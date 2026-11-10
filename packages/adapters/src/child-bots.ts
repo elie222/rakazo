@@ -710,9 +710,12 @@ const REMOTE_TEAM_SANDBOX_KINDS = new Set([
   "novita",
   "daytona",
   "boat",
+  "boxd",
   "createos",
   "kubernetes",
   "incus",
+  "mola",
+  "railway",
 ]);
 
 /**

@@ -1,5 +1,28 @@
-import { describe, expect, it } from "vitest";
+import type { AdapterContext } from "@rakazo/adapter-kit";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMolaSandboxProvider } from "./mola-sandbox.js";
+
+type FetchMock = ReturnType<typeof vi.fn>;
+
+function mockFetchResponse(status: number, body: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : status === 201 ? "Created" : "Error",
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as Response;
+}
+
+function createMockContext(signal?: AbortSignal): AdapterContext {
+  return {
+    operationId: "test-op",
+    traceId: "test-trace",
+    spaceId: "test-space",
+    userId: "test-user",
+    signal: signal ?? new AbortController().signal,
+  };
+}
 
 describe("MolaSandboxProvider", () => {
   describe("construction and configuration", () => {
@@ -124,6 +147,357 @@ describe("MolaSandboxProvider", () => {
         apiUrl: "http://127.0.0.1:4141/v1",
       });
       expect(provider).toBeDefined();
+    });
+  });
+
+  describe("API request verification with mocked fetch", () => {
+    let originalFetch: typeof global.fetch;
+    let fetchMock: FetchMock;
+
+    beforeEach(() => {
+      originalFetch = global.fetch;
+      fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof global.fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+      vi.restoreAllMocks();
+    });
+
+    it("sends correct Cloud create request payload", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-machine-123";
+      fetchMock
+        // Create response
+        .mockResolvedValueOnce(
+          mockFetchResponse(201, {
+            data: {
+              id: machineId,
+              name: "rakazo-test",
+              status: "provisioning",
+              is_transitional: true,
+              vcpus: 2,
+              memory_mb: 4096,
+              disk_gb: 40,
+              created_at: new Date().toISOString(),
+            },
+          }),
+        )
+        // Readiness poll
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: {
+              id: machineId,
+              status: "ready",
+              is_transitional: false,
+            },
+          }),
+        );
+
+      await provider.provision(
+        {
+          botId: "bot-123",
+          homePath: "/home/bot",
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("No fetch call made");
+      expect(call[0]).toBe("https://cloud.mola.sh/api/v1/computers");
+      const options = call[1] as RequestInit;
+      expect(options.method).toBe("POST");
+      const body = JSON.parse(options.body as string);
+      expect(body).toMatchObject({
+        image: "ubuntu",
+        auto_stop_minutes: 30,
+      });
+      expect(body.name).toMatch(/^rakazo-/);
+      expect(body).not.toHaveProperty("vcpus");
+      expect(body).not.toHaveProperty("memory_mb");
+      expect(body).not.toHaveProperty("disk_gb");
+    });
+
+    it("sends correct self-hosted create request payload", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://localhost:4141/v1",
+      });
+
+      const machineId = "test-machine-456";
+      fetchMock
+        // Create response
+        .mockResolvedValueOnce(
+          mockFetchResponse(201, {
+            data: {
+              id: machineId,
+              name: "rakazo-test",
+              status: "provisioning",
+              is_transitional: true,
+              vcpus: 2,
+              memory_mb: 4096,
+              disk_gb: 40,
+              created_at: new Date().toISOString(),
+            },
+          }),
+        )
+        // Readiness poll
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: {
+              id: machineId,
+              status: "ready",
+              is_transitional: false,
+            },
+          }),
+        );
+
+      await provider.provision(
+        {
+          botId: "bot-456",
+          homePath: "/home/bot",
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("No fetch call made");
+      expect(call[0]).toBe("http://localhost:4141/v1/machines");
+      const options = call[1] as RequestInit;
+      expect(options.method).toBe("POST");
+      const body = JSON.parse(options.body as string);
+      expect(body).toMatchObject({
+        vcpus: 2,
+        memory_mb: 4096,
+        disk_gb: 40,
+      });
+      expect(body.name).toMatch(/^rakazo-/);
+      expect(body).not.toHaveProperty("image");
+      expect(body).not.toHaveProperty("auto_stop_minutes");
+    });
+
+    it("polls with fresh status during readiness check (is_transitional)", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-machine-789";
+      let callCount = 0;
+
+      fetchMock.mockImplementation(async (_url) => {
+        callCount++;
+        if (callCount === 1) {
+          // Create response
+          return mockFetchResponse(201, {
+            data: {
+              id: machineId,
+              name: "rakazo-test",
+              status: "provisioning",
+              is_transitional: true,
+              vcpus: 2,
+              memory_mb: 4096,
+              disk_gb: 40,
+              created_at: new Date().toISOString(),
+            },
+          });
+        }
+        if (callCount === 2) {
+          // First poll - still provisioning
+          return mockFetchResponse(200, {
+            data: {
+              id: machineId,
+              status: "provisioning",
+              is_transitional: true,
+            },
+          });
+        }
+        if (callCount === 3) {
+          // Second poll - booting
+          return mockFetchResponse(200, {
+            data: {
+              id: machineId,
+              status: "booting",
+              is_transitional: true,
+            },
+          });
+        }
+        // Third poll - ready
+        return mockFetchResponse(200, {
+          data: {
+            id: machineId,
+            status: "ready",
+            is_transitional: false,
+          },
+        });
+      });
+
+      await provider.provision(
+        {
+          botId: "bot-789",
+          homePath: "/home/bot",
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+      // Verify fresh fetches during polling
+      const pollCalls = fetchMock.mock.calls.slice(1);
+      for (const call of pollCalls) {
+        expect(call[0]).toContain(`/computers/${machineId}`);
+        const method = (call[1] as RequestInit)?.method;
+        // GET requests may have method set or undefined
+        expect(method === undefined || method === "GET").toBe(true);
+      }
+    });
+
+    it("stops then restarts a machine with cache invalidation", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-machine-restart";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-restart",
+      };
+
+      fetchMock
+        // Stop call
+        .mockResolvedValueOnce(mockFetchResponse(200, { data: { ok: true } }))
+        // Reconnect - fetch fresh status (stopped)
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { id: machineId, status: "stopped" },
+          }),
+        )
+        // Start call
+        .mockResolvedValueOnce(mockFetchResponse(200, { data: { ok: true } }))
+        // Fresh poll after start
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { id: machineId, status: "ready" },
+          }),
+        );
+
+      await provider.stop(computer, createMockContext());
+
+      // Now reconnect (provision with existing ref)
+      await provider.provision(
+        {
+          botId: computer.botId,
+          homePath: "/home/bot",
+          providerRef: computer.providerRef,
+          providerKind: "mola",
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      const stopCall = fetchMock.mock.calls[0];
+      if (!stopCall) throw new Error("Stop call not made");
+      expect(stopCall[0]).toBe(`https://cloud.mola.sh/api/v1/computers/${machineId}/stop`);
+
+      const startCall = fetchMock.mock.calls[2];
+      if (!startCall) throw new Error("Start call not made");
+      expect(startCall[0]).toBe(`https://cloud.mola.sh/api/v1/computers/${machineId}/start`);
+    });
+
+    it("clamps exec timeout to 1-120 seconds and extends HTTP timeout", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-machine-exec";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-exec",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, {
+          data: {
+            exit_code: 0,
+            stdout: "command output",
+            stderr: "",
+            timed_out: false,
+          },
+        }),
+      );
+
+      const events: string[] = [];
+      for await (const event of provider.execute(
+        computer,
+        { argv: ["sleep", "5"], timeoutMs: 300_000 }, // 5 minutes requested
+        createMockContext(),
+      )) {
+        events.push(event.type);
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Execute call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      // Timeout should be clamped to 120s (Mola's max)
+      expect(body.timeout).toBe(120);
+      expect(events).toContain("stdout");
+      expect(events).toContain("exit");
+    });
+
+    it("detects self-hosted for custom domain (not localhost)", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://mola.internal:4141/v1",
+      });
+
+      const machineId = "test-id";
+      fetchMock
+        // Create response
+        .mockResolvedValueOnce(
+          mockFetchResponse(201, {
+            data: {
+              id: machineId,
+              name: "test",
+              status: "provisioning",
+              is_transitional: true,
+              vcpus: 2,
+              memory_mb: 4096,
+              disk_gb: 40,
+              created_at: new Date().toISOString(),
+            },
+          }),
+        )
+        // Readiness poll - now ready
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: {
+              id: machineId,
+              status: "ready",
+              is_transitional: false,
+            },
+          }),
+        );
+
+      await provider.provision({ botId: "bot-1", homePath: "/home/bot" }, createMockContext());
+
+      // Should use /machines (self-hosted) not /computers (cloud)
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Provision call not made");
+      expect(call[0]).toBe("http://mola.internal:4141/v1/machines");
     });
   });
 });

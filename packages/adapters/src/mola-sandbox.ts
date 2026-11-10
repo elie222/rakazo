@@ -24,11 +24,7 @@ import {
 import type { ComputerSize } from "@rakazo/contracts";
 import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import {
-  normalizeWorkspacePath,
-  shellQuote,
-  workspacePath,
-} from "./computer-support.js";
+import { normalizeWorkspacePath, shellQuote } from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -117,7 +113,7 @@ function readPngDimensions(pngBuffer: Uint8Array): { width: number; height: numb
   if (pngBuffer.length < 24) {
     throw new Error("Invalid PNG: buffer too short");
   }
-  
+
   // Check PNG signature
   if (
     pngBuffer[0] !== 0x89 ||
@@ -127,13 +123,21 @@ function readPngDimensions(pngBuffer: Uint8Array): { width: number; height: numb
   ) {
     throw new Error("Invalid PNG: bad signature");
   }
-  
+
   // Width is at bytes 16-19 (big-endian)
-  const width = ((pngBuffer[16] ?? 0) << 24) | ((pngBuffer[17] ?? 0) << 16) | ((pngBuffer[18] ?? 0) << 8) | (pngBuffer[19] ?? 0);
-  
+  const width =
+    ((pngBuffer[16] ?? 0) << 24) |
+    ((pngBuffer[17] ?? 0) << 16) |
+    ((pngBuffer[18] ?? 0) << 8) |
+    (pngBuffer[19] ?? 0);
+
   // Height is at bytes 20-23 (big-endian)
-  const height = ((pngBuffer[20] ?? 0) << 24) | ((pngBuffer[21] ?? 0) << 16) | ((pngBuffer[22] ?? 0) << 8) | (pngBuffer[23] ?? 0);
-  
+  const height =
+    ((pngBuffer[20] ?? 0) << 24) |
+    ((pngBuffer[21] ?? 0) << 16) |
+    ((pngBuffer[22] ?? 0) << 8) |
+    (pngBuffer[23] ?? 0);
+
   return { width, height };
 }
 
@@ -144,7 +148,7 @@ function readPngDimensions(pngBuffer: Uint8Array): { width: number; height: numb
 function mapKeyToMola(key: string, modifiers?: string[]): string {
   // Build the key string with modifiers
   const parts: string[] = [];
-  
+
   if (modifiers?.includes("control") || modifiers?.includes("ctrl")) {
     parts.push("ctrl");
   }
@@ -157,9 +161,9 @@ function mapKeyToMola(key: string, modifiers?: string[]): string {
   if (modifiers?.includes("meta") || modifiers?.includes("command")) {
     parts.push("meta");
   }
-  
+
   parts.push(key.toLowerCase());
-  
+
   return parts.join("+");
 }
 
@@ -184,17 +188,21 @@ export class MolaSandboxProvider implements SandboxProvider {
   }
 
   private detectApiMode(url: string): MolaApiMode {
-    const lower = url.toLowerCase();
-    if (lower.includes("cloud.mola.sh")) {
+    try {
+      const parsed = new URL(url);
+      const hostname = parsed.hostname.toLowerCase();
+      // Only treat cloud.mola.sh and *.mola.sh as cloud
+      if (hostname === "cloud.mola.sh" || hostname.endsWith(".mola.sh")) {
+        return "cloud";
+      }
+      return "selfhosted";
+    } catch {
+      // Fallback for invalid URLs
       return "cloud";
     }
-    if (lower.includes("localhost") || lower.includes("127.0.0.1") || lower.includes("0.0.0.0")) {
-      return "selfhosted";
-    }
-    return "cloud";
   }
 
-  private resourcePath(resource: "machines" | "computers"): string {
+  private resourcePath(_resource: "machines" | "computers"): string {
     return this.apiMode === "cloud" ? "computers" : "machines";
   }
 
@@ -220,6 +228,7 @@ export class MolaSandboxProvider implements SandboxProvider {
       method?: string;
       body?: unknown;
       signal?: AbortSignal;
+      timeoutMs?: number;
     } = {},
   ): Promise<Response> {
     const url = `${this.apiUrl}${endpoint}`;
@@ -229,14 +238,18 @@ export class MolaSandboxProvider implements SandboxProvider {
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), MOLA_API_TIMEOUT_MS);
+    const timeoutMs = options.timeoutMs ?? MOLA_API_TIMEOUT_MS;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const combinedSignal = options.signal
+      ? AbortSignal.any([controller.signal, options.signal])
+      : controller.signal;
 
     try {
       const response = await fetch(url, {
         method: options.method || "GET",
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: options.signal || controller.signal,
+        signal: combinedSignal,
       });
 
       if (response.status === 401) {
@@ -280,12 +293,12 @@ export class MolaSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async getMachine(machineId: string): Promise<MolaMachine> {
+  private async getMachine(machineId: string, options?: { fresh?: boolean }): Promise<MolaMachine> {
     const now = Date.now();
     const cached = this.machines.get(machineId);
     const lastCheck = this.checkedAt.get(machineId) ?? 0;
 
-    if (cached && now - lastCheck < MOLA_HANDLE_PROBE_MS) {
+    if (!options?.fresh && cached && now - lastCheck < MOLA_HANDLE_PROBE_MS) {
       return cached;
     }
 
@@ -300,21 +313,29 @@ export class MolaSandboxProvider implements SandboxProvider {
     return machine;
   }
 
+  private invalidateCache(machineId: string): void {
+    this.machines.delete(machineId);
+    this.checkedAt.delete(machineId);
+    this.prepared.delete(machineId);
+    this.preparations.delete(machineId);
+  }
+
   private async executeAction(
     machineId: string,
     action: MolaActionRequest,
+    options?: { signal?: AbortSignal; timeoutMs?: number },
   ): Promise<MolaActionResponse> {
     const resource = this.resourcePath("computers");
     const response = await this.request(`/${resource}/${machineId}/actions`, {
       method: "POST",
       body: action,
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
     });
     return await response.json();
   }
 
-  private async getDesktopUrl(
-    machineId: string,
-  ): Promise<{ url: string; expires_in: number }> {
+  private async getDesktopUrl(machineId: string): Promise<{ url: string; expires_in: number }> {
     const response = await this.request(`/machines/${machineId}/desktop`, {
       method: "POST",
     });
@@ -322,17 +343,22 @@ export class MolaSandboxProvider implements SandboxProvider {
     return { url: result.data.desktop_url, expires_in: result.data.expires_in };
   }
 
-  private async waitForReady(machineId: string, context: AdapterContext): Promise<void> {
+  private async waitForReady(machineId: string, context: AdapterContext): Promise<MolaMachine> {
     const start = Date.now();
     while (Date.now() - start < MOLA_READY_TIMEOUT_MS) {
       context.signal.throwIfAborted();
-      const machine = await this.getMachine(machineId);
+      const machine = await this.getMachine(machineId, { fresh: true });
 
       if (machine.status === "ready") {
-        return;
+        return machine;
       }
 
-      if (machine.is_transitional || machine.status === "provisioning" || machine.status === "booting" || machine.status === "starting") {
+      if (
+        machine.is_transitional ||
+        machine.status === "provisioning" ||
+        machine.status === "booting" ||
+        machine.status === "starting"
+      ) {
         await abortableDelay(MOLA_POLL_MS, context.signal);
         continue;
       }
@@ -373,10 +399,15 @@ export class MolaSandboxProvider implements SandboxProvider {
 
     if (request.providerRef && request.providerKind === "mola") {
       try {
-        const machine = await withAbort(this.getMachine(request.providerRef), context.signal);
+        const machine = await withAbort(
+          this.getMachine(request.providerRef, { fresh: true }),
+          context.signal,
+        );
         if (machine.status === "stopped") {
           await this.request(`/${resource}/${request.providerRef}/start`, { method: "POST" });
-          await this.waitForReady(request.providerRef, context);
+          this.invalidateCache(request.providerRef);
+          const readyMachine = await this.waitForReady(request.providerRef, context);
+          return this.ref(readyMachine, request.botId);
         }
         return this.ref(machine, request.botId);
       } catch (error) {
@@ -409,12 +440,9 @@ export class MolaSandboxProvider implements SandboxProvider {
     const result: { data: MolaMachine } = await response.json();
     const machine = result.data;
 
-    this.machines.set(machine.id, machine);
-    this.checkedAt.set(machine.id, Date.now());
-
     try {
-      await this.waitForReady(machine.id, context);
-      return this.ref(machine, request.botId, true);
+      const readyMachine = await this.waitForReady(machine.id, context);
+      return this.ref(readyMachine, request.botId, true);
     } catch (error) {
       try {
         await this.request(`/${resource}/${machine.id}`, { method: "DELETE" });
@@ -440,7 +468,7 @@ export class MolaSandboxProvider implements SandboxProvider {
     }
   }
 
-  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+  async isRunning(computer: ComputerRef, _context: AdapterContext): Promise<boolean> {
     try {
       const machine = await this.getMachine(computer.providerRef);
       return machine.status === "ready" || machine.runtime_status === "running";
@@ -457,21 +485,36 @@ export class MolaSandboxProvider implements SandboxProvider {
     if (existing) return existing;
 
     const preparation = (async () => {
-      context.signal.throwIfAborted();
-      const machine = await this.getMachine(computer.providerRef);
+      try {
+        context.signal.throwIfAborted();
+        const machine = await this.getMachine(computer.providerRef, { fresh: true });
 
-      if (machine.status !== "ready") {
-        throw new Error("Machine must be ready before preparation");
+        if (machine.status !== "ready") {
+          throw new Error("Machine must be ready before preparation");
+        }
+
+        // Set up the workspace directory
+        const result = await this.executeAction(
+          computer.providerRef,
+          {
+            action: "exec",
+            command: `mkdir -p ${MOLA_WORKSPACE}`,
+            timeout: 30,
+          },
+          { signal: context.signal },
+        );
+
+        if (result.data?.exit_code !== 0) {
+          throw new Error(
+            `Workspace setup failed with exit code ${result.data?.exit_code}: ${result.data?.stderr || "unknown error"}`,
+          );
+        }
+
+        this.prepared.add(computer.providerRef);
+      } finally {
+        // Remove from preparations map whether successful or not
+        this.preparations.delete(computer.providerRef);
       }
-
-      // Set up the workspace directory
-      await this.executeAction(computer.providerRef, {
-        action: "exec",
-        command: `mkdir -p ${MOLA_WORKSPACE}`,
-        timeout: 30,
-      });
-
-      this.prepared.add(computer.providerRef);
     })();
 
     this.preparations.set(computer.providerRef, preparation);
@@ -489,12 +532,24 @@ export class MolaSandboxProvider implements SandboxProvider {
     const command = argv.map(shellQuote).join(" ");
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
 
+    // Clamp exec timeout to Mola's 1-120 second range
+    const execTimeoutSeconds = Math.max(1, Math.min(120, Math.ceil(timeoutMs / 1000)));
+    // HTTP timeout = exec timeout + 10s margin
+    const httpTimeoutMs = (execTimeoutSeconds + 10) * 1000;
+
     try {
-      const result = await this.executeAction(computer.providerRef, {
-        action: "exec",
-        command,
-        timeout: Math.ceil(timeoutMs / 1000),
-      });
+      const result = await this.executeAction(
+        computer.providerRef,
+        {
+          action: "exec",
+          command,
+          timeout: execTimeoutSeconds,
+        },
+        {
+          signal: context.signal,
+          timeoutMs: httpTimeoutMs,
+        },
+      );
 
       if (result.data?.timed_out) {
         yield* timedOutCommandEvents(timeoutMs);
@@ -548,9 +603,13 @@ export class MolaSandboxProvider implements SandboxProvider {
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     context.signal.throwIfAborted();
 
-    const result = await this.executeAction(computer.providerRef, {
-      action: "screenshot",
-    });
+    const result = await this.executeAction(
+      computer.providerRef,
+      {
+        action: "screenshot",
+      },
+      { signal: context.signal },
+    );
 
     if (!result.data?.image_base64) {
       throw new Error("Screenshot failed");
@@ -558,7 +617,7 @@ export class MolaSandboxProvider implements SandboxProvider {
 
     const image = Buffer.from(result.data.image_base64, "base64");
     const now = new Date().toISOString();
-    
+
     let width = 1280;
     let height = 800;
     try {
@@ -585,64 +644,102 @@ export class MolaSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<ComputerActionResult> {
     context.signal.throwIfAborted();
-    
+
     let completed = 0;
-    
+
     for (const action of request.actions) {
       context.signal.throwIfAborted();
-      
+
       try {
         if (action.kind === "key") {
           // Map key action to Mola key format
           const molaKey = mapKeyToMola(action.key, action.modifiers);
-          await this.executeAction(computer.providerRef, {
-            action: "key",
-            key: molaKey,
-          });
+          await this.executeAction(
+            computer.providerRef,
+            {
+              action: "key",
+              key: molaKey,
+            },
+            { signal: context.signal },
+          );
           completed++;
         } else if (action.kind === "pointer") {
           if (action.type === "click") {
             // Single click
             const button = action.button === "right" ? 3 : action.button === "left" ? 1 : 1;
-            await this.executeAction(computer.providerRef, {
-              action: "click",
-              x: Math.round(action.x),
-              y: Math.round(action.y),
-              button,
-            });
+            await this.executeAction(
+              computer.providerRef,
+              {
+                action: "click",
+                x: Math.round(action.x),
+                y: Math.round(action.y),
+                button,
+              },
+              { signal: context.signal },
+            );
             completed++;
           } else if (action.type === "move") {
             // Move cursor
-            await this.executeAction(computer.providerRef, {
-              action: "move",
-              x: Math.round(action.x),
-              y: Math.round(action.y),
-            });
+            await this.executeAction(
+              computer.providerRef,
+              {
+                action: "move",
+                x: Math.round(action.x),
+                y: Math.round(action.y),
+              },
+              { signal: context.signal },
+            );
             completed++;
           } else if (action.type === "down" || action.type === "up") {
             // Mouse button down/up not directly supported by Mola
-            throw new Error(`Unsupported pointer action: ${action.type}. Mola only supports 'click' and 'move'.`);
+            throw new Error(
+              `Unsupported pointer action: ${action.type}. Mola only supports 'click' and 'move'.`,
+            );
           }
         } else if (action.kind === "scroll") {
           // Map scroll direction (Mola only supports up/down)
           if (action.direction === "left" || action.direction === "right") {
-            throw new Error(`Unsupported scroll direction: ${action.direction}. Mola only supports 'up' and 'down'.`);
+            throw new Error(
+              `Unsupported scroll direction: ${action.direction}. Mola only supports 'up' and 'down'.`,
+            );
           }
-          
-          const amount = Math.min(action.amount ?? 5, 20); // Clamp to Mola's 1-20 range
-          await this.executeAction(computer.providerRef, {
-            action: "scroll",
-            direction: action.direction,
-            amount,
-          });
+
+          // Move to target coordinates if specified
+          if (action.x !== undefined && action.y !== undefined) {
+            await this.executeAction(
+              computer.providerRef,
+              {
+                action: "move",
+                x: Math.round(action.x),
+                y: Math.round(action.y),
+              },
+              { signal: context.signal },
+            );
+          }
+
+          // Clamp to Mola's 1-20 range with lower bound
+          const amount = Math.max(1, Math.min(20, Math.round(action.amount ?? 5)));
+          await this.executeAction(
+            computer.providerRef,
+            {
+              action: "scroll",
+              direction: action.direction,
+              amount,
+            },
+            { signal: context.signal },
+          );
           completed++;
         } else if (action.kind === "clipboard") {
           // Map clipboard to type action (Mola supports text up to 10000 chars)
           const text = action.text.slice(0, 10000);
-          await this.executeAction(computer.providerRef, {
-            action: "type",
-            text,
-          });
+          await this.executeAction(
+            computer.providerRef,
+            {
+              action: "type",
+              text,
+            },
+            { signal: context.signal },
+          );
           completed++;
         } else if (action.kind === "wait") {
           // Wait is local, not sent to Mola
@@ -650,7 +747,9 @@ export class MolaSandboxProvider implements SandboxProvider {
           completed++;
         } else if (action.kind === "open" || action.kind === "launch" || action.kind === "focus") {
           // These actions are not directly supported by Mola's API
-          throw new Error(`Unsupported action: ${action.kind}. Mola does not provide direct ${action.kind} actions.`);
+          throw new Error(
+            `Unsupported action: ${action.kind}. Mola does not provide direct ${action.kind} actions.`,
+          );
         }
       } catch (error) {
         // If an action fails, stop executing further actions
@@ -658,15 +757,16 @@ export class MolaSandboxProvider implements SandboxProvider {
         throw error;
       }
     }
-    
+
     // Apply settle time if requested
     if (request.settleMs && request.settleMs > 0) {
       await delay(request.settleMs, { signal: context.signal });
     }
-    
+
     // Take observation if requested
-    const observation = request.observe !== false ? await this.observe(computer, context) : undefined;
-    
+    const observation =
+      request.observe !== false ? await this.observe(computer, context) : undefined;
+
     return {
       completed,
       observation,
@@ -683,11 +783,15 @@ export class MolaSandboxProvider implements SandboxProvider {
     const normalized = normalizeWorkspacePath(filePath);
     const fullPath = path.posix.join(MOLA_WORKSPACE, normalized);
 
-    const result = await this.executeAction(computer.providerRef, {
-      action: "exec",
-      command: `ls -la ${shellQuote(fullPath)} | tail -n +2`,
-      timeout: 30,
-    });
+    const result = await this.executeAction(
+      computer.providerRef,
+      {
+        action: "exec",
+        command: `ls -la ${shellQuote(fullPath)} | tail -n +2`,
+        timeout: 30,
+      },
+      { signal: context.signal },
+    );
 
     if (result.data?.exit_code !== 0) {
       return [];
@@ -703,11 +807,15 @@ export class MolaSandboxProvider implements SandboxProvider {
       const name = parts.slice(8).join(" ");
       if (name === "." || name === "..") continue;
 
-      const isDir = parts[0]?.startsWith("d");
+      const mode = parts[0] ?? "";
+      const isDir = mode.startsWith("d");
+      const isExecutable = !isDir && mode.includes("x");
+
       entries.push({
         path: path.posix.join(filePath, name),
         kind: isDir ? "dir" : "file",
         size: Number.parseInt(parts[4] ?? "0", 10),
+        executable: isExecutable ? true : undefined,
       });
     }
 
@@ -724,12 +832,16 @@ export class MolaSandboxProvider implements SandboxProvider {
     const normalized = normalizeWorkspacePath(filePath);
     const fullPath = path.posix.join(MOLA_WORKSPACE, normalized);
 
-    const result = await this.executeAction(computer.providerRef, {
-      action: "read_file",
-      path: fullPath,
-    });
+    const result = await this.executeAction(
+      computer.providerRef,
+      {
+        action: "read_file",
+        path: fullPath,
+      },
+      { signal: context.signal },
+    );
 
-    if (!result.data?.content_base64) {
+    if (result.data?.content_base64 === undefined) {
       throw new Error("File read failed");
     }
 
@@ -746,15 +858,32 @@ export class MolaSandboxProvider implements SandboxProvider {
     const normalized = normalizeWorkspacePath(file.path);
     const fullPath = path.posix.join(MOLA_WORKSPACE, normalized);
 
-    await this.executeAction(computer.providerRef, {
-      action: "write_file",
-      path: fullPath,
-      content_base64: Buffer.from(
-        file.content.buffer,
-        file.content.byteOffset,
-        file.content.byteLength,
-      ).toString("base64"),
-    });
+    await this.executeAction(
+      computer.providerRef,
+      {
+        action: "write_file",
+        path: fullPath,
+        content_base64: Buffer.from(
+          file.content.buffer,
+          file.content.byteOffset,
+          file.content.byteLength,
+        ).toString("base64"),
+      },
+      { signal: context.signal },
+    );
+
+    // Apply executable permission if specified
+    if (file.executable) {
+      await this.executeAction(
+        computer.providerRef,
+        {
+          action: "exec",
+          command: `chmod +x ${shellQuote(fullPath)}`,
+          timeout: 10,
+        },
+        { signal: context.signal },
+      );
+    }
   }
 
   async *exportWorkspace(
@@ -763,33 +892,53 @@ export class MolaSandboxProvider implements SandboxProvider {
   ): AsyncIterable<PortableFile | StreamedPortableFile> {
     context.signal.throwIfAborted();
 
-    // List all files in workspace
-    const result = await this.executeAction(computer.providerRef, {
-      action: "exec",
-      command: `find ${shellQuote(MOLA_WORKSPACE)} -type f`,
-      timeout: 60,
-    });
+    // List all files in workspace using -print0 for safety with special filenames
+    const findResult = await this.executeAction(
+      computer.providerRef,
+      {
+        action: "exec",
+        command: `find ${shellQuote(MOLA_WORKSPACE)} -type f -print0`,
+        timeout: 60,
+      },
+      { signal: context.signal },
+    );
 
-    if (result.data?.exit_code !== 0) {
-      return;
+    if (findResult.data?.exit_code !== 0) {
+      throw new Error(
+        `Workspace export failed: find command exited with code ${findResult.data?.exit_code}: ${findResult.data?.stderr || "unknown error"}`,
+      );
     }
 
-    const files = (result.data?.stdout ?? "").split("\n").filter(Boolean);
+    const files = (findResult.data?.stdout ?? "").split("\0").filter((f) => f.length > 0);
 
     for (const filePath of files) {
       if (shouldSkipPortableWorkspaceFile(filePath)) continue;
 
-      try {
-        const relativePath = filePath.slice(MOLA_WORKSPACE.length + 1);
-        const content = await this.readFile(computer, relativePath, context);
+      const relativePath = filePath.slice(MOLA_WORKSPACE.length + 1);
 
-        yield {
-          path: relativePath,
-          content,
-        };
-      } catch (error) {
-        log.warn("Failed to export file", { error, path: filePath });
-      }
+      // Check if file is executable
+      const statResult = await this.executeAction(
+        computer.providerRef,
+        {
+          action: "exec",
+          command: `stat -c '%a' ${shellQuote(filePath)}`,
+          timeout: 10,
+        },
+        { signal: context.signal },
+      );
+
+      const isExecutable =
+        statResult.data?.exit_code === 0 &&
+        statResult.data.stdout &&
+        /[1357]$/.test(statResult.data.stdout.trim());
+
+      const content = await this.readFile(computer, relativePath, context);
+
+      yield {
+        path: relativePath,
+        content,
+        executable: isExecutable ? true : undefined,
+      };
     }
   }
 
@@ -805,7 +954,10 @@ export class MolaSandboxProvider implements SandboxProvider {
     }
   }
 
-  async snapshot(computer: ComputerRef, _context: AdapterContext): Promise<{ id: string; createdAt: string }> {
+  async snapshot(
+    computer: ComputerRef,
+    _context: AdapterContext,
+  ): Promise<{ id: string; createdAt: string }> {
     // Mola doesn't support snapshots yet
     return {
       id: computer.providerRef,
@@ -826,8 +978,13 @@ export class MolaSandboxProvider implements SandboxProvider {
         method: "POST",
         body: { force: options?.discardUnsaved ?? false },
       });
+      this.invalidateCache(computer.providerRef);
     } catch (error) {
-      if (!isSandboxGoneError(error)) throw error;
+      if (isSandboxGoneError(error)) {
+        this.invalidateCache(computer.providerRef);
+      } else {
+        throw error;
+      }
     }
   }
 
@@ -839,12 +996,13 @@ export class MolaSandboxProvider implements SandboxProvider {
       await this.request(`/${resource}/${computer.providerRef}`, {
         method: "DELETE",
       });
-      this.machines.delete(computer.providerRef);
-      this.checkedAt.delete(computer.providerRef);
-      this.prepared.delete(computer.providerRef);
-      this.preparations.delete(computer.providerRef);
+      this.invalidateCache(computer.providerRef);
     } catch (error) {
-      if (!isSandboxGoneError(error)) throw error;
+      if (isSandboxGoneError(error)) {
+        this.invalidateCache(computer.providerRef);
+      } else {
+        throw error;
+      }
     }
   }
 }
