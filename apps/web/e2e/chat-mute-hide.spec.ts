@@ -68,3 +68,15 @@ test("a chat row's ⋯ menu mutes and hides a chat, by pointer or keyboard", asy
   await expect(chief).toBeVisible();
   await expect(hidden).toHaveCount(0);
 });
+
+test("opens on no chat, and still gets ready, when every bot is hidden", async ({ page }) => {
+  await signup(page, `chat-all-hidden-${Date.now()}@rakazo.test`, "password12", "Test User");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const chiefId = await activeBotId(page);
+  await rpc(page, "threads/hide", { botId: chiefId, hidden: true });
+  await page.goto("/app");
+  await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
+  await expect(page).not.toHaveURL(new RegExp(`/app/${chiefId}`));
+});

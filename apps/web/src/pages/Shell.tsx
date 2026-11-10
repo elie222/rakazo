@@ -663,11 +663,12 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
+  // With no bot in the list, every one hidden included, nothing opens and the shell is ready as is.
   const shellReady =
     initialBotsLoaded &&
     (inGroup
       ? Boolean(activeGroup && activeSnapshot)
-      : bots.length === 0 || Boolean(active && activeSnapshot));
+      : bots.every((bot) => bot.hidden) || Boolean(active && activeSnapshot));
 
   useLayoutEffect(() => {
     if (initialBotsLoaded) {

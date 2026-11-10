@@ -9,7 +9,7 @@ import {
   truncatedPlainText,
   truncatePlainText,
 } from "@rakazo/core";
-import type { ChatHold, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   chatHoldsFor,
   chatMutedByDefault,
@@ -224,13 +224,14 @@ async function deliverChatNotice(
   const holds =
     message.kind === "completion"
       ? await chatHoldsFor(deps.prisma, message.threadId, input.recipients).catch((error) => {
-          // A retried delivery waits for the answer; otherwise everyone hears, rather than no one,
-          // unless the chat's own setting mutes it.
+          // A retried delivery waits for the answer.
           if (input.retryOnFailure) throw error;
           getLogger().error("chat hold lookup", error);
-          return new Map<string, ChatHold>();
+          return undefined;
         })
       : null;
+  // News whose holds could not be read reaches no one, so a failed read never overrides a mute.
+  if (holds === undefined) return;
   const recipients = input.recipients.filter((userId) => {
     if (!holds) return true;
     const hold = holds.get(userId);

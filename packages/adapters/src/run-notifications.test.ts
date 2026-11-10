@@ -9,12 +9,17 @@ const holds = vi.hoisted(
   () => new Map<string, { snoozed: boolean; hidden: boolean; muted: boolean | null }>(),
 );
 const unhidden = vi.hoisted(() => [] as string[]);
+const lookup = vi.hoisted(() => ({ fails: false }));
 // Each person's own unread count: Ada has 2 unread chats, Bea 5.
 vi.mock("@rakazo/db", () => ({
   countUnreadInboxChats: async (_: unknown, { userId }: { userId: string }) =>
     userId === "user-1" ? 2 : 5,
-  chatHoldsFor: async (_: unknown, _threadId: string, userIds: string[]) =>
-    new Map(userIds.flatMap((userId) => (holds.has(userId) ? [[userId, holds.get(userId)]] : []))),
+  chatHoldsFor: async (_: unknown, _threadId: string, userIds: string[]) => {
+    if (lookup.fails) throw new Error("database unavailable");
+    return new Map(
+      userIds.flatMap((userId) => (holds.has(userId) ? [[userId, holds.get(userId)]] : [])),
+    );
+  },
   chatMutedByDefault: (bot?: { notifyOnFinish: boolean } | null) =>
     bot ? !bot.notifyOnFinish : false,
   ownerHearsChat: (muted: boolean | null | undefined, mutedByDefault: boolean) =>
@@ -28,6 +33,7 @@ const hold = (userId: string, set: { snoozed?: boolean; hidden?: boolean; muted?
 afterEach(() => {
   holds.clear();
   unhidden.length = 0;
+  lookup.fails = false;
 });
 
 const run = {
@@ -193,6 +199,14 @@ describe("notifications in a shared Space", () => {
       expect(recipients(send)).toEqual(["user-1"]);
       expect(publish.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["user-1"]);
     }
+  });
+
+  it("sends news to no one when it cannot read who muted the chat", async () => {
+    lookup.fails = true;
+    const { value, publish, send } = deps({ members: shared, groupId: "group-1" });
+    await notifyRun(value, run, message);
+    expect(send).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("still brings its owner a muted chat's questions, takeovers and failures", async () => {
