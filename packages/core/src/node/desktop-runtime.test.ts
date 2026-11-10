@@ -10,7 +10,9 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import net from "node:net";
@@ -1057,6 +1059,23 @@ describe("shared Linux desktop lifecycle", () => {
     expect(url.searchParams.get("path")).toBe("websockify?_token=provider-key&token=view-key");
   });
 
+  function recordedPid(contents: string) {
+    return contents.trim().split(/\s+/)[0] ?? "";
+  }
+
+  function procStartTime(pid: string) {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const fields = stat
+        .slice(stat.lastIndexOf(")") + 1)
+        .trim()
+        .split(/\s+/);
+      return fields[19] ?? "";
+    } catch {
+      return "";
+    }
+  }
+
   async function portalScreenFixture() {
     const root = mkdtempSync(path.join(tmpdir(), "desktop-portal-"));
     roots.push(root);
@@ -1347,6 +1366,11 @@ describe("shared Linux desktop lifecycle", () => {
     return {
       root,
       runtime,
+      bin,
+      libexec,
+      pidLog,
+      pythonBin: python.stdout.trim(),
+      runEnv,
       browserLog,
       portalLog,
       dbusLog,
@@ -1410,9 +1434,9 @@ describe("shared Linux desktop lifecycle", () => {
         const dbusPid = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
         const portalPid = readFileSync(path.join(runtime, `portal-pid-${extraDisplay}`), "utf8");
         const gtkPid = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
-        expect(alive(dbusPid)).toBe(true);
-        expect(alive(portalPid)).toBe(true);
-        expect(alive(gtkPid)).toBe(true);
+        expect(alive(recordedPid(dbusPid))).toBe(true);
+        expect(alive(recordedPid(portalPid))).toBe(true);
+        expect(alive(recordedPid(gtkPid))).toBe(true);
 
         const second = run(extra, true);
         expect(second.status, second.stderr).toBe(0);
@@ -1462,9 +1486,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
           "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
         );
-        expect(alive(dbusPid)).toBe(false);
-        expect(alive(portalPid)).toBe(false);
-        expect(alive(gtkPid)).toBe(false);
+        expect(alive(recordedPid(dbusPid))).toBe(false);
+        expect(alive(recordedPid(portalPid))).toBe(false);
+        expect(alive(recordedPid(gtkPid))).toBe(false);
         const bootHash = createHash("sha256").update("boot").digest("hex").slice(0, 32);
         const bootPid = readFileSync(path.join(runtime, `browser-pid-${bootHash}`), "utf8");
         expect(alive(bootPid)).toBe(true);
@@ -1480,7 +1504,7 @@ describe("shared Linux desktop lifecycle", () => {
           "utf8",
         );
         const restartedBus = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
-        expect(alive(restartedPortal)).toBe(true);
+        expect(alive(recordedPid(restartedPortal))).toBe(true);
         const reset = run(relocate(resetDesktopRuntimeCommand(screenEnv)), false);
         expect(reset.status, reset.stderr).toBe(0);
         expect(existsSync(busFile)).toBe(false);
@@ -1488,9 +1512,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
           "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
         );
-        expect(alive(restartedPortal)).toBe(false);
-        expect(alive(restartedGtk)).toBe(false);
-        expect(alive(restartedBus)).toBe(false);
+        expect(alive(recordedPid(restartedPortal))).toBe(false);
+        expect(alive(recordedPid(restartedGtk))).toBe(false);
+        expect(alive(recordedPid(restartedBus))).toBe(false);
       } finally {
         cleanup();
       }
@@ -1536,7 +1560,7 @@ describe("shared Linux desktop lifecycle", () => {
         expect(alive(unrelated)).toBe(true);
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
         expect(readFileSync(dbusPid, "utf8")).not.toBe(unrelated);
-        expect(alive(readFileSync(dbusPid, "utf8"))).toBe(true);
+        expect(alive(recordedPid(readFileSync(dbusPid, "utf8")))).toBe(true);
       } finally {
         cleanup();
       }
@@ -1574,17 +1598,17 @@ describe("shared Linux desktop lifecycle", () => {
         const gtk = readFileSync(gtkPid, "utf8");
         const portal = readFileSync(portalPid, "utf8");
         const dbus = readFileSync(dbusPid, "utf8");
-        process.kill(Number(gtk), "SIGKILL");
-        await waitDead(gtk);
+        process.kill(Number(recordedPid(gtk)), "SIGKILL");
+        await waitDead(recordedPid(gtk));
         const second = run(command, true);
         expect(second.status, second.stderr).toBe(0);
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
         expect(readFileSync(dbusPid, "utf8")).toBe(dbus);
         expect(readFileSync(portalPid, "utf8")).toBe(portal);
         expect(readFileSync(gtkPid, "utf8")).not.toBe(gtk);
-        expect(alive(readFileSync(gtkPid, "utf8"))).toBe(true);
-        expect(alive(portal)).toBe(true);
-        expect(alive(dbus)).toBe(true);
+        expect(alive(recordedPid(readFileSync(gtkPid, "utf8")))).toBe(true);
+        expect(alive(recordedPid(portal))).toBe(true);
+        expect(alive(recordedPid(dbus))).toBe(true);
         const lines = readFileSync(portalLog, "utf8").trim().split("\n");
         expect(lines.filter((line) => line.startsWith("xdg-desktop-portal "))).toHaveLength(1);
         expect(lines.filter((line) => line.startsWith("xdg-desktop-portal-gtk "))).toHaveLength(2);
@@ -1616,16 +1640,16 @@ describe("shared Linux desktop lifecycle", () => {
         const dbus = readFileSync(dbusPid, "utf8");
         const portal = readFileSync(portalPid, "utf8");
         const gtk = readFileSync(gtkPid, "utf8");
-        process.kill(Number(dbus), "SIGKILL");
-        await waitDead(dbus);
+        process.kill(Number(recordedPid(dbus)), "SIGKILL");
+        await waitDead(recordedPid(dbus));
         const unrelated = String(process.pid);
         writeFileSync(dbusPid, unrelated);
         writeFileSync(portalPid, unrelated);
         const second = run(command, true);
         expect(second.status, second.stderr).toBe(0);
         expect(alive(unrelated)).toBe(true);
-        expect(alive(portal)).toBe(true);
-        expect(alive(gtk)).toBe(false);
+        expect(alive(recordedPid(portal))).toBe(true);
+        expect(alive(recordedPid(gtk))).toBe(false);
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\nlaunch\n");
         const restartedBus = readFileSync(dbusPid, "utf8");
         const restartedPortal = readFileSync(portalPid, "utf8");
@@ -1633,9 +1657,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(restartedBus).not.toBe(unrelated);
         expect(restartedPortal).not.toBe(unrelated);
         expect(restartedGtk).not.toBe(unrelated);
-        expect(alive(restartedBus)).toBe(true);
-        expect(alive(restartedPortal)).toBe(true);
-        expect(alive(restartedGtk)).toBe(true);
+        expect(alive(recordedPid(restartedBus))).toBe(true);
+        expect(alive(recordedPid(restartedPortal))).toBe(true);
+        expect(alive(recordedPid(restartedGtk))).toBe(true);
       } finally {
         cleanup();
       }
@@ -1681,12 +1705,16 @@ describe("shared Linux desktop lifecycle", () => {
       expect(readFileSync(activationLog, "utf8")).toBe(
         `bus=${address} args=DISPLAY=:${extraDisplay}\n`,
       );
-      const gtkPid = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
+      const gtkPid = recordedPid(
+        readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8"),
+      );
       expect(alive(gtkPid)).toBe(true);
       const gtkEnviron = readFileSync(`/proc/${gtkPid}/environ`).toString("utf8").split("\0");
       expect(gtkEnviron).toContain(`DISPLAY=:${extraDisplay}`);
       expect(gtkEnviron).not.toContain("DISPLAY=:1");
-      const dbusPid = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
+      const dbusPid = recordedPid(
+        readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8"),
+      );
       const daemonEnviron = readFileSync(`/proc/${dbusPid}/environ`).toString("utf8").split("\0");
       expect(daemonEnviron).toContain(`DISPLAY=:${extraDisplay}`);
       expect(daemonEnviron).not.toContain("DISPLAY=:1");
@@ -1694,4 +1722,264 @@ describe("shared Linux desktop lifecycle", () => {
       cleanup();
     }
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "screen pid files trust only the recorded process",
+    async () => {
+      const killHeld = (pids: string[]) => {
+        for (const pid of pids) {
+          try {
+            process.kill(Number(pid), "SIGKILL");
+          } catch {
+            // The screen stop already reaped it.
+          }
+        }
+      };
+      const spawnHeld = (env: NodeJS.ProcessEnv, binary: string, held: string[]) => {
+        const started = spawnSync(
+          "bash",
+          ["-c", 'nohup "$1" </dev/null >/dev/null 2>&1 & echo $!', "hold", binary],
+          { encoding: "utf8", env, timeout: 5_000 },
+        );
+        expect(started.status, started.stderr).toBe(0);
+        const pid = started.stdout.trim();
+        expect(pid).toMatch(/^\d+$/);
+        expect(process.kill(Number(pid), 0)).toBe(true);
+        held.push(pid);
+        return pid;
+      };
+      const plantOutside = (
+        env: NodeJS.ProcessEnv,
+        file: string,
+        binary: string,
+        held: string[],
+      ) => {
+        const original = readFileSync(file, "utf8");
+        const recordedStart = original.trim().split(/\s+/)[1];
+        let outside = "";
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          outside = spawnHeld(env, binary, held);
+          if (recordedStart === undefined || procStartTime(outside) !== recordedStart) break;
+          process.kill(Number(outside), "SIGKILL");
+          spawnSync("sleep", ["0.02"]);
+        }
+        if (recordedStart !== undefined) expect(procStartTime(outside)).not.toBe(recordedStart);
+        writeFileSync(file, original.replace(/^\d+/, outside));
+        return outside;
+      };
+      const waitDead = async (alive: (pid: string) => boolean, pid: string) => {
+        for (let i = 0; i < 50 && alive(pid); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(alive(pid)).toBe(false);
+      };
+      const replaceBinary = (file: string, source: string) => {
+        unlinkSync(file);
+        copyFileSync(source, file);
+        chmodSync(file, 0o755);
+      };
+
+      const recycled = await portalScreenFixture();
+      const recycledHeld: string[] = [];
+      try {
+        const command = recycled.relocate(
+          ensureScreenCommand(1, "extra", "viewtok", recycled.screenEnv),
+        );
+        const stop = recycled.relocate(stopExtraScreenCommand(1, "extra", recycled.screenEnv));
+        const portalFile = path.join(recycled.runtime, `portal-pid-${recycled.extraDisplay}`);
+        const dbusFile = path.join(recycled.runtime, `dbus-pid-${recycled.extraDisplay}`);
+        const gtkFile = path.join(recycled.runtime, `portal-gtk-pid-${recycled.extraDisplay}`);
+        const killRecorded = async (file: string) => {
+          const pid = recordedPid(readFileSync(file, "utf8"));
+          process.kill(Number(pid), "SIGKILL");
+          await waitDead(recycled.alive, pid);
+        };
+        const retarget = async () => {
+          const started = recycled.run(command, true);
+          expect(started.status, started.stderr).toBe(0);
+          await killRecorded(portalFile);
+          await killRecorded(dbusFile);
+          await killRecorded(gtkFile);
+          return {
+            portal: plantOutside(
+              recycled.runEnv,
+              portalFile,
+              path.join(recycled.libexec, "xdg-desktop-portal"),
+              recycledHeld,
+            ),
+            dbus: plantOutside(
+              recycled.runEnv,
+              dbusFile,
+              path.join(recycled.bin, "dbus-daemon"),
+              recycledHeld,
+            ),
+            gtk: plantOutside(
+              recycled.runEnv,
+              gtkFile,
+              path.join(recycled.libexec, "xdg-desktop-portal-gtk"),
+              recycledHeld,
+            ),
+          };
+        };
+
+        const outside = await retarget();
+        const stopped = recycled.run(stop, false);
+        expect(stopped.status, stopped.stderr).toBe(0);
+        expect(recycled.alive(outside.portal)).toBe(true);
+        expect(recycled.alive(outside.dbus)).toBe(true);
+        expect(recycled.alive(outside.gtk)).toBe(true);
+
+        const resetOutside = await retarget();
+        const reset = recycled.run(
+          recycled.relocate(resetDesktopRuntimeCommand(recycled.screenEnv)),
+          false,
+        );
+        expect(reset.status, reset.stderr).toBe(0);
+        expect(recycled.alive(resetOutside.portal)).toBe(true);
+        expect(recycled.alive(resetOutside.dbus)).toBe(true);
+        expect(recycled.alive(resetOutside.gtk)).toBe(true);
+
+        const ensuredOutside = await retarget();
+        const launches = readFileSync(recycled.dbusLog, "utf8");
+        const ensured = recycled.run(command, true);
+        expect(ensured.status, ensured.stderr).toBe(0);
+        expect(recycled.alive(ensuredOutside.portal)).toBe(true);
+        expect(recycled.alive(ensuredOutside.dbus)).toBe(true);
+        expect(recycled.alive(ensuredOutside.gtk)).toBe(true);
+        const freshPortal = recordedPid(readFileSync(portalFile, "utf8"));
+        expect(freshPortal).not.toBe(ensuredOutside.portal);
+        expect(recycled.alive(freshPortal)).toBe(true);
+        expect(recordedPid(readFileSync(dbusFile, "utf8"))).not.toBe(ensuredOutside.dbus);
+        expect(readFileSync(recycled.dbusLog, "utf8")).toBe(`${launches}launch\n`);
+      } finally {
+        killHeld(recycledHeld);
+        recycled.cleanup();
+      }
+
+      const replaced = await portalScreenFixture();
+      try {
+        const command = replaced.relocate(
+          ensureScreenCommand(1, "extra", "viewtok", replaced.screenEnv),
+        );
+        const gtkFile = path.join(replaced.runtime, `portal-gtk-pid-${replaced.extraDisplay}`);
+        const started = replaced.run(command, true);
+        expect(started.status, started.stderr).toBe(0);
+        const gtkBefore = readFileSync(gtkFile, "utf8");
+        const gtkPid = recordedPid(gtkBefore);
+        const pidsBefore = readFileSync(replaced.pidLog, "utf8");
+        const portalsBefore = readFileSync(replaced.portalLog, "utf8");
+        const gtkBinary = path.join(replaced.libexec, "xdg-desktop-portal-gtk");
+        replaceBinary(gtkBinary, replaced.pythonBin);
+        expect(readlinkSync(`/proc/${gtkPid}/exe`)).toMatch(
+          /\/xdg-desktop-portal-gtk \(deleted\)$/,
+        );
+        const again = replaced.run(command, true);
+        expect(again.status, again.stderr).toBe(0);
+        expect(readFileSync(gtkFile, "utf8")).toBe(gtkBefore);
+        expect(readFileSync(replaced.portalLog, "utf8")).toBe(portalsBefore);
+        const seenPids = new Set(pidsBefore.split("\n").filter((line) => line.length > 0));
+        for (const pid of readFileSync(replaced.pidLog, "utf8").split("\n")) {
+          if (pid.length === 0 || seenPids.has(pid)) continue;
+          let exe = "";
+          try {
+            exe = readlinkSync(`/proc/${pid}/exe`);
+          } catch {
+            exe = "";
+          }
+          expect(exe).not.toContain("xdg-desktop-portal-gtk");
+        }
+        expect(replaced.alive(gtkPid)).toBe(true);
+        const stopped = replaced.run(
+          replaced.relocate(stopExtraScreenCommand(1, "extra", replaced.screenEnv)),
+          false,
+        );
+        expect(stopped.status, stopped.stderr).toBe(0);
+        expect(replaced.alive(gtkPid)).toBe(false);
+        expect(existsSync(gtkFile)).toBe(false);
+
+        writeFileSync(replaced.dbusLog, "");
+        const restarted = replaced.run(command, true);
+        expect(restarted.status, restarted.stderr).toBe(0);
+        expect(readFileSync(replaced.dbusLog, "utf8")).toBe("launch\n");
+        const dbusFile = path.join(replaced.runtime, `dbus-pid-${replaced.extraDisplay}`);
+        const dbusBefore = readFileSync(dbusFile, "utf8");
+        const dbusPid = recordedPid(dbusBefore);
+        const launches = readFileSync(replaced.dbusLog, "utf8");
+        replaceBinary(path.join(replaced.bin, "dbus-daemon"), replaced.pythonBin);
+        expect(readlinkSync(`/proc/${dbusPid}/exe`)).toMatch(/\/dbus-daemon \(deleted\)$/);
+        const kept = replaced.run(command, true);
+        expect(kept.status, kept.stderr).toBe(0);
+        expect(readFileSync(replaced.dbusLog, "utf8")).toBe(launches);
+        expect(readFileSync(dbusFile, "utf8")).toBe(dbusBefore);
+        expect(replaced.alive(dbusPid)).toBe(true);
+        const stoppedBus = replaced.run(
+          replaced.relocate(stopExtraScreenCommand(1, "extra", replaced.screenEnv)),
+          false,
+        );
+        expect(stoppedBus.status, stoppedBus.stderr).toBe(0);
+        expect(replaced.alive(dbusPid)).toBe(false);
+        expect(existsSync(dbusFile)).toBe(false);
+      } finally {
+        replaced.cleanup();
+      }
+
+      const legacy = await portalScreenFixture();
+      const legacyHeld: string[] = [];
+      try {
+        const portalFile = path.join(legacy.runtime, `portal-pid-${legacy.extraDisplay}`);
+        const dbusFile = path.join(legacy.runtime, `dbus-pid-${legacy.extraDisplay}`);
+        const gtkFile = path.join(legacy.runtime, `portal-gtk-pid-${legacy.extraDisplay}`);
+        const busFile = path.join(legacy.runtime, `dbus-session-${legacy.extraDisplay}`);
+        const outsidePortal = spawnHeld(
+          legacy.runEnv,
+          path.join(legacy.libexec, "xdg-desktop-portal"),
+          legacyHeld,
+        );
+        const outsideDbus = spawnHeld(
+          legacy.runEnv,
+          path.join(legacy.bin, "dbus-daemon"),
+          legacyHeld,
+        );
+        const outsideGtk = spawnHeld(
+          legacy.runEnv,
+          path.join(legacy.libexec, "xdg-desktop-portal-gtk"),
+          legacyHeld,
+        );
+        const plantLegacy = () => {
+          writeFileSync(portalFile, outsidePortal);
+          writeFileSync(dbusFile, outsideDbus);
+          writeFileSync(gtkFile, outsideGtk);
+          writeFileSync(busFile, "export DBUS_SESSION_BUS_ADDRESS=unix:path=/legacy\n");
+        };
+        plantLegacy();
+        const stopped = legacy.run(
+          legacy.relocate(stopExtraScreenCommand(1, "extra", legacy.screenEnv)),
+          false,
+        );
+        expect(stopped.status, stopped.stderr).toBe(0);
+        expect(legacy.alive(outsidePortal)).toBe(true);
+        expect(legacy.alive(outsideDbus)).toBe(true);
+        expect(legacy.alive(outsideGtk)).toBe(true);
+        plantLegacy();
+        const ensured = legacy.run(
+          legacy.relocate(ensureScreenCommand(1, "extra", "viewtok", legacy.screenEnv)),
+          true,
+        );
+        expect(ensured.status, ensured.stderr).toBe(0);
+        expect(legacy.alive(outsidePortal)).toBe(true);
+        expect(legacy.alive(outsideDbus)).toBe(true);
+        expect(legacy.alive(outsideGtk)).toBe(true);
+        expect(recordedPid(readFileSync(portalFile, "utf8"))).not.toBe(outsidePortal);
+        expect(recordedPid(readFileSync(dbusFile, "utf8"))).not.toBe(outsideDbus);
+        expect(recordedPid(readFileSync(gtkFile, "utf8"))).not.toBe(outsideGtk);
+        expect(existsSync(legacy.dbusLog) ? readFileSync(legacy.dbusLog, "utf8") : "").toBe(
+          "launch\n",
+        );
+      } finally {
+        killHeld(legacyHeld);
+        legacy.cleanup();
+      }
+    },
+    120_000,
+  );
 });
