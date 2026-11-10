@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
 import { DEVICE_VOICE_KEY } from "./device-voice";
 import {
+  activateVoiceAudio,
   createSpeechOwner,
   getVoicePlaybackState,
   pauseVoicePlayback,
@@ -894,12 +895,27 @@ describe("call audio", () => {
       interruptionMode: "mixWithOthers",
       shouldPlayInBackground: false,
     });
-    expect(setIsAudioActiveAsync).toHaveBeenCalledExactlyOnceWith(false);
+    expect(setIsAudioActiveAsync).toHaveBeenCalledWith(false);
 
+    vi.mocked(setIsAudioActiveAsync).mockClear();
     await playSpeechClip(new Uint8Array([1, 2, 3]));
+    expect(setIsAudioActiveAsync).toHaveBeenCalledExactlyOnceWith(true);
     expect(createAudioPlayer).toHaveBeenLastCalledWith(expect.anything(), {
       keepAudioSessionActive: false,
     });
+  });
+
+  it.each([
+    ["call", () => setCallAudio(true), () => setCallAudio(false)],
+    ["dictation", () => setDictationAudio(true), () => setDictationAudio(false)],
+    ["cue preview", activateVoiceAudio, async () => undefined],
+  ])("re-enables audio for a %s after dictation releases it", async (_name, start, stop) => {
+    await setDictationAudio(true);
+    await setDictationAudio(false);
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+    await start();
+    expect(setIsAudioActiveAsync).toHaveBeenCalledExactlyOnceWith(true);
+    await stop();
   });
 
   it("leaves the session to speech that is still playing when a call ends", async () => {
@@ -910,7 +926,7 @@ describe("call audio", () => {
 
     await setCallAudio(true);
     await setCallAudio(false);
-    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalledWith(false);
 
     stopVoicePlayback();
     void reading;
@@ -921,7 +937,7 @@ describe("call audio", () => {
     vi.mocked(setIsAudioActiveAsync).mockClear();
     await setCallAudio(true);
     await setCallAudio(false);
-    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalledWith(false);
   });
 
   it("keeps the session of a call that starts while the last one releases it", async () => {
@@ -933,7 +949,7 @@ describe("call audio", () => {
     expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ allowsRecording: true }),
     );
-    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalledWith(false);
     await setCallAudio(false);
   });
 
@@ -951,7 +967,7 @@ describe("call audio", () => {
         applied.push(mode);
       });
     const starting = setCallAudio(true);
-    await Promise.resolve();
+    await waitFor(() => typeof releaseFirst === "function");
     const ending = setCallAudio(false);
     await Promise.resolve();
     expect(applied).toEqual([]);
@@ -982,13 +998,13 @@ describe("call audio", () => {
     expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ allowsRecording: true }),
     );
-    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalledWith(false);
     vi.mocked(setAudioModeAsync).mockClear();
     await setDictationAudio(false);
     expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ allowsRecording: false }),
     );
-    expect(setIsAudioActiveAsync).toHaveBeenCalledExactlyOnceWith(false);
+    expect(setIsAudioActiveAsync).toHaveBeenCalledWith(false);
   });
 });
 

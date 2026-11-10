@@ -26,7 +26,10 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async () => undefined),
 }));
 const call = vi.hoisted(() => ({ active: false }));
-vi.mock("./voice", () => ({ callAudioActive: () => call.active }));
+vi.mock("./voice", () => ({
+  activateVoiceAudio: vi.fn(async () => undefined),
+  callAudioActive: () => call.active,
+}));
 vi.mock("expo-audio", () => ({
   createAudioPlayer: vi.fn(),
   setAudioModeAsync: vi.fn(),

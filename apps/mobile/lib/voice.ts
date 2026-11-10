@@ -142,6 +142,7 @@ const CALL_AUDIO = {
 
 const DICTATION_AUDIO = { playsInSilentMode: true, allowsRecording: true } as const;
 
+let audioDisabled = false;
 let onCall = false;
 let dictating = false;
 let audioModeChange: Promise<void> = Promise.resolve();
@@ -150,6 +151,22 @@ function changeAudioMode(change: () => Promise<void>): Promise<void> {
   const next = audioModeChange.then(change);
   audioModeChange = next.catch(() => undefined);
   return next;
+}
+
+async function activateAudio(): Promise<void> {
+  if (!audioDisabled) return;
+  await setIsAudioActiveAsync(true);
+  audioDisabled = false;
+}
+
+async function releaseAudio(): Promise<void> {
+  // This API also disables future players until explicitly enabled again.
+  audioDisabled = true;
+  await setIsAudioActiveAsync(false);
+}
+
+export function activateVoiceAudio(): Promise<void> {
+  return changeAudioMode(activateAudio);
 }
 
 export function callAudioActive(): boolean {
@@ -161,16 +178,18 @@ export function setCallAudio(active: boolean): Promise<void> {
   return changeAudioMode(async () => {
     if (onCall !== active) return;
     if (active) {
+      await activateAudio();
       await setAudioModeAsync(CALL_AUDIO);
       return;
     }
     if (dictating) {
+      await activateAudio();
       await setAudioModeAsync(DICTATION_AUDIO);
       return;
     }
     await setAudioModeAsync(READ_ALOUD_AUDIO);
     if (Platform.OS === "ios" && !onCall && playback.status === "idle") {
-      await setIsAudioActiveAsync(false);
+      await releaseAudio();
     }
   });
 }
@@ -180,11 +199,12 @@ export function setDictationAudio(active: boolean): Promise<void> {
   return changeAudioMode(async () => {
     if (onCall || dictating !== active) return;
     if (active) {
+      await activateAudio();
       await setAudioModeAsync(DICTATION_AUDIO);
       return;
     }
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
-    if (Platform.OS === "ios" && playback.status === "idle") await setIsAudioActiveAsync(false);
+    if (Platform.OS === "ios" && playback.status === "idle") await releaseAudio();
   });
 }
 
@@ -687,6 +707,7 @@ async function playWithHtmlAudio(
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
   await changeAudioMode(async () => {
+    await activateAudio();
     if (!onCall) await setAudioModeAsync(READ_ALOUD_AUDIO);
   });
   const file = new File(

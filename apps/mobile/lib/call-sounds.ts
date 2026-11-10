@@ -1,6 +1,6 @@
 import type { AudioPlayer } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
-import { callAudioActive } from "./voice";
+import { activateVoiceAudio, callAudioActive } from "./voice";
 import type { WaitTone, WaitUnit } from "./wait-pattern";
 import { nextWaitUnit, WAIT_PATTERNS } from "./wait-pattern";
 
@@ -81,6 +81,8 @@ export async function playCallCue(cue: CallCue): Promise<void> {
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
   if (epoch !== waitCallEpoch) return;
   const { createAudioPlayer } = await import("expo-audio");
+  if (epoch !== waitCallEpoch) return;
+  await activateVoiceAudio();
   if (epoch !== waitCallEpoch) return;
   const player = createAudioPlayer(CUE_ASSETS[cue], {
     keepAudioSessionActive: callAudioActive(),
