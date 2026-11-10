@@ -84,6 +84,7 @@ describe("verifyVoiceHttpGet", () => {
     ).resolves.toEqual({
       ok: false,
       message: "ElevenLabs rejected that key. Check the key and that it has speech permissions.",
+      code: "VOICE_KEY_REJECTED",
     });
   });
 

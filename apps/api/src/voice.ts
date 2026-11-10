@@ -16,7 +16,6 @@ import {
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
-  voiceUnreachable,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -375,13 +374,13 @@ export async function persistVoiceCredential(
   }
   const verified = await provider.verify(apiKey, voiceContext(actor, input.signal));
   if (!verified.ok) {
-    const name = voiceCatalogEntry(input.provider)?.name ?? input.provider;
-    // No key was typed, so "check the key" would not help; an unreachable provider keeps its own copy.
+    // No key was typed, so "check the key" would not help. Credit, rate limits and outages keep
+    // the provider's own words.
     const refusedLink =
-      isModelConnectionVoiceSecret(plaintext) && verified.message !== voiceUnreachable(name);
+      isModelConnectionVoiceSecret(plaintext) && verified.code === "VOICE_KEY_REJECTED";
     throw new ORPCError("BAD_REQUEST", {
       message: refusedLink
-        ? `${name} didn't accept your Models connection for voice. Paste an API key instead.`
+        ? `${voiceCatalogEntry(input.provider)?.name ?? input.provider} didn't accept your Models connection for voice. Paste an API key instead.`
         : (verified.message ?? "That key was rejected."),
     });
   }

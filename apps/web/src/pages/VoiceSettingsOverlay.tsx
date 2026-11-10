@@ -10,6 +10,7 @@ import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
 import {
@@ -230,13 +231,12 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  // The account's model connection can stand in for a key; once linked there is no key to manage.
-  const keyOptional = Boolean(selected?.modelConnection) && !credential;
-  const linked = credential?.hasKey === false;
-  const typedKey = apiKey.trim();
-  const canConnect =
-    keyless ||
-    (selfHosted ? Boolean(baseUrl.trim()) : typedKey.length >= 8 || (keyOptional && !typedKey));
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connectKey() {
     if (!selected || !canConnect) return;

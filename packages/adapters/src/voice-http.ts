@@ -227,14 +227,11 @@ export async function verifyVoiceHttpGet(options: {
       signal: voiceDeadline(options.signal, 20_000),
     });
     if (res.ok) return { ok: true };
+    const body = await readVoiceJson(res);
     return {
       ok: false,
-      message: voiceHttpError(
-        res.status,
-        options.provider,
-        "checking that key",
-        await readVoiceJson(res),
-      ),
+      message: voiceHttpError(res.status, options.provider, "checking that key", body),
+      code: voiceAccountIssue(res.status, body),
     };
   } catch {
     return {

@@ -202,7 +202,7 @@ describe("ElevenLabsVoiceProvider", () => {
       provider.synthesize({ text: "Hi", voiceId: "abc", apiKey: "sk_test_key" }, ctx),
     ).rejects.toThrow(speaking);
     if (status === 401)
-      await expect(provider.verify("sk_test_key", ctx)).resolves.toEqual({
+      await expect(provider.verify("sk_test_key", ctx)).resolves.toMatchObject({
         ok: false,
         message: speaking,
       });

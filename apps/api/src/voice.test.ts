@@ -1266,7 +1266,11 @@ describe("persistVoiceCredential", () => {
 
     it("asks for a key when xAI refuses the model connection, not to check a key never typed", async () => {
       const { verify } = stubProvider();
-      verify.mockResolvedValueOnce({ ok: false, message: "xAI rejected that key." });
+      verify.mockResolvedValueOnce({
+        ok: false,
+        message: "xAI rejected that key.",
+        code: "VOICE_KEY_REJECTED",
+      });
       const { deps, put } = linkedDeps();
 
       await expect(
@@ -1275,6 +1279,24 @@ describe("persistVoiceCredential", () => {
         message: "xAI didn't accept your Models connection for voice. Paste an API key instead.",
       });
       expect(put).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        name: "spent credit",
+        message: "You have run out of credits or need a Grok subscription",
+        code: "VOICE_OUT_OF_CREDIT" as const,
+      },
+      { name: "a rate limit", message: "xAI is rate-limiting this account." },
+      { name: "an outage", message: "checking that key failed (503)" },
+    ])("keeps xAI's own words for $name", async ({ message, code }) => {
+      const { verify } = stubProvider();
+      verify.mockResolvedValueOnce({ ok: false, message, code });
+      const { deps } = linkedDeps();
+
+      await expect(
+        persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" }),
+      ).rejects.toMatchObject({ message });
     });
   });
 });

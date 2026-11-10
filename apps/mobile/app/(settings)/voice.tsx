@@ -4,6 +4,7 @@ import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
@@ -349,16 +350,12 @@ export default function VoiceSettings() {
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const keyless = Boolean(selected?.keyless);
-  // Until connected, the account's model connection can stand in for a key; once it does, there
-  // is no key to show or replace.
-  const keyOptional = Boolean(selected?.modelConnection) && !credential;
-  const linked = credential?.hasKey === false;
-  const typedKey = apiKey.trim();
-  const canConnect =
-    keyless ||
-    (selfHosted
-      ? Boolean(baseUrl.trim())
-      : typedKey.length >= 8 || (keyOptional && typedKey === ""));
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connect() {
     if (!selected || !canConnect) return;
