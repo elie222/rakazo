@@ -58,6 +58,7 @@ import {
   UserDevices,
   userDeviceForwardSecret,
   WorkActivities,
+  withHostComputerScreen,
   withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -138,8 +139,9 @@ async function main() {
       ? new ScriptedAgentRuntime()
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(env.dataDir) });
   const sandboxProvider = resolveSandboxProvider(process.env);
+  const sandboxOptions = sandboxProviderOptionsFromEnv(process.env);
   const sandbox = await createRunSandbox(sandboxProvider, {
-    ...sandboxProviderOptionsFromEnv(process.env),
+    ...sandboxOptions,
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
     dataDir: env.dataDir,
@@ -228,13 +230,20 @@ async function main() {
     messaging,
     cloudAgent,
     // Device sockets live in an API process; the worker forwards to whichever one holds it.
-    userDevices:
+    userDevices: withHostComputerScreen(
       process.env.USER_DEVICES_ENABLED === "false"
         ? undefined
         : new UserDevices({
             prisma,
             forwardSecret: userDeviceForwardSecret(env.encryptionKey),
           }),
+      {
+        prisma,
+        sandboxKind: sandboxProvider,
+        url: sandboxOptions.hostComputerUrl,
+        token: sandboxOptions.hostComputerToken,
+      },
+    ),
     paymentWallet,
     shutdownSignal: shutdown.signal,
   });
