@@ -113,6 +113,7 @@ jobs:
       - name: Restore CJK fonts cache
         if: steps.areas.outputs.e2e != 'false'
         id: cjk-cache
+        continue-on-error: true
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/fonts-noto-cjk
@@ -143,9 +144,13 @@ jobs:
               fi
             done
           fi
-          sudo dpkg -i "$DEB_DIR"/*.deb
+          if ! sudo dpkg -i "$DEB_DIR"/*.deb; then
+            echo "::warning::Could not install fonts-noto-cjk; screenshots will show CJK text as boxes."
+            exit 1
+          fi
       - name: Save CJK fonts cache
         if: steps.areas.outputs.e2e != 'false' && steps.cjk-cache.outputs.cache-hit != 'true' && steps.cjk-fonts.outcome == 'success'
+        continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/fonts-noto-cjk
