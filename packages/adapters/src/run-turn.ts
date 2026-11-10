@@ -626,6 +626,20 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
     overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
       ? overLimitStopText(humanName, overLimit)
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
+  await ctx.settleRunningHelpers();
+  const stopped = await deps.events.finalizeRun({
+    spaceId: run.spaceId,
+    threadId: thread.id,
+    botId: bot.id,
+    runId,
+    taskId: run.taskId,
+    attemptId: ctx.attempt.id,
+    leaseOwner: workerId,
+    leaseFence: fence,
+    outcome: "completed",
+    blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
+  });
+  if (!stopped) return;
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
   const refusal = ctx.state.lastToolRefusal;
   logLoopGuardStop(
@@ -645,20 +659,6 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
     },
     ctx.secrets,
   );
-  await ctx.settleRunningHelpers();
-  const stopped = await deps.events.finalizeRun({
-    spaceId: run.spaceId,
-    threadId: thread.id,
-    botId: bot.id,
-    runId,
-    taskId: run.taskId,
-    attemptId: ctx.attempt.id,
-    leaseOwner: workerId,
-    leaseFence: fence,
-    outcome: "completed",
-    blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
-  });
-  if (!stopped) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });

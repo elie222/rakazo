@@ -342,7 +342,7 @@ export async function prepareToolRequest(
   // replay goes on to the handler, which checks again.
   if (name === "schedule_create" && nextApprovedTool !== name) {
     const refused = await scheduleCreateRefusal(ctx, args);
-    if (refused) return refused;
+    if (refused) return refusal("schedule_create_refused", refused.error);
   }
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||

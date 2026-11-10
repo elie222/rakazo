@@ -215,9 +215,15 @@ export async function gateToolCall(
     SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
   const fetchUrl = sendsToSite ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
   const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
-  if (sendsToSite && !fetchSite) return { result: { error: "url must be an http(s) URL" } };
+  if (sendsToSite && !fetchSite)
+    return { result: refusal("fetch_url_invalid", "url must be an http(s) URL") };
   if (fetchUrl && fetchUrl.length > MAX_FETCH_URL_LENGTH)
-    return { result: { error: `url must be at most ${MAX_FETCH_URL_LENGTH} characters` } };
+    return {
+      result: refusal(
+        "fetch_url_too_long",
+        `url must be at most ${MAX_FETCH_URL_LENGTH} characters`,
+      ),
+    };
   // The card, the stored effect and the request all use the URL the gate checked.
   if (fetchUrl) {
     args = { ...args, url: fetchUrl };
