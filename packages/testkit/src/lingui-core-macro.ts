@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
 import { generateMessageId } from "@lingui/message-utils/generateMessageId";
 
@@ -18,8 +19,13 @@ function isPlaceholder(value: unknown): value is Placeholder {
   return typeof value === "object" && value !== null && PLACEHOLDER in value;
 }
 
-/** Found from the working folder: a browser-like test environment has no file URL to start from. */
+/**
+ * Next to this file when its URL is a file path; a browser-like test environment has none, so
+ * then it is found from the working folder.
+ */
 function englishCatalog(): string {
+  const here = new URL("../../i18n/locales/en/messages.po", import.meta.url);
+  if (here.protocol === "file:" && existsSync(fileURLToPath(here))) return fileURLToPath(here);
   for (let dir = process.cwd(); ; dir = path.dirname(dir)) {
     const file = path.join(dir, "packages/i18n/locales/en/messages.po");
     if (existsSync(file)) return file;

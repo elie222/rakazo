@@ -34,7 +34,8 @@ const isolated = include
 
 export default defineConfig({
   // Mobile imports its translation catalogs as `.po` files.
-  plugins: [lingui()],
+  // Some runs start outside the repo, so the config is named rather than searched for.
+  plugins: [lingui({ configPath: path.join(root, "lingui.config.ts") })],
   resolve: {
     alias: [
       {
