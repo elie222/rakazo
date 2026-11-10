@@ -104,7 +104,6 @@ vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({
   useMobileTokens: () => ({
     mutedForeground: "#888",

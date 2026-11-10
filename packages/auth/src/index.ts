@@ -11,7 +11,12 @@ import {
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
-import { bootstrapUserSpace, personalOrganizationIds, recordSecurityEvent } from "@rakazo/db";
+import {
+  bootstrapUserSpace,
+  personalOrganizationIds,
+  recordSecurityEvent,
+  SpaceDeletionInProgressError,
+} from "@rakazo/db";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -373,7 +378,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       deleteUser: {
         enabled: true,
         beforeDelete: async (user) => {
-          await env.beforeDeleteUser?.(user.id);
+          try {
+            await env.beforeDeleteUser?.(user.id);
+          } catch (error) {
+            if (error instanceof SpaceDeletionInProgressError)
+              throw new APIError("CONFLICT", { message: error.message });
+            throw error;
+          }
           const organizationIds = await personalOrganizationIds(prisma, user.id);
 
           await prisma.$transaction(async (tx) => {

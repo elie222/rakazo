@@ -28,6 +28,7 @@ while IFS= read -r file; do
     apps/*/package.json | packages/*/package.json | infra/*/package.json) all_packages=true ;;
     # vitest.config.ts loads these into every package's tests, which the package graph misses.
     packages/testkit/src/pin-test-env.ts | packages/testkit/src/lingui-core-macro.ts | \
+      packages/testkit/src/lingui-react-macro.ts | \
       packages/chat-ui/src/native-test-stubs.tsx) all_packages=true ;;
     apps/*/* | packages/*/* | infra/sandboxes/supervisor/* | infra/updater/*) ;;
     .agents/skills/pr-watch/* | .agents/skills/translate/*) all_packages=true ;;

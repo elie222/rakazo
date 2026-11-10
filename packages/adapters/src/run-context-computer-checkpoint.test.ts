@@ -4,6 +4,7 @@ import { expect, it } from "vitest";
 import { namedAgentTools } from "./pi-runtime-tools.js";
 import type { RunContext } from "./run-context.js";
 import { nextMutatingEffectOccurrence, restoreTurnCheckpointEffects } from "./run-context.js";
+import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
 
 function fixture(tools: ConnectorTool[] = []) {
   return {
@@ -90,4 +91,15 @@ it("keeps canonical wire names and saved effect occurrences unchanged", () => {
   expect(nextMutatingEffectOccurrence(ctx, "destination.write", {}, executionId)).toBe(3);
   expect(nextMutatingEffectOccurrence(ctx, "destination.write", {}, "later")).toBe(4);
   expect(ctx.state.effects.occurrences[0]).toEqual(saved.effectOccurrences[0]);
+});
+it("reports a pinned turn whose pending tool is offline as unavailable, not incompatible", () => {
+  expect(() =>
+    restoreTurnCheckpointEffects(
+      fixture(),
+      checkpoint("desktop_run", "computer"),
+      model,
+      "computer",
+    ),
+  ).toThrow(PausedTurnToolsUnavailableError);
+  expect(restoreTurnCheckpointEffects(fixture(), checkpoint("desktop_run"), model)).toBeUndefined();
 });

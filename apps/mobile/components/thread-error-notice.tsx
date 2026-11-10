@@ -1,5 +1,7 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { useI18n } from "../lib/i18n";
+import { useUiLocale } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 import { RunErrorAction, RunErrorTextAction } from "./run-error-actions";
@@ -19,19 +21,20 @@ export function ThreadErrorNotice({
   /** The one action that fixes the failure. */
   action?: { label: string; onPress: () => void } | null;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const tokens = useMobileTokens();
   const { fontScale } = useWindowDimensions();
   if (!error && !summary) return null;
   const upcomingReset =
     resetAt && resetAt > Date.now()
-      ? t("Resets {date}.", {
+      ? t`Resets ${ph({
           date: new Intl.DateTimeFormat(locale, {
             month: "short",
             day: "numeric",
             timeZone: "UTC",
           }).format(resetAt),
-        })
+        })}.`
       : null;
   const hasBody = (summary && error) || upcomingReset || action || (summary && onDetails);
   return (
@@ -66,7 +69,7 @@ export function ThreadErrorNotice({
           ) : null}
           {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
           {summary && onDetails ? (
-            <RunErrorTextAction label={t("Details")} onPress={onDetails} />
+            <RunErrorTextAction label={t`Details`} onPress={onDetails} />
           ) : null}
         </View>
       ) : null}
@@ -82,12 +85,12 @@ export function ThreadFetchErrorNotice({
   error: string | null;
   showingSaved: boolean;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   if (!error) return null;
   return (
     <View style={{ paddingBottom: 24 }}>
       <ThreadErrorNotice
-        error={showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
+        error={showingSaved ? t`Couldn't refresh — showing the last loaded messages.` : error}
         summary={null}
       />
     </View>

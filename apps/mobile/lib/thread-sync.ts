@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import { isRetryableError, reconcileRefreshedThread } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
 import { rpc, selectedSpaceId } from "./api";
 import { onConversationCleared } from "./conversation-cleared";
-import { useI18n } from "./i18n";
 import { isIntegrationsScopeCurrent } from "./integrations-cache";
 import { mobileThreadRefreshResult } from "./mobile-types";
 import { threadRefreshDelayMs } from "./refresh";
@@ -41,6 +41,7 @@ export function useThreadSync({
   foreground,
   focused,
   sessionEpoch,
+  userId,
   activeBotId,
   activeGroupId,
   readVisibleTarget,
@@ -60,6 +61,8 @@ export function useThreadSync({
   foreground: boolean;
   focused: boolean;
   sessionEpoch: number;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  userId: string;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
   readVisibleTarget: RefObject<string | null>;
@@ -70,7 +73,7 @@ export function useThreadSync({
   refreshMentionBots: () => Promise<unknown>;
   markReadIfVisible: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const {
     snap,
     showingSaved,
@@ -194,6 +197,7 @@ export function useThreadSync({
     focused,
     readOnly,
     sessionEpoch,
+    userId,
     messageId,
     historyEpoch,
     expandedHistoryThread,
@@ -302,7 +306,7 @@ export function useThreadSync({
     jumpAnchor.current.begin(messageId);
     void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId }).catch(
       (err) => {
-        setError(errorText(err, t("Could not open message")));
+        setError(errorText(err, t`Could not open message`));
       },
     );
   }, [botId, groupId, messageId, sessionEpoch]);

@@ -12,8 +12,7 @@ import {
 } from "./wakeup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 let pool: Pool | undefined;
 function testPool(): Pool {

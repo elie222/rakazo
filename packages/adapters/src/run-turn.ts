@@ -69,6 +69,7 @@ import {
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
+  withReplyToolOutcomes,
 } from "./run-progress.js";
 import {
   completionMessageSegments,
@@ -89,7 +90,11 @@ import {
 } from "./silent-reply.js";
 import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
-import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
+import {
+  appendToolCompletionAudit,
+  toolCompletionFromResult,
+  toolCompletionOutcome,
+} from "./tool-completion-audit.js";
 import {
   advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
@@ -510,7 +515,14 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
-  reply.pendingToolNames.push(...(stepNames.length > 0 ? stepNames : [event.name]));
+  const callSteps = stepNames.length > 0 ? stepNames : [event.name];
+  reply.pendingToolNames.push(...callSteps);
+  reply.toolCalls.push(
+    ...callSteps.map((name) => ({
+      label: humanizeToolName(name),
+      executionId: event.executionId,
+    })),
+  );
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
   const heldNote =
     event.name === "message_user" || event.name === "ask_user"
@@ -564,21 +576,16 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   try {
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
     toolResults.set(event.executionId, toolResultFingerprint(result));
-    await appendToolCompletionAudit(
-      deps,
-      audit,
-      toolCompletionFromResult(
-        {
-          name: event.name,
-          executionId: event.executionId,
-          durationMs: Date.now() - startedAt,
-        },
-        result,
-      ),
-      ctx.secrets,
+    const completion = toolCompletionFromResult(
+      { name: event.name, executionId: event.executionId, durationMs: Date.now() - startedAt },
+      result,
     );
+    const outcome = toolCompletionOutcome(completion);
+    if (outcome) reply.toolOutcomes.set(event.executionId, outcome);
+    await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
     return isToolPauseResult(result);
   } catch (error) {
+    reply.toolOutcomes.set(event.executionId, "failed");
     await appendToolCompletionAudit(
       deps,
       audit,
@@ -603,6 +610,8 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
+  // Calls that had not finished when the loop was stopped never ran to the end.
+  reply.messageSegments = withReplyToolOutcomes(reply, "stopped");
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
   if (reply.messageSegments.length > 0) {
     await publishMessage(deps, run, "bot", redactBlocks(reply.messageSegments, ctx.secrets));
@@ -808,6 +817,7 @@ export async function completeRun(ctx: RunContext) {
     reply.currentTextSegment = reply.assembled;
   }
   flushPendingTools(reply);
+  reply.messageSegments = withReplyToolOutcomes(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.
   // A member a group message named nobody for may end silently with the sentinel, a placeholder
@@ -871,6 +881,11 @@ export async function completeRun(ctx: RunContext) {
     run.trigger === "bot_message"
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
+  const marksUnread = completionMarksUnread(
+    run.trigger,
+    text,
+    ctx.source.peerMessage?.repliesToRequest === true,
+  );
   await ctx.settleRunningHelpers();
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -883,9 +898,7 @@ export async function completeRun(ctx: RunContext) {
     leaseFence: ctx.fence,
     outcome: "completed",
     blocks,
-    markUnread:
-      !groupSilentEnd &&
-      completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true),
+    markUnread: !groupSilentEnd && marksUnread,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
@@ -914,7 +927,13 @@ export async function completeRun(ctx: RunContext) {
     );
   }
   const notifyBody = completionNotificationPreview(text);
-  if (runSendsFinishNotification(run.trigger) && notifyBody && !completed.continuationRunId) {
+  // Agent-to-agent work the chat stays read for is not news to the user either.
+  if (
+    runSendsFinishNotification(run.trigger) &&
+    marksUnread &&
+    notifyBody &&
+    !completed.continuationRunId
+  ) {
     await notifyRun(deps, run, {
       kind: "completion",
       title: `${displayName(bot.name, "Bot")} finished`,

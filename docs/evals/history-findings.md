@@ -54,16 +54,16 @@ The two complete runs below loaded the same implementation fingerprint
 case versions and unchanged graders. Provider cache state was uncontrolled and
 execution was sequential. These are observed policy charges, not causal savings.
 
-| Complete workflow measurement | Retrieval | Snapshots |
-| --- | --- | --- |
-| Passed workflows | 54/54 | 54/54 |
-| Charge | USD 0.068219460 | USD 0.076096435 |
-| Model calls | 246 | 248 |
-| Latency p50 / p95 | 9.273 / 38.978 seconds | 9.633 / 36.840 seconds |
-| Ordinary 36 workflows | USD 0.030151330 | USD 0.036254290 |
-| Rich loop 6 workflows | USD 0.023983145 | USD 0.025025865 |
-| Clarification 3 workflows | USD 0.001781775 | USD 0.002247900 |
-| Repeated 9 workflows | USD 0.012303210 | USD 0.012568380 |
+| Complete workflow measurement | Retrieval              | Snapshots              |
+| ----------------------------- | ---------------------- | ---------------------- |
+| Passed workflows              | 54/54                  | 54/54                  |
+| Charge                        | USD 0.068219460        | USD 0.076096435        |
+| Model calls                   | 246                    | 248                    |
+| Latency p50 / p95             | 9.273 / 38.978 seconds | 9.633 / 36.840 seconds |
+| Ordinary 36 workflows         | USD 0.030151330        | USD 0.036254290        |
+| Rich loop 6 workflows         | USD 0.023983145        | USD 0.025025865        |
+| Clarification 3 workflows     | USD 0.001781775        | USD 0.002247900        |
+| Repeated 9 workflows          | USD 0.012303210        | USD 0.012568380        |
 
 Retrieval cost about 10.4% less in this sample and avoids navigation snapshots;
 its p95 was slightly higher. Unknown-capability cache-aware selection is
@@ -75,20 +75,20 @@ score differences do not establish a cache-policy benefit.
 Every original report stays unchanged in the local archive. Important subsequent
 runs are summarized here; they use distinct sources and cannot be silently pooled.
 
-| Local archive report | Result | Charge | Evidence |
-| --- | --- | --- | --- |
-| history-current-baseline.json | 4/6 | USD 0.004304100 | Current omitted rare distant facts; includes paid short-chat compaction. |
-| history-current-snapshots-qualification-partial.json | 76 attempted, 32 not run | USD 0.228789600 conservative guard | Rich-loop failure and a current timeout/cleanup failure; unknown cost retained conservatively. |
-| history-snapshots-qualification.json | 50/54 | USD 0.097921115 | Strict absent-fact and balanced-v2 failures retained. |
-| history-snapshots-final-qualification.json | 52/54 | USD 0.097118530 | Two paraphrased recalls abandoned available history pages. |
-| history-adaptive-full-qualification.json | 53/54 | USD 0.076252385 | Third repeated answer lost a previously verified fact. |
-| history-followup-qualification.json | 54/54 | USD 0.076096435 | Snapshots comparison source qualified after follow-up guidance. |
-| history-retrieval-full-qualification.json | 54/54 | USD 0.068219460 | Retrieval qualified at the same comparison source. |
-| history-default-final-qualification.json | 54/54 | USD 0.065191950 | Selected default source qualified before later upstream integration. |
-| history-pr-final-qualification.json | 53/54 | USD 0.091159270 | Newer base/Pi 0.87.1: paraphrased recall at 1,000 messages abandoned a non-null older-page cursor. |
-| history-pr-pagination-qualification.json | 11 passed, 43 not run | USD 0.013316460 | Safe source-audit stop: stable-prefix memory ordering was missing. |
-| history-pr-restored-prefix-qualification.json | 53/54 | USD 0.093003835 | Model guessed continuation tokens, skipped segment 7 and requested an invalid cursor. |
-| history-pr-opaque-cursor-qualification.json | 53/54 | USD 0.091085410 | Model stopped after segment 5 and claimed the next cursor was unavailable. |
+| Local archive report                                 | Result                   | Charge                             | Evidence                                                                                           |
+| ---------------------------------------------------- | ------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| history-current-baseline.json                        | 4/6                      | USD 0.004304100                    | Current omitted rare distant facts; includes paid short-chat compaction.                           |
+| history-current-snapshots-qualification-partial.json | 76 attempted, 32 not run | USD 0.228789600 conservative guard | Rich-loop failure and a current timeout/cleanup failure; unknown cost retained conservatively.     |
+| history-snapshots-qualification.json                 | 50/54                    | USD 0.097921115                    | Strict absent-fact and balanced-v2 failures retained.                                              |
+| history-snapshots-final-qualification.json           | 52/54                    | USD 0.097118530                    | Two paraphrased recalls abandoned available history pages.                                         |
+| history-adaptive-full-qualification.json             | 53/54                    | USD 0.076252385                    | Third repeated answer lost a previously verified fact.                                             |
+| history-followup-qualification.json                  | 54/54                    | USD 0.076096435                    | Snapshots comparison source qualified after follow-up guidance.                                    |
+| history-retrieval-full-qualification.json            | 54/54                    | USD 0.068219460                    | Retrieval qualified at the same comparison source.                                                 |
+| history-default-final-qualification.json             | 54/54                    | USD 0.065191950                    | Selected default source qualified before later upstream integration.                               |
+| history-pr-final-qualification.json                  | 53/54                    | USD 0.091159270                    | Newer base/Pi 0.87.1: paraphrased recall at 1,000 messages abandoned a non-null older-page cursor. |
+| history-pr-pagination-qualification.json             | 11 passed, 43 not run    | USD 0.013316460                    | Safe source-audit stop: stable-prefix memory ordering was missing.                                 |
+| history-pr-restored-prefix-qualification.json        | 53/54                    | USD 0.093003835                    | Model guessed continuation tokens, skipped segment 7 and requested an invalid cursor.              |
+| history-pr-opaque-cursor-qualification.json          | 53/54                    | USD 0.091085410                    | Model stopped after segment 5 and claimed the next cursor was unavailable.                         |
 
 The latest paid run loaded clean committed
 `3dd01cea8924ce22816a9b93539672431986d6d7`. All 12 distant samples and all 27
@@ -112,13 +112,13 @@ metadata changes require no new inference; no further paid run is scheduled.
 The exact final-ledger step partition compares three-question 100-message histories workflows.
 Each policy has three samples with uncontrolled cache state.
 
-| Mean charge | Earlier current | Qualified retrieval | Qualified snapshots |
-| --- | --- | --- | --- |
-| First question | USD 0.000709967 | USD 0.000776870 | USD 0.000767467 |
-| First follow-up | USD 0.000078030 | USD 0.000075998 | USD 0.000074690 |
-| Second follow-up | USD 0.000072205 | USD 0.000070123 | USD 0.000075240 |
-| LLM preparation | USD 0.000416500 | No compaction calls | No compaction calls |
-| Complete workflow | USD 0.001276702 | USD 0.000922992 | USD 0.000917397 |
+| Mean charge       | Earlier current | Qualified retrieval | Qualified snapshots |
+| ----------------- | --------------- | ------------------- | ------------------- |
+| First question    | USD 0.000709967 | USD 0.000776870     | USD 0.000767467     |
+| First follow-up   | USD 0.000078030 | USD 0.000075998     | USD 0.000074690     |
+| Second follow-up  | USD 0.000072205 | USD 0.000070123     | USD 0.000075240     |
+| LLM preparation   | USD 0.000416500 | No compaction calls | No compaction calls |
+| Complete workflow | USD 0.001276702 | USD 0.000922992     | USD 0.000917397     |
 
 Current incurred two compaction calls per workflow. Retrieval made two
 first-question lookups; snapshots used bounded originals without lookups. This

@@ -10,7 +10,7 @@ import {
 } from "./helpers";
 
 test(
-  "Korean webhook routine keeps technical field labels in English",
+  "Korean webhook routine keeps its URL and header value in English",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     const stamp = Date.now();
@@ -35,9 +35,14 @@ test(
     await page.getByRole("menuitem", { name: "웹훅", exact: true }).click();
 
     await expect(page.getByText("웹훅이 실행될 때", { exact: true })).toBeVisible();
-    await expect(page.getByText("POST 대상")).toBeVisible();
-    await expect(page.getByText("key", { exact: true })).toBeVisible();
-    await expect(page.getByText("header")).toBeVisible();
+    await expect(page.getByText("저장 후 사용 가능", { exact: true })).toBeVisible();
+    const saved = page.waitForResponse(
+      (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+    );
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await saved;
+    await expect(page.getByRole("button", { name: "URL 복사", exact: true })).toBeVisible();
+    await expect(page.getByText(/^Authorization: Bearer /)).toBeVisible();
     await captureScreenshot(page, testInfo, "routine-webhook-ko");
   },
 );
@@ -49,7 +54,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   const botId = activeBotId(page);
 
   await openBotPanelTab(page, "Routines");
-  await expect(page.getByRole("button", { name: "Test run" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run now" })).toHaveCount(0);
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Daily verification");
   await page
@@ -78,7 +83,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   );
   const runs = async () =>
     (await rpc<RoutineHistory>(page, "routines/history", { routineId: created?.id })).runs;
-  await page.getByRole("button", { name: "Test run" }).click();
+  await page.getByRole("button", { name: "Run now" }).click();
   // The open editor's instruction already shows the marker text, so wait on the run itself
   // and read the marker from the bot reply the run recorded.
   await expect

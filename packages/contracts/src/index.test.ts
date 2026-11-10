@@ -216,10 +216,11 @@ describe("contracts", () => {
     );
   });
 
-  it("keeps a note on a step and still reads steps saved without one", () => {
+  it("keeps a step's note and outcomes and still reads steps saved without them", () => {
     const steps = [
       { label: "Read file", count: 1, note: "The meeting is with Anna." },
-      { label: "Save", count: 1 },
+      { label: "Save", count: 2, outcomes: { succeeded: 1, failed: 1 } },
+      { label: "Shell", count: 1 },
     ];
     expect(MessageBlock.parse({ kind: "steps", steps })).toEqual({ kind: "steps", steps });
   });

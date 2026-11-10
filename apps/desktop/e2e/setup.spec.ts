@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server, ServerResponse } from "node:http";
 import { createServer } from "node:http";
@@ -91,6 +92,10 @@ function launch(extraEnv: Record<string, string> = {}) {
   };
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
+  // A first launch opens Rakazo Cloud; these specs stay offline and start in setup instead.
+  if (!extraEnv.RAKAZO_WEB_URL && !existsSync(path.join(userData, "setup.json"))) {
+    env.RAKAZO_FORCE_SETUP = "1";
+  }
   const executablePath = process.env.RAKAZO_E2E_EXECUTABLE;
   return electron.launch({
     ...(executablePath ? { executablePath: path.resolve(executablePath) } : {}),
@@ -100,7 +105,7 @@ function launch(extraEnv: Record<string, string> = {}) {
   });
 }
 
-test("first run offers Rakazo Cloud first, with local and existing instances", async () => {
+test("setup offers Rakazo Cloud first, with local and existing instances", async () => {
   app = await launch();
   if (process.env.RAKAZO_E2E_EXECUTABLE) {
     expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(true);

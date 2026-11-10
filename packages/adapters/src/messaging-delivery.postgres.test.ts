@@ -6,8 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 const context: AdapterContext = {
   operationId: "op-1",
