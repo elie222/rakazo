@@ -272,7 +272,8 @@ ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait"
 sidecar 会为它创建新的基础备份。恢复期间应暂停 CI 部署。确认恢复后的数据库无误后，再删除旧集群：
 
 ```bash
-$COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf "$PGDATA".before-restore-*'
+ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf \"\$PGDATA\".before-restore-*'"
 ```
 
 关闭 PITR 时，先从 `COMPOSE_PROFILES` 中移除 `pitr`，再运行 `sudo infra/compose/pitr.sh disable`。
