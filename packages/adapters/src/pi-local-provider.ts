@@ -1,7 +1,8 @@
 import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { Agent } from "undici";
+import type { Dispatcher } from "undici";
+import { Agent, EnvHttpProxyAgent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
 import { MODEL_STREAM_AGENT_TIMEOUTS } from "./pi-runtime-limits.js";
@@ -76,15 +77,23 @@ function localModel(id: string): Model<"openai-completions"> {
   };
 }
 
-let localAgent: Agent | undefined;
+let localDispatcher: Dispatcher | undefined;
+
+/** Node's built-in fetch, which local servers used before, honors HTTP(S)_PROXY only when asked to. */
+function nodeFetchUsesEnvProxy(): boolean {
+  const flags = [...process.execArgv, ...(process.env.NODE_OPTIONS?.split(/\s+/) ?? [])];
+  return process.env.NODE_USE_ENV_PROXY === "1" || flags.includes("--use-env-proxy");
+}
 
 /** A queued local server can stay silent for minutes; the runtime's own timeouts bound it. */
 function localModelFetch(baseFetch?: typeof globalThis.fetch): typeof globalThis.fetch {
-  localAgent ??= new Agent(MODEL_STREAM_AGENT_TIMEOUTS);
-  const dispatcher = localAgent;
+  localDispatcher ??= nodeFetchUsesEnvProxy()
+    ? new EnvHttpProxyAgent(MODEL_STREAM_AGENT_TIMEOUTS)
+    : new Agent(MODEL_STREAM_AGENT_TIMEOUTS);
+  const dispatcher = localDispatcher;
   const transport = fetchPairedWithDispatcher(baseFetch);
   return (input, init) =>
-    transport(input, { ...init, dispatcher } as RequestInit & { dispatcher: Agent });
+    transport(input, { ...init, dispatcher } as RequestInit & { dispatcher: Dispatcher });
 }
 
 function localApi(): ProviderStreams {

@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import type { ServerResponse } from "node:http";
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import type * as Undici from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -95,5 +96,51 @@ describe.each(["local", "openai-compatible"] as const)("%s model stream transpor
         response.write(": still thinking\n\n", () => response.socket?.destroy());
       }),
     ).rejects.toThrow("terminated (other side closed)");
+  });
+});
+
+describe("local model stream through a proxy", () => {
+  it("keeps the proxy Node's fetch was told to use", async () => {
+    const proxied: string[] = [];
+    // Tunnels CONNECT to the target and answers plain proxied requests itself.
+    const proxy = createServer((request, response) => {
+      proxied.push(request.url ?? "");
+      request.resume();
+      request.on("end", () => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(finished);
+      });
+    });
+    proxy.on("connect", (request, client, head) => {
+      proxied.push(request.url ?? "");
+      const [host, port] = (request.url ?? "").split(":");
+      const upstream = connect(Number(port), host, () => {
+        client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        upstream.write(head);
+        upstream.pipe(client);
+        client.pipe(upstream);
+      });
+      upstream.on("error", () => client.destroy());
+      client.on("error", () => upstream.destroy());
+    });
+    proxy.listen(0, "127.0.0.1");
+    await once(proxy, "listening");
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("Fixture proxy unavailable");
+    vi.stubEnv("NODE_USE_ENV_PROXY", "1");
+    vi.stubEnv("HTTP_PROXY", `http://127.0.0.1:${address.port}`);
+    vi.stubEnv("NO_PROXY", "");
+    try {
+      const events = await runTurn("local", (response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(finished);
+      });
+      expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+      expect(proxied).not.toHaveLength(0);
+    } finally {
+      proxy.closeAllConnections();
+      proxy.close();
+      await once(proxy, "close");
+    }
   });
 });
