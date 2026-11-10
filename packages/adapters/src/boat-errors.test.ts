@@ -3,6 +3,7 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import {
   SandboxProviderAccountError,
   SandboxRateLimitError,
+  SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR } from "@rakazo/contracts";
@@ -158,6 +159,23 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a resume refused for lack of capacity as a computer that did not start", async () => {
+    const call = vi.fn(async () => {
+      throw new ResponseError(
+        Response.json(
+          {
+            code: "resume_failed",
+            message: "Server is currently at capacity. Please try again in a few minutes.",
+          },
+          { status: 409 },
+        ),
+      );
+    });
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnavailableError);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
     const call = wrapBoatCall(async () => {
       throw new ResponseError(
@@ -213,6 +231,32 @@ describe("Boat API errors", () => {
       expect(sentAt).toEqual(sent);
     },
   );
+
+  const hang = (_request: unknown, init?: RequestInit) =>
+    new Promise<never>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal?.aborted) reject(signal.reason);
+      signal?.addEventListener("abort", () => reject(signal.reason));
+    });
+
+  it("reports a call Boat does not answer within its time limit as unresponsive", async () => {
+    const call = wrapBoatCall(hang, "fake-key", true, undefined, 20);
+    const error = await call({}, { signal: new AbortController().signal }).catch(
+      (failure: unknown) => failure,
+    );
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((error as Error).message).toBe("Boat did not answer in time");
+  });
+
+  it("keeps a cancelled call cancelled when it also has a time limit", async () => {
+    const controller = new AbortController();
+    const call = wrapBoatCall(hang, "fake-key", true, undefined, 60_000);
+    const pending = call({}, { signal: controller.signal }).catch((failure: unknown) => failure);
+    controller.abort(new Error("cancelled"));
+    const error = await pending;
+    expect(error).not.toBeInstanceOf(SandboxUnresponsiveError);
+    expect((error as Error).message).toBe("cancelled");
+  });
 
   it("does not resend a call whose caller gave no signal to bound the wait", async () => {
     const call = vi.fn(async () => {

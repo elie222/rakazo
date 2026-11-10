@@ -345,6 +345,80 @@ describe("mobile API sign-in and account", () => {
     );
   });
 
+  it.each([
+    [
+      "saving a server",
+      "https://second.example.test",
+      () => saveApiBase("https://second.example.test"),
+    ],
+    ["resetting the server", "http://127.0.0.1:3100", () => resetApiBase()],
+  ])(
+    "drops a sign-in that starts and finishes while %s is still being stored",
+    async (_name, next, change) => {
+      const storage = new Map<string, string>();
+      mockSecureStore(storage);
+      await saveApiBase("https://first.example.test");
+      let releaseWrite!: () => void;
+      const writeHeld = new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+      let writing!: () => void;
+      const writeStarted = new Promise<void>((resolve) => {
+        writing = resolve;
+      });
+      const holdEndpointWrite = async (key: string) => {
+        if (key !== "rakazo.api_base") return;
+        writing();
+        await writeHeld;
+      };
+      vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+        await holdEndpointWrite(key);
+        storage.set(key, value);
+      });
+      vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+        await holdEndpointWrite(key);
+        storage.delete(key);
+      });
+      const fetchMock = vi.fn(async (input: string, _init?: RequestInit) =>
+        input.endsWith("/api/auth/sign-in/email")
+          ? jsonResponse({ token: "fake-session-first" })
+          : jsonResponse({ success: true }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const switching = change();
+      await writeStarted;
+      expect(currentApiBase()).toBe("https://first.example.test");
+      const pending = signIn("ada@example.test", "correct horse");
+      let settled = false;
+      const rejection = expect(
+        pending.finally(() => {
+          settled = true;
+        }),
+      ).rejects.toThrow("Could not continue");
+      // The answer is handled while the new server URL is still being written.
+      try {
+        await vi.waitFor(() => expect(settled).toBe(true));
+      } finally {
+        releaseWrite();
+      }
+      await rejection;
+      await expect(switching).resolves.toMatchObject({ ok: true });
+
+      expect(currentApiBase()).toBe(next);
+      expect(await loadSessionToken()).toBe("");
+      await vi.waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "https://first.example.test/api/auth/sign-out",
+          expect.objectContaining({
+            headers: expect.objectContaining({ authorization: "Bearer fake-session-first" }),
+          }),
+        ),
+      );
+      await resetApiBase();
+    },
+  );
+
   it("drops a sign-in whose session changes while its token is being written", async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {

@@ -1,10 +1,11 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { SignInMcpServer } from "@rakazo/core";
 import { signInMcpServers } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { finishMcpSignIn } from "../lib/mcp-oauth";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -23,7 +24,7 @@ export function IntegrationCatalogSearch({
   onConnected: (serverId: string) => Promise<void>;
   onSearched: (searched: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const [servers, setServers] = useState<SignInMcpServer[] | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function IntegrationCatalogSearch({
       });
       if (latestQuery.current === sent) setServers(signInMcpServers(response.results));
     } catch (reason) {
-      if (latestQuery.current === sent) setError(errorText(reason, t("Could not connect")));
+      if (latestQuery.current === sent) setError(errorText(reason, t`Could not connect`));
     } finally {
       setPending(null);
     }
@@ -76,7 +77,7 @@ export function IntegrationCatalogSearch({
         await onConnected(row.id).catch(() => undefined);
       }
     } catch (reason) {
-      setError(errorText(reason, t("Could not connect")));
+      setError(errorText(reason, t`Could not connect`));
     } finally {
       setPending(null);
     }
@@ -87,14 +88,14 @@ export function IntegrationCatalogSearch({
       {servers === null ? (
         <NativeActionButton
           fill={false}
-          label={t("Search more apps")}
+          label={t`Search more apps`}
           busy={pending === "search"}
           disabled={Boolean(pending)}
           onPress={() => void search()}
           prominence="secondary"
         />
       ) : servers.length === 0 ? (
-        <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
+        <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
       ) : (
         servers.map((server) => (
           <View key={server.endpoint} style={styles.row}>
@@ -104,10 +105,8 @@ export function IntegrationCatalogSearch({
             </Text>
             <NativeActionButton
               fill={false}
-              label={t("Sign in")}
-              accessibilityLabel={t("Connect MCP server {name}", {
-                name: server.name,
-              })}
+              label={t`Sign in`}
+              accessibilityLabel={t`Connect MCP server ${ph({ name: server.name })}`}
               busy={pending === server.endpoint}
               disabled={Boolean(pending)}
               onPress={() => void connect(server)}

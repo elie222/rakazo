@@ -67,6 +67,22 @@ describe("composio toolkit directory cache", () => {
     expect(items.find((item) => item.slug === "hackernews")?.connected).toBe(true);
   });
 
+  it("drops apps that need sign-in setup unless the user has an account for them", () => {
+    const items = mergeCatalogWithConnected(
+      [
+        { slug: "shopify", name: "Shopify", logo: null, noAuth: false, needsSignInSetup: true },
+        { slug: "twitter", name: "X", logo: null, noAuth: false, needsSignInSetup: true },
+        { slug: "etsy", name: "Etsy", logo: null, noAuth: false, needsSignInSetup: true },
+      ],
+      ["twitter"],
+      ["twitter", "ETSY"],
+    );
+    expect(items).toEqual([
+      { slug: "twitter", name: "X", logo: null, noAuth: false, connected: true },
+      { slug: "etsy", name: "Etsy", logo: null, noAuth: false, connected: false },
+    ]);
+  });
+
   it("handles detached refresh rejection in a real Node process", async () => {
     const moduleUrl = new URL("./composio-catalog-cache.ts", import.meta.url).href;
     const { stdout } = await promisify(execFile)(

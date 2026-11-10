@@ -94,10 +94,6 @@ vi.mock("../components/native-symbol", () => ({
     <span data-symbol={ios} data-color={color} />
   ),
 }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,

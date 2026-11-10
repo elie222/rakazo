@@ -86,6 +86,7 @@ function createDeps(
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 4, nextEventSeq: 9 })) },
     bot: { findFirst: vi.fn(async () => ({ id: "bot-2" })) },
     // What a `SELECT ... FOR UPDATE` on the connection row would see.
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async (query: TemplateStringsArray) => {
       if (query.join("").includes("FROM bots"))
         return policyRows().map((bot) => ({
@@ -186,6 +187,7 @@ function createDeps(
     user: { findUnique: vi.fn(async () => ({ id: "user-1", name: "Alice Owner" })) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-2" })) },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async (query: TemplateStringsArray) =>
       query.join("").includes("FROM bots") ? policyRows() : txMock.$queryRaw(query),
     ),

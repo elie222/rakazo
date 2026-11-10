@@ -1,9 +1,9 @@
+import { useLingui } from "@lingui/react/macro";
 import type { McpServer } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -18,7 +18,7 @@ export function McpOAuthClientForm({
   server: McpServer;
   onSaved: () => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -49,7 +49,7 @@ export function McpOAuthClientForm({
         oauthClient: { clientId: clientId.trim(), clientSecret: clientSecret || undefined },
       });
     } catch (reason) {
-      setError(errorText(reason, t("Could not connect")));
+      setError(errorText(reason, t`Could not connect`));
       setBusy(false);
       return;
     }
@@ -62,8 +62,8 @@ export function McpOAuthClientForm({
       <TextInput
         value={clientId}
         onChangeText={setClientId}
-        accessibilityLabel={t("Client ID")}
-        placeholder={t("Client ID")}
+        accessibilityLabel={t`Client ID`}
+        placeholder={t`Client ID`}
         placeholderTextColor={native.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
@@ -72,8 +72,8 @@ export function McpOAuthClientForm({
       <TextInput
         value={clientSecret}
         onChangeText={setClientSecret}
-        accessibilityLabel={t("Client secret")}
-        placeholder={t("Client secret")}
+        accessibilityLabel={t`Client secret`}
+        placeholder={t`Client secret`}
         placeholderTextColor={native.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
@@ -82,7 +82,7 @@ export function McpOAuthClientForm({
       />
       {redirectUri ? (
         <View style={styles.redirect}>
-          <Text style={styles.label}>{t("Redirect URI")}</Text>
+          <Text style={styles.label}>{t`Redirect URI`}</Text>
           <Text selectable style={styles.value}>
             {redirectUri}
           </Text>
@@ -90,7 +90,7 @@ export function McpOAuthClientForm({
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <NativeActionButton
-        label={t("Sign in")}
+        label={t`Sign in`}
         busy={busy}
         disabled={busy || !clientId.trim()}
         onPress={() => void save()}

@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import { clampCatalogThinkingLevel } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
@@ -5,7 +6,6 @@ import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 import { Linking } from "react-native";
 import type { rpc as apiRpc } from "./api";
-import { useI18n } from "./i18n";
 import type { MobileModel } from "./mobile-types";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt, waitForModelOAuth } from "./model-auth";
 import type { SettingsTarget } from "./settings-target";
@@ -44,7 +44,7 @@ export function useSubscriptionSignIn({
   publishFeedback,
   clearFeedback,
 }: SubscriptionSignInOptions) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [oauthPending, setOauthPending] = useState(false);
@@ -92,7 +92,7 @@ export function useSubscriptionSignIn({
     if (await finishConnecting(selected?.id ?? modelId, saved.id)) return;
     await load({ modelId });
     if (controller.signal.aborted) return;
-    publishFeedback("connection", { notice: t("Saved.") });
+    publishFeedback("connection", { notice: t`Saved.` });
   }
 
   async function startSubscriptionSignIn() {
@@ -133,7 +133,7 @@ export function useSubscriptionSignIn({
       oauthLoginIdRef.current = null;
       if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
       publishFeedback("connection", {
-        error: errorText(err, t("Could not start sign-in")),
+        error: errorText(err, t`Could not start sign-in`),
       });
       setOauth(null);
     } finally {
@@ -174,7 +174,7 @@ export function useSubscriptionSignIn({
         setPasteCode(code);
       }
       publishFeedback("connection", {
-        error: errorText(err, t("Could not finish sign-in")),
+        error: errorText(err, t`Could not finish sign-in`),
       });
     } finally {
       oauthCodeSubmittingRef.current = false;

@@ -1,9 +1,8 @@
+import { MAX_TRANSCRIPTION_RESPONSE_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   combineTranscript,
   Dictation,
-  MAX_TRANSCRIPTION_RESPONSE_BYTES,
-  TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
   transcriptionLanguage,
   webSpeechAvailable,
   webSpeechNeedsServerFallback,
@@ -376,7 +375,7 @@ describe("Dictation recorder fallback", () => {
     await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
     dictation.submitHold();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    await vi.advanceTimersByTimeAsync(TRANSCRIPTION_RESPONSE_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS);
 
     expect(dictation.state.error).toBe("Transcription request timed out.");
   });

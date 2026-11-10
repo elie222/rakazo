@@ -153,6 +153,7 @@ button {
 }
 
 .site-header__left {
+  align-items: baseline;
   gap: 28px;
 }
 
@@ -176,12 +177,15 @@ button {
 }
 
 .brand-lockup {
+  /* The wordmark's line box matches the mark's height, so it reads as centered
+     while giving the lockup a text baseline the nav links can align to. */
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 9px;
 }
 
 .brand-lockup__mark {
+  align-self: center;
   width: 36px;
   height: 36px;
   flex: none;
@@ -192,6 +196,7 @@ button {
   font-family: Aeonik, Geist, ui-sans-serif, system-ui, sans-serif;
   font-size: 21px;
   font-weight: 500;
+  line-height: 36px;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
@@ -4623,6 +4628,7 @@ td:last-child .pricing-hint__tip {
 
 .docs-topbar .brand-lockup__word {
   font-size: 19px;
+  line-height: 30px;
 }
 
 .docs-topbar .star-pill,

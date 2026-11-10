@@ -8,6 +8,7 @@ import Security
 public class RakazoCallsSubscriber: ExpoAppDelegateSubscriber {
   public func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     _ = IncomingCalls.shared
+    if #available(iOS 18.0, *) { WorkActivities.shared.observe() }
     return true
   }
 }
@@ -207,19 +208,32 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     savedSession()?.headers["authorization"]?.isEmpty == false
   }
   private func decline(_ call: [String: String]) {
-    guard expiry(call) > Date(), let saved = savedSession(),
-      let url = URL(string: saved.base.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rpc/notifications/declineIncomingCall")
-    else { return }
+    guard expiry(call) > Date() else { return }
+    send("notifications/declineIncomingCall", ["callId": call["callId"] ?? ""])
+  }
+  /// Calls the server with the saved session, from the background too. `done` gets the output on
+  /// the main queue, or nil when the call did not go through.
+  func send(_ procedure: String, _ input: [String: String], done: (([String: Any]?) -> Void)? = nil) {
+    guard let saved = savedSession(),
+      let url = URL(string: saved.base.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rpc/" + procedure)
+    else { done?(nil); return }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.timeoutInterval = 8
     for (name, value) in saved.headers { request.setValue(value, forHTTPHeaderField: name) }
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("rakazo://", forHTTPHeaderField: "Origin")
-    request.httpBody = try? JSONSerialization.data(withJSONObject: ["json": ["callId": call["callId"] ?? ""]])
+    request.httpBody = try? JSONSerialization.data(withJSONObject: ["json": input])
     let task = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
-    session.dataTask(with: request) { _, _, _ in
-      DispatchQueue.main.async { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
+    session.dataTask(with: request) { data, response, _ in
+      let ok = (response as? HTTPURLResponse)?.statusCode == 200
+      let output = ok
+        ? (data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["json"] as? [String: Any]
+        : nil
+      DispatchQueue.main.async {
+        done?(output)
+        if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
+      }
     }.resume()
   }
   func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
@@ -231,7 +245,18 @@ public class RakazoNotificationsModule: Module {
   private var observer: NSObjectProtocol?
   public func definition() -> ModuleDefinition {
     Name("RakazoNotifications")
-    Events("onIncomingCallChanged")
+    Events("onIncomingCallChanged", "onWorkActivityToken", "onWorkActivityStartToken")
+    OnCreate {
+      if #available(iOS 18.0, *) {
+        WorkActivities.shared.onToken = { [weak self] token in
+          self?.sendEvent("onWorkActivityToken", ["token": token])
+        }
+        WorkActivities.shared.onStartToken = { [weak self] token in
+          self?.sendEvent("onWorkActivityStartToken", ["token": token])
+        }
+        WorkActivities.shared.observe()
+      }
+    }
     OnStartObserving {
       self.observer = NotificationCenter.default.addObserver(forName: IncomingCalls.changed, object: nil, queue: .main) { [weak self] _ in
         self?.sendEvent("onIncomingCallChanged", [:])
@@ -249,5 +274,24 @@ public class RakazoNotificationsModule: Module {
       if let uuid = UUID(uuidString: id) { IncomingCalls.shared.end(uuid, reason: .remoteEnded) }
     }.runOnQueue(.main)
     AsyncFunction("clearIncomingCalls") { IncomingCalls.shared.clear() }.runOnQueue(.main)
+    AsyncFunction("startWorkActivity") { (title: String, spaceId: String, botId: String?, groupId: String?) in
+      if #available(iOS 18.0, *) {
+        // A group's bot is known only once the server's first update names it.
+        let name = title.isEmpty
+          ? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? ""
+          : title
+        WorkActivities.shared.start(.init(
+          status: .working, title: name, line: "", spaceId: spaceId, botId: botId, groupId: groupId))
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("refreshWorkActivity") {
+      if #available(iOS 18.0, *) {
+        WorkActivities.shared.refreshStartToken()
+        WorkActivities.shared.refresh()
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("endWorkActivity") {
+      if #available(iOS 18.0, *) { WorkActivities.shared.end() }
+    }.runOnQueue(.main)
   }
 }

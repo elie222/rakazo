@@ -28,15 +28,15 @@ For ChatGPT, Claude, Gemini or any other assistant:
 
 Before anything is created, you see every item the import found and tick what to keep:
 
-| Item | Becomes |
-| --- | --- |
-| Instructions (`SOUL.md`, `AGENTS.md`, …) | The new bot's instructions |
-| Memory (`MEMORY.md`, `USER.md`, daily notes) | The bot's memory, or memory shared by all your bots |
-| Skills | Skills in the library all your bots share |
-| Model | The bot's model, when you have that provider connected or import its key |
-| MCP servers | MCP servers the bot asks before using |
-| Scheduled jobs | Routines, paused until you turn them on |
-| API keys | Model connections, only when you tick **Include API keys** |
+| Item                                         | Becomes                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| Instructions (`SOUL.md`, `AGENTS.md`, …)     | The new bot's instructions                                               |
+| Memory (`MEMORY.md`, `USER.md`, daily notes) | The bot's memory, or memory shared by all your bots                      |
+| Skills                                       | Skills in the library all your bots share                                |
+| Model                                        | The bot's model, when you have that provider connected or import its key |
+| MCP servers                                  | MCP servers the bot asks before using                                    |
+| Scheduled jobs                               | Routines, paused until you turn them on                                  |
+| API keys                                     | Model connections, only when you tick **Include API keys**               |
 
 Anything that runs code or acts on its own (skills, MCP servers, routines) starts unticked, as do
 untouched defaults the old agent wrote and text that looks like it contains a key. **Not

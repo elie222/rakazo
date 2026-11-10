@@ -169,21 +169,29 @@ function isLaunchSecret(name: string, value: string): boolean {
 }
 
 /** A flag, query, or header value under a credential name. Only explicit credential names
- * (`api_key`, `password`) take numeric values, so `?key=0` cannot redact every zero. */
+ * (`api_key`, `password`, `access_key`) take numeric values, so `?key=0` cannot redact every zero. */
 function isCredentialArg(name: string, value: string): boolean {
   const normalized = snakeName(name);
   return (
     isCredentialName(normalized) &&
-    looksLikeSecretValue(value, { allowNumeric: isExplicitCredentialKey(normalized) })
+    looksLikeSecretValue(value, {
+      allowNumeric: isExplicitCredentialKey(normalized) || NAMED_KEY.test(normalized),
+    })
   );
 }
 
-/** Flag and query names that carry a credential (`api_key`, `token`, `private_key`, `pat`). */
+/** Key names that say which credential they hold (`access_key`, not a bare `key`). */
+const NAMED_KEY = /(?:^|_)(access_key|private_key|secret_key)$/;
+
+/** Flag and query names that carry a credential (`api_key`, `token`, `client_auth`, `pat`). */
 function isCredentialName(normalized: string): boolean {
   return (
     isExplicitCredentialKey(normalized) ||
     isAmbiguousCredentialKey(normalized) ||
-    /(?:^|_)(access_key|private_key|secret_key)$|^(key|pat|auth)$/.test(normalized)
+    NAMED_KEY.test(normalized) ||
+    /^(key|pat|auth)$/.test(normalized) ||
+    // `--client-auth <token>`, but not a switch such as `--no-auth`, whose next argument is not its value.
+    (/_auth$/.test(normalized) && !/^(no|disable|enable|skip|use|require)_/.test(normalized))
   );
 }
 
@@ -509,6 +517,46 @@ function requestOfflineAccess(
   authorizationUrl.searchParams.set("scope", [...scopes, OFFLINE_ACCESS].join(" "));
 }
 
+/**
+ * Client-authentication methods this client can perform, most preferred first: a
+ * public client proving itself with PKCE, then a secret in the body, then one in
+ * a Basic header. Anything else (`private_key_jwt`, mTLS) needs key material
+ * this client does not hold.
+ */
+const REGISTRATION_AUTH_METHODS = ["none", "client_secret_post", "client_secret_basic"];
+
+/**
+ * The client-authentication method to register with (RFC 7591).
+ *
+ * A public client -- `none`, holding no secret and proving itself with PKCE -- is
+ * the right shape here, but asserting it unconditionally breaks registration
+ * outright on an authorization server that does not offer it: the server rejects
+ * the whole document with `invalid_client_metadata` rather than registering us
+ * with a method it prefers. So the choice follows what the server advertises
+ * (RFC 8414), narrowed to the methods above.
+ *
+ * When the server advertises nothing, the field is omitted so the server applies
+ * its own default -- `client_secret_basic` per RFC 8414 S2. A registration that
+ * comes back with a client secret is stored and used like any other; the SDK
+ * picks the matching method for the token request from the same metadata.
+ *
+ * A server that advertises methods but none this client can perform is a
+ * different case, and omitting the field there would quietly register for
+ * `client_secret_basic` -- a method it never offered -- leaving a client that
+ * cannot authenticate. Only a client registered out of band can sign in to such
+ * a server, which is what the pre-registered client exists for.
+ */
+function registrationAuthMethod(discovery: OAuthDiscoveryState | undefined): string | undefined {
+  const advertised = discovery?.authorizationServerMetadata?.token_endpoint_auth_methods_supported;
+  if (!Array.isArray(advertised) || advertised.length === 0) return undefined;
+  const usable = REGISTRATION_AUTH_METHODS.find((method) => advertised.includes(method));
+  if (!usable)
+    throw new Error(
+      `${MCP_DYNAMIC_REGISTRATION_UNSUPPORTED} with a client-authentication method this client can perform; it accepts only ${advertised.join(", ")}`,
+    );
+  return usable;
+}
+
 function applyGrant(oauth: OAuthState, grant: TokenGrant): void {
   if (grant.tokens) oauth.tokens = grant.tokens;
   else delete oauth.tokens;
@@ -548,12 +596,18 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     if (!redirectUri) throw new McpReauthorizationRequiredError(this.serverId);
     const hostname = new URL(redirectUri).hostname;
     const applicationType = hostname === "localhost" || hostname === "127.0.0.1" ? "native" : "web";
+    // Only a registration this client is about to make has to match the server; a
+    // pre-registered client was given its method out of band, and this document is
+    // then read for its scope alone.
+    const authMethod = this.material.oauthClient
+      ? undefined
+      : registrationAuthMethod(this.material.oauth?.discoveryState);
     return {
       redirect_uris: [redirectUri],
       client_name: "Rakazo",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      token_endpoint_auth_method: "none",
+      ...(authMethod ? { token_endpoint_auth_method: authMethod } : {}),
       application_type: applicationType,
       ...(this.configuredScope ? { scope: this.configuredScope } : {}),
     } as OAuthClientMetadata;

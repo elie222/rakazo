@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { AgentSkillCatalogEntry, RpcPath } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
 import {
@@ -7,7 +8,6 @@ import {
 } from "@rakazo/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RpcOptions, rpc } from "./api";
-import { t } from "./i18n";
 import type { PickedAttachment } from "./pick-attachments";
 
 export type ComposerSnapshot = {
@@ -510,7 +510,7 @@ export function useThreadFeedback(
       const scope = config?.scope();
       // Saving before the restore would replace the queue still on disk.
       if (!scope || !restored) throw new Error("SESSION_CHANGED");
-      if (waiting().length >= OUTBOX_MAX_ENTRIES) throw new Error(t("Too many unsent messages"));
+      if (waiting().length >= OUTBOX_MAX_ENTRIES) throw new Error(t`Too many unsent messages`);
       // Files left by a removal whose save failed still count against the disk budget.
       if (removed.size) save(waiting());
       const attempt: SendAttempt = {
@@ -525,7 +525,7 @@ export function useThreadFeedback(
       const admitted = canPersist
         ? tryDisk(() => config!.disk.admit(attempt), undefined)
         : undefined;
-      if (admitted === false) throw new Error(t("Too many unsent messages"));
+      if (admitted === false) throw new Error(t`Too many unsent messages`);
       // Save before the caller clears the composer whenever storage is available.
       if (admitted === undefined || !save([...waiting(), attempt])) {
         // A failed move may have committed; forget files only after a later index omits them.

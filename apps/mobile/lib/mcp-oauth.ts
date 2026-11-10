@@ -1,7 +1,7 @@
+import { t } from "@lingui/core/macro";
 import type { RpcOutput } from "@rakazo/contracts";
 import { MOBILE_MCP_OAUTH_CALLBACK_URL } from "@rakazo/contracts";
 import { rpc } from "./api";
-import { t } from "./i18n";
 
 export type McpSignIn =
   | "connected"
@@ -22,7 +22,7 @@ export async function finishMcpSignIn(started: SignInStart): Promise<McpSignIn> 
   if (started.status !== "authorization_required") return started.status;
   // Defer the native module, as sign-in does, so older binaries fail with a message.
   const { openAuthSessionAsync } = await import("expo-web-browser").catch(() => {
-    throw new Error(t("Could not continue"));
+    throw new Error(t`Could not continue`);
   });
   const result = await openAuthSessionAsync(
     started.authorizationUrl,

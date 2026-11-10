@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import {
   canonicalPiProviderId,
   compatibleEndpointPresets,
@@ -20,7 +21,6 @@ import { SpaceBotsModel } from "../../components/space-bots-model";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import type { ModelConnectionRequest } from "../../lib/model-connection-request";
 import { closeModelConnection, openModelConnection } from "../../lib/model-connection-request";
@@ -48,7 +48,7 @@ export default function Models() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createModelsStyles);
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const me =
     useQuery({ ...rpcQuery("me", undefined, spaceId), enabled: false }, queryClient).data ?? null;
   const catalog =
@@ -100,8 +100,7 @@ export default function Models() {
         setLoadError(null);
       } catch (err) {
         // A newer read replaced this one and reports for both.
-        if (!isCancelledError(err))
-          setLoadError(errorText(err, t("Could not load model settings")));
+        if (!isCancelledError(err)) setLoadError(errorText(err, t`Could not load model settings`));
       }
     },
     [spaceId, t],
@@ -200,7 +199,7 @@ export default function Models() {
   /** Adds a connection, even for a provider that has one, without touching any list. */
   function addProvider() {
     pushModelPicker({
-      title: t("Add provider"),
+      title: t`Add provider`,
       selectedKey: "",
       choices: allProviders.map((provider) => ({
         key: providerKey(provider),
@@ -281,8 +280,8 @@ export default function Models() {
             <ModelRoleSettings
               {...shared}
               modelRole="main"
-              title={t("Main model")}
-              defaultLabel={t("Choose a model")}
+              title={t`Main model`}
+              defaultLabel={t`Choose a model`}
               onChanged={() => void load()}
             />
             {me.needsModel ? null : (
@@ -291,14 +290,14 @@ export default function Models() {
             <ModelRoleSettings
               {...shared}
               modelRole="approval"
-              title={t("Approval model")}
-              defaultLabel={t("Choose a model")}
+              title={t`Approval model`}
+              defaultLabel={t`Choose a model`}
             />
             <ModelRoleSettings
               {...shared}
               modelRole="computer"
-              title={t("Computer-use model")}
-              defaultLabel={t("Same as main model")}
+              title={t`Computer-use model`}
+              defaultLabel={t`Same as main model`}
             />
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (
@@ -310,7 +309,7 @@ export default function Models() {
                 onRename={(credential, label) =>
                   void changeConnection(
                     () => rpc("models/rename", { credentialId: credential.id, label }),
-                    t("Could not update name"),
+                    t`Could not update name`,
                   )
                 }
                 onDisconnect={(credential) =>
@@ -320,7 +319,7 @@ export default function Models() {
                         provider: credential.provider,
                         credentialId: credential.id,
                       }),
-                    t("Could not disconnect this provider"),
+                    t`Could not disconnect this provider`,
                   )
                 }
               />

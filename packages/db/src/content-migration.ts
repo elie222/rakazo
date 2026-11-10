@@ -13,18 +13,25 @@ export type ContentMigrationMode = "encrypt" | "reencrypt" | "decrypt";
 
 interface TableSpec {
   model: keyof typeof ENCRYPTED_MODELS;
-  delegate: "message" | "event" | "memoryDocument" | "memoryRevision" | "thread";
-  column: string;
+  delegate:
+    | "message"
+    | "event"
+    | "memoryDocument"
+    | "memoryRevision"
+    | "thread"
+    | "botEmailMessage";
+  /** Scans return them in this order as `values`. */
+  columns: string[];
   json: boolean;
   /** Preserve @updatedAt so a migration does not reorder recently edited documents. */
   updatedAt?: boolean;
   scan: (cursor: string, limit: number) => Prisma.Sql;
-  writePlaintext: (id: string, value: unknown) => Prisma.Sql;
+  writePlaintext: (id: string, row: Record<string, unknown>) => Prisma.Sql;
 }
 
 interface ScannedRow {
   id: string;
-  value: unknown;
+  values: unknown[];
   spaceId: string | null;
   owner: string;
   tokens?: boolean;
@@ -34,68 +41,84 @@ const TABLES: TableSpec[] = [
   {
     model: "Message",
     delegate: "message",
-    column: "blocks",
+    columns: ["blocks"],
     json: true,
     scan: (cursor, limit) => Prisma.sql`
-      SELECT m.id, m.blocks AS value, t."spaceId", m."threadId" AS owner,
+      SELECT m.id, jsonb_build_array(m.blocks) AS values, t."spaceId", m."threadId" AS owner,
         m."searchTokens" IS NOT NULL AS tokens
       FROM messages m JOIN threads t ON t.id = m."threadId"
       WHERE m.id > ${cursor} ORDER BY m.id LIMIT ${limit}`,
-    writePlaintext: (id, value) =>
-      Prisma.sql`UPDATE messages SET blocks = ${JSON.stringify(value)}::jsonb, "searchTokens" = NULL WHERE id = ${id}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE messages SET blocks = ${JSON.stringify(row.blocks)}::jsonb, "searchTokens" = NULL WHERE id = ${id}`,
   },
   {
     model: "Event",
     delegate: "event",
-    column: "payload",
+    columns: ["payload"],
     json: true,
     scan: (cursor, limit) => Prisma.sql`
-      SELECT id, payload AS value, "spaceId", "threadId" AS owner FROM events
+      SELECT id, jsonb_build_array(payload) AS values, "spaceId", "threadId" AS owner FROM events
       WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
-    writePlaintext: (id, value) =>
-      Prisma.sql`UPDATE events SET payload = ${JSON.stringify(value)}::jsonb WHERE id = ${id}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE events SET payload = ${JSON.stringify(row.payload)}::jsonb WHERE id = ${id}`,
   },
   {
     model: "MemoryDocument",
     delegate: "memoryDocument",
-    column: "content",
+    columns: ["content"],
     json: false,
     updatedAt: true,
     scan: (cursor, limit) => Prisma.sql`
-      SELECT id, content AS value, "spaceId", "userId" AS owner FROM memory_documents
+      SELECT id, jsonb_build_array(content) AS values, "spaceId", "userId" AS owner FROM memory_documents
       WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
-    writePlaintext: (id, value) =>
-      Prisma.sql`UPDATE memory_documents SET content = ${value as string} WHERE id = ${id}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE memory_documents SET content = ${row.content as string} WHERE id = ${id}`,
   },
   {
     model: "MemoryRevision",
     delegate: "memoryRevision",
-    column: "content",
+    columns: ["content"],
     json: false,
     scan: (cursor, limit) => Prisma.sql`
-      SELECT r.id, r.content AS value, d."spaceId", r."documentId" AS owner
+      SELECT r.id, jsonb_build_array(r.content) AS values, d."spaceId", r."documentId" AS owner
       FROM memory_revisions r JOIN memory_documents d ON d.id = r."documentId"
       WHERE r.id > ${cursor} ORDER BY r.id LIMIT ${limit}`,
-    writePlaintext: (id, value) =>
-      Prisma.sql`UPDATE memory_revisions SET content = ${value as string} WHERE id = ${id}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE memory_revisions SET content = ${row.content as string} WHERE id = ${id}`,
   },
   {
     model: "Thread",
     delegate: "thread",
-    column: "historyCompactionSummary",
+    columns: ["historyCompactionSummary"],
     json: false,
     scan: (cursor, limit) => Prisma.sql`
-      SELECT id, "historyCompactionSummary" AS value, "spaceId", "userId" AS owner FROM threads
+      SELECT id, jsonb_build_array("historyCompactionSummary") AS values, "spaceId", "userId" AS owner FROM threads
       WHERE id > ${cursor} AND "historyCompactionSummary" IS NOT NULL ORDER BY id LIMIT ${limit}`,
-    writePlaintext: (id, value) =>
-      Prisma.sql`UPDATE threads SET "historyCompactionSummary" = ${value as string} WHERE id = ${id}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE threads SET "historyCompactionSummary" = ${row.historyCompactionSummary as string} WHERE id = ${id}`,
+  },
+  {
+    model: "BotEmailMessage",
+    delegate: "botEmailMessage",
+    columns: ["fromAddress", "fromName", "subject", "text"],
+    json: false,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array("fromAddress", "fromName", subject, text) AS values,
+        "spaceId", "botId" AS owner, "searchTokens" IS NOT NULL AS tokens
+      FROM bot_email_messages WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE bot_email_messages SET "fromAddress" = ${row.fromAddress as string},
+        "fromName" = ${row.fromName as string}, subject = ${row.subject as string},
+        text = ${row.text as string}, "searchTokens" = NULL WHERE id = ${id}`,
   },
 ];
 
-function keyIds(table: TableSpec, value: unknown): string[] {
-  if (table.json) return jsonKeyIds(value);
-  const id = ciphertextKeyId(value);
-  return id ? [id] : [];
+function keyIds(table: TableSpec, values: unknown[]): string[] {
+  return values.flatMap((value) => {
+    if (table.json) return jsonKeyIds(value);
+    const id = ciphertextKeyId(value);
+    return id ? [id] : [];
+  });
 }
 
 async function needsWork(
@@ -104,9 +127,11 @@ async function needsWork(
   mode: ContentMigrationMode,
   ring: ContentKeyRing,
 ): Promise<boolean> {
-  const ids = keyIds(table, row.value);
+  const ids = keyIds(table, row.values);
   if (mode === "decrypt") return ids.length > 0 || row.tokens === true;
-  const plaintext = table.json ? jsonNeedsSealing(row.value) : !isCiphertext(row.value);
+  const plaintext = row.values.some((value) =>
+    table.json ? jsonNeedsSealing(value) : !isCiphertext(value),
+  );
   if (plaintext || row.tokens === false) return true;
   if (mode !== "reencrypt" || !row.spaceId) return false;
   const current = await ring.current(row.spaceId);
@@ -185,23 +210,30 @@ async function rewrite(
           where: { id: { in: ids } },
           select: {
             id: true,
-            [table.column]: true,
+            ...Object.fromEntries(table.columns.map((column) => [column, true])),
             ...(table.updatedAt ? { updatedAt: true } : {}),
           },
         },
       ])) as Array<Record<string, unknown> & { id: string }>;
       for (const row of rows) {
-        const value = row[table.column];
-        if (value === null || value === undefined) continue;
+        const columns = table.columns.filter((column) => row[column] != null);
+        if (!columns.length) continue;
         if (mode === "decrypt") {
-          await tx.$executeRaw(table.writePlaintext(row.id, value));
+          // Decrypted text that looks like ciphertext would read as a value under a missing key.
+          const plain = Object.fromEntries(
+            Object.entries(row).map(([column, value]) => [
+              column,
+              typeof value === "string" && ciphertextKeyId(value) ? `\u200b${value}` : value,
+            ]),
+          );
+          await tx.$executeRaw(table.writePlaintext(row.id, { ...plain, id: row.id }));
           continue;
         }
         await Reflect.apply(delegate.update, delegate, [
           {
             where: { id: row.id },
             data: {
-              [table.column]: value,
+              ...Object.fromEntries(columns.map((column) => [column, row[column]])),
               ...(table.updatedAt ? { updatedAt: row.updatedAt } : {}),
             },
             select: { id: true },
@@ -308,6 +340,10 @@ export async function contentEncryptionStatus(
     UNION ALL
     SELECT 'threads', count(*) FILTER (WHERE "historyCompactionSummary" IS NOT NULL),
       count(*) FILTER (WHERE "historyCompactionSummary" NOT LIKE 'rkz1:%') FROM threads
+    UNION ALL
+    SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE NOT (text LIKE 'rkz1:%'
+      AND subject LIKE 'rkz1:%' AND "fromAddress" LIKE 'rkz1:%' AND "fromName" LIKE 'rkz1:%'))
+      FROM bot_email_messages
   `;
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {

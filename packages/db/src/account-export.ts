@@ -299,6 +299,7 @@ async function* spaceRecords(
     hash: string;
     rootArtifactId: string | null;
     version: number;
+    standalone: boolean;
     storageKey: string;
     createdAt: Date;
   }): AccountExportRecord => {
@@ -315,6 +316,7 @@ async function* spaceRecords(
       hash: row.hash,
       rootArtifactId: row.rootArtifactId,
       version: row.version,
+      standalone: row.standalone,
       createdAt: iso(row.createdAt),
     };
   };

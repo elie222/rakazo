@@ -12,8 +12,7 @@ import {
 import { receiveBotEmail } from "./email-inbound.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 const DOMAIN = "bots.test";
 
 describePostgres("bot email addresses (PostgreSQL)", () => {
@@ -160,6 +159,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       key: `<${suffix}@example.test>`,
       from: { address: `colleague-${suffix}@example.test`, name: "" },
       authenticated: true,
+      unauthenticatedReason: null,
       temporaryFailure: false,
       to: [`${helper}@${DOMAIN}`],
       cc: [],
@@ -219,6 +219,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       key: `<${from}-${suffix}>`,
       from: { address: from, name: "" },
       authenticated: false,
+      unauthenticatedReason: "no valid signature from the sender's domain",
       temporaryFailure: false,
       to: [`${helper}@${DOMAIN}`],
       cc: [],
@@ -256,12 +257,13 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     });
     expect(notes).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(thread.unread).toBe(true);
+    await expect(
+      system.threadRead.count({ where: { threadId: thread.id, unread: true } }),
+    ).resolves.toBeGreaterThan(0);
     // Both copies of the owner's message are one inbox entry; the stranger's is another.
-    const saved = await system.botEmailMessage.findMany({
-      where: { botId: target.id },
-      orderBy: { fromAddress: "asc" },
-    });
+    // Sorted after reading: the sender is stored encrypted when content encryption is on.
+    const saved = await system.botEmailMessage.findMany({ where: { botId: target.id } });
+    saved.sort((a, b) => a.fromAddress.localeCompare(b.fromAddress));
     expect(saved.map((row) => [row.fromAddress, row.verified, row.text])).toEqual([
       [email, false, "Your code is 123456"],
       [`stranger-${suffix}@example.test`, false, "Your code is 123456"],

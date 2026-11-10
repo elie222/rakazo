@@ -167,10 +167,16 @@ export function extractReadableText(html: string, url: string): { title: string;
   return stripHtmlFallback(html);
 }
 
+// Readability runs synchronously and slows sharply on element-heavy pages (tens of seconds past
+// tens of thousands of elements), freezing the server. Bigger pages take the linear fallback.
+const MAX_READABILITY_ELEMENTS = 10_000;
+
 function extractWithReadability(html: string, url: string): { title: string; text: string } | null {
   try {
     const dom = new JSDOM(html, { url });
-    const article = new Readability(dom.window.document).parse();
+    const article = new Readability(dom.window.document, {
+      maxElemsToParse: MAX_READABILITY_ELEMENTS,
+    }).parse();
     if (article?.textContent && article.textContent.length > 0) {
       return {
         title: article.title?.trim() || "Untitled",
