@@ -60,12 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     env:
       BRANCH: i18n/catalog-sync
       CHANGED: ${{ needs.extract.outputs.changed }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -77,6 +75,8 @@ jobs:
           path: ${{ runner.temp }}/translation-catalogs
       - name: Push branch and open, or close, the PR
         env:
+          # The workflow token can neither open PRs nor start CI on what it pushes.
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
           # The runner context exists only at step level.
           PATCH_DIR: ${{ runner.temp }}/translation-catalogs
         run: |
@@ -155,9 +155,6 @@ jobs:
           This pull request is rebuilt from main whenever main's web sources change. Fill
           translations here (the workflow then leaves the branch alone until it merges) or in a
           separate pull request after this one merges.
-
-          Opened with the workflow token, so checks do not start on their own: close and
-          reopen it to run CI.
           EOF
           )"
           fi
