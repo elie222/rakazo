@@ -2,3 +2,5 @@ config.env
 installation.env
 secrets.env
 rendered*.yaml
+migration.env
+migration.env.next

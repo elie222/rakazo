@@ -48,6 +48,11 @@ spec:
             secretKeyRef:
               name: rakazo-secrets
               key: DATABASE_MIGRATION_URL
+        - name: RAKAZO_DEPLOYED_MIGRATIONS
+          valueFrom:
+            configMapKeyRef:
+              name: rakazo-migration-state
+              key: RAKAZO_DEPLOYED_MIGRATIONS
         command:
         - node
         - dist/cli/migrate-database.js

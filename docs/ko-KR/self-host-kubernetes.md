@@ -61,6 +61,7 @@ API와 worker가 같은 노드의 데이터 볼륨을 공유하므로, 여러 �
 cd docs/examples/kubernetes
 cp config.env.example config.env
 cp installation.env.example installation.env
+cp migration.env.example migration.env
 ```
 
 `config.env`의 공개 주소를 자신의 도메인으로 바꾸고, 소유자 이메일 두 곳도
@@ -79,6 +80,17 @@ kubectl get endpoints kubernetes -n default -o wide
 TCP 6443을 허용합니다. 포트가 다르면 정책도 바꾸세요. 접속이 안 된다고
 내부 네트워크 전체를 열지는 마세요. 네트워크 플러그인의 Service 주소 변환에
 따라 정책이 확인하는 주소가 달라질 수 있으므로 실제 연결을 확인해야 합니다.
+
+`TRUSTED_PROXIES`도 실제 전달 경로에 맞춰 설정하세요. containerd에서는 기본값만
+쓰면 API가 모든 사용자를 web Pod 하나로 볼 수 있습니다. 그러면 로그인 횟수
+제한을 함께 소비하고 접속 기록에도 프록시 주소가 남습니다.
+예제의 두 **headless Service**는 가상 Service 주소 대신 web과 Traefik의 실제
+Pod 주소를 DNS로 알려 줍니다. selector를 클러스터에 맞추고, `192.0.2.20/32`를
+전달 경로에서 보이는 외부 입구 주소로 바꾸세요. OAuth 프록시나 SNAT 노드 등
+추가 경유지는 확인한 주소만 개별 등록합니다. 내부망 전체나 공유 Pod 대역 전체를
+신뢰하지 마세요. 인터넷 입구는 클라이언트가 임의로 보낸 전달 헤더를 버려야 하고,
+안쪽 프록시는 신뢰하는 앞단에서 온 정보만 받아야 합니다. 공개 전 실제 사용자의
+주소가 세션·보안 기록에 남는지 확인하세요.
 
 다음으로 비밀값을 한 번만 만듭니다.
 [영문 문서의 비밀 파일 생성 코드](../self-host-kubernetes.md#prepare-settings-before-starting-anything)를
@@ -287,6 +299,29 @@ ConfigMap과 Secret 이름은 고정되어 있습니다. 값을 적용해도 실
 환경변수가 저절로 바뀌지는 않습니다. foundation 단계를 적용한 뒤 관련 Deployment를
 재시작하세요. 컴퓨터 설정을 바꿀 때는 먼저 정상 중지해 홈을 저장합니다.
 기존 Pod는 생성 당시 이미지와 자원 제한을 유지합니다.
+
+마이그레이션은 성공했는데 새 앱이 시작되지 않을 수도 있습니다. 데이터베이스는
+새 변경을 봤지만, 아직 실행 중인 옛 앱은 삭제 예정 컬럼이 필요할 수 있습니다.
+그래서 다음 시도에는 단순한 DB 실행 이력과 별개로 **마지막으로 배포를 완료한
+릴리스의 마이그레이션 목록**을 전달해야 합니다.
+
+예제 Job은 `migration.env`에서 만든 `rakazo-migration-state` ConfigMap의
+`RAKAZO_DEPLOYED_MIGRATIONS`를 반드시 읽습니다. 초기 빈 값도 명시적인 값입니다.
+이미 데이터가 있는 DB에서는 지연된 삭제를 보수적으로 계속 보류합니다.
+ConfigMap이나 키가 없으면 보호장치 없이 진행하는 대신 Job이 시작되지 않습니다.
+매 업그레이드마다 예제 파일로 덮어쓰지 마세요.
+
+첫 설치와 이후 업그레이드를 모두 검증하고 옛 API·worker가 종료된 뒤,
+[영문 문서의 배포 목록 기록 코드](../self-host-kubernetes.md#change-configuration-and-recover-deliberately)를
+실행합니다. 현재 실행 중인 API 이미지의 마이그레이션 디렉터리 이름을 읽고,
+명령 성공과 비어 있지 않은 결과를 확인한 후에만 `migration.env`를 교체합니다.
+이전 파일은 해당 릴리스 백업과 함께 보관하세요.
+
+마이그레이션만 성공했거나 앱 배포가 실패했을 때는 이 목록을 갱신하지 않습니다.
+다음 마이그레이션 전에 foundation 단계를 적용해 저장한 목록을 읽힌 뒤 새 이름의
+Job을 실행합니다. 앱 이미지를 롤백하면 해당 릴리스의 목록도 복원하세요.
+목록을 잃었다면 실행 릴리스를 확인할 때까지 명시적인 빈 값을 사용하고,
+환경변수 자체를 빼서 보호장치를 건너뛰지 마세요.
 
 업그레이드 전에는 PostgreSQL, 데이터 볼륨, 암호화 키를 백업하고 복원도 시험하세요.
 [업그레이드 안내](../self-host-upgrading.md)에 따라 worker 작업을 마친 뒤 교체합니다.

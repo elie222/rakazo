@@ -21,6 +21,10 @@ configMapGenerator:
   namespace: rakazo
   envs:
   - installation.env
+- name: rakazo-migration-state
+  namespace: rakazo
+  envs:
+  - migration.env
 secretGenerator:
 - name: rakazo-secrets
   namespace: rakazo

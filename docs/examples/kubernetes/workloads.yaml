@@ -267,3 +267,33 @@ spec:
   ports:
   - port: 5173
     targetPort: 5173
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rakazo-web-peers
+  namespace: rakazo
+  labels:
+    rakazo.example/phase: foundation
+spec:
+  clusterIP: None
+  selector:
+    app: rakazo-web
+  ports:
+  - port: 5173
+    targetPort: 5173
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rakazo-ingress-peers
+  namespace: kube-system
+  labels:
+    rakazo.example/phase: foundation
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: traefik
+  ports:
+  - port: 80
+    targetPort: 8000

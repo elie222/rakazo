@@ -59,6 +59,7 @@ From a checkout of this repository:
 cd docs/examples/kubernetes
 cp config.env.example config.env
 cp installation.env.example installation.env
+cp migration.env.example migration.env
 ```
 
 Edit `config.env`: replace `app.example.com` in all public URL settings and replace
@@ -76,6 +77,18 @@ Set `KUBERNETES_API_CIDR` in `installation.env` to that endpoint's IPv4 `/32`.
 The example permits TCP 6443 to it for API and worker only. Change the port/rules
 if your endpoint differs; do not solve a timeout by allowing the whole private network.
 Your CNI's Service translation can affect which address a policy sees; test it.
+
+Also set `TRUSTED_PROXIES` for the actual forwarding chain. Otherwise, with
+containerd the API can treat every request as coming from the web Pod: unrelated
+users share a sign-in rate-limit bucket and security logs record that proxy.
+The example adds two **headless Services**, whose DNS resolves the web and Traefik
+Pod IPs instead of a virtual Service IP. Keep their selectors aligned with your
+cluster, and replace `192.0.2.20/32` with the edge's actual address as seen in the
+forwarded chain. Add other verified proxy hops, such as an OAuth proxy or SNAT node,
+individually. Do not trust all private ranges or the whole shared Pod network.
+The internet-facing edge must discard client-supplied forwarding headers; configure
+inner proxies to accept forwarding information only from their trusted predecessors.
+Check an actual client IP in session/security records before exposing the service.
 
 Next create independent secrets **once**. This writes a private file without
 printing passwords or placing them in shell arguments. It refuses to overwrite an
@@ -298,6 +311,45 @@ ConfigMaps and Secrets have stable names here. Updating them does not update a
 running process's environment: apply the foundation phase, then restart the affected
 Deployments. Stop computers cleanly first when changing computer settings; an
 existing Pod keeps its creation-time image and limits.
+
+A migration can finish while a new app release fails to start. The database has
+seen the new migration, but the old app may still need the column it proposes to
+drop. Therefore the next attempt must know the **last fully deployed release**,
+not just which migrations have run.
+
+The migration Job always reads `RAKAZO_DEPLOYED_MIGRATIONS` from the dedicated
+`rakazo-migration-state` ConfigMap, generated from `migration.env`. The initial empty
+value is explicit: on a nonempty database it conservatively keeps deferred drops
+held back. A missing ConfigMap/key stops the Job instead of omitting the safeguard.
+Do not replace this file with the empty example on each upgrade.
+
+After initial installation—and after each **fully verified** upgrade with all old
+API/worker instances stopped—record the running release's inventory:
+
+```sh
+# Run in docs/examples/kubernetes. Keep the previous file with the release backup.
+python3 - <<'PYTHON'
+from pathlib import Path
+import subprocess
+script = ('const fs=require("node:fs");'
+          'process.stdout.write(fs.readdirSync("/app/packages/db/prisma/migrations",'
+          '{withFileTypes:true}).filter(e=>e.isDirectory())'
+          '.map(e=>e.name).sort().join(","))')
+inventory = subprocess.check_output([
+    "kubectl", "-n", "rakazo", "exec", "deployment/rakazo-api", "--", "node", "-e", script
+], text=True).strip()
+if not inventory or "\n" in inventory:
+    raise SystemExit("No valid deployed inventory; existing migration.env was preserved")
+Path("migration.env.next").write_text("RAKAZO_DEPLOYED_MIGRATIONS=" + inventory + "\n")
+Path("migration.env.next").replace("migration.env")
+PYTHON
+```
+
+Do not advance this inventory after migration alone or a failed rollout. Before the
+next migration, apply the foundation phase to load the saved inventory, then create
+the newly named migration Job. If rolling back app images, restore the inventory
+belonging to that release too. If the inventory is lost, use an explicit empty value
+until the active release is established; never unset the variable as a shortcut.
 
 For an upgrade, back up PostgreSQL, the data PVC and encryption keys first; test a
 restore. Drain running worker jobs before replacing the worker, as described in
