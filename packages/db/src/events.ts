@@ -14,6 +14,7 @@ import {
   messagingChannelId,
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
+  RUN_REPLY_EVENT,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -152,6 +153,8 @@ export type FinalizeRunInput = FinalizeRunBase &
         outcome: "completed";
         blocks: MessageBlock[];
         markUnread?: boolean;
+        /** A reply kept out of the chat, saved for the run's history instead of as a message. */
+        heldReply?: MessageBlock[];
       }
     | {
         outcome: "failed";
@@ -832,6 +835,18 @@ async function finalizeRunOnce(
         payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
       });
       firstResponse = response.firstResponse;
+    }
+    if (input.outcome === "completed" && input.heldReply?.length) {
+      await appendEventInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        type: RUN_REPLY_EVENT,
+        runId: input.runId,
+        payload: {
+          blocks: completedRunBlocks(input.heldReply, writableRun?.startedAt ?? null, now),
+        },
+      });
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,

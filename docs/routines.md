@@ -25,6 +25,16 @@ bot's **Routines** list. Choose **Create Routine** (the **+**), or click a routi
 Under **Advanced** you can give a routine its own **Model** and **Thinking** level, for example a
 cheaper model for a simple daily check.
 
+### Silent routines
+
+For housekeeping, such as tidying a board, updating memory or a page, or sending an email, turn on
+**Silent** under **Advanced**. Its scheduled and change-triggered runs, and **Run now**, post
+nothing to the chat, mark nothing unread and send no notification when they finish. Each run's
+steps and reply stay in **Run history**: click a run to read them. A silent routine still asks in
+the chat when it needs you, and when a run fails it says so there and notifies you. Runs started by
+a webhook, Git event, email or message still post in the chat, since they start from a message.
+You can also ask the bot for a silent routine.
+
 ## Triggers
 
 ### On a schedule
@@ -77,6 +87,7 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 
 The mobile app lists a bot's routines from its profile. Tap **+** to create one. Tapping a routine
 shows its instruction, schedule, next run and run history, with a switch to pause it and a button to
-test it; **Edit routine** changes its name, instruction and schedules, or deletes it. Webhook, Git event, Slack
+test it; tap a silent run to read its reply. **Edit routine** changes its name, instruction,
+schedules and **Silent**, or deletes it. Webhook, Git event, Slack
 message and change triggers, and a routine's own model, are set up in chat or the web or desktop
 app; mobile shows them and keeps them as they are.

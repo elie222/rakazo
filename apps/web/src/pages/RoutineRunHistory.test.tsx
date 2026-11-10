@@ -30,8 +30,13 @@ vi.mock("@lingui/react/macro", () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw({ raw: parts }, ...values),
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
+  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+    (value === 1 ? one : other).replace("#", String(value)),
 }));
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async () => ({
+  ...(await vi.importActual<typeof import("@rakazo/ui-web/components/ui/collapsible")>(
+    "@rakazo/ui-web/components/ui/collapsible",
+  )),
   Button: ({
     size: _size,
     variant: _variant,
@@ -235,6 +240,38 @@ it("says when a scheduled run started late, and only then", async () => {
       "Started 3d late",
       undefined,
     ]);
+  } finally {
+    await view.close();
+  }
+});
+
+it("opens a silent run's steps and reply in place instead of linking to the chat", async () => {
+  routines.history.mockResolvedValue(
+    page([
+      {
+        ...run,
+        // The run asked something on the way; its reply still lives in the history.
+        messageId: "ask-1",
+        reply: [
+          { kind: "steps", steps: [{ label: "Read the board", count: 2 }], durationMs: 4_000 },
+          { kind: "text", text: "Archived **3** done tickets." },
+        ],
+      },
+    ]),
+  );
+  const view = await mounted();
+  try {
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
+    expect(view.container.querySelector("a")).toBeNull();
+    expect(view.rows()[0]?.textContent).not.toContain("No reply");
+    const toggle = view.rows()[0]!.querySelector("button")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(view.container.querySelector('[data-testid="routine-run-reply"]')).toBeNull();
+    await act(async () => toggle.click());
+    await view.settled(() => expect(toggle.getAttribute("aria-expanded")).toBe("true"));
+    const reply = view.container.querySelector('[data-testid="routine-run-reply"]');
+    expect(reply?.textContent).toContain("Archived 3 done tickets.");
+    expect(reply?.textContent).toContain("2 tools");
   } finally {
     await view.close();
   }

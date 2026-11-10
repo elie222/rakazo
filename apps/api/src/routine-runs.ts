@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { Actor, RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
-import { ROUTINE_HISTORY_PAGE_SIZE } from "@rakazo/contracts";
-import { runFailureError } from "@rakazo/core";
+import { MessageBlock, ROUTINE_HISTORY_PAGE_SIZE } from "@rakazo/contracts";
+import { RUN_REPLY_EVENT, runFailureError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 
@@ -70,6 +70,25 @@ export async function listRoutineRuns(
       `)
     : [];
   const replyByRun = new Map(messages.map((message) => [message.runId, message.id]));
+  // A silent run kept its reply out of the chat; the history is where it shows.
+  const heldReplies = runs.length
+    ? await prisma.event.findMany({
+        where: {
+          spaceId: actor.spaceId,
+          type: RUN_REPLY_EVENT,
+          runId: { in: runs.map((run) => run.id) },
+        },
+        select: { runId: true, payload: true },
+      })
+    : [];
+  const heldReplyByRun = new Map(
+    heldReplies.flatMap((event) => {
+      const blocks = MessageBlock.array().safeParse(
+        (event.payload as { blocks?: unknown } | null)?.blocks,
+      );
+      return event.runId && blocks.success ? [[event.runId, blocks.data] as const] : [];
+    }),
+  );
   return {
     nextCursor,
     runs: runs.map((run) => ({
@@ -83,6 +102,7 @@ export async function listRoutineRuns(
       lateSince: run.lateSince?.toISOString() ?? null,
       completedAt: run.completedAt?.toISOString() ?? null,
       messageId: replyByRun.get(run.id) ?? null,
+      ...(heldReplyByRun.has(run.id) ? { reply: heldReplyByRun.get(run.id) } : {}),
     })),
   };
 }

@@ -1481,6 +1481,8 @@ model Routine {
   timezone       String    @default("UTC")
   active         Boolean   @default(false)
   notify         Boolean   @default(true)
+  /// Runs it starts itself post nothing to the chat; each keeps its reply for the run history.
+  silent         Boolean   @default(false)
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?

@@ -49,6 +49,7 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     crons: input.crons,
     timezone: input.timezone,
     notify: input.notify,
+    silent: input.silent,
     active: input.active,
     webhookEnabled: input.webhookEnabled,
     githubEnabled: input.githubEnabled,
@@ -87,6 +88,7 @@ export function mapRoutine(row: {
   timezone: string;
   active: boolean;
   notify: boolean;
+  silent: boolean;
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
@@ -109,6 +111,7 @@ export function mapRoutine(row: {
     timezone: row.timezone,
     active: row.active,
     notify: row.notify,
+    silent: row.silent,
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,
@@ -182,13 +185,17 @@ export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
   return `routine-run:${actor.userId}:${clientNonce}`;
 }
 
-/** Task + run commit together; a run already saved under the nonce fails the insert. */
+/**
+ * Task + run commit together; a run already saved under the nonce fails the insert. Run now runs
+ * the routine as it is set up, silent or not; a routine named in a chat message answers there.
+ */
 export async function createRoutineTestRun(
   tx: Prisma.TransactionClient,
   actor: Actor,
   target: Awaited<ReturnType<typeof routineTestTarget>>,
   prompt: string,
   nonce: string | undefined,
+  trigger = "routine",
 ) {
   const { routine, botId, threadId } = target;
   const task = await tx.task.create({
@@ -214,7 +221,7 @@ export async function createRoutineTestRun(
       taskId: task.id,
       userId: actor.userId,
       status: "queued",
-      trigger: "routine",
+      trigger,
       routineId: routine.id,
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,

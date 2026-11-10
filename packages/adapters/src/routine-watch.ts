@@ -690,7 +690,7 @@ export type RoutineWatchTickDeps = RoutineWatchDeps & {
   jobs: JobPublisher;
 };
 
-type TickRoutine = RoutineWatchTarget & { name: string };
+type TickRoutine = RoutineWatchTarget & { name: string; silent?: boolean };
 
 export type RoutineWatchTick =
   | { run: false }
@@ -753,7 +753,7 @@ export async function tickRoutineWatch(
     });
     if (paused.count === 1) {
       await deps.jobs.cancel(routineJobKey(routine.id)).catch(() => undefined);
-      await postRoutineWatchMessage(deps, {
+      await postRoutineMessage(deps, {
         spaceId: routine.spaceId,
         ...target,
         role: "bot",
@@ -779,8 +779,8 @@ export async function tickRoutineWatch(
     data: { nextRunAt, watchState: outcome.state },
   });
   if (claimed.count !== 1) return { run: false };
-  if (watch.loud) {
-    await postRoutineWatchMessage(deps, {
+  if (watch.loud && !routine.silent) {
+    await postRoutineMessage(deps, {
       spaceId: routine.spaceId,
       ...target,
       role: "system",
@@ -795,7 +795,7 @@ export async function tickRoutineWatch(
 }
 
 /** A line in the routine's thread without a model run. */
-export async function postRoutineWatchMessage(
+export async function postRoutineMessage(
   deps: Pick<RoutineWatchDeps, "prisma" | "events">,
   input: {
     spaceId: string;

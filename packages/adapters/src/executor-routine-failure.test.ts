@@ -12,12 +12,19 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+import type * as RoutineWatchModule from "./routine-watch.js";
+import { postRoutineMessage } from "./routine-watch.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
+}));
+
+vi.mock("./routine-watch.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof RoutineWatchModule>()),
+  postRoutineMessage: vi.fn(async () => undefined),
 }));
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
@@ -66,7 +73,7 @@ async function failRun(scenario: Scenario) {
     userId: "user-1",
     status: "queued",
     trigger,
-    routineId: trigger === "routine" ? "routine-1" : null,
+    routineId: trigger === "routine" || trigger === "silent_routine" ? "routine-1" : null,
     retryOfRunId: scenario.retryOfRunId ?? null,
     clientNonce: scenario.clientNonce ?? null,
     lateSince: scenario.lateSince ?? null,
@@ -119,6 +126,7 @@ async function failRun(scenario: Scenario) {
       findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean } }) => {
         if (scenario.lateLookupFails && select?.crons) throw new Error("lookup unavailable");
         return {
+          name: "Inbox sweep",
           crons:
             scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
               ? ["0 * * * *"]
@@ -299,6 +307,7 @@ const overloaded = () =>
 
 beforeEach(() => {
   vi.mocked(countUnreadInboxChats).mockReset().mockResolvedValue(0);
+  vi.mocked(postRoutineMessage).mockClear();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
 });
@@ -358,6 +367,50 @@ describe("routine failure notifications", () => {
     });
 
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("silent routine failures", () => {
+  const failureLine = {
+    spaceId: "space-1",
+    threadId: "thread-1",
+    botId: "bot-1",
+    role: "bot",
+    text: "The **Inbox sweep** routine failed: Invalid API key",
+  };
+
+  it("say so in the chat the run kept quiet in, and notify as any routine does", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      trigger: "silent_routine",
+    });
+    expect(postRoutineMessage).toHaveBeenCalledExactlyOnceWith(expect.anything(), failureLine);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure", title: "Assistant failed" }),
+      expect.anything(),
+    );
+  });
+
+  it("still show in the chat when the routine sends no notifications", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      trigger: "silent_routine",
+      routineNotify: false,
+    });
+    expect(postRoutineMessage).toHaveBeenCalledExactlyOnceWith(expect.anything(), failureLine);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("retry a transient failure first, saying nothing until the retry gives up", async () => {
+    const { retries, send } = await failRun({ error: overloaded(), trigger: "silent_routine" });
+    expect(retries).toHaveLength(1);
+    expect(postRoutineMessage).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("leave a loud routine's failure to the chat's own failure state", async () => {
+    await failRun({ error: new Error("Invalid API key") });
+    expect(postRoutineMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -576,6 +629,7 @@ describe("backing off a routine after its model connection refuses it", () => {
 });
 
 interface RetryScenario {
+  trigger?: string;
   status?: string;
   retryOfRunId?: string | null;
   active?: boolean;
@@ -607,7 +661,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     taskId: "task-1",
     userId: "user-1",
     status: scenario.status ?? "failed",
-    trigger: "routine",
+    trigger: scenario.trigger ?? "routine",
     routineId: "routine-1",
     retryOfRunId: scenario.retryOfRunId ?? null,
     modelProvider: "routine-provider",
@@ -671,6 +725,7 @@ function retryHarness(scenario: RetryScenario = {}) {
         scenario.missingRoutine
           ? null
           : {
+              name: "Inbox sweep",
               notify: scenario.routineNotify ?? true,
               active: scenario.active ?? true,
               userId: scenario.routineOwner ?? "user-1",
@@ -709,6 +764,7 @@ describe("running a routine retry", () => {
       const error = new Error("temporarily unavailable");
       if (failure === "preference lookup") {
         prisma.routine.findUnique.mockResolvedValueOnce({
+          name: "Inbox sweep",
           notify: true,
           active: false,
           userId: "user-1",
@@ -858,6 +914,35 @@ describe("running a routine retry", () => {
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("retries a silent routine's run as a silent run", async () => {
+    const { executor, tx } = retryHarness({ trigger: "silent_routine" });
+
+    await executor.retryRoutineRun("run-1");
+
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ trigger: "silent_routine", retryOfRunId: "run-1" }),
+    });
+    expect(postRoutineMessage).not.toHaveBeenCalled();
+  });
+
+  it("says in the chat when a silent routine's retry is abandoned", async () => {
+    const { executor, send } = retryHarness({ trigger: "silent_routine", active: false });
+
+    await executor.retryRoutineRun("run-1");
+
+    expect(postRoutineMessage).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      role: "bot",
+      text: `The **Inbox sweep** routine failed: ${overloaded().message}`,
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ kind: "failure" }),
+      expect.anything(),
+    );
   });
 
   it("queues one new run of the routine that points at the failed run", async () => {

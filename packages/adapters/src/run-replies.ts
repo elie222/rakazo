@@ -3,6 +3,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   isBackgroundRunTrigger,
   isConversationalRun,
+  SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
 import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength } from "./user-progress.js";
@@ -38,6 +39,8 @@ export function runPromotesMidTurnNarration(trigger: string): boolean {
 export const TICKET_SILENT_REPLY_GUIDANCE =
   "Ticket work is reported on the board, not in chat. Put updates and results in ticket_comment and keep the ticket status current with ticket_update. Use the existing ask or approval mechanism when user input is needed. Leave the final reply empty.";
 
+export const SILENT_ROUTINE_REPLY_GUIDANCE = `This routine runs silently: nothing you write reaches the chat. Do the work with your tools, and use the existing ask or approval mechanism only when you need the person. End with a short summary of what you did; it is kept in the routine's run history. If there was nothing to do, the entire final reply may be exactly ${NO_RESPONSE}.`;
+
 /**
  * Messages mode only where a person waits on the reply and the bot can message them; every
  * other run keeps chat mode. A background helper cannot message anyone: its result goes back
@@ -61,6 +64,7 @@ export function runReplyMode(
 export function runReplyGuidance(trigger: string, replyMode: ReplyMode = "chat"): string {
   if (replyMode === "messages") return messagesModeReplyGuidance();
   if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
+  if (trigger === SILENT_ROUTINE_TRIGGER) return SILENT_ROUTINE_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
   return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : longWorkProgressGuidance();
 }

@@ -110,6 +110,24 @@ it("sends on/off only when the save changes it", async () => {
   expect(update.mock.calls[1]![0]).toMatchObject({ active: false });
 });
 
+it("sends silent only when the save changes it, and opens a silent routine as silent", async () => {
+  update.mockResolvedValueOnce(routine).mockResolvedValueOnce({ ...routine, silent: true });
+  act(() => editor.editRoutine(routine));
+  expect(editor.editorProps!.draft.silent).toBe(false);
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, name: "Renamed" }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("silent");
+
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, silent: true }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[1]![0]).toMatchObject({ silent: true });
+  expect(editor.editorProps!.draft.silent).toBe(true);
+});
+
 it("shows a revealed webhook secret only for the bot it belongs to", async () => {
   let finishRotate!: (result: { secret: string }) => void;
   rotateWebhookSecret.mockImplementation(() => new Promise((resolve) => (finishRotate = resolve)));

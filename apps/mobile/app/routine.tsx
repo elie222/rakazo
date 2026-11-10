@@ -549,6 +549,17 @@ function RoutineEditor({
           onRemove={() => update({ emailSenders: null })}
         />
       ) : null}
+      {/* Event triggers post their delivery in the chat, so silence applies only to runs it starts. */}
+      {draft.silent || draft.schedules.length > 0 || kept?.watch ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="silent"
+            label={t("Silent")}
+            value={draft.silent}
+            onChange={(silent) => update({ silent })}
+          />
+        </SettingsGroup>
+      ) : null}
       {base ? (
         <SettingsGroup>
           <SettingsRow

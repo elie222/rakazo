@@ -176,6 +176,7 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ b
 vi.mock("./native", () => ({
   native: color,
   useMobileTokens: () => color,
+  useResolvedAppearance: () => "light",
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => color }));
@@ -1181,6 +1182,23 @@ describe("routine detail", () => {
     expect(container.textContent).not.toContain("Run history");
   });
 
+  it("offers Silent in the form once the routine runs on its own", async () => {
+    const silent = () => container.querySelector<HTMLInputElement>('input[aria-label="Silent"]');
+    await render(createElement(RoutineDetail));
+    await act(async () => button("Edit routine").click());
+    // Without a schedule or a change check nothing would be silent.
+    expect(silent()).toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    profileRpc(async () => [routine("r1", "Morning digest", { crons: ["0 9 * * *"] })]);
+    await render(createElement(RoutineDetail));
+    await act(async () => button("Edit routine").click());
+    expect(silent()?.checked).toBe(false);
+    await act(async () => silent()!.click());
+    expect(silent()?.checked).toBe(true);
+  });
+
   it("opens the run history from its row", async () => {
     await render(createElement(RoutineDetail));
     button("Run history").click();
@@ -1253,6 +1271,42 @@ describe("routine detail", () => {
     });
     await act(async () => rows[2]!.click());
     expect(container.querySelector("dialog")?.textContent).toBe("504: timed out");
+  });
+
+  it("opens a silent run's reply, which it kept out of the chat", async () => {
+    profileRpc(async () => [routine("r1", "Morning digest")], {
+      history: async () => ({
+        runs: [
+          {
+            id: "run-1",
+            botId: "bot-fixture",
+            groupId: null,
+            status: "completed",
+            error: null,
+            createdAt: "2026-01-02T12:00:00Z",
+            startedAt: "2026-01-02T12:00:00Z",
+            completedAt: "2026-01-02T12:01:22Z",
+            messageId: null,
+            reply: [
+              { kind: "steps", steps: [{ label: "Read the board", count: 2 }] },
+              { kind: "text", text: "Archived **3** done tickets." },
+            ],
+          },
+        ],
+        nextCursor: null,
+      }),
+    });
+    await render(createElement(RoutineRuns));
+    expect(container.textContent).not.toContain("No reply");
+    const row = [...container.querySelectorAll("button")].find((node) =>
+      node.textContent?.includes("Jan 2,"),
+    );
+    await act(async () => row!.click());
+    expect(alert).toHaveBeenLastCalledWith(
+      expect.stringContaining("Jan 2,"),
+      "Archived 3 done tickets.\n\n✓ Read the board ×2",
+    );
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("loads older runs a page at a time", async () => {

@@ -6,6 +6,7 @@ import {
   isBackgroundRunTrigger,
   plainTextFromMarkdown,
   redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
   truncatedPlainText,
   truncatePlainText,
 } from "@rakazo/core";
@@ -72,9 +73,14 @@ export async function notifyRun(
   message: NotificationMessage,
   options: { retryOnFailure?: boolean } = {},
 ) {
+  // Background work speaks up only when it needs the person; a silent routine also when it failed.
+  const needsPerson =
+    message.kind === "help" ||
+    message.kind === "takeover" ||
+    (message.kind === "failure" && run.trigger === SILENT_ROUTINE_TRIGGER);
   if (
     (!deps.notifications && !deps.events.publishChatAlert) ||
-    (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
+    (isBackgroundRunTrigger(run.trigger) && !needsPerson)
   )
     return;
   const routineId = message.kind === "failure" ? run.routineId : null;

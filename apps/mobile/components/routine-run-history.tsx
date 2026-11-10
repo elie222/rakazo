@@ -2,11 +2,11 @@ import type { RoutineRun } from "@rakazo/contracts";
 import { formatRoutineRunAt } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator } from "react-native";
+import { ActivityIndicator, Alert } from "react-native";
 import { activityStatusLabel, routineRunLateLabel } from "../lib/activity";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
-import { routineRunDestination, useRoutineRuns } from "../lib/routine-runs";
+import { routineRunDestination, routineRunReplyText, useRoutineRuns } from "../lib/routine-runs";
 import { NativeActionButton } from "./native-action-button";
 import { RunErrorSheet, useRunError } from "./run-error-sheet";
 import { SettingsGroup, SettingsRow } from "./settings-group";
@@ -18,7 +18,7 @@ export function RoutineRunHistory({
   routineId: string;
   botName: string | undefined;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const history = useRoutineRuns(routineId);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -47,17 +47,21 @@ export function RoutineRunHistory({
           history.runs.map((run) => {
             const destination = routineRunDestination(run, botName);
             const error = run.status === "failed" ? run.error : null;
+            // A silent run kept its reply out of the chat, so it opens here.
+            const reply = routineRunReplyText(run.reply);
             return (
               <RunRow
                 key={run.id}
                 run={run}
                 error={error}
                 onPress={
-                  destination
-                    ? () => router.push(destination)
-                    : error
-                      ? () => setErrorDetails(error)
-                      : undefined
+                  reply
+                    ? () => Alert.alert(formatRoutineRunAt(run, dateLocaleForUi(locale)), reply)
+                    : destination
+                      ? () => router.push(destination)
+                      : error
+                        ? () => setErrorDetails(error)
+                        : undefined
                 }
               />
             );
@@ -101,7 +105,7 @@ function RunRow({
       value={
         run.status !== "completed"
           ? activityStatusLabel(run.status)
-          : run.messageId
+          : run.messageId || run.reply?.length
             ? undefined
             : t("No reply")
       }

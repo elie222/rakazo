@@ -118,6 +118,74 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await captureScreenshot(page, testInfo, "35-routine-run-persisted");
 });
 
+test("a silent routine runs without posting to the chat and keeps its reply in the run history", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-silent-${stamp}@rakazo.test`, "password12", "Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await openBotPanelTab(page, "Routines");
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Board tidy");
+  await page
+    .locator("label:has-text('Instruction') textarea")
+    .fill("write silent-routine-ok into the durable task result");
+  const advanced = page.getByRole("button", { name: "Advanced", exact: true });
+  const silent = page.getByRole("switch", { name: "Silent", exact: true });
+  // Silence covers the runs a routine starts itself, so it shows once there is a schedule.
+  await advanced.click();
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
+  await expect(silent).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "On a schedule" }).hover();
+  await page.getByRole("menuitem", { name: "Every day", exact: true }).click();
+  await advanced.click();
+  await expect(silent).not.toBeChecked();
+  await silent.click();
+  await expect(silent).toBeChecked();
+  await captureScreenshot(page, testInfo, "routine-silent-switch");
+  await page.keyboard.press("Escape");
+
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+  );
+  await page.getByRole("button", { name: "Save" }).click();
+  expect((await saved).request().postDataJSON().json).toMatchObject({ silent: true });
+  await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
+    (item) => item.name === "Board tidy",
+  );
+  expect(created?.silent).toBe(true);
+
+  const runs = async () =>
+    (await rpc<RoutineHistory>(page, "routines/history", { routineId: created?.id })).runs;
+  await page.getByRole("button", { name: "Run now" }).click();
+  await expect
+    .poll(async () => (await runs()).map((run) => run.status), { timeout: 30_000 })
+    .toEqual(["completed"]);
+  const [run] = await runs();
+  expect(run?.messageId).toBeNull();
+  expect(JSON.stringify(run?.reply)).toMatch(/silent-routine-ok/i);
+  // Nothing of the run reached the chat, live or after a reload.
+  const transcript = page.getByTestId("transcript");
+  await expect(transcript.getByText(/silent-routine-ok/i)).toHaveCount(0);
+
+  const history = page.getByTestId("routine-run-history");
+  const row = history.getByTestId("routine-run-row");
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await expect(row.getByRole("link")).toHaveCount(0);
+  await row.getByRole("button").click();
+  await expect(history.getByTestId("routine-run-reply")).toContainText(/silent-routine-ok/i);
+  await captureScreenshot(page, testInfo, "routine-silent-run-history");
+
+  await page.reload();
+  await expect(page.getByTestId("transcript")).toBeVisible();
+  await expect(page.getByTestId("transcript").getByText(/silent-routine-ok/i)).toHaveCount(0);
+});
+
 test("a routine run that failed to start shows the error in Details", async ({
   page,
 }, testInfo) => {

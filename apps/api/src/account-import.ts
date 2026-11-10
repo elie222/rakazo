@@ -778,6 +778,7 @@ class AccountImporter implements ArchiveSink {
             // Nothing fires on the new install until its owner turns the routine on.
             active: false,
             notify: record.notify,
+            silent: record.silent ?? false,
             messageProvider: record.messageProvider,
             modelProvider: record.modelProvider,
             modelId: record.modelId,

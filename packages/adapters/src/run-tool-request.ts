@@ -1,6 +1,6 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { isRoutineRunTrigger, redactSecrets } from "@rakazo/core";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
@@ -588,7 +588,7 @@ async function prepareOwnBotUpdate(
     return { error: "Instructions cannot contain credentials." };
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
-  if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
+  if (run.trigger !== "created" && !isRoutineRunTrigger(run.trigger) && !ctx.source.ownerStartedRun)
     return { error: "Instruction changes are blocked for runs someone else started." };
   if (Object.keys(args).some((key) => key !== "instructions"))
     return { error: "Change your instructions in their own update_bot call." };

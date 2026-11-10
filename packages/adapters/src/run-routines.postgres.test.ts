@@ -103,6 +103,38 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     expect(run).toMatchObject({ modelProvider: "prov-b", modelId: "model-B", modelPinned: true });
   });
 
+  it("starts a silent routine's tick as a silent run", async () => {
+    const dueAt = new Date(Date.now() - 60_000);
+    const routine = await system.routine.create({
+      data: {
+        ...identity,
+        name: "board tidy",
+        prompt: "Archive done tickets",
+        crons: ["* * * * *"],
+        active: true,
+        silent: true,
+        nextRunAt: dueAt,
+      },
+    });
+    const executor = createRunExecutor({
+      prisma: system,
+      jobs: {
+        enqueue: async () => undefined,
+        cancel: async () => undefined,
+        close: async () => undefined,
+      },
+      events: {
+        append: (input: Parameters<typeof appendEvent>[1]) => appendEvent(system, input),
+        notify: async () => undefined,
+      },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.wakeRoutine(routine.id, dueAt.toISOString());
+
+    const run = await system.run.findFirstOrThrow({ where: { routineId: routine.id } });
+    expect(run.trigger).toBe("silent_routine");
+  });
+
   it("runs no routine in a Space that is being deleted", async () => {
     const dueAt = new Date(Date.now() - 60_000);
     const routine = await system.routine.create({

@@ -54,7 +54,7 @@ describePostgres("routine timer coalescing (PostgreSQL)", () => {
         active: true,
       },
     });
-    const config = { ...identity, routineId: routine.id, prompt: "fixture" };
+    const config = { ...identity, trigger: "routine", routineId: routine.id, prompt: "fixture" };
     async function create(tx: Prisma.TransactionClient, clientNonce: string | null) {
       const task = await tx.task.create({
         data: { ...identity, prompt: "fixture", status: "queued" },
@@ -86,6 +86,15 @@ describePostgres("routine timer coalescing (PostgreSQL)", () => {
     const results = await Promise.all([tick(1), tick(2)]);
     expect(results[0]!.id).toBe(results[1]!.id);
     expect(await system.run.count({ where: { routineId: routine.id } })).toBe(1);
+  });
+  it("never folds a tick into a pending run of the other loudness", async () => {
+    const { routine, config, create } = await fixture();
+    await system.$transaction((tx) => create(tx, routineTimerNonce(routine.id, "tick-loud")));
+    expect(
+      await system.$transaction((tx) =>
+        findPendingRoutineTick(tx, { ...config, trigger: "silent_routine" }),
+      ),
+    ).toBeNull();
   });
   it("preserves ambiguous legacy runs even with scheduled firing events", async () => {
     const { config, create } = await fixture();

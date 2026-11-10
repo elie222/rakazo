@@ -244,6 +244,12 @@ describe("tickRoutineWatch", () => {
     });
   });
 
+  it("posts no 'no changes' line for a silent routine, even when loud", async () => {
+    const { deps, routine, messages } = setup({ data: { changes: [] } }, { loud: true });
+    await tickRoutineWatch(deps, { ...routine, silent: true }, target, scheduledAt);
+    expect(messages).toHaveLength(0);
+  });
+
   it.each([false, undefined])(
     "refuses a tool with readOnly %s without executing it",
     async (readOnly) => {
