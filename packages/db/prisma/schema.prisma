@@ -51,6 +51,8 @@ model User {
   byokTrialCheckoutExpiresAt      DateTime?
   /// Set while the account may not sign in or run work; its content stays. Cleared to reactivate.
   deactivatedAt               DateTime?
+  /// Operator-set lifetime hosted model usage ceiling, including pending reservations.
+  modelCreditCapMicros        BigInt?
   sessions                    Session[]
   accounts                    Account[]
   scimSubject                 ScimSubject?

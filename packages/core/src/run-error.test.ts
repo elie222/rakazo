@@ -12,6 +12,7 @@ import {
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDIT_CAP_REACHED_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
@@ -471,6 +472,13 @@ describe("normalizeRunError", () => {
         details,
         kind: "output",
         recovery: "model",
+      });
+    });
+
+    it("shows an operator cap without suggesting buying credits or changing connections", () => {
+      expect(normalizeRunError(MODEL_CREDIT_CAP_REACHED_ERROR)).toEqual({
+        summary: MODEL_CREDIT_CAP_REACHED_ERROR,
+        details: MODEL_CREDIT_CAP_REACHED_ERROR,
       });
     });
 
