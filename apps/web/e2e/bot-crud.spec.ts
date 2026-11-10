@@ -109,8 +109,9 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await page.clock.runFor(50);
   const focusResponse = await (await nextListRequest).response();
   expect(focusResponse).not.toBeNull();
+  expect(focusResponse?.ok()).toBe(true);
   // The response resolves on headers; the roster applies only once the body has arrived.
-  await focusResponse?.finished();
+  expect(await focusResponse?.finished()).toBeNull();
   await page.clock.resume();
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
