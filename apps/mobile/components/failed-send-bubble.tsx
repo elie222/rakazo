@@ -1,7 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import { isModelRequiredSendError } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import { ActionSheetIOS, Alert, Image, Platform, Pressable, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
+import { Alert, Image, Platform, Pressable, Text, View } from "react-native";
+import { showIOSActionSheet } from "../lib/ios-action-sheet";
 import { openModelSettings } from "../lib/model-settings";
 import { useMobileTokens } from "../lib/native";
 import type { SendAttempt } from "../lib/thread-feedback";
@@ -23,7 +24,7 @@ export function FailedSendBubble({
   needsModel?: boolean;
   userBubble?: UserBubble;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = withUserBubble(useMobileTokens(), userBubble);
   const { payload, state } = attempt;
   const sending = state === "pending";
@@ -32,14 +33,14 @@ export function FailedSendBubble({
   const modelRequired = isModelRequiredSendError(attempt.error) && needsModel !== false;
   // A missing model isn't fixed by retrying, so the caption names the cause instead.
   const caption = sending
-    ? t("Sending…")
+    ? t`Sending…`
     : attempt.imageConfirmation
-      ? t("Not sent. Tap for options")
+      ? t`Not sent. Tap for options`
       : modelRequired
-        ? t("Not sent. No model")
+        ? t`Not sent. No model`
         : retryable
-          ? t("Not sent. Tap to retry")
-          : t("Not sent");
+          ? t`Not sent. Tap to retry`
+          : t`Not sent`;
   const messageLabel = [payload.displayText, ...payload.attachments.map(({ name }) => name)]
     .filter(Boolean)
     .join(", ");
@@ -47,11 +48,11 @@ export function FailedSendBubble({
 
   function showActions(manage = true) {
     const actions = [
-      ...(modelRequired ? [{ text: t("Add model"), onPress: openModelSettings }] : []),
+      ...(modelRequired ? [{ text: t`Add model`, onPress: openModelSettings }] : []),
       ...(attempt.imageConfirmation
         ? [
             {
-              text: t("Send as file"),
+              text: t`Send as file`,
               onPress: () => {
                 attempt.imageHandling = "file";
                 onRetry();
@@ -61,26 +62,26 @@ export function FailedSendBubble({
         : []),
       // Retrying can't help until a model is added; tapping the bubble still retries.
       ...(retryable && !modelRequired && !attempt.imageConfirmation
-        ? [{ text: t("Try again"), onPress: onRetry }]
+        ? [{ text: t`Try again`, onPress: onRetry }]
         : []),
       ...(attempt.imageConfirmation && !manage
-        ? [{ text: t("Try again"), onPress: onRetry }]
-        : [{ text: t("Delete"), style: "destructive" as const, onPress: onDelete }]),
+        ? [{ text: t`Try again`, onPress: onRetry }]
+        : [{ text: t`Delete`, style: "destructive" as const, onPress: onDelete }]),
     ];
     // No header for a missing-model failure: Add model says it, and once connected it's stale.
     // A file choice must not suggest the model will understand the picture.
     const message = isModelRequiredSendError(attempt.error)
       ? undefined
       : attempt.imageConfirmation
-        ? [attempt.error, t("The bot can use the file but won't see the picture.")]
+        ? [attempt.error, t`The bot can use the file but won't see the picture.`]
             .filter(Boolean)
             .join("\n\n")
         : attempt.error;
     if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
+      showIOSActionSheet(
         {
           message,
-          options: [...actions.map((action) => action.text), t("Cancel")],
+          options: [...actions.map((action) => action.text), t`Cancel`],
           destructiveButtonIndex:
             attempt.imageConfirmation && !manage ? undefined : actions.length - 1,
           cancelButtonIndex: actions.length,
@@ -89,7 +90,7 @@ export function FailedSendBubble({
       );
     } else {
       // Android supports three buttons; the sheet can also be dismissed outside it.
-      Alert.alert(caption, message, [...actions, { text: t("Cancel"), style: "cancel" as const }], {
+      Alert.alert(caption, message, [...actions, { text: t`Cancel`, style: "cancel" as const }], {
         cancelable: true,
       });
     }
@@ -99,7 +100,7 @@ export function FailedSendBubble({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={messageLabel ? `${messageLabel}. ${caption}` : caption}
-      accessibilityHint={sending ? undefined : t("Long press to delete")}
+      accessibilityHint={sending ? undefined : t`Long press to delete`}
       accessibilityState={{ disabled: sending }}
       disabled={sending}
       onPress={

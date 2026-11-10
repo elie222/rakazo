@@ -27,6 +27,8 @@ export function countUnreadInboxChats(
       JOIN member_spaces m ON m."spaceId" = t."spaceId"
       JOIN thread_reads r ON r."threadId" = t.id AND r."userId" = ${userId}
       WHERE r.unread
+        -- A snoozed chat leaves the inbox until it wakes, so it doesn't count either.
+        AND (r."snoozedUntil" IS NULL OR r."snoozedUntil" <= now())
         AND t."externalConversationId" IS NULL
         AND (
           EXISTS (SELECT 1 FROM bots b WHERE b.id = t."botId"

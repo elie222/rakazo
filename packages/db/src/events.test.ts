@@ -539,7 +539,10 @@ describe("thread lock transaction budget", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
@@ -2501,7 +2504,7 @@ describe("answerWaitingRunWithTextInTransaction", () => {
   });
 });
 
-describe("answerRunInput", () => {
+describe("answerRunInput approvals", () => {
   it("approves consequential actions without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {
@@ -5220,7 +5223,10 @@ describe("clearThread", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -5272,7 +5278,10 @@ describe("clearThread", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -5365,7 +5374,10 @@ describe("clearThread", () => {
     const fanout = new TestFanout();
     const tx = {
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => [{ id: "group-1" }]),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
@@ -5443,13 +5455,17 @@ describe("clearThread", () => {
 });
 
 describe("appendEvent", () => {
+  const inserted = (seq: number, runId: string | null = "run-1") => ({
+    id: `event-${seq}`,
+    seq,
+    createdAt: new Date("2026-08-15T12:00:00.000Z"),
+    runId,
+    firstResponse: false,
+  });
+  const statementValues = (queryRaw: ReturnType<typeof vi.fn>) =>
+    JSON.stringify(queryRaw.mock.calls[0]!.slice(1));
+
   it("exports only committed run metadata and a coarse error kind, never error text", async () => {
-    const created = { ...event(4), type: "run.failed", runId: "run-1" };
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "failed" }) },
-      event: { create: vi.fn().mockResolvedValue(created) },
-    };
     const at = new Date("2026-01-01T00:00:00Z");
     const run = {
       userId: "user-1",
@@ -5461,40 +5477,39 @@ describe("appendEvent", () => {
     };
     const prisma = {
       run: { findUnique: vi.fn().mockResolvedValue(run) },
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      $queryRaw: vi.fn().mockResolvedValue([inserted(4)]),
     } as unknown as PrismaClient;
     const analytics = { capture: vi.fn(), flush: async () => undefined };
-    await appendEvent(
-      prisma,
-      {
-        spaceId: "workspace-1",
-        threadId: "thread-1",
-        botId: "bot-1",
-        type: "run.failed",
-        runId: "run-1",
-        payload: { error: run.error },
-      },
-      undefined,
-      analytics,
-    );
+    const input = {
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      type: "run.failed" as const,
+      runId: "run-1",
+      payload: { error: run.error },
+    };
+    await appendEvent(prisma, input, undefined, analytics);
+    await vi.waitFor(() => expect(analytics.capture).toHaveBeenCalledTimes(1));
     expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
       "user-1",
       { name: "run_failed", trigger: "user", errorKind: "auth" },
       { id: "run-1", at },
     );
     expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("private@example.test");
-    expect(prisma.run.findUnique).toHaveBeenCalledExactlyOnceWith({
-      where: { id: "run-1" },
-      select: {
-        userId: true,
-        trigger: true,
-        error: true,
-        startedAt: true,
-        completedAt: true,
-        createdAt: true,
-      },
-    });
     vi.mocked(prisma.run.findUnique).mockRejectedValueOnce(new Error("db unavailable"));
+    await expect(
+      appendEvent(prisma, { ...input, payload: {} }, undefined, analytics),
+    ).resolves.toEqual(expect.objectContaining({ type: "run.failed", seq: 4 }));
+    expect(analytics.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes the committed seq and returns the plaintext payload", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([inserted(7)]),
+    } as unknown as PrismaClient;
+
     await expect(
       appendEvent(
         prisma,
@@ -5502,28 +5517,29 @@ describe("appendEvent", () => {
           spaceId: "workspace-1",
           threadId: "thread-1",
           botId: "bot-1",
-          type: "run.failed",
+          type: "thread.progress",
           runId: "run-1",
-          payload: {},
+          payload: { delta: "fresh", streaming: true },
         },
-        undefined,
-        analytics,
+        fanout,
       ),
-    ).resolves.toEqual(expect.objectContaining({ type: "run.failed" }));
-    expect(analytics.capture).toHaveBeenCalledTimes(1);
+    ).resolves.toMatchObject({
+      id: "event-7",
+      seq: 7,
+      type: "thread.progress",
+      runId: "run-1",
+      payload: { delta: "fresh", streaming: true },
+    });
+    expect(publish).toHaveBeenCalledExactlyOnceWith(
+      "thread:thread-1",
+      JSON.stringify({ cursor: 7 }),
+    );
   });
 
-  it("does not persist output from a cancelled run after history was cleared", async () => {
+  it("publishes nothing when the run can no longer write history", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
-      event: { create: vi.fn() },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
+    const prisma = { $queryRaw: vi.fn().mockResolvedValue([]) } as unknown as PrismaClient;
 
     await expect(
       appendEvent(
@@ -5539,242 +5555,48 @@ describe("appendEvent", () => {
         fanout,
       ),
     ).rejects.toThrow(RunHistoryWriteError);
-    expect(tx.event.create).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("reruns the whole transaction after a mid-write deadlock and publishes once", async () => {
-    const fanout = new TestFanout();
-    const publish = vi.spyOn(fanout, "publish");
-    const deadlock = Object.assign(new Error("write conflict or a deadlock"), { code: "P2034" });
-    const created = { ...event(4), type: "thread.progress", runId: "run-1" };
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
-      // The sequence already advanced when the insert deadlocks; Postgres rolls both back.
-      event: { create: vi.fn().mockRejectedValueOnce(deadlock).mockResolvedValue(created) },
-    };
-    const transaction = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
+  it("reports a missing thread as an error when no run is involved", async () => {
+    const prisma = { $queryRaw: vi.fn().mockResolvedValue([]) } as unknown as PrismaClient;
 
     await expect(
-      appendEvent(
-        { $transaction: transaction } as unknown as PrismaClient,
-        {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          botId: "bot-1",
-          type: "thread.progress",
-          runId: "run-1",
-          payload: { text: "progress" },
-        },
-        fanout,
-      ),
-    ).resolves.toMatchObject({ type: "thread.progress", runId: "run-1" });
-    expect(transaction).toHaveBeenCalledTimes(2);
-    expect(tx.thread.update).toHaveBeenCalledTimes(2);
-    expect(tx.event.create).toHaveBeenCalledTimes(2);
-    expect(publish).toHaveBeenCalledTimes(1);
-  });
-
-  it("treats a run event for a deleted thread as closed run history", async () => {
-    const missing = Object.assign(new Error("No record was found for an update."), {
-      code: "P2025",
-    });
-    const tx = {
-      thread: { update: vi.fn().mockRejectedValue(missing) },
-      run: { findUnique: vi.fn() },
-      event: { create: vi.fn() },
-    };
-    const transaction = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
-    const input = {
-      spaceId: "workspace-1",
-      threadId: "thread-1",
-      botId: "bot-1",
-      type: "computer.command" as const,
-      payload: { text: "late output" },
-    };
-
-    await expect(
-      appendEvent({ $transaction: transaction } as unknown as PrismaClient, {
-        ...input,
-        runId: "run-1",
+      appendEvent(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        type: "computer.command",
+        payload: { text: "late output" },
       }),
-    ).rejects.toThrow(RunHistoryWriteError);
-    await expect(
-      appendEvent({ $transaction: transaction } as unknown as PrismaClient, input),
-    ).rejects.toBe(missing);
-    expect(tx.event.create).not.toHaveBeenCalled();
+    ).rejects.toThrow("Thread not found");
   });
 
-  it("does not retry a run that can no longer write history", async () => {
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
-      event: { create: vi.fn() },
-    };
-    const transaction = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
+  it("does not persist a split-emoji high surrogate that would crash JSON insert", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([inserted(3, "run-3")]);
+    const prisma = { $queryRaw: queryRaw } as unknown as PrismaClient;
 
+    // Orphaned UTF-16 high surrogate (e.g. 😀 split across stream chunks as \uD83D alone).
     await expect(
-      appendEvent({ $transaction: transaction } as unknown as PrismaClient, {
+      appendEvent(prisma, {
         spaceId: "workspace-1",
         threadId: "thread-1",
         botId: "bot-1",
         type: "thread.progress",
-        runId: "run-1",
-        payload: { text: "stale" },
+        runId: "run-3",
+        payload: { delta: "hello \uD83D", streaming: true },
       }),
-    ).rejects.toThrow(RunHistoryWriteError);
-    expect(transaction).toHaveBeenCalledTimes(1);
+    ).resolves.toMatchObject({ payload: { delta: "hello \uFFFD", streaming: true } });
+    const values = statementValues(queryRaw);
+    expect(values).toContain(
+      JSON.stringify(JSON.stringify({ delta: "hello \uFFFD", streaming: true })),
+    );
+    expect(values).not.toMatch(/\\ud83d/i);
   });
 
-  it("lets a new active run write after the thread was cleared", async () => {
-    const fanout = new TestFanout();
-    const publish = vi.spyOn(fanout, "publish");
-    const created = {
-      ...event(8),
-      type: "thread.progress",
-      runId: "run-2",
-    };
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 9 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
-      event: { create: vi.fn().mockResolvedValue(created) },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-
-    await expect(
-      appendEvent(
-        prisma,
-        {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          botId: "bot-1",
-          type: "thread.progress",
-          runId: "run-2",
-          payload: { text: "fresh" },
-        },
-        fanout,
-      ),
-    ).resolves.toMatchObject({ type: "thread.progress", runId: "run-2" });
-    expect(tx.event.create).toHaveBeenCalled();
-    expect(publish).toHaveBeenCalled();
-  });
-
-  it("does not persist a split-emoji high surrogate that would crash JSON insert", async () => {
-    const fanout = new TestFanout();
-    const created = {
-      ...event(3),
-      type: "thread.progress",
-      runId: "run-3",
-      payload: { delta: "hello \uFFFD", streaming: true },
-    };
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 4 }) },
-      run: {
-        findUnique: vi.fn().mockResolvedValue({ status: "running" }),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-      },
-      event: { create: vi.fn().mockResolvedValue(created) },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-
-    // Orphaned UTF-16 high surrogate (e.g. 😀 split across stream chunks as \uD83D alone).
-    const orphanedHigh = "hello \uD83D";
-    await expect(
-      appendEvent(
-        prisma,
-        {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          botId: "bot-1",
-          type: "thread.progress",
-          runId: "run-3",
-          payload: { delta: orphanedHigh, streaming: true },
-        },
-        fanout,
-      ),
-    ).resolves.toMatchObject({ type: "thread.progress", runId: "run-3" });
-
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        payload: { delta: "hello \uFFFD", streaming: true },
-      }),
-    });
-    const persisted = tx.event.create.mock.calls[0]![0].data.payload as { delta: string };
-    // Postgres rejects unpaired surrogates in json; the sanitized form must not contain any.
-    expect(persisted.delta).not.toMatch(/[\uD800-\uDFFF]/);
-    expect(() => JSON.stringify(persisted)).not.toThrow();
-  });
-
-  it("persists run.cancelled for a run that is already cancelled", async () => {
-    const fanout = new TestFanout();
-    const publish = vi.spyOn(fanout, "publish");
-    const created = { ...event(7), type: "run.cancelled", runId: "run-1" };
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
-      event: { create: vi.fn().mockResolvedValue(created) },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-
-    await expect(
-      appendEvent(
-        prisma,
-        {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          botId: "bot-1",
-          type: "run.cancelled",
-          runId: "run-1",
-          payload: {},
-        },
-        fanout,
-      ),
-    ).resolves.toMatchObject({ type: "run.cancelled", runId: "run-1" });
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ type: "run.cancelled", runId: "run-1", seq: 7 }),
-    });
-    expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
-  });
-
-  it("rejects run.cancelled while the run is not cancelled", async () => {
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
-      event: { create: vi.fn() },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-
-    await expect(
-      appendEvent(prisma, {
-        spaceId: "workspace-1",
-        threadId: "thread-1",
-        botId: "bot-1",
-        type: "run.cancelled",
-        runId: "run-1",
-        payload: {},
-      }),
-    ).rejects.toThrow(RunHistoryWriteError);
-    expect(tx.event.create).not.toHaveBeenCalled();
-  });
-
-  it("rejects run.cancelled without a run", async () => {
-    const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
-      run: { findUnique: vi.fn() },
-      event: { create: vi.fn() },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
+  it("rejects run.cancelled without a run before touching the thread", async () => {
+    const queryRaw = vi.fn();
+    const prisma = { $queryRaw: queryRaw } as unknown as PrismaClient;
 
     await expect(
       appendEvent(prisma, {
@@ -5785,8 +5607,7 @@ describe("appendEvent", () => {
         payload: {},
       }),
     ).rejects.toThrow(RunHistoryWriteError);
-    expect(tx.run.findUnique).not.toHaveBeenCalled();
-    expect(tx.event.create).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
 

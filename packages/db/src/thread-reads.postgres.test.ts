@@ -9,13 +9,13 @@ import {
   clearThreadReads,
   markThreadReadFor,
   markThreadUnreadFromFor,
+  setThreadSnoozeFor,
   setThreadUnreadFor,
 } from "./thread-reads.js";
 import { countUnreadInboxChats } from "./unread-inbox-chats.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 // Ada owns a Space and shared it with Bea. Otto has a Space of his own and nothing to do with it.
 describePostgres("each member's own read state (PostgreSQL)", () => {
@@ -235,6 +235,42 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
     hold();
     await otherTab;
     await expect(read).resolves.toBe(-1);
+  });
+
+  it("snoozes a chat for one person, until they open it after it wakes", async () => {
+    const snoozeOf = async (userId: string) =>
+      (
+        await as(userId, () =>
+          prisma.threadRead.findFirst({
+            where: { threadId, userId },
+            select: { snoozedUntil: true },
+          }),
+        )
+      )?.snoozedUntil ?? null;
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await as(bea, () => setThreadSnoozeFor(prisma, reader(bea), tomorrow));
+    expect(await snoozeOf(bea)).toEqual(tomorrow);
+    expect(await snoozeOf(ada)).toBeNull();
+
+    // Reading while still snoozed keeps the snooze.
+    await as(bea, () => markThreadReadFor(prisma, reader(bea)));
+    expect(await snoozeOf(bea)).toEqual(tomorrow);
+
+    // Once it has woken, opening the chat ends it, even with nothing new to read.
+    await asSystem(prisma).threadRead.update({
+      where: { threadId_userId: { threadId, userId: bea } },
+      data: { snoozedUntil: new Date(Date.now() - 1000) },
+    });
+    await as(bea, () => markThreadReadFor(prisma, reader(bea)));
+    expect(await snoozeOf(bea)).toBeNull();
+
+    // Clearing the chat keeps a snooze; unsnoozing ends it.
+    await as(bea, () => setThreadSnoozeFor(prisma, reader(bea), tomorrow));
+    await as(ada, () => prisma.$transaction((tx) => clearThreadReads(tx, threadId)));
+    expect(await snoozeOf(bea)).toEqual(tomorrow);
+    expect(await unread(bea)).toBe(false);
+    await as(bea, () => setThreadSnoozeFor(prisma, reader(bea), null));
+    expect(await snoozeOf(bea)).toBeNull();
   });
 
   it("clears every member's state with the chat", async () => {

@@ -1,5 +1,7 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ModelQuota } from "@rakazo/contracts";
-import { dateLocaleForUi, useI18n } from "../lib/i18n";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 
 export function ConnectionQuota({
@@ -13,48 +15,49 @@ export function ConnectionQuota({
   loading: boolean;
   onRefresh: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   return (
     <SettingsGroup
-      label={label ?? t("Quota")}
+      label={label ?? t`Quota`}
       footer={
         currentQuota?.observedAt
-          ? `${t("Updated")} ${new Date(currentQuota.observedAt).toLocaleString(dateLocaleForUi(locale))}`
+          ? `${t`Updated`} ${new Date(currentQuota.observedAt).toLocaleString(dateLocaleForUi(locale))}`
           : undefined
       }
     >
-      {currentQuota?.status === "stale" ? <SettingsRow title={t("Last known usage")} /> : null}
+      {currentQuota?.status === "stale" ? <SettingsRow title={t`Last known usage`} /> : null}
       {!currentQuota || currentQuota.status === "unavailable" ? (
-        <SettingsRow title={currentPending ? t("Loading") : t("Quota unavailable")} />
+        <SettingsRow title={currentPending ? t`Loading` : t`Quota unavailable`} />
       ) : null}
       {currentQuota?.windows.map((window) => (
         <SettingsRow
           key={window.id}
           title={
             window.id === "five_hour"
-              ? t("Session")
+              ? t`Session`
               : window.id === "seven_day"
-                ? t("Weekly")
+                ? t`Weekly`
                 : window.id === "monthly"
-                  ? t("Monthly")
+                  ? t`Monthly`
                   : window.id === "primary_window" || window.id === "secondary_window"
-                    ? t("Allowance")
+                    ? t`Allowance`
                     : window.id
           }
-          value={t("{remaining}% remaining", {
+          value={t`${ph({
             remaining: new Intl.NumberFormat(dateLocaleForUi(locale)).format(
               Math.round((100 - window.usedPercent) * 10) / 10,
             ),
-          })}
+          })}% remaining`}
           detail={
             window.resetsAt
-              ? `${t("Resets")} ${new Date(window.resetsAt).toLocaleString(dateLocaleForUi(locale))}`
+              ? `${t`Resets`} ${new Date(window.resetsAt).toLocaleString(dateLocaleForUi(locale))}`
               : undefined
           }
         />
       ))}
       {currentQuota?.status !== "unsupported" ? (
-        <SettingsRow title={t("Refresh")} disabled={currentPending} onPress={onRefresh} />
+        <SettingsRow title={t`Refresh`} disabled={currentPending} onPress={onRefresh} />
       ) : null}
     </SettingsGroup>
   );

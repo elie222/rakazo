@@ -6,8 +6,7 @@ import { asSystem, runAsTenant } from "./row-security.js";
 import { countUnreadInboxChats } from "./unread-inbox-chats.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("unread inbox chat count (PostgreSQL)", () => {
   const suffix = randomUUID();
@@ -151,9 +150,20 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
     await asSystem(prisma).threadRead.create({
       data: { threadId: readByThem.thread!.id, spaceId, userId: otherUserId, unread: true },
     });
+    // Snoozed until later: out of the inbox, so not counted. Woken: back, and counted.
+    for (const snoozedUntil of [
+      new Date(Date.now() + 60 * 60 * 1000),
+      new Date(Date.now() - 1000),
+    ]) {
+      const snoozed = await bot(spaceId);
+      await asSystem(prisma).threadRead.update({
+        where: { threadId_userId: { threadId: snoozed.thread!.id, userId } },
+        data: { snoozedUntil },
+      });
+    }
     await expect(
       runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { spaceId, userId })),
-    ).resolves.toBe(6);
+    ).resolves.toBe(7);
     // Another organization's chats count only there, like its Spaces in the sidebar.
     await expect(countUnreadInboxChats(prisma, { spaceId: spaceIds[2]!, userId })).resolves.toBe(1);
     // A Space shared with them as a guest shows, and counts, wherever they are.
@@ -161,6 +171,6 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
       where: { organizationId: organizationIds[1], userId },
       data: { role: "guest" },
     });
-    await expect(countUnreadInboxChats(prisma, { spaceId, userId })).resolves.toBe(7);
+    await expect(countUnreadInboxChats(prisma, { spaceId, userId })).resolves.toBe(8);
   });
 });

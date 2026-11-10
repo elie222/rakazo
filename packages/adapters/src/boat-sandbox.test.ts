@@ -11,7 +11,11 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
+import {
+  desktopWorkCommand,
+  screenDisplayArgv,
+  shellQuote,
+} from "@rakazo/core/node/desktop-runtime";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -162,7 +166,7 @@ describe("BoatSandboxProvider", () => {
           sandboxId: computer.id,
           resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "xlarge" },
         },
-        { signal: context.signal },
+        { signal: expect.any(AbortSignal) },
       );
     });
 
@@ -187,7 +191,7 @@ describe("BoatSandboxProvider", () => {
           sandboxId: computer.id,
           resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "large" },
         },
-        { signal: context.signal },
+        { signal: expect.any(AbortSignal) },
       );
     });
 
@@ -331,6 +335,24 @@ describe("BoatSandboxProvider", () => {
     ]);
   });
 
+  // Node's fetch drops a response with no headers after 300 seconds, however long Boat would wait.
+  it("follows the workspace archive in the background instead of waiting on one request", async () => {
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.writeFile(
+      computer,
+      { path: "notes.txt", content: Uint8Array.from([1]) },
+      context,
+    );
+
+    await readExport(provider.exportWorkspace(computer, context));
+    const archive = command.mock.calls
+      .map(([request]) => request.commandRequest)
+      .find((request) => request.command.includes("rakazo-workspace-archive-"));
+    expect(archive).toMatchObject({ detached: true });
+    expect(archive).not.toHaveProperty("timeoutSeconds");
+  });
+
   it("keeps command secrets out of command text and removes the env file as the command starts", async () => {
     const command = vi.spyOn(FakeBoatApi.prototype, "command");
     const writeFile = vi.spyOn(FakeBoatApi.prototype, "writeFile");
@@ -471,7 +493,7 @@ describe("BoatSandboxProvider", () => {
     });
     expect(resume).toHaveBeenCalledWith(
       { sandboxId: computer.id, resumeRequest: { noEnv: true, ttlSeconds: 7200 } },
-      { signal: context.signal },
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -1085,7 +1107,7 @@ describe("BoatSandboxProvider", () => {
         return { deadline, caller, signal: (init as RequestInit).signal };
       };
       const byDeadline = await statusRead();
-      expect(timeout).toHaveBeenLastCalledWith(10_000);
+      expect(timeout).toHaveBeenCalledWith(10_000);
       expect(byDeadline.signal?.aborted).toBe(false);
       byDeadline.deadline.abort();
       expect(byDeadline.signal?.aborted).toBe(true);
@@ -1339,18 +1361,24 @@ describe("BoatSandboxProvider", () => {
   it.each([
     ["an unexpected failure", new Error("attach broke"), "Error"],
     ["a Boat server error", boatError(500, "internal", "upstream"), "SandboxUnresponsiveError"],
-  ])("fails a long command when %s ends the attach to its output", async (_name, failure, name) => {
-    const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
-    const status = vi.spyOn(FakeBoatApi.prototype, "commandStatus");
-    const { provider, computer } = await boat();
-    await provider.prepare(computer, context);
-    attach.mockRejectedValue(failure);
+  ])(
+    "fails and stops a long command when %s ends the attach to its output",
+    async (_name, failure, name) => {
+      const command = vi.spyOn(FakeBoatApi.prototype, "command");
+      const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
+      const status = vi.spyOn(FakeBoatApi.prototype, "commandStatus");
+      const { provider, computer } = await boat();
+      await provider.prepare(computer, context);
+      attach.mockRejectedValue(failure);
 
-    await expect(
-      drain(provider.execute(computer, { argv: ["echo", "x"], timeoutMs: 20 * 60_000 }, context)),
-    ).rejects.toMatchObject({ name });
-    expect(status).not.toHaveBeenCalled();
-  });
+      await expect(
+        drain(provider.execute(computer, { argv: ["echo", "x"], timeoutMs: 20 * 60_000 }, context)),
+      ).rejects.toMatchObject({ name });
+      expect(status).not.toHaveBeenCalled();
+      const sent = command.mock.calls.map(([request]) => request.commandRequest.command);
+      expect(sent.some((script) => script.includes("pkill"))).toBe(true);
+    },
+  );
 
   it("follows a long command on Boat's output stream, reattaching where each connection ended", async () => {
     const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
@@ -2103,8 +2131,11 @@ describe("BoatSandboxProvider", () => {
     // The saved login reaches the helper on stdin, never in a command Boat logs.
     expect(seen).toEqual([
       {
-        command: expect.stringMatching(
-          /^DISPLAY=:20 RAKAZO_CDP_PORT=9241 HOME='\/home\/user\/rakazo-home' RAKAZO_BROWSER_ARGS_STDIN=1 \/usr\/local\/bin\/rakazo-page-browser act$/,
+        command: desktopWorkCommand(
+          "bot-a",
+          undefined,
+          0,
+          "DISPLAY=:20 RAKAZO_CDP_PORT=9241 HOME='/home/user/rakazo-home' RAKAZO_BROWSER_ARGS_STDIN=1 /usr/local/bin/rakazo-page-browser act",
         ),
         input: `${JSON.stringify({ command: "act", actions: [fill] })}\n`,
       },

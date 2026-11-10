@@ -40,6 +40,8 @@ const IDLE_CACHE_MS = 60 * 60_000;
 const READER_HEARTBEAT_MS = 5 * 60_000;
 /** Revisions left by a crashed save are removed once they are clearly not in progress. */
 const STALE_REVISION_MS = 24 * 60 * 60_000;
+/** Folder removal starts over this many times when another process saves the home meanwhile. */
+const REMOVE_FOLDERS_ATTEMPTS = 3;
 
 /** Where a home's revisions are stored and the key that seals them. */
 export interface StoredHome {
@@ -62,6 +64,13 @@ export interface AgentHomeRecords {
   revisions(storageIds: readonly string[]): Promise<Map<string, string | null>>;
   /** The computer kind of each home that still has a computer. */
   kinds(homeKeys: readonly string[]): Promise<Map<string, string>>;
+}
+
+class StaleHomeCacheError extends Error {
+  constructor() {
+    super("The cached home is older than its stored revision");
+    this.name = "StaleHomeCacheError";
+  }
 }
 
 export class HomeSaveConflictError extends Error {
@@ -177,8 +186,26 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     await this.revise(botId);
   }
 
-  /** Removes the folders from the stored copy too, so no host or later boot gets them back. */
+  /**
+   * Removes the folders from the stored copy too, so no host or later boot gets them back.
+   * A remote computer can save between the download and this save (deleting a bot stops its
+   * runs, which saves the computer); its files are then the stored copy, so removal starts
+   * over from them. A Docker computer's mounted copy is never replaced, so that still fails.
+   */
   override async removeFolders(botId: string, parent: string, names: readonly string[]) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.removeFoldersOnce(botId, parent, names);
+      } catch (error) {
+        const superseded =
+          error instanceof StaleHomeCacheError || error instanceof HomeSaveConflictError;
+        if (!superseded || attempt >= REMOVE_FOLDERS_ATTEMPTS || (await this.isLiveCache(botId)))
+          throw error;
+      }
+    }
+  }
+
+  private async removeFoldersOnce(botId: string, parent: string, names: readonly string[]) {
     await this.hydrate(botId);
     const stored = Boolean((await this.records.load(botId))?.revision);
     const before = await this.localRevision(botId);
@@ -206,7 +233,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       const { stored, local } = await this.loadCacheRevision(botId);
       const base = stored?.revision ?? null;
       if (base && (local !== base || !(await this.hasCache(botId))))
-        throw new Error("The cached home is older than its stored revision");
+        throw new StaleHomeCacheError();
       return (await this.upload(botId, { base })).revision;
     });
   }

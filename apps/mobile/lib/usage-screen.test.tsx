@@ -79,11 +79,7 @@ vi.mock("../components/settings-group", () => ({
 }));
 vi.mock("./api", () => ({ rpc: request }));
 vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (s: string, values?: Record<string, string>) =>
-      values ? s.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "") : s,
-    locale: "en",
-  }),
+  useUiLocale: () => "en",
   dateLocaleForUi: () => "en-US",
 }));
 vi.mock("./native", () => ({ native: { groupedPage: "white" } }));

@@ -3,7 +3,6 @@ import { Trans } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/web";
 import type { Bot, PageSummary } from "@rakazo/contracts";
 import {
-  Badge,
   BotAvatar,
   Command,
   CommandDialog,

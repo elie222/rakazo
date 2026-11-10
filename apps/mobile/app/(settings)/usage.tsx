@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ModelQuota, ModelRoleView, UsageSummary } from "@rakazo/contracts";
 import { connectionDisplayName, connectionUsageGroups } from "@rakazo/contracts";
 import type { ModelUsageSort, ModelUsageSortInverted } from "@rakazo/core";
@@ -11,7 +13,7 @@ import { MenuPicker } from "../../components/menu-picker";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
-import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
 import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import {
   loadModelUsageSort,
@@ -23,7 +25,8 @@ import { native } from "../../lib/native";
 import { useSideInsets } from "../../lib/side-insets";
 
 export default function Usage() {
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const sideInsets = useSideInsets();
   const [credentials, setCredentials] = useState<MobileModelCredential[] | null>(null);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -131,7 +134,7 @@ export default function Usage() {
       credential.provider === "openai-codex"
         ? "Codex"
         : credential.provider === "anthropic" && credential.authKind === "oauth"
-          ? t("Claude subscription")
+          ? t`Claude subscription`
           : (catalog.find((entry) => entry.provider === credential.provider)?.providerName ??
             credential.provider);
     const label = connectionDisplayName(credential, providerName);
@@ -160,27 +163,28 @@ export default function Usage() {
         {summary ? (
           <SettingsGroup>
             <SettingsRow
-              title={t("Usage")}
-              detail={t("{runs} runs, {tokens} tokens", {
-                runs: new Intl.NumberFormat(dateLocaleForUi(locale)).format(summary.runs),
-                tokens:
-                  summary.totalTokens == null
-                    ? "—"
-                    : new Intl.NumberFormat(dateLocaleForUi(locale)).format(summary.totalTokens),
-              })}
+              title={t`Usage`}
+              detail={t`${ph({ runs: new Intl.NumberFormat(dateLocaleForUi(locale)).format(summary.runs) })} runs, ${ph(
+                {
+                  tokens:
+                    summary.totalTokens == null
+                      ? "—"
+                      : new Intl.NumberFormat(dateLocaleForUi(locale)).format(summary.totalTokens),
+                },
+              )} tokens`}
             />
           </SettingsGroup>
         ) : null}
         {credentials && groups.length ? (
           <SettingsGroup>
             <MenuPicker
-              label={t("Sort by")}
+              label={t`Sort by`}
               value={sortOrder}
               choices={[
-                { key: "main-model", label: t("Main model") },
-                { key: "approval-model", label: t("Approval model") },
-                { key: "quota", label: t("Remaining quota") },
-                { key: "alphabetical", label: t("Alphabetical") },
+                { key: "main-model", label: t`Main model` },
+                { key: "approval-model", label: t`Approval model` },
+                { key: "quota", label: t`Remaining quota` },
+                { key: "alphabetical", label: t`Alphabetical` },
               ]}
               onChange={(value) => {
                 const next = value as ModelUsageSort;
@@ -192,10 +196,10 @@ export default function Usage() {
           </SettingsGroup>
         ) : null}
         {credentials && groups.length ? (
-          <SettingsGroup label={t("Order")}>
+          <SettingsGroup label={t`Order`}>
             <View style={styles.segmentedControl}>
               <NativeSegmentedControl
-                accessibilityLabel={t("Order")}
+                accessibilityLabel={t`Order`}
                 value={sortInverted ? "inverted" : "normal"}
                 onChange={(value) => {
                   const next = value === "inverted";
@@ -208,19 +212,19 @@ export default function Usage() {
                     value: "normal",
                     label:
                       sortOrder === "quota"
-                        ? t("Most remaining")
+                        ? t`Most remaining`
                         : sortOrder === "alphabetical"
-                          ? t("A–Z")
-                          : t("Primary first"),
+                          ? t`A–Z`
+                          : t`Primary first`,
                   },
                   {
                     value: "inverted",
                     label:
                       sortOrder === "quota"
-                        ? t("Least remaining")
+                        ? t`Least remaining`
                         : sortOrder === "alphabetical"
-                          ? t("Z–A")
-                          : t("Backups first"),
+                          ? t`Z–A`
+                          : t`Backups first`,
                   },
                 ]}
               />
@@ -229,17 +233,17 @@ export default function Usage() {
         ) : null}
         {failed ? (
           <SettingsGroup>
-            <SettingsRow title={t("Could not load usage")} />
+            <SettingsRow title={t`Could not load usage`} />
           </SettingsGroup>
         ) : null}
         {!failed && !credentials ? (
           <SettingsGroup>
-            <SettingsRow title={t("Loading")} />
+            <SettingsRow title={t`Loading`} />
           </SettingsGroup>
         ) : null}
         {!failed && credentials && groups.length === 0 ? (
           <SettingsGroup>
-            <SettingsRow title={t("No connected providers")} />
+            <SettingsRow title={t`No connected providers`} />
           </SettingsGroup>
         ) : null}
         {sortedEntries.map(({ credential, label, quota }) => {

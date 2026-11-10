@@ -13,6 +13,34 @@ import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
  */
 export const SHELL_STREAM_IDLE_MS = 1_000;
 
+/**
+ * Other output often pauses briefly (a header before an API call), so wait longer before
+ * returning a command that is still running, such as one waiting on a prompt.
+ */
+const SHELL_STREAM_QUIET_MS = 10_000;
+
+// A device-code prompt prints a link and a code together. A link alone is ordinary progress
+// output (`Fetching https://...`), so it does not end the wait. Device codes are usually groups
+// such as ABCD-1234 or 1234-5678, or one token mixing letters and digits such as FZ8Q4X8BJ; a
+// word (ERROR), a number or a short error code (E404) is not counted. A code in another shape
+// returns after the longer wait.
+const SIGN_IN_LINK = /https?:\/\/\S/;
+const ONE_TIME_CODE =
+  /\b[Cc]ode\b[\s:"'`]*(?:is\s+)?(?:[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+|(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]{6,})\b/;
+// A prompt is the latest output, so only the end of each stream is checked, which keeps long
+// logs cheap. The link and the code may be on different streams.
+const SIGN_IN_PROMPT_SCAN_CHARS = 4_000;
+
+function showsSignInPrompt(snapshot: ShellCommandSnapshot): boolean {
+  const recent = [snapshot.stdout, snapshot.stderr].map((stream) =>
+    stream.slice(-SIGN_IN_PROMPT_SCAN_CHARS),
+  );
+  return (
+    recent.some((stream) => SIGN_IN_LINK.test(stream)) &&
+    recent.some((stream) => ONE_TIME_CODE.test(stream))
+  );
+}
+
 export const SHELL_STILL_RUNNING_NOTICE =
   "Still running. Tell the user any one-time code or sign-in URL in the output.";
 
@@ -139,14 +167,16 @@ async function finishOrAbort(
 }
 
 /**
- * Read a command stream. When output arrives and then stays quiet, return it
- * before exit and keep collecting the rest on `completion`.
+ * Read a command stream. When output arrives and then stays quiet, return it before exit
+ * and keep collecting the rest on `completion`. A sign-in prompt returns after `idleMs`,
+ * other output after `quietMs`.
  */
 export async function observeShellCommand(
   events: AsyncIterable<ProcessEvent>,
   options: {
     secrets: string[];
     idleMs?: number;
+    quietMs?: number;
     onOutput?: (snapshot: ShellCommandSnapshot) => void;
   },
 ): Promise<{
@@ -154,6 +184,7 @@ export async function observeShellCommand(
   completion?: Promise<FinishedShellCommand>;
 }> {
   const idleMs = options.idleMs ?? SHELL_STREAM_IDLE_MS;
+  const quietMs = options.quietMs ?? SHELL_STREAM_QUIET_MS;
   let stdout = "";
   let stderr = "";
   let code: number | undefined;
@@ -172,13 +203,13 @@ export async function observeShellCommand(
     timer = undefined;
   };
 
-  const armIdle = () => {
+  const armIdle = (waitMs: number) => {
     clearIdle();
-    if (idleMs <= 0) {
+    if (waitMs <= 0) {
       resolveIdle?.("idle");
       return;
     }
-    timer = setTimeout(() => resolveIdle?.("idle"), idleMs);
+    timer = setTimeout(() => resolveIdle?.("idle"), waitMs);
   };
 
   const done = (async (): Promise<FinishedShellCommand> => {
@@ -196,7 +227,9 @@ export async function observeShellCommand(
         } catch {
           // Live output is a view. A failed update must not kill the command.
         }
-        if (stdout.length > 0 || stderr.length > 0) armIdle();
+        if (stdout.length > 0 || stderr.length > 0) {
+          armIdle(showsSignInPrompt({ stdout, stderr }) ? idleMs : quietMs);
+        }
       }
     } catch (error) {
       // Providers may include command environment values in errors. Never expose the raw

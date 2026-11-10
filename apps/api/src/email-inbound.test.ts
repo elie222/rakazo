@@ -27,6 +27,7 @@ function email(overrides: Partial<InboundEmail> = {}): InboundEmail {
     key: "<m-1@example.test>",
     from: { address: "owner@example.test", name: "Owner" },
     authenticated: true,
+    unauthenticatedReason: null,
     temporaryFailure: false,
     to: ["helper@bots.test"],
     cc: [],
@@ -46,7 +47,7 @@ function setup(
     message?: InboundEmail;
     bot?: Record<string, unknown> | null;
     routines?: Array<Record<string, unknown>>;
-    owner?: { email: string; emailVerified?: boolean };
+    owner?: { email: string; emailVerified?: boolean; deactivatedAt?: Date | null };
     storeAttachment?: EmailInboundDeps["storeAttachment"];
     /** Messages the bot saved in the last day. */
     savedToday?: number;
@@ -327,6 +328,41 @@ describe("inbound email route", () => {
 
     expect(storeAttachment).not.toHaveBeenCalled();
     expect(saveEmail.mock.calls[0]?.[0].data.attachments).toEqual([{ name: "a.pdf" }]);
+  });
+
+  it("drops mail for a deactivated owner's bot without saving it or its files", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>();
+    const { post, saveEmail, sendUserMessage, readEmail } = setup({
+      storeAttachment,
+      owner: { email: "owner@example.test", emailVerified: true, deactivatedAt: new Date() },
+      message: email({
+        attachments: [{ name: "a.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) }],
+      }),
+    });
+
+    expect(await (await post()).json()).toEqual({ ok: true, ignored: "owner deactivated" });
+    expect(readEmail).not.toHaveBeenCalled();
+    expect(storeAttachment).not.toHaveBeenCalled();
+    expect(saveEmail).not.toHaveBeenCalled();
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stranger's files apart from the owner's same-name files", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({ id: "a-1", ...attachment, size: 1 }),
+    );
+    const message = (address: string) =>
+      email({
+        from: { address, name: "" },
+        attachments: [
+          { name: "report.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) },
+        ],
+      });
+
+    await setup({ routines: [], storeAttachment, message: message("someone@shop.test") }).post();
+    await setup({ routines: [], storeAttachment, message: message("owner@example.test") }).post();
+
+    expect(storeAttachment.mock.calls.map(([input]) => input.standalone)).toEqual([true, false]);
   });
 
   it("saves signed mail that doesn't name the bot as unverified, without its files", async () => {
