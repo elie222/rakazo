@@ -92,9 +92,16 @@ jobs:
       - name: Choose release platforms
         id: platforms
         shell: bash
+        env:
+          MAC_ONLY: ${{ vars.DESKTOP_RELEASE_MAC_ONLY }}
         run: |
           set -euo pipefail
           include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'
+          case "$MAC_ONLY" in
+            true) include='[{"os":"macos-26","artifact":"macos"}]' ;;
+            false|"") ;;
+            *) echo 'DESKTOP_RELEASE_MAC_ONLY must be true or false.' >&2; exit 1 ;;
+          esac
           echo "include=$include" >> "$GITHUB_OUTPUT"
 
   build:
@@ -130,6 +137,10 @@ jobs:
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
           RAKAZO_DESKTOP_RELEASE: "1"
+
+      - name: Configure the macOS repository update feed
+        if: runner.os == 'macOS'
+        run: node apps/desktop/scripts/release-feed.mjs apps/desktop/package.json
 
       - name: Require macOS signing and notarization credentials
         if: runner.os == 'macOS'
@@ -249,8 +260,8 @@ jobs:
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
           grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
+          grep -Fqx "owner: $GITHUB_REPOSITORY_OWNER" "$app/Contents/Resources/app-update.yml"
+          grep -Fqx "repo: ${GITHUB_REPOSITORY#*/}" "$app/Contents/Resources/app-update.yml"
 
       - name: Verify packaged native dependencies
         if: runner.os == 'macOS'
@@ -449,6 +460,7 @@ jobs:
           RELEASE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_PLATFORMS: ${{ needs.validate.outputs.platforms }}
         shell: bash
         run: |
           set -euo pipefail
@@ -458,24 +470,35 @@ jobs:
             exit 1
           fi
 
-          test -f release-artifacts/latest-mac.yml
-          test -f release-artifacts/latest-linux.yml
-          compgen -G 'release-artifacts/*.dmg' >/dev/null
-          compgen -G 'release-artifacts/*.zip' >/dev/null
-          compgen -G 'release-artifacts/*.AppImage' >/dev/null
-          for image in release-artifacts/*.AppImage; do
-            if [[ ! -s "$image.sig" ]]; then
-              echo "$image has no update signature." >&2
-              exit 1
-            fi
-          done
-          test -f release-artifacts/latest.yml
-          compgen -G 'release-artifacts/*.exe' >/dev/null
-          feeds=(
-            release-artifacts/latest-mac.yml
-            release-artifacts/latest-linux.yml
-            release-artifacts/latest.yml
-          )
+          feeds=()
+          while IFS= read -r platform; do
+            case "$platform" in
+              macos)
+                test -f release-artifacts/latest-mac.yml
+                compgen -G 'release-artifacts/*.dmg' >/dev/null
+                compgen -G 'release-artifacts/*.zip' >/dev/null
+                feeds+=(release-artifacts/latest-mac.yml)
+                ;;
+              linux)
+                test -f release-artifacts/latest-linux.yml
+                compgen -G 'release-artifacts/*.AppImage' >/dev/null
+                for image in release-artifacts/*.AppImage; do
+                  if [[ ! -s "$image.sig" ]]; then
+                    echo "$image has no update signature." >&2
+                    exit 1
+                  fi
+                done
+                feeds+=(release-artifacts/latest-linux.yml)
+                ;;
+              windows)
+                test -f release-artifacts/latest.yml
+                compgen -G 'release-artifacts/*.exe' >/dev/null
+                feeds+=(release-artifacts/latest.yml)
+                ;;
+              *) echo 'Unknown release platform.' >&2; exit 1 ;;
+            esac
+          done < <(jq -r '.[].artifact' <<< "$RELEASE_PLATFORMS")
+          test "${#feeds[@]}" -gt 0
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
             # GitHub renames assets with spaces, so every file a feed names must upload under that name.
