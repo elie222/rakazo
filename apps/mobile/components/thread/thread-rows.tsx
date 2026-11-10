@@ -203,6 +203,7 @@ export function useThreadRows({
           columnWidth={columnWidth}
           enableJump={options?.enableJump ?? false}
           index={options?.index ?? 0}
+          userId={userId}
         />
       );
     },

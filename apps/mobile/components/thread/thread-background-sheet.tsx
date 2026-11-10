@@ -47,12 +47,15 @@ export function ThreadBackgroundSheet({
   threadKey,
   heroVisible,
   onClose,
+  onOpenCustomSettings,
 }: {
   visible: boolean;
   threadKey: string | undefined;
   /** False where there is no title hero (groups): the hero section hides. */
   heroVisible?: boolean;
   onClose: () => void;
+  /** Opens the interface settings; absent hides the entry row. */
+  onOpenCustomSettings?: () => void;
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
@@ -404,6 +407,37 @@ export function ThreadBackgroundSheet({
           {t("Restore default background")}
         </Text>
       </Pressable>
+      {onOpenCustomSettings ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Customize interface")}
+          onPress={onOpenCustomSettings}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            marginTop: 8,
+            ...(pressed ? { backgroundColor: tokens.muted } : null),
+          })}
+        >
+          <NativeSymbol
+            ios="slider.horizontal.3"
+            android="options-outline"
+            size={20}
+            color={tokens.link}
+          />
+          <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Customize interface")}</Text>
+          <View style={{ flex: 1 }} />
+          <NativeSymbol
+            ios="chevron.right"
+            android="chevron-forward-outline"
+            size={16}
+            color={tokens.mutedForeground}
+          />
+        </Pressable>
+      ) : null}
     </View>
   );
 

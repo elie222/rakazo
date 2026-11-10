@@ -31,11 +31,18 @@ const codeBox = {
   borderRadius: 10,
 };
 
-export function markdownStyles(palette: ColorTokens) {
+export function markdownStyles(
+  palette: ColorTokens,
+  body?: { fontSize?: number; color?: string; fontFamily?: string },
+) {
+  const bodyFontSize = body?.fontSize ?? BODY_FONT_SIZE;
   return StyleSheet.create({
     body: {
-      color: palette.foreground,
+      color: body?.color ?? palette.foreground,
       ...typeScale.body,
+      fontSize: bodyFontSize,
+      lineHeight: Math.round((bodyFontSize * typeScale.body.lineHeight) / typeScale.body.fontSize),
+      ...(body?.fontFamily ? { fontFamily: body.fontFamily } : null),
       width: "100%",
       minWidth: 0,
       flexShrink: 1,

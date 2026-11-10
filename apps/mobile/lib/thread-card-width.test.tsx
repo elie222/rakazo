@@ -100,6 +100,7 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 
 vi.mock("../components/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
+  useMessageChatFont: () => ({ size: 17, color: null }),
 }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
 vi.mock("../components/native-symbol", () => ({

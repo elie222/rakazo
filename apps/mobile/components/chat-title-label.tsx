@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import type { TextStyle } from "react-native";
+import type { StyleProp, TextStyle } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { HEADER_TITLE_MAX_FONT_SCALE } from "../lib/native-controls";
 
@@ -18,7 +18,7 @@ export function ChatTitleLabel({
 }: {
   label: string;
   placeholder: boolean;
-  style: TextStyle;
+  style: StyleProp<TextStyle>;
 }) {
   const openedWithPlaceholder = useRef(placeholder).current;
   return (

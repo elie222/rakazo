@@ -39,6 +39,7 @@ export function useThreadHeader({
   computerFloatEnabled,
   onOpenComputerFloat,
   onOpenSearch,
+  userId,
 }: {
   botId?: string;
   groupId?: string;
@@ -64,6 +65,8 @@ export function useThreadHeader({
   onOpenComputerFloat?: () => void;
   /** Opens the conversation search bar. */
   onOpenSearch?: () => void;
+  /** The account whose interface settings style the header title. */
+  userId?: string;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -100,6 +103,7 @@ export function useThreadHeader({
         composing: titleComposing,
         name: titleName,
         members: groupMembers,
+        userId,
         // The title opens the bot's profile in a one-to-one chat, the group's settings in a group.
         opens: chatTitleRoute({ groupId, botId, name: titleName, readOnly }),
       }),
@@ -113,6 +117,7 @@ export function useThreadHeader({
       titleComposing,
       titleName,
       groupMembers,
+      userId,
     ],
   );
 

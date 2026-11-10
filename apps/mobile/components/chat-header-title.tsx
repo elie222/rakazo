@@ -6,6 +6,7 @@ import { Pressable, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { ChatTitleRoute } from "../lib/chat-settings-route";
 import { chatTitleRoute } from "../lib/chat-settings-route";
+import { customTitleTextStyle, useCustomSettings } from "../lib/custom-settings";
 import { GROUP_SEAT_SIZE } from "../lib/group-seats";
 import { useI18n } from "../lib/i18n";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
@@ -28,6 +29,8 @@ export type ChatTitle = {
   opens: ChatTitleRoute | null;
   /** A group's members, in order, for its title. */
   members?: MobileGroup["members"];
+  /** The account whose interface settings style the name; unset keeps the defaults. */
+  userId?: string;
 };
 
 /** The route params a chat screen opens with. */
@@ -78,6 +81,7 @@ export function ChatHeaderTitle({
   const router = useRouter();
   const styles = useThemedStyles(createThreadHeaderStyles);
   const published = useSyncExternalStore(subscribe, () => titles.get(routeKey));
+  const customSettings = useCustomSettings(published?.userId ?? "");
   const inboxBot = useInboxBot(params.botId);
   const inboxGroup = useInboxGroup(params.groupId);
   const inGroup = Boolean(params.groupId);
@@ -111,7 +115,11 @@ export function ChatHeaderTitle({
         <View style={styles.titleText}>
           {/* The mockup's title: the name with its chevron, opening the profile or settings. */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 1 }}>
-            <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
+            <ChatTitleLabel
+              label={label}
+              placeholder={!title.name}
+              style={[styles.title, customTitleTextStyle(customSettings)]}
+            />
             {opens ? (
               <NativeSymbol
                 ios="chevron.right"

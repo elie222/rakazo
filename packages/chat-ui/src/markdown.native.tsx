@@ -41,9 +41,20 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   onOpenPage,
   palette = darkTokens,
   colorScheme = "dark",
+  bodyFontSize,
+  bodyColor,
+  bodyFontFamily,
 }: ChatMarkdownProps & { palette?: ColorTokens; colorScheme?: ResolvedAppearance }) {
   const openLink = useNativeLinkConfirm();
-  const styles = useMemo(() => markdownStyles(palette), [palette]);
+  const styles = useMemo(
+    () =>
+      markdownStyles(palette, {
+        fontSize: bodyFontSize,
+        color: bodyColor,
+        fontFamily: bodyFontFamily,
+      }),
+    [palette, bodyFontSize, bodyColor, bodyFontFamily],
+  );
   const diagramSurface = useMemo(
     () => ({ streaming, palette, colorScheme }),
     [streaming, palette, colorScheme],

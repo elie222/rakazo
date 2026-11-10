@@ -1,4 +1,5 @@
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { customErrorTextStyle, useCustomSettings } from "../lib/custom-settings";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
@@ -11,6 +12,7 @@ export function ThreadErrorNotice({
   resetAt,
   onDetails,
   action,
+  userId,
 }: {
   error: string | null;
   summary: string | null;
@@ -18,10 +20,14 @@ export function ThreadErrorNotice({
   onDetails?: () => void;
   /** The one action that fixes the failure. */
   action?: { label: string; onPress: () => void } | null;
+  /** The account whose interface settings style the error text. */
+  userId?: string;
 }) {
   const { t, locale } = useI18n();
   const tokens = useMobileTokens();
   const { fontScale } = useWindowDimensions();
+  const customSettings = useCustomSettings(userId ?? "");
+  const errorStyle = customErrorTextStyle(customSettings);
   if (!error && !summary) return null;
   const upcomingReset =
     resetAt && resetAt > Date.now()
@@ -54,15 +60,28 @@ export function ThreadErrorNotice({
             color={tokens.warning}
           />
         </View>
-        <Text style={[styles.headline, { color: tokens.foreground }]}>{summary ?? error}</Text>
+        <Text
+          style={[
+            styles.headline,
+            { color: errorStyle.color ?? tokens.foreground },
+            { fontSize: errorStyle.fontSize, lineHeight: errorStyle.lineHeight },
+            ...(errorStyle.fontFamily ? [{ fontFamily: errorStyle.fontFamily }] : []),
+          ]}
+        >
+          {summary ?? error}
+        </Text>
       </View>
       {hasBody ? (
         <View style={[styles.body, { marginLeft: 18 * fontScale + 8 }]}>
           {summary && error ? (
-            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{error}</Text>
+            <Text style={[errorStyle, { color: errorStyle.color ?? tokens.mutedForeground }]}>
+              {error}
+            </Text>
           ) : null}
           {upcomingReset ? (
-            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{upcomingReset}</Text>
+            <Text style={[errorStyle, { color: errorStyle.color ?? tokens.mutedForeground }]}>
+              {upcomingReset}
+            </Text>
           ) : null}
           {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
           {summary && onDetails ? (
@@ -78,9 +97,12 @@ export function ThreadErrorNotice({
 export function ThreadFetchErrorNotice({
   error,
   showingSaved,
+  userId,
 }: {
   error: string | null;
   showingSaved: boolean;
+  /** The account whose interface settings style the error text. */
+  userId?: string;
 }) {
   const { t } = useI18n();
   if (!error) return null;
@@ -89,6 +111,7 @@ export function ThreadFetchErrorNotice({
       <ThreadErrorNotice
         error={showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
         summary={null}
+        userId={userId}
       />
     </View>
   );

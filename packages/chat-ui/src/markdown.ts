@@ -13,6 +13,10 @@ export type ChatMarkdownProps = {
   renderMention?: (id: string, name: string) => ReactNode;
   /** Opens a page linked as `[title](page:<pageId>)`; without it the title stays plain text. */
   onOpenPage?: (pageId: string) => void;
+  /** Overrides the body text size, colour, and family; unset follows the type scale. */
+  bodyFontSize?: number;
+  bodyColor?: string;
+  bodyFontFamily?: string;
 };
 
 const PAGE_URL_PATTERN = /^page:([A-Za-z0-9_-]{1,64})$/;

@@ -47,7 +47,8 @@ import { ImportSetupCard } from "../ImportSetupCard";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
 import { McpApprovalCard } from "../McpApprovalCard";
-import { MessageCaption } from "../message-caption";
+import type { MessageChatFont } from "../message-caption";
+import { MessageCaption, useMessageChatFont } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
 import { PageCard } from "../pages/page-card";
 import { PeerReceiptLine } from "../peer-receipt-line";
@@ -222,6 +223,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   actionProps,
   doubleTapSurface = false,
   userBubble,
+  userId,
 }: {
   onHelperToggle?: MessageRowActions["helperToggle"];
   botId: string;
@@ -253,11 +255,15 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   actionProps: MessageActionProps;
   doubleTapSurface?: boolean;
   userBubble?: UserBubble;
+  /** The account whose interface settings style this message's text. */
+  userId?: string;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
+  // The conversation font from the interface settings, for this message's body text.
+  const chatFont = useMessageChatFont(userId);
   const outgoing = message.role === "user" && !authorName;
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
@@ -324,6 +330,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         detail={handoff.text}
         expanded={peerExpanded}
         onToggle={() => setPeerExpanded((expanded) => !expanded)}
+        chatFont={chatFont}
       />
     );
   }
@@ -560,6 +567,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 tokens={tokens}
                 colorScheme={colorScheme}
                 streaming={message.id.startsWith("progress:")}
+                chatFont={chatFont}
               />
             ) : null}
           </View>
@@ -715,6 +723,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           actionProps={actionProps}
           doubleTapSurface={doubleTapSurface}
           userBubble={userBubble}
+          userId={userId}
         />
       ))}
       {choiceBlocks.map((block, index) => (
@@ -773,6 +782,7 @@ function MessageTextCard({
   actionProps,
   doubleTapSurface = false,
   userBubble,
+  userId,
 }: {
   message: MobileMessage;
   outgoing: boolean;
@@ -781,11 +791,14 @@ function MessageTextCard({
   actionProps: MessageActionProps;
   doubleTapSurface?: boolean;
   userBubble?: UserBubble;
+  /** The account whose interface settings style this card's text. */
+  userId?: string;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const contentText = blockText(message);
   const { t } = useI18n();
+  const chatFont = useMessageChatFont(userId);
   const userMentions = useContext(UserMentionsContext);
   if (!contentText) return null;
   // The surface is one accessibility element, so the bots a message names are offered as its
@@ -845,6 +858,7 @@ function MessageTextCard({
         tokens={tokens}
         colorScheme={colorScheme}
         streaming={message.id.startsWith("progress:")}
+        chatFont={chatFont}
       />
     </Surface>
   );
@@ -856,12 +870,15 @@ function AgentEventLabel({
   expanded,
   onToggle,
   actionProps,
+  chatFont,
 }: {
   label: string;
   detail?: string;
   expanded: boolean;
   onToggle: () => void;
   actionProps: MessageActionProps;
+  /** The conversation font from the interface settings; unset follows the type scale. */
+  chatFont?: MessageChatFont;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -896,7 +913,13 @@ function AgentEventLabel({
             paddingVertical: 10,
           }}
         >
-          <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+          <ChatMarkdown
+            palette={tokens}
+            colorScheme={colorScheme}
+            bodyFontSize={chatFont?.size}
+            bodyColor={chatFont?.color ?? undefined}
+            bodyFontFamily={chatFont?.family}
+          >
             {detail}
           </ChatMarkdown>
         </View>

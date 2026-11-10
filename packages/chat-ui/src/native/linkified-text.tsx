@@ -15,6 +15,9 @@ type LinkifiedTextProps = {
   color: string;
   linkColor: string;
   palette: ColorTokens;
+  /** Overrides the body text size and family; unset follows the type scale. */
+  fontSize?: number;
+  fontFamily?: string;
   /** Renders the runs between links, which are plain strings by default. */
   renderText?: (text: string) => ReactNode;
   onOpenPage?: (pageId: string) => void;
@@ -25,6 +28,8 @@ export const LinkifiedText = memo(function LinkifiedText({
   color,
   linkColor,
   palette,
+  fontSize,
+  fontFamily,
   renderText,
   onOpenPage,
 }: LinkifiedTextProps) {
@@ -36,8 +41,22 @@ export const LinkifiedText = memo(function LinkifiedText({
     // Links in a bubble are the bubble's text colour, so the underline is what marks them.
     textDecorationColor: linkColor,
   };
+  const bodyFontSize = fontSize ?? typeScale.body.fontSize;
   return (
-    <Text style={[{ color, ...typeScale.body }, contraryDirection(children) && layout.farSideText]}>
+    <Text
+      style={[
+        {
+          color,
+          ...typeScale.body,
+          fontSize: bodyFontSize,
+          lineHeight: Math.round(
+            (bodyFontSize * typeScale.body.lineHeight) / typeScale.body.fontSize,
+          ),
+          ...(fontFamily ? { fontFamily } : null),
+        },
+        contraryDirection(children) && layout.farSideText,
+      ]}
+    >
       {plainTextLinkParts(children).map((part, index) => {
         if (part.type === "text") {
           return renderText ? (

@@ -1,6 +1,7 @@
 import type { SpaceBot } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Pressable, View } from "react-native";
+import { customTitleTextStyle, scaledLineHeight, useCustomSettings } from "../lib/custom-settings";
 import type { MobileBot } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { ChatTitleAvatar } from "./chat-title-avatar";
@@ -33,6 +34,16 @@ export const CHAT_TITLE_HERO_MAX_HEIGHT =
   CHAT_TITLE_HERO_AVATAR_SIZE + CHAT_TITLE_HERO_NAME_LINE_HEIGHT + CHAT_TITLE_HERO_PADDING_BOTTOM;
 
 /**
+ * The hero's height at a title font size: the name line grows with the title
+ * slot, so the thread screen's top clearance must grow with it.
+ */
+export function chatTitleHeroHeight(titleFontSize: number): number {
+  return (
+    CHAT_TITLE_HERO_AVATAR_SIZE + scaledLineHeight(titleFontSize) + CHAT_TITLE_HERO_PADDING_BOTTOM
+  );
+}
+
+/**
  * A one-to-one chat's title at the top of its messages: the big state-linked avatar with
  * its name under it. Solid background (the thread screen paints it), never transparent:
  * a see-through hero lets the scrolling conversation show through above the avatar.
@@ -45,6 +56,7 @@ export function ChatTitleHero({
   composing,
   name,
   onAvatarPress,
+  userId,
 }: {
   bot: MobileBot | SpaceBot | undefined;
   status: string | undefined;
@@ -52,8 +64,11 @@ export function ChatTitleHero({
   name: string | undefined;
   /** Opens the bot menu. */
   onAvatarPress?: () => void;
+  /** The account whose interface settings style the name. */
+  userId?: string;
 }) {
   const styles = useThemedStyles(createThreadHeaderStyles);
+  const customSettings = useCustomSettings(userId ?? "");
   return (
     <View
       style={{
@@ -76,7 +91,11 @@ export function ChatTitleHero({
           size={CHAT_TITLE_HERO_AVATAR_SIZE}
         />
       </Pressable>
-      <ChatTitleLabel label={name ?? ""} placeholder={!name} style={styles.title} />
+      <ChatTitleLabel
+        label={name ?? ""}
+        placeholder={!name}
+        style={[styles.title, customTitleTextStyle(customSettings)]}
+      />
     </View>
   );
 }

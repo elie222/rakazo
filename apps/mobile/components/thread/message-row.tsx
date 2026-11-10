@@ -10,8 +10,8 @@ import {
   selectableMessageText,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
-import type { ComponentProps } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GestureResponderEvent, LayoutChangeEvent } from "react-native";
 import { Platform, Pressable, View } from "react-native";
 import Animated, {
@@ -25,6 +25,8 @@ import Animated, {
   ZoomIn,
 } from "react-native-reanimated";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
+import type { MessageActionId } from "../../lib/custom-settings";
+import { useCustomSettings, visibleMessageActions } from "../../lib/custom-settings";
 import { canDoubleTapReact } from "../../lib/double-tap";
 import { useI18n } from "../../lib/i18n";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
@@ -131,6 +133,8 @@ type MessageRowProps = {
   columnWidth: number;
   enableJump: boolean;
   index: number;
+  /** The account whose interface settings style this row's text and actions. */
+  userId?: string;
 };
 
 export const MessageRow = memo(function MessageRow({
@@ -172,6 +176,7 @@ export const MessageRow = memo(function MessageRow({
   columnWidth,
   enableJump,
   index,
+  userId,
 }: MessageRowProps) {
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
@@ -572,6 +577,7 @@ export const MessageRow = memo(function MessageRow({
                 doubleTapSurface={Boolean(likeMessage)}
                 onHelperToggle={actions.helperToggle}
                 userBubble={userBubble}
+                userId={userId}
               />
             </ThreadReadOnlyContext.Provider>
           </MessageContextMenu>
@@ -579,6 +585,7 @@ export const MessageRow = memo(function MessageRow({
           !message.id.startsWith("progress:") &&
           blockText(message).trim() ? (
             <MessageActionRow
+              userId={userId}
               labels={{
                 copy: t("Copy"),
                 speak: t("Speak message"),
@@ -638,15 +645,17 @@ export const MessageRow = memo(function MessageRow({
 });
 
 /**
- * The five action buttons under an AI reply: 36×36 tiles with a 10pt radius,
- * 6pt apart, 10pt below the bubble and 20pt below the row; copy, speak, share
- * and favorite on blue-soft tiles, a spacer, then regenerate alone on a plain
- * tile at the end. A favorited reply shows its bookmark tile filled in
- * accent blue. The read-aloud tile pulses while this reply is speaking.
- * Light colors are the mockup's own palette; dark mode falls back to the
- * shared tokens, which the mockup does not define.
+ * The action buttons under an AI reply: 36×36 tiles with a 10pt radius,
+ * 6pt apart, 10pt below the bubble and 20pt below the row; copy, speak,
+ * share and favorite on blue-soft tiles, a spacer, then regenerate alone on
+ * a plain tile. The order and which tiles show come from the interface
+ * settings, intersected with what this message can do. A favorited reply
+ * shows its bookmark tile filled in accent blue. The read-aloud tile pulses
+ * while this reply is speaking. Light colors are the mockup's own palette;
+ * dark mode falls back to the shared tokens, which the mockup does not define.
  */
 export function MessageActionRow({
+  userId,
   labels,
   onCopy,
   onSpeak,
@@ -658,6 +667,8 @@ export function MessageActionRow({
   favorited = false,
   onRegenerate,
 }: {
+  /** The account whose interface settings order and hide these tiles. */
+  userId?: string;
   labels: {
     copy: string;
     speak: string;
@@ -678,6 +689,15 @@ export function MessageActionRow({
 }) {
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
+  const customSettings = useCustomSettings(userId ?? "");
+  // The user's order and hidden tiles, intersected with what this message can do.
+  const visible = visibleMessageActions(customSettings, {
+    copy: true,
+    speak: canSpeak,
+    share: true,
+    favorite: onFavorite !== undefined,
+    regenerate: onRegenerate !== undefined,
+  });
   const tile =
     colorScheme === "dark"
       ? { background: tokens.accent, icon: tokens.link }
@@ -689,6 +709,60 @@ export function MessageActionRow({
   const favoriteTile = favorited
     ? { background: colorScheme === "dark" ? tokens.link : "#2f6bff", icon: "#fff" }
     : tile;
+  const tiles: Record<MessageActionId, ReactNode> = {
+    copy: (
+      <ActionTile
+        label={labels.copy}
+        ios="doc.on.doc"
+        android="copy-outline"
+        background={tile.background}
+        color={tile.icon}
+        onPress={onCopy}
+      />
+    ),
+    speak: (
+      <ActionTile
+        label={labels.speak}
+        ios="speaker.wave.2"
+        android="volume-high-outline"
+        background={tile.background}
+        color={tile.icon}
+        onPress={onSpeak}
+        pulse={speaking}
+        reducedMotion={reducedMotion}
+      />
+    ),
+    share: (
+      <ActionTile
+        label={labels.share}
+        ios="paperplane"
+        android="paper-plane-outline"
+        background={tile.background}
+        color={tile.icon}
+        onPress={onShare}
+      />
+    ),
+    favorite: (
+      <ActionTile
+        label={labels.favorite}
+        ios={favorited ? "bookmark.fill" : "bookmark"}
+        android={favorited ? "bookmark" : "bookmark-outline"}
+        background={favoriteTile.background}
+        color={favoriteTile.icon}
+        onPress={onFavorite!}
+      />
+    ),
+    regenerate: (
+      <ActionTile
+        label={labels.regenerate}
+        ios="arrow.clockwise"
+        android="refresh-outline"
+        background={plain.background}
+        color={plain.icon}
+        onPress={onRegenerate!}
+      />
+    ),
+  };
   return (
     <View
       style={{
@@ -699,55 +773,12 @@ export function MessageActionRow({
         marginBottom: 20,
       }}
     >
-      <ActionTile
-        label={labels.copy}
-        ios="doc.on.doc"
-        android="copy-outline"
-        background={tile.background}
-        color={tile.icon}
-        onPress={onCopy}
-      />
-      {canSpeak ? (
-        <ActionTile
-          label={labels.speak}
-          ios="speaker.wave.2"
-          android="volume-high-outline"
-          background={tile.background}
-          color={tile.icon}
-          onPress={onSpeak}
-          pulse={speaking}
-          reducedMotion={reducedMotion}
-        />
-      ) : null}
-      <ActionTile
-        label={labels.share}
-        ios="paperplane"
-        android="paper-plane-outline"
-        background={tile.background}
-        color={tile.icon}
-        onPress={onShare}
-      />
-      {onFavorite ? (
-        <ActionTile
-          label={labels.favorite}
-          ios={favorited ? "bookmark.fill" : "bookmark"}
-          android={favorited ? "bookmark" : "bookmark-outline"}
-          background={favoriteTile.background}
-          color={favoriteTile.icon}
-          onPress={onFavorite}
-        />
-      ) : null}
-      <View style={{ flex: 1 }} />
-      {onRegenerate ? (
-        <ActionTile
-          label={labels.regenerate}
-          ios="arrow.clockwise"
-          android="refresh-outline"
-          background={plain.background}
-          color={plain.icon}
-          onPress={onRegenerate}
-        />
-      ) : null}
+      {visible.map((id, index) => (
+        <Fragment key={id}>
+          {id === "regenerate" && index > 0 ? <View style={{ flex: 1 }} /> : null}
+          {tiles[id]}
+        </Fragment>
+      ))}
     </View>
   );
 }

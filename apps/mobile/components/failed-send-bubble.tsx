@@ -1,6 +1,7 @@
 import { isModelRequiredSendError } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { ActionSheetIOS, Alert, Image, Platform, Pressable, Text, View } from "react-native";
+import { customErrorTextStyle, customFontFamily, useCustomSettings } from "../lib/custom-settings";
 import { useI18n } from "../lib/i18n";
 import { openModelSettings } from "../lib/model-settings";
 import { useMobileTokens } from "../lib/native";
@@ -15,6 +16,7 @@ export function FailedSendBubble({
   onDelete,
   needsModel,
   userBubble,
+  userId,
 }: {
   attempt: SendAttempt;
   onRetry: () => void;
@@ -22,12 +24,21 @@ export function FailedSendBubble({
   /** Whether the account still has no model; unknown keeps the saved send error. */
   needsModel?: boolean;
   userBubble?: UserBubble;
+  /** The account whose interface settings style this bubble's text. */
+  userId?: string;
 }) {
   const { t } = useI18n();
   const tokens = withUserBubble(useMobileTokens(), userBubble);
   const { payload, state } = attempt;
   const sending = state === "pending";
   const retryable = state === "failed" || state === "queued";
+  const customSettings = useCustomSettings(userId ?? "");
+  // The failed message itself keeps the conversation font; its "Not sent" caption
+  // takes the error font (a sending message is a status, not an error, and stays grey).
+  const chatSize = customSettings.font.chat.size;
+  const chatColor = customSettings.font.chat.color;
+  const chatFamily = customFontFamily(customSettings);
+  const errorStyle = customErrorTextStyle(customSettings);
   // Once a model is connected, the saved missing-model error is stale and retrying can work.
   const modelRequired = isModelRequiredSendError(attempt.error) && needsModel !== false;
   // A missing model isn't fixed by retrying, so the caption names the cause instead.
@@ -133,7 +144,17 @@ export function FailedSendBubble({
           </Text>
         ) : null}
         {payload.displayText ? (
-          <Text style={{ color: tokens.chatUserForeground, ...typeScale.body }}>
+          <Text
+            style={{
+              color: chatColor ?? tokens.chatUserForeground,
+              ...typeScale.body,
+              fontSize: chatSize,
+              lineHeight: Math.round(
+                (chatSize * typeScale.body.lineHeight) / typeScale.body.fontSize,
+              ),
+              ...(chatFamily ? { fontFamily: chatFamily } : null),
+            }}
+          >
             {payload.displayText}
           </Text>
         ) : null}
@@ -162,7 +183,13 @@ export function FailedSendBubble({
             color={color}
           />
         ) : null}
-        <Text style={{ color, fontSize: 13 }}>{caption}</Text>
+        <Text
+          style={
+            sending ? { color, fontSize: 13 } : [errorStyle, { color: errorStyle.color ?? color }]
+          }
+        >
+          {caption}
+        </Text>
       </View>
     </Pressable>
   );

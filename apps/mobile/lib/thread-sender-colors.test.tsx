@@ -40,6 +40,7 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 
 vi.mock("../components/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
+  useMessageChatFont: () => ({ size: 17, color: null }),
 }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
