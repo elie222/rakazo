@@ -47,11 +47,13 @@ fi
 # Sustained, not momentary: the 15-minute load and what the kernel could still hand out.
 read -r _ _ load15 _ </proc/loadavg
 if awk -v avg="${load15}" -v cpus="$(nproc)" 'BEGIN { exit !(avg > cpus) }'; then
+  echo "15-minute load ${load15} on $(nproc) cores" >&2
   report "CPU is overloaded (15-minute load above the core count)"
 fi
 if awk '/^MemTotal:/ { total = $2 } /^MemAvailable:/ { available = $2 }
   /^SwapTotal:/ { swap = $2 } /^SwapFree:/ { swapfree = $2 }
   END { exit !(available * 10 < total || swap - swapfree > 1048576) }' /proc/meminfo; then
+  grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo >&2
   report "Memory is low (under 10% available, or over 1GiB swapped)"
 fi
 

@@ -743,6 +743,16 @@ class HostCheckTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Memory is low", alert_log.read_text())
+            meminfo.write_text(
+                "MemTotal: 8000000 kB\nMemAvailable: 4000000 kB\n"
+                "SwapTotal: 4000000 kB\nSwapFree: 2000000 kB\n"
+            )
+            alert_log.write_text("")
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Memory is low", alert_log.read_text())
             meminfo.write_text(healthy_memory)
             rules.write_text(
                 "### tuple ### allow any 2222 0.0.0.0/0 any 0.0.0.0/0 in\n"
