@@ -9,15 +9,16 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import {
   readVoiceAudio,
   readVoiceJson,
-  requireOk,
   speechUploadName,
-  verifyVoiceHttpGet,
   voiceDeadline,
+  voiceErrorDetail,
   voiceLanguageHint,
   voiceRequestError,
+  voiceUnreachable,
 } from "./voice-http.js";
 
 export const XAI_VOICE_PROVIDER_ID = "xai";
@@ -39,12 +40,21 @@ export class XaiVoiceProvider implements VoiceProvider {
   }
 
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
-    return verifyVoiceHttpGet({
-      url: `${API}/tts/voices`,
-      headers: { authorization: `Bearer ${apiKey}` },
-      signal: context.signal,
-      provider: PROVIDER,
-    });
+    try {
+      const res = await fetch(`${API}/tts/voices`, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: voiceDeadline(context.signal, 20_000),
+      });
+      if (res.ok) return { ok: true };
+      const error = xaiRequestError(res.status, "checking that key", await readVoiceJson(res));
+      return {
+        ok: false,
+        message: error.message,
+        code: error instanceof VoiceAccountError ? error.code : undefined,
+      };
+    } catch {
+      return { ok: false, message: voiceUnreachable(PROVIDER) };
+    }
   }
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
@@ -52,7 +62,7 @@ export class XaiVoiceProvider implements VoiceProvider {
       headers: { authorization: `Bearer ${apiKey}` },
       signal: voiceDeadline(context.signal, 20_000),
     });
-    await requireOk(res, PROVIDER, "listing voices");
+    if (!res.ok) throw xaiRequestError(res.status, "listing voices", await readVoiceJson(res));
     const body = await readVoiceJson(res, { requireValid: true });
     const listed =
       body && typeof body === "object" && "voices" in body && Array.isArray(body.voices)
@@ -81,7 +91,7 @@ export class XaiVoiceProvider implements VoiceProvider {
       body: JSON.stringify({ text: request.text, voice_id: request.voiceId, language: "auto" }),
       signal,
     });
-    await requireOk(res, PROVIDER, "speaking");
+    if (!res.ok) throw xaiRequestError(res.status, "speaking", await readVoiceJson(res));
     return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
   }
 
@@ -109,8 +119,20 @@ export class XaiVoiceProvider implements VoiceProvider {
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw voiceRequestError(res.status, PROVIDER, "transcribing", body);
+    if (!res.ok) throw xaiRequestError(res.status, "transcribing", body);
     const text = body && typeof body === "object" && "text" in body ? body.text : undefined;
     return { text: typeof text === "string" ? text.trim() : "" };
   }
+}
+
+/** Normalize xAI's account statuses only at its adapter boundary. */
+function xaiRequestError(status: number, what: string, body: unknown): Error {
+  const message = voiceErrorDetail(body);
+  if (status === 400 && /\b(?:incorrect|invalid) api key\b/i.test(message)) status = 401;
+  if (
+    status === 403 &&
+    /\bcredits?\b|billing|paid subscription|account is not active/i.test(message)
+  )
+    status = 402;
+  return voiceRequestError(status, PROVIDER, what, body);
 }
