@@ -8,6 +8,7 @@ import {
   deploymentConnectionSecret,
   deploymentServes,
   deploymentStandIn,
+  findConnectedModelCredential,
   findDeploymentVoice,
   parseModelSecret,
   resolveMemberMainModel,
@@ -131,16 +132,17 @@ export async function aiConsentStatus(
   if (modelsEnabled) {
     const deploymentModels = await currentDeploymentModels(deps, settings);
     const deployment = deploymentStandIn(deploymentModels);
+    // The connection a run uses: a member's endpoint that doesn't list the model gives way to
+    // the deployment's, so consent names the endpoint that receives the content.
+    const runCredential = (provider: string, modelId: string) =>
+      findConnectedModelCredential(deps.prisma, deps.secrets, actor, provider, modelId, {
+        deployment: async () => deploymentModels,
+      }).catch(() => findModelCredential(deps.prisma, actor, provider, modelId));
     const selected = await Promise.all(
       (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =
           override?.modelProvider && override.modelId
-            ? await findModelCredential(
-                deps.prisma,
-                actor,
-                override.modelProvider,
-                override.modelId,
-              )
+            ? await runCredential(override.modelProvider, override.modelId)
             : null;
         return selectConfiguredModel({
           override,
@@ -171,7 +173,7 @@ export async function aiConsentStatus(
       roleChoices.map(async (choice) => {
         const credential = choice.credentialId
           ? await findModelCredentialById(deps.prisma, actor, choice.credentialId)
-          : await findModelCredential(deps.prisma, actor, choice.provider, choice.modelId);
+          : await runCredential(choice.provider, choice.modelId);
         // A choice the deployment serves runs on its connection, so it is a recipient too.
         return credential ||
           (!choice.credentialId &&

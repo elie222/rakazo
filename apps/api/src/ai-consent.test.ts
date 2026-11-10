@@ -365,3 +365,72 @@ it("keys consent for the deployment's own endpoint to its origin", async () => {
     moved.recipients.map((recipient) => recipient.key),
   );
 });
+
+it("names the deployment's endpoint for a model the member's own endpoint doesn't list", async () => {
+  const { deps, actor } = setup();
+  deps.env = {
+    ...deps.env,
+    agentRuntime: "pi",
+    defaultProvider: "openrouter",
+    defaultModel: "fixture/default",
+  } as never;
+  vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+    defaultModelProvider: "openai-compatible",
+    defaultModelId: "fixture/endpoint-model",
+    modelConnections: [
+      {
+        provider: "openai-compatible",
+        ciphertext: "deployment-cipher",
+        models: ["fixture/endpoint-model"],
+      },
+    ],
+  } as never);
+  vi.mocked(deps.prisma.userModelCredential.findMany).mockResolvedValue([
+    {
+      id: "own-credential",
+      userId: actor.userId,
+      provider: "openai-compatible",
+      label: "fixture",
+      secretId: "own-secret",
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    },
+  ] as never);
+  const ownSecret = { id: "own-secret", ciphertext: "own-cipher" };
+  vi.mocked(deps.prisma.secret.findMany).mockResolvedValue([ownSecret] as never);
+  vi.mocked(deps.prisma.secret.findFirst).mockResolvedValue(ownSecret);
+  vi.mocked(deps.prisma.bot.findMany).mockResolvedValue([
+    {
+      id: "bot",
+      modelProvider: "openai-compatible",
+      modelId: "fixture/endpoint-model",
+      thinkingLevel: null,
+    },
+  ] as never);
+  deps.secrets = {
+    load: vi.fn(async (ciphertext: string) =>
+      JSON.stringify(
+        ciphertext === "own-cipher"
+          ? {
+              kind: "openai_compatible",
+              baseUrl: "https://own.example.test/v1",
+              apiKey: "fixture-own-key",
+              enabledModelIds: ["own/model"],
+            }
+          : {
+              kind: "openai_compatible",
+              baseUrl: "https://deployment.example.test/v1",
+              apiKey: "fixture-endpoint-key",
+            },
+      ),
+    ),
+  } as never;
+
+  const status = await aiConsentStatus(deps, actor, { botId: "bot", uses: ["model"] });
+
+  expect(
+    status.recipients
+      .filter((recipient) => recipient.detail === "fixture/endpoint-model")
+      .map((recipient) => recipient.name),
+  ).toEqual([expect.stringContaining("https://deployment.example.test")]);
+});
