@@ -344,6 +344,20 @@ function chatTime(
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
 }
 
+/**
+ * Whether the viewer muted the chat, as the server says. A server from before chat mutes sends a
+ * bot's own notification setting instead, which is that viewer's mute there, and cannot mute a
+ * group: unknown.
+ */
+export function chatMuted(
+  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+): boolean | undefined {
+  if (typeof chat.muted === "boolean") return chat.muted;
+  return "notifyOnFinish" in chat && typeof chat.notifyOnFinish === "boolean"
+    ? !chat.notifyOnFinish
+    : undefined;
+}
+
 /** A group's avatar, with the bell while the viewer has it muted. */
 function MutableGroupAvatar({ group, size }: { group: MobileGroup | SpaceGroup; size: number }) {
   return (
@@ -383,7 +397,7 @@ export function ChatSwipe({
       rowKey={rowKey}
       unread={chat.unread}
       pinned={chat.pinned}
-      muted={chat.muted}
+      muted={chatMuted(chat)}
       hidden={chat.hidden}
       sectionId={chat.sectionId}
       sections={sections}

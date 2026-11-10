@@ -12,7 +12,21 @@ it("lands on a listed chat before a snoozed one", () => {
   expect(firstThreadRoute([], [], now)).toBe("/app");
 });
 
-it("lands on a listed chat before a hidden one", () => {
+it("never lands on a hidden chat, even with nothing else to open", () => {
   expect(firstThreadRoute([{ id: "a", hidden: true }, { id: "b" }], [], now)).toBe("/app/b");
   expect(firstThreadRoute([{ id: "a", hidden: true }], [{ id: "g" }], now)).toBe("/app/g/g");
+  expect(firstThreadRoute([{ id: "a", hidden: true }], [{ id: "g", hidden: true }], now)).toBe(
+    "/app",
+  );
+  // A snoozed chat still opens before none, but not over being hidden.
+  expect(
+    firstThreadRoute(
+      [
+        { id: "a", hidden: true },
+        { id: "b", snoozedUntil: later },
+      ],
+      [],
+      now,
+    ),
+  ).toBe("/app/b");
 });

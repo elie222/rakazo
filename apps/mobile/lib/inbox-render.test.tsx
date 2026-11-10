@@ -34,6 +34,7 @@ const ui = vi.hoisted(() => ({
   rowMenus: [] as NativeRowMenu[],
   a11yActions: new Map<string, (event: { nativeEvent: { actionName: string } }) => void>(),
   swipeRows: [] as string[],
+  swipeMuted: [] as Array<boolean | undefined>,
   avatars: [] as string[],
   chevronStarts: [] as number[],
   chevronTargets: [] as number[],
@@ -220,13 +221,16 @@ vi.mock("../components/inbox-swipe-row", () => ({
   InboxSwipeRow: ({
     rowKey,
     sections,
+    muted,
     children,
   }: {
     rowKey: string;
     sections: { id: string }[];
+    muted?: boolean;
     children: ReactElement;
   }) => {
     ui.swipeRows.push([rowKey, ...sections.map((section) => section.id)].join(" "));
+    ui.swipeMuted.push(muted);
     return children;
   },
 }));
@@ -294,6 +298,7 @@ beforeEach(() => {
     menus: [],
     rowMenus: [],
     swipeRows: [],
+    swipeMuted: [],
     avatars: [],
     chevronStarts: [],
     chevronTargets: [],
@@ -682,6 +687,26 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
   render(<PublishRoster key="session-2" me={me} inboxSpaces={[]} />);
   expect(publish).toHaveBeenLastCalledWith([]);
+});
+
+it("offers Mute for a bot on a server that sends only its notification setting", () => {
+  const items = [
+    {
+      type: "bot",
+      bot: { id: "quiet", spaceId: "space-a", name: "Quiet", preview: "", notifyOnFinish: false },
+    },
+    {
+      type: "bot",
+      bot: { id: "loud", spaceId: "space-a", name: "Loud", preview: "", notifyOnFinish: true },
+    },
+    // Such a server cannot mute a group, so its menu offers no Mute.
+    {
+      type: "group",
+      group: { id: "crew", spaceId: "space-a", name: "Crew", preview: "", members: [] },
+    },
+  ] as unknown as InboxItem[];
+  render(<List items={items} spaceId="space-a" />);
+  expect(ui.swipeMuted).toEqual([true, false, undefined]);
 });
 
 it("gives chats in every space the long-press menu, with their own space's sections", () => {

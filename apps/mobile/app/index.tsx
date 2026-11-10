@@ -32,7 +32,7 @@ import { createHomeStyles } from "../components/home-styles";
 import { ActivitySection } from "../components/inbox-activity";
 import { InboxHeader } from "../components/inbox-header";
 import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
-import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
+import { CompactRowsContext, chatMuted, SelectedChatContext } from "../components/inbox-rows";
 import { NativeInboxList } from "../components/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/organization-menu";
 import { PickChatPane } from "../components/pick-chat-pane";
@@ -900,7 +900,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       </SelectedChatContext.Provider>
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
-          bot={organizeChat}
+          bot={{ ...organizeChat, muted: chatMuted(organizeChat) }}
           sections={organizeSpace?.botSections ?? organizeTarget.sections}
           onClose={() => {
             organizeRequestId.current += 1;

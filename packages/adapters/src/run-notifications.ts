@@ -344,6 +344,19 @@ export function completionMarksUnread(
   return (trigger !== "routine" && trigger !== "reaction") || Boolean(text);
 }
 
+/**
+ * How a run's final message is marked, however the run finished: unread for the people in the
+ * chat, or written for another bot whose request it answers, which alerts nobody.
+ */
+export function completionMarks(
+  trigger: string,
+  text: string,
+  userFacingPeerReply = false,
+): { markUnread: boolean; forBot: boolean } {
+  const markUnread = completionMarksUnread(trigger, text, userFacingPeerReply);
+  return { markUnread, forBot: trigger === "bot_message" && !markUnread };
+}
+
 export function subagentMarksUnread(
   trigger: string,
   status: "running" | "completed" | "failed",

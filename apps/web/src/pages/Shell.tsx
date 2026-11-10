@@ -288,9 +288,10 @@ function SpaceShell() {
     inGroup || routeChat?.groupId
       ? undefined
       : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ??
-        // With no chat named, open one that's in the list, not a snoozed or hidden one.
+        // With no chat named, open one that's in the list, not a snoozed one while any other is,
+        // and never a hidden one.
         bots.find((b) => chatListed(b, snoozeNow)) ??
-        bots[0]);
+        bots.find((b) => !b.hidden));
   const selectBot = useCallback(
     (id: string) => {
       setMobileSidebarOpen(false);

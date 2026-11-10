@@ -80,8 +80,8 @@ export function useShellNavigation() {
 }
 
 /**
- * The chat to land on: the first one in the list, so not a snoozed or hidden one while any other
- * is listed.
+ * The chat to land on: the first one in the list, so not a snoozed one while any other is listed,
+ * and never a hidden one, which opens only from the Hidden shelf or search.
  */
 export function firstThreadRoute(
   bots: readonly Pick<Bot, "id" | "snoozedUntil" | "hidden">[],
@@ -95,7 +95,11 @@ export function firstThreadRoute(
   if (bot) return `/app/${bot.id}`;
   const group = listed(groups);
   if (group) return `/app/g/${group.id}`;
-  if (bots[0]) return `/app/${bots[0].id}`;
-  if (groups[0]) return `/app/g/${groups[0].id}`;
+  const shown = <T extends { hidden?: boolean }>(chats: readonly T[]) =>
+    chats.find((chat) => !chat.hidden);
+  const snoozedBot = shown(bots);
+  if (snoozedBot) return `/app/${snoozedBot.id}`;
+  const snoozedGroup = shown(groups);
+  if (snoozedGroup) return `/app/g/${snoozedGroup.id}`;
   return "/app";
 }
