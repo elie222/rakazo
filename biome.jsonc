@@ -1,0 +1,158 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/coverage",
+      "!**/design",
+      "!**/packages/db/src/generated",
+      "!**/apps/mobile/.expo",
+      "!**/playwright-report",
+      "!**/test-results",
+      "!**/test-report",
+      "!**/verify-report",
+      "!**/data",
+      "!**/*.astro",
+      "!**/apps/www"
+    ]
+  },
+  "plugins": [
+    {
+      "path": "./scripts/biome/no-hex-colors.grit",
+      "includes": [
+        "**/apps/web/src/**/*.tsx",
+        "**/packages/ui-web/src/**/*.tsx",
+        "!**/*.test.tsx",
+        "!**/packages/ui-web/src/bot-avatar.tsx",
+        "!**/apps/web/src/pages/WindowChrome.tsx"
+      ]
+    },
+    {
+      "path": "./scripts/biome/no-css-var-arbitrary-values.grit",
+      "includes": ["**/apps/web/src/**/*.tsx", "**/packages/ui-web/src/**/*.tsx"]
+    }
+  ],
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "noNonNullAssertion": "off",
+        "useImportType": { "level": "error", "options": { "style": "separatedType" } }
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "off"
+      },
+      "a11y": {
+        "noSvgWithoutTitle": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "markdown": {
+    "parser": {
+      "frontmatter": true
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/mobile/**", "packages/chat-ui/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noReactNativeRawText": {
+              "level": "error",
+              // Our components that render string children inside a Text.
+              "options": { "skip": ["SvgText", "ChatMarkdown", "LinkifiedText", "SettingsLabel"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      // Tests render mocked React Native through react-dom, so raw text there never reaches a
+      // native view, and harness components are created once per test, not on each render.
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noReactNativeRawText": "off",
+            "noComponentHookFactories": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/ui-web/src/components/ui/**", "packages/ui-web/src/shadcn.css"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noLabelWithoutControl": "off",
+            "useKeyWithClickEvents": "off",
+            "useSemanticElements": "off"
+          },
+          "suspicious": {
+            "noDoubleEquals": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "apps/api/**",
+        "apps/worker/**",
+        "infra/sandboxes/supervisor/**",
+        "infra/updater/**",
+        "packages/adapters/**",
+        "packages/db/**",
+        "packages/logging/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/logging/src/console-sink.ts", "packages/logging/src/sink-guard.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
+}

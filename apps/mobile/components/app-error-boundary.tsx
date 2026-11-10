@@ -1,9 +1,9 @@
+import { t } from "@lingui/core/macro";
 import * as SplashScreen from "expo-splash-screen";
 import type { ReactNode } from "react";
 import { Component } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { t } from "../lib/i18n";
 import { reportMobileError } from "../lib/monitoring";
 import { completeMobileStartup } from "../lib/startup";
 
@@ -39,7 +39,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           ]}
         >
           <Text style={[styles.actionText, { color: tokens.primaryForeground }]}>
-            {t("Try again")}
+            {t`Try again`}
           </Text>
         </Pressable>
       </View>

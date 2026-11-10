@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
@@ -6,13 +7,12 @@ import { NativeActionButton } from "../components/native-action-button";
 import { SettingsGroup, SettingsInputRow } from "../components/settings-group";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { refreshOrganizations, switchOrganization, useOrganizations } from "../lib/organizations";
 import { errorText } from "../lib/user-error";
 
 export default function NewOrganization() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const organizations = useOrganizations().data;
@@ -32,12 +32,12 @@ export default function NewOrganization() {
       const target = { ...created, spaceIds: [created.defaultSpaceId], canManage: true };
       if (!(await switchOrganization(target, organizations?.organizations ?? []))) {
         void refreshOrganizations();
-        Alert.alert(t("Could not switch spaces"), t("Try again."));
+        Alert.alert(t`Could not switch spaces`, t`Try again.`);
         router.dismissAll();
         router.replace("/");
       }
     } catch (reason) {
-      setError(errorText(reason, t("Something went wrong. Try again.")));
+      setError(errorText(reason, t`Something went wrong. Try again.`));
       creating.current = false;
       setPending(false);
     }
@@ -46,15 +46,15 @@ export default function NewOrganization() {
   return (
     <View style={styles.content}>
       <Text accessibilityRole="header" style={styles.title}>
-        {t("Create organization")}
+        {t`Create organization`}
       </Text>
       <SettingsGroup>
         <SettingsInputRow
-          accessibilityLabel={t("Name")}
+          accessibilityLabel={t`Name`}
           autoFocus
           editable={!pending}
           maxLength={60}
-          placeholder={t("Name")}
+          placeholder={t`Name`}
           value={name}
           onChangeText={setName}
           onSubmitEditing={() => void create()}
@@ -68,7 +68,7 @@ export default function NewOrganization() {
       ) : null}
       <NativeActionButton
         disabled={!name.trim() || pending}
-        label={pending ? t("Creating…") : t("Create")}
+        label={pending ? t`Creating…` : t`Create`}
         onPress={() => void create()}
       />
     </View>

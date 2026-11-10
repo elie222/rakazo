@@ -1,4 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { BotSecretMetadata, VaultKind, VaultRevealed } from "@rakazo/contracts";
 import {
   cardExpiry,
@@ -22,8 +24,8 @@ import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { VaultItemEditor } from "../../components/vault-item-editor";
 import { VaultItemSheet } from "../../components/vault-item-sheet";
+import { VaultTile } from "../../components/vault-tile";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
@@ -58,7 +60,7 @@ export default function Vault() {
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
-  const { t } = useI18n();
+  const { t } = useLingui();
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -98,7 +100,7 @@ export default function Vault() {
           setLoadError(null);
         })
         .catch((err: unknown) => {
-          if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
+          if (current) setLoadError(errorText(err, t`Something went wrong. Try again.`));
         });
       return () => {
         current = false;
@@ -117,8 +119,8 @@ export default function Vault() {
       unstable_headerRightItems: () => [
         {
           type: "menu" as const,
-          label: t("New item"),
-          accessibilityLabel: t("New item"),
+          label: t`New item`,
+          accessibilityLabel: t`New item`,
           icon: { type: "sfSymbol" as const, name: "plus" },
           menu: {
             items: VAULT_KINDS.map((kind) => ({
@@ -149,16 +151,16 @@ export default function Vault() {
       setItems((current) => current?.filter((entry) => entry.name !== name) ?? null);
       setOpened(null);
     } catch (err) {
-      setError(errorText(err, t("Could not remove the item")));
+      setError(errorText(err, t`Could not remove the item`));
     } finally {
       setPending(false);
     }
   }
 
   function confirmRemove(item: BotSecretMetadata) {
-    Alert.alert(t("Remove {name}?", { name: item.title }), undefined, [
-      { text: t("Cancel"), style: "cancel" },
-      { text: t("Remove"), style: "destructive", onPress: () => void remove(item.name) },
+    Alert.alert(t`Remove ${ph({ name: item.title })}?`, undefined, [
+      { text: t`Cancel`, style: "cancel" },
+      { text: t`Remove`, style: "destructive", onPress: () => void remove(item.name) },
     ]);
   }
 
@@ -173,7 +175,7 @@ export default function Vault() {
     } catch (err) {
       // Dismissing the confirmation prompt is the person's choice, not a failure.
       if (!isIdentityConfirmationRequired(err)) {
-        setError(errorText(err, t("Could not show the item")));
+        setError(errorText(err, t`Could not show the item`));
       }
     } finally {
       setPending(false);
@@ -184,36 +186,36 @@ export default function Vault() {
     const copy = (text: string) => void Clipboard.setStringAsync(text).catch(() => undefined);
     if ("value" in revealed) {
       Alert.alert(title, revealed.value, [
-        { text: t("Copy"), onPress: () => copy(revealed.value) },
-        { text: t("Done"), style: "cancel" },
+        { text: t`Copy`, onPress: () => copy(revealed.value) },
+        { text: t`Done`, style: "cancel" },
       ]);
       return;
     }
     const fields =
       "card" in revealed
         ? [
-            { label: t("Card number"), value: revealed.card.number },
-            { label: t("Expires"), value: cardExpiry(revealed.card) },
-            ...(revealed.card.cvc ? [{ label: t("Security code"), value: revealed.card.cvc }] : []),
+            { label: t`Card number`, value: revealed.card.number },
+            { label: t`Expires`, value: cardExpiry(revealed.card) },
+            ...(revealed.card.cvc ? [{ label: t`Security code`, value: revealed.card.cvc }] : []),
           ]
         : revealed.fields;
     Alert.alert(title, fields.map((field) => `${field.label}\n${field.value}`).join("\n\n"), [
       {
-        text: t("Copy"),
+        text: t`Copy`,
         // An item can have more fields than an Android alert has buttons, so each gets a sheet row.
         onPress: () =>
           presentMessageActionSheet({
             title,
             actions: fields.map((field) => ({
-              text: t("Copy {label}", { label: field.label }),
+              text: t`Copy ${ph({ label: field.label })}`,
               onPress: () => copy(field.value),
             })),
-            cancel: t("Cancel"),
-            more: t("More"),
+            cancel: t`Cancel`,
+            more: t`More`,
             colorScheme,
           }),
       },
-      { text: t("Done"), style: "cancel" },
+      { text: t`Done`, style: "cancel" },
     ]);
   }
 
@@ -233,7 +235,7 @@ export default function Vault() {
       } catch (err) {
         // Dismissing the confirmation prompt is the person's choice, not a failure.
         if (!isIdentityConfirmationRequired(err)) {
-          setError(errorText(err, t("Could not show the item")));
+          setError(errorText(err, t`Could not show the item`));
         }
         return;
       } finally {
@@ -286,7 +288,7 @@ export default function Vault() {
           // Older iOS and Android have no header menu, so New sits above the list.
           <MenuView
             colorScheme={colorScheme}
-            title={t("New item")}
+            title={t`New item`}
             actions={VAULT_KINDS.map((kind) => ({ id: kind, title: vaultKindLabel(kind) }))}
             onPressAction={({ nativeEvent }) => startAdding(nativeEvent.event as VaultKind)}
           >
@@ -295,11 +297,11 @@ export default function Vault() {
             <View
               accessible
               accessibilityRole="button"
-              accessibilityLabel={t("New item")}
+              accessibilityLabel={t`New item`}
               style={styles.add}
             >
               <NativeSymbol ios="plus" android="add" size={18} />
-              <Text style={styles.addLabel}>{t("New item")}</Text>
+              <Text style={styles.addLabel}>{t`New item`}</Text>
             </View>
           </MenuView>
         ) : null}
@@ -308,17 +310,17 @@ export default function Vault() {
         ) : null}
         {kinds.length > 1 ? (
           <NativeSegmentedControl
-            accessibilityLabel={t("Kind")}
+            accessibilityLabel={t`Kind`}
             value={activeFilter}
             onChange={setFilter}
             options={[
-              { value: "all" as const, label: t("All") },
+              { value: "all" as const, label: t`All` },
               ...kinds.map((kind) => ({ value: kind, label: filterLabel(kind) })),
             ]}
           />
         ) : null}
         {items && items.length === 0 ? (
-          <Text style={styles.empty}>{t("Nothing saved yet.")}</Text>
+          <Text style={styles.empty}>{t`Nothing saved yet.`}</Text>
         ) : null}
         {shown.length ? (
           <SettingsGroup>
@@ -333,11 +335,11 @@ export default function Vault() {
                   key={item.name}
                   actions={[
                     ...(readable
-                      ? [{ id: "edit", title: t("Edit"), attributes: { disabled: pending } }]
+                      ? [{ id: "edit", title: t`Edit`, attributes: { disabled: pending } }]
                       : []),
                     {
                       id: "remove",
-                      title: t("Remove"),
+                      title: t`Remove`,
                       attributes: { destructive: true, disabled: pending },
                     },
                   ]}
@@ -358,13 +360,16 @@ export default function Vault() {
                       detail={vaultItemSubtitle(item) || undefined}
                       chevron="right"
                       leading={
-                        <View style={styles.tile}>
+                        <VaultTile
+                          origin={readable?.auth.type === "login" ? item.origin : undefined}
+                          style={styles.tile}
+                        >
                           <NativeSymbol
                             ios={symbol.ios}
                             android={symbol.android as never}
                             size={17}
                           />
-                        </View>
+                        </VaultTile>
                       }
                     />
                   )}
@@ -401,11 +406,11 @@ export default function Vault() {
   );
 
   function filterLabel(kind: VaultKind) {
-    if (kind === "login") return t("Logins");
-    if (kind === "card") return t("Cards");
-    if (kind === "contact") return t("Contacts");
-    if (kind === "api_key") return t("Keys");
-    return t("Variables");
+    if (kind === "login") return t`Logins`;
+    if (kind === "card") return t`Cards`;
+    if (kind === "contact") return t`Contacts`;
+    if (kind === "api_key") return t`Keys`;
+    return t`Variables`;
   }
 }
 

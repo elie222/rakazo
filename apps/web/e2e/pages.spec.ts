@@ -520,8 +520,11 @@ test("in the macOS app a page's top row sits below the window controls and its c
   ).toBeVisible();
   const close = view.getByRole("button", { name: "Close page" });
   // Below the 12px traffic lights at y 16, and outside the window's drag areas, which Electron
-  // applies through anything drawn over them.
-  expect((await close.boundingBox())!.y).toBeGreaterThanOrEqual(36);
+  // applies through anything drawn over them. macOS draws the lights from x=16 to about x=68.
+  const box = await close.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(36);
+  // Close page must clear the 72px traffic-light strip (#3450).
+  expect(box!.x).toBeGreaterThanOrEqual(72);
   for (const control of [
     close,
     view.getByRole("button", { name: title }),
@@ -534,6 +537,14 @@ test("in the macOS app a page's top row sits below the window controls and its c
   await captureScreenshot(page, testInfo, "page-full-screen-macos");
   await close.click();
   await expect(view).toBeHidden();
+
+  // #3757: on a narrow window the nav hamburger must clear the same traffic-light strip.
+  await page.setViewportSize({ width: 500, height: 860 });
+  const openNav = page.getByRole("button", { name: "Open navigation" });
+  await expect(openNav).toBeVisible();
+  const navBox = await openNav.boundingBox();
+  expect(navBox!.x).toBeGreaterThanOrEqual(72);
+  await captureScreenshot(page, testInfo, "open-navigation-macos");
 });
 
 test("a page's failures, a deleted page's card, and the Library's Share, search and rename", async ({

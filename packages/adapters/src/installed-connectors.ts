@@ -70,7 +70,6 @@ const McpAuthSchema = z
 /** MCP services offered as one-step sources. A preset with a URL always connects there. */
 export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
   { id: "executor", name: "Executor", urlPlaceholder: "https://executor.example/mcp" },
-  { id: "treg", name: "Treg", url: "https://treg.to/mcp/" },
 ];
 
 /** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send

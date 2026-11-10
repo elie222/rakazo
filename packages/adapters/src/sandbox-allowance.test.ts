@@ -21,6 +21,7 @@ function allowanceDeps(input: {
     currentPeriodStartsAt?: Date | null;
     byokInterval?: "month" | "year";
     byokTier?: ByokTier | null;
+    byokPriceCents?: number | null;
   };
   hours?: Array<{ kind: string; hours: number }>;
   sandbox?: Partial<SandboxProvider>;
@@ -42,6 +43,7 @@ function allowanceDeps(input: {
                 currentPeriodStartsAt: input.subscription?.currentPeriodStartsAt ?? null,
                 byokInterval: input.subscription?.byokInterval ?? null,
                 byokTier: input.subscription?.byokTier ?? null,
+                byokPriceCents: input.subscription?.byokPriceCents ?? null,
               },
       }),
     },
@@ -96,6 +98,18 @@ describe("computer allowance", () => {
   it("gives a monthly credit plan a fifth of its amount", async () => {
     const { deps } = allowanceDeps({ billing: true, mode: "credits", creditAmountCents: 5000 });
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
+  });
+
+  it.each<[string | null, string]>([
+    ["credits", "a top-up switched its models to credits"],
+    [null, "it never chose how to pay for models"],
+  ])("keeps a paid own-key subscription's hours when its mode is %s (%s)", async (mode) => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode,
+      subscription: { status: "active", byokTier: "pro", byokPriceCents: 4900 },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(20_000_000);
   });
 
   it("gives nothing without a monthly plan", async () => {
@@ -257,12 +271,15 @@ describe("computer hours left", () => {
 describe("plan computer size", () => {
   function sizeFor(
     mode: string | null,
-    billing: { status: string | null; byokTier: string | null } | null,
+    billing: { status: string | null; byokTier: string | null; byokPriceCents?: number } | null,
   ) {
     const prisma = {
       space: {
         findUnique: vi.fn().mockResolvedValue({
-          organization: { modelCredits: mode ? { mode } : null, billing },
+          organization: {
+            modelCredits: mode ? { mode } : null,
+            billing: billing && { byokPriceCents: null, ...billing },
+          },
         }),
       },
     };
@@ -273,6 +290,9 @@ describe("plan computer size", () => {
     expect(await sizeFor("byok", { status: "active", byokTier: "pro" })).toBe("large");
     expect(await sizeFor("byok", { status: "trialing", byokTier: "max" })).toBe("xlarge");
     expect(await sizeFor("byok", { status: "active", byokTier: "standard" })).toBe("standard");
+    expect(
+      await sizeFor("credits", { status: "active", byokTier: "max", byokPriceCents: 9900 }),
+    ).toBe("xlarge");
   });
 
   it("keeps credits, lapsed plans and plans without a tier standard", async () => {

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
+import { MODEL_CREDITS_EXHAUSTED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
+import { enforceModelCreditCap } from "./model-credit-cap.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
 import {
   allocateCreditLots,
@@ -15,6 +17,8 @@ import {
 import { isUniqueViolation } from "./prisma-errors.js";
 
 export const MICROS_PER_DOLLAR = 1_000_000;
+/** A charge the reconciler settled from counted tokens once the provider could not report one. */
+export const RECONCILED_ESTIMATE_COST_SOURCE = "reconciled-estimate";
 
 export async function creditAccount(prisma: PrismaClient, organizationId: string) {
   try {
@@ -114,23 +118,26 @@ export async function reserveModelCredits(
   const callId = attribution?.callId ?? randomUUID();
   const source = `call:${callId}`;
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
+    // Piggyback the nullable cap lookup on the account lock we already take. No extra
+    // round trip, journal scan, or user lock for the normal uncapped path.
+    const [account] = await tx.$queryRaw<{ modelCreditCapMicros: bigint | null }[]>`
+      SELECT (SELECT "modelCreditCapMicros" FROM "user" WHERE id=${attribution?.userId ?? null}) AS "modelCreditCapMicros"
+      FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
     const existing = await tx.modelCreditEntry.findUnique({ where: { callId } });
     if (existing) {
       if (existing.organizationId !== organizationId)
         throw new Error("Model call belongs to another account");
       return existing.id;
     }
+    if (attribution?.userId && account?.modelCreditCapMicros != null)
+      await enforceModelCreditCap(tx, attribution.userId, amountMicros);
     await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const reserved = await tx.modelCreditAccount.updateMany({
       where: { organizationId, balanceMicros: { gte: amountMicros } },
       data: { balanceMicros: { decrement: amountMicros } },
     });
-    if (reserved.count !== 1)
-      throw new Error(
-        "Not enough model credits. Add credits in Billing or connect your own API key.",
-      );
+    if (reserved.count !== 1) throw new Error(MODEL_CREDITS_EXHAUSTED_ERROR);
     const allocations = await allocateCreditLots(tx, organizationId, amountMicros, now);
     return (
       await tx.modelCreditEntry.create({
@@ -203,7 +210,7 @@ export function settleModelCredits(
   return prisma.$transaction((tx) => settleModelCreditsTx(tx, reservationId, costUsd, false, now));
 }
 
-/** A provider cost or a proven pre-generation stop can finalize accounting. */
+/** A provider cost, the reconciler's last resort, or a proven pre-generation stop is final. */
 export function hasFinalModelCost(
   usage: Pick<AgentUsage, "costUsd" | "costSource" | "usageSource">,
 ): boolean {
@@ -212,6 +219,7 @@ export function hasFinalModelCost(
     Number.isFinite(usage.costUsd) &&
     usage.costUsd >= 0 &&
     (usage.costSource === "provider-reported" ||
+      usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE ||
       (usage.costUsd === 0 &&
         ["not-started", "provider-rejected"].includes(usage.usageSource ?? "")))
   );

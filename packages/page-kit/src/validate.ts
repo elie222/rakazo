@@ -32,6 +32,29 @@ const KIT_LIST = (PAGE_KIT_COMPONENTS as readonly string[]).join(", ");
 // Escapes JSX decodes in its own text, but that a JavaScript string shows as typed.
 const HTML_ENTITY = /&(?:lt|gt|amp|quot|apos|nbsp|#39|#x27);/;
 
+/** React hooks a page may call. A hook called while the file loads runs outside React's render. */
+const REACT_HOOKS: ReadonlySet<string> = new Set([
+  "useCallback",
+  "useContext",
+  "useDebugValue",
+  "useDeferredValue",
+  "useEffect",
+  "useId",
+  "useImperativeHandle",
+  "useInsertionEffect",
+  "useLayoutEffect",
+  "useMemo",
+  "useReducer",
+  "useRef",
+  "useSource",
+  "useState",
+  "useSyncExternalStore",
+  "useTheme",
+  "useTransition",
+]);
+// A hook React adds later still looks like this, so the shape catches it too.
+const HOOK_NAME = /^use[A-Z][A-Za-z0-9]*$/;
+
 const GIVEN: ReadonlySet<string> = new Set(PAGE_GLOBALS);
 const DECLARATION_ROLES: ReadonlySet<IdentifierRole | null> = new Set([
   IdentifierRole.TopLevelDeclaration,
@@ -196,6 +219,11 @@ export function checkPageSource(source: string): PageSourceCheck {
       `line ${line}: <${name}> is not a kit component. Use ${KIT_LIST}, or define ${name} in this file.`,
     );
   }
+  for (const { name, start } of moduleScopeHookCalls(tokens, source, declared)) {
+    errors.push(
+      `line ${lineOf(start)}: ${name}() must be called inside a component, not at the top level of the file.`,
+    );
+  }
   if (defaults !== 1) {
     errors.push("The page needs exactly one `export default` of its top component.");
   }
@@ -308,4 +336,124 @@ function lineLocator(source: string): (offset: number) => number {
     }
     return low + 1;
   };
+}
+
+/**
+ * A hook called while the file is loading runs outside React's render, where the dispatcher is
+ * null, so the viewer crashes on it. Finds the calls that sit at the top level of the file.
+ */
+function moduleScopeHookCalls(
+  tokens: Tokens,
+  source: string,
+  declared: ReadonlySet<string>,
+): { name: string; start: number }[] {
+  const found: { name: string; start: number }[] = [];
+  // Braces, innermost last: a function body hides the hooks under it, an object literal does not.
+  const braces: ("function" | "other")[] = [];
+  // An arrow body without braces: the expression after `=>` belongs to the function.
+  const arrows: { paren: number; bracket: number; brace: number }[] = [];
+  let paren = 0;
+  let bracket = 0;
+  const text = (index: number) => source.slice(tokens[index]!.start, tokens[index]!.end);
+  const closeArrows = (
+    matches: (arrow: { paren: number; bracket: number; brace: number }) => boolean,
+  ) => {
+    for (let index = arrows.length - 1; index >= 0; index--) {
+      if (matches(arrows[index]!)) arrows.splice(index, 1);
+    }
+  };
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (token.type === TokenType.braceL || token.type === TokenType.dollarBraceL) {
+      const kind = braceKind(tokens, index);
+      braces.push(kind);
+      // A brace that opens a function body ends the arrow that leads to it.
+      if (kind === "function") closeArrows((arrow) => arrow.brace === braces.length - 1);
+      continue;
+    }
+    if (token.type === TokenType.braceR) {
+      closeArrows((arrow) => arrow.brace === braces.length);
+      braces.pop();
+      continue;
+    }
+    if (token.type === TokenType.parenL) {
+      paren += 1;
+      continue;
+    }
+    if (token.type === TokenType.parenR) {
+      closeArrows((arrow) => arrow.paren === paren);
+      paren -= 1;
+      continue;
+    }
+    if (token.type === TokenType.bracketL) {
+      bracket += 1;
+      continue;
+    }
+    if (token.type === TokenType.bracketR) {
+      closeArrows((arrow) => arrow.bracket === bracket);
+      bracket -= 1;
+      continue;
+    }
+    if (token.type === TokenType.semi || token.type === TokenType.comma) {
+      closeArrows(
+        (arrow) =>
+          arrow.paren === paren && arrow.bracket === bracket && arrow.brace === braces.length,
+      );
+      continue;
+    }
+    if (token.type === TokenType.arrow) {
+      arrows.push({ paren, bracket, brace: braces.length });
+      continue;
+    }
+    if (token.type !== TokenType.name) continue;
+    const name = text(index);
+    if (!isHookName(name, declared)) continue;
+    // A hook that is only referenced is not a call.
+    if (tokens[index + 1]?.type !== TokenType.parenL) continue;
+    const before = tokens[index - 1];
+    // A property, a definition or a constructor is not a call either.
+    if (
+      before &&
+      (before.type === TokenType.dot ||
+        before.type === TokenType.questionDot ||
+        before.type === TokenType._function ||
+        before.type === TokenType._class ||
+        before.type === TokenType._new)
+    )
+      continue;
+    // Inside a function body or an arrow body the hook runs while React renders.
+    if (braces.includes("function") || arrows.length) continue;
+    found.push({ name, start: token.start });
+  }
+  return found;
+}
+
+/** A brace opens a function body, a block statement or an object literal; only the first hides a hook. */
+function braceKind(tokens: Tokens, open: number): "function" | "other" {
+  const previous = tokens[open - 1];
+  if (!previous) return "other";
+  if (previous.type === TokenType.arrow) return "function";
+  if (previous.type !== TokenType.parenR) return "other";
+  // The paren that closes here tells a function header from a control statement.
+  let depth = 1;
+  let index = open - 2;
+  for (; index >= 0; index--) {
+    const type = tokens[index]!.type;
+    if (type === TokenType.parenR) depth += 1;
+    else if (type === TokenType.parenL) {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  const before = tokens[index - 1];
+  if (!before) return "other";
+  // `function name() {` and a method `name() {` open a function; `if (...) {` does not.
+  if (before.type === TokenType._function || before.type === TokenType.name) return "function";
+  return "other";
+}
+
+/** A hook React may add later still looks like this; a page's own name does not have to. */
+function isHookName(name: string, declared: ReadonlySet<string>): boolean {
+  if (declared.has(name)) return false;
+  return REACT_HOOKS.has(name) || HOOK_NAME.test(name);
 }

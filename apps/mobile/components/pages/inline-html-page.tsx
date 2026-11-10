@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
 import { pageLinkRequest } from "@rakazo/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { currentApiBase } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { pageActionAllowed, pageDocument, pageTapStart } from "../../lib/pages";
 import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
@@ -18,7 +18,7 @@ const MAX_PAGE_HEIGHT = 200_000;
  * which also passes up its height and the web links it asks the app to open.
  */
 export function InlineHtmlPage({ detail }: { detail: PageDetail }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const theme = useResolvedAppearance();
   const openLink = useNativeLinkConfirm();
@@ -32,7 +32,7 @@ export function InlineHtmlPage({ detail }: { detail: PageDetail }) {
     let active = true;
     // A tap on the page before it reloads is not one on the new page.
     tappedAt.current = null;
-    void pageDocument(currentApiBase(), detail.code, theme, t("This page couldn't be shown."), {
+    void pageDocument(currentApiBase(), detail.code, theme, t`This page couldn't be shown.`, {
       format: "html",
     }).then(
       (next) => {
@@ -80,7 +80,7 @@ export function InlineHtmlPage({ detail }: { detail: PageDetail }) {
       <View style={[styles.failed, { backgroundColor: tokens.card }]}>
         {failed ? (
           <Text style={[styles.failedText, { color: tokens.mutedForeground }]}>
-            {t("This page couldn't load")}
+            {t`This page couldn't load`}
           </Text>
         ) : null}
       </View>

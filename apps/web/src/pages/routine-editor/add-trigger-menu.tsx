@@ -1,4 +1,3 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CronFreq, CronPreset } from "@rakazo/core";
 import { cronFromPreset, defaultCronPreset } from "@rakazo/core";
@@ -13,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
 import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus } from "lucide-react";
+import { cronFreqLabel } from "../../lib/cron";
 import type { RoutineDraftState } from "../../lib/routine-draft";
 import { emptyWatchDraft } from "../../lib/routine-draft";
 
@@ -76,13 +76,11 @@ export function AddTriggerMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="outline" className="mt-2 h-auto w-full rounded-xl py-3" />}
-      >
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="mt-2" />}>
         <Plus />
         <Trans>Add trigger</Trans>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top">
+      <DropdownMenuContent side="top" align="start" className="w-auto">
         <DropdownMenuSub>
           <DropdownMenuSubTrigger disabled={Boolean(draft.watch)}>
             <Clock />
@@ -91,7 +89,7 @@ export function AddTriggerMenu({
           <DropdownMenuSubContent className="min-w-[170px]">
             {SCHEDULE_PRESETS.map((freq) => (
               <DropdownMenuItem key={freq} onClick={() => addSchedule(freq)}>
-                {schedulePresetLabel(freq)}
+                {freq === "Advanced" ? t`Advanced...` : cronFreqLabel(freq)}
               </DropdownMenuItem>
             ))}
           </DropdownMenuSubContent>
@@ -143,25 +141,4 @@ export function AddTriggerMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function schedulePresetLabel(freq: CronFreq): string {
-  switch (freq) {
-    case "Every hour":
-      return t`Every hour`;
-    case "Every day":
-      return t`Every day`;
-    case "Weekdays":
-      return t`Weekdays`;
-    case "Every week":
-      return t`Every week`;
-    case "Every month":
-      return t`Every month`;
-    case "Interval":
-      return t`Interval`;
-    case "Advanced":
-      return t`Advanced...`;
-    default:
-      return freq;
-  }
 }

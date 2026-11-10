@@ -1,6 +1,7 @@
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { toHistory } from "./pi-runtime-history.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 
 function harness(replyTo: unknown = null, replyQuote: string | null = null) {
@@ -209,4 +210,38 @@ it("includes the server-derived first line and author role for an id-only reply"
   expect(text).toContain('"quotedText":"First line"');
   expect(text).not.toContain("Second line");
   expect(text).toContain("Why?");
+});
+
+describe("earlier turns' tool work", () => {
+  it("replays what an earlier reply did on the computer, not only its final text", () => {
+    const install = messageToAgentHistoryText({
+      id: "bot-install",
+      threadId: "thread-1",
+      role: "bot",
+      blocks: [
+        {
+          kind: "steps",
+          steps: [
+            { label: "Shell", count: 2, note: "Installing the password manager extension." },
+            { label: "Computer screenshot", count: 1 },
+          ],
+          durationMs: 9_000,
+        },
+        { kind: "text", text: "Done." },
+      ],
+    });
+    const [, replayed] = toHistory(
+      [
+        { id: "user-ask", role: "user", content: "Install the password manager extension." },
+        { id: "bot-install", role: "assistant", content: install },
+        { id: "user-later", role: "user", content: "What's the weather?" },
+      ],
+      "Did you install the extension?",
+    );
+    expect(replayed).toMatchObject({ role: "assistant" });
+    const text = JSON.stringify(replayed);
+    expect(text).toContain("Shell ×2: Installing the password manager extension.");
+    expect(text).toContain("Computer screenshot");
+    expect(text).toContain("Done.");
+  });
 });

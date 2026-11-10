@@ -30,6 +30,7 @@ import { McpOAuthBroker } from "./mcp-oauth.js";
 import { reconcileMediaVideos } from "./media-video-poll.js";
 import { createMessagingContextLoader } from "./messaging-context.js";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
+import { localModelsApiKey } from "./pi-local-provider-id.js";
 import type { PipedreamEnvironmentValues } from "./pipedream-connector.js";
 import {
   isPipedreamEnabled,
@@ -192,6 +193,7 @@ export function createRunRuntime(
       connectors.integrationSettings.listConnectedPluginSlugs(userId),
     secrets: [
       env.deploymentModelKey ?? "",
+      localModelsApiKey() ?? "",
       env.composioApiKey ?? "",
       env.cursorApiKey ?? "",
       process.env.TYPESAFE_API_KEY ?? "",

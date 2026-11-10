@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
@@ -6,7 +8,6 @@ import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import {
   activeOrganization,
@@ -19,7 +20,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function OrganizationSettings() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -90,11 +91,11 @@ export default function OrganizationSettings() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <SettingsGroup accessibilityLabel={t("Name")} label={t("Name")}>
+        <SettingsGroup accessibilityLabel={t`Name`} label={t`Name`}>
           {current.canManage ? (
             <SettingsInputRow
               key="name"
-              accessibilityLabel={t("Name")}
+              accessibilityLabel={t`Name`}
               editable={!pending}
               maxLength={60}
               value={name}
@@ -111,7 +112,7 @@ export default function OrganizationSettings() {
             key="create"
             accessibilityRole="button"
             disabled={pending}
-            title={t("Create organization")}
+            title={t`Create organization`}
             onPress={() => openFromSettingsSheet(router, "/new-organization")}
           />
         </SettingsGroup>
@@ -123,7 +124,7 @@ export default function OrganizationSettings() {
               destructive
               disabled={pending}
               dimmed={pending}
-              title={t("Delete organization")}
+              title={t`Delete organization`}
               onPress={() => {
                 setConfirming((open) => !open);
                 setConfirmation("");
@@ -132,12 +133,12 @@ export default function OrganizationSettings() {
             {confirming ? (
               <SettingsInputRow
                 key="confirmation"
-                accessibilityLabel={t("Type {name} to confirm", { name: current.name })}
+                accessibilityLabel={t`Type ${ph({ name: current.name })} to confirm`}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus
                 editable={!pending}
-                placeholder={t("Type {name} to confirm", { name: current.name })}
+                placeholder={t`Type ${ph({ name: current.name })} to confirm`}
                 value={confirmation}
                 onChangeText={setConfirmation}
               />
@@ -149,7 +150,7 @@ export default function OrganizationSettings() {
                 destructive
                 disabled={pending || confirmation.trim() !== current.name.trim()}
                 dimmed={pending || confirmation.trim() !== current.name.trim()}
-                title={t("Delete")}
+                title={t`Delete`}
                 trailing={
                   pending ? <ActivityIndicator color={mobileTokens().destructive} /> : undefined
                 }

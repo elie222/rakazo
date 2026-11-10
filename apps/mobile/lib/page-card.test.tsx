@@ -71,7 +71,6 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "https://app.example", rpc: vi.fn() }));
 vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
