@@ -59,10 +59,10 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
 }
 
 export function messageToAgentHistoryText(message: ReplyMessage): string {
-  const text = blocksToAgentHistoryText(messageBlocks(message), { fromBot: message.role === "bot" });
-  return [replyContext(message, message.threadId), text]
-    .filter(Boolean)
-    .join("\n\n");
+  const text = blocksToAgentHistoryText(messageBlocks(message), {
+    fromBot: message.role === "bot",
+  });
+  return [replyContext(message, message.threadId), text].filter(Boolean).join("\n\n");
 }
 
 /** Fetch the explicit target even when it has fallen outside the history window. */

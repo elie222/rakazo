@@ -558,17 +558,21 @@ describe("tool step history", () => {
 
   it("drops a step list a reply copied into its text", () => {
     expect(
-      blocksToAgentHistoryText([
-        {
-          kind: "text",
-          text: "Checking now.\n[tool calls this reply made]\n- Schedule list (succeeded)\n- List files (succeeded)\n\nDone.",
-        },
-      ], { fromBot: true }),
+      blocksToAgentHistoryText(
+        [
+          {
+            kind: "text",
+            text: "Checking now.\n[tool calls this reply made]\n- Schedule list (succeeded)\n- List files (succeeded)\n\nDone.",
+          },
+        ],
+        { fromBot: true },
+      ),
     ).toBe("Checking now.\n\nDone.");
     expect(
-      blocksToAgentHistoryText([
-        { kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" },
-      ], { fromBot: true }),
+      blocksToAgentHistoryText(
+        [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
+        { fromBot: true },
+      ),
     ).toBe("");
   });
 
