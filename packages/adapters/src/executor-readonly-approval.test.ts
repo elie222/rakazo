@@ -763,7 +763,11 @@ function askDetail(f: ReturnType<typeof fixture>): string {
 }
 
 it("enqueues pending work when an approval pauses its current run", async () => {
-  const f = fixture({ name: "shell", trigger: "webhook" });
+  const f = fixture({
+    name: "shell",
+    trigger: "webhook",
+    rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "shell" }],
+  });
   f.pauseRunForInput.mockResolvedValueOnce({ continuationRunId: "pending-run" });
   await f.run();
   expect(f.enqueue).toHaveBeenCalledWith(
@@ -800,34 +804,24 @@ describe("connector read-only metadata and approval enforcement", () => {
     reviewMock.mockReset();
   });
 
-  // Only an Always allow the webhook overrode gets the line; the owner's own Require approval
-  // asks in every run.
+  // A webhook run follows the owner's rules like any other run.
   it.each([
-    ["shell", "always_allow", true],
-    ["write_file", "require_approval", false],
-  ] as const)(
-    "forces owner approval for webhook-triggered %s despite a %s rule",
-    async (name, effect, explained) => {
-      const f = fixture({
-        name,
-        trigger: "webhook",
-        rules: [{ effect, matchKind: "tool", matchValue: name }],
-      });
-      await f.run();
-      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-      expect(askDetail(f).startsWith("Asked because a webhook started this run.")).toBe(explained);
-      if (explained)
-        expect(askDetail(f)).toMatch(
-          /^Asked because a webhook started this run\. Always allow doesn't skip this\.(\n|$)/,
-        );
-      expect(isApprovalPausedResult(f.results[0])).toBe(true);
-      expect(reviewMock).not.toHaveBeenCalled();
-      // Always allow can't skip a webhook card, so one that already has the rule doesn't offer it.
-      expect(pausedActionIds(f)).toEqual(
-        explained ? ["allow", "deny"] : ["allow", "always", "deny"],
-      );
-    },
-  );
+    ["shell", "always_allow", false],
+    ["write_file", "require_approval", true],
+  ] as const)("follows a %s %s rule in a webhook run", async (name, effect, asks) => {
+    const f = fixture({
+      name,
+      trigger: "webhook",
+      rules: [{ effect, matchKind: "tool", matchValue: name }],
+    });
+    // This fixture has no sandbox, so an allowed shell call fails after the gate lets it run.
+    await f.run(!asks);
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(asks ? 1 : 0);
+    expect(isApprovalPausedResult(f.results[0])).toBe(asks);
+    expect(askDetail(f)).not.toContain("webhook");
+    expect(reviewMock).not.toHaveBeenCalled();
+    if (asks) expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
+  });
 
   it("writes shared memory directly, including when an always-allow rule exists", async () => {
     const args = { path: " MEMORY.md ", content: "Printing: all print jobs go to Clyde." };
@@ -1159,34 +1153,20 @@ describe("connector read-only metadata and approval enforcement", () => {
       },
     );
 
-    it("forces owner approval for webhook-triggered writes despite an allow rule", async () => {
+    it.each([
+      ["demo_send_message", true],
+      ["demo_read_profile_card", false],
+    ] as const)("runs %s in a webhook run when it is always allowed", async (name, readOnly) => {
       const f = fixture({
         catalog,
-        name: "demo_send_message",
+        name,
+        readOnly,
         trigger: "webhook",
-        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "demo_send_message" }],
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: name }],
       });
       await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-      expect(isApprovalPausedResult(f.results[0])).toBe(true);
-      expect(reviewMock).not.toHaveBeenCalled();
-    });
-
-    it("forces owner approval for a webhook-triggered read-named write operation", async () => {
-      const f = fixture({
-        catalog,
-        name: "demo_read_profile_card",
-        readOnly: false,
-        trigger: "webhook",
-        rules: [
-          { effect: "always_allow", matchKind: "tool", matchValue: "demo_read_profile_card" },
-        ],
-      });
-      await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
     it("lets a webhook-triggered declared read run unattended", async () => {

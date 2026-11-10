@@ -25,7 +25,6 @@ import {
   SITE_SENDING_TOOLS,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
-  unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -84,9 +83,6 @@ import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
 import { refusal } from "./tool-refusal.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
-
-const WEBHOOK_RUN_ASK_REASON =
-  "Asked because a webhook started this run. Always allow doesn't skip this.";
 
 type ApprovalCard = {
   reviewReason: string | undefined;
@@ -181,17 +177,6 @@ export async function gateToolCall(
     toolName === approvalName || toolName === name || declaredReadOnly === false
       ? declaredReadOnly
       : ctx.tools.connector.get(toolName)?.readOnly;
-  const requiresUnattendedApproval =
-    !catalogControlRead &&
-    ((unidentifiedAction && run.trigger === "webhook") ||
-      approvalToolNames.some((toolName) =>
-        unattendedTriggerToolRequiresApproval(
-          run.trigger,
-          toolName,
-          viaConnector,
-          declaredReadOnlyFor(toolName),
-        ),
-      ));
   // A background helper only reads, whatever the approval mode or rules: a connector call
   // runs only when every action it names is declared read-only.
   if (
@@ -292,7 +277,6 @@ export async function gateToolCall(
     request.heldForApproval ||
     paying ||
     commandWatch ||
-    requiresUnattendedApproval ||
     siteGate === "new" ||
     unidentifiedAction ||
     (!catalogControlRead &&
@@ -304,7 +288,6 @@ export async function gateToolCall(
   // These ask in every run, whatever started it.
   const mandatoryInAnyRun =
     paying || commandWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
-  const requiresMandatoryApproval = mandatoryInAnyRun || requiresUnattendedApproval;
   // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
   // on their card would save a rule that never takes effect.
   const asksEveryTime =
@@ -330,7 +313,7 @@ export async function gateToolCall(
       ? { ...resolvedRules, decision: "ask" as const }
       : resolvedRules;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
-  const reviewable = mode === "auto" && !requiresMandatoryApproval;
+  const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;
   const reviewSettings = !reviewable || injectedReview ? null : await ctx.trust.loadApprovalModel();
   const memberChecker = reviewSettings?.primarySource === "member";
@@ -367,7 +350,7 @@ export async function gateToolCall(
     : planActionGate({
         resolved: approvalResolved,
         mode,
-        mandatory: requiresMandatoryApproval,
+        mandatory: mandatoryInAnyRun,
         steerable:
           guardedInNeverAsk && mode === "never"
             ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
@@ -593,19 +576,11 @@ export async function gateToolCall(
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
   });
-  // Only when the webhook overrode the owner's Always allow; cards every run shows say nothing.
-  const webhookForcedAsk =
-    requiresUnattendedApproval &&
-    !mandatoryInAnyRun &&
-    !request.heldForApproval &&
-    siteGate !== "new" &&
-    !unidentifiedAction &&
-    approvalResolved.source === "always_allow";
   const card = {
-    reviewReason: webhookForcedAsk ? WEBHOOK_RUN_ASK_REASON : reviewReason,
+    reviewReason,
     summary: request.fleetSummary,
     batch: connectorTool?.batch,
-    onceOnly: asksEveryTime || webhookForcedAsk,
+    onceOnly: asksEveryTime,
   };
 
   if (applied?.duplicate) {

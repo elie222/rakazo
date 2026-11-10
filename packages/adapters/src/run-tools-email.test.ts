@@ -2,7 +2,6 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
-  unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { botEmailInstruction } from "./run-instructions.js";
@@ -368,7 +367,6 @@ describe("read_email", () => {
 
     expect(names(true)).toContain("read_email");
     expect(names(false)).not.toContain("read_email");
-    expect(unattendedTriggerToolRequiresApproval("webhook", "read_email", false)).toBe(false);
     // What it returns is someone else's mail, so the run counts as having read outside content.
     expect(toolResultTaintsRun("read_email")).toBe(true);
   });
@@ -417,7 +415,6 @@ describe("delete_email", () => {
     expect(names(true)).toContain("delete_email");
     expect(names(false)).not.toContain("delete_email");
     expect(toolRequiresApproval("delete_email", false)).toBe(true);
-    expect(unattendedTriggerToolRequiresApproval("webhook", "delete_email", false)).toBe(true);
     expect(toolResultTaintsRun("delete_email")).toBe(false);
   });
 });
@@ -835,7 +832,6 @@ describe("send_email", () => {
     expect(names(false)).not.toContain("send_email");
     expect(toolRequiresApproval("send_email", false)).toBe(true);
     expect(toolRequiresExplicitApproval("send_email")).toBe(false);
-    expect(unattendedTriggerToolRequiresApproval("webhook", "send_email", false)).toBe(true);
     expect(toolResultTaintsRun("send_email")).toBe(false);
   });
 });

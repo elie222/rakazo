@@ -63,28 +63,6 @@ const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "set_child_bot_model",
 ]);
 
-const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
-  "browser_snapshot",
-  "cloud_agent_status",
-  "computer_observe",
-  "list_files",
-  "list_fleet",
-  "list_secrets",
-  "purchase_status",
-  "read_email",
-  "read_file",
-  "recall_memory",
-  "request_takeover",
-  "run_subagent",
-  "task_catalog",
-  "schedule_list",
-  "scratchpad_list",
-  "skill_read",
-  "web_fetch",
-  "web_search",
-  "service_search",
-]);
-
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
 /** App slug before a hyphenated action: letters and digits, with at most one underscore. */
 const PLAIN_CONNECTOR_SLUG = /^[a-z0-9]+(?:_[a-z0-9]+)?$/;
@@ -209,19 +187,6 @@ export function toolRequiresExplicitApproval(toolName: string): boolean {
 export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): boolean {
   if (trigger === "follow_up") return followUpFromUser;
   return trigger === "user" || trigger === "call_end";
-}
-
-/** External webhook runs may inspect state unattended, but side effects always need the owner. */
-export function unattendedTriggerToolRequiresApproval(
-  trigger: string,
-  toolName: string,
-  viaConnector: boolean,
-  readOnly?: boolean,
-): boolean {
-  if (trigger !== "webhook") return false;
-  return viaConnector
-    ? connectorToolRequiresApproval(toolName, readOnly)
-    : !UNATTENDED_SAFE_BUILTIN_TOOLS.has(toolName);
 }
 
 /**
