@@ -22,7 +22,7 @@
     "test:e2e": "maestro test .maestro/smoke.yaml"
   },
   "dependencies": {
-    "@dr.pogodin/react-native-fs": "2.41.0",
+    "@dr.pogodin/react-native-fs": "2.40.4",
     "@expo/metro-runtime": "57.0.18",
     "@expo/ui": "57.0.26",
     "@kesha-antonov/react-native-background-downloader": "4.8.0",
