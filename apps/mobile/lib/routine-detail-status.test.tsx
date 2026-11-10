@@ -23,10 +23,6 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
-vi.mock("./i18n", () => {
-  const t = (message: string) => message;
-  return { useI18n: () => ({ t, locale: "en" }), dateLocaleForUi: () => "en-US" };
-});
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./cron", () => ({ cronLabels: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));

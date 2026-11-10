@@ -1,9 +1,10 @@
+import { plural } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { splitPeerLabel } from "@rakazo/core";
 import type { PressableProps } from "react-native";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { peerExchangeLabel, useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 
@@ -29,9 +30,15 @@ export function PeerReceiptLine({
     "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
   >;
 }) {
-  useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const label = peerExchangeLabel(count, direction, peerBotName);
+  const peer = peerBotName;
+  const label =
+    count > 1
+      ? t`${plural(count, { one: `# message with ${peer}`, other: `# messages with ${peer}` })}`
+      : direction === "sent"
+        ? t`Messaged ${peer}`
+        : t`Message from ${peer}`;
   const parts = splitPeerLabel(label, peerBotName);
   return (
     <Pressable

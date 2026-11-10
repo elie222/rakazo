@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { accountDisplay, chatSnoozed } from "@rakazo/core";
 import type { Href } from "expo-router";
@@ -48,7 +50,7 @@ import type { CreateAction } from "../lib/create-chooser";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
-import { t, useI18n } from "../lib/i18n";
+import { useUiLocale } from "../lib/i18n";
 import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox-changes";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
@@ -108,7 +110,7 @@ const COMPACT_LIST_WIDTH = 360;
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
-    Alert.alert(t("Could not switch spaces"), t("Try again."));
+    Alert.alert(t`Could not switch spaces`, t`Try again.`);
     return;
   }
   open();
@@ -154,7 +156,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const isFocused = useIsFocused();
   const day = useInboxDay();
   const spaceActionRef = useRef<{ busy: boolean; recoveryId: string | null }>({
@@ -319,7 +322,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           ? [
               {
                 id: me.spaceId,
-                name: t("Personal"),
+                name: t`Personal`,
                 isDefault: true,
                 hasContent: true,
                 bots: visible,
@@ -397,7 +400,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     if (badgeCount === null || badgeLoad === null) return;
     void syncInboxAppBadge(badgeCount, badgeLoad.generation);
   }, [badgeCount, badgeLoad]);
-  const initials = accountDisplay(me ?? {}, t("You")).initial ?? "?";
+  const initials = accountDisplay(me ?? {}, t`You`).initial ?? "?";
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId
       ? { bots, groups, botSections }
@@ -523,11 +526,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           spaceActionRef.current.recoveryId === spaceId
             ? await retryInboxSpaceFallback(spaceId, refresh)
             : await selectInboxSpace(spaceId, refresh);
-        if (!selected) throw new Error(t("Could not switch spaces"));
+        if (!selected) throw new Error(t`Could not switch spaces`);
       } catch (err) {
-        const message = errorText(err, t("Could not switch spaces"));
+        const message = errorText(err, t`Could not switch spaces`);
         setError(message);
-        Alert.alert(message, t("Try again."));
+        Alert.alert(message, t`Try again.`);
       } finally {
         spaceActionRef.current.busy = false;
         setSpaceBusy(false);
@@ -558,10 +561,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         if (recoveryId) {
           spaceActionRef.current.recoveryId = recoveryId;
           setSpaceRecoveryId(recoveryId);
-          setError(t("Could not switch spaces"));
+          setError(t`Could not switch spaces`);
         }
       } catch (err) {
-        Alert.alert(t("Could not delete space"), errorText(err, t("Try again.")));
+        Alert.alert(t`Could not delete space`, errorText(err, t`Try again.`));
       } finally {
         spaceActionRef.current.busy = false;
         setSpaceBusy(false);
@@ -578,10 +581,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         spaceActionRef.current.recoveryId
       )
         return;
-      Alert.alert(deleteSpaceTitle(space), t("This removes the space for everyone."), [
-        { text: t("Cancel"), style: "cancel" },
+      Alert.alert(deleteSpaceTitle(space), t`This removes the space for everyone.`, [
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Delete"),
+          text: t`Delete`,
           style: "destructive",
           onPress: () => void deleteInboxSpace(space),
         },
@@ -678,7 +681,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           isCurrent,
         );
       } catch (err) {
-        if (isCurrent()) Alert.alert(t("Could not load bots"), errorText(err, t("Try again.")));
+        if (isCurrent()) Alert.alert(t`Could not load bots`, errorText(err, t`Try again.`));
         return;
       }
       if (!target) return;
@@ -756,7 +759,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           onPress={() => void chooseInboxSpace(spaceRecoveryId)}
           style={styles.recoveryAction}
         >
-          <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+          <Text style={styles.spaceTitle}>{t`Try again.`}</Text>
         </Pressable>
       ) : null}
       {/* Folds are saved per account, so wait for it before offering them. */}
@@ -794,7 +797,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         onSignIn={() => void signInAgain()}
       />
     ) : (
-      <Text style={styles.empty}>{me && !onShareSelect ? t("Tap + to create a bot") : null}</Text>
+      <Text style={styles.empty}>{me && !onShareSelect ? t`Tap + to create a bot` : null}</Text>
     );
   const listFooter = (
     <InboxListFooter

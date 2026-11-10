@@ -3,7 +3,6 @@ import { computerHoursOut } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
 import type { MobileSnapshot } from "../../lib/mobile-types";
 import { openModelSettings } from "../../lib/model-settings";
 import { computerHoursOutCopy, runErrorActionLabel } from "../../lib/run-error-presentation";
@@ -11,7 +10,6 @@ import { useRunError } from "../run-error-sheet";
 
 /** The chat's failed run: its error, the recovery action, and whether its details are open. */
 export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?: string) {
-  const { t } = useI18n();
   const router = useRouter();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const runError = run?.status === "failed" ? (run.error ?? null) : null;
@@ -32,7 +30,7 @@ export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?
       active = false;
     };
   }, [needsPlan, failedRunId]);
-  const hoursOut = needsPlan && billing ? computerHoursOutCopy(t, computerHoursOut(billing)) : null;
+  const hoursOut = needsPlan && billing ? computerHoursOutCopy(computerHoursOut(billing)) : null;
   const normalizedRunError =
     classified && hoursOut ? { ...classified, summary: hoursOut.summary } : classified;
   const label = needsPlan
@@ -40,7 +38,7 @@ export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?
       ? (hoursOut?.action ?? null)
       : null
     : normalizedRunError
-      ? runErrorActionLabel(t, normalizedRunError)
+      ? runErrorActionLabel(normalizedRunError)
       : null;
   const runBotId = run?.botId ?? botId;
   const runErrorAction = label

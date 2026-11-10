@@ -22,11 +22,11 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { useLingui } from "@lingui/react/macro";
 import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
 import type { ReactElement } from "react";
 import { useContext, useState } from "react";
 import { PlatformColor, useWindowDimensions, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import type { InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActions, SNOOZE_LABELS } from "../lib/inbox-swipe";
 import { native, useResolvedAppearance } from "../lib/native";
@@ -59,7 +59,7 @@ export function InboxSwipeRow({
   onSnooze,
   children,
 }: InboxSwipeRowProps) {
-  const { t } = useI18n();
+  const { t, i18n } = useLingui();
   const scheme = useResolvedAppearance();
   const window = useWindowDimensions();
   const [width, setWidth] = useState(window.width);
@@ -72,7 +72,7 @@ export function InboxSwipeRow({
     return (
       <Button
         key={action}
-        label={t(label)}
+        label={i18n._(label)}
         systemImage={systemImage}
         // A swipe button is never given the destructive role, which makes SwiftUI remove the
         // row at the tap even when the request then fails; Archive is red by its tint instead.
@@ -111,25 +111,25 @@ export function InboxSwipeRow({
             {button(pinned ? "unpin" : "pin", false)}
             {notifyOnFinish === undefined ? null : (
               <Button
-                label={notifyOnFinish ? t("Silence notifications") : t("Resume notifications")}
+                label={notifyOnFinish ? t`Silence notifications` : t`Resume notifications`}
                 systemImage={notifyOnFinish ? "bell.slash" : "bell"}
                 onPress={() => onOrganize({ notifyOnFinish: !notifyOnFinish })}
               />
             )}
             {!onSnooze ? null : snoozed ? (
-              <Button label={t("Unsnooze")} systemImage="moon.zzz" onPress={() => onSnooze(null)} />
+              <Button label={t`Unsnooze`} systemImage="moon.zzz" onPress={() => onSnooze(null)} />
             ) : (
-              <Menu label={t("Snooze")} systemImage="moon.zzz">
+              <Menu label={t`Snooze`} systemImage="moon.zzz">
                 {SNOOZE_PRESETS.map((preset) => (
                   <Button
                     key={preset}
-                    label={t(SNOOZE_LABELS[preset])}
+                    label={i18n._(SNOOZE_LABELS[preset])}
                     onPress={() => onSnooze(snoozePresetTime(preset, new Date()).toISOString())}
                   />
                 ))}
               </Menu>
             )}
-            <Menu label={t("Move to")} systemImage="folder">
+            <Menu label={t`Move to`} systemImage="folder">
               {sections.map((section) => (
                 <Toggle
                   key={section.id}
@@ -139,19 +139,19 @@ export function InboxSwipeRow({
                 />
               ))}
               <Toggle
-                label={t("Unassigned")}
+                label={t`Unassigned`}
                 isOn={sectionId == null}
                 onIsOnChange={() => moveTo(null)}
               />
               <Divider />
               <Button
-                label={t("New section")}
+                label={t`New section`}
                 systemImage="folder.badge.plus"
                 onPress={() => onEditSection("create")}
               />
               {sections.some((section) => section.id === sectionId) ? (
                 <Button
-                  label={t("Rename section")}
+                  label={t`Rename section`}
                   systemImage="pencil"
                   onPress={() => onEditSection("rename")}
                 />

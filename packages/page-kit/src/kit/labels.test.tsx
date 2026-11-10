@@ -45,7 +45,7 @@ const longRows = Array.from({ length: 250 }, (_, index) => [`Row ${index}`, inde
 describe("page words", () => {
   it("cover the app's shipped web languages", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const shipped = readdirSync(join(here, "../../../../apps/web/src/locales"), {
+    const shipped = readdirSync(join(here, "../../../../packages/i18n/locales"), {
       withFileTypes: true,
     })
       .filter((entry) => entry.isDirectory())

@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { agentImportErrorReason } from "@rakazo/contracts";
-import { translateRunError } from "./run-error";
+import { translateRunError } from "@rakazo/i18n/run-error";
 
 function errorProvider(error: unknown): string {
   const data = error && typeof error === "object" && "data" in error ? error.data : undefined;
