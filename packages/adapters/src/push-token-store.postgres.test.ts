@@ -217,9 +217,14 @@ suite("database push registrations", () => {
     expect(await api.hasDesktopTarget(user("a"), "space-2")).toBe(true);
     await worker.markDesktopLive(user("a"), session("a"), null, newer);
     expect(await api.hasDesktopTarget(user("a"), "space-1")).toBe(true);
-    // A new token from the same signed-in app replaces its old one.
+    // A new token from the same signed-in app replaces its old one and keeps its live mark,
+    // which the open stream still clears by the time it wrote.
+    const marked = new Date(Date.now() + 60_000);
+    await api.markDesktopLive(user("a"), session("a"), { spaceId: "space-1", until: marked });
     const rotated = "cd".repeat(32);
     await api.saveDesktop(user("a"), rotated, session("a"));
+    expect(await worker.desktopTargets(user("a"), "space-1")).toEqual([]);
+    await worker.markDesktopLive(user("a"), session("a"), null, marked);
     expect(await worker.desktopTargets(user("a"), "space-1")).toEqual([
       { id: credentialDigest(rotated), token: rotated },
     ]);

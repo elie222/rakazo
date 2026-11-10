@@ -251,12 +251,25 @@ export class PrismaPushTokenStore implements PushTokenStore {
             where: { id },
             select: { userId: true, sessionId: true },
           });
-          // The same app registering again keeps the live mark its open stream may have set.
+          // The same app registering again keeps the live mark its open stream may have set. A new
+          // token for that app takes over the mark from the row it replaces, so the open stream
+          // keeps covering its own alerts until its next renewal.
           const sameApp = existing?.userId === userId && existing.sessionId === sessionId;
+          const replaced = sameApp
+            ? null
+            : await tx.desktopPushDevice.findFirst({
+                where: { userId, sessionId, id: { not: id }, liveUntil: { gt: new Date() } },
+                orderBy: { liveUntil: "desc" },
+                select: { liveSpaceId: true, liveUntil: true },
+              });
+          const live = {
+            liveSpaceId: replaced?.liveSpaceId ?? null,
+            liveUntil: replaced?.liveUntil ?? null,
+          };
           await tx.desktopPushDevice.upsert({
             where: { id },
-            create: { id, ...data },
-            update: sameApp ? data : { ...data, liveSpaceId: null, liveUntil: null },
+            create: { id, ...data, ...live },
+            update: sameApp ? data : { ...data, ...live },
           });
           // One token per signed-in app, and a few apps per account, so a client cannot make
           // every alert fan out to an unbounded number of APNs requests.
