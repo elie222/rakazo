@@ -417,6 +417,7 @@ export const MessageView = memo(function MessageView({
               <DeliveryDisclosure
                 key={i}
                 block={block}
+                quoteMessageId={quoteMessageId}
                 text={blocks.flatMap((b) => (b.kind === "text" ? [b.text] : [])).join("\n\n")}
               >
                 {i === hoverAnchorIndex ? hoverActions : null}

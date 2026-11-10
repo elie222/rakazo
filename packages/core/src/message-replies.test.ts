@@ -215,6 +215,8 @@ describe("previewMessageText", () => {
     ];
     expect(previewMessageText({ role: "user", blocks }, labels)).toBe("Ana · Invoice");
     expect(messageReplyPreview(blocks, "user")).toMatchObject({ text: "Ana · Invoice" });
+    const emoji = [{ kind: "delivery", source: "email", title: `${"a".repeat(279)}\u{1f600}` }];
+    expect(messageReplyPreview(emoji as MessageBlock[], "user").text).toBe("a".repeat(279));
   });
 
   it("shows a channel message's text alone, like the server preview", () => {

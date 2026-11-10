@@ -425,9 +425,9 @@ it("folds a delivery's prompt under its one-line title", () => {
   expect(line.getAttribute("aria-expanded")).toBe("false");
   act(() => line.click());
   expect(line.getAttribute("aria-expanded")).toBe("true");
-  expect(container.querySelector('[data-testid="delivery-message-prompt"]')?.textContent).toContain(
-    '"email": "ada@example.test"',
-  );
+  const prompt = container.querySelector<HTMLElement>('[data-testid="delivery-message-prompt"]');
+  expect(prompt?.textContent).toContain('"email": "ada@example.test"');
+  expect(prompt?.dataset.quoteMessageId).toBe("message");
 });
 
 it("keeps an older delivery saved as text in its bubble", () => {

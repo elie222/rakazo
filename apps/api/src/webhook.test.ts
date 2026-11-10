@@ -366,6 +366,21 @@ describe("inbound webhook HTTP route", () => {
     expect(deps.enqueue).toHaveBeenCalled();
   });
 
+  it("names a delivery by its event when the routine's name is blank", async () => {
+    const deps = createDeps({ routines: [{ ...WEBHOOK_ROUTINE, name: "   " }] });
+    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+      body: JSON.stringify({ event: "ci.failed" }),
+    });
+    expect(res.status).toBe(200);
+    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({
+      kind: "delivery",
+      source: "webhook",
+      title: "ci.failed",
+    });
+  });
+
   it("pins a routine model when every matching routine chose it", async () => {
     const deps = createDeps({
       routines: [

@@ -18,10 +18,12 @@ const SOURCE_ICONS = { webhook: Webhook, email: Mail, messaging: MessageSquare }
 export function DeliveryDisclosure({
   block,
   text,
+  quoteMessageId,
   children,
 }: {
   block: DeliveryBlock;
   text: string;
+  quoteMessageId?: string;
   /** Hover actions, anchored on the line. */
   children?: ReactNode;
 }) {
@@ -49,6 +51,7 @@ export function DeliveryDisclosure({
       <CollapsibleContent hiddenUntilFound className="w-full">
         <pre
           data-testid="delivery-message-prompt"
+          data-quote-message-id={quoteMessageId}
           className="mt-1 max-h-96 overflow-auto whitespace-pre-wrap wrap-anywhere rounded-xl bg-muted px-3.5 py-2.5 font-mono text-body-sm text-foreground/80"
           dir="auto"
         >

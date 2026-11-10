@@ -315,6 +315,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     );
   }
   const delivery = message.blocks.find((block) => block.kind === "delivery");
+  // The text block is the full prompt the delivery woke the bot with.
+  const deliveryPrompt = message.blocks
+    .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+    .join("\n\n");
   // A delivery with files keeps its file cards, captioned with its title below.
   if (delivery && isDeliveryLine(message.blocks)) {
     return (
@@ -322,10 +326,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         actionProps={actionProps}
         symbol={DELIVERY_SYMBOLS[delivery.source]}
         label={delivery.title}
-        // The text block is the full prompt the delivery woke the bot with.
-        detail={message.blocks
-          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-          .join("\n\n")}
+        detail={deliveryPrompt}
         literal
         expanded={peerExpanded}
         onToggle={() => setPeerExpanded((expanded) => !expanded)}
@@ -539,7 +540,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     (block) => block.kind === "image" || block.kind === "file",
   );
   const caption = delivery
-    ? delivery.title
+    ? peerExpanded
+      ? deliveryPrompt
+      : delivery.title
     : message.blocks
         .flatMap((block) => {
           if (block.kind === "channel_message" && block.text) {
@@ -564,6 +567,16 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       paddingVertical: 12,
       gap: 8,
     } as const;
+    const messageCaption = caption ? (
+      <MessageCaption
+        role={message.role}
+        received={!outgoing}
+        text={caption}
+        tokens={tokens}
+        colorScheme={colorScheme}
+        streaming={message.id.startsWith("progress:")}
+      />
+    ) : null;
     return (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
         {((showBotSenderName || authorName) && speaker) || caption ? (
@@ -575,16 +588,20 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 {speaker}
               </Text>
             ) : null}
-            {caption ? (
-              <MessageCaption
-                role={message.role}
-                received={!outgoing}
-                text={caption}
-                tokens={tokens}
-                colorScheme={colorScheme}
-                streaming={message.id.startsWith("progress:")}
-              />
-            ) : null}
+            {delivery ? (
+              <Pressable
+                {...actionProps}
+                onPress={() => setPeerExpanded((expanded) => !expanded)}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  peerExpanded ? t`Hide ${delivery.title}` : t`Show ${delivery.title}`
+                }
+              >
+                {messageCaption}
+              </Pressable>
+            ) : (
+              messageCaption
+            )}
           </View>
         ) : null}
         {attachments.map((attachment, index) => (
