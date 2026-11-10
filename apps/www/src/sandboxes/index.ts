@@ -35,7 +35,10 @@ import {
   dockerComputersFit,
   euro,
   hourly,
+  instaboxCreditHours,
+  instaboxHour,
   instaboxProMonthly,
+  instaboxShape,
   macMiniMonthly,
   monthly,
   railwayAppMonthly,
@@ -75,9 +78,9 @@ const About = (amount: number) => `A${aboutUsd(amount).slice(1)}`;
 const boatBeatsE2bHours = Math.round(BOAT.minimum / hourly(RATES.e2b) / 10) * 10;
 const hostedHourly = [RATES.novita, RATES.e2b].map((rate) => hourly(rate));
 const hostedWorkday = [RATES.novita, RATES.e2b].map((rate) => monthly(rate, WORKDAY_HOURS));
-const instaboxShape = `${INSTABOX.size.vcpus} vCPU / ${INSTABOX.size.gb} GB`;
-const instaboxHour = hourly(RATES.instabox, INSTABOX.size);
-const instaboxCreditHours = Math.round(INSTABOX.proFee / instaboxHour / 10) * 10;
+const instaboxShapeLabel = instaboxShape();
+const instaboxHourly = instaboxHour();
+const instaboxCredit = instaboxCreditHours();
 
 /** Hub sections after the comparison table: prices, the wider market, and isolation. */
 const HUB_SECTIONS: readonly ArticleSection[] = [
@@ -123,7 +126,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
           cells: [
             `Per second. Pro plan $${INSTABOX.proFee} a month, returned as usage credit`,
             "Free plan for one computer",
-            `${usd(instaboxProMonthly(WORKDAY_HOURS))} on Pro, the fee, at ${instaboxShape}, the size Rakazo uses`,
+            `${usd(instaboxProMonthly(WORKDAY_HOURS))} on Pro, the fee, at ${instaboxShapeLabel}, the size Rakazo uses`,
             `${usd(instaboxProMonthly(MONTH_HOURS))} on Pro`,
           ],
         },
@@ -173,7 +176,7 @@ const HUB_SECTIONS: readonly ArticleSection[] = [
     bullets: [
       "For a few hours a day, per-second providers are cheapest. InstaBox has the lowest hourly rates here, just under Boat's, and a free plan for one computer, but more computers need its Pro plan. Of the providers with no plan fee, Novita has the lowest rate, and E2B and Daytona charge the same as each other.",
       `Boat's $${BOAT.minimum} minimum covers about ${Math.floor(BOAT.minimum / BOAT_RAKAZO.hour)} hours of the bigger computer self-hosted Rakazo uses, and it covers every computer on the account, so it is cheaper than E2B or Daytona once your computers run more than about ${boatBeatsE2bHours} hours a month between them, and by far around the clock.`,
-      `InstaBox's Pro fee works the same way: the $${INSTABOX.proFee} comes back as usage credit, enough for about ${instaboxCreditHours} hours of the ${instaboxShape} computer Rakazo uses there, shared by every computer on the account.`,
+      `InstaBox's Pro fee works the same way: the $${INSTABOX.proFee} comes back as usage credit, enough for about ${instaboxCredit} hours of the ${instaboxShapeLabel} computer Rakazo uses there, shared by every computer on the account.`,
       "A server you rent for Docker costs the same whether bots work or not. It's the cheapest way to run many computers, if you're happy to look after it.",
     ],
   },
@@ -325,7 +328,7 @@ export const SANDBOXES_HUB = {
     },
     {
       question: "How much does an AI agent sandbox cost?",
-      answer: `Most hosted sandboxes Rakazo supports charge about ${usd(hostedHourly[0])} to ${usd(hostedHourly[1])} an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $${Math.round(hostedWorkday[0])} to $${Math.round(hostedWorkday[1])} a month. InstaBox charges about ${rateUsd(instaboxHour)} an hour for the ${instaboxShape} computer Rakazo uses there. Boat has a $${BOAT.minimum} monthly minimum, and InstaBox's $${INSTABOX.proFee} Pro fee comes back as usage credit, so both cover far more hours. Self-hosting costs whatever your server does.`,
+      answer: `Most hosted sandboxes Rakazo supports charge about ${usd(hostedHourly[0])} to ${usd(hostedHourly[1])} an hour for 2 vCPU and 4 GB while running, as of November 2026, so a computer used 4 hours a workday costs about $${Math.round(hostedWorkday[0])} to $${Math.round(hostedWorkday[1])} a month. InstaBox charges about ${rateUsd(instaboxHourly)} an hour for the ${instaboxShapeLabel} computer Rakazo uses there. Boat has a $${BOAT.minimum} monthly minimum, and InstaBox's $${INSTABOX.proFee} Pro fee comes back as usage credit, so both cover far more hours. Self-hosting costs whatever your server does.`,
     },
     {
       question: "What is the cheapest sandbox for AI agents?",

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { INSTABOX_COMPUTER_TEMPLATE } from "./instabox-sandbox.js";
 import { emulatedInstabox, InstaboxEmulator } from "./instabox-sandbox.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -131,6 +131,22 @@ describe("instabox computer backend", () => {
     emulator.hangs = (command) => command.includes("infinity");
     const events = await run(provider, computer, 50);
     expect(events.at(-1)).toEqual({ type: "exit", code: 124 });
+    expect(emulator.killedJobs).toHaveLength(1);
+    expect(emulator.computers.get(computer.id)!.state).toBe("running");
+  });
+
+  it("kills a cancelled command instead of only closing its stream", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.hangs = (command) => command.includes("infinity");
+    const controller = new AbortController();
+    const finished = run(provider, computer, 60_000, { ...ctx, signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(emulator.requests).toContain(`run ${computer.id} background`);
+    controller.abort();
+    const events = await finished;
+    expect(events.at(-1)).toEqual({ type: "exit", code: 130 });
+    expect(emulator.killedJobs).toHaveLength(1);
+    expect(emulator.requests.some((request) => request.startsWith("pause "))).toBe(false);
   });
 
   it("runs a command past ten minutes as a job, and kills it when the run is cancelled", async () => {
@@ -144,5 +160,67 @@ describe("instabox computer backend", () => {
     const events = await finished;
     expect(events.at(-1)).toEqual({ type: "exit", code: 130 });
     expect(emulator.killedJobs).toHaveLength(1);
+  });
+
+  it("pauses the computer when a cancelled job's kill is rejected", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.hangs = (command) => command.includes("infinity");
+    emulator.jobKill = () => new Error("kill unavailable");
+    const controller = new AbortController();
+    const finished = run(provider, computer, 60_000, { ...ctx, signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    await expect(finished).rejects.toMatchObject({ name: "SandboxUnsafeStopError" });
+    expect(emulator.killedJobs).toHaveLength(3);
+    const fenceAt = emulator.requests.indexOf(`fence ${computer.id}`);
+    const pauseAt = emulator.requests.indexOf(`pause ${computer.id}`);
+    expect(fenceAt).toBeGreaterThanOrEqual(0);
+    expect(pauseAt).toBeGreaterThan(fenceAt);
+    expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+  });
+
+  it("pauses the computer when a timed-out job's kill is not confirmed", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.hangs = (command) => command.includes("infinity");
+    emulator.jobKill = () => false;
+    await expect(run(provider, computer, 50)).rejects.toThrow("was paused");
+    expect(emulator.killedJobs).toHaveLength(3);
+    expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+  });
+
+  it("retries a job kill that fails once", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.hangs = (command) => command.includes("infinity");
+    let attempts = 0;
+    emulator.jobKill = () => {
+      attempts += 1;
+      return attempts === 1 ? new Error("temporary failure") : true;
+    };
+    const events = await run(provider, computer, 50);
+    expect(events.at(-1)).toEqual({ type: "exit", code: 124 });
+    expect(emulator.killedJobs).toHaveLength(2);
+    expect(emulator.computers.get(computer.id)!.state).toBe("running");
+  });
+
+  it("reports a computer deleted during a command as gone", async () => {
+    const { emulator, provider, computer } = await started();
+    emulator.computers.delete(computer.id);
+    await expect(run(provider, computer, 1_000)).rejects.toSatisfy(isSandboxGoneError);
+  });
+
+  it("keeps the computer when a liveness check is rate limited", async () => {
+    vi.useFakeTimers();
+    try {
+      const { emulator, provider, computer } = await started();
+      const connects = emulator.requests.filter((request) => request.startsWith("connect "));
+      emulator.rateLimited = 1;
+      await vi.advanceTimersByTimeAsync(61_000);
+      await expect(provider.listFiles(computer, "", ctx)).resolves.toEqual([]);
+      expect(emulator.requests.filter((request) => request.startsWith("connect "))).toEqual(
+        connects,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

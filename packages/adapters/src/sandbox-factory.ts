@@ -144,7 +144,10 @@ export async function createSandboxProvider(
     case "instabox": {
       if (!opts.instaboxApiKey?.trim()) return missingRemoteKey("instabox", "INSTABOX_API_KEY");
       const { InstaboxSandboxProvider } = await import("./instabox-sandbox.js");
-      return new InstaboxSandboxProvider({ apiKey: opts.instaboxApiKey });
+      return new InstaboxSandboxProvider({
+        apiKey: opts.instaboxApiKey,
+        onUnsafeStop: opts.onUnsafeStop,
+      });
     }
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");

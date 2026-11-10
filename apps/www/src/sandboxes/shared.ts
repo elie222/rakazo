@@ -168,6 +168,20 @@ export function instaboxProMonthly(hours: number, size: ComputerShape = INSTABOX
   return Math.max(INSTABOX.proFee, monthly(RATES.instabox, hours, size));
 }
 
+/** The shape Rakazo gives every InstaBox computer, such as "4 vCPU / 8 GB". */
+export function instaboxShape(size: ComputerShape = INSTABOX.size): string {
+  return `${size.vcpus} vCPU / ${size.gb} GB`;
+}
+
+export function instaboxHour(size: ComputerShape = INSTABOX.size): number {
+  return hourly(RATES.instabox, size);
+}
+
+/** Hours of that computer the Pro fee's usage credit covers, rounded to the nearest 10. */
+export function instaboxCreditHours(size: ComputerShape = INSTABOX.size): number {
+  return Math.round(INSTABOX.proFee / instaboxHour(size) / 10) * 10;
+}
+
 /** Vercel bills CPU only while busy, and provisioned memory the whole time. */
 export const VERCEL = { activeCpuHour: 0.128, gbHour: 0.0212 };
 

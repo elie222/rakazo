@@ -37,8 +37,10 @@ export class InstaboxEmulator implements InstaboxApi {
   fails: (command: string) => boolean = () => false;
   /** Upcoming calls that the API refuses with 429. */
   rateLimited = 0;
-  /** Jobs killed after their wait gave up. */
+  /** Jobs whose kill was attempted after their wait gave up. */
   readonly killedJobs: string[] = [];
+  /** Each `job.kill`. An Error rejects; false means the signal was not confirmed. */
+  jobKill: () => boolean | Error = () => true;
   private sequence = 0;
 
   async create(template: string, metadata: Record<string, string>): Promise<InstaboxMachine> {
@@ -143,8 +145,11 @@ export class InstaboxEmulator implements InstaboxApi {
           return this.finish(computer, command, options.envs ?? {});
         },
         kill: async () => {
-          killed = true;
           this.killedJobs.push(command);
+          const outcome = this.jobKill();
+          if (outcome instanceof Error) throw outcome;
+          if (!outcome) return false;
+          killed = true;
           return true;
         },
       };
@@ -239,7 +244,13 @@ export function emulatedInstabox(emulator = new InstaboxEmulator()) {
   const provider = () =>
     new InstaboxSandboxProvider(
       { apiKey: "test-instabox-key" },
-      instaboxSdk("test-instabox-key", async () => emulator),
+      instaboxSdk(
+        "test-instabox-key",
+        async (id) => {
+          emulator.requests.push(`fence ${id}`);
+        },
+        async () => emulator,
+      ),
     );
   return { emulator, provider };
 }

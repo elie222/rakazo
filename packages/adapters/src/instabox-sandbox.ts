@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { shellQuote } from "./computer-support.js";
 import type {
@@ -7,7 +8,12 @@ import type {
   RemoteDesktopSdk,
 } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
-import { sandboxNotFoundError } from "./sandbox-errors.js";
+import {
+  isSandboxGoneError,
+  isSandboxUnsafeStopError,
+  SandboxUnsafeStopError,
+  sandboxNotFoundError,
+} from "./sandbox-errors.js";
 
 /** instabox's stock desktop image; the shared prepare step installs the rest. */
 export const INSTABOX_COMPUTER_TEMPLATE = "agent-browser";
@@ -78,13 +84,16 @@ export async function nativeInstaboxApi(apiKey: string): Promise<InstaboxApi> {
 
 /** instabox owns the VM lifecycle; the shared Linux runtime owns each bot's desktop. */
 export class InstaboxSandboxProvider extends RemoteDesktopSandboxProvider {
-  constructor(options: { apiKey: string }, sdk?: RemoteDesktopSdk) {
+  constructor(
+    options: { apiKey: string; onUnsafeStop?: (providerRef: string) => Promise<void> },
+    sdk?: RemoteDesktopSdk,
+  ) {
     super({
       id: "instabox",
       label: "instabox",
       apiKey: options.apiKey,
       template: INSTABOX_COMPUTER_TEMPLATE,
-      sdk: sdk ?? instaboxSdk(options.apiKey),
+      sdk: sdk ?? instaboxSdk(options.apiKey, options.onUnsafeStop),
       // Commands past their deadline come back as exit 124, never as an error.
       isTimeoutError: () => false,
     });
@@ -93,6 +102,7 @@ export class InstaboxSandboxProvider extends RemoteDesktopSandboxProvider {
 
 export function instaboxSdk(
   apiKey: string,
+  onUnsafeStop?: (providerRef: string) => Promise<void>,
   load: () => Promise<InstaboxApi> = () => nativeInstaboxApi(apiKey),
 ): RemoteDesktopSdk {
   let loaded: Promise<InstaboxApi> | undefined;
@@ -111,6 +121,23 @@ export function instaboxSdk(
       throw translate(error, machine.sandboxId);
     }
   };
+  // A paused instabox computer keeps the failed command in memory, so other instances must be
+  // fenced off before the pause or a later resume would start it again.
+  const safetyPause = async (machine: InstaboxMachine) => {
+    let fenceError: unknown;
+    try {
+      await onUnsafeStop?.(machine.sandboxId);
+    } catch (error) {
+      fenceError = error;
+    }
+    try {
+      await machine.pause();
+    } catch (error) {
+      if (!isSandboxGoneError(translate(error, machine.sandboxId))) throw error;
+    }
+    if (fenceError) throw fenceError;
+  };
+  const pause = (machine: InstaboxMachine) => () => safetyPause(machine);
   return {
     create: async (template, options) => {
       let machine: InstaboxMachine;
@@ -120,19 +147,22 @@ export function instaboxSdk(
         throw translate(error);
       }
       try {
-        return await openDesktop(machine, true);
+        return await openDesktop(machine, true, pause(machine));
       } catch (error) {
         // Nothing has the new computer's reference yet, so nothing else would delete it.
         await (await api()).kill(machine.sandboxId).catch(() => false);
         throw error;
       }
     },
-    connect: async (id) => openDesktop(await reach(id, true), true),
+    connect: async (id) => {
+      const machine = await reach(id, true);
+      return openDesktop(machine, true, pause(machine));
+    },
     connectRunning: async (id) => {
       const machine = await reach(id, false);
       if ((await state(machine)) !== "running")
         throw new Error("instabox computer is paused; start it before using it");
-      return openDesktop(machine, false);
+      return openDesktop(machine, false, pause(machine));
     },
     isRunning: async (id) => (await state(await reach(id, false))) === "running",
     pause: async (id) => {
@@ -162,18 +192,26 @@ export function instaboxSdk(
 }
 
 /** Publishes the desktop gateway, and on a new or resumed computer links its home. */
-async function openDesktop(machine: InstaboxMachine, setup: boolean): Promise<RemoteDesktop> {
-  if (setup) await checked(machine, LINK_HOME);
+async function openDesktop(
+  machine: InstaboxMachine,
+  setup: boolean,
+  pause: () => Promise<void>,
+): Promise<RemoteDesktop> {
+  if (setup) await checked(machine, LINK_HOME, pause);
   let host: string;
   try {
     host = new URL((await machine.ports.publish(SCREEN_PORT)).url).host;
   } catch (error) {
-    throw translate(error);
+    throw translate(error, machine.sandboxId);
   }
-  return instaboxDesktop(machine, host);
+  return instaboxDesktop(machine, host, pause);
 }
 
-export function instaboxDesktop(machine: InstaboxMachine, host: string): RemoteDesktop {
+export function instaboxDesktop(
+  machine: InstaboxMachine,
+  host: string,
+  pause: () => Promise<void>,
+): RemoteDesktop {
   return {
     sandboxId: machine.sandboxId,
     getHost: (port) => {
@@ -183,24 +221,35 @@ export function instaboxDesktop(machine: InstaboxMachine, host: string): RemoteD
     },
     // instabox has no lifetime deadline to move; this only proves the computer still runs.
     setTimeout: async () => {
-      const { state } = await machine.getInfo();
+      let state: string;
+      try {
+        state = (await machine.getInfo()).state;
+      } catch (error) {
+        const translated = translate(error, machine.sandboxId);
+        // box() drops this handle on any throw. A rate limit says nothing about the computer.
+        if (translated instanceof SandboxRateLimitError) return;
+        throw translated;
+      }
       if (state !== "running") {
         const error = new Error(`instabox computer is ${state}`);
         error.name = "SandboxNotRunningError";
         throw error;
       }
     },
-    commands: { run: (command, options) => runCommand(machine, command, options) },
+    commands: { run: (command, options) => runCommand(machine, command, options, pause) },
     files: {
       makeDir: async (path) => {
-        await checked(machine, `mkdir -p -- ${shellQuote(path)}`);
+        await checked(machine, `mkdir -p -- ${shellQuote(path)}`, pause);
         return true;
       },
-      list: async (path, options) => listEntries(machine, path, options.signal),
+      list: async (path, options) => listEntries(machine, path, pause, options.signal),
       getInfo: async (path, options) => {
-        const result = await runCommand(machine, `stat -L -c '%s %a' -- ${shellQuote(path)}`, {
-          signal: options.signal,
-        });
+        const result = await runCommand(
+          machine,
+          `stat -L -c '%s %a' -- ${shellQuote(path)}`,
+          { signal: options.signal },
+          pause,
+        );
         if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `no such file: ${path}`);
         const [size, mode] = result.stdout.trim().split(" ");
         return {
@@ -238,11 +287,17 @@ export function instaboxDesktop(machine: InstaboxMachine, host: string): RemoteD
 }
 
 /** One entry per line: type, size, octal mode, then the name, which ends at the NUL. */
-async function listEntries(machine: InstaboxMachine, path: string, signal?: AbortSignal) {
+async function listEntries(
+  machine: InstaboxMachine,
+  path: string,
+  pause: () => Promise<void>,
+  signal?: AbortSignal,
+) {
   const result = await runCommand(
     machine,
     `find ${shellQuote(path)} -mindepth 1 -maxdepth 1 -printf '%y %s %m %f\\0'`,
     { signal },
+    pause,
   );
   if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `cannot list ${path}`);
   return result.stdout
@@ -260,36 +315,45 @@ async function listEntries(machine: InstaboxMachine, path: string, signal?: Abor
     });
 }
 
-async function checked(machine: InstaboxMachine, command: string): Promise<void> {
-  const result = await runCommand(machine, command, { timeoutMs: 60_000 });
+async function checked(
+  machine: InstaboxMachine,
+  command: string,
+  pause: () => Promise<void>,
+): Promise<void> {
+  const result = await runCommand(machine, command, { timeoutMs: 60_000 }, pause);
   if (result.exitCode !== 0)
     throw new Error(result.stderr.trim() || `instabox command failed with exit ${result.exitCode}`);
 }
+
+const ABORTED: CommandResult = { exitCode: 130, stdout: "", stderr: "command aborted\n" };
 
 /** A non-zero exit, a deadline, or an abort is a result; only transport failures throw. */
 async function runCommand(
   machine: InstaboxMachine,
   command: string,
   options: CommandStartOpts,
+  pause: () => Promise<void>,
 ): Promise<CommandResult> {
   const { signal, timeoutMs, ...rest } = options;
-  signal?.throwIfAborted();
+  // Nothing was started, so there is no remote process to stop.
+  if (signal?.aborted) return ABORTED;
   try {
-    if (timeoutMs === undefined || timeoutMs <= FOREGROUND_LIMIT_MS) {
-      // Streamed output is never cut short; a buffered result keeps 1 MiB of each stream.
-      const result = (await machine.commands.run(command, {
-        ...rest,
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        ...(signal ? { signal } : {}),
-        onStdout: () => undefined,
-      })) as InstaboxCommandResult;
-      return commandResult(result, timeoutMs);
+    // Aborting a foreground command only closes its stream. A command the caller can cancel,
+    // and one past the foreground limit, runs as a job whose process we can kill.
+    if (signal || (timeoutMs !== undefined && timeoutMs > FOREGROUND_LIMIT_MS)) {
+      return await runJob(machine, command, rest, timeoutMs, signal, pause);
     }
-    return await runJob(machine, command, rest, timeoutMs, signal);
+    // Streamed output is never cut short; a buffered result keeps 1 MiB of each stream.
+    const result = (await machine.commands.run(command, {
+      ...rest,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      onStdout: () => undefined,
+    })) as InstaboxCommandResult;
+    return commandResult(result, timeoutMs);
   } catch (error) {
     if (isCommandExit(error)) return commandResult(error, timeoutMs);
-    if (signal?.aborted) return { exitCode: 130, stdout: "", stderr: "command aborted\n" };
-    throw translate(error);
+    if (isSandboxUnsafeStopError(error)) throw error;
+    throw translate(error, machine.sandboxId);
   }
 }
 
@@ -298,22 +362,78 @@ async function runJob(
   machine: InstaboxMachine,
   command: string,
   options: Pick<CommandStartOpts, "cwd" | "envs">,
-  timeoutMs: number,
+  timeoutMs: number | undefined,
   signal: AbortSignal | undefined,
+  pause: () => Promise<void>,
 ): Promise<CommandResult> {
-  const job = (await machine.commands.run(command, {
-    ...options,
-    background: true,
-  })) as InstaboxJob;
+  let job: InstaboxJob;
   try {
-    return commandResult(await job.wait({ timeoutMs, ...(signal ? { signal } : {}) }), timeoutMs);
+    // The caller's signal is not passed: aborting the start can leave a job and no handle.
+    job = (await machine.commands.run(command, {
+      ...options,
+      background: true,
+    })) as InstaboxJob;
   } catch (error) {
     if (isCommandExit(error)) return commandResult(error, timeoutMs);
-    // Waiting gave up, but the job runs on until it is killed.
-    await job.kill().catch(() => false);
-    if (errorCode(error) === "job_wait_timeout") return timedOut(timeoutMs);
-    throw error;
+    const translated = translate(error, machine.sandboxId);
+    if (isSandboxGoneError(translated) || translated instanceof SandboxRateLimitError) {
+      throw translated;
+    }
+    // The process can start before its start result reaches us, leaving no job to kill.
+    return pauseAfterUnsafeCommand(pause, error);
   }
+  if (signal?.aborted) {
+    await confirmJobStopped(job, pause);
+    return ABORTED;
+  }
+  try {
+    return commandResult(
+      await job.wait({
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(signal ? { signal } : {}),
+      }),
+      timeoutMs,
+    );
+  } catch (error) {
+    if (isCommandExit(error)) return commandResult(error, timeoutMs);
+    const translated = translate(error, machine.sandboxId);
+    // A deleted computer is not still billing. Anything else left the job running.
+    if (isSandboxGoneError(translated)) throw translated;
+    await confirmJobStopped(job, pause);
+    if (signal?.aborted) return ABORTED;
+    if (errorCode(error) === "job_wait_timeout") return timedOut(timeoutMs);
+    throw translated;
+  }
+}
+
+/** Retries the kill, then pauses the computer. Only a delivered signal counts as stopped. */
+async function confirmJobStopped(job: InstaboxJob, pause: () => Promise<void>): Promise<void> {
+  let cause: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (await job.kill()) return;
+      cause = new Error("instabox job kill was not confirmed");
+    } catch (failure) {
+      cause = failure;
+    }
+    if (attempt < 2) await delay(250 * 2 ** attempt);
+  }
+  return pauseAfterUnsafeCommand(pause, cause);
+}
+
+async function pauseAfterUnsafeCommand(pause: () => Promise<void>, cause: unknown): Promise<never> {
+  try {
+    await pause();
+  } catch (pauseError) {
+    throw new SandboxUnsafeStopError(
+      "instabox command termination failed and the safety stop could not be completed; the computer may still be running",
+      new AggregateError([cause, pauseError]),
+    );
+  }
+  throw new SandboxUnsafeStopError(
+    "instabox computer was paused after command termination failed; the command may remain suspended",
+    cause,
+  );
 }
 
 function commandResult(
@@ -339,13 +459,17 @@ function errorCode(error: unknown): unknown {
 
 /**
  * Rate limits from any call. A 404 means the computer is gone only when `id` names the computer
- * the call was about: a missing file inside it answers 404 too.
+ * the call was about: a missing file or job inside it answers 404 too.
  */
 function translate(error: unknown, id?: string): unknown {
   if (!(error instanceof Error)) return error;
   const status = (error as { status?: unknown }).status;
   if (status === 429) return new SandboxRateLimitError({ cause: error });
-  if (id && status === 404)
+  if (id && status === 404 && !isInsideComputerNotFound(error))
     return sandboxNotFoundError(`instabox sandbox ${id} not found`, { cause: error });
   return error;
+}
+
+function isInsideComputerNotFound(error: Error): boolean {
+  return /^(?:file|directory) not found:|^no job /.test(error.message);
 }

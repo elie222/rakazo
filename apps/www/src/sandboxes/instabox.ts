@@ -12,17 +12,20 @@ import {
   WORKDAY_HOURS,
   boatMonthly,
   hourly,
+  instaboxCreditHours,
+  instaboxHour,
   instaboxProMonthly,
+  instaboxShape,
   monthly,
   rateUsd,
   usd,
 } from "./shared";
 import type { Sandbox } from "./types";
 
-const shape = `${INSTABOX.size.vcpus} vCPU / ${INSTABOX.size.gb} GB`;
-const hour = hourly(RATES.instabox, INSTABOX.size);
+const shape = instaboxShape();
+const hour = instaboxHour();
 const workdayUsage = monthly(RATES.instabox, WORKDAY_HOURS, INSTABOX.size);
-const creditHours = Math.round(INSTABOX.proFee / hour / 10) * 10;
+const creditHours = instaboxCreditHours();
 const atSize = (rate: (typeof RATES)[keyof typeof RATES], hours: number) => usd(monthly(rate, hours, INSTABOX.size));
 
 export const instabox: Sandbox = {
@@ -187,8 +190,8 @@ export const instabox: Sandbox = {
   },
   faq: [
     {
-      question: "Is InstaBox cheaper than E2B?",
-      answer: `Per hour, yes. Rakazo's InstaBox computer has ${shape} and costs about ${rateUsd(hour)} an hour, while its E2B computer has 2 vCPU / 4 GB and costs about ${usd(hourly(RATES.e2b))}. More than one InstaBox computer needs the $${INSTABOX.proFee} Pro plan, whose fee comes back as usage credit. Both use Firecracker microVMs and pause with memory. [E2B](/sandboxes/e2b/) is open source.`,
+      question: "How does InstaBox's price compare with E2B?",
+      answer: `Rakazo's InstaBox computer has ${shape} and costs about ${rateUsd(hour)} an hour. Its E2B computer has 2 vCPU / 4 GB and costs about ${usd(hourly(RATES.e2b))} an hour. The machines are different sizes. More than one InstaBox computer needs the $${INSTABOX.proFee} Pro plan, whose fee comes back as usage credit. Both use Firecracker microVMs and pause with memory. [E2B](/sandboxes/e2b/) is open source.`,
     },
     {
       question: "Does InstaBox's free plan work with Rakazo?",
