@@ -1,3 +1,4 @@
+import { ph, t } from "@lingui/core/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import {
   botAvatarActivity,
@@ -8,7 +9,6 @@ import {
 } from "@rakazo/core";
 import { rpc, selectedSpaceId } from "./api";
 import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
-import { t } from "./i18n";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
 import type { MobileBot, MobileGroup, MobileSpace } from "./mobile-types";
 import type { InboxSignal } from "./offscreen-unreads";
@@ -91,9 +91,9 @@ export function canDeleteInboxSpace(space: Pick<InboxSpace, "isDefault" | "canDe
 export function deleteSpaceTitle(space: Pick<InboxSpace, "name" | "botCount" | "bots">) {
   // Servers before botCount only listed the member's active bots.
   const bots = space.botCount ?? space.bots.length;
-  if (bots === 0) return t("Delete {name}?", { name: space.name });
-  if (bots === 1) return t("Delete {name} and its bot?", { name: space.name });
-  return t("Delete {name} and its {count} bots?", { name: space.name, count: bots });
+  if (bots === 0) return t`Delete ${ph({ name: space.name })}?`;
+  if (bots === 1) return t`Delete ${ph({ name: space.name })} and its bot?`;
+  return t`Delete ${ph({ name: space.name })} and its ${ph({ count: bots })} bots?`;
 }
 
 /** Only headings with no chats under them, counting chats in collapsed sections. */
@@ -157,7 +157,7 @@ export function spaceInboxItems(
     }
     for (const group of groupBotsForSidebar(chats, space.botSections, {
       includeEmptySections: true,
-      labels: { pinned: t("Pinned"), unassigned: t("Unassigned") },
+      labels: { pinned: t`Pinned`, unassigned: t`Unassigned` },
     })) {
       if (group.title) {
         const key = `${space.id}:${group.key}`;
@@ -182,8 +182,8 @@ export function spaceInboxItems(
       }
     }
     for (const [key, title, setAside] of [
-      [snoozedHeadingKey(space.id), t("Snoozed"), snoozed],
-      [hiddenHeadingKey(space.id), t("Hidden"), hidden],
+      [snoozedHeadingKey(space.id), t`Snoozed`, snoozed],
+      [hiddenHeadingKey(space.id), t`Hidden`, hidden],
     ] as const) {
       if (setAside.length === 0) continue;
       const folded = !collapsed.has(key);

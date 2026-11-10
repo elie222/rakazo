@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import {
   AiConsentBlocked,
   recognitionLocaleTag,
@@ -11,7 +12,7 @@ import { captureApiRequestContext, rpc } from "./api";
 import { recordClip, transcribeClip } from "./call-session";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import * as dictation from "./dictation";
-import { deviceLanguage, getActiveUiLocale, useI18n } from "./i18n";
+import { deviceLanguage, getActiveUiLocale } from "./i18n";
 import { currentSessionGeneration } from "./session";
 import { errorText } from "./user-error";
 import { ensureVoiceConsent } from "./voice";
@@ -64,7 +65,7 @@ export function useComposerDictation({
    */
   onWords: (text: string, final?: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const [status, setStatus] = useState<ComposerDictationStatus>("idle");
@@ -139,11 +140,11 @@ export function useComposerDictation({
     if (plan.kind === "dictation") {
       end(mine);
       Alert.alert(
-        t("Could not dictate"),
-        t("Allow speech recognition in Settings, or connect a voice provider that transcribes."),
+        t`Could not dictate`,
+        t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
         [
-          { text: t("Not now"), style: "cancel" },
-          { text: t("Open Voice"), onPress: () => router.push("/voice") },
+          { text: t`Not now`, style: "cancel" },
+          { text: t`Open Voice`, onPress: () => router.push("/voice") },
         ],
       );
       return;
@@ -174,7 +175,7 @@ export function useComposerDictation({
       mine.finish = () => {};
       const deadline = requestDeadline(
         VOICE_RESPONSE_TIMEOUT_MS,
-        t("Could not transcribe that."),
+        t`Could not transcribe that.`,
         mine.cancel.signal,
       );
       let text = "";
@@ -213,7 +214,7 @@ export function useComposerDictation({
       },
       // Hearing nothing is not an error; a recognizer that broke is.
       onGiveUp: (reason) => {
-        if (end(mine) && reason === "failed") Alert.alert(t("Could not dictate"), t("Try again."));
+        if (end(mine) && reason === "failed") Alert.alert(t`Could not dictate`, t`Try again.`);
       },
     });
     if (stopRequested && session.current === mine) dictation.finishListening();
@@ -237,7 +238,7 @@ export function useComposerDictation({
     start(mine).catch((error: unknown) => {
       mine.cancel.abort();
       if (!end(mine) || error instanceof AiConsentBlocked) return;
-      Alert.alert(t("Could not dictate"), errorText(error, t("Try again.")));
+      Alert.alert(t`Could not dictate`, errorText(error, t`Try again.`));
     });
   }
 

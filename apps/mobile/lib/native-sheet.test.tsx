@@ -57,9 +57,8 @@ async function loadComponents(gate: Promise<void> = Promise.resolve()) {
   ({ BotOrganizeModal } = await import("../components/bot-organize-modal"));
   ({ RunErrorSheetContainer } = await import("../components/run-error-sheet-container"));
 }
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./confirm-delete-section", () => ({
-  confirmDeleteSection: (_section: unknown, _t: unknown, confirm: () => void) => {
+  confirmDeleteSection: (_section: unknown, confirm: () => void) => {
     mocks.confirmDelete();
     confirm();
   },
@@ -434,15 +433,15 @@ describe("inbox organization actions", () => {
     ["Unpin", { pinned: false }],
     ["Mute", { muted: true }],
     ["Unmute", { muted: false }],
-    ["Hide {label}", { hidden: true }],
-    ["Show {label}", { hidden: false }],
+    ["Hide Sample chat", { hidden: true }],
+    ["Show Sample chat", { hidden: false }],
     ["Second", { sectionId: "two" }],
     ["Unassigned", { sectionId: null }],
   ])("keeps %s working inside the native sheet", async (label, update) => {
     const { props, click } = await organize({
       pinned: label === "Unpin",
       muted: label === "Unmute",
-      hidden: label === "Show {label}",
+      hidden: label === "Show Sample chat",
     });
     await click(label as string);
     expect(props.onUpdate).toHaveBeenCalledWith(update);

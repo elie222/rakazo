@@ -49,14 +49,17 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("de-HK")).toBe("de");
   });
 
-  it("falls back to English for unknown locales and web-only languages", () => {
-    expect(normalizeUiLocale("fr-FR")).toBe("en");
-    expect(normalizeUiLocale("ko")).toBe("en");
-    expect(normalizeUiLocale("ko-KR")).toBe("en");
-    expect(normalizeUiLocale("tr")).toBe("en");
-    expect(normalizeUiLocale("hi")).toBe("en");
-    expect(normalizeUiLocale("pt")).toBe("en");
-    expect(normalizeUiLocale("pt-BR")).toBe("en");
+  it("matches every language the app ships, regional tags included", () => {
+    expect(normalizeUiLocale("fr-FR")).toBe("fr");
+    expect(normalizeUiLocale("ko-KR")).toBe("ko");
+    expect(normalizeUiLocale("tr")).toBe("tr");
+    expect(normalizeUiLocale("hi-IN")).toBe("hi");
+    expect(normalizeUiLocale("he-IL")).toBe("he");
+    expect(normalizeUiLocale("pt-BR")).toBe("pt-BR");
+  });
+
+  it("falls back to English for unknown locales", () => {
+    expect(normalizeUiLocale("sv-SE")).toBe("en");
     expect(normalizeUiLocale("")).toBe("en");
     expect(normalizeUiLocale(null)).toBe("en");
   });

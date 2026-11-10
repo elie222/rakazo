@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
@@ -15,7 +16,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFloatingHeaderInset } from "../lib/floating-header";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { useListSearch } from "../lib/use-list-search";
@@ -44,7 +44,7 @@ export function ModelPickerList({
   /** A single-provider picker only needs vendor headings. */
   providerLabel?: string;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const sideInsets = useSideInsets();
@@ -91,7 +91,7 @@ export function ModelPickerList({
     navigation.setOptions({
       headerSearchBarOptions: showSearch
         ? {
-            placeholder: t("Search"),
+            placeholder: t`Search`,
             hideWhenScrolling: false,
             hideNavigationBar: false,
             autoCapitalize: "none",
@@ -191,7 +191,7 @@ export function ModelPickerList({
     [],
   );
 
-  const noMatchesMessage = emptyMessage ?? t("No matching models");
+  const noMatchesMessage = emptyMessage ?? t`No matching models`;
   const noMatches = choices !== null && sections.length === 0;
 
   // The search field keeps focus, so tell screen readers once when the results run out.
@@ -257,12 +257,12 @@ export function ModelPickerList({
             <SettingsRow
               accessibilityRole="button"
               accessibilityLabel={item.label}
-              accessibilityHint={item.images === false ? t("Can't read images") : undefined}
+              accessibilityHint={item.images === false ? t`Can't read images` : undefined}
               accessibilityState={{ selected }}
               onPress={() => onSelect(item)}
               title={item.title ?? item.label}
               detail={item.detail}
-              value={section.connect ? t("Connect") : undefined}
+              value={section.connect ? t`Connect` : undefined}
               chevron={section.connect ? "right" : undefined}
               trailing={
                 item.images === false || selected ? (

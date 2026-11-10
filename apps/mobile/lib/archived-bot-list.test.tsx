@@ -131,7 +131,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
 vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => swift.headerInset }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 
 it("gives archived bot and group rows a rectangular context-menu hit area", () => {
   swift.menus.length = 0;

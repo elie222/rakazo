@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { createChatChoiceQueue } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
@@ -9,7 +10,6 @@ import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import { confirmDeleteSection } from "./confirm-delete-section";
-import { useI18n } from "./i18n";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
@@ -53,7 +53,7 @@ export function useInboxChatActions({
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
@@ -145,7 +145,7 @@ export function useInboxChatActions({
         ).catch((err) => {
           // A change from a session that has since ended is dropped quietly.
           if (session !== currentSessionGeneration()) return;
-          Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
+          Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`));
         });
         return;
       }
@@ -178,8 +178,8 @@ export function useInboxChatActions({
         } catch (err) {
           settle();
           Alert.alert(
-            kind === "bot" ? t("Could not archive bot") : t("Could not update chat"),
-            errorText(err, t("Try again.")),
+            kind === "bot" ? t`Could not archive bot` : t`Could not update chat`,
+            errorText(err, t`Try again.`),
           );
         }
         try {
@@ -208,7 +208,7 @@ export function useInboxChatActions({
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>
-        Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
+        Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       );
     },
     [loadBots, sendReadState, t, updateChat],
@@ -244,7 +244,7 @@ export function useInboxChatActions({
       update: BotOrganizationUpdate,
     ) =>
       void updateChat(kind, chat, update).catch((err) =>
-        Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
+        Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       ),
     [t, updateChat],
   );
@@ -274,7 +274,7 @@ export function useInboxChatActions({
         apply,
         settled: (failed) => {
           if (failed) {
-            Alert.alert(t("Could not update chat"), errorText(failed.error, t("Try again.")));
+            Alert.alert(t`Could not update chat`, errorText(failed.error, t`Try again.`));
           }
           void loadBots().catch(() => undefined);
         },
@@ -294,18 +294,16 @@ export function useInboxChatActions({
         mode === "rename" ? sections.find((section) => section.id === chat.sectionId) : null;
       if (mode === "rename" && !current) return;
       promptSectionName({
-        title: current ? t("Rename section") : t("New section"),
-        cancelLabel: t("Cancel"),
-        submitLabel: current ? t("Save") : t("Create"),
+        title: current ? t`Rename section` : t`New section`,
+        cancelLabel: t`Cancel`,
+        submitLabel: current ? t`Save` : t`Create`,
         defaultValue: current?.name,
         onSubmit: (name) =>
           void (
             current
               ? renameSection(current.id, name, chat.spaceId)
               : createSection(kind, chat.id, name, chat.spaceId)
-          ).catch((err) =>
-            Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
-          ),
+          ).catch((err) => Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`))),
       });
     },
     [createSection, renameSection, t],
@@ -313,13 +311,13 @@ export function useInboxChatActions({
 
   const deleteSection = useCallback(
     (section: { id: string; name: string }) => {
-      confirmDeleteSection(section, t, () => {
+      confirmDeleteSection(section, () => {
         void (async () => {
           try {
             await rpc("botSections/remove", { sectionId: section.id });
             await loadBots();
           } catch (err) {
-            Alert.alert(t("Could not delete section"), errorText(err, t("Try again.")));
+            Alert.alert(t`Could not delete section`, errorText(err, t`Try again.`));
           }
         })();
       });

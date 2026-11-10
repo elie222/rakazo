@@ -32,7 +32,6 @@ vi.mock("./incoming-share", () => ({
   cancelIncomingShare: state.cancel,
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },

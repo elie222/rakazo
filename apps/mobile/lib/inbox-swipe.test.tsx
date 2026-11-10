@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
 import { NativeListRowContext } from "../components/native-list-row";
+// Activates the language the row actions are translated into, as the app does at startup.
+import "./i18n";
 import type { InboxRowAction } from "./inbox-swipe";
 import {
   applyUnreadOverrides,
@@ -33,7 +35,6 @@ vi.mock("./native", () => ({
   native: { page: "page", fill: "fill" },
   useResolvedAppearance: () => "light",
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 // SwiftUI views render as plain DOM so tests can read the row's structure.
 // Tests load the shared module; the list rows are the iOS one.
 vi.mock("../components/native-row", () => import("../components/native-row.ios"));
@@ -407,7 +408,7 @@ describe("iOS swipe row", () => {
       ["Pin", "pin", null],
       ["Mute", "bell.slash", null],
       ["Snooze", "moon.zzz", null],
-      ["Hide {label}", "eye.slash.circle", null],
+      ["Hide Ada", "eye.slash.circle", null],
       ["Move to", "folder", null],
       ["Archive", "eye.slash", null],
       ["Delete…", "trash", "destructive"],
@@ -479,7 +480,7 @@ describe("iOS swipe row", () => {
     press("Mark as Unread");
     press("Pin");
     press("Unmute");
-    press("Show {label}");
+    press("Show Ada");
     press("Work");
     press("Home");
     press("Unassigned");

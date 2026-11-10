@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { AuthCapabilities } from "@rakazo/contracts";
 import { hostMatchesPasskeyRpId, passkeyOfferDismissedKey, shouldOfferPasskey } from "@rakazo/core";
 import Constants from "expo-constants";
@@ -7,7 +8,6 @@ import type * as NativePasskeys from "react-native-passkeys";
 import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
 import { passwordResetCapabilities } from "./api-auth";
 import { clearSpace } from "./api-server";
-import { t } from "./i18n";
 import {
   currentSessionGeneration,
   replaceSessionTokenIfCurrent,
@@ -70,7 +70,7 @@ function challengeCookie(response: Response): string {
   const match = response.headers
     .get("set-cookie")
     ?.match(/(?:^|,\s*)((?:__Secure-)?better-auth\.better-auth-passkey)=([^;,]*)/);
-  if (!match?.[2]) throw new Error(t("Could not continue"));
+  if (!match?.[2]) throw new Error(t`Could not continue`);
   return `${match[1]}=${match[2]}`;
 }
 
@@ -84,7 +84,7 @@ const WITHOUT_COOKIE_JAR = { credentials: "omit" } as const;
 
 function passkeyErrorText(status: number, body: unknown, invalidJson?: boolean): string {
   const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
-  if (code === "SESSION_NOT_FRESH") return t("Sign in again");
+  if (code === "SESSION_NOT_FRESH") return t`Sign in again`;
   return authResponseErrorText(status, body, invalidJson);
 }
 
@@ -97,7 +97,7 @@ function captureFlow() {
     generation,
     requireCurrent() {
       if (apiBase !== currentApiBase() || generation !== currentSessionGeneration())
-        throw new Error(t("Could not continue"));
+        throw new Error(t`Could not continue`);
     },
   };
 }
@@ -119,7 +119,7 @@ export function signInWithPasskey(): Promise<boolean> {
   return exclusive(async () => {
     const flow = captureFlow();
     const passkeys = await loadNative();
-    if (!passkeys) throw new Error(t("Could not continue"));
+    if (!passkeys) throw new Error(t`Could not continue`);
     const options = await fetchMobileJson<RequestOptions>(
       `${flow.apiBase}/api/auth/passkey/generate-authenticate-options`,
       { ...WITHOUT_COOKIE_JAR, headers: { origin: "rakazo://" } },
@@ -127,14 +127,14 @@ export function signInWithPasskey(): Promise<boolean> {
     );
     if (!options.response.ok || options.invalidJson)
       throw new Error(passkeyErrorText(options.response.status, options.body, options.invalidJson));
-    if (!serverMatchesRp(flow.apiBase, options.body.rpId)) throw new Error(t("Could not continue"));
+    if (!serverMatchesRp(flow.apiBase, options.body.rpId)) throw new Error(t`Could not continue`);
     const cookie = challengeCookie(options.response);
     let credential: Awaited<ReturnType<typeof passkeys.get>>;
     try {
       credential = await passkeys.get(options.body);
     } catch (error) {
       if (cancelled(error)) return false;
-      throw new Error(t("Could not continue"));
+      throw new Error(t`Could not continue`);
     }
     if (!credential) return false;
     flow.requireCurrent();
@@ -151,11 +151,11 @@ export function signInWithPasskey(): Promise<boolean> {
     if (!response.ok || invalidJson)
       throw new Error(passkeyErrorText(response.status, body, invalidJson));
     const token = tokenFromAuthResponse(response, body);
-    if (!token) throw new Error(t("Sign-in did not return a session"));
+    if (!token) throw new Error(t`Sign-in did not return a session`);
     flow.requireCurrent();
     try {
       if (!(await clearSpace()))
-        throw new Error(t("Could not save your sign-in on this device. Try again."));
+        throw new Error(t`Could not save your sign-in on this device. Try again.`);
       return await replaceSessionTokenIfCurrent(flow.generation, token);
     } catch (error) {
       throw new Error(sessionSaveErrorText(error));
@@ -168,7 +168,7 @@ export function addPasskey(): Promise<boolean> {
   return exclusive(async () => {
     const flow = captureFlow();
     const passkeys = await loadNative();
-    if (!passkeys) throw new Error(t("Could not continue"));
+    if (!passkeys) throw new Error(t`Could not continue`);
     const headers = await authHeaders();
     flow.requireCurrent();
     const options = await fetchMobileJson<CreationOptions>(
@@ -178,15 +178,14 @@ export function addPasskey(): Promise<boolean> {
     );
     if (!options.response.ok || options.invalidJson)
       throw new Error(passkeyErrorText(options.response.status, options.body, options.invalidJson));
-    if (!serverMatchesRp(flow.apiBase, options.body.rp?.id))
-      throw new Error(t("Could not continue"));
+    if (!serverMatchesRp(flow.apiBase, options.body.rp?.id)) throw new Error(t`Could not continue`);
     const cookie = challengeCookie(options.response);
     let credential: Awaited<ReturnType<typeof passkeys.create>>;
     try {
       credential = await passkeys.create(options.body);
     } catch (error) {
       if (cancelled(error)) return false;
-      throw new Error(t("Could not continue"));
+      throw new Error(t`Could not continue`);
     }
     if (!credential) return false;
     flow.requireCurrent();
@@ -231,7 +230,7 @@ async function passkeyRequest<T>(path: string, body?: unknown): Promise<T> {
 
 export async function listPasskeys(): Promise<MobilePasskey[]> {
   const result = await passkeyRequest<unknown>("list-user-passkeys");
-  if (!Array.isArray(result)) throw new Error(t("Could not continue"));
+  if (!Array.isArray(result)) throw new Error(t`Could not continue`);
   return result.flatMap((item: Record<string, unknown> | null) =>
     item && typeof item.id === "string"
       ? [
@@ -299,14 +298,14 @@ export async function offerPasskeyOnce(userId: string, isActive: () => boolean):
   }
   const dismiss = () =>
     void SecureStore.setItemAsync(passkeyOfferDismissedKey(userId), "1").catch(() => undefined);
-  Alert.alert(t("Add a passkey for faster sign-in?"), undefined, [
-    { text: t("Not now"), style: "cancel", onPress: dismiss },
+  Alert.alert(t`Add a passkey for faster sign-in?`, undefined, [
+    { text: t`Not now`, style: "cancel", onPress: dismiss },
     {
-      text: t("Add passkey"),
+      text: t`Add passkey`,
       onPress: () => {
         dismiss();
         addPasskey().catch((error: unknown) =>
-          Alert.alert(errorText(error, t("Could not continue"))),
+          Alert.alert(errorText(error, t`Could not continue`)),
         );
       },
     },
