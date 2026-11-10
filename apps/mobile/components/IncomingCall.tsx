@@ -1,8 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import { createAudioPlayer } from "expo-audio";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { AppState, Modal, StyleSheet, Text, Vibration, View } from "react-native";
 import { useCallSession } from "../lib/call-session";
-import { useI18n } from "../lib/i18n";
 import {
   getIncomingCall,
   respondToMobileCall,
@@ -18,7 +18,7 @@ export function IncomingCall() {
   const incoming = useSyncExternalStore(subscribeIncomingCalls, getIncomingCall, getIncomingCall);
   const active = useCallSession();
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = incoming?.incomingCall.callId;
@@ -51,7 +51,7 @@ export function IncomingCall() {
     try {
       await respondToMobileCall(incoming, action);
     } catch (error) {
-      setError(errorText(error, t("Something went wrong. Try again.")));
+      setError(errorText(error, t`Something went wrong. Try again.`));
     } finally {
       setBusy(false);
     }
@@ -81,14 +81,14 @@ export function IncomingCall() {
         ) : null}
         <View style={{ flexDirection: "row", gap: 32 }}>
           <NativeActionButton
-            label={t("Decline")}
+            label={t`Decline`}
             fill={false}
             prominence="destructive"
             disabled={busy}
             onPress={() => void respond("decline")}
           />
           <NativeActionButton
-            label={t("Answer")}
+            label={t`Answer`}
             fill={false}
             disabled={busy}
             onPress={() => void respond("answer")}

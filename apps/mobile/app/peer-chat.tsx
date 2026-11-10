@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { PeerConversation } from "@rakazo/core";
 import { displayName, loadPeerHistory, peerConversations } from "@rakazo/core";
@@ -21,7 +22,6 @@ import { SheetCloseButton } from "../components/sheet-close-button";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
-import { useI18n } from "../lib/i18n";
 import { isInlineImageBlock } from "../lib/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -31,7 +31,7 @@ import { errorText } from "../lib/user-error";
 export default function PeerChat() {
   const router = useRouter();
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -45,7 +45,7 @@ export default function PeerChat() {
   }>();
   const botId = params.botId ?? "";
   const peerBotId = params.peerBotId ?? "";
-  const botName = displayName(params.botName, t("Bot"));
+  const botName = displayName(params.botName, t`Bot`);
   const [state, setState] = useState<
     { kind: "loading" } | { kind: "failed" } | { kind: "ready"; chat: PeerConversation | null }
   >({ kind: "loading" });
@@ -79,7 +79,7 @@ export default function PeerChat() {
   }, [botId, peerBotId, attempt]);
 
   const chat = state.kind === "ready" ? state.chat : null;
-  const peerName = displayName(chat?.peerBotName ?? params.peerBotName, t("Bot"));
+  const peerName = displayName(chat?.peerBotName ?? params.peerBotName, t`Bot`);
   return (
     <View style={[styles.screen, sideInsets]}>
       <Stack.Screen
@@ -126,14 +126,14 @@ export default function PeerChat() {
           </View>
         ) : state.kind === "failed" ? (
           <View style={styles.center}>
-            <Text style={styles.muted}>{t("Could not load this chat.")}</Text>
+            <Text style={styles.muted}>{t`Could not load this chat.`}</Text>
             <Pressable accessibilityRole="button" onPress={retry} hitSlop={8}>
-              <Text style={styles.retry}>{t("Try again")}</Text>
+              <Text style={styles.retry}>{t`Try again`}</Text>
             </Pressable>
           </View>
         ) : !chat?.messages.length ? (
           <View style={styles.center}>
-            <Text style={styles.muted}>{t("No messages yet")}</Text>
+            <Text style={styles.muted}>{t`No messages yet`}</Text>
           </View>
         ) : (
           chat.messages.map((item, index) => {
@@ -201,10 +201,7 @@ export default function PeerChat() {
                             block.name,
                             block.mimeType,
                           ).catch((error) =>
-                            Alert.alert(
-                              t("Could not open file"),
-                              errorText(error, t("Try again.")),
-                            ),
+                            Alert.alert(t`Could not open file`, errorText(error, t`Try again.`)),
                           )
                         }
                       />

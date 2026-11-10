@@ -1,6 +1,7 @@
 import type { AppEmulator } from "../apps/app-emulator.js";
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
+import { SESSION_EVAL_CASES } from "./history-session.js";
 import type { JudgeInput } from "./judge.js";
 import type { ComputerScript } from "./scripted-shell.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
@@ -733,3 +734,5 @@ for (const size of [100, 1000, 10000] as const) {
     ],
   });
 }
+
+HISTORY_EVAL_CASES.push(...SESSION_EVAL_CASES);

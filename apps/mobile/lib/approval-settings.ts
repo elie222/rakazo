@@ -1,8 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ActionAutoReviewSettings, ApprovalMode } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
-import { useI18n } from "./i18n";
 import type { SettingsTarget } from "./settings-target";
 import { settingsRpc } from "./settings-target";
 import { errorText } from "./user-error";
@@ -24,7 +24,7 @@ export type ApprovalSettings = {
 export function useApprovalSettings(target: SettingsTarget, enabled = true): ApprovalSettings {
   const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [settings, setSettings] = useState<ActionAutoReviewSettings | null>(null);
   const [ruleCount, setRuleCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export function useApprovalSettings(target: SettingsTarget, enabled = true): App
         })
         .catch((err: unknown) => {
           if (current && saves.current === savesAtRead)
-            setLoadError(errorText(err, t("Something went wrong. Try again.")));
+            setLoadError(errorText(err, t`Something went wrong. Try again.`));
         });
       return () => {
         current = false;
@@ -86,7 +86,7 @@ export function useApprovalSettings(target: SettingsTarget, enabled = true): App
       if (resets.current === resetsAtSave) setSettings(saved);
     } catch (err) {
       if (resets.current === resetsAtSave) setSettings(previous);
-      Alert.alert(t("Could not save that preference"), errorText(err, t("Try again.")));
+      Alert.alert(t`Could not save that preference`, errorText(err, t`Try again.`));
       // The save may have landed before the reply was lost, so read what is actually stored.
       readAfterSave.current = true;
     } finally {

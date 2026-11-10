@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">Canlı ajan durumu</string>
+  <string name="rakazo_channel_messages">Ajan mesajları</string>
+  <string name="rakazo_channel_scheduled">Zamanlanmış görevler</string>
+  <string name="rakazo_channel_attention">İlgi bekliyor</string>
+
+  <string name="rakazo_live_one">%1$s çalışıyor</string>
+  <string name="rakazo_live_many">%1$s ve %2$d kişi daha çalışıyor</string>
+  <string name="rakazo_live_working">Çalışıyor</string>
+
+  <string name="rakazo_scheduled_title">%1$s · Zamanlanmış görev</string>
+  <string name="rakazo_replied_group">%1$s, %2$s içinde yanıt verdi</string>
+  <string name="rakazo_replied">%1$s yanıt verdi</string>
+
+  <string name="rakazo_attention_failed">%1$s bir sorunla karşılaştı</string>
+  <string name="rakazo_attention_takeover">%1$s ekranda sana ihtiyaç duyuyor</string>
+  <string name="rakazo_attention_input">%1$s yanıtını bekliyor</string>
+</resources>

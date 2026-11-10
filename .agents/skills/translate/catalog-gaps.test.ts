@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { applyTranslations, findMismatches, listGaps, translationsOf } from "./catalog-gaps.ts";
 
-const LOCALES = fileURLToPath(new URL("../../../apps/web/src/locales", import.meta.url));
+const LOCALES = fileURLToPath(new URL("../../../packages/i18n/locales", import.meta.url));
 
 const po = `msgid ""
 msgstr ""

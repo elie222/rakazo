@@ -263,7 +263,8 @@ sees:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  --profile updater run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
+  --profile updater run --rm updater \
+  sh -c 'git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1'
 ```
 
 That must print your checkout's HEAD. The two tempting wrong answers both fail: a native Windows

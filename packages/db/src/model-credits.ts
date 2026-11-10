@@ -3,6 +3,7 @@ import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
 import { MODEL_CREDITS_EXHAUSTED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
+import { enforceModelCreditCap } from "./model-credit-cap.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
 import {
   allocateCreditLots,
@@ -117,13 +118,19 @@ export async function reserveModelCredits(
   const callId = attribution?.callId ?? randomUUID();
   const source = `call:${callId}`;
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
+    // Piggyback the nullable cap lookup on the account lock we already take. No extra
+    // round trip, journal scan, or user lock for the normal uncapped path.
+    const [account] = await tx.$queryRaw<{ modelCreditCapMicros: bigint | null }[]>`
+      SELECT (SELECT "modelCreditCapMicros" FROM "user" WHERE id=${attribution?.userId ?? null}) AS "modelCreditCapMicros"
+      FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
     const existing = await tx.modelCreditEntry.findUnique({ where: { callId } });
     if (existing) {
       if (existing.organizationId !== organizationId)
         throw new Error("Model call belongs to another account");
       return existing.id;
     }
+    if (attribution?.userId && account?.modelCreditCapMicros != null)
+      await enforceModelCreditCap(tx, attribution.userId, amountMicros);
     await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const reserved = await tx.modelCreditAccount.updateMany({

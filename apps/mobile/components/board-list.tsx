@@ -1,11 +1,11 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { TICKET_STATUSES } from "@rakazo/contracts";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
 import type { BoardSection } from "../lib/board";
 import { ticketStatusLabel } from "../lib/board";
-import { useI18n } from "../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "./settings-group";
@@ -20,7 +20,7 @@ export type BoardListProps = {
 
 /** Settings-style groups, one per column; iOS renders the same groups as a SwiftUI list. */
 export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const sideInsets = useSideInsets();
@@ -43,16 +43,16 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
     >
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {sections.map((section) => (
-        <SettingsGroup key={section.status} label={ticketStatusLabel(section.status, t)}>
+        <SettingsGroup key={section.status} label={ticketStatusLabel(section.status)}>
           {section.tickets.map((ticket) => (
             <MenuView
               key={ticket.id}
               actions={TICKET_STATUSES.filter((status) => status !== ticket.status).map(
-                (status) => ({ id: status, title: ticketStatusLabel(status, t) }),
+                (status) => ({ id: status, title: ticketStatusLabel(status) }),
               )}
               colorScheme={colorScheme}
               onPressAction={(event) => onMove(ticket, event.nativeEvent.event as TicketStatus)}
-              title={t("Move to")}
+              title={t`Move to`}
             >
               <SettingsRow accessibilityRole="button" title={ticket.title} detail={ticket.ref} />
             </MenuView>

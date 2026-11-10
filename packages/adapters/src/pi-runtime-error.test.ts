@@ -111,6 +111,8 @@ describe("Pi runtime errors", () => {
     "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
     MODEL_CREDITS_EXHAUSTED_ERROR,
     `400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace's Privacy settings to use it."}`,
+    "400 checking third-party user token: Personal Access Tokens are not supported for this endpoint",
+    `400 {"status":400,"title":"Bad Request","detail":"Function id 'example-function': DEGRADED function cannot be invoked"}`,
     'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;

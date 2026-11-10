@@ -22,6 +22,8 @@ const EXPO_PUSH_TIMEOUT_MS = 15_000;
 const EXPO_PUSH_RETRY_DELAYS_MS = [1_000, 2_000];
 /** Expo suggests reading receipts 15 minutes after a send and clears them after a day. */
 const EXPO_RECEIPT_DELAY_MS = 15 * 60_000;
+/** APNs or FCM turned down one device, or it got too many pushes; the deployment is fine. */
+const EXPECTED_RECEIPT_ERRORS = new Set(["ProviderError", "MessageRateExceeded"]);
 /** Keeps a push well inside Expo's 4096-byte payload limit. */
 const MAX_PUSH_TITLE_CHARS = 100;
 const MAX_PUSH_BODY_CHARS = 180;
@@ -399,9 +401,10 @@ export class ExpoPushProvider implements NotificationProvider {
       await this.tokens.remove(receipt.userId, receipt.tokenDigest);
       return;
     }
-    getLogger().error(
-      `expo push receipt error: ${result.details?.error ?? result.message ?? "unknown"}`,
-    );
+    const code = result.details?.error;
+    const message = `expo push receipt error: ${code ?? result.message ?? "unknown"}`;
+    if (code && EXPECTED_RECEIPT_ERRORS.has(code)) getLogger().warn(message);
+    else getLogger().error(message);
   }
 
   private async postWithBackoff(url: string, payload: unknown, signal?: AbortSignal) {

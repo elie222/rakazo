@@ -12,6 +12,7 @@ import {
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDIT_CAP_REACHED_ERROR,
   MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
@@ -103,10 +104,18 @@ describe("normalizeRunError", () => {
       "Your model provider rejected the API key. Check your connection settings.",
     ],
     [
+      "400 checking third-party user token: Personal Access Tokens are not supported for this endpoint",
+      "Your model provider rejected the API key. Check your connection settings.",
+    ],
+    [
       '404: {"error":{"message":"Model fake-model does not exist"}}',
       "Your model provider can't run this model.",
     ],
     ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
+    [
+      '400 {"status":400,"title":"Bad Request","detail":"Function id \'example-function\': DEGRADED function cannot be invoked"}',
+      "Your model provider can't run this model.",
+    ],
     [
       '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
       "Your model provider can't run this model.",
@@ -471,6 +480,13 @@ describe("normalizeRunError", () => {
         details,
         kind: "output",
         recovery: "model",
+      });
+    });
+
+    it("shows an operator cap without suggesting buying credits or changing connections", () => {
+      expect(normalizeRunError(MODEL_CREDIT_CAP_REACHED_ERROR)).toEqual({
+        summary: MODEL_CREDIT_CAP_REACHED_ERROR,
+        details: MODEL_CREDIT_CAP_REACHED_ERROR,
       });
     });
 

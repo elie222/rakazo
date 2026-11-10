@@ -1442,7 +1442,21 @@ function systemDamaged(stderr: string): boolean {
 function commandStatus(result: BoatCommandResult): string {
   if (result.timedOut) return "timed out";
   if (result.exitCode === BOAT_LISTING_UNREADABLE) return "an entry could not be read";
-  return `exit ${result.exitCode}`;
+  const reasons = errorReasons(result.stderr);
+  return reasons ? `exit ${result.exitCode}: ${reasons}` : `exit ${result.exitCode}`;
+}
+
+/**
+ * The system errors find and tar ended with, such as `No space left on device`, without the
+ * workspace paths they name.
+ */
+function errorReasons(stderr: string): string {
+  const reasons = new Set<string>();
+  for (const line of stderr.split("\n")) {
+    const reason = line.slice(line.lastIndexOf(": ") + 2).trim();
+    if (line.includes(": ") && /^[A-Za-z][A-Za-z /]{0,79}$/.test(reason)) reasons.add(reason);
+  }
+  return [...reasons].slice(0, 3).join("; ");
 }
 
 /** Each step of bringing back a sandbox that stopped answering; none is a failure by itself. */
@@ -1743,6 +1757,7 @@ function boatListingWalk(
     `  if ! printf '%s\\n' "$errors" | grep -qv ${tolerated}; then status=0;`,
     `  elif printf '%s\\n' "$errors" | grep -q 'Permission denied$'; then status=${BOAT_LISTING_UNREADABLE}; fi`,
     "fi",
+    'if [ "$status" -ne 0 ]; then printf \'%s\\n\' "$errors" >&2; fi',
     'exit "$status"',
   ].join("\n");
 }
@@ -1825,6 +1840,7 @@ export function archiveBoatWorkspaceCommand(
     'if [ "$status" -eq 1 ]; then status=0;',
     `elif [ "$status" -eq 2 ] && ! grep -qv ${tolerated} "$archive.errors"; then status=0;`,
     `elif grep -q 'Permission denied$' "$archive.errors"; then status=${BOAT_LISTING_UNREADABLE}; fi`,
+    'if [ "$status" -ne 0 ]; then cat "$archive.errors" >&2; fi',
     cleanup,
     'exit "$status"',
   ].join("\n");

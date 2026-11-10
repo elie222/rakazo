@@ -19,12 +19,6 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (value: string, params?: { name: string }) =>
-      params ? value.replace("{name}", params.name) : value,
-  }),
-}));
 vi.mock("./native", () => ({ useThemedStyles: () => ({}) }));
 vi.mock("./activity", () => ({
   activityPreview: () => "",

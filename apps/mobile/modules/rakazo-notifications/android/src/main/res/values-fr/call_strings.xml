@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">Appel en cours</string>
+  <string name="rakazo_call_title">Appel Rakazo</string>
+  <string name="rakazo_call_text">Le micro est actif</string>
+  <string name="rakazo_call_answer">Répondre</string>
+  <string name="rakazo_call_decline">Refuser</string>
+</resources>

@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import {
   chmodSync,
+  copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -1053,5 +1055,643 @@ describe("shared Linux desktop lifecycle", () => {
     );
     expect(url.searchParams.get("_token")).toBe("provider-key");
     expect(url.searchParams.get("path")).toBe("websockify?_token=provider-key&token=view-key");
+  });
+
+  async function portalScreenFixture() {
+    const root = mkdtempSync(path.join(tmpdir(), "desktop-portal-"));
+    roots.push(root);
+    const bin = path.join(root, "bin");
+    const libexec = path.join(root, "libexec");
+    const runtime = path.join(root, "rt");
+    const recordBin = path.join(root, "record-bin");
+    const browserLog = path.join(root, "browser-log");
+    const portalLog = path.join(root, "portal-log");
+    const dbusLog = path.join(root, "dbus-log");
+    const activationLog = path.join(root, "activation-log");
+    const dbusSendLog = path.join(root, "dbus-send-log");
+    const pidLog = path.join(root, "pid-log");
+    const recorderLog = path.join(root, "recorder-log");
+    mkdirSync(runtime);
+    const gateway = net.createServer();
+    await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+    const gatewayAddress = gateway.address();
+    if (!gatewayAddress || typeof gatewayAddress === "string") {
+      throw new Error("expected gateway port");
+    }
+    const port = gatewayAddress.port;
+    await new Promise<void>((resolve) => gateway.close(() => resolve()));
+    const screenEnv = {
+      homeDir: path.join(root, "home"),
+      workspaceDir: path.join(root, "work"),
+      browserProfilesDir: path.join(root, "profiles"),
+      displayStart: 80,
+      portStart: port,
+      preservePrimaryDisplay: true,
+      bindHost: "127.0.0.1",
+    };
+    const writeExecutable = (file: string, contents: string) => {
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, contents);
+      chmodSync(file, 0o755);
+    };
+    const python = spawnSync(
+      "python3",
+      ["-c", "import os, sys; print(os.path.realpath(sys.executable))"],
+      { encoding: "utf8" },
+    );
+    if (python.status !== 0) throw new Error(python.stderr);
+    const siteDir = path.join(root, "py");
+    mkdirSync(siteDir);
+    writeFileSync(
+      path.join(siteDir, "sitecustomize.py"),
+      [
+        "import os, time",
+        "name = os.path.basename(os.readlink('/proc/self/exe'))",
+        "if name.startswith('xdg-desktop-portal') or name == 'dbus-daemon':",
+        "    pid_log = os.environ.get('PID_LOG')",
+        "    if pid_log:",
+        "        handle = open(pid_log, 'a')",
+        "        handle.write('%s\\n' % os.getpid())",
+        "        handle.close()",
+        "    portal_log = os.environ.get('PORTAL_LOG')",
+        "    if portal_log and name.startswith('xdg-desktop-portal'):",
+        "        display = os.environ.get('DISPLAY', '')",
+        "        bus = os.environ.get('DBUS_SESSION_BUS_ADDRESS', '')",
+        "        handle = open(portal_log, 'a')",
+        "        handle.write('%s DISPLAY=%s DBUS=%s\\n' % (name, display, bus))",
+        "        handle.close()",
+        "    while True:",
+        "        time.sleep(3600)",
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(bin, { recursive: true });
+    mkdirSync(libexec, { recursive: true });
+    const hold = (file: string) => {
+      copyFileSync(python.stdout.trim(), file);
+      chmodSync(file, 0o755);
+    };
+    hold(path.join(bin, "dbus-daemon"));
+    hold(path.join(libexec, "xdg-desktop-portal"));
+    hold(path.join(libexec, "xdg-desktop-portal-gtk"));
+    writeExecutable(
+      path.join(bin, "dbus-launch"),
+      [
+        "#!/bin/bash",
+        "printf 'launch\\n' >> \"$DBUS_LOG\"",
+        "daemon=$(command -v dbus-daemon) || exit 1",
+        '"$daemon" </dev/null >/dev/null 2>&1 &',
+        "pid=$!",
+        'printf "DBUS_SESSION_BUS_ADDRESS=\'unix:path=%s/bus-%s\';\\n" "$RUNTIME" "$pid"',
+        "printf 'export DBUS_SESSION_BUS_ADDRESS;\\n'",
+        "printf 'DBUS_SESSION_BUS_PID=%s;\\n' \"$pid\"",
+        "printf 'export DBUS_SESSION_BUS_PID;\\n'",
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "dbus-update-activation-environment"),
+      [
+        "#!/bin/bash",
+        'printf \'bus=%s args=%s\\n\' "$DBUS_SESSION_BUS_ADDRESS" "$*" >> "$ACTIVATION_LOG"',
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "dbus-send"),
+      [
+        "#!/bin/bash",
+        'if [ -n "$DBUS_SEND_LOG" ]; then printf \'%s\\n\' "$*" >> "$DBUS_SEND_LOG"; fi',
+        "printf 'boolean true\\n'",
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "rakazo-browser"),
+      [
+        "#!/usr/bin/env python3",
+        "import os, socket, sys, time",
+        "log = os.environ.get('BROWSER_LOG')",
+        "if log:",
+        "    handle = open(log, 'a')",
+        "    handle.write('DISPLAY=%s\\nDBUS=%s\\n' % (os.environ.get('DISPLAY', ''), os.environ.get('DBUS_SESSION_BUS_ADDRESS', '')))",
+        "    handle.flush()",
+        "    handle.close()",
+        "pid_log = os.environ.get('PID_LOG')",
+        "if pid_log:",
+        "    open(pid_log, 'a').write(str(os.getpid()) + '\\n')",
+        "port = None",
+        "for arg in sys.argv[1:]:",
+        "    if arg.startswith('--remote-debugging-port='):",
+        "        port = int(arg.split('=', 1)[1])",
+        "if port is None:",
+        "    raise SystemExit('missing debugging port')",
+        "server = socket.socket()",
+        "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+        "server.bind(('127.0.0.1', port))",
+        "server.listen()",
+        "while True:",
+        "    connection, _addr = server.accept()",
+        "    connection.settimeout(0.2)",
+        "    try:",
+        "        request = connection.recv(1024)",
+        "    except socket.timeout:",
+        "        request = b''",
+        "    connection.close()",
+        "    if b'GET /json/version' in request:",
+        "        break",
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "x11vnc"),
+      [
+        "#!/usr/bin/env python3",
+        "import os, socket, sys, time",
+        "pid_log = os.environ.get('PID_LOG')",
+        "if pid_log:",
+        "    open(pid_log, 'a').write(str(os.getpid()) + '\\n')",
+        "sock = None",
+        "args = sys.argv[1:]",
+        "for index, arg in enumerate(args):",
+        "    if arg == '-unixsock' and index + 1 < len(args):",
+        "        sock = args[index + 1]",
+        "if not sock:",
+        "    raise SystemExit('missing socket')",
+        "os.makedirs(os.path.dirname(sock), exist_ok=True)",
+        "try:",
+        "    os.remove(sock)",
+        "except FileNotFoundError:",
+        "    pass",
+        "server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)",
+        "server.bind(sock)",
+        "server.listen()",
+        "time.sleep(300)",
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "websockify"),
+      [
+        "#!/usr/bin/env python3",
+        "import os, socket, sys, time",
+        "pid_log = os.environ.get('PID_LOG')",
+        "if pid_log:",
+        "    open(pid_log, 'a').write(str(os.getpid()) + '\\n')",
+        "port = None",
+        "for arg in sys.argv[1:]:",
+        "    if arg.startswith('127.0.0.1:'):",
+        "        port = int(arg.split(':')[1])",
+        "if port is None:",
+        "    raise SystemExit('missing port')",
+        "server = socket.socket()",
+        "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+        "server.bind(('127.0.0.1', port))",
+        "server.listen()",
+        "time.sleep(300)",
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(recordBin, "rakazo-browser"),
+      [
+        "#!/usr/bin/env python3",
+        "import os",
+        "handle = open(os.environ['RECORDER_LOG'], 'a')",
+        "handle.write('DISPLAY=%s\\nDBUS=%s\\n' % (os.environ.get('DISPLAY', ''), os.environ.get('DBUS_SESSION_BUS_ADDRESS', '')))",
+        "handle.close()",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      path.join(runtime, "dbus-session"),
+      "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
+    );
+    const runEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+      BROWSER_LOG: browserLog,
+      PORTAL_LOG: portalLog,
+      DBUS_LOG: dbusLog,
+      PID_LOG: pidLog,
+      RUNTIME: runtime,
+      PYTHONPATH: siteDir,
+      DISPLAY: ":1",
+      ACTIVATION_LOG: activationLog,
+      DBUS_SEND_LOG: dbusSendLog,
+    };
+    delete runEnv.DBUS_SESSION_BUS_ADDRESS;
+    const relocate = (script: string) =>
+      script
+        .replaceAll("/usr/libexec", libexec)
+        .replaceAll("/tmp/rakazo", runtime)
+        .replaceAll("/usr/share/novnc", root)
+        .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"));
+    const run = (script: string, displayUp: boolean) =>
+      spawnSync(
+        "bash",
+        ["-eu", "-c", `${displayUp ? "xdpyinfo() { return 0; }\n" : ""}${script}`],
+        { encoding: "utf8", timeout: 40_000, env: runEnv },
+      );
+    const busAddress = (file: string) => {
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      delete env.DBUS_SESSION_BUS_ADDRESS;
+      return spawnSync(
+        "bash",
+        [
+          "-c",
+          'unset DBUS_SESSION_BUS_ADDRESS; . "$1"; printf %s "$DBUS_SESSION_BUS_ADDRESS"',
+          "bash",
+          file,
+        ],
+        { encoding: "utf8", env },
+      ).stdout;
+    };
+    const alive = (pid: string) => {
+      const parsed = Number(pid);
+      if (!Number.isSafeInteger(parsed) || parsed <= 1) return false;
+      try {
+        process.kill(parsed, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const launch = (display: number, inherited: string | undefined, log: string) => {
+      const env: NodeJS.ProcessEnv = {
+        PATH: `${recordBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        HOME: screenEnv.homeDir,
+        RECORDER_LOG: log,
+      };
+      if (inherited !== undefined) env.DBUS_SESSION_BUS_ADDRESS = inherited;
+      return spawnSync(path.join(runtime, `browser-launch-${display}`), [], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env,
+      });
+    };
+    const extraDisplay = screenEnv.displayStart + 1;
+    const bootDisplay = screenEnv.displayStart;
+    const cleanup = () => {
+      if (!existsSync(pidLog)) return;
+      for (const line of readFileSync(pidLog, "utf8").split("\n")) {
+        const parsed = Number(line);
+        if (!Number.isSafeInteger(parsed) || parsed <= 1) continue;
+        try {
+          process.kill(parsed, "SIGKILL");
+        } catch {
+          // The screen stop already reaped it.
+        }
+      }
+    };
+    return {
+      root,
+      runtime,
+      browserLog,
+      portalLog,
+      dbusLog,
+      activationLog,
+      recorderLog,
+      screenEnv,
+      run,
+      relocate,
+      busAddress,
+      alive,
+      launch,
+      extraDisplay,
+      bootDisplay,
+      cleanup,
+    };
+  }
+
+  it.skipIf(process.platform !== "linux")(
+    "team-screen-file-chooser-portal",
+    async () => {
+      const {
+        root,
+        runtime,
+        browserLog,
+        portalLog,
+        dbusLog,
+        recorderLog,
+        screenEnv,
+        run,
+        relocate,
+        busAddress,
+        alive,
+        launch,
+        extraDisplay,
+        bootDisplay,
+        cleanup,
+      } = await portalScreenFixture();
+      try {
+        const extra = relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv));
+        const first = run(extra, true);
+        expect(first.status, first.stderr).toBe(0);
+        const busFile = path.join(runtime, `dbus-session-${extraDisplay}`);
+        const address = busAddress(busFile);
+        expect(address.startsWith("unix:path=")).toBe(true);
+        expect(address).not.toBe("unix:path=/boot-bus");
+        const expectedPortals = [
+          `xdg-desktop-portal DISPLAY=:${extraDisplay} DBUS=${address}`,
+          `xdg-desktop-portal-gtk DISPLAY=:${extraDisplay} DBUS=${address}`,
+        ].sort();
+        const portalLines = () =>
+          readFileSync(portalLog, "utf8")
+            .trim()
+            .split("\n")
+            .filter((line) => line.length > 0)
+            .sort();
+        expect(portalLines()).toEqual(expectedPortals);
+        expect(readFileSync(browserLog, "utf8")).toBe(
+          `DISPLAY=:${extraDisplay}\nDBUS=${address}\n`,
+        );
+        expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
+        const dbusPid = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
+        const portalPid = readFileSync(path.join(runtime, `portal-pid-${extraDisplay}`), "utf8");
+        const gtkPid = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
+        expect(alive(dbusPid)).toBe(true);
+        expect(alive(portalPid)).toBe(true);
+        expect(alive(gtkPid)).toBe(true);
+
+        const second = run(extra, true);
+        expect(second.status, second.stderr).toBe(0);
+        expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
+        expect(portalLines()).toEqual(expectedPortals);
+        expect(readFileSync(browserLog, "utf8")).toBe(
+          `DISPLAY=:${extraDisplay}\nDBUS=${address}\n`,
+        );
+        expect(readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8")).toBe(dbusPid);
+        expect(readFileSync(path.join(runtime, `portal-pid-${extraDisplay}`), "utf8")).toBe(
+          portalPid,
+        );
+        expect(readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8")).toBe(
+          gtkPid,
+        );
+
+        const inherited = launch(extraDisplay, "unix:path=/boot-bus", recorderLog);
+        expect(inherited.status, inherited.stderr).toBe(0);
+        expect(readFileSync(recorderLog, "utf8")).toBe(
+          `DISPLAY=:${extraDisplay}\nDBUS=${address}\n`,
+        );
+
+        const boot = run(relocate(ensureScreenCommand(0, "boot", "viewboot", screenEnv)), true);
+        expect(boot.status, boot.stderr).toBe(0);
+        expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
+        expect(portalLines()).toEqual(expectedPortals);
+        expect(readFileSync(browserLog, "utf8")).toBe(
+          `DISPLAY=:${extraDisplay}\nDBUS=${address}\nDISPLAY=:${bootDisplay}\nDBUS=unix:path=/boot-bus\n`,
+        );
+        const sourced = launch(bootDisplay, undefined, path.join(root, "boot-recorder"));
+        expect(sourced.status, sourced.stderr).toBe(0);
+        expect(readFileSync(path.join(root, "boot-recorder"), "utf8")).toBe(
+          `DISPLAY=:${bootDisplay}\nDBUS=unix:path=/boot-bus\n`,
+        );
+        const kept = launch(bootDisplay, "unix:path=/already-set", path.join(root, "boot-kept"));
+        expect(kept.status, kept.stderr).toBe(0);
+        expect(readFileSync(path.join(root, "boot-kept"), "utf8")).toBe(
+          `DISPLAY=:${bootDisplay}\nDBUS=unix:path=/already-set\n`,
+        );
+
+        const stopped = run(relocate(stopExtraScreenCommand(1, "extra", screenEnv)), false);
+        expect(stopped.status, stopped.stderr).toBe(0);
+        expect(existsSync(busFile)).toBe(false);
+        expect(existsSync(path.join(runtime, `dbus-pid-${extraDisplay}`))).toBe(false);
+        expect(existsSync(path.join(runtime, `portal-pid-${extraDisplay}`))).toBe(false);
+        expect(existsSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`))).toBe(false);
+        expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
+          "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
+        );
+        expect(alive(dbusPid)).toBe(false);
+        expect(alive(portalPid)).toBe(false);
+        expect(alive(gtkPid)).toBe(false);
+        const bootHash = createHash("sha256").update("boot").digest("hex").slice(0, 32);
+        const bootPid = readFileSync(path.join(runtime, `browser-pid-${bootHash}`), "utf8");
+        expect(alive(bootPid)).toBe(true);
+
+        const restarted = run(extra, true);
+        expect(restarted.status, restarted.stderr).toBe(0);
+        const restartedPortal = readFileSync(
+          path.join(runtime, `portal-pid-${extraDisplay}`),
+          "utf8",
+        );
+        const restartedGtk = readFileSync(
+          path.join(runtime, `portal-gtk-pid-${extraDisplay}`),
+          "utf8",
+        );
+        const restartedBus = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
+        expect(alive(restartedPortal)).toBe(true);
+        const reset = run(relocate(resetDesktopRuntimeCommand(screenEnv)), false);
+        expect(reset.status, reset.stderr).toBe(0);
+        expect(existsSync(busFile)).toBe(false);
+        expect(existsSync(path.join(runtime, `dbus-pid-${extraDisplay}`))).toBe(false);
+        expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
+          "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
+        );
+        expect(alive(restartedPortal)).toBe(false);
+        expect(alive(restartedGtk)).toBe(false);
+        expect(alive(restartedBus)).toBe(false);
+      } finally {
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "recycled screen session pids are left alive",
+    async () => {
+      const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =
+        await portalScreenFixture();
+      const unrelated = String(process.pid);
+      const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
+      const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
+      const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
+      const busFile = path.join(runtime, `dbus-session-${extraDisplay}`);
+      const plant = () => {
+        writeFileSync(dbusPid, unrelated);
+        writeFileSync(portalPid, unrelated);
+        writeFileSync(gtkPid, unrelated);
+        writeFileSync(busFile, "export DBUS_SESSION_BUS_ADDRESS=unix:path=/stale\n");
+      };
+      try {
+        plant();
+        const stopped = run(relocate(stopExtraScreenCommand(1, "extra", screenEnv)), false);
+        expect(stopped.status, stopped.stderr).toBe(0);
+        expect(alive(unrelated)).toBe(true);
+        expect(existsSync(dbusPid)).toBe(false);
+        expect(existsSync(portalPid)).toBe(false);
+        expect(existsSync(gtkPid)).toBe(false);
+
+        plant();
+        writeFileSync(path.join(runtime, `browser-profile-${extraDisplay}`), "profile");
+        const reset = run(relocate(resetDesktopRuntimeCommand(screenEnv)), false);
+        expect(reset.status, reset.stderr).toBe(0);
+        expect(alive(unrelated)).toBe(true);
+        expect(existsSync(dbusPid)).toBe(false);
+
+        plant();
+        const ensured = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(ensured.status, ensured.stderr).toBe(0);
+        expect(alive(unrelated)).toBe(true);
+        expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
+        expect(readFileSync(dbusPid, "utf8")).not.toBe(unrelated);
+        expect(alive(readFileSync(dbusPid, "utf8"))).toBe(true);
+      } finally {
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "restarts only a dead screen portal",
+    async () => {
+      const {
+        runtime,
+        screenEnv,
+        run,
+        relocate,
+        alive,
+        extraDisplay,
+        dbusLog,
+        portalLog,
+        cleanup,
+      } = await portalScreenFixture();
+      const command = relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv));
+      const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
+      const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
+      const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
+      const waitDead = async (pid: string) => {
+        for (let i = 0; i < 50 && alive(pid); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(alive(pid)).toBe(false);
+      };
+      try {
+        const first = run(command, true);
+        expect(first.status, first.stderr).toBe(0);
+        const gtk = readFileSync(gtkPid, "utf8");
+        const portal = readFileSync(portalPid, "utf8");
+        const dbus = readFileSync(dbusPid, "utf8");
+        process.kill(Number(gtk), "SIGKILL");
+        await waitDead(gtk);
+        const second = run(command, true);
+        expect(second.status, second.stderr).toBe(0);
+        expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
+        expect(readFileSync(dbusPid, "utf8")).toBe(dbus);
+        expect(readFileSync(portalPid, "utf8")).toBe(portal);
+        expect(readFileSync(gtkPid, "utf8")).not.toBe(gtk);
+        expect(alive(readFileSync(gtkPid, "utf8"))).toBe(true);
+        expect(alive(portal)).toBe(true);
+        expect(alive(dbus)).toBe(true);
+        const lines = readFileSync(portalLog, "utf8").trim().split("\n");
+        expect(lines.filter((line) => line.startsWith("xdg-desktop-portal "))).toHaveLength(1);
+        expect(lines.filter((line) => line.startsWith("xdg-desktop-portal-gtk "))).toHaveLength(2);
+      } finally {
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "restarts a dead screen bus without killing an unrelated pid",
+    async () => {
+      const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =
+        await portalScreenFixture();
+      const command = relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv));
+      const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
+      const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
+      const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
+      const waitDead = async (pid: string) => {
+        for (let i = 0; i < 50 && alive(pid); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(alive(pid)).toBe(false);
+      };
+      try {
+        const first = run(command, true);
+        expect(first.status, first.stderr).toBe(0);
+        const dbus = readFileSync(dbusPid, "utf8");
+        const portal = readFileSync(portalPid, "utf8");
+        const gtk = readFileSync(gtkPid, "utf8");
+        process.kill(Number(dbus), "SIGKILL");
+        await waitDead(dbus);
+        const unrelated = String(process.pid);
+        writeFileSync(dbusPid, unrelated);
+        writeFileSync(portalPid, unrelated);
+        const second = run(command, true);
+        expect(second.status, second.stderr).toBe(0);
+        expect(alive(unrelated)).toBe(true);
+        expect(alive(portal)).toBe(true);
+        expect(alive(gtk)).toBe(false);
+        expect(readFileSync(dbusLog, "utf8")).toBe("launch\nlaunch\n");
+        const restartedBus = readFileSync(dbusPid, "utf8");
+        const restartedPortal = readFileSync(portalPid, "utf8");
+        const restartedGtk = readFileSync(gtkPid, "utf8");
+        expect(restartedBus).not.toBe(unrelated);
+        expect(restartedPortal).not.toBe(unrelated);
+        expect(restartedGtk).not.toBe(unrelated);
+        expect(alive(restartedBus)).toBe(true);
+        expect(alive(restartedPortal)).toBe(true);
+        expect(alive(restartedGtk)).toBe(true);
+      } finally {
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it("screen bus activation uses that screen's display", async () => {
+    const script = ensureScreenCommand(1, "extra", "viewtok");
+    const launchAt = script.indexOf("DISPLAY=:2 dbus-launch --sh-syntax");
+    const activationAt = script.indexOf("dbus-update-activation-environment DISPLAY=:2");
+    const claimAt = script.indexOf("screen_claim_gtk", activationAt);
+    const portalAt = script.indexOf("nohup /usr/libexec/xdg-desktop-portal ", activationAt);
+    expect(launchAt).toBeGreaterThan(-1);
+    expect(activationAt).toBeGreaterThan(launchAt);
+    expect(claimAt).toBeGreaterThan(activationAt);
+    expect(portalAt).toBeGreaterThan(claimAt);
+    expect(script).toContain("org.freedesktop.DBus.NameHasOwner");
+    expect(script).toContain("string:org.freedesktop.impl.portal.desktop.gtk");
+    expect(ensureScreenCommand(0, "boot", "viewtok")).not.toContain(
+      "dbus-update-activation-environment",
+    );
+    const managed = managedDesktopCommand("bot", "run:1", DEFAULT_DESKTOP_ENV, "token");
+    expect(managed).toContain(`DISPLAY=:\${desktop_display} dbus-launch --sh-syntax`);
+    expect(managed).toContain(`dbus-update-activation-environment DISPLAY=:\${desktop_display}`);
+    if (process.platform !== "linux") return;
+
+    const {
+      runtime,
+      screenEnv,
+      run,
+      relocate,
+      alive,
+      extraDisplay,
+      busAddress,
+      activationLog,
+      cleanup,
+    } = await portalScreenFixture();
+    try {
+      const ensured = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+      expect(ensured.status, ensured.stderr).toBe(0);
+      const address = busAddress(path.join(runtime, `dbus-session-${extraDisplay}`));
+      expect(readFileSync(activationLog, "utf8")).toBe(
+        `bus=${address} args=DISPLAY=:${extraDisplay}\n`,
+      );
+      const gtkPid = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
+      expect(alive(gtkPid)).toBe(true);
+      const gtkEnviron = readFileSync(`/proc/${gtkPid}/environ`).toString("utf8").split("\0");
+      expect(gtkEnviron).toContain(`DISPLAY=:${extraDisplay}`);
+      expect(gtkEnviron).not.toContain("DISPLAY=:1");
+      const dbusPid = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
+      const daemonEnviron = readFileSync(`/proc/${dbusPid}/environ`).toString("utf8").split("\0");
+      expect(daemonEnviron).toContain(`DISPLAY=:${extraDisplay}`);
+      expect(daemonEnviron).not.toContain("DISPLAY=:1");
+    } finally {
+      cleanup();
+    }
   });
 });

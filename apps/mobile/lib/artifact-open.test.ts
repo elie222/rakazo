@@ -57,7 +57,6 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("react-native", () => ({ Image: { getSize: state.getSize } }));
 vi.mock("expo-sharing", () => ({ isAvailableAsync: vi.fn(), shareAsync: vi.fn() }));
-vi.mock("./i18n", () => ({ t: (value: string) => value }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
