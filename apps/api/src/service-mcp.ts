@@ -92,7 +92,13 @@ export function serviceMcpHandler(inner: (request: Request) => Promise<Response>
     const authorization = request.headers.get("authorization") ?? "";
     let message: Rpc;
     try {
-      message = JSON.parse((await readBoundedBody(request, MAX_MESSAGE_BYTES)) ?? "") as Rpc;
+      const raw = await readBoundedBody(request, MAX_MESSAGE_BYTES);
+      if (raw === null) {
+        return reply(413, {
+          error: { code: "payload_too_large", message: "Body too large for this call." },
+        });
+      }
+      message = JSON.parse(raw) as Rpc;
     } catch {
       return failure(null, -32700, "Parse error.");
     }
