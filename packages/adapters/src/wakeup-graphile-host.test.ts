@@ -67,16 +67,18 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function mockRunner() {
+function mockRunner(stop?: Runner["stop"]) {
   const life = deferred();
   // Keep a rejection handler so Node does not treat the mock lifecycle as an
   // unexpected unhandledRejection before the host attaches supervise().
   life.promise.catch(() => undefined);
   const runner = {
     promise: life.promise,
-    stop: vi.fn(async () => {
-      life.resolve();
-    }),
+    stop:
+      stop ??
+      vi.fn(async () => {
+        life.resolve();
+      }),
     kill: vi.fn(async () => undefined),
     addJob: vi.fn(),
     events: { on: vi.fn(), off: vi.fn(), once: vi.fn(), emit: vi.fn() },
@@ -85,6 +87,43 @@ function mockRunner() {
     runner,
     rejectLife: (error: unknown) => life.reject(error),
   };
+}
+
+/** A runner whose shutdown never completes, as against a database that stopped answering. */
+function stalledRunner() {
+  return mockRunner(() => new Promise<void>(() => undefined));
+}
+
+/**
+ * A pool whose single checked-out client answers every query, so a test can
+ * land one of Graphile's job-write statements through the host's wrapped pool.
+ */
+function jobWritePool() {
+  const statements: Array<{ name?: string; values?: unknown[] }> = [];
+  const client = {
+    query: vi.fn(async (config: { name?: string; values?: unknown[] }) => {
+      statements.push(config);
+      return { rows: [] };
+    }),
+    release: vi.fn(),
+  };
+  const pool = { connect: vi.fn(async () => client) } as unknown as Pool;
+  return { pool, statements };
+}
+
+/** Lands one of Graphile's batched job-write statements on the wrapped pool. */
+async function landJobWrite(pool: Pool, name: string, values: unknown[]) {
+  const client = await pool.connect();
+  try {
+    await client.query({ text: name, name, values });
+  } finally {
+    client.release();
+  }
+}
+
+/** The task helpers Graphile always passes; the host reads the job id from them. */
+function jobHelpers(id: string) {
+  return { job: { id } };
 }
 
 const tooMany = Object.assign(new Error("sorry, too many clients already"), { code: "53300" });
@@ -329,8 +368,9 @@ describe("reserved Graphile workloads", () => {
       true,
       true,
     ]);
-    // Batched job writes are what Graphile's shutdown waits for before the worker exits.
-    const batched = { completeJobBatchDelay: 0, failJobBatchDelay: 0 };
+    // Batched job writes are what Graphile's shutdown waits for before the worker
+    // exits; prepared statements name them for the wrapped runner pool.
+    const batched = { completeJobBatchDelay: 0, failJobBatchDelay: 0, preparedStatements: true };
     expect(configurations.map(({ preset }) => preset)).toEqual([
       { worker: batched },
       { worker: batched },
@@ -379,7 +419,10 @@ describe("reserved Graphile workloads", () => {
       for (let cycle = 0; cycle < 2; cycle++) {
         await host.start(target);
         const background = run.mock.calls[cycle * 3 + 1]?.[0].taskList;
-        await background["run.continue"](wrapJobPayload({ runId: "legacy-chat" }));
+        await background["run.continue"](
+          wrapJobPayload({ runId: "legacy-chat" }),
+          jobHelpers("job-legacy"),
+        );
         await host.stop();
       }
       expect(target["run.continue"]).toHaveBeenCalledTimes(2);
@@ -422,10 +465,487 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     };
     try {
       await host.start(target);
-      await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "hung-run" });
+      await run.mock.calls[0]![0].taskList["run.continue"](
+        { runId: "hung-run" },
+        jobHelpers("job-hung"),
+      );
       await host.stop();
     } finally {
       hung.resolve();
+    }
+  });
+
+  it("stops an idle host within the idle bound when the runner's shutdown stalls", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { idleStopTimeoutMs: 25 });
+    await host.start(handlers());
+    const stopped = host.stop();
+    const outcome = await Promise.race([
+      stopped.then(() => "stopped" as const),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+    ]);
+    expect(outcome).toBe("stopped");
+  });
+
+  it("keeps draining a running job while the runner's shutdown stalls", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      // The second assertion below must stay well inside the drain deadline: with
+      // a 250 ms deadline it ran at about 200 ms and stop() resolved at about
+      // 275 ms, so one late event-loop tick of 75 ms failed the test.
+      drainTimeoutMs: 2_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      execution!.onRunStarted();
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      await run.mock.calls[0]![0].taskList["run.continue"](
+        { runId: "draining-run" },
+        jobHelpers("job-draining"),
+      );
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // A job is running, so the idle bound must not cut the drain short.
+      expect(stopped).toBe(false);
+      release.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The run finished, but the runner's shutdown still stalls: only the drain
+      // deadline may end the wait, not the idle bound.
+      expect(stopped).toBe(false);
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 5_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("keeps draining a maintenance job while the runner's shutdown stalls", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      // As above: the negative assertions need a wide margin to the deadline.
+      drainTimeoutMs: 2_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatched = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "sleeping" },
+        jobHelpers("job-sleeping"),
+      ).catch(() => undefined);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // A maintenance job is not a run execution, but it is still work the idle
+      // bound must not cut short.
+      expect(stopped).toBe(false);
+      release.resolve();
+      await dispatched;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The handler finished, but the runner's shutdown still stalls: only the drain
+      // deadline may end the wait, not the idle bound.
+      expect(stopped).toBe(false);
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 5_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("waits for a finished job's pending completion write within the drain", async () => {
+    // Graphile's shutdown completes only once the queued completion write lands.
+    const writeLanded = deferred();
+    const runner = mockRunner(() => writeLanded.promise.then(() => undefined));
+    run.mockResolvedValueOnce(runner.runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatched = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saving" },
+        jobHelpers("job-saving"),
+      ).catch(() => undefined);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(stopped).toBe(false);
+      release.resolve();
+      await dispatched;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The handler finished, but its completion write has not landed in the database
+      // yet; leaving now would keep the job locked until its lock expires.
+      expect(stopped).toBe(false);
+      writeLanded.resolve();
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      writeLanded.resolve();
+      await host.stop();
+    }
+  });
+
+  it("waits for the pending write of a job that finished just before the stop", async () => {
+    // The handler settles first; Graphile's shutdown then waits for its queued write.
+    const writeLanded = deferred();
+    const runner = mockRunner(() => writeLanded.promise.then(() => undefined));
+    run.mockResolvedValueOnce(runner.runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    try {
+      await host.start(handlers());
+      await run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saved" },
+        jobHelpers("job-just-saved"),
+      );
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Past the idle bound, but the finished job's completion write has not landed yet.
+      expect(stopped).toBe(false);
+      writeLanded.resolve();
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      writeLanded.resolve();
+      await host.stop();
+    }
+  });
+
+  it("waits for a completion write that predates the stop by over a minute", async () => {
+    // Graphile's shutdown never completes while the row-locked write is pending.
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const { pool } = jobWritePool();
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const clock = vi.spyOn(Date, "now");
+    try {
+      await host.start(handlers());
+      const settledAt = new Date("2030-01-01T00:00:00.000Z").getTime();
+      clock.mockReturnValue(settledAt);
+      await run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saved" },
+        jobHelpers("job-saved"),
+      );
+      // The stop signal arrives over a minute after the handler settled.
+      clock.mockReturnValue(settledAt + 61_000);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // However long ago the handler settled, its write is still owed: leaving
+      // now would keep the job locked until its lock expires.
+      expect(stopped).toBe(false);
+      await landJobWrite(run.mock.calls[0]![0].pgPool as Pool, "complete_job/graphile_worker", [
+        "job-saved",
+      ]);
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      clock.mockRestore();
+      await host.stop();
+    }
+  });
+
+  it("stops within the idle bound once a recent completion fully persisted", async () => {
+    // The completion write landed before the stop; only stalled housekeeping —
+    // here the runner's unlisten — remains, which the idle bound covers.
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const { pool } = jobWritePool();
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    try {
+      await host.start(handlers());
+      await run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saved" },
+        jobHelpers("job-saved"),
+      );
+      await landJobWrite(run.mock.calls[0]![0].pgPool as Pool, "complete_job/graphile_worker", [
+        "job-saved",
+      ]);
+      const outcome = await Promise.race([
+        host.stop().then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("bounds remaining housekeeping by the idle bound once work and writes finish", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const { pool } = jobWritePool();
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatched = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saving" },
+        jobHelpers("job-saving"),
+      ).catch(() => undefined);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Work is running, so the idle bound must not cut the drain short.
+      expect(stopped).toBe(false);
+      release.resolve();
+      await dispatched;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The handler finished, but its completion write is still owed, so the
+      // drain deadline still bounds the wait.
+      expect(stopped).toBe(false);
+      await landJobWrite(run.mock.calls[0]![0].pgPool as Pool, "complete_job/graphile_worker", [
+        "job-saving",
+      ]);
+      // The write landed and nothing is outstanding: only housekeeping remains,
+      // so the idle bound ends the wait though the runner's shutdown stalls.
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("bounds remaining housekeeping once a handed-off run finishes", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const { pool } = jobWritePool();
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      execution!.onRunStarted();
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      // The wrapper settles at durable handoff; the run keeps executing.
+      await run.mock.calls[0]![0].taskList["run.continue"](
+        { runId: "handed-off" },
+        jobHelpers("job-handed-off"),
+      ).catch(() => undefined);
+      await landJobWrite(run.mock.calls[0]![0].pgPool as Pool, "complete_job/graphile_worker", [
+        "job-handed-off",
+      ]);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The handed-off run still owns its lease, so the drain bound applies.
+      expect(stopped).toBe(false);
+      release.resolve();
+      // The run finished and its write landed before it: only housekeeping
+      // remains, so the idle bound ends the wait though shutdown stalls.
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("waits for a failing job's write until its failure statement lands", async () => {
+    // Graphile writes a failure as fail_job/{schema} with [poolId, json] values;
+    // the stop may leave only once that statement has landed.
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const { pool } = jobWritePool();
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      throw new Error("fixture job failure");
+    };
+    try {
+      await host.start(target);
+      await run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "failing" },
+        jobHelpers("job-failing"),
+      ).catch(() => undefined);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(stopped).toBe(false);
+      await landJobWrite(run.mock.calls[0]![0].pgPool as Pool, "fail_job/graphile_worker", [
+        "pool-fixture",
+        JSON.stringify([{ jobId: "job-failing", message: "fixture" }]),
+      ]);
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("drains a claim racing the stop instead of abandoning it at the idle bound", async () => {
+    const writeLanded = deferred();
+    const runner = mockRunner(() => writeLanded.promise.then(() => undefined));
+    run.mockResolvedValueOnce(runner.runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      // Graphile can still deliver a claimed job while the runner's stop deactivates the pool.
+      const dispatched = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "late" },
+        jobHelpers("job-late"),
+      ).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The claim arrived after the stop signal, so the idle bound must not abandon it.
+      expect(stopped).toBe(false);
+      release.resolve();
+      await dispatched;
+      writeLanded.resolve();
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      writeLanded.resolve();
+      await host.stop();
+    }
+  });
+
+  it("drains a second claim that races the stop after the first one settled", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const { pool } = jobWritePool();
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 2,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async (payload) => {
+      if ((payload as { computerId: string }).computerId === "second") await release.promise;
+    };
+    try {
+      await host.start(target);
+      const taskList = run.mock.calls[0]![0].taskList;
+      const wrapped = run.mock.calls[0]![0].pgPool as Pool;
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      // The first late claim settles and persists, so the deadline is back at the idle bound.
+      await taskList["computer.sleep"]({ computerId: "first" }, jobHelpers("job-first"));
+      await landJobWrite(wrapped, "complete_job/graphile_worker", ["job-first"]);
+      // A second claim from another in-flight poll arrives afterwards.
+      const second = taskList["computer.sleep"](
+        { computerId: "second" },
+        jobHelpers("job-second"),
+      ).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(stopped).toBe(false);
+      release.resolve();
+      await second;
+      await landJobWrite(wrapped, "complete_job/graphile_worker", ["job-second"]);
+      const outcome = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(outcome).toBe("stopped");
+    } finally {
+      release.resolve();
+      await host.stop();
     }
   });
 
@@ -444,7 +964,9 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       await host.start(target);
       const dispatch = run.mock.calls[0]![0].taskList["run.continue"];
       await Promise.all(
-        Array.from({ length: 5 }, (_, index) => dispatch({ runId: `run-${index}` })),
+        Array.from({ length: 5 }, (_, index) =>
+          dispatch({ runId: `run-${index}` }, jobHelpers(`job-run-${index}`)),
+        ),
       );
       expect(started).toBe(5);
       let stopped = false;
@@ -476,10 +998,10 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     try {
       await host.start(target);
       const dispatch = run.mock.calls[0]![0].taskList["run.continue"];
-      await dispatch({ runId: "0" });
-      await dispatch({ runId: "1" });
+      await dispatch({ runId: "0" }, jobHelpers("job-headroom-0"));
+      await dispatch({ runId: "1" }, jobHelpers("job-headroom-1"));
       vi.mocked(process.availableMemory).mockReturnValue(40 * 1024 ** 2);
-      const third = dispatch({ runId: "2" });
+      const third = dispatch({ runId: "2" }, jobHelpers("job-headroom-2"));
       expect(entered).toEqual(["0", "1"]);
       vi.mocked(process.availableMemory).mockReturnValue(64 * 1024 ** 2);
       releases[0]!.resolve();
@@ -678,7 +1200,10 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     try {
       await host.start(target);
       await expect(
-        run.mock.calls[0]![0].taskList["run.continue"]({ runId: "setup-failure" }),
+        run.mock.calls[0]![0].taskList["run.continue"](
+          { runId: "setup-failure" },
+          jobHelpers("job-setup-failure"),
+        ),
       ).rejects.toBe(error);
     } finally {
       await host.stop();
@@ -700,9 +1225,9 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     try {
       await host.start(target);
       const dispatch = run.mock.calls[0]![0].taskList["run.continue"];
-      await dispatch({ runId: "first" });
+      await dispatch({ runId: "first" }, jobHelpers("job-gc-first"));
       vi.mocked(process.availableMemory).mockReturnValue(40 * 1024 ** 2);
-      const second = dispatch({ runId: "second" });
+      const second = dispatch({ runId: "second" }, jobHelpers("job-gc-second"));
       expect(entered).toBe(1);
       vi.mocked(process.availableMemory).mockReturnValue(64 * 1024 ** 2);
       await vi.advanceTimersByTimeAsync(1_000);
@@ -727,7 +1252,10 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     };
     try {
       await host.start(target);
-      await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "late-failure" });
+      await run.mock.calls[0]![0].taskList["run.continue"](
+        { runId: "late-failure" },
+        jobHelpers("job-late-failure"),
+      );
       lateFailure.reject(new Error("fixture execution failure"));
       await host.stop();
       expect(sink.events.filter((event) => event.level === "error")).toEqual([
