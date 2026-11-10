@@ -377,6 +377,7 @@ describe("silent routine failures", () => {
     botId: "bot-1",
     role: "bot",
     text: "The **Inbox sweep** routine failed: Invalid API key",
+    clientNonce: "routine-failed:run-1",
   };
 
   it("say so in the chat the run kept quiet in, and notify as any routine does", async () => {
@@ -938,6 +939,7 @@ describe("running a routine retry", () => {
       botId: "bot-1",
       role: "bot",
       text: `The **Inbox sweep** routine failed: ${overloaded().message}`,
+      clientNonce: "routine-failed:run-1",
     });
     expect(send).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ kind: "failure" }),

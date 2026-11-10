@@ -803,6 +803,8 @@ export async function postRoutineMessage(
     botId: string;
     role: "bot" | "system";
     text: string;
+    /** Makes the line idempotent: a second post with it adds nothing to the thread. */
+    clientNonce?: string;
   },
 ): Promise<void> {
   const blocks =
@@ -816,6 +818,7 @@ export async function postRoutineMessage(
         botId: input.botId,
         role: input.role,
         blocks,
+        clientNonce: input.clientNonce,
       });
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,

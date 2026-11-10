@@ -110,7 +110,7 @@ export async function scheduleRoutineRetry(
  */
 export async function notifyFailedRoutineRun(
   deps: ExecutorDeps,
-  failed: Parameters<typeof notifyRun>[1] & { error: string | null },
+  failed: Parameters<typeof notifyRun>[1] & { id: string; error: string | null },
   options: { retryOnFailure?: boolean } = {},
 ) {
   const bot = await deps.prisma.bot.findUniqueOrThrow({
@@ -129,6 +129,8 @@ export async function notifyFailedRoutineRun(
         botId: failed.botId,
         role: "bot",
         text: `The **${routine.name}** routine failed: ${failed.error ?? ""}`.trim(),
+        // One line per failed run, however often a notice that did not reach anyone is retried.
+        clientNonce: `routine-failed:${failed.id}`,
       });
     }
   }

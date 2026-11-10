@@ -17,6 +17,7 @@ function context(
   existing?: { currentVersion: number; visibility?: "private" | "link" },
   secrets: string[] = [],
   skipApprovals = false,
+  trigger = "user",
 ) {
   const prisma = {
     page: {
@@ -36,7 +37,14 @@ function context(
   };
   return {
     deps: { prisma },
-    run: { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "t-1", botId: "bot-1" },
+    run: {
+      id: "run-1",
+      spaceId: "space-1",
+      userId: "user-1",
+      threadId: "t-1",
+      botId: "bot-1",
+      trigger,
+    },
     bot: { id: "bot-1" },
     thread: { groupId: null },
     secrets,
@@ -71,6 +79,16 @@ describe("save_page", () => {
     expect(result).toMatchObject({ pageId: "page-1", version: 1, title: "Plan" });
     expect(result.error).toMatch(/saved, but its card could not be posted/);
     expect(result.error).toContain("[Plan](page:page-1)");
+  });
+
+  it("posts no card for a page a silent routine saves, new or not", async () => {
+    const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Plan" })) } };
+    const result = (await pageTools.save_page!(
+      context(tx, undefined, [], false, "silent_routine"),
+      call({ title: "Plan", source: source("Plan") }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ pageId: "page-1", version: 1, title: "Plan" });
+    expect(publishMessage).not.toHaveBeenCalled();
   });
 
   it("taints the run when it reads a page's stored source, but not when it saves one", async () => {

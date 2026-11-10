@@ -1,7 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
+import {
+  defaultCronPreset,
+  draftFromRoutine,
+  emptyRoutineDraft,
+  routineOffersSilent,
+} from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
@@ -552,8 +557,7 @@ function RoutineEditor({
           onRemove={() => update({ emailSenders: null })}
         />
       ) : null}
-      {/* Event triggers post their delivery in the chat, so silence applies only to runs it starts. */}
-      {draft.silent || draft.schedules.length > 0 || kept?.watch ? (
+      {routineOffersSilent({ ...draft, watch: kept?.watch }) ? (
         <SettingsGroup>
           <SettingsSwitch
             key="silent"

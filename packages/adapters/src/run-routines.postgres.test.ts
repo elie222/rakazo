@@ -14,6 +14,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { postRoutineMessage } from "./routine-watch.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -133,6 +134,28 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
 
     const run = await system.run.findFirstOrThrow({ where: { routineId: routine.id } });
     expect(run.trigger).toBe("silent_routine");
+  });
+
+  it("posts a failed silent run's chat line once, however often its notice is retried", async () => {
+    const deps = {
+      prisma: system,
+      events: { notify: async () => undefined },
+    } as unknown as Parameters<typeof postRoutineMessage>[0];
+    const line = {
+      spaceId: identity.spaceId,
+      threadId: identity.threadId,
+      botId: identity.botId,
+      role: "bot" as const,
+      text: "The **board tidy** routine failed: fixture",
+      clientNonce: `routine-failed:${randomUUID()}`,
+    };
+    await postRoutineMessage(deps, line);
+    await postRoutineMessage(deps, line);
+    await expect(
+      system.message.count({
+        where: { threadId: identity.threadId, clientNonce: line.clientNonce },
+      }),
+    ).resolves.toBe(1);
   });
 
   it("runs no routine in a Space that is being deleted", async () => {

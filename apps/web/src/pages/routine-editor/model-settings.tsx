@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
-import { credentialForModel } from "@rakazo/core";
+import { credentialForModel, routineOffersSilent } from "@rakazo/core";
 import {
   Button,
   NativeSelect,
@@ -62,8 +62,7 @@ export function RoutineModelSettings({
     []
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
-  // Event triggers post their delivery in the chat, so silence applies only to runs it starts.
-  const offersSilent = draft.silent || draft.schedules.length > 0 || Boolean(draft.watch);
+  const offersSilent = routineOffersSilent(draft);
 
   return (
     <Popover>
