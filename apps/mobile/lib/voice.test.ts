@@ -973,7 +973,7 @@ describe("call audio", () => {
     await setCallAudio(false);
   });
 
-  it("keeps a dictation recording when a call ends under it", async () => {
+  it("keeps a dictation recording when a call ends under it, then releases audio after it", async () => {
     vi.mocked(setIsAudioActiveAsync).mockClear();
     await setDictationAudio(true);
     await setCallAudio(true);
@@ -988,6 +988,7 @@ describe("call audio", () => {
     expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ allowsRecording: false }),
     );
+    expect(setIsAudioActiveAsync).toHaveBeenCalledExactlyOnceWith(false);
   });
 });
 

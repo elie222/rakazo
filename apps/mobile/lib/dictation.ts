@@ -15,7 +15,6 @@ const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
 export const QUIET_RESTART_MS = 15_000;
-export const ABORT_END_GRACE_MS = 2_000;
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
 const FATAL_ERRORS = new Set([
   "not-allowed",
@@ -237,9 +236,7 @@ function watchQuiet(session: Session): void {
       session.recognizer.abort();
     } catch {
       giveUp(session, "failed", "start-failed");
-      return;
     }
-    session.quiet = setTimeout(() => onEnd(session), ABORT_END_GRACE_MS);
   }, QUIET_RESTART_MS);
 }
 

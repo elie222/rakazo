@@ -24,12 +24,7 @@ import {
   toggleMute,
 } from "./call-session";
 import type { SpeechRecognizer } from "./dictation";
-import {
-  ENDPOINT_SILENCE_MS,
-  QUIET_RESTART_MS,
-  setSpeechRecognizer,
-  stop as stopDictation,
-} from "./dictation";
+import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
 import { activateUiLocale, getActiveUiLocale } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
@@ -1040,6 +1035,21 @@ describe("mobile call session", () => {
     expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
   });
 
+  it("checks on-device recognition once per call when the device has none", async () => {
+    const fake = fakes();
+    const dictate = vi.fn(fake.deps.dictate);
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...fake.deps, dictate });
+    await flush();
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "It is green.");
+    fake.speeches[0]?.resolve();
+    await flush();
+
+    expect(fake.recordings).toHaveLength(2);
+    expect(dictate).toHaveBeenCalledOnce();
+  });
+
   it("stops recording while muted", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
@@ -1583,7 +1593,7 @@ describe("mobile call recognition recovery", () => {
     }
     const starts = fake.start.mock.calls.length;
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(fake.start.mock.calls.length - starts).toBeLessThanOrEqual(60_000 / QUIET_RESTART_MS);
+    expect(fake.start).toHaveBeenCalledTimes(starts);
     fake.emit("result", { isFinal: false, results: [{ transcript: "status please" }] });
     await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
     expect(fake.send).toHaveBeenCalledExactlyOnceWith(

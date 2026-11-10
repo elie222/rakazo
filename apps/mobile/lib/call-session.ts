@@ -475,6 +475,7 @@ async function openMic(): Promise<void> {
         return;
       }
       onDevice = false;
+      recognitionFailures = 0;
     }
     // Muting or hanging up while the device was deciding: no microphone after all.
     if (!mine() || !state || state.muted) {
@@ -493,7 +494,7 @@ async function openMic(): Promise<void> {
     const text = clip ? await deps.transcribe(clip, controller.signal) : "";
     if (!mine()) return;
     micOpen = false;
-    if (recognitionFailures < 2) onDevice = null;
+    if (recognitionFailures === 1) onDevice = null;
     await handleTranscript(text);
   } catch (error) {
     if (!mine()) return;

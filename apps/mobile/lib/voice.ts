@@ -179,9 +179,12 @@ export function setDictationAudio(active: boolean): Promise<void> {
   dictating = active;
   return changeAudioMode(async () => {
     if (onCall || dictating !== active) return;
-    await setAudioModeAsync(
-      active ? DICTATION_AUDIO : { playsInSilentMode: true, allowsRecording: false },
-    );
+    if (active) {
+      await setAudioModeAsync(DICTATION_AUDIO);
+      return;
+    }
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+    if (Platform.OS === "ios" && playback.status === "idle") await setIsAudioActiveAsync(false);
   });
 }
 
