@@ -69,9 +69,16 @@ export function useInboxChatActions({
       update: BotOrganizationUpdate,
     ) => {
       const target = chatTarget(kind, chat.id);
-      // One request per change; the server maps a bot's mute onto its own notification setting.
-      if ("muted" in update) await chatRpc(chat.spaceId, "threads/mute", { ...target, ...update });
-      else if ("hidden" in update) {
+      // One request per change. A bot's notification switch is the viewer's own mute, which
+      // servers from before chat mutes know too.
+      if ("muted" in update && kind === "bot") {
+        await chatRpc(chat.spaceId, "bots/update", {
+          botId: chat.id,
+          notifyOnFinish: !update.muted,
+        });
+      } else if ("muted" in update) {
+        await chatRpc(chat.spaceId, "threads/mute", { ...target, ...update });
+      } else if ("hidden" in update) {
         await chatRpc(chat.spaceId, "threads/hide", { ...target, ...update });
       } else await chatRpc(chat.spaceId, `${kind}s/update`, { ...target, ...update });
       // A hidden chat holds its news as a muted one does, so either brings the device in line.

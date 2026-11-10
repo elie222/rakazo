@@ -119,7 +119,8 @@ it("reports a saved bot mute even when its inbox row has no thread id", async ()
   const actions = await handlers(async () => undefined);
   await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { muted: true });
   expect(vi.mocked(rpc).mock.calls.map(sent)).toEqual([
-    ["threads/mute", { botId: "b1", muted: true }],
+    // Through the bot's own setting, which older servers know too.
+    ["bots/update", { botId: "b1", notifyOnFinish: false }],
   ]);
   expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith("", null, "space-a", {
     botId: "b1",
