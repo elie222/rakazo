@@ -511,6 +511,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
       resetAttention();
+      let refreshed = false;
       // Close a pane in another space before selection can change its request context.
       onSelectSpace?.(spaceId);
       try {
@@ -529,6 +530,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           await refreshBots();
           await loadActivity();
           await loadAttention();
+          refreshed = true;
         };
         const selected =
           spaceActionRef.current.recoveryId === spaceId
@@ -542,6 +544,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       } finally {
         spaceActionRef.current.busy = false;
         setSpaceBusy(false);
+        // A failed switch leaves the original Space selected; bring its count back.
+        if (!refreshed) void loadAttention();
       }
     },
     [refreshBots, loadActivity, loadAttention, onSelectSpace, resetAttention, t],
@@ -560,6 +564,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       inboxRequestId.current += 1;
       activityRequestId.current += 1;
       resetAttention();
+      let refreshed = false;
       try {
         const recoveryId = await removeInboxSpace(space.id, async () => {
           spaceActionRef.current.busy = false;
@@ -567,6 +572,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           await refreshBots();
           await loadActivity();
           await loadAttention();
+          refreshed = true;
         });
         if (recoveryId) {
           spaceActionRef.current.recoveryId = recoveryId;
@@ -578,6 +584,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       } finally {
         spaceActionRef.current.busy = false;
         setSpaceBusy(false);
+        // A failed delete leaves the original Space selected; bring its count back.
+        if (!refreshed) void loadAttention();
       }
     },
     [refreshBots, loadActivity, loadAttention, resetAttention, t],

@@ -333,8 +333,9 @@ export async function listAttentionItems(
     );
   }
 
-  // One item per bot keeps the inbox calm, but it names every overdue routine so none hides.
-  const delayedByBot = new Map<
+  // Group by the chat the routines will run in, so the card's Open chat matches every name
+  // it lists. Routines sharing a chat stay one calm item.
+  const delayedByThread = new Map<
     string,
     { routine: RoutineRow; thread: RoutineThread; names: string[] }
   >();
@@ -344,12 +345,12 @@ export async function listAttentionItems(
     if (!routineScheduleDelayed({ active: true, nextRunAt }, now.getTime())) continue;
     const thread = routineThread(routine);
     if (!thread) continue;
-    const seen = delayedByBot.get(routine.botId);
+    const seen = delayedByThread.get(thread.id);
     if (seen) seen.names.push(routine.name);
-    else delayedByBot.set(routine.botId, { routine, thread, names: [routine.name] });
+    else delayedByThread.set(thread.id, { routine, thread, names: [routine.name] });
   }
 
-  for (const { routine, thread, names } of delayedByBot.values()) {
+  for (const { routine, thread, names } of delayedByThread.values()) {
     items.push({
       id: `routine:${routine.id}`,
       kind: "routine_delayed",

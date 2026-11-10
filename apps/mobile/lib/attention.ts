@@ -10,6 +10,20 @@ type Translate = (
   values?: Record<string, string | number>,
 ) => string;
 
+const changedListeners = new Set<() => void>();
+
+/** Lets the inbox's answer refresh the separate count kept by the Home row. */
+export function subscribeAttentionChanged(listener: () => void): () => void {
+  changedListeners.add(listener);
+  return () => {
+    changedListeners.delete(listener);
+  };
+}
+
+export function notifyAttentionChanged(): void {
+  for (const listener of [...changedListeners]) listener();
+}
+
 const SECTION_TITLES = {
   waiting: msg`Waiting on you`,
   failed: msg`Failed`,

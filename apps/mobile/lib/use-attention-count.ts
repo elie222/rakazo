@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { selectedSpaceId } from "./api";
 import { subscribeConfirmedSpaceSwitch } from "./api-server";
-import { fetchAttentionItems } from "./attention";
+import { fetchAttentionItems, subscribeAttentionChanged } from "./attention";
 import { useForegroundPoll } from "./foreground-poll";
 import { ATTENTION_POLL_INTERVAL_MS } from "./poll-cadence";
 
@@ -59,6 +59,8 @@ export function useAttentionCount({
     resetAttention();
     void loadAttention();
   }, [loadAttention, resetAttention, spaceId]);
+
+  useEffect(() => subscribeAttentionChanged(() => void loadAttention()), [loadAttention]);
 
   useEffect(
     () => () => {

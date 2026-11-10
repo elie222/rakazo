@@ -26,6 +26,7 @@ import {
   attentionIcon,
   attentionSections,
   attentionTitle,
+  notifyAttentionChanged,
 } from "../lib/attention";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { useThemedStyles } from "../lib/native";
@@ -88,6 +89,7 @@ export default function NeedsYouScreen() {
         answer: answerValue,
       });
       await queryClient.invalidateQueries({ queryKey: attentionQuery.queryKey });
+      notifyAttentionChanged();
     } catch (error) {
       Alert.alert(t`Could not answer this card.`, errorText(error, t`Please try again.`));
     } finally {

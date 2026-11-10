@@ -340,6 +340,65 @@ describeAttention("attention.list", () => {
     expect(routines[0]!.detail).toContain("Weekly report");
   });
 
+  it("opens each delayed routine in the chat it targets", async () => {
+    const cookie = await signup(app, `attention-destinations-${stamp}@rakazo.test`, "Routes User");
+    const bot = await createBot(app, cookie, "Routes Bot");
+    const mate = await createBot(app, cookie, "Routes Mate");
+    const botThread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const groupThreads = [];
+    for (const name of ["First Crew", "Second Crew"]) {
+      const group = await prisma.chatGroup.create({
+        data: { spaceId: botThread.spaceId, userId: botThread.userId, name },
+      });
+      await prisma.chatGroupMember.createMany({
+        data: [
+          { groupId: group.id, botId: bot.id },
+          { groupId: group.id, botId: mate.id },
+        ],
+      });
+      groupThreads.push(
+        await prisma.thread.create({
+          data: { spaceId: botThread.spaceId, userId: botThread.userId, groupId: group.id },
+        }),
+      );
+    }
+    const base = {
+      spaceId: botThread.spaceId,
+      botId: bot.id,
+      userId: botThread.userId,
+      prompt: "Send the update",
+      crons: ["30 7 * * *"],
+      timezone: "UTC",
+      active: true,
+      notify: true,
+    };
+    await prisma.routine.createMany({
+      data: [
+        {
+          ...base,
+          name: "First brief",
+          threadId: groupThreads[0]!.id,
+          nextRunAt: new Date(Date.now() - 120 * 60_000),
+        },
+        {
+          ...base,
+          name: "Second brief",
+          threadId: groupThreads[1]!.id,
+          nextRunAt: new Date(Date.now() - 60 * 60_000),
+        },
+      ],
+    });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+    const routines = result.items.filter((item) => item.kind === "routine_delayed");
+
+    expect(routines).toHaveLength(2);
+    expect(routines.map((item) => item.groupName).sort()).toEqual(["First Crew", "Second Crew"]);
+    expect(routines.map((item) => item.threadId).sort()).toEqual(
+      groupThreads.map((thread) => thread.id).sort(),
+    );
+  });
+
   it("keeps a payment approval in the chat where the receipt is visible", async () => {
     const cookie = await signup(app, `attention-payment-${stamp}@rakazo.test`, "Payment User");
     const bot = await createBot(app, cookie, "Payment Bot");
