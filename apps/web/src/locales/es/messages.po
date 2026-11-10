@@ -701,7 +701,6 @@ msgstr "Agrega un nombre de servidor."
 msgid "Add a stdio command."
 msgstr "Agrega un comando stdio."
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
 msgid "Add a trigger to run this routine."
 msgstr "Añade un activador para ejecutar esta rutina."
@@ -813,12 +812,12 @@ msgstr "Línea de dirección 2"
 msgid "Adds"
 msgstr "Incluye"
 
+#: src/lib/cron.ts
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "Avanzado"
@@ -1175,8 +1174,8 @@ msgid "Automated senders"
 msgstr "Remitentes automáticos"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "Available after the routine is saved"
-msgstr "Disponible después de guardar la rutina"
+msgid "Available after saving"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2072,6 +2071,7 @@ msgstr "Conversaciones"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/model-step.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
@@ -2088,6 +2088,10 @@ msgstr "Copiar"
 #: src/components/vault/BotEmailAddresses.tsx
 msgid "Copy {address}"
 msgstr "Copiar {address}"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Copy {label}"
+msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2632,6 +2636,10 @@ msgstr "No se pudo enviar eso"
 msgid "Could not show the credential"
 msgstr "No se pudo mostrar la credencial"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not show the webhook key"
+msgstr ""
+
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
 msgstr "No se pudo iniciar sesión"
@@ -2781,8 +2789,8 @@ msgid "Create organization"
 msgstr "Crear organización"
 
 #: src/pages/RoutineList.tsx
-msgid "Create Routine"
-msgstr "Crear rutina"
+msgid "Create routine"
+msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3353,14 +3361,10 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Todos los bots de este espacio leen estas notas y las mantienen al día."
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Todos los días"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Cada hora"
 
@@ -3376,16 +3380,6 @@ msgstr "Todos los mensajes"
 #: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Cada lunes"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every month"
-msgstr "Cada mes"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every week"
-msgstr "Cada semana"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -3704,8 +3698,8 @@ msgid "Hang up, then enter the code on screen."
 msgstr "Cuelga y luego ingresa el código en pantalla."
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "header"
-msgstr "Encabezado"
+msgid "Header"
+msgstr ""
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3742,6 +3736,10 @@ msgstr "Oculto"
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Hide"
 msgstr "Ocultar"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Hide key"
+msgstr ""
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -3945,8 +3943,7 @@ msgstr "Dominio de la integración"
 msgid "Integrations"
 msgstr "Integraciones"
 
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Interval"
 msgstr "Intervalo"
 
@@ -4037,8 +4034,8 @@ msgid "Keep tool results whole"
 msgstr "Mantener completos los resultados de herramientas"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "key"
-msgstr "Clave"
+msgid "Key options"
+msgstr ""
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4548,6 +4545,10 @@ msgstr "Créditos mensuales"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Los créditos mensuales vencen al renovar. Las recargas no vencen."
 
+#: src/lib/cron.ts
+msgid "Monthly on the 1st"
+msgstr ""
+
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4865,6 +4866,10 @@ msgstr "Sin reinicio"
 msgid "No results"
 msgstr "Sin resultados"
 
+#: src/pages/RoutineList.tsx
+msgid "No routines yet"
+msgstr ""
+
 #: src/components/markdown-copy.tsx
 msgid "No rows"
 msgstr "Sin filas"
@@ -4873,7 +4878,7 @@ msgstr "Sin filas"
 msgid "No runs match these filters."
 msgstr "Ninguna ejecución coincide con estos filtros."
 
-#: src/pages/RoutineRunHistory.tsx
+#: src/pages/ActivityList.tsx
 msgid "No runs yet"
 msgstr "Aún no hay ejecuciones"
 
@@ -4983,6 +4988,7 @@ msgid "Offline"
 msgstr "Sin conexión"
 
 #: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "On a schedule"
 msgstr "Con un horario"
 
@@ -5014,6 +5020,10 @@ msgstr "Introduce solo un código que te haya enviado {codeHost}."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Solo yo"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can see its webhook key."
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -5374,10 +5384,6 @@ msgstr "Plugins"
 msgid "Post \"No changes\" in chat"
 msgstr "Publicar «Sin cambios» en el chat"
 
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "POST to"
-msgstr "POST a"
-
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "PR reviewer"
 msgstr "Revisor de PR"
@@ -5727,7 +5733,7 @@ msgstr "Eliminar encabezado"
 msgid "Remove message trigger"
 msgstr "Quitar activador de mensajes"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Remove schedule"
 msgstr "Quitar horario"
 
@@ -5993,6 +5999,10 @@ msgstr "Ejecutar a las"
 msgid "Run history"
 msgstr "Historial de ejecuciones"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Run now"
+msgstr ""
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
 msgstr "La hora de ejecución debe ser en el futuro."
@@ -6082,10 +6092,6 @@ msgstr "Guardado, pero falló la actualización de la lista"
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "Guardado."
-
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "Saved. Rotate to reveal."
-msgstr "Guardado. Rota para revelar."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -6210,6 +6216,10 @@ msgstr "Búsqueda: {0}"
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "Buscando…"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Secret"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6383,6 +6393,10 @@ msgstr "Mostrar todos"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "Mostrar bots"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Show key"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -6857,10 +6871,6 @@ msgstr "Probar clave de API"
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "Probar conexión"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Test run"
-msgstr "Ejecución de prueba"
 
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Testing"
@@ -7425,6 +7435,10 @@ msgstr "Subir"
 msgid "Urgent"
 msgstr "Urgente"
 
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "URL"
+msgstr ""
+
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Uso"
@@ -7619,8 +7633,6 @@ msgid "week"
 msgstr "semana"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Días laborables"
 
