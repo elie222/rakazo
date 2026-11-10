@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-const CHAT_BACKGROUNDS_KEY = "rakazo.chat-backgrounds";
+export const CHAT_BACKGROUNDS_KEY = "rakazo.chat-backgrounds";
 const CHAT_BACKGROUND_FILES = "chat-backgrounds";
 
 /** The background's opacity when one is first set. */
@@ -118,10 +118,15 @@ export function isChatBackgroundUrl(value: string): boolean {
   }
 }
 
-/** This thread's background, or null for the default. */
+/** This thread's chat background, or null for the default. */
 export function chatBackgroundFor(threadKey: string | undefined): ChatBackground | null {
   if (!threadKey) return null;
   return backgrounds[threadKey] ?? null;
+}
+
+/** A copy of every thread's chat background, for the settings backup file. */
+export function allChatBackgrounds(): Record<string, ChatBackground> {
+  return { ...backgrounds };
 }
 
 export function useChatBackground(threadKey: string | undefined): ChatBackground | null {

@@ -104,6 +104,7 @@ import {
 import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { isUserAvatarImage, pickUserAvatarImage } from "../../lib/user-avatar";
 import { errorText } from "../../lib/user-error";
+import { clearWebdavBackupAccount } from "../../lib/webdav-backup-account";
 
 let hapticsSaveVersion = 0;
 
@@ -387,6 +388,8 @@ export default function Account() {
       // Hang up while the session still exists, so the server records the call's end.
       await endCallBeforeSessionEnd();
       await signOut();
+      // The WebDAV account belongs to this account, not the device.
+      if (me?.userId) await clearWebdavBackupAccount(me.userId).catch(() => undefined);
       replaceWithSignIn();
     } catch (err) {
       setSignOutError(errorText(err, t("Could not sign out")));

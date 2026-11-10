@@ -1999,6 +1999,7 @@ async function renderChips() {
           onOpenFavorites={() => undefined}
           backgroundLabel="Default"
           onOpenBackground={() => undefined}
+          onOpenBackup={() => undefined}
         />
         {sheetRole ? (
           <ThreadModelPickerSheet
@@ -2035,7 +2036,7 @@ const FakeSheet = ({ children }: { children?: ReactNode }) =>
   createElement("div", { "data-native-sheet": true }, children);
 
 describe("thread composer quick cards", () => {
-  it("shows live values on seven cards in the mockup's order", async () => {
+  it("shows live values on eight cards in the mockup's order", async () => {
     await renderChips();
     expect(
       [...container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
@@ -2047,6 +2048,7 @@ describe("thread composer quick cards", () => {
       "Routines: 3 running",
       "Favorites: No favorites",
       "Background: Default",
+      "Backup: Not set up",
     ]);
   });
 

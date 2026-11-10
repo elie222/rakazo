@@ -5,7 +5,7 @@ import type { ImageSourcePropType } from "react-native";
 /** The expression packs a bot's avatar can use. "chief" is the default Q-style assistant. */
 export type ExpressionPack = "chief" | "off";
 
-const EXPRESSION_PACK_KEY = "rakazo.expression-pack";
+export const EXPRESSION_PACK_KEY = "rakazo.expression-pack";
 
 /** The six faces of the chief pack, one per activity state. */
 const CHIEF_IMAGES: Record<string, ImageSourcePropType> = {
@@ -88,6 +88,11 @@ let saving: Promise<void> = Promise.resolve();
 export function expressionPackFor(botId: string | undefined): ExpressionPack {
   if (!botId) return "chief";
   return packs[botId] ?? "chief";
+}
+
+/** A copy of every bot's pack choice, for the settings backup file. */
+export function allExpressionPacks(): Record<string, ExpressionPack> {
+  return { ...packs };
 }
 
 export function useExpressionPack(botId: string | undefined): ExpressionPack {

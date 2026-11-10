@@ -12,7 +12,7 @@ import { clampChatBackgroundOpacity } from "./chat-background";
  */
 export type HeroBackground = ChatBackground;
 
-const HERO_BACKGROUNDS_KEY = "rakazo.hero-backgrounds";
+export const HERO_BACKGROUNDS_KEY = "rakazo.hero-backgrounds";
 const HERO_BACKGROUND_FILES = "hero-backgrounds";
 
 type BackgroundMap = Record<string, HeroBackground>;
@@ -89,6 +89,11 @@ function subscribe(listener: () => void): () => void {
 export function heroBackgroundFor(threadKey: string | undefined): HeroBackground | null {
   if (!threadKey) return null;
   return backgrounds[threadKey] ?? null;
+}
+
+/** A copy of every thread's hero background, for the settings backup file. */
+export function allHeroBackgrounds(): Record<string, HeroBackground> {
+  return { ...backgrounds };
 }
 
 export function useHeroBackground(threadKey: string | undefined): HeroBackground | null {

@@ -33,6 +33,7 @@ import { composerDraftScope } from "../../lib/composer-draft";
 import { useComposerThinkingLevel } from "../../lib/composer-thinking-level";
 import { useComputerFloatEnabled } from "../../lib/computer-float-settings";
 import { cronLabels } from "../../lib/cron";
+import { heroBackgroundWidthFor, useCustomSettings } from "../../lib/custom-settings";
 import { useI18n } from "../../lib/i18n";
 import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import { useThemedStyles } from "../../lib/native";
@@ -69,7 +70,7 @@ import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
 import { getVoicePlaybackState, stopVoicePlayback, subscribeVoicePlayback } from "../../lib/voice";
-import { CHAT_TITLE_HERO_MAX_HEIGHT, ChatTitleHero } from "../chat-title-hero";
+import { ChatTitleHero, chatTitleHeroHeight } from "../chat-title-hero";
 import { FailedSendBubble } from "../failed-send-bubble";
 import { NativeSymbol } from "../native-symbol";
 import { NewestPageCards } from "../pages/page-card";
@@ -83,9 +84,11 @@ import { ComputerFloatWindow } from "./computer-float-window";
 import { HeroBackgroundLayer } from "./hero-background-layer";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadBackgroundSheet } from "./thread-background-sheet";
+import { ThreadBackupSheet } from "./thread-backup-sheet";
 import { ThreadBotMenuSheet } from "./thread-bot-menu-sheet";
 import { ThreadComposerChips } from "./thread-composer-chips";
 import { ThreadComposerDock } from "./thread-composer-dock";
+import { ThreadCustomSettingsSheet } from "./thread-custom-settings-sheet";
 import { ThreadFavoritesSheet } from "./thread-favorites-sheet";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
@@ -127,12 +130,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const searchBarHeight = searchOpen ? 48 : 0;
+  // The interface settings, live: a slider moves the chat at once, so the hero's
+  // width and height follow the settings without a reload.
+  const customSettings = useCustomSettings(userId);
   // The list's top clearance always reserves the hero's full height, so the
   // oldest message starts below the hero instead of scrolling underneath it. The
-  // height is a layout constant, never measured, so the clearance and the hero can never
-  // disagree and leave a gap for the conversation to show through.
+  // height follows the title font size, never measured, so the clearance and the
+  // hero can never disagree and leave a gap for the conversation to show through.
+  const heroHeight = chatTitleHeroHeight(customSettings.font.title.size);
   const listClearance = {
-    padding: heroTop + CHAT_TITLE_HERO_MAX_HEIGHT + searchBarHeight,
+    padding: heroTop + heroHeight + searchBarHeight,
     anchor: heroTop + 20,
     minHeight: heroTop,
   };
@@ -148,6 +155,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const [botMenuOpen, setBotMenuOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [customSettingsOpen, setCustomSettingsOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
   const columnInsets = readableGutters(windowWidth, {
@@ -460,6 +469,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             setComputerFloatOpen(true);
           }
         : undefined,
+    userId,
   });
 
   useThreadFocus({
@@ -743,8 +753,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing={titleComposing}
         name={titleName}
         onAvatarPress={() => setBotMenuOpen(true)}
+        userId={userId}
       />
     ) : null;
+  // The hero background narrows by this thread's width setting, centred.
+  const heroMargin =
+    ((100 - heroBackgroundWidthFor(customSettings, threadKey)) / 200) * windowWidth;
 
   const failedSendBubbles = feedback.unsentSends.map((attempt) => (
     <FailedSendBubble
@@ -754,6 +768,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       onRetry={() => composer.retry(attempt)}
       onDelete={() => feedback.discard(attempt)}
       userBubble={userBubble}
+      userId={userId}
     />
   ));
 
@@ -766,6 +781,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       resetAt={visibleRunError?.resetAt}
       onDetails={() => setDetailsOpen(true)}
       action={visibleRunError ? runErrorAction : null}
+      userId={userId}
     />
   );
 
@@ -831,8 +847,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               style={{
                 position: "absolute",
                 top: heroTop + searchBarHeight,
-                left: 0,
-                right: 0,
+                left: heroMargin,
+                right: heroMargin,
                 backgroundColor: tokens.background,
               }}
             >
@@ -975,6 +991,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
                       : t("URL subscription")
               }
               onOpenBackground={() => setBackgroundOpen(true)}
+              onOpenBackup={() => setBackupOpen(true)}
             />
             <ThreadComposer
               key={threadKey}
@@ -1048,6 +1065,23 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           threadKey={threadKey}
           heroVisible={!inGroup}
           onClose={() => setBackgroundOpen(false)}
+          onOpenCustomSettings={() => {
+            setBackgroundOpen(false);
+            setCustomSettingsOpen(true);
+          }}
+        />
+        <ThreadCustomSettingsSheet
+          visible={customSettingsOpen}
+          userId={userId}
+          threadKey={threadKey}
+          heroVisible={!inGroup}
+          onClose={() => setCustomSettingsOpen(false)}
+        />
+        <ThreadBackupSheet
+          visible={backupOpen}
+          userId={userId}
+          botId={botId}
+          onClose={() => setBackupOpen(false)}
         />
         <RunErrorSheet
           details={detailsOpen ? runError : null}

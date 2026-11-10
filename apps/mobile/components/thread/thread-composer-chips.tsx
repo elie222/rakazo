@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
+import { useCustomSettings } from "../../lib/custom-settings";
 import { useI18n } from "../../lib/i18n";
 import type { MobileBot, MobileModel } from "../../lib/mobile-types";
 import { NativeSymbol } from "../native-symbol";
@@ -24,7 +25,8 @@ export type ComposerChip = {
     | "computer"
     | "routines"
     | "favorites"
-    | "background";
+    | "background"
+    | "backup";
   label: string;
   value: string;
   active: boolean;
@@ -48,6 +50,7 @@ export function ThreadComposerChips({
   onOpenFavorites,
   backgroundLabel,
   onOpenBackground,
+  onOpenBackup,
 }: {
   botId?: string;
   currentBot?: MobileBot;
@@ -63,6 +66,7 @@ export function ThreadComposerChips({
   onOpenFavorites: () => void;
   backgroundLabel: string;
   onOpenBackground: () => void;
+  onOpenBackup: () => void;
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
@@ -72,6 +76,24 @@ export function ThreadComposerChips({
   const [voices, setVoices] = useState<VoiceInfo[] | null>(null);
   const [computerStatus, setComputerStatus] = useState<ComputerStatus | null>(null);
   const [routines, setRoutines] = useState<Routine[] | null>(null);
+  const [backupHost, setBackupHost] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { loadWebdavBackupAccount } = await import("../../lib/webdav-backup-account");
+      const account = await loadWebdavBackupAccount(userId).catch(() => null);
+      if (cancelled || !account) return;
+      try {
+        setBackupHost(new URL(account.serverUrl).host);
+      } catch {
+        setBackupHost(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!botId) return;
@@ -208,6 +230,13 @@ export function ThreadComposerChips({
         active: backgroundLabel !== t("Default"),
         onPress: onOpenBackground,
       },
+      {
+        id: "backup",
+        label: t("Backup"),
+        value: backupHost ?? t("Not set up"),
+        active: Boolean(backupHost),
+        onPress: onOpenBackup,
+      },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -225,14 +254,19 @@ export function ThreadComposerChips({
     router,
     favoriteCount,
     backgroundLabel,
+    backupHost,
     t,
   ]);
 
+  // The interface settings narrow the row (centred) and resize its cards.
+  const customSettings = useCustomSettings(userId);
+  const chipsRowWidthPct = customSettings.chipsRowWidthPct;
+  const chipsCardWidth = customSettings.chipsCardWidth;
   if (!botId || !currentBot) return null;
   // The quick row from the chat mockup (v3): five big cards in one horizontally
   // scrolling row, icon on top, name in the middle, live value underneath in
   // small grey type. Card width matches the v3 grid (412px phone, 12px insets,
-  // 7px gaps -> 72px a card); the row scrolls so all seven stay reachable.
+  // 7px gaps -> 72px a card); the row scrolls so all eight stay reachable.
   return (
     <ScrollView
       horizontal
@@ -240,6 +274,8 @@ export function ThreadComposerChips({
       contentContainerStyle={{ gap: 7, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}
       style={{
         flexShrink: 0,
+        width: `${chipsRowWidthPct}%`,
+        alignSelf: "center",
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopColor: tokens.border,
         backgroundColor: tokens.background,
@@ -252,7 +288,7 @@ export function ThreadComposerChips({
           accessibilityLabel={`${chip.label}: ${chip.value}`}
           onPress={chip.onPress}
           style={{
-            width: 72,
+            width: chipsCardWidth,
             borderRadius: 14,
             borderWidth: 1,
             borderColor: tokens.border,
@@ -292,7 +328,9 @@ export function ThreadComposerChips({
                           ? "clock.arrow.circlepath"
                           : chip.id === "favorites"
                             ? "bookmark"
-                            : "photo"
+                            : chip.id === "backup"
+                              ? "icloud"
+                              : "photo"
               }
               android={
                 chip.id === "mainModel"
@@ -307,7 +345,9 @@ export function ThreadComposerChips({
                           ? "time-outline"
                           : chip.id === "favorites"
                             ? "bookmark-outline"
-                            : "image-outline"
+                            : chip.id === "backup"
+                              ? "cloud-upload-outline"
+                              : "image-outline"
               }
               size={21}
               color={tokens.link}
