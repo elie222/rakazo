@@ -763,11 +763,7 @@ function askDetail(f: ReturnType<typeof fixture>): string {
 }
 
 it("enqueues pending work when an approval pauses its current run", async () => {
-  const f = fixture({
-    name: "shell",
-    trigger: "webhook",
-    rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "shell" }],
-  });
+  const f = fixture({ name: "shell", trigger: "webhook" });
   f.pauseRunForInput.mockResolvedValueOnce({ continuationRunId: "pending-run" });
   await f.run();
   expect(f.enqueue).toHaveBeenCalledWith(
@@ -804,15 +800,17 @@ describe("connector read-only metadata and approval enforcement", () => {
     reviewMock.mockReset();
   });
 
-  // A webhook run follows the owner's rules like any other run.
+  // A webhook run follows the owner's rules like any other run. Shell, free in the owner's own
+  // runs, asks there unless the owner always allows it.
   it.each([
     ["shell", "always_allow", false],
+    ["shell", undefined, true],
     ["write_file", "require_approval", true],
-  ] as const)("follows a %s %s rule in a webhook run", async (name, effect, asks) => {
+  ] as const)("runs %s with a %s rule in a webhook run", async (name, effect, asks) => {
     const f = fixture({
       name,
       trigger: "webhook",
-      rules: [{ effect, matchKind: "tool", matchValue: name }],
+      rules: effect ? [{ effect, matchKind: "tool", matchValue: name }] : [],
     });
     // This fixture has no sandbox, so an allowed shell call fails after the gate lets it run.
     await f.run(!asks);

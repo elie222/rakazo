@@ -18,6 +18,7 @@ import {
   humanizeToolName,
   newSiteOutcome,
   outboundSiteGate,
+  outsideRunToolRequiresApproval,
   planActionGate,
   redactSecrets,
   repeatsDeniedAction,
@@ -280,8 +281,10 @@ export async function gateToolCall(
     siteGate === "new" ||
     unidentifiedAction ||
     (!catalogControlRead &&
-      approvalToolNames.some((toolName) =>
-        toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
+      approvalToolNames.some(
+        (toolName) =>
+          toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)) ||
+          (!viaConnector && outsideRunToolRequiresApproval(run.trigger, toolName)),
       ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;

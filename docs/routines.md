@@ -64,8 +64,10 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 
 > [!NOTE]
 > Runs started by a webhook, an email or an outside message follow your [approval](./approvals.md)
-> mode and Always allow list, like any other run. Since outside text could steer them, a site the
-> bot found only in that text is still checked before it visits it, and a purchase is refused.
+> mode and Always allow list, like any other run. Since outside text could steer them, shell
+> commands, file changes and computer use are checked there even though they never ask in your own
+> chats, a site the bot found only in that text is checked before it visits it, and a purchase is
+> refused.
 
 ## Test, pause and review
 

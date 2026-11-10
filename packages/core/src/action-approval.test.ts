@@ -17,6 +17,7 @@ import {
   isSecretAskBlock,
   newSiteOutcome,
   outboundSiteGate,
+  outsideRunToolRequiresApproval,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -219,6 +220,17 @@ describe("isOwnerStartedRun", () => {
   ])("treats %s (follow-up from user: %s) as owner-started: %s", (trigger, fromUser, expected) => {
     expect(isOwnerStartedRun(trigger, fromUser)).toBe(expected);
   });
+});
+
+it("gates exempt tools that change something only in runs outside text started", () => {
+  for (const name of ["shell", "write_file", "computer_act", "browser_act", "remember"]) {
+    expect(toolRequiresApproval(name, false)).toBe(false);
+    expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
+    expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
+  }
+  for (const name of ["read_file", "computer_observe", "browser_snapshot", "message_user"]) {
+    expect(outsideRunToolRequiresApproval("webhook", name)).toBe(false);
+  }
 });
 
 it("treats a declared write with a read-looking name as a write", () => {

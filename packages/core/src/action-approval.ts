@@ -32,6 +32,20 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "request_purchase",
 ]);
 
+/** Approval-exempt tools that only look: they stay free even when outside text started the run. */
+const EXEMPT_READ_TOOLS = new Set([
+  "computer_observe",
+  "browser_snapshot",
+  "list_files",
+  "read_file",
+  "read_history",
+  "search_history",
+  "request_takeover",
+  "run_subagent",
+  "schedule_list",
+  "list_fleet",
+]);
+
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
@@ -147,6 +161,18 @@ export function toolRequiresApproval(
   if (APPROVAL_REQUIRED_BUILTIN_TOOLS.has(toolName)) return true;
   if (viaConnector) return connectorToolRequiresApproval(toolName, readOnly);
   return false;
+}
+
+/**
+ * The owner's own runs skip approval for the tools in APPROVAL_EXEMPT_TOOLS. A run a webhook or an
+ * email started carries text someone else may have written, so there a tool on that list that
+ * changes something (shell, file writes, the computer and browser, memory, schedules) is gated like
+ * any other consequential action: Always allow, the approval model or Never ask can still pass it.
+ */
+export function outsideRunToolRequiresApproval(trigger: string, toolName: string): boolean {
+  return (
+    trigger === "webhook" && APPROVAL_EXEMPT_TOOLS.has(toolName) && !EXEMPT_READ_TOOLS.has(toolName)
+  );
 }
 
 /**
