@@ -1,8 +1,9 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
-import { APP_LOCALE_LABELS, accountDisplay, displayName } from "@rakazo/core";
+import type { AccountSecurity, PlanLimits, UsageSummary } from "@rakazo/contracts";
+import { modelCreditsUsd } from "@rakazo/contracts";
+import { APP_LOCALE_LABELS, accountDisplay, displayName, formatTimeUntil } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -179,6 +180,9 @@ export default function Account() {
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  // Subscription allowances and a credit balance show only for members who have them.
+  const [plans, setPlans] = useState<PlanLimits[]>([]);
+  const [creditsUsd, setCreditsUsd] = useState<number | null>(null);
   // Messaging appears only on servers that have a chat app connected, as on web.
   const [messagingEnabled, setMessagingEnabled] = useState(false);
   const appearance = getCachedAppearancePreference();
@@ -246,6 +250,12 @@ export default function Account() {
     void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
+    void rpc("usage/limits")
+      .then(setPlans)
+      .catch(() => undefined);
+    void rpc("billing/status")
+      .then((status) => setCreditsUsd(modelCreditsUsd(status)))
+      .catch(() => undefined);
     if (Platform.OS === "android") {
       void getLiveNotificationSettings()
         .then(setNotifications)
@@ -278,6 +288,35 @@ export default function Account() {
       value={cost(usage?.costUsd)}
     />
   );
+  const creditsRow =
+    creditsUsd !== null ? (
+      <SettingsRow
+        key="credits"
+        accessible
+        title={t`Credits`}
+        value={t`${ph({ amount: usd.format(creditsUsd) })} left`}
+      />
+    ) : null;
+  const period = { session: t`Session`, week: t`Weekly`, month: t`Monthly` };
+  const planGroups = plans.map((plan) => (
+    <SettingsGroup
+      key={plan.credentialId}
+      label={plan.label === plan.name ? plan.name : `${plan.name} · ${plan.label}`}
+    >
+      {plan.windows.map((window) => {
+        const reset = formatTimeUntil(window.resetsAt, dateLocaleForUi(locale));
+        return (
+          <SettingsRow
+            key={window.period}
+            accessible
+            title={period[window.period]}
+            detail={reset ? t`Resets in ${ph({ reset })}` : undefined}
+            value={t`${ph({ used: Math.round(window.usedPercent) })}% used`}
+          />
+        );
+      })}
+    </SettingsGroup>
+  ));
   const usageModels = usage?.models?.length ? (
     <SettingsGroup>
       {usage.models.map((row) => (
@@ -462,7 +501,11 @@ export default function Account() {
       >
         {focus === "usage" ? (
           <>
-            <SettingsGroup>{usageBlock}</SettingsGroup>
+            <SettingsGroup>
+              {usageBlock}
+              {creditsRow}
+            </SettingsGroup>
+            {planGroups}
             {usageModels}
           </>
         ) : null}
@@ -485,7 +528,9 @@ export default function Account() {
             onPress={editName}
           />
           {focus !== "usage" ? usageBlock : null}
+          {focus !== "usage" ? creditsRow : null}
         </SettingsGroup>
+        {focus !== "usage" ? planGroups : null}
 
         {organizations ? (
           <SettingsGroup>
