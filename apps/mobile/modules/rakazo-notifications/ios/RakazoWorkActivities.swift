@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import UIKit
 
 /// Starts the phone's live status card when the user sends, and hands its push token to the app,
 /// which gives it to the server. The server updates and ends the card, and starts one by push when
@@ -33,10 +34,14 @@ final class WorkActivities {
     watch(activity)
   }
 
-  /// Follows cards the server starts by push, and the token that lets it. Called once.
+  /// Follows cards the server starts by push, and the token that lets it. Called at launch, which
+  /// may be iOS waking the app in the background for a card it just started.
   func observe() {
     guard !observing else { return }
     observing = true
+    for activity in Activity<WorkActivityAttributes>.activities where activity.activityState == .active {
+      watch(activity)
+    }
     Task { @MainActor [weak self] in
       for await token in Activity<WorkActivityAttributes>.pushToStartTokenUpdates {
         self?.onStartToken?(hex(token))
@@ -82,7 +87,20 @@ final class WorkActivities {
   private func watch(_ activity: Activity<WorkActivityAttributes>) {
     guard watched.insert(activity.id).inserted else { return }
     Task { @MainActor [weak self] in
-      for await token in activity.pushTokenUpdates { self?.onToken?(hex(token)) }
+      for await token in activity.pushTokenUpdates { self?.deliver(hex(token)) }
+    }
+  }
+
+  /// A card the server starts wakes the app in the background, where its JavaScript may not run
+  /// in time, so the token goes to the server from here with the saved session.
+  private func deliver(_ token: String) {
+    if UIApplication.shared.applicationState == .active, let onToken {
+      onToken(token)
+      return
+    }
+    IncomingCalls.shared.send("notifications/followWorkActivity", ["token": token]) { [weak self] output in
+      // Nothing would update it: no bot is at work or this server cannot reach the phone.
+      if output?["following"] as? Bool == false { self?.end() }
     }
   }
 
