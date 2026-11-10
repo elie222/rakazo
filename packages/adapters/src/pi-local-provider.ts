@@ -1,9 +1,11 @@
-import type { Model, MutableModels, Provider } from "@earendil-works/pi-ai";
+import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-
+import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
+import { MODEL_STREAM_AGENT_TIMEOUTS } from "./pi-runtime-limits.js";
+import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
@@ -74,6 +76,27 @@ function localModel(id: string): Model<"openai-completions"> {
   };
 }
 
+let localAgent: Agent | undefined;
+
+/** A queued local server can stay silent for minutes; the runtime's own timeouts bound it. */
+function localModelFetch(baseFetch?: typeof globalThis.fetch): typeof globalThis.fetch {
+  localAgent ??= new Agent(MODEL_STREAM_AGENT_TIMEOUTS);
+  const dispatcher = localAgent;
+  const transport = fetchPairedWithDispatcher(baseFetch);
+  return (input, init) =>
+    transport(input, { ...init, dispatcher } as RequestInit & { dispatcher: Agent });
+}
+
+function localApi(): ProviderStreams {
+  const api = openAICompletionsApi();
+  return {
+    stream: (model, context, options) =>
+      api.stream(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+    streamSimple: (model, context, options) =>
+      api.streamSimple(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+  };
+}
+
 export function localProvider(): Provider | undefined {
   const ids = localModelIds();
   if (!ids.length) return undefined;
@@ -91,7 +114,7 @@ export function localProvider(): Provider | undefined {
       },
     },
     models: ids.map(localModel),
-    api: openAICompletionsApi(),
+    api: localApi(),
   });
 }
 

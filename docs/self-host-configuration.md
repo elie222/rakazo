@@ -67,8 +67,11 @@ retries let long turns survive brief provider failures.
 
 Model timeouts are configurable in milliseconds. Invalid or out-of-range values retain their
 defaults. Longer timeouts can help when several bots share a local inference server that queues
-requests. Provider SDKs and HTTP transports may impose independent timeout limits, so these
-settings do not guarantee that every provider supports arbitrarily long waits.
+requests. For `RAKAZO_LOCAL_MODELS` servers and OpenAI-compatible connections added in the app,
+these settings are the only limits Rakazo applies, and a stream that is cut off names why in the
+run's error details, such as `terminated (other side closed)`. Built-in providers still drop a
+response after 5 minutes without data, and a proxy or load balancer in between may cut off a
+silent stream sooner.
 
 - `MODEL_STREAM_TIMEOUT_MS` (default `120000`, range `1000`–`2147483647`) is the time budget
   for retrying the same model. It also controls the wait for response headers when using the
