@@ -186,12 +186,21 @@ function isDatabaseSaturated(error: unknown): boolean {
 }
 
 function abandonment() {
-  let abandon!: () => void;
-  const promise = new Promise<never>((_resolve, reject) => {
-    abandon = () => reject(new Error("The worker stopped before this job finished"));
+  let reject!: (error: Error) => void;
+  const promise = new Promise<never>((_resolve, rejectPromise) => {
+    reject = rejectPromise;
   });
   promise.catch(() => undefined);
-  return { promise, abandon };
+  const state = {
+    promise,
+    /** Read synchronously, so a late delivery is refused before its handler starts. */
+    abandoned: false,
+    abandon() {
+      state.abandoned = true;
+      reject(new Error("The worker stopped before this job finished"));
+    },
+  };
+  return state;
 }
 
 /**
@@ -402,21 +411,25 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     const busy = this.busy();
     const idleMs = this.options.idleStopTimeoutMs ?? IDLE_JOB_STOP_TIMEOUT_MS;
     const drainMs = this.options.drainTimeoutMs ?? JOB_DRAIN_TIMEOUT_MS;
+    // A callback that outlives this stop may only ever reach this session's abandonment.
+    const session = this.abandoned;
     if (busy) getLogger().info("jobs.draining", this.runningBindings());
     const abandon = (timedOut: "jobs.drain_timed_out" | "jobs.stop_timed_out") => {
       getLogger().warn(timedOut, this.runningBindings());
-      this.abandoned.abandon();
+      session.abandon();
     };
     // The deadline tracks the outstanding work: the drain bound while a job runs or
-    // owes its write, the idle bound once neither remains, re-armed on every change.
+    // owes its write, the idle bound once neither remains, re-armed on every change
+    // until this stop returns.
     let armedBusy = busy;
+    let finished = false;
     let deadline = setTimeout(
       () => abandon(armedBusy ? "jobs.drain_timed_out" : "jobs.stop_timed_out"),
       armedBusy ? drainMs : idleMs,
     );
     const rearmDeadline = () => {
       const nowBusy = this.busy();
-      if (nowBusy === armedBusy) return;
+      if (finished || nowBusy === armedBusy) return;
       armedBusy = nowBusy;
       clearTimeout(deadline);
       deadline = setTimeout(
@@ -438,9 +451,13 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       ranSinceStop = true;
       rearmDeadline();
     };
-    const abandoned = this.abandoned.promise.catch(() => undefined);
+    const abandoned = session.promise.catch(() => undefined);
     try {
-      const runnerStop = this.runner?.stop() ?? Promise.resolve();
+      // During a relaunch there is no runner yet: the supervise loop stops the new one once
+      // run() returns, and that shutdown waits for any job the new runner already claimed.
+      const runnerStop = this.runner
+        ? this.runner.stop()
+        : (this.superviseTask?.catch(() => undefined) ?? Promise.resolve());
       const drained = await Promise.race([
         runnerStop.then(() => true as const),
         abandoned.then(() => false as const),
@@ -457,10 +474,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       // The queue has stopped accepting deliveries. Handed-off runs still own
       // leases and must finish before their database and providers are closed.
       await Promise.race([draining, abandoned]);
+      finished = true;
       clearTimeout(deadline);
-      // The supervise loop only winds down a runner stop() already told to quit; it is
-      // bookkeeping, so the idle bound covers it as well.
-      await this.settleWithin(this.superviseTask ?? Promise.resolve(), idleMs);
       this.runner = undefined;
       this.superviseTask = undefined;
       this.handlers = undefined;
@@ -481,19 +496,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     if (removed) this.rearmStopDeadline?.();
   }
 
-  /** Waits for the work, then fails everything still running once the bound passes. */
-  private async settleWithin(work: Promise<unknown>, boundMs: number): Promise<void> {
-    const bound = setTimeout(() => this.abandoned.abandon(), boundMs);
-    try {
-      await Promise.race([
-        work.catch(() => undefined),
-        this.abandoned.promise.catch(() => undefined),
-      ]);
-    } finally {
-      clearTimeout(bound);
-    }
-  }
-
   private runningBindings() {
     const names = [...this.running].map((job) => job.name);
     return {
@@ -506,6 +508,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private async launchRunner(): Promise<void> {
     const handlers = this.handlers;
     if (!handlers) throw new Error("Background job worker has no handlers");
+    const abandoned = this.abandoned;
     const taskList = Object.fromEntries(
       (Object.keys(handlers) as BackgroundJobName[])
         .filter((name) => {
@@ -516,6 +519,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         .map((name) => [
           this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
           async (payload: unknown, helpers: JobHelpers) => {
+            // A claim that returns after the stop gave up on this runner must not start:
+            // Graphile fails the job at once, and a retry elsewhere would overlap its handler.
+            if (abandoned.abandoned) throw new Error("The worker stopped before this job started");
             const unpacked = unwrapJobPayload(payload);
             const execute = (execution?: BackgroundJobExecution) =>
               runCorrelatedJob({
@@ -531,7 +537,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
               const work = name === "run.continue" ? this.executions.execute(execute) : execute();
               // An abandoned job may still settle; the process exits soon after.
               work.catch(() => undefined);
-              await Promise.race([work, this.abandoned.promise]);
+              await Promise.race([work, abandoned.promise]);
             } finally {
               this.running.delete(job);
               // Graphile queues this job's completion or failure write the moment

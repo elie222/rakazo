@@ -3,6 +3,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
+import { endDatabasePool } from "./database-shutdown.js";
 import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
@@ -282,7 +283,7 @@ async function main() {
         await connectors.mcp.close();
         await connectors.installed.close();
         await prisma.$disconnect().catch(() => undefined);
-        await pool.end().catch(() => undefined);
+        await endDatabasePool(pool);
       } finally {
         await analytics?.flush();
         await shutdownPiTelemetry();

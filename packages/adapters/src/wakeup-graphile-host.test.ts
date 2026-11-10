@@ -949,6 +949,142 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     }
   });
 
+  it("fails a claim delivered after the stop deadline without starting its handler", async () => {
+    run.mockResolvedValueOnce(stalledRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1, idleStopTimeoutMs: 25 });
+    const target = handlers();
+    try {
+      await host.start(target);
+      // Idle, the deadline abandons the stalled runner's shutdown after the idle bound.
+      await host.stop();
+      // A claim that was still in flight returns afterwards.
+      const late = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "late" },
+        jobHelpers("job-late"),
+      );
+      await expect(late).rejects.toThrow();
+      // Graphile fails the job at once, so its handler must not be running here.
+      expect(target["computer.sleep"]).not.toHaveBeenCalled();
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("drains a job claimed by a relaunch that the stop interrupts", async () => {
+    const first = mockRunner();
+    const launched = deferred();
+    let relaunched!: Runner;
+    run.mockResolvedValueOnce(first.runner).mockImplementationOnce(async () => {
+      await launched.promise;
+      return relaunched;
+    });
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+      sleep: async () => undefined,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      first.rejectLife(tooMany);
+      // The supervisor relaunches the runner; its run() is still in flight.
+      await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      // The relaunched runner already claimed a job, and its shutdown waits for it.
+      let outcome: "pending" | "resolved" | "rejected" = "pending";
+      const dispatched = run.mock.calls[1]![0].taskList["computer.sleep"](
+        { computerId: "relaunched" },
+        jobHelpers("job-relaunched"),
+      ).then(
+        () => {
+          outcome = "resolved";
+        },
+        () => {
+          outcome = "rejected";
+        },
+      );
+      relaunched = mockRunner(() => dispatched).runner;
+      launched.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Past the idle bound, but the handler is still running: it must not be failed.
+      expect(outcome).toBe("pending");
+      expect(stopped).toBe(false);
+      release.resolve();
+      const result = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(result).toBe("stopped");
+      expect(outcome).toBe("resolved");
+    } finally {
+      release.resolve();
+      launched.resolve();
+      await host.stop();
+    }
+  });
+
+  it("leaves a restarted host alone when a run abandoned by the previous stop finishes", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner).mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 20,
+    });
+    const hung = deferred();
+    const release = deferred();
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      execution!.onRunStarted();
+      await hung.promise;
+    };
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      await run.mock.calls[0]![0].taskList["run.continue"](
+        { runId: "abandoned-run" },
+        jobHelpers("job-abandoned"),
+      );
+      // The handed-off run outlives the drain deadline, so the stop gives up on it.
+      await host.stop();
+      await host.start(target);
+      // The abandoned run finishes while the restarted host is idle.
+      hung.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      let outcome: "pending" | "resolved" | "rejected" = "pending";
+      const dispatched = run.mock.calls[1]![0].taskList["computer.sleep"](
+        { computerId: "new" },
+        jobHelpers("job-new"),
+      ).then(
+        () => {
+          outcome = "resolved";
+        },
+        () => {
+          outcome = "rejected";
+        },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The previous stop is over; nothing of it may fail a job of the new session.
+      expect(outcome).toBe("pending");
+      release.resolve();
+      await dispatched;
+      expect(outcome).toBe("resolved");
+    } finally {
+      hung.resolve();
+      release.resolve();
+      await host.stop();
+    }
+  });
+
   it("releases dispatch slots after durable handoff and drains executions at shutdown", async () => {
     run.mockResolvedValueOnce(mockRunner().runner);
     const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 4 });
