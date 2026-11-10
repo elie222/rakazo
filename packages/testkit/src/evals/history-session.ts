@@ -104,6 +104,7 @@ const GRADERS: Record<SessionScenario, (text: string) => Criterion[]> = {
   sql: (text) => [
     { id: "reporting-schema", pass: /\brpt_v3\b/.test(text) },
     { id: "reporting-table", pass: /\borders_daily\b/.test(text) },
+    { id: "no-live-table", pass: !/\b(?:from|join)\s+(?:\w+\.)?orders\b/i.test(text) },
   ],
   option: (text) => [
     { id: "vendor", pass: /northwind/i.test(text) },
@@ -140,7 +141,6 @@ export const SESSION_EVAL_CASES: EvalCase[] = (["sql", "option", "plan", "date"]
       ],
       observe: (e: Evidence) => ({
         "looked-up-history": e.toolCalls.some((call) => historyTool(call.name)),
-        "asked-the-user": e.clarificationPending === true || /\?\s*$/.test(e.text.trim()),
       }),
     };
   },
