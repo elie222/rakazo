@@ -234,15 +234,16 @@ function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): strin
 /**
  * A message as history text. Tool steps are left out unless asked for: replayed inside the bot's
  * own turns, the step list reads as something it writes, and models copied it as their whole reply
- * instead of calling tools. Summaries written by another model call can still include them.
+ * instead of calling tools. Summaries and quoted messages can still include them. `fromBot` also
+ * drops a list a bot wrote into its reply; a person's text is always kept as written.
  */
 export function blocksToAgentHistoryText(
   blocks: MessageBlock[],
-  { toolSteps = false }: { toolSteps?: boolean } = {},
+  { toolSteps = false, fromBot = false }: { toolSteps?: boolean; fromBot?: boolean } = {},
 ): string {
   return blocks
     .map((block) => {
-      if (block.kind === "text") return withoutCopiedToolSteps(block.text);
+      if (block.kind === "text") return fromBot ? withoutCopiedToolSteps(block.text) : block.text;
       if (block.kind === "steps") return toolSteps ? toolStepsHistoryText(block.steps) : "";
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;

@@ -563,12 +563,21 @@ describe("tool step history", () => {
           kind: "text",
           text: "Checking now.\n[tool calls this reply made]\n- Schedule list (succeeded)\n- List files (succeeded)\n\nDone.",
         },
-      ]),
+      ], { fromBot: true }),
     ).toBe("Checking now.\n\nDone.");
     expect(
       blocksToAgentHistoryText([
         { kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" },
-      ]),
+      ], { fromBot: true }),
     ).toBe("");
+  });
+
+  it("keeps a step list a person wrote", () => {
+    for (const text of [
+      "[tool calls this reply made]",
+      "Why did you send this?\n[tool calls this reply made]\n- List files (succeeded)",
+    ]) {
+      expect(blocksToAgentHistoryText([{ kind: "text", text }])).toBe(text);
+    }
   });
 });

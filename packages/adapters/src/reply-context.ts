@@ -36,7 +36,10 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
   const targetPayload = excerpt
     ? { quotedText: truncateReplyQuote(excerpt) }
     : (() => {
-        const content = blocksToAgentHistoryText(messageBlocks(target));
+        const content = blocksToAgentHistoryText(messageBlocks(target), {
+          toolSteps: true,
+          fromBot: target.role === "bot",
+        });
         return {
           content: content.slice(0, 20_000),
           ...(content.length > 20_000 ? { truncated: true } : {}),
@@ -56,7 +59,8 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
 }
 
 export function messageToAgentHistoryText(message: ReplyMessage): string {
-  return [replyContext(message, message.threadId), blocksToAgentHistoryText(messageBlocks(message))]
+  const text = blocksToAgentHistoryText(messageBlocks(message), { fromBot: message.role === "bot" });
+  return [replyContext(message, message.threadId), text]
     .filter(Boolean)
     .join("\n\n");
 }

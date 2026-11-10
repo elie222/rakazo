@@ -245,4 +245,21 @@ describe("earlier turns' tool work", () => {
     expect(text).not.toContain("tool calls this reply made");
     expect(text).not.toContain("Shell");
   });
+
+  it("quotes the tool steps of a reply someone reacted to", () => {
+    const text = messageToAgentHistoryText({
+      id: "reaction",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "👍" }],
+      replyToMessageId: "bot-tools",
+      replyTo: {
+        id: "bot-tools",
+        threadId: "thread-1",
+        role: "bot",
+        blocks: [{ kind: "steps", steps: [{ label: "Shell", count: 1 }] }],
+      },
+    });
+    expect(text).toContain("Shell");
+  });
 });

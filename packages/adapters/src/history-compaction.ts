@@ -361,7 +361,7 @@ export async function compactHistory(
   };
   const transcriptParts = batch.map(
     (message) =>
-      `${speaker(message)}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[], { toolSteps: true })}`,
+      `${speaker(message)}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[], { toolSteps: true, fromBot: message.role === "bot" })}`,
   );
   let transcript = transcriptParts.join("\n\n");
   if (transcript.length > MAX_TRANSCRIPT_CHARS) {
