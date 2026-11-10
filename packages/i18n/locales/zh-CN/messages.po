@@ -51,7 +51,7 @@ msgstr "{0, plural, one {# 个技能} other {# 个技能}}"
 #. placeholder {0}: chosen.length
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "{0, plural, one {# space} other {# spaces}}"
-msgstr "{0, plural, one {# 个工作区} other {# 个工作区}}"
+msgstr "{0, plural, one {# 个空间} other {# 个空间}}"
 
 #. placeholder {0}: server.health.toolCount
 #: apps/web/src/pages/McpServersOverlay.tsx
@@ -187,7 +187,7 @@ msgstr "我是 {bot}。你好 {name}。"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
-msgstr "{botCount, plural, other {删除 {name} 及其 # 个机器人？}}"
+msgstr "{botCount, plural, other {删除 {name} 及其 # 个 Bot？}}"
 
 #: apps/web/src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
@@ -821,7 +821,7 @@ msgstr "1 个技能"
 
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "1 space"
-msgstr "1 个工作区"
+msgstr "1 个空间"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "1 tool"
@@ -870,7 +870,7 @@ msgstr "每周汇总你关注话题的最新变化"
 
 #: apps/web/src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
-msgstr "约 {kb} KB 的记忆不再提供给机器人。"
+msgstr "约 {kb} KB 的记忆不再提供给 Bot。"
 
 #: apps/mobile/components/info-button.tsx
 #: apps/web/src/components/InfoTooltip.tsx
@@ -938,7 +938,7 @@ msgstr "{name} 的操作"
 
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
-msgstr "工作区操作"
+msgstr "空间操作"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/BillingSettingsPanel.tsx
@@ -1104,7 +1104,7 @@ msgstr "添加通行密钥"
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 msgid "Add provider"
-msgstr "添加提供方"
+msgstr "添加提供商"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -1248,7 +1248,7 @@ msgstr "全部文件"
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "All spaces"
-msgstr "所有工作区"
+msgstr "所有空间"
 
 #: apps/web/src/pages/ActivityList.tsx
 msgid "All statuses"
@@ -1270,7 +1270,7 @@ msgstr "在手机上允许 {name}"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
-msgstr "允许跨空间机器人通信"
+msgstr "允许跨空间 Bot 通信"
 
 #: apps/mobile/lib/ask-action-label.ts
 #: apps/web/src/components/AskCard.tsx
@@ -1368,7 +1368,7 @@ msgstr "金额"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
-msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
+msgstr "此提供商存储的是 API 密钥，不是订阅登录。"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -1390,7 +1390,7 @@ msgstr "Android 已阻止通知。"
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
 msgid "Another agent"
-msgstr "其他 Agent"
+msgstr "其他智能体"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Another assistant"
@@ -1532,7 +1532,7 @@ msgstr "请在屏幕上批准或拒绝。"
 #: apps/mobile/components/McpApprovalCard.tsx
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
-msgstr "批准此服务器后，Agent 才能使用它的工具。"
+msgstr "批准此服务器后，智能体才能使用它的工具。"
 
 #: apps/web/src/pages/PluginSubmissionsPanel.tsx
 msgid "Approved"
@@ -1667,7 +1667,7 @@ msgstr "授权"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
-msgstr "授权此服务器后，Agent 才能使用其工具。将打开弹窗。"
+msgstr "授权此服务器后，智能体才能使用其工具。将打开弹窗。"
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1896,7 +1896,7 @@ msgstr "Bot 和它们自己的聊天会保留。"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
-msgstr "机器人使用给它发消息的人的账号"
+msgstr "Bot 使用给它发消息的人的账号"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Bots with their own computer"
@@ -2194,7 +2194,7 @@ msgstr "聊天设置"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Chat with your bot from Slack."
-msgstr "在 Slack 中与你的机器人聊天。"
+msgstr "在 Slack 中与你的 Bot 聊天。"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Chat with your bots from other apps."
@@ -2271,7 +2271,7 @@ msgstr "正在检查…"
 
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
-msgstr "选择机器人形状和颜色，或上传图片"
+msgstr "选择 Bot 形状和颜色，或上传图片"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
@@ -2293,7 +2293,7 @@ msgstr "选择方案"
 
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
-msgstr "选择提供方"
+msgstr "选择提供商"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Choose backup"
@@ -2699,7 +2699,7 @@ msgstr "连接模型"
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
 msgid "Connect a model in Settings before running bots."
-msgstr "运行机器人前，请先在设置中连接模型。"
+msgstr "运行 Bot 前，请先在设置中连接模型。"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Connect a voice provider first."
@@ -2726,7 +2726,7 @@ msgstr "连接 MCP 服务器 {name}"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Connect memory provider"
-msgstr "连接记忆提供方"
+msgstr "连接记忆提供商"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Connect my own"
@@ -2738,7 +2738,7 @@ msgstr "连接 OAuth"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
-msgstr "请先连接此模型的提供方。"
+msgstr "请先连接此模型的提供商。"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Connect your AI"
@@ -3016,7 +3016,7 @@ msgstr "无法修改密码"
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "Could not change where this is available"
-msgstr "无法更改可用的工作区"
+msgstr "无法更改可用范围"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -3080,11 +3080,11 @@ msgstr "无法连接 {0}"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Could not connect this provider"
-msgstr "无法连接此提供方"
+msgstr "无法连接此提供商"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not connect this voice provider"
-msgstr "无法连接此语音提供方"
+msgstr "无法连接此语音提供商"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/use-computer.tsx
@@ -3144,7 +3144,7 @@ msgstr "无法创建分组"
 #: apps/mobile/app/new-space.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Could not create space"
-msgstr "无法创建工作区"
+msgstr "无法创建空间"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -3207,7 +3207,7 @@ msgstr "无法删除技能"
 #: apps/mobile/app/index.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Could not delete space"
-msgstr "无法删除工作区"
+msgstr "无法删除空间"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not delete the page."
@@ -3232,7 +3232,7 @@ msgstr "无法断开连接"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
-msgstr "无法断开记忆提供方"
+msgstr "无法断开记忆提供商"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Could not disconnect OAuth"
@@ -3242,11 +3242,11 @@ msgstr "无法断开 OAuth"
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Could not disconnect this provider"
-msgstr "无法断开此提供方"
+msgstr "无法断开此提供商"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not disconnect this voice provider"
-msgstr "无法断开此语音提供方"
+msgstr "无法断开此语音提供商"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Could not dismiss"
@@ -3294,7 +3294,7 @@ msgstr "无法安装插件"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not leave space"
-msgstr "无法退出工作区"
+msgstr "无法退出空间"
 
 #: apps/web/src/components/ErrorBoundary.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -3630,7 +3630,7 @@ msgstr "无法重命名分组"
 
 #: apps/web/src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
-msgstr "无法重命名工作区"
+msgstr "无法重命名空间"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not rename the page."
@@ -3913,7 +3913,7 @@ msgstr "无法更新账单"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Could not update bot access"
-msgstr "无法更新机器人访问权限"
+msgstr "无法更新 Bot 访问权限"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/bot-organize-modal.tsx
@@ -4074,7 +4074,7 @@ msgstr "创建分组"
 #: apps/web/src/components/AskCard.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Create space"
-msgstr "创建工作区"
+msgstr "创建空间"
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Create your Rakazo"
@@ -4186,7 +4186,7 @@ msgstr "自定义{setting}"
 
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
-msgstr "自定义机器人头像"
+msgstr "自定义 Bot 头像"
 
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
@@ -4337,11 +4337,11 @@ msgstr "删除 {name}"
 
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name} and its {count} bots?"
-msgstr "要删除 {name} 及其 {count} 个机器人吗？"
+msgstr "要删除 {name} 及其 {count} 个 Bot 吗？"
 
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name} and its bot?"
-msgstr "要删除 {name} 及其机器人吗？"
+msgstr "要删除 {name} 及其 Bot 吗？"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
@@ -4389,7 +4389,7 @@ msgstr "删除分组"
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
-msgstr "删除工作区"
+msgstr "删除空间"
 
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
@@ -4399,7 +4399,7 @@ msgstr "要删除此例行任务吗？"
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
 msgid "Delete this Space's credentials?"
-msgstr "要删除此工作区的凭据吗？"
+msgstr "要删除此空间的凭据吗？"
 
 #: apps/mobile/components/account-deletion.tsx
 msgid "Delete your account?"
@@ -4915,7 +4915,7 @@ msgstr "每{n}小时{minute}分"
 
 #: apps/web/src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
-msgstr "此空间中的所有机器人都会读取并更新这些笔记。"
+msgstr "此空间中的所有 Bot 都会读取并更新这些笔记。"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/mobile/lib/cron.ts
@@ -4958,15 +4958,15 @@ msgstr "每周"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
-msgstr "这里的每个人都能看到它的聊天、机器人和记忆"
+msgstr "这里的每个人都能看到它的聊天、Bot 和记忆"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {app}."
-msgstr "此机器人空间中的每个人都能阅读它从 {app} 收到的聊天。"
+msgstr "此 Bot 空间中的每个人都能阅读它从 {app} 收到的聊天。"
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
-msgstr "此 Bot 所在工作区的所有人都能读取它从 {linkApp} 收到的对话。"
+msgstr "此 Bot 所在空间的所有人都能读取它从 {linkApp} 收到的对话。"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
@@ -5098,7 +5098,7 @@ msgstr "文件"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
-msgstr "计算机上的文件或文件夹"
+msgstr "电脑上的文件或文件夹"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
@@ -5106,7 +5106,7 @@ msgstr "文件或文件夹，每行一个"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Files your bots create, like reports, docs and images, collect here."
-msgstr "你的机器人创建的文件，例如报告、文档和图片，都会汇集在这里。"
+msgstr "你的 Bot 创建的文件，例如报告、文档和图片，都会汇集在这里。"
 
 #: apps/mobile/components/bot-member-picker.tsx
 #: apps/web/src/pages/GroupPanel.tsx
@@ -5115,7 +5115,7 @@ msgstr "筛选 Bot"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Filter by bot"
-msgstr "按机器人筛选"
+msgstr "按 Bot 筛选"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -5305,7 +5305,7 @@ msgstr "获取邮箱地址"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "Get notified when this Bot finishes or needs input"
-msgstr "在此机器人完成或需要输入时收到通知"
+msgstr "在此 Bot 完成或需要输入时收到通知"
 
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -5554,7 +5554,7 @@ msgstr "频率"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
-msgstr "其他机器人如何了解它"
+msgstr "其他 Bot 如何了解它"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -5625,7 +5625,7 @@ msgstr "导入"
 #: apps/web/src/components/AccountDataSettings.tsx
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Import an agent"
-msgstr "导入 Agent"
+msgstr "导入智能体"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Import data"
@@ -5932,7 +5932,7 @@ msgstr "允许 Bot 使用这台电脑"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
+msgstr "让 Bot 在 MEMORY.md 之外，按语义保存和回忆事实。"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6039,7 +6039,7 @@ msgstr "正在加载工具…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
-msgstr "正在加载语音提供方…"
+msgstr "正在加载语音提供商…"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
@@ -6164,7 +6164,7 @@ msgstr "管理 MCP 服务器"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
-msgstr "管理其他机器人"
+msgstr "管理其他 Bot"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -6354,7 +6354,7 @@ msgstr "来自 {peer} 的消息"
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
 msgid "Message from another agent"
-msgstr "来自其他 Agent 的消息"
+msgstr "来自其他智能体的消息"
 
 #: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/pages/shell/composer.tsx
@@ -6477,7 +6477,7 @@ msgstr "模型"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Models at provider cost"
-msgstr "按提供方成本计费的模型"
+msgstr "按提供商成本计费的模型"
 
 #: apps/web/src/components/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -6791,7 +6791,7 @@ msgstr "新建技能"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "New space"
-msgstr "新建工作区"
+msgstr "新建空间"
 
 #: apps/web/src/pages/Board.tsx
 msgid "New ticket"
@@ -6858,7 +6858,7 @@ msgstr "无认证"
 
 #: apps/web/src/components/integrations/agent-access.tsx
 msgid "No bots"
-msgstr "没有机器人"
+msgstr "没有 Bot"
 
 #: apps/web/src/pages/GroupPanel.tsx
 #: apps/web/src/pages/shell/bot-picker.tsx
@@ -6923,7 +6923,7 @@ msgstr "未列出模型。"
 
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
-msgstr "未找到 OpenClaw、Hermes 或 Agent 文档。"
+msgstr "未找到 OpenClaw、Hermes 或智能体文档。"
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -7472,11 +7472,11 @@ msgstr "页面"
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this bot builds for you appear here."
-msgstr "此机器人为你创建的页面会显示在这里。"
+msgstr "此 Bot 为你创建的页面会显示在这里。"
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
-msgstr "此机器人为你创建的页面会显示在这里。请它做一个仪表板、跟踪表或计划即可创建。"
+msgstr "此 Bot 为你创建的页面会显示在这里。让 Bot 做一个仪表板、跟踪表或计划，即可生成。"
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this group builds for you appear here."
@@ -7774,7 +7774,7 @@ msgstr "私有"
 
 #: apps/web/src/pages/shell/bot-picker.tsx
 msgid "Private workspace with its own bots and groups."
-msgstr "单独的工作区，有自己的 Bot 和群组。"
+msgstr "独立的空间，有自己的 Bot 和群组。"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-catalog-browse.ts
@@ -7804,7 +7804,7 @@ msgstr "协议"
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
-msgstr "提供方"
+msgstr "提供商"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Provider message"
@@ -7813,7 +7813,7 @@ msgstr "提供商消息"
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 msgid "Providers"
-msgstr "提供方"
+msgstr "提供商"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
@@ -8140,7 +8140,7 @@ msgstr "移除 {name}？"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
-msgstr "要移除 {secretName} 吗？机器人将无法再使用它。"
+msgstr "要移除 {secretName} 吗？Bot 将无法再使用它。"
 
 #: apps/web/src/components/TrustedLinkSitesSettings.tsx
 msgid "Remove {site}"
@@ -8161,7 +8161,7 @@ msgstr "移除邮件触发器"
 #: apps/web/src/pages/McpServersOverlay.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
-msgstr "从所有工作区移除？"
+msgstr "从所有空间移除？"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
@@ -8483,7 +8483,7 @@ msgstr "返回 Rakazo"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
-msgstr "请检查提供方设置并重新测试。"
+msgstr "请检查提供商设置并重新测试。"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -8599,7 +8599,7 @@ msgstr "运行"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
-msgstr "这个 Bot 收到该提供方发来的已验证消息时会运行。"
+msgstr "这个 Bot 收到该提供商发来的已验证消息时会运行。"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-catalog-browse.ts
@@ -8799,7 +8799,7 @@ msgstr "搜索 Bot"
 
 #: apps/web/src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
-msgstr "搜索机器人、操作和设置"
+msgstr "搜索 Bot、操作和设置"
 
 #: apps/web/src/pages/plugins/add-menu.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
@@ -9268,7 +9268,7 @@ msgstr "网站"
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Sites you sign in to stay signed in for everyone in this space"
-msgstr "你登录的网站会对此工作区的所有人保持登录"
+msgstr "你登录的网站会对此空间的所有人保持登录"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
@@ -9425,7 +9425,7 @@ msgstr "分拣新邮件并起草回复"
 #: apps/web/src/lib/identity-display.ts
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr "工作区"
+msgstr "空间"
 
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Space actions for {name}"
@@ -9438,11 +9438,11 @@ msgstr "空间已创建"
 #: apps/mobile/lib/chat-model.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
 msgid "Space default"
-msgstr "工作区默认"
+msgstr "空间默认"
 
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Spaces"
-msgstr "工作区"
+msgstr "空间"
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -9620,7 +9620,7 @@ msgstr "流式回复"
 #: apps/mobile/lib/identity-display.ts
 #: apps/web/src/lib/identity-display.ts
 msgid "subagent"
-msgstr "子 Agent"
+msgstr "子智能体"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -9841,28 +9841,28 @@ msgstr "Bot 可以使用该文件，但看不到图片内容。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't finish its reply. Technical details includes the reported error."
-msgstr "机器人未能完成回复。技术详情包含报告的错误。"
+msgstr "Bot 未能完成回复。技术详情包含报告的错误。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's daily limit was reached."
-msgstr "机器人无法回复，因为已达到其提供商的每日限额。"
+msgstr "Bot 无法回复，因为已达到其提供商的每日限额。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's monthly limit was reached."
-msgstr "机器人无法回复，因为已达到其提供商的每月限额。"
+msgstr "Bot 无法回复，因为已达到其提供商的每月限额。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's usage limit was reached."
-msgstr "机器人无法回复，因为已达到其提供商的使用限额。"
+msgstr "Bot 无法回复，因为已达到其提供商的使用限额。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's weekly limit was reached."
-msgstr "机器人无法回复，因为已达到其提供商的每周限额。"
+msgstr "Bot 无法回复，因为已达到其提供商的每周限额。"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
-msgstr "Bot 的浏览器会对此工作区的所有人保持登录"
+msgstr "Bot 的浏览器会对此空间的所有人保持登录"
 
 #: apps/web/src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -9897,19 +9897,19 @@ msgstr "所有者可能已关闭其链接或删除了它。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
-msgstr "提供商无法提供为此机器人选择的模型。"
+msgstr "提供商无法提供为此 Bot 选择的模型。"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
-msgstr "提供方正在限制请求频率。"
+msgstr "提供商正在限制请求频率。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider received too many requests to answer this bot."
-msgstr "提供商收到的请求过多，无法为此机器人提供回复。"
+msgstr "提供商收到的请求过多，无法为此 Bot 提供回复。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider refused the key this bot used for its reply."
-msgstr "提供商拒绝了此机器人用于回复的密钥。"
+msgstr "提供商拒绝了此 Bot 用于回复的密钥。"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -9926,7 +9926,7 @@ msgstr "屏幕链接已过期。"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
-msgstr "所选记忆提供方在此构建中不可用。"
+msgstr "所选记忆提供商在此构建中不可用。"
 
 #: apps/mobile/lib/api.ts
 msgid "The server changed while starting the request"
@@ -10018,19 +10018,19 @@ msgstr "此 Bot 运行在这台电脑上，而不是 Linux 桌面。Shell 和文
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's daily limit. Your own key has its own limits."
-msgstr "此机器人的回复因其密钥达到每日限额而停止。你自己的密钥有独立的限额。"
+msgstr "此 Bot 的回复因其密钥达到每日限额而停止。你自己的密钥有独立的限额。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's monthly limit. Your own key has its own limits."
-msgstr "此机器人的回复因其密钥达到每月限额而停止。你自己的密钥有独立的限额。"
+msgstr "此 Bot 的回复因其密钥达到每月限额而停止。你自己的密钥有独立的限额。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's usage limit. Your own key has its own limits."
-msgstr "此机器人的回复因其密钥达到使用限额而停止。你自己的密钥有独立的限额。"
+msgstr "此 Bot 的回复因其密钥达到使用限额而停止。你自己的密钥有独立的限额。"
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's weekly limit. Your own key has its own limits."
-msgstr "此机器人的回复因其密钥达到每周限额而停止。你自己的密钥有独立的限额。"
+msgstr "此 Bot 的回复因其密钥达到每周限额而停止。你自己的密钥有独立的限额。"
 
 #: apps/web/src/lib/dictation.ts
 msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
@@ -10175,11 +10175,11 @@ msgstr "将永久删除全部消息并停止当前工作。聊天仍可使用。
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "This provider cannot be tested without saving."
-msgstr "此提供方必须先保存才能测试。"
+msgstr "此提供商必须先保存才能测试。"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "This provider is not connected yet."
-msgstr "此提供方尚未连接。"
+msgstr "此提供商尚未连接。"
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
@@ -10189,7 +10189,7 @@ msgstr "这将删除所有消息并停止当前工作。Bot、电脑、记忆和
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 msgid "This removes the connection from every space."
-msgstr "这会从所有工作区移除这个连接。"
+msgstr "这会从所有空间移除这个连接。"
 
 #: apps/mobile/app/index.tsx
 msgid "This removes the space for everyone."
@@ -10223,7 +10223,7 @@ msgstr "此服务器的工具结果超出模型容量。请关闭该服务器的
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
-msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供方。"
+msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供商。"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -10967,7 +10967,7 @@ msgstr "它的记忆怎么处理？"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "What can this space use?"
-msgstr "这个工作区可以使用什么？"
+msgstr "这个空间可以使用什么？"
 
 #: apps/mobile/app/(settings)/signup-survey.tsx
 #: apps/web/src/components/SignupSurvey.tsx
@@ -11326,12 +11326,12 @@ msgstr "试用期的电脑时长已用完。"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
-msgstr "你的语音提供方额度已用完。"
+msgstr "你的语音提供商额度已用完。"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
-msgstr "你的语音提供方拒绝了该密钥。"
+msgstr "你的语音提供商拒绝了该密钥。"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

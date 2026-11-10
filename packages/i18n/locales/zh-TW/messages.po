@@ -752,7 +752,7 @@ msgid "**This week**\n"
 "Nothing new on battery recycling."
 msgstr "**本週**\n"
 "\n"
-"**開源 AI 代理**\n"
+"**開源 AI 代理程式**\n"
 "- 一個重大版本新增了排程任務（3 天前）\n"
 "- 兩篇新的比較文章；都認為記憶是最大缺口\n"
 "\n"
@@ -1203,7 +1203,7 @@ msgstr "代理程式"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Agent from another app"
-msgstr "其他應用程式中的代理"
+msgstr "其他應用程式中的代理程式"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Agent messages"
@@ -1590,7 +1590,7 @@ msgstr "詢問"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
-msgstr "在聊天中請此 Bot 設定一個例行任務。"
+msgstr "在聊天中請此機器人設定一個例行任務。"
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1849,7 +1849,7 @@ msgstr "機器人操作"
 #: apps/mobile/components/bot-email.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
 msgid "Bot email addresses"
-msgstr "Bot 的電子郵件地址"
+msgstr "機器人的電子郵件地址"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"

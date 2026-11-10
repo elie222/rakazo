@@ -406,9 +406,8 @@ it.each(["zh-CN", "zh-TW", "pl"])(
       [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
     for (const [id, entry] of Object.entries(source)) {
       const message = entry.message ?? entry.translation ?? id;
-      // Untranslated entries fall back to English, as in every other catalog.
       const translation = translated[id]?.translation;
-      if (locale === "pl") expect(translation?.trim(), message).toBeTruthy();
+      expect(translation?.trim(), message).toBeTruthy();
       if (!translation?.trim()) continue;
       expect(markers(translation), message).toEqual(markers(message));
     }
