@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type {
   AutomatedSenderPolicies,
   AutomatedSenderPolicyMode,
@@ -26,14 +28,13 @@ import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import { errorText } from "../../lib/user-error";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
 export default function TeamConversationSettings() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const tokens = useMobileTokens();
@@ -51,7 +52,7 @@ export default function TeamConversationSettings() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const saveRef = useRef(async () => {});
-  const title = loaded ? loaded.conversation.displayName || t("External conversation") : "";
+  const title = loaded ? loaded.conversation.displayName || t`External conversation` : "";
 
   useEffect(() => {
     let active = true;
@@ -86,7 +87,7 @@ export default function TeamConversationSettings() {
               unstable_headerRightItems: () => [
                 {
                   type: "button" as const,
-                  label: t("Save"),
+                  label: t`Save`,
                   variant: "prominent" as const,
                   tintColor: mobileTokens().primary,
                   disabled: saving,
@@ -99,7 +100,7 @@ export default function TeamConversationSettings() {
                 <NativeActionButton
                   disabled={saving}
                   fill={false}
-                  label={t("Save")}
+                  label={t`Save`}
                   onPress={() => void saveRef.current()}
                 />
               ),
@@ -124,14 +125,14 @@ export default function TeamConversationSettings() {
   const senders = roomAutomatedSenders(policies, conversation.automatedSenders);
   const listening = ambientValue(mode) ?? bot.teamChatAmbientEnabled;
   const replyLabels: Record<Exclude<ListenMode, "inherit">, string> = {
-    listen: t("Every message"),
-    mentions: t("Mentions only"),
+    listen: t`Every message`,
+    mentions: t`Mentions only`,
   };
   const senderModeLabels: Record<AutomatedSenderPolicyMode, string> = {
-    ignore: t("Ignore"),
-    rollup: t("Group updates"),
-    action: t("Always act"),
-    user: t("Treat like a person"),
+    ignore: t`Ignore`,
+    rollup: t`Group updates`,
+    action: t`Always act`,
+    user: t`Treat like a person`,
   };
 
   async function save() {
@@ -152,7 +153,7 @@ export default function TeamConversationSettings() {
       router.back();
     } catch (err) {
       // Save sits in the header, so a failure needs to show where the person is looking.
-      Alert.alert(errorText(err, t("Could not save")));
+      Alert.alert(errorText(err, t`Could not save`));
     } finally {
       setSaving(false);
     }
@@ -169,9 +170,9 @@ export default function TeamConversationSettings() {
     >
       <SettingsGroup>
         <MenuPickerMenu
-          label={t("Replies to")}
+          label={t`Replies to`}
           choices={[
-            { key: "inherit", label: t("Same as {bot}", { bot: bot.name }) },
+            { key: "inherit", label: t`Same as ${ph({ bot: bot.name })}` },
             { key: "listen", label: replyLabels.listen },
             { key: "mentions", label: replyLabels.mentions },
           ]}
@@ -180,10 +181,10 @@ export default function TeamConversationSettings() {
         >
           <View>
             <SettingsRow
-              accessibilityLabel={t("Replies to")}
+              accessibilityLabel={t`Replies to`}
               accessibilityRole="button"
               accessible
-              title={t("Replies to")}
+              title={t`Replies to`}
               value={replyLabels[listening ? "listen" : "mentions"]}
               trailing={
                 <NativeSymbol
@@ -199,10 +200,10 @@ export default function TeamConversationSettings() {
       </SettingsGroup>
       <View>
         <View style={styles.labelRow}>
-          <Text style={styles.label}>{t("Instructions for this room")}</Text>
+          <Text style={styles.label}>{t`Instructions for this room`}</Text>
           {rules !== null ? (
             <NativeActionButton
-              label={t("Reset")}
+              label={t`Reset`}
               prominence="quiet"
               variant="text"
               size="compact"
@@ -212,7 +213,7 @@ export default function TeamConversationSettings() {
           ) : null}
         </View>
         <TextInput
-          accessibilityLabel={t("Instructions for this room")}
+          accessibilityLabel={t`Instructions for this room`}
           value={rules ?? ""}
           // An emptied field follows the bot again, as it shows.
           onChangeText={(text) => setRules(text || null)}
@@ -224,7 +225,7 @@ export default function TeamConversationSettings() {
         />
       </View>
       {senders.length ? (
-        <SettingsGroup label={t("Automated senders")}>
+        <SettingsGroup label={t`Automated senders`}>
           {senders.flatMap((sender) => {
             const policy = senderPolicy(policies, sender);
             const row = (
@@ -266,11 +267,11 @@ export default function TeamConversationSettings() {
               row,
               <SettingsRow
                 key={`${sender.id}:rollup`}
-                title={t("Every")}
+                title={t`Every`}
                 trailing={
                   <View style={styles.hours}>
                     <TextInput
-                      accessibilityLabel={t("{sender} rollup hours", { sender: sender.name })}
+                      accessibilityLabel={t`${ph({ sender: sender.name })} rollup hours`}
                       keyboardType="number-pad"
                       value={hoursDrafts[sender.id] ?? String(policy.rollupHours ?? 6)}
                       onChangeText={(text) =>
@@ -278,7 +279,7 @@ export default function TeamConversationSettings() {
                       }
                       style={[styles.hoursInput, { color: tokens.foreground }]}
                     />
-                    <Text style={styles.hint}>{t("hours")}</Text>
+                    <Text style={styles.hint}>{t`hours`}</Text>
                   </View>
                 }
               />,

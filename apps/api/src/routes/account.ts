@@ -445,6 +445,18 @@ export function accountRoutes(ctx: RouterContext) {
           return { following: following ?? false };
         },
       ),
+      registerWorkActivityStarts: authed.notifications.registerWorkActivityStarts.handler(
+        async ({ context, input }) => {
+          // The phone stops getting cards with the session that registered it.
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          await deps.workActivities?.registerStarts(
+            context.actor.userId,
+            context.sessionId,
+            input.token,
+          );
+          return { ok: true as const };
+        },
+      ),
     },
     voice: {
       catalog: authed.voice.catalog.handler(async () =>
