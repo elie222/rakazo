@@ -484,7 +484,8 @@ export function normalizeRunError(
   } else if (
     status === 401 ||
     // A personal access token pasted where the provider only accepts its own sign-in token.
-    /\bpersonal access tokens are not supported\b/i.test(signals) ||
+    (!(status !== undefined && status >= 500) &&
+      /\bpersonal access tokens are not supported\b/i.test(signals)) ||
     ((status === 403 ||
       /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
         signals,
