@@ -14,7 +14,7 @@ import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
-import { useUsageHint } from "../../components/PlanUsage";
+import { PlanUsageRows, useUsageHint } from "../../components/PlanUsage";
 import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
@@ -426,6 +426,7 @@ function ShellSidebarFooter({
           openSettings("general");
         }}
         usage={usage}
+        usageDetails={<PlanUsageRows />}
         onUsage={() => {
           setMenuOpen(false);
           openSettings("usage");

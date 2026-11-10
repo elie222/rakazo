@@ -1194,10 +1194,15 @@ export const PlanLimitsSchema = z.object({
 });
 export type PlanLimits = z.infer<typeof PlanLimitsSchema>;
 
-/** The fullest allowance across subscriptions, which is the one that stops runs first. */
-export function peakPlanUsage(plans: readonly PlanLimits[]): number | null {
-  const used = plans.flatMap((plan) => plan.windows.map((window) => window.usedPercent));
-  return used.length ? Math.max(...used) : null;
+/**
+ * How used the subscription with the most room is. Each one is only as open as its fullest
+ * allowance, so a nearly spent session on one plan does not read as the member being out.
+ */
+export function planUsagePercent(plans: readonly PlanLimits[]): number | null {
+  if (!plans.length) return null;
+  return Math.min(
+    ...plans.map((plan) => Math.max(...plan.windows.map((window) => window.usedPercent))),
+  );
 }
 
 export const MessagingLinkedIdentitySchema = z.object({

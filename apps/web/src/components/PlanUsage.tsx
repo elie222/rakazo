@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
-import type { PlanLimits, PlanLimitWindow } from "@rakazo/contracts";
-import { modelCreditsUsd, peakPlanUsage } from "@rakazo/contracts";
+import type { PlanLimitWindow } from "@rakazo/contracts";
+import { modelCreditsUsd, planUsagePercent } from "@rakazo/contracts";
 import { formatTimeUntil } from "@rakazo/core";
 import { Progress } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -27,71 +27,75 @@ export function useUsageHint(): string | null {
   const { t } = useLingui();
   const { plans, creditsUsd } = usePlanUsage();
   const usd = useFormatUsd();
-  const peak = peakPlanUsage(plans);
-  if (peak !== null) return t`${Math.round(peak)}% used`;
+  const used = planUsagePercent(plans);
+  if (used !== null) return t`${Math.round(used)}% used`;
   if (creditsUsd !== null) return t`${usd(creditsUsd)} left`;
   return null;
 }
 
-function WindowRow({ window }: { window: PlanLimitWindow }) {
+function WindowUsage({ window }: { window: PlanLimitWindow }) {
   const { t, i18n } = useLingui();
   const label = { session: t`Session`, week: t`Weekly`, month: t`Monthly` }[window.period];
   const used = Math.round(window.usedPercent);
   const reset = formatTimeUntil(window.resetsAt, i18n.locale);
   return (
-    <>
-      <span className="text-body-sm text-muted-foreground">{label}</span>
-      <Progress
-        value={used}
-        aria-label={label}
-        className={used >= 90 ? "[&_[data-slot=progress-indicator]]:bg-destructive" : undefined}
-      />
-      <span className="text-body-sm tabular-nums text-foreground">
-        {t`${used}% used`}
-        {reset ? <span className="text-muted-foreground">{` · ${reset}`}</span> : null}
-      </span>
-    </>
-  );
-}
-
-function PlanCard({ plan }: { plan: PlanLimits }) {
-  return (
-    <div data-testid="plan-limits" className="rounded-xl border border-border px-4 py-3">
-      <div className="mb-2.5 flex items-baseline justify-between gap-3">
-        <span className="text-body font-medium text-foreground">{plan.name}</span>
-        {plan.label !== plan.name ? (
-          <span className="min-w-0 truncate text-body-sm text-muted-foreground">{plan.label}</span>
-        ) : null}
+    <div className="min-w-0">
+      <div className="flex items-baseline justify-between gap-2 text-body-sm">
+        <span className="truncate text-muted-foreground">{label}</span>
+        <span className="tabular-nums text-foreground">{used}%</span>
       </div>
-      <div className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-x-3 gap-y-2">
-        {plan.windows.map((window) => (
-          <WindowRow key={window.period} window={window} />
-        ))}
-      </div>
+      <Progress value={used} aria-label={label} className="mt-1.5" />
+      {reset ? (
+        <p className="mt-1.5 truncate text-label text-muted-foreground">{t`Resets in ${reset}`}</p>
+      ) : null}
     </div>
   );
 }
 
-/** Subscription allowances and the credit balance, each only when the member has it. */
-export function PlanUsage() {
+/** Each subscription's allowances and the credit balance; the caller frames them. */
+export function PlanUsageRows() {
   const { t } = useLingui();
   const { plans, creditsUsd } = usePlanUsage();
   const usd = useFormatUsd();
-  if (!plans.length && creditsUsd === null) return null;
   return (
-    <div className="mb-4 flex flex-col gap-3">
+    <div className="divide-y divide-border">
       {plans.map((plan) => (
-        <PlanCard key={plan.credentialId} plan={plan} />
+        <div key={plan.credentialId} data-testid="plan-limits" className="px-3.5 py-3">
+          <div className="mb-2.5 flex items-baseline justify-between gap-3">
+            <span className="text-body font-medium text-foreground">{plan.name}</span>
+            {plan.label !== plan.name ? (
+              <span className="min-w-0 truncate text-body-sm text-muted-foreground">
+                {plan.label}
+              </span>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+            {plan.windows.map((window) => (
+              <WindowUsage key={window.period} window={window} />
+            ))}
+          </div>
+        </div>
       ))}
       {creditsUsd !== null ? (
         <div
           data-testid="credit-balance"
-          className="flex items-baseline justify-between rounded-xl border border-border px-4 py-3"
+          className="flex items-baseline justify-between gap-3 px-3.5 py-3"
         >
           <span className="text-body font-medium text-foreground">{t`Credits`}</span>
           <span className="text-body tabular-nums text-foreground">{t`${usd(creditsUsd)} left`}</span>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Settings > Usage; renders nothing for a member with no subscription or credits. */
+export function PlanUsage() {
+  const { plans, creditsUsd } = usePlanUsage();
+  if (!plans.length && creditsUsd === null) return null;
+  return (
+    <div className="mb-3 rounded-xl border border-border">
+      <PlanUsageRows />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BillingStatus } from "./billing.js";
 import { modelCreditsUsd } from "./billing.js";
-import { peakPlanUsage } from "./domain.js";
+import { planUsagePercent } from "./domain.js";
 
 describe("modelCreditsUsd", () => {
   const status = (overrides: Partial<BillingStatus>) => overrides as BillingStatus;
@@ -18,11 +18,11 @@ describe("modelCreditsUsd", () => {
   });
 });
 
-describe("peakPlanUsage", () => {
-  it("is the fullest window across subscriptions", () => {
-    expect(peakPlanUsage([])).toBeNull();
+describe("planUsagePercent", () => {
+  it("is the subscription with the most room, judged by its fullest window", () => {
+    expect(planUsagePercent([])).toBeNull();
     expect(
-      peakPlanUsage([
+      planUsagePercent([
         {
           credentialId: "a",
           name: "A",
@@ -36,7 +36,7 @@ describe("peakPlanUsage", () => {
           credentialId: "b",
           name: "B",
           label: "B",
-          windows: [{ period: "session", usedPercent: 30, resetsAt: null }],
+          windows: [{ period: "session", usedPercent: 93, resetsAt: null }],
         },
       ]),
     ).toBe(64);
