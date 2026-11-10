@@ -1,5 +1,5 @@
+import { ph, t } from "@lingui/core/macro";
 import type { AgentImportNeed, AgentImportSetupItem, MessageBlock } from "@rakazo/contracts";
-import { t } from "./i18n";
 
 export type ImportSetupBlock = Extract<MessageBlock, { kind: "import_setup" }>;
 
@@ -7,21 +7,21 @@ export type ImportSetupBlock = Extract<MessageBlock, { kind: "import_setup" }>;
 export function importNeedText(need: AgentImportNeed): string {
   switch (need.kind) {
     case "api_key":
-      return t("API key for {provider}", { provider: need.provider });
+      return t`API key for ${ph({ provider: need.provider })}`;
     case "credentials":
-      return t("Credentials: {names}", { names: need.names.join(", ") });
+      return t`Credentials: ${ph({ names: need.names.join(", ") })}`;
     case "env":
-      return t("Environment variables: {names}", { names: need.names.join(", ") });
+      return t`Environment variables: ${ph({ names: need.names.join(", ") })}`;
     case "program":
-      return t("Program: {name}", { name: need.name });
+      return t`Program: ${ph({ name: need.name })}`;
     case "local_paths":
-      return t("Uses paths on your computer");
+      return t`Uses paths on your computer`;
     case "requires":
-      return t("Needs: {names}", { names: need.names.join(", ") });
+      return t`Needs: ${ph({ names: need.names.join(", ") })}`;
     case "turn_on":
-      return t("Paused");
+      return t`Paused`;
     case "bundled_files":
-      return t("Uses files that are not imported");
+      return t`Uses files that are not imported`;
   }
 }
 

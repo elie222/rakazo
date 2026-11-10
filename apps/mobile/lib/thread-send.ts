@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
 import {
@@ -18,7 +19,6 @@ import { chatSettingsRoute } from "./chat-settings-route";
 import { subscribeComposerOffer } from "./composer-offer";
 import { cancelFocusPrompt } from "./focus-prompt";
 import { hapticImpact, hapticSuccess } from "./haptics";
-import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 import { takePageReply } from "./pages";
@@ -74,7 +74,7 @@ export function useThreadSend({
   markCaughtUp: () => void;
   openBotChat: (target: MobileBot, ring: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const { pendingAttachments, setPendingAttachments, setAttachmentNotice, importingShare } =
@@ -167,7 +167,7 @@ export function useThreadSend({
     try {
       await prepareUnsentSends();
     } catch (error) {
-      Alert.alert(t("Failed to send message"), errorText(error));
+      Alert.alert(t`Failed to send message`, errorText(error));
       return;
     } finally {
       preparingSend.current = false;
@@ -208,7 +208,7 @@ export function useThreadSend({
         fromPage: pageCard ? true : undefined,
       });
     } catch (error) {
-      Alert.alert(t("Failed to send message"), errorText(error));
+      Alert.alert(t`Failed to send message`, errorText(error));
       return;
     }
     composerRef.current?.reset();
@@ -265,7 +265,7 @@ export function useThreadSend({
     if (reroutedToGroup && groupTarget) {
       router.push({
         pathname: "/group-thread",
-        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t("Group") },
+        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t`Group` },
       });
       return;
     }
@@ -334,7 +334,7 @@ export function useThreadSend({
       return true;
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return false;
-      Alert.alert(t("Could not update reaction"), errorText(err, t("Try again.")));
+      Alert.alert(t`Could not update reaction`, errorText(err, t`Try again.`));
       return false;
     }
   }

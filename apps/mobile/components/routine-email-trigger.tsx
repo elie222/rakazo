@@ -1,5 +1,6 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
-import { useI18n } from "../lib/i18n";
 import type { BotEmail } from "./bot-email";
 import { useBotEmailRows } from "./bot-email";
 import { MenuPicker } from "./menu-picker";
@@ -21,21 +22,21 @@ export function RoutineEmailTrigger({
   onChange: (senders: RoutineEmailSenders) => void;
   onRemove: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const rows = useBotEmailRows({ botId, botName, email });
   const domain = email.address?.domain;
 
   return (
-    <SettingsGroup label={t("When an email arrives")}>
+    <SettingsGroup label={t`When an email arrives`}>
       {rows}
       {domain && email.ownerDomain ? (
         <MenuPicker
           key="senders"
-          label={t("Who can start it")}
+          label={t`Who can start it`}
           value={senders}
           choices={[
-            { key: "owner", label: t("Only me") },
-            { key: "domain", label: t("Anyone at @{domain}", { domain: email.ownerDomain }) },
+            { key: "owner", label: t`Only me` },
+            { key: "domain", label: t`Anyone at @${ph({ domain: email.ownerDomain })}` },
           ]}
           onChange={(key) => onChange(key as RoutineEmailSenders)}
         />
@@ -44,7 +45,7 @@ export function RoutineEmailTrigger({
         key="remove"
         accessibilityRole="button"
         destructive
-        title={t("Remove email trigger")}
+        title={t`Remove email trigger`}
         onPress={onRemove}
       />
     </SettingsGroup>

@@ -22,12 +22,6 @@ vi.mock("./native", () => ({
 vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (message: string, values: Record<string, string> = {}) =>
-      message.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? ""),
-  }),
-}));
 const push = vi.fn();
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),

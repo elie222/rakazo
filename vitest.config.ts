@@ -1,6 +1,7 @@
 import { globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { lingui } from "@lingui/vite-plugin";
 import { defineConfig } from "vitest/config";
 
 const include = [
@@ -32,6 +33,8 @@ const isolated = include
   );
 
 export default defineConfig({
+  // Mobile imports its translation catalogs as `.po` files.
+  plugins: [lingui()],
   resolve: {
     alias: [
       {
@@ -49,6 +52,12 @@ export default defineConfig({
         find: /^@lingui\/core\/macro$/,
         replacement: fileURLToPath(
           new URL("./packages/testkit/src/lingui-core-macro.ts", import.meta.url),
+        ),
+      },
+      {
+        find: /^@lingui\/react\/macro$/,
+        replacement: fileURLToPath(
+          new URL("./packages/testkit/src/lingui-react-macro.ts", import.meta.url),
         ),
       },
       // Native-only transitive deps of the renderer contain uncompiled Flow

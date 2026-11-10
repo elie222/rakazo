@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { AgentImportSetupItem, AgentImportSetupState } from "@rakazo/contracts";
 import {
   importSetupStateInput,
@@ -13,7 +14,6 @@ import { useCallback, useState } from "react";
 import type { ViewProps } from "react-native";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import type { ImportSetupBlock } from "../lib/import-setup";
 import { importSetupDetail } from "../lib/import-setup";
 import { threadCardWidth } from "../lib/message-presentation";
@@ -49,7 +49,7 @@ export function ImportSetupCard({
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
@@ -93,7 +93,7 @@ export function ImportSetupCard({
           onAccessibilityAction={onAccessibilityAction}
           style={[styles.name, { color: tokens.foreground }]}
         >
-          {t("Setup complete")}
+          {t`Setup complete`}
         </Text>
       </View>
     );
@@ -117,7 +117,7 @@ export function ImportSetupCard({
         onAccessibilityAction={onAccessibilityAction}
         style={[styles.title, { color: tokens.foreground }]}
       >
-        {t("Finish setting up")}
+        {t`Finish setting up`}
       </Text>
       {block.items.map((item, index) => {
         const name = item.kind === "model" ? item.title : item.name;
@@ -125,7 +125,7 @@ export function ImportSetupCard({
         const href = readOnly ? null : target(item);
         const detail = [
           importSetupDetail(item),
-          isImportSetupVerifiable(item) ? "" : t("Check this yourself"),
+          isImportSetupVerifiable(item) ? "" : t`Check this yourself`,
         ]
           .filter(Boolean)
           .join(" · ");
@@ -140,7 +140,7 @@ export function ImportSetupCard({
               ) : null}
             </View>
             {done ? (
-              <View accessible accessibilityLabel={t("Done")}>
+              <View accessible accessibilityLabel={t`Done`}>
                 <NativeSymbol
                   ios="checkmark"
                   android="checkmark"
@@ -150,8 +150,8 @@ export function ImportSetupCard({
               </View>
             ) : href ? (
               <NativeActionButton
-                label={t("Open")}
-                accessibilityLabel={t("Open {name}", { name })}
+                label={t`Open`}
+                accessibilityLabel={t`Open ${name}`}
                 fill={false}
                 prominence="secondary"
                 size="compact"

@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
@@ -16,7 +18,7 @@ import { SkillSymbol } from "../../components/skill-symbol";
 import { rpc } from "../../lib/api";
 import { botTemplateCopy } from "../../lib/bot-template-copy";
 import { cronLabels } from "../../lib/cron";
-import { useI18n } from "../../lib/i18n";
+import { useUiLocale } from "../../lib/i18n";
 import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery } from "../../lib/query";
 import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
@@ -30,7 +32,7 @@ export default function BotTemplateScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const templates = useQuery(rpcQuery("bots/templates"), queryClient);
   const template = templates.data?.find((item) => item.id === id);
 
@@ -43,15 +45,15 @@ export default function BotTemplateScreen() {
       {template ? (
         <TemplateDetail template={template} onChanged={() => void templates.refetch()} />
       ) : templates.isPending ? (
-        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
       ) : (
         <View style={styles.failure}>
           <Text style={styles.secondary}>
-            {errorText(templates.error, t("Could not load templates"))}
+            {errorText(templates.error, t`Could not load templates`)}
           </Text>
           <NativeActionButton
             fill={false}
-            label={t("Retry")}
+            label={t`Retry`}
             onPress={() => void templates.refetch()}
             prominence="secondary"
           />
@@ -74,7 +76,8 @@ function TemplateDetail({
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const { name, summary, sample } = botTemplateCopy(template);
   const { botId } = template;
   const [pending, setPending] = useState(false);
@@ -100,23 +103,21 @@ function TemplateDetail({
     {
       key: "bot",
       title: name,
-      detail: t("Instructions"),
+      detail: t`Instructions`,
       body: template.instructions,
       icon: <NativeSymbol ios="text.alignleft" android="reader-outline" size={16} />,
     },
     ...template.skills.map((skill) => ({
       key: `skill:${skill.name}`,
       title: skill.name,
-      detail: t("Skill"),
+      detail: t`Skill`,
       body: skill.body,
       icon: <SkillSymbol size={16} />,
     })),
     ...template.routines.map((routine, index) => ({
       key: `routine:${index}`,
       title: routine.name,
-      detail: t("{schedule}, paused until you turn it on", {
-        schedule: routine.crons.map((cron) => formatCron(cron, labels)).join(", "),
-      }),
+      detail: t`${ph({ schedule: routine.crons.map((cron) => formatCron(cron, labels)).join(", ") })}, paused until you turn it on`,
       body: routine.prompt,
       icon: <NativeSymbol ios="clock" android="time-outline" size={16} />,
     })),
@@ -147,10 +148,10 @@ function TemplateDetail({
     } catch (cause) {
       if (generation !== focusGeneration.current) return;
       if (isBotTemplateChanged(cause)) {
-        Alert.alert(t("This template was just updated. Check it again."));
+        Alert.alert(t`This template was just updated. Check it again.`);
         onChanged();
       } else {
-        Alert.alert(t("Could not create the bot"), errorText(cause, t("Try again.")));
+        Alert.alert(t`Could not create the bot`, errorText(cause, t`Try again.`));
       }
     } finally {
       if (generation === focusGeneration.current) setPending(false);
@@ -169,7 +170,7 @@ function TemplateDetail({
       openBot(bot);
     } catch (cause) {
       if (generation !== focusGeneration.current) return;
-      Alert.alert(t("Could not load bot"), errorText(cause, t("Try again.")));
+      Alert.alert(t`Could not load bot`, errorText(cause, t`Try again.`));
     } finally {
       if (generation === focusGeneration.current) setPending(false);
     }
@@ -187,7 +188,7 @@ function TemplateDetail({
         </View>
       </View>
       <NativeActionButton
-        label={botId ? t("Open") : t("Create bot")}
+        label={botId ? t`Open` : t`Create bot`}
         busy={pending}
         onPress={() => void (botId ? openExisting(botId) : create())}
       />
@@ -196,7 +197,7 @@ function TemplateDetail({
           {sample}
         </ChatMarkdown>
       </View>
-      <SettingsGroup label={t("Adds")}>
+      <SettingsGroup label={t`Adds`}>
         {rows.flatMap((row) => {
           const open = expanded === row.key;
           return [
@@ -223,7 +224,7 @@ function TemplateDetail({
         })}
       </SettingsGroup>
       {apps.length ? (
-        <SettingsGroup label={t("Works with")}>
+        <SettingsGroup label={t`Works with`}>
           {apps.map((app) => (
             <SettingsRow
               key={app.slug}
@@ -231,7 +232,7 @@ function TemplateDetail({
               leading={<ConnectorIcon name={app.name} logo={app.logo} size={28} />}
               trailing={
                 app.connected ? (
-                  <View accessible accessibilityLabel={t("Connected")}>
+                  <View accessible accessibilityLabel={t`Connected`}>
                     <NativeSymbol
                       ios="checkmark.circle.fill"
                       android="checkmark-circle"

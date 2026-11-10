@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (create: () => unknown) => create() }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));

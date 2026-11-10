@@ -119,10 +119,6 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn(() => false) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 34 }) }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
