@@ -3,19 +3,18 @@ import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import {
-  availableDesktopPlatforms,
+  DESKTOP_PLATFORMS,
   desktopDownloadHref,
-  fetchDesktopDownloads,
   githubStarsLabel,
 } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { APP_URL, IOS_APP_URL, SELF_HOST_GUIDE_PATH } from "../site";
 
-const [starsLabel, downloads] = await Promise.all([githubStarsLabel(), fetchDesktopDownloads()]);
+const starsLabel = await githubStarsLabel();
 
 const DESKTOP_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
 const platforms = [
-  ...availableDesktopPlatforms(downloads).map((platform) => ({
+  ...DESKTOP_PLATFORMS.map((platform) => ({
     name: DESKTOP_NAMES[platform],
     action: "Download",
     href: desktopDownloadHref(platform),

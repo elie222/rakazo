@@ -22,6 +22,7 @@ const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
 const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
 const NAV_LINKS = [
+  { href: "/download/", label: getHomeCopy(locale).footer.links.download },
   { href: "/docs/", label: copy.docs },
   { href: "/integrations/", label: copy.integrations },
   { href: "/pricing/", label: copy.pricing },
