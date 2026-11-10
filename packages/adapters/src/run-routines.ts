@@ -127,8 +127,10 @@ export async function notifyFailedRoutineRun(
         spaceId: failed.spaceId,
         threadId: failed.threadId,
         botId: failed.botId,
-        role: "bot",
-        text: `The **${routine.name}** routine failed: ${failed.error ?? ""}`.trim(),
+        // A status line like a watch's, not the bot speaking: the raw error stays in the run's
+        // details and its notice, which shorten and translate it.
+        role: "system",
+        text: `${routine.name} routine: failed`,
         // One line per failed run, however often a notice that did not reach anyone is retried.
         clientNonce: `routine-failed:${failed.id}`,
       });

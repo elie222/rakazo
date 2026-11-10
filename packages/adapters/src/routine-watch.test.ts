@@ -145,7 +145,7 @@ describe("tickRoutineWatch", () => {
     };
     const deps = {
       prisma: {
-        routine: { updateMany },
+        routine: { updateMany, findUnique: vi.fn(async () => ({ silent: false })) },
         connection: { findMany: vi.fn(async () => []) },
         spaceSettingOverride: { findUnique: vi.fn(async () => null) },
         actionApprovalRule: { findMany: vi.fn(async () => []) },
@@ -247,6 +247,14 @@ describe("tickRoutineWatch", () => {
   it("posts no 'no changes' line for a silent routine, even when loud", async () => {
     const { deps, routine, messages } = setup({ data: { changes: [] } }, { loud: true });
     await tickRoutineWatch(deps, { ...routine, silent: true }, target, scheduledAt);
+    expect(messages).toHaveLength(0);
+  });
+
+  it("posts no line when Silent was turned on while the check ran", async () => {
+    const { deps, routine, messages } = setup({ data: { changes: [] } }, { loud: true });
+    // Loaded before the check as not silent; saved as silent by the time it finishes.
+    vi.mocked(deps.prisma.routine.findUnique).mockResolvedValue({ silent: true } as never);
+    await tickRoutineWatch(deps, { ...routine, silent: false }, target, scheduledAt);
     expect(messages).toHaveLength(0);
   });
 

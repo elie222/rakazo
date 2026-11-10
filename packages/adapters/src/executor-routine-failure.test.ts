@@ -375,8 +375,8 @@ describe("silent routine failures", () => {
     spaceId: "space-1",
     threadId: "thread-1",
     botId: "bot-1",
-    role: "bot",
-    text: "The **Inbox sweep** routine failed: Invalid API key",
+    role: "system",
+    text: "Inbox sweep routine: failed",
     clientNonce: "routine-failed:run-1",
   };
 
@@ -937,8 +937,8 @@ describe("running a routine retry", () => {
       spaceId: "space-1",
       threadId: "thread-1",
       botId: "bot-1",
-      role: "bot",
-      text: `The **Inbox sweep** routine failed: ${overloaded().message}`,
+      role: "system",
+      text: "Inbox sweep routine: failed",
       clientNonce: "routine-failed:run-1",
     });
     expect(send).toHaveBeenCalledExactlyOnceWith(

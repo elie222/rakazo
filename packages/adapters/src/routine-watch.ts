@@ -779,7 +779,18 @@ export async function tickRoutineWatch(
     data: { nextRunAt, watchState: outcome.state },
   });
   if (claimed.count !== 1) return { run: false };
-  if (watch.loud && !routine.silent) {
+  // Silent is read again now, not taken from before the check, so turning it on meanwhile keeps
+  // this line out of the chat too.
+  const posts =
+    watch.loud &&
+    !routine.silent &&
+    !(
+      await deps.prisma.routine.findUnique({
+        where: { id: routine.id },
+        select: { silent: true },
+      })
+    )?.silent;
+  if (posts) {
     await postRoutineMessage(deps, {
       spaceId: routine.spaceId,
       ...target,

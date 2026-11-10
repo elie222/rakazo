@@ -43,20 +43,23 @@ export function useRoutineRuns(routineId: string) {
   };
 }
 
-/** A silent run's reply as plain text: what it wrote, then the steps it took. */
+/** A silent run's reply as plain text: what it wrote and the steps it took, in the run's order. */
 export function routineRunReplyText(blocks: readonly MessageBlock[] | undefined): string {
-  const text = (blocks ?? [])
-    .flatMap((block) =>
-      block.kind === "text" ? [plainTextFromMarkdown(block.text, { maxSource: Infinity })] : [],
-    )
-    .join("\n\n")
-    .trim();
-  const steps = (blocks ?? []).flatMap((block) =>
-    block.kind === "steps"
-      ? block.steps.map((step) => `✓ ${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
-      : [],
-  );
-  return [text, steps.join("\n")].filter(Boolean).join("\n\n");
+  return (blocks ?? [])
+    .flatMap((block) => {
+      if (block.kind === "text")
+        return [plainTextFromMarkdown(block.text, { maxSource: Infinity })];
+      if (block.kind === "steps")
+        return [
+          block.steps
+            .map((step) => `✓ ${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
+            .join("\n"),
+        ];
+      return [];
+    })
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /**

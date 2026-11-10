@@ -145,8 +145,8 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
       spaceId: identity.spaceId,
       threadId: identity.threadId,
       botId: identity.botId,
-      role: "bot" as const,
-      text: "The **board tidy** routine failed: fixture",
+      role: "system" as const,
+      text: "board tidy routine: failed",
       clientNonce: `routine-failed:${randomUUID()}`,
     };
     await postRoutineMessage(deps, line);
