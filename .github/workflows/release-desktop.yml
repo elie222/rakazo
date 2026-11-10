@@ -259,9 +259,7 @@ jobs:
           rm -f "$entitlements"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
-          grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "owner: $GITHUB_REPOSITORY_OWNER" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "repo: ${GITHUB_REPOSITORY#*/}" "$app/Contents/Resources/app-update.yml"
+          node apps/desktop/scripts/release-feed.mjs --verify "$app/Contents/Resources/app-update.yml"
 
       - name: Verify packaged native dependencies
         if: runner.os == 'macOS'

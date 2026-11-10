@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 const script = path.resolve(import.meta.dirname, "../scripts/release-feed.mjs");
 
@@ -128,6 +128,34 @@ describe("release repository feed", () => {
         }).status,
       ).not.toBe(0);
       expect(readFileSync(file, "utf8")).toBe(original);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("packaged update feed verification", () => {
+  it.each([
+    ["example-owner/123", { provider: "github", owner: "example-owner", repo: "123" }, true],
+    ["true/false", { provider: "github", owner: "true", repo: "false" }, true],
+    ["example-owner/app", { provider: "github", owner: "example-owner", repo: "app" }, true],
+    ["example-owner/app", { provider: "generic", owner: "example-owner", repo: "app" }, false],
+    ["example-owner/app", { provider: "github", owner: "another-owner", repo: "app" }, false],
+    ["example-owner/app", { provider: "github", owner: "example-owner", repo: "other" }, false],
+    ["example-owner/123", { provider: "github", owner: "example-owner", repo: 123 }, false],
+    ["true/false", { provider: "github", owner: true, repo: false }, false],
+    ["example-owner/app", null, false],
+  ])("checks parsed repository values for %s", (repository, feed, accepted) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "packaged-feed-"));
+    try {
+      const file = path.join(root, "app-update.yml");
+      const contents = stringify(feed);
+      writeFileSync(file, contents);
+      const result = spawnSync(process.execPath, [script, "--verify", file], {
+        env: { ...process.env, GITHUB_REPOSITORY: repository },
+      });
+      expect(result.status === 0, result.stderr.toString()).toBe(accepted);
+      expect(readFileSync(file, "utf8")).toBe(contents);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
