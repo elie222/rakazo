@@ -52,6 +52,8 @@ A key's message never answers a question a bot is waiting on. The bot keeps wait
 
 A message sent while the bot is busy waits for a run of its own. The response has `held: true` and `runId: null`. With `?wait=`, the request follows the message into that run and returns its reply, within the time you allowed. Without it, send the same request with the same `Idempotency-Key` to get the run once it exists; nothing is sent twice. Several waiting messages can share one run. Stopping the bot drops waiting messages, as it does in the chat, and the response then has `held: false` and `runId: null`.
 
+Stopping a run leaves its request in the conversation, as it does in the chat, so the bot can pick that work up again on its next message. Say so in that message if it should not.
+
 The mobile app does not show the mark yet, and key management is only in the web app.
 
 ## Requests
