@@ -41,6 +41,9 @@ export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
 export const MODEL_CREDITS_EXHAUSTED_ERROR =
   "Not enough model credits. Add credits in Billing or connect your own API key.";
 
+/** An operator-set usage ceiling; buying credits does not lift it. */
+export const MODEL_CREDIT_CAP_REACHED_ERROR = "Usage limit reached. Contact support to continue.";
+
 /** A run in a billing organization without a paid plan, credits, or free period. */
 export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep running bots.";
 
@@ -119,6 +122,7 @@ const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
   ...MODEL_CONNECTION_RUN_ERRORS,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
+  MODEL_CREDIT_CAP_REACHED_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   ...stuckWorkStatusMessages(),
