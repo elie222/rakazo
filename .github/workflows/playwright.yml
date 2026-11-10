@@ -103,11 +103,13 @@ jobs:
         run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Install CJK fonts
         if: steps.areas.outputs.e2e != 'false'
-        timeout-minutes: 4
-        # Chromium needs CJK fallback fonts. apt-get against the runner's Azure mirror
-        # stalls on this 61 MB package and the install hits the wall clock (exit 124,
-        # not a test failure), so fetch the .deb straight from the archive and skip
-        # the index update entirely. Deterministic: one file, one dpkg.
+        timeout-minutes: 5
+        # Chromium needs CJK fallback fonts. Two failure modes already burned us here:
+        # apt-get against the runner's mirror stalls on this 61 MB package until the cap
+        # fires (exit 124), and a straight https:// fetch to archive.ubuntu.com dies in
+        # the TLS handshake from the runner (curl 35, SSL_ERROR_SYSCALL). So: plain HTTP,
+        # the runner's own Azure mirror first, then the two public fallbacks, retrying
+        # all errors, and verify the sha256 before installing.
         run: |
           set -euo pipefail
           if command -v fc-list >/dev/null && fc-list :lang=zh | grep -q .; then
@@ -115,8 +117,25 @@ jobs:
             exit 0
           fi
           DEB=/tmp/fonts-noto-cjk.deb
-          URL="https://archive.ubuntu.com/ubuntu/pool/main/f/fonts-noto-cjk/fonts-noto-cjk_20220127+repack1-1_all.deb"
-          curl -fsSL --retry 3 --retry-delay 2 --max-time 120 -o "$DEB" "$URL"
+          P=pool/main/f/fonts-noto-cjk/fonts-noto-cjk_20220127+repack1-1_all.deb
+          WANT=e804b3474a79bd70d5f03f590e2d06dbc5ce17f48be7cfaf6c48086471edd5be
+          got=""
+          for BASE in \
+            http://azure.archive.ubuntu.com/ubuntu \
+            http://archive.ubuntu.com/ubuntu \
+            http://ports.ubuntu.com/ubuntu-ports \
+            https://mirrors.edge.kernel.org/ubuntu ; do
+            echo "fetching $DEB from $BASE"
+            rm -f "$DEB"
+            if curl -fsSL --retry 4 --retry-all-errors --retry-delay 3 \
+                 --connect-timeout 15 --max-time 180 -o "$DEB" "$BASE/$P"; then
+              got="$BASE"
+              break
+            fi
+            echo "  $BASE failed, next mirror"
+          done
+          test -n "$got" || { echo "no mirror served the CJK font package" >&2; exit 1; }
+          echo "$WANT  $DEB" | sha256sum -c -
           sudo dpkg -i "$DEB"
           sudo fc-cache -f
           fc-list :lang=zh | head -3
