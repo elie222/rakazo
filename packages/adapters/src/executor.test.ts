@@ -1873,6 +1873,7 @@ describe("dockerComputerToolInstruction", () => {
       new Set(["browser_navigate", "browser_snapshot"]),
     );
     expect(noShellAtSelection).not.toContain("Debian bookworm");
+    expect(noShellAtSelection).not.toContain("`python3 -c`");
     const shellOffered = dockerComputerToolInstruction(
       "docker",
       undefined,

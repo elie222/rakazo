@@ -130,7 +130,7 @@ export function dockerComputerToolInstruction(
     "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets.",
   ];
   // Tool selection can drop shell (creation intro, background helpers) while bot
-  // settings leave it enabled, so the map follows the tools the run actually offers.
+  // settings leave it enabled, so the shell guidance follows the tools the run offers.
   const shellOffered = offeredToolNames
     ? offeredToolNames.has("shell")
     : builtinOffered(disabled, "shell");
@@ -139,7 +139,7 @@ export function dockerComputerToolInstruction(
       "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
     );
   }
-  if (builtinOffered(disabled, "shell")) {
+  if (shellOffered) {
     parts.push(
       "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
     );

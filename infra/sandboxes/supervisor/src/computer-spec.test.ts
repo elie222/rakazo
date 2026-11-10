@@ -738,7 +738,18 @@ describe("graphical computer spec", () => {
     )?.[1];
     expect(install).toBeDefined();
     const packages = install?.split(/\s+/);
-    for (const name of ["ripgrep", "fd-find", "file", "sqlite3"]) {
+    // Every apt package behind a command the shell environment map names.
+    for (const name of [
+      "curl",
+      "git",
+      "jq",
+      "openssh-client",
+      "unzip",
+      "ripgrep",
+      "fd-find",
+      "file",
+      "sqlite3",
+    ]) {
       expect(packages).toContain(name);
     }
     expect(runtimeStage).toContain("ln -s /usr/bin/fdfind /usr/local/bin/fd");
