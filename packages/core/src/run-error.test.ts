@@ -103,10 +103,18 @@ describe("normalizeRunError", () => {
       "Your model provider rejected the API key. Check your connection settings.",
     ],
     [
+      "400 checking third-party user token: Personal Access Tokens are not supported for this endpoint",
+      "Your model provider rejected the API key. Check your connection settings.",
+    ],
+    [
       '404: {"error":{"message":"Model fake-model does not exist"}}',
       "Your model provider can't run this model.",
     ],
     ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
+    [
+      '400 {"status":400,"title":"Bad Request","detail":"Function id \'example-function\': DEGRADED function cannot be invoked"}',
+      "Your model provider can't run this model.",
+    ],
     [
       '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
       "Your model provider can't run this model.",

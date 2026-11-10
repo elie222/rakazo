@@ -212,7 +212,7 @@ const MALFORMED_KEY_HEADER =
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
-  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model|only supports (?:the )?(?:\/|[\w ./-]{1,40}\b(?:endpoint|API)\b))|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
+  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model|only supports (?:the )?(?:\/|[\w ./-]{1,40}\b(?:endpoint|API)\b))|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b|\bDEGRADED function cannot be invoked\b/i;
 
 export type RunErrorRecovery = "connection" | "model" | "plan";
 
@@ -483,6 +483,8 @@ export function normalizeRunError(
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 401 ||
+    // A personal access token pasted where the provider only accepts its own sign-in token.
+    /\bpersonal access tokens are not supported\b/i.test(signals) ||
     ((status === 403 ||
       /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
         signals,
