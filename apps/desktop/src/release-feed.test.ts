@@ -81,40 +81,45 @@ it.each([undefined, "false", "true", "invalid"])("selects release platforms for 
 });
 
 describe("release repository feed", () => {
-  it("packages the releasing repository without changing identity or signing settings", () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "release-feed-"));
-    try {
-      const file = path.join(root, "package.json");
-      const input = {
-        version: "1.2.3",
-        build: {
-          appId: "dev.example.app",
-          mac: { notarize: true },
-          publish: [{ provider: "github", owner: "parent", repo: "app" }],
-        },
-      };
-      writeFileSync(file, JSON.stringify(input));
-      const result = spawnSync(process.execPath, [script, file], {
-        env: { ...process.env, GITHUB_REPOSITORY: "example-owner/own-app" },
-      });
-      expect(result.status, result.stderr.toString()).toBe(0);
-      expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({
-        ...input,
-        build: {
-          ...input.build,
-          publish: [{ provider: "github", owner: "example-owner", repo: "own-app" }],
-        },
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+  it.each(["own-app", ".rakazo", "_rakazo", "-rakazo"])(
+    "packages repository %s without changing identity or signing settings",
+    (repo) => {
+      const root = mkdtempSync(path.join(os.tmpdir(), "release-feed-"));
+      try {
+        const file = path.join(root, "package.json");
+        const input = {
+          version: "1.2.3",
+          build: {
+            appId: "dev.example.app",
+            mac: { notarize: true },
+            publish: [{ provider: "github", owner: "parent", repo: "app" }],
+          },
+        };
+        writeFileSync(file, JSON.stringify(input));
+        const result = spawnSync(process.execPath, [script, file], {
+          env: { ...process.env, GITHUB_REPOSITORY: `example-owner/${repo}` },
+        });
+        expect(result.status, result.stderr.toString()).toBe(0);
+        expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({
+          ...input,
+          build: {
+            ...input.build,
+            publish: [{ provider: "github", owner: "example-owner", repo }],
+          },
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([
     "",
     "https://example.test/owner/repo",
     "owner/repo/extra",
     "owner/../repo",
+    "owner/.",
+    "owner/..",
     "owner/repo\nother",
   ])("rejects invalid repository %j before writing", (repository) => {
     const root = mkdtempSync(path.join(os.tmpdir(), "release-feed-"));

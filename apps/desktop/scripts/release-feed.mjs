@@ -3,10 +3,11 @@ import { parse } from "yaml";
 
 // The release runner's repository is the authority for the packaged update feed.
 const repository = process.env.GITHUB_REPOSITORY ?? "";
-if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repository)) {
+if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(repository)) {
   throw new Error("A valid release repository is required.");
 }
 const [owner, repo] = repository.split("/");
+if (repo === "." || repo === "..") throw new Error("A valid release repository is required.");
 const verify = process.argv[2] === "--verify";
 const file = process.argv[verify ? 3 : 2];
 if (!file) throw new Error("A desktop configuration file is required.");
