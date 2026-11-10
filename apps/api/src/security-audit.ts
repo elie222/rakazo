@@ -177,6 +177,14 @@ export function procedureSecurityEvent(
       .sort()
       .join(",");
   }
+  // A switch opens or closes one provider's models to members; the audit names which.
+  if (
+    procedure === "models.deployment.update" &&
+    isRecord(fields.open) &&
+    typeof fields.open.provider === "string"
+  )
+    metadata[fields.open.open === true ? "openedProvider" : "closedProvider"] =
+      fields.open.provider;
   if (procedure === "mcp.assignments.approve") metadata.decision = "allow";
   if (procedure === "mcp.assignments.dismiss") metadata.decision = "deny";
   return { type: audited.type, userId: actor.userId, spaceId: actor.spaceId, metadata };

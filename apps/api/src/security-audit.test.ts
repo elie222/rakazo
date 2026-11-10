@@ -128,6 +128,23 @@ describe("procedureSecurityEvent", () => {
     });
   });
 
+  it("names the provider a deployment model switch opens or closes", () => {
+    for (const open of [true, false]) {
+      expect(
+        procedureSecurityEvent(
+          ["models", "deployment", "update"],
+          { open: { provider: "anthropic", open } },
+          actor,
+        )?.metadata,
+      ).toEqual({
+        procedure: "models.deployment.update",
+        kind: "deployment_model",
+        [open ? "openedProvider" : "closedProvider"]: "anthropic",
+        changed: "open",
+      });
+    }
+  });
+
   it("records an MCP approval as a decision", () => {
     expect(
       procedureSecurityEvent(
