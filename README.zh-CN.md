@@ -91,7 +91,7 @@ Gmail、Slack、GitHub、Notion、Linear 等数千个应用，以及你自己的
 
 ### 全平台可用
 
-网页、桌面端、iPhone 和 Android，连接同一台服务器。
+网页、桌面端、iPhone、iPad 和 Android，连接同一台服务器。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone 上的机器人列表和聊天" width="100%">
 

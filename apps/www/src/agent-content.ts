@@ -129,7 +129,7 @@ export const DOWNLOAD_MARKDOWN = `# Download Rakazo
 - [macOS](https://rakazo.com/api/download?platform=mac)
 - [Windows](https://rakazo.com/api/download?platform=windows)
 - [Linux](https://rakazo.com/api/download?platform=linux)
-- [iPhone](${IOS_APP_URL})
+- [iPhone, iPhone Duo, and iPad](${IOS_APP_URL})
 - [Android](${ANDROID_APP_STORE_URL})
 - [Web](${APP_URL})
 
