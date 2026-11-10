@@ -59,7 +59,7 @@ export function breachedPasswordCheck() {
 }
 
 /** Have I Been Pwned k-anonymity range lookup, aborted at the deadline. */
-async function isPasswordBreached(password: string): Promise<boolean> {
+export async function isPasswordBreached(password: string): Promise<boolean> {
   const hash = createHash("sha1").update(password).digest("hex").toUpperCase();
   const signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
   const response = await fetch(`https://api.pwnedpasswords.com/range/${hash.slice(0, 5)}`, {

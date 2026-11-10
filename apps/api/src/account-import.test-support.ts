@@ -50,9 +50,11 @@ export function exportFiles(
     homes?: Array<[botId: string, path: string, content: string | Uint8Array]>;
     executables?: Array<{ botId: string; path: string }>;
   }>,
+  options: { credentials?: Uint8Array } = {},
 ): ArchiveFile[] {
   return [
     ["manifest.json", JSON.stringify(manifest)],
+    ...(options.credentials ? [["credentials.enc.json", options.credentials] as ArchiveFile] : []),
     ...spaces.flatMap((space): ArchiveFile[] => [
       [
         accountExportPaths.records(space.id),

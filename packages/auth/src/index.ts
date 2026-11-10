@@ -22,6 +22,7 @@ import {
   getOAuthState,
 } from "better-auth/api";
 import { parseSetCookieHeader } from "better-auth/cookies";
+import { verifyPassword } from "better-auth/crypto";
 import { emailOTP, organization } from "better-auth/plugins";
 import {
   ACCOUNT_EXPORT_TOKEN_PREFIX,
@@ -34,7 +35,7 @@ import {
   sessionForAuthHook,
   signedBearer,
 } from "./account-security.js";
-import { breachedPasswordCheck } from "./breached-password.js";
+import { breachedPasswordCheck, isPasswordBreached } from "./breached-password.js";
 import { DEACTIVATED_AT_FIELD } from "./directory.js";
 import type { EmailLocaleOf } from "./email.js";
 import { emailLocale, passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
@@ -810,6 +811,21 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       issueAccountExportToken((await auth.$context).internalAdapter, userId),
     consumeAccountExportToken: async (token: string) =>
       consumeAccountExportToken((await auth.$context).internalAdapter, token),
+    /** Whether the backup password is the account's own password. False with no password. */
+    verifyAccountPassword: async (userId: string, password: string): Promise<boolean> => {
+      const account = await prisma.account.findFirst({
+        where: { userId, providerId: "credential" },
+        select: { password: true },
+      });
+      if (!account?.password) return false;
+      try {
+        return await verifyPassword({ hash: account.password, password });
+      } catch {
+        return false;
+      }
+    },
+    /** The breached-password check, reusable outside sign-up (backup passwords). */
+    isPasswordBreached,
     disposeOidcDiscovery: () => discovery?.dispose(),
   });
 }

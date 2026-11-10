@@ -16,13 +16,41 @@ import { PageSourceSchema, PageTitleSchema } from "./pages.js";
  * Content is decrypted. Ids are the source install's; an import gives every row a new id and
  * rewrites references, including ids inside message blocks. Credentials, integrations, runs,
  * billing, computers and page links are not exported: they belong to the source install.
+ *
+ * Version 2 adds an encrypted credentials section (see `AccountExportEncryptedCredentialsSchema`):
+ * the user's own credentials, sealed with a key derived from a backup password the exporter
+ * supplies with the export request. Version 1 archives have no credentials section and still
+ * import. An older server rejects a version 2 archive outright.
  */
 /** A page version number, within the database's 32-bit column. */
 const PageVersionNumber = z.number().int().positive().max(2_147_483_647);
 
 export const ACCOUNT_EXPORT_FORMAT = "rakazo-account-export";
-export const ACCOUNT_EXPORT_VERSION = 1;
+export const ACCOUNT_EXPORT_VERSION = 2;
 export const ACCOUNT_EXPORT_MANIFEST_PATH = "manifest.json";
+/**
+ * The encrypted credentials section, second in the archive, right after the manifest. Only
+ * this entry carries credentials, and only in encrypted form: the backup password and the
+ * key derived from it never enter the archive.
+ */
+export const ACCOUNT_EXPORT_CREDENTIALS_PATH = "credentials.enc.json";
+/** The credentials section is kilobytes; anything bigger is not a credentials section. */
+export const ACCOUNT_EXPORT_CREDENTIALS_MAX_BYTES = 4 * 1024 * 1024;
+/** The backup password must stand alone: the account password's minimum is only 8. */
+export const ACCOUNT_EXPORT_BACKUP_PASSWORD_MIN_LENGTH = 12;
+/**
+ * The backup key derivation, pinned: the salt, N, r, p and key length in an archive must match
+ * these exactly, so a hostile archive cannot make the importer derive with a ruinous cost.
+ */
+export const ACCOUNT_EXPORT_BACKUP_KDF = {
+  algorithm: "scrypt",
+  n: 32_768,
+  r: 8,
+  p: 1,
+  keyLength: 32,
+  saltBytes: 16,
+  nonceBytes: 12,
+} as const;
 /** Larger workspace files stay behind, matching the workspace export limit elsewhere. */
 export const ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES = 8 * 1024 * 1024;
 
@@ -39,14 +67,135 @@ export type AccountExportExecutables = z.infer<typeof AccountExportExecutablesSc
 
 export const AccountExportManifestSchema = z.object({
   format: z.literal(ACCOUNT_EXPORT_FORMAT),
-  version: z.literal(ACCOUNT_EXPORT_VERSION),
+  version: z.union([z.literal(1), z.literal(2)]),
   exportedAt: IsoDate,
   user: z.object({ name: z.string(), email: z.string(), timezone: z.string().nullable() }),
   spaces: z.array(z.object({ id: Id, name: z.string(), createdAt: IsoDate })),
 });
 export type AccountExportManifest = z.infer<typeof AccountExportManifestSchema>;
 
+/** Base64 of exactly `bytes` bytes: the length is fixed, so the check needs no Buffer. */
+const base64OfBytes = (bytes: number) =>
+  z
+    .string()
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/)
+    .length(Math.ceil(bytes / 3) * 4);
+
+/** Base64 of any length, as `Buffer.toString("base64")` writes it. */
+const base64String = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9+/]+={0,2}$/)
+  .refine((value) => value.length % 4 === 0);
+
+/**
+ * The encrypted credentials section, `credentials.enc.json`. The KDF parameters are literals,
+ * not free values: an archive that claims a larger N is refused before any derivation runs.
+ * The AAD is the importing user's id, so one account's section cannot move to another's.
+ */
+export const AccountExportEncryptedCredentialsSchema = z.object({
+  algorithm: z.literal("aes-256-gcm"),
+  kdf: z.object({
+    algorithm: z.literal("scrypt"),
+    n: z.literal(ACCOUNT_EXPORT_BACKUP_KDF.n),
+    r: z.literal(ACCOUNT_EXPORT_BACKUP_KDF.r),
+    p: z.literal(ACCOUNT_EXPORT_BACKUP_KDF.p),
+    keyLength: z.literal(ACCOUNT_EXPORT_BACKUP_KDF.keyLength),
+    salt: base64OfBytes(ACCOUNT_EXPORT_BACKUP_KDF.saltBytes),
+  }),
+  nonce: base64OfBytes(ACCOUNT_EXPORT_BACKUP_KDF.nonceBytes),
+  ciphertext: base64String,
+  tag: base64OfBytes(16),
+});
+export type AccountExportEncryptedCredentials = z.infer<
+  typeof AccountExportEncryptedCredentialsSchema
+>;
+
 const json = z.json();
+
+/** One credential's value, decrypted. A single value is never megabytes; cap it early. */
+const credentialPlaintext = z.string().min(1).max(1_048_576);
+
+/**
+ * The decrypted credentials section. `spaceId` and `botId` are the source install's ids and
+ * are remapped on import; a null `spaceId` is the account vault, shared by every space.
+ * Connections and MCP servers with no secret keep their row and no value (`plaintext` /
+ * `material` null): the row is still worth restoring so the user can reconnect it.
+ */
+export const AccountExportCredentialsSchema = z.object({
+  version: z.literal(1),
+  model: z
+    .array(
+      z.object({
+        provider: z.string().min(1),
+        label: z.string(),
+        supportsImages: z.boolean(),
+        plaintext: credentialPlaintext,
+      }),
+    )
+    .default([]),
+  voice: z
+    .array(z.object({ provider: z.string().min(1), plaintext: credentialPlaintext }))
+    .default([]),
+  connections: z
+    .array(
+      z.object({
+        spaceId: z.string(),
+        connectorId: z.string(),
+        provider: z.string(),
+        displayName: z.string(),
+        status: z.string(),
+        providerRef: z.string().nullable(),
+        metadata: json,
+        plaintext: credentialPlaintext.nullable(),
+      }),
+    )
+    .default([]),
+  mcp: z
+    .array(
+      z.object({
+        spaceId: z.string(),
+        slug: z.string(),
+        name: z.string(),
+        description: z.string(),
+        transport: z.string(),
+        endpoint: z.string().nullable(),
+        command: z.string().nullable(),
+        allSpaces: z.boolean(),
+        allBots: z.boolean(),
+        enabled: z.boolean(),
+        verbatimResults: z.boolean(),
+        material: json.nullable(),
+      }),
+    )
+    .default([]),
+  vault: z
+    .array(
+      z.object({
+        spaceId: z.string().nullable(),
+        name: z.string(),
+        title: z.string(),
+        note: z.string(),
+        origin: z.string(),
+        auth: json,
+        plaintext: credentialPlaintext,
+      }),
+    )
+    .default([]),
+  botSecrets: z
+    .array(
+      z.object({
+        spaceId: z.string(),
+        botId: z.string(),
+        name: z.string(),
+        origin: z.string(),
+        auth: json,
+        plaintext: credentialPlaintext,
+      }),
+    )
+    .default([]),
+});
+export type AccountExportCredentials = z.infer<typeof AccountExportCredentialsSchema>;
 
 export const AccountExportRecordSchema = z.discriminatedUnion("type", [
   z.object({
@@ -249,5 +398,31 @@ export type AccountExportRecord = z.infer<typeof AccountExportRecordSchema>;
 
 export const AccountImportResultSchema = z.object({
   spaces: z.array(z.object({ id: Id, name: z.string() })),
+  /**
+   * The second, credential phase. Absent for version 1 archives, which have no credentials
+   * section. `error` means the section was present but unrestorable (wrong backup password,
+   * no password supplied, tampered); the spaces above still imported.
+   */
+  credentials: z
+    .object({
+      restored: z.object({
+        model: z.number().int().nonnegative(),
+        voice: z.number().int().nonnegative(),
+        connections: z.number().int().nonnegative(),
+        mcp: z.number().int().nonnegative(),
+        vault: z.number().int().nonnegative(),
+        botSecrets: z.number().int().nonnegative(),
+      }),
+      skipped: z.object({
+        model: z.number().int().nonnegative(),
+        voice: z.number().int().nonnegative(),
+        connections: z.number().int().nonnegative(),
+        mcp: z.number().int().nonnegative(),
+        vault: z.number().int().nonnegative(),
+        botSecrets: z.number().int().nonnegative(),
+      }),
+      error: z.string().optional(),
+    })
+    .optional(),
 });
 export type AccountImportResult = z.infer<typeof AccountImportResultSchema>;

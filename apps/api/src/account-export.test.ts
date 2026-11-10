@@ -190,6 +190,25 @@ describe("account export archive", () => {
     );
   });
 
+  it("yields the encrypted credentials section right after the manifest", async () => {
+    const fakes = stores();
+    const credentialsFile = new TextEncoder().encode('{"algorithm":"aes-256-gcm"}');
+    const entries = await unzipStream(
+      zipStream(
+        accountArchiveFiles(source(), fakes, { now: new Date(createdAt), credentialsFile }),
+      ),
+    );
+    expect(entries.map((entry) => entry.name).slice(0, 2)).toEqual([
+      "manifest.json",
+      "credentials.enc.json",
+    ]);
+    expect(entries[1]!.data).toEqual(Buffer.from(credentialsFile));
+    const without = await unzipStream(
+      zipStream(accountArchiveFiles(source(), fakes, { now: new Date(createdAt) })),
+    );
+    expect(without.map((entry) => entry.name)).not.toContain("credentials.enc.json");
+  });
+
   it("leaves out workspace files over the import limit", async () => {
     const fakes = stores();
     fakes.home.exportHome = async function* () {
@@ -269,18 +288,111 @@ describe("account export archive", () => {
   });
 });
 
-describe("GET /api/account/export", () => {
-  it("refuses a token that does not name a user", async () => {
+describe("POST /api/account/export", () => {
+  const fakePrisma = () => ({
+    user: {
+      findUnique: async () => ({ deactivatedAt: null }),
+      findUniqueOrThrow: async () => ({ name: "Ada", email: "ada@example.com", timezone: null }),
+    },
+    spaceMember: { findMany: async () => [] },
+    secret: { findFirst: async () => ({ ciphertext: "enc:sec-1" }) },
+    userModelCredential: {
+      findMany: async () => [
+        { provider: "acme", label: "Acme", secretId: "sec-1", supportsImages: false },
+      ],
+    },
+    userVoiceCredential: { findMany: async () => [] },
+    connection: { findMany: async () => [] },
+    mcpServer: { findMany: async () => [] },
+    vaultCredential: { findMany: async () => [] },
+    botSecret: { findMany: async () => [] },
+  });
+  const fakeAuth = (overrides: Record<string, unknown> = {}) => ({
+    consumeAccountExportToken: vi.fn(async (token: string) => (token === "used" ? "user-1" : null)),
+    verifyAccountPassword: vi.fn(async () => false),
+    isPasswordBreached: vi.fn(async () => false),
+    ...overrides,
+  });
+  const fakeSecrets = {
+    load: vi.fn(async () => "sk-acme"),
+    put: vi.fn(),
+  };
+  const postExport = (app: Hono, body: unknown) =>
+    app.request("/api/account/export", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const mount = (authOverrides: Record<string, unknown> = {}) => {
     const app = new Hono();
-    const consumeAccountExportToken = vi.fn(async () => null);
     mountAccountExportRoute(app, {
       ...stores(),
-      prisma: {} as never,
-      auth: { consumeAccountExportToken },
+      prisma: fakePrisma() as never,
+      secrets: fakeSecrets as never,
+      auth: fakeAuth(authOverrides),
     });
-    const response = await app.request("/api/account/export?token=used");
+    return app;
+  };
+
+  it("refuses a token that does not name a user", async () => {
+    const app = mount();
+    const response = await postExport(app, { token: "nope" });
     expect(response.status).toBe(410);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(consumeAccountExportToken).toHaveBeenCalledWith("used");
+  });
+
+  it("accepts the token as `token` or `accountToken`", async () => {
+    for (const body of [{ token: "used" }, { accountToken: "used" }]) {
+      expect((await postExport(mount(), body)).status).toBe(200);
+    }
+  });
+
+  it("exports without a credentials section when no backup password is sent", async () => {
+    const entries = await unzipStream((await postExport(mount(), { token: "used" })).body!);
+    expect(entries.map((entry) => entry.name)).toEqual(["manifest.json"]);
+    expect(fakeSecrets.load).not.toHaveBeenCalled();
+  });
+
+  it("seals credentials with the backup password and keeps the password out of the zip", async () => {
+    const backupPassword = "correct horse battery staple";
+    const response = await postExport(mount(), { token: "used", backupPassword });
+    expect(response.status).toBe(200);
+    const entries = await unzipStream(response.body!);
+    expect(entries.map((entry) => entry.name)).toEqual(["manifest.json", "credentials.enc.json"]);
+    const whole = Buffer.concat(entries.map((entry) => entry.data));
+    expect(whole.includes(backupPassword)).toBe(false);
+    expect(whole.includes("sk-acme")).toBe(false);
+    const { decryptBackupCredentials } = await import("./account-credentials-crypto.js");
+    const credentials = await decryptBackupCredentials({
+      userId: "user-1",
+      password: Buffer.from(backupPassword, "utf8"),
+      encrypted: JSON.parse(new TextDecoder().decode(entries[1]!.data)),
+    });
+    expect(credentials.model).toEqual([
+      { provider: "acme", label: "Acme", supportsImages: false, plaintext: "sk-acme" },
+    ]);
+  });
+
+  it("refuses a short backup password", async () => {
+    const response = await postExport(mount(), { token: "used", backupPassword: "short" });
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a backup password equal to the account password", async () => {
+    const app = mount({ verifyAccountPassword: async () => true });
+    const response = await postExport(app, {
+      token: "used",
+      backupPassword: "correct horse battery staple",
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a breached backup password", async () => {
+    const app = mount({ isPasswordBreached: async () => true });
+    const response = await postExport(app, {
+      token: "used",
+      backupPassword: "correct horse battery staple",
+    });
+    expect(response.status).toBe(400);
   });
 });

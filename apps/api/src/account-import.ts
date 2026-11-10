@@ -6,7 +6,7 @@ import { chmod, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type {
   AccountExportManifest,
@@ -15,6 +15,8 @@ import type {
   Actor,
 } from "@rakazo/contracts";
 import {
+  ACCOUNT_EXPORT_CREDENTIALS_MAX_BYTES,
+  ACCOUNT_EXPORT_CREDENTIALS_PATH,
   ACCOUNT_EXPORT_FORMAT,
   ACCOUNT_EXPORT_MANIFEST_PATH,
   ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES,
@@ -40,6 +42,9 @@ import { getLogger } from "@rakazo/logging";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
+import { zeroBuffer } from "./account-credentials-crypto.js";
+import type { CredentialMappings } from "./account-credentials-restore.js";
+import { restoreAccountCredentials } from "./account-credentials-restore.js";
 import { inflateEntry, parseZipArchive, readExact, ZipFormatError } from "./account-zip-reader.js";
 import { cancelBody } from "./http-body.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
@@ -51,6 +56,8 @@ export const ACCOUNT_IMPORT_LIMITS = {
   /** Everything the zip inflates to, so a bomb stops early. */
   unpackedBytes: 16 * 1024 ** 3,
   manifestBytes: 1024 * 1024,
+  /** The credentials section is kilobytes; its own cap, not the generic one. */
+  credentialsBytes: ACCOUNT_EXPORT_CREDENTIALS_MAX_BYTES,
   /** Room for about a million executable paths, more than a space's workspace files could hold. */
   executablesBytes: 64 * 1024 * 1024,
   recordLineBytes: 64 * 1024 * 1024,
@@ -83,10 +90,14 @@ const outOfOrder = () => new AccountImportError("The export's files are out of o
 const missingRecord = () => new AccountImportError("The export refers to a missing record.");
 const tooLarge = () => new AccountImportError("The export is too large.", 413);
 
-export type AccountImportDeps = SpaceDeletionDeps & { maxArtifactBytes: number };
+export type AccountImportDeps = SpaceDeletionDeps & {
+  maxArtifactBytes: number;
+  secrets: SecretStore;
+};
 
 export type ArchiveEntry =
   | { kind: "manifest" }
+  | { kind: "credentials" }
   | { kind: "records"; spaceId: string }
   | { kind: "artifact"; spaceId: string; artifactId: string }
   | { kind: "home"; spaceId: string; botId: string; path: string }
@@ -98,6 +109,9 @@ export function parseEntryName(name: string, index: number): ArchiveEntry {
     if (name !== ACCOUNT_EXPORT_MANIFEST_PATH) throw unreadable();
     return { kind: "manifest" };
   }
+  // The credentials section has one name and one place: right after the manifest. Any other
+  // spelling or position is not the section, and falls through to the rejection below.
+  if (index === 1 && name === ACCOUNT_EXPORT_CREDENTIALS_PATH) return { kind: "credentials" };
   if (/[\\\0]/.test(name)) throw invalidEntry();
   const segments = name.split("/");
   if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
@@ -117,6 +131,8 @@ function entryLimit(entry: ArchiveEntry, limits: ArchiveLimits): number {
   switch (entry.kind) {
     case "manifest":
       return limits.manifestBytes;
+    case "credentials":
+      return limits.credentialsBytes;
     case "executables":
       return limits.executablesBytes;
     case "records":
@@ -366,8 +382,12 @@ class SpaceImport {
 
 class AccountImporter implements ArchiveSink {
   private manifest: AccountExportManifest | null = null;
+  /** The encrypted credentials section, read only — decryption waits for the second phase. */
+  private credentialsFile: Uint8Array | null = null;
   private readonly created: Array<{ id: string; name: string; sourceId: string }> = [];
   private readonly finished = new Set<string>();
+  /** Source bot ids to the new bots, kept after each space finishes, for credential restore. */
+  private readonly importedBots = new Map<string, string>();
   private current: SpaceImport | null = null;
   private entry: ArchiveEntry | null = null;
   private chunks: Uint8Array[] = [];
@@ -389,6 +409,11 @@ class AccountImporter implements ArchiveSink {
     if (entry.kind === "manifest") return;
     const manifest = this.manifest;
     if (!manifest) throw unreadable();
+    if (entry.kind === "credentials") {
+      // Only a version 2 archive has a credentials section, and only one copy of it.
+      if (manifest.version !== 2 || this.credentialsFile) throw invalidEntry();
+      return;
+    }
     if (entry.kind === "records") {
       if (this.finished.has(entry.spaceId) || this.current?.sourceId === entry.spaceId)
         throw outOfOrder();
@@ -446,6 +471,9 @@ class AccountImporter implements ArchiveSink {
       case "manifest":
         this.manifest = parseManifest(bytes);
         return;
+      case "credentials":
+        this.credentialsFile = bytes;
+        return;
       case "records":
         return this.closeRecords();
       case "artifact":
@@ -474,6 +502,19 @@ class AccountImporter implements ArchiveSink {
         return created ? [{ id: created.id, name: created.name }] : [];
       }),
     };
+  }
+
+  /** Source ids to the new ids, for the credential phase that runs after this import. */
+  credentialMappings(): CredentialMappings {
+    return {
+      spaces: new Map(this.created.map((space) => [space.sourceId, space.id])),
+      bots: new Map(this.importedBots),
+    };
+  }
+
+  /** The encrypted credentials section, if the archive carried one. */
+  credentialsSection(): Uint8Array | null {
+    return this.credentialsFile;
   }
 
   /** All or nothing: every space this import created goes, with its files. */
@@ -1075,6 +1116,7 @@ class AccountImporter implements ArchiveSink {
     });
     for (const [homeKey, staging] of space.homes)
       await this.deps.home.commit(homeKey, staging, space.context());
+    for (const [sourceBotId, bot] of space.bots) this.importedBots.set(sourceBotId, bot.id);
     this.finished.add(space.sourceId);
     this.current = null;
     await rm(space.tempDir, { recursive: true, force: true });
@@ -1093,7 +1135,7 @@ function parseManifest(bytes: Uint8Array): AccountExportManifest {
   if (format !== ACCOUNT_EXPORT_FORMAT) throw unreadable();
   const manifest = AccountExportManifestSchema.safeParse(parsed);
   if (manifest.success) return manifest.data;
-  if (version !== ACCOUNT_EXPORT_VERSION)
+  if (typeof version === "number" && version > ACCOUNT_EXPORT_VERSION)
     throw new AccountImportError("This export is from a newer version of Rakazo.");
   throw unreadable();
 }
@@ -1118,19 +1160,38 @@ export async function importAccount(
   deps: AccountImportDeps,
   actor: Actor,
   body: AsyncIterable<Uint8Array>,
+  options: { backupPassword?: Buffer } = {},
 ): Promise<AccountImportResult> {
   const importer = new AccountImporter(deps, actor);
+  let result: AccountImportResult;
   try {
     await readArchive(
       body,
       { ...ACCOUNT_IMPORT_LIMITS, artifactBytes: deps.maxArtifactBytes },
       importer,
     );
-    return await importer.finish();
+    result = await importer.finish();
   } catch (error) {
     await importer.rollback();
     throw error;
   }
+  // Second phase, after the main import committed: decrypting and rebuilding credentials
+  // runs outside the rollback above, so a wrong backup password costs only the credentials,
+  // never the spaces that just imported. The password buffer is zeroed here, whatever happens.
+  const password = options.backupPassword ?? null;
+  try {
+    const credentials = await restoreAccountCredentials(
+      deps,
+      actor,
+      importer.credentialsSection(),
+      password,
+      importer.credentialMappings(),
+    );
+    if (credentials) result = { ...result, credentials };
+  } finally {
+    if (password) zeroBuffer(password);
+  }
+  return result;
 }
 
 async function* boundedBody(body: ReadableStream<Uint8Array>, maxBytes: number) {
@@ -1172,12 +1233,25 @@ export function mountAccountImportRoute(
       cancelBody(request.body);
       return c.json({ error: tooLarge().message }, 413);
     }
+    // The body is the zip stream, so the backup password travels in a header instead of a
+    // second field: request logging records method, route, status and duration only, never
+    // headers, and the value is zeroed once the import returns. Empty means no password.
+    const backupPassword = request.headers.get("x-rakazo-backup-password");
+    if (backupPassword !== null && backupPassword.length > 1024) {
+      cancelBody(request.body);
+      return c.json({ error: "Backup password is too long." }, 400);
+    }
+    const password =
+      backupPassword === null || backupPassword === ""
+        ? undefined
+        : Buffer.from(backupPassword, "utf8");
     try {
       return c.json(
         await importAccount(
           deps,
           actor,
           boundedBody(request.body, ACCOUNT_IMPORT_LIMITS.bodyBytes),
+          { backupPassword: password },
         ),
       );
     } catch (error) {

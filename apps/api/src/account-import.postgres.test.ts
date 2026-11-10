@@ -8,12 +8,13 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { LocalAgentHomeStore } from "@rakazo/adapters";
+import { EncryptedSecretStore, LocalAgentHomeStore } from "@rakazo/adapters";
 import type { AccountExportRecord, Actor } from "@rakazo/contracts";
 import { PAGE_SOURCE_MAX_BYTES } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createOrganizationForUser } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { encryptBackupCredentials } from "./account-credentials-crypto.js";
 import { AccountImportError, importAccount } from "./account-import.js";
 import {
   buildArchive,
@@ -362,7 +363,7 @@ describePostgres("account import (PostgreSQL)", () => {
         },
       ]),
     );
-  const runImport = (bytes: Uint8Array, importer = actor) =>
+  const runImport = (bytes: Uint8Array, importer = actor, options?: { backupPassword?: Buffer }) =>
     importAccount(
       {
         prisma,
@@ -372,9 +373,11 @@ describePostgres("account import (PostgreSQL)", () => {
         jobs: noop as JobPublisher,
         dataDir: root,
         maxArtifactBytes: 1024 * 1024,
+        secrets: new EncryptedSecretStore("test-only-encryption-key"),
       },
       importer,
       chunked(bytes),
+      options,
     );
   const ownedSpaceIds = async () =>
     (await system.spaceMember.findMany({ where: { userId }, select: { spaceId: true } }))
@@ -832,5 +835,115 @@ describePostgres("account import (PostgreSQL)", () => {
     await expect(runImport(bytes)).rejects.toBeInstanceOf(AccountImportError);
     expect(await ownedSpaceIds()).toEqual(before);
     expect(stored.size).toBe(blobs);
+  });
+
+  it("keeps the imported spaces when the credentials section cannot be decrypted", async () => {
+    const before = await ownedSpaceIds();
+    const file = await encryptBackupCredentials({
+      userId,
+      password: Buffer.from("correct horse battery staple", "utf8"),
+      credentials: {
+        version: 1,
+        model: [{ provider: "acme", label: "Acme", supportsImages: false, plaintext: "sk-acme" }],
+        voice: [],
+        connections: [],
+        mcp: [],
+        vault: [],
+        botSecrets: [],
+      },
+    });
+    const bytes = buildArchive(
+      exportFiles(
+        { ...manifestFor([{ id: "src-space", name: "Imported Home" }]), version: 2 },
+        [
+          {
+            id: "src-space",
+            records: sourceRecords(),
+            artifacts: [["src-art-1", "v1"]],
+          },
+        ],
+        { credentials: file },
+      ),
+    );
+    const result = await runImport(bytes, actor, {
+      backupPassword: Buffer.from("wrong password here", "utf8"),
+    });
+    expect(result.spaces).toHaveLength(1);
+    expect(result.credentials?.error).toMatch("backup password is incorrect");
+    expect((await ownedSpaceIds()).length).toBe(before.length + 1);
+    expect(await system.userModelCredential.count({ where: { userId, provider: "acme" } })).toBe(0);
+  });
+
+  it("restores credentials with the right backup password, remapping bot ids", async () => {
+    const file = await encryptBackupCredentials({
+      userId,
+      password: Buffer.from("correct horse battery staple", "utf8"),
+      credentials: {
+        version: 1,
+        model: [{ provider: "acme", label: "Acme", supportsImages: false, plaintext: "sk-acme" }],
+        voice: [],
+        connections: [],
+        mcp: [],
+        vault: [
+          {
+            spaceId: null,
+            name: "login",
+            title: "",
+            note: "",
+            origin: "https://example.test",
+            auth: { type: "login" },
+            plaintext: "user:pass",
+          },
+        ],
+        botSecrets: [
+          {
+            spaceId: "src-space",
+            botId: "src-bot-child",
+            name: "api-key",
+            origin: "",
+            auth: { type: "api_key" },
+            plaintext: "bot-key",
+          },
+        ],
+      },
+    });
+    const bytes = buildArchive(
+      exportFiles(
+        { ...manifestFor([{ id: "src-space", name: "Imported Home" }]), version: 2 },
+        [
+          {
+            id: "src-space",
+            records: sourceRecords(),
+            artifacts: [["src-art-1", "v1"]],
+          },
+        ],
+        { credentials: file },
+      ),
+    );
+    const result = await runImport(bytes, actor, {
+      backupPassword: Buffer.from("correct horse battery staple", "utf8"),
+    });
+    expect(result.credentials?.error).toBeUndefined();
+    expect(result.credentials?.restored).toMatchObject({ model: 1, vault: 1, botSecrets: 1 });
+    const [space] = result.spaces;
+    const credential = await system.userModelCredential.findFirstOrThrow({
+      where: { userId, provider: "acme" },
+    });
+    const secret = await system.secret.findFirstOrThrow({ where: { id: credential.secretId } });
+    expect(
+      await new EncryptedSecretStore("test-only-encryption-key").load(secret.ciphertext, secret.id),
+    ).toBe("sk-acme");
+    const vaultRow = await system.vaultCredential.findFirstOrThrow({
+      where: { userId, name: "login" },
+    });
+    expect(vaultRow.spaceId).toBeNull();
+    const botRow = await system.botSecret.findFirstOrThrow({
+      where: { userId, name: "api-key" },
+    });
+    expect(botRow.spaceId).toBe(space!.id);
+    const child = await system.bot.findFirstOrThrow({
+      where: { spaceId: space!.id, name: "Scout" },
+    });
+    expect(botRow.botId).toBe(child.id);
   });
 });

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { encryptBackupCredentials } from "./account-credentials-crypto.js";
 import type { AccountImportDeps, ArchiveEntry, ArchiveSink } from "./account-import.js";
 import {
   ACCOUNT_IMPORT_LIMITS,
@@ -131,9 +132,16 @@ describe("account import archive", () => {
 
   it("rejects a newer version", async () => {
     const bytes = buildArchive([
-      ["manifest.json", JSON.stringify({ ...manifestFor([]), version: 2 })],
+      ["manifest.json", JSON.stringify({ ...manifestFor([]), version: 3 })],
     ]);
     await expect(importBytes(bytes)).rejects.toThrow("newer version of Rakazo");
+  });
+
+  it("accepts a version 2 archive without a credentials section", async () => {
+    const bytes = buildArchive([
+      ["manifest.json", JSON.stringify({ ...manifestFor([]), version: 2 })],
+    ]);
+    await expect(importBytes(bytes)).resolves.toEqual({ spaces: [] });
   });
 
   it("rejects an archive that does not start with the manifest", async () => {
@@ -167,12 +175,20 @@ describe("account import archive", () => {
     "spaces/s1/homes/b1/dir\\..\\x",
     "other/s1/records.jsonl",
     "manifest.json",
+    "spaces/s1/credentials.enc.json",
+    "Credentials.enc.json",
   ])("rejects the entry name %s", (name) => {
     expect(() => parseEntryName(name, 1)).toThrow(AccountImportError);
   });
 
+  it("rejects the credentials section anywhere but right after the manifest", () => {
+    expect(() => parseEntryName("credentials.enc.json", 2)).toThrow(AccountImportError);
+    expect(() => parseEntryName("credentials.enc.json", 0)).toThrow(AccountImportError);
+  });
+
   it("parses the documented layout", () => {
     expect(parseEntryName("manifest.json", 0)).toEqual({ kind: "manifest" });
+    expect(parseEntryName("credentials.enc.json", 1)).toEqual({ kind: "credentials" });
     expect(parseEntryName("spaces/s1/records.jsonl", 1)).toEqual({
       kind: "records",
       spaceId: "s1",
@@ -210,6 +226,72 @@ describe("account import archive", () => {
       ],
     ]);
     await expect(importBytes(bytes)).rejects.toThrow("too large");
+  });
+
+  it("stops a credentials section over its own limit while inflating", async () => {
+    const bytes = buildArchive([
+      ["manifest.json", JSON.stringify({ ...manifestFor([]), version: 2 })],
+      ["credentials.enc.json", "x".repeat(64)],
+    ]);
+    await expect(
+      readArchive(chunked(bytes), { ...limits, credentialsBytes: 10 }, new RecordingSink()),
+    ).rejects.toThrow("too large");
+  });
+
+  it("keeps the import when the credentials section cannot be decrypted", async () => {
+    const file = await encryptBackupCredentials({
+      userId: actor.userId,
+      password: Buffer.from("correct horse battery staple", "utf8"),
+      credentials: {
+        version: 1,
+        model: [{ provider: "acme", label: "Acme", supportsImages: false, plaintext: "sk-acme" }],
+        voice: [],
+        connections: [],
+        mcp: [],
+        vault: [],
+        botSecrets: [],
+      },
+    });
+    const bytes = buildArchive([
+      ["manifest.json", JSON.stringify({ ...manifestFor([]), version: 2 })],
+      ["credentials.enc.json", file],
+    ]);
+    const result = await importAccount(deps, actor, chunked(bytes), {
+      backupPassword: Buffer.from("wrong password here", "utf8"),
+    });
+    expect(result.spaces).toEqual([]);
+    expect(result.credentials?.error).toMatch("backup password is incorrect");
+    expect(result.credentials?.restored).toEqual({
+      model: 0,
+      voice: 0,
+      connections: 0,
+      mcp: 0,
+      vault: 0,
+      botSecrets: 0,
+    });
+  });
+
+  it("reports a credentials section with no backup password, without failing", async () => {
+    const file = await encryptBackupCredentials({
+      userId: actor.userId,
+      password: Buffer.from("correct horse battery staple", "utf8"),
+      credentials: {
+        version: 1,
+        model: [],
+        voice: [],
+        connections: [],
+        mcp: [],
+        vault: [],
+        botSecrets: [],
+      },
+    });
+    const bytes = buildArchive([
+      ["manifest.json", JSON.stringify({ ...manifestFor([]), version: 2 })],
+      ["credentials.enc.json", file],
+    ]);
+    const result = await importAccount(deps, actor, chunked(bytes));
+    expect(result.spaces).toEqual([]);
+    expect(result.credentials?.error).toMatch("backup password is required");
   });
 
   it("stops an artifact over the artifact limit while inflating", async () => {

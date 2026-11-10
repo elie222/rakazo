@@ -989,7 +989,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     if (matched) return c.newResponse(response.body, response);
     await next();
   });
-  mountAccountExportRoute(app, { prisma, auth, artifacts, home });
+  mountAccountExportRoute(app, { prisma, auth, artifacts, home, secrets });
   mountAuditExportRoute(app, { prisma, sessionActor });
   mountVoiceHttpRoutes(app, { prisma, secrets, env }, async (c) => {
     const actor = await sessionActor(c.req.raw);
@@ -1007,6 +1007,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       dataDir: env.dataDir,
       messagingInstallations,
       maxArtifactBytes: env.maxUploadSizeBytes,
+      secrets,
     },
     sessionActor,
   );

@@ -1,4 +1,10 @@
-import type { AccountExportManifest, AccountExportRecord } from "@rakazo/contracts";
+import type { SecretStore } from "@rakazo/adapter-kit";
+import type {
+  AccountExportCredentials,
+  AccountExportManifest,
+  AccountExportRecord,
+} from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import type { Prisma, PrismaClient } from "./client.js";
 import { runAsTenant } from "./row-security.js";
 
@@ -502,4 +508,226 @@ async function* spaceRecords(
     if (tickets.length < PAGE) break;
     number = tickets.at(-1)!.number;
   }
+}
+
+/**
+ * The user's own credentials, decrypted for the backup-encryption layer. Every value comes
+ * through `secrets.load`, never from a ciphertext column: an Infisical deployment stores
+ * `infisical:` references there, which a new install could not open. A row whose secret
+ * cannot be read is left out and counted, never copied as ciphertext and never fatal to
+ * the export — the rest of the backup still goes out.
+ *
+ * Deployment-level keys are deliberately absent: integration provider configs and deployment
+ * settings belong to the install, not the account.
+ */
+export async function readAccountExportCredentials(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  userId: string,
+): Promise<{ credentials: AccountExportCredentials; unreadable: number }> {
+  const credentials: AccountExportCredentials = {
+    version: 1,
+    model: [],
+    voice: [],
+    connections: [],
+    mcp: [],
+    vault: [],
+    botSecrets: [],
+  };
+  let unreadable = 0;
+  const skip = (table: string, id: string) => {
+    unreadable += 1;
+    getLogger().warn("account.export.credential_unreadable", { table, "row.id": id });
+  };
+  // A Secret row's ciphertext opens under its own id, which is also the AAD.
+  const loadSecret = async (secretId: string | null, table: string, rowId: string) => {
+    if (!secretId) return null;
+    const secret = await prisma.secret.findFirst({
+      where: { id: secretId, userId },
+      select: { ciphertext: true },
+    });
+    if (!secret) {
+      skip(table, rowId);
+      return null;
+    }
+    try {
+      return await secrets.load(secret.ciphertext, secretId);
+    } catch {
+      skip(table, rowId);
+      return null;
+    }
+  };
+
+  const models = await prisma.userModelCredential.findMany({
+    where: { userId },
+    orderBy: [{ provider: "asc" }, { id: "asc" }],
+    select: { provider: true, label: true, secretId: true, supportsImages: true },
+  });
+  for (const row of models) {
+    const plaintext = await loadSecret(row.secretId, "user_model_credentials", row.provider);
+    if (plaintext === null) continue;
+    credentials.model.push({
+      provider: row.provider,
+      label: row.label,
+      supportsImages: row.supportsImages,
+      plaintext,
+    });
+  }
+
+  const voices = await prisma.userVoiceCredential.findMany({
+    where: { userId },
+    orderBy: [{ provider: "asc" }, { id: "asc" }],
+    select: { provider: true, secretId: true },
+  });
+  for (const row of voices) {
+    const plaintext = await loadSecret(row.secretId, "user_voice_credentials", row.provider);
+    if (plaintext === null) continue;
+    credentials.voice.push({ provider: row.provider, plaintext });
+  }
+
+  const connections = await prisma.connection.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      spaceId: true,
+      connectorId: true,
+      provider: true,
+      displayName: true,
+      status: true,
+      providerRef: true,
+      metadata: true,
+      secretId: true,
+    },
+  });
+  for (const row of connections) {
+    // Managed connectors hold the token remotely and leave secretId null; the row still
+    // restores so the user can reconnect it. A present but unreadable secret keeps the
+    // row with no value rather than dropping the connection.
+    const plaintext = row.secretId
+      ? await loadSecret(row.secretId, "connections", row.provider)
+      : null;
+    credentials.connections.push({
+      spaceId: row.spaceId,
+      connectorId: row.connectorId,
+      provider: row.provider,
+      displayName: row.displayName,
+      status: row.status,
+      providerRef: row.providerRef,
+      metadata: json(row.metadata),
+      plaintext,
+    });
+  }
+
+  const servers = await prisma.mcpServer.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      spaceId: true,
+      slug: true,
+      name: true,
+      description: true,
+      transport: true,
+      endpoint: true,
+      command: true,
+      allSpaces: true,
+      allBots: true,
+      enabled: true,
+      verbatimResults: true,
+      secretId: true,
+    },
+  });
+  for (const row of servers) {
+    let material: AccountExportCredentials["mcp"][number]["material"] = null;
+    if (row.secretId) {
+      const plaintext = await loadSecret(row.secretId, "mcp_servers", row.slug);
+      if (plaintext !== null) {
+        try {
+          material = JSON.parse(plaintext) as AccountExportCredentials["mcp"][number]["material"];
+        } catch {
+          skip("mcp_servers", row.slug);
+        }
+      }
+    }
+    credentials.mcp.push({
+      spaceId: row.spaceId,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      transport: row.transport,
+      endpoint: row.endpoint,
+      command: row.command,
+      allSpaces: row.allSpaces,
+      allBots: row.allBots,
+      enabled: row.enabled,
+      verbatimResults: row.verbatimResults,
+      material,
+    });
+  }
+
+  const vaultRows = await prisma.vaultCredential.findMany({
+    where: { userId },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      spaceId: true,
+      name: true,
+      title: true,
+      note: true,
+      origin: true,
+      auth: true,
+      ciphertext: true,
+    },
+  });
+  for (const row of vaultRows) {
+    // Vault rows seal their own column under the row id as AAD.
+    let plaintext: string;
+    try {
+      plaintext = await secrets.load(row.ciphertext, row.id);
+    } catch {
+      skip("vault_credentials", row.id);
+      continue;
+    }
+    credentials.vault.push({
+      spaceId: row.spaceId,
+      name: row.name,
+      title: row.title,
+      note: row.note,
+      origin: row.origin,
+      auth: json(row.auth),
+      plaintext,
+    });
+  }
+
+  const botRows = await prisma.botSecret.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      spaceId: true,
+      botId: true,
+      name: true,
+      origin: true,
+      auth: true,
+      ciphertext: true,
+    },
+  });
+  for (const row of botRows) {
+    let plaintext: string;
+    try {
+      plaintext = await secrets.load(row.ciphertext, row.id);
+    } catch {
+      skip("bot_secrets", row.id);
+      continue;
+    }
+    credentials.botSecrets.push({
+      spaceId: row.spaceId,
+      botId: row.botId,
+      name: row.name,
+      origin: row.origin,
+      auth: json(row.auth),
+      plaintext,
+    });
+  }
+
+  return { credentials, unreadable };
 }

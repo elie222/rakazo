@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import { LocalAgentHomeStore } from "@rakazo/adapters";
+import { EncryptedSecretStore, LocalAgentHomeStore } from "@rakazo/adapters";
 import type { AccountExportRecord, Actor } from "@rakazo/contracts";
 import {
   AccountExportManifestSchema,
@@ -290,35 +290,47 @@ describePostgres("account export (PostgreSQL)", () => {
     await db.pool.end();
   });
 
-  it("refuses a link once the account is deactivated", async () => {
+  const secrets = new EncryptedSecretStore("test-only-encryption-key");
+  const exportAuth = {
+    consumeAccountExportToken: async (token: string) => (token === "good" ? exporter : null),
+    verifyAccountPassword: async () => false,
+    isPasswordBreached: async () => false,
+  };
+  const exportApp = () => {
     const app = new Hono();
     mountAccountExportRoute(app, {
       prisma,
-      auth: { consumeAccountExportToken: async (token) => (token === "good" ? exporter : null) },
+      auth: exportAuth,
       artifacts: { get: async (key) => new TextEncoder().encode(`bytes:${key}`) },
       home: { exportHome: async function* () {} },
+      secrets,
     });
+    return app;
+  };
+  const downloadExport = (app: Hono, token: string) =>
+    app.request("/api/account/export", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+
+  it("refuses a link once the account is deactivated", async () => {
+    const app = exportApp();
     const setDeactivated = (deactivatedAt: Date | null) =>
       runAsSystem("test fixture", () =>
         prisma.user.update({ where: { id: exporter }, data: { deactivatedAt } }),
       );
     await setDeactivated(new Date());
     try {
-      expect((await app.request("/api/account/export?token=good")).status).toBe(410);
+      expect((await downloadExport(app, "good")).status).toBe(410);
     } finally {
       await setDeactivated(null);
     }
   });
 
   it("downloads only the exporter's content, decrypted", async () => {
-    const app = new Hono();
-    mountAccountExportRoute(app, {
-      prisma,
-      auth: { consumeAccountExportToken: async (token) => (token === "good" ? exporter : null) },
-      artifacts: { get: async (key) => new TextEncoder().encode(`bytes:${key}`) },
-      home: { exportHome: async function* () {} },
-    });
-    const response = await app.request("/api/account/export?token=good");
+    const app = exportApp();
+    const response = await downloadExport(app, "good");
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/zip");
     expect(response.headers.get("content-disposition")).toMatch(
@@ -465,17 +477,20 @@ describePostgres("account export (PostgreSQL)", () => {
 
   it("imports into another account with the same content", async () => {
     const blobs = new Map<string, Uint8Array>();
-    const exportApp = new Hono();
-    mountAccountExportRoute(exportApp, {
+    const roundtripApp = new Hono();
+    mountAccountExportRoute(roundtripApp, {
       prisma,
-      auth: { consumeAccountExportToken: async (token) => token },
+      auth: {
+        consumeAccountExportToken: async (token) => token,
+        verifyAccountPassword: async () => false,
+        isPasswordBreached: async () => false,
+      },
       artifacts: { get: async (key) => blobs.get(key) ?? new TextEncoder().encode(`bytes:${key}`) },
       home: { exportHome: async function* () {} },
+      secrets,
     });
     const download = async (userId: string) =>
-      new Uint8Array(
-        await (await exportApp.request(`/api/account/export?token=${userId}`)).arrayBuffer(),
-      );
+      new Uint8Array(await (await downloadExport(roundtripApp, userId)).arrayBuffer());
     const archive = await download(exporter);
 
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-account-roundtrip-"));
@@ -503,6 +518,7 @@ describePostgres("account export (PostgreSQL)", () => {
           jobs: noop as JobPublisher,
           dataDir: root,
           maxArtifactBytes: 1024 * 1024,
+          secrets,
         },
         actor,
         (async function* () {
