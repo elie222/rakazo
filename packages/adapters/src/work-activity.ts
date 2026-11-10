@@ -59,8 +59,6 @@ const MAX_CARDS_PER_USER = 5;
  * a moment later; a phone is started a card only once that would have happened.
  */
 const START_GRACE_MS = 10_000;
-/** iOS budgets cards started by push: a phone is started one at most this often. */
-const MIN_START_INTERVAL_MS = 60_000;
 /** The card's height fits this many rows; the count covers the rest. */
 export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
@@ -140,6 +138,13 @@ export class WorkActivities {
         }),
       );
     }
+    // This phone shows the work now: it is started no other card for it, even once this one goes.
+    await runAsSystem("record a phone's own live status card", () =>
+      this.prisma.workActivityStartToken.updateMany({
+        where: { userId, sessionId },
+        data: { startedAt: new Date() },
+      }),
+    );
     // A user's phones are few; the oldest cards beyond that end, so each update fans out a little.
     const extra = await runAsSystem("find a user's oldest live status cards", () =>
       this.prisma.workActivityToken.findMany({
@@ -421,8 +426,7 @@ export class WorkActivities {
       (phone) =>
         live.has(phone.sessionId) &&
         !shown.has(phone.sessionId) &&
-        (!phone.startedAt ||
-          (phone.startedAt < since && now - phone.startedAt.getTime() >= MIN_START_INTERVAL_MS)),
+        (!phone.startedAt || phone.startedAt < since),
     );
     if (!due.length) return [];
     const wait = newest.getTime() + START_GRACE_MS - now;

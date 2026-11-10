@@ -532,13 +532,10 @@ describe("live status card of the user's bots at work", () => {
       // Until its card registers, or after the user dismissed it, the same work starts no other.
       await activities.sync("user-1");
       expect(start).toHaveBeenCalledTimes(2);
-      // New work after a pause starts one again, though not sooner than iOS allows.
+      // New work after a pause starts one again.
       runs[0]!.status = "completed";
       run("2", { createdAt: new Date(Date.now() - 20_000) });
       for (const phone of phones.values()) phone.startedAt = new Date(Date.now() - 30_000);
-      await activities.sync("user-1");
-      expect(start).toHaveBeenCalledTimes(2);
-      for (const phone of phones.values()) phone.startedAt = new Date(Date.now() - 120_000);
       await activities.sync("user-1");
       expect(start).toHaveBeenCalledTimes(4);
     });
@@ -546,7 +543,7 @@ describe("live status card of the user's bots at work", () => {
     it("leaves a phone that shows its own card, and waits for the one that just sent", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
       try {
-        const { activities, run, runs, start } = setup();
+        const { activities, cards, run, runs, start } = setup();
         runs.length = 0;
         run("1", { createdAt: new Date() });
         await activities.registerStarts("user-1", "session-1", START_TOKEN);
@@ -555,6 +552,10 @@ describe("live status card of the user's bots at work", () => {
         // The phone that sent registers its own card in the meantime.
         expect(await activities.register("user-1", "session-1", TOKEN)).toBe(true);
         await vi.advanceTimersByTimeAsync(10_000);
+        expect(start).not.toHaveBeenCalled();
+        // Its card going, such as when the user dismisses it, starts no other for the same work.
+        cards.clear();
+        await activities.sync("user-1");
         expect(start).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
