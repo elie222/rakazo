@@ -16,7 +16,6 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (error: Error) => error.message }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));

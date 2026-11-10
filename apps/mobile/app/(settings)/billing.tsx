@@ -1,11 +1,15 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { BillingStatus } from "@rakazo/contracts";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import type { BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
 import {
   ByokTierSchema,
   byokTierChangeOffered,
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
+  creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  HeldCreditAmountSchema,
   isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
@@ -21,12 +25,10 @@ import {
   ownKeySubscriptionCents,
   planEndsAt,
 } from "../../lib/billing";
-import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import { dateLocaleForUi } from "../../lib/i18n";
 import { rememberReferral } from "../../lib/referral";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
-
-type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(dateLocaleForUi(), {
@@ -39,10 +41,10 @@ function formatDate(iso: string) {
 export default function BillingScreen() {
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
+  const [amount, setAmount] = useState<HeldCreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
   // This screen shows the Space it opened in; every answer it gets, including a late one after a
   // Space switch, is filed under that Space.
@@ -52,7 +54,7 @@ export default function BillingScreen() {
       setStatus(next);
       rememberReferral(space, next.referral);
       setAmount(
-        ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
+        HeldCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
       );
     },
     [space],
@@ -66,7 +68,7 @@ export default function BillingScreen() {
             if (active) show(next);
           })
           .catch(() => {
-            if (active) Alert.alert(t("Could not load billing"));
+            if (active) Alert.alert(t`Could not load billing`);
           });
       };
       load();
@@ -85,7 +87,7 @@ export default function BillingScreen() {
     try {
       await work();
     } catch {
-      Alert.alert(t("Could not update billing"));
+      Alert.alert(t`Could not update billing`);
     } finally {
       setPending(false);
     }
@@ -117,29 +119,25 @@ export default function BillingScreen() {
   /** "$49 / month", at the plan's interval. */
   const tierPrice = (cents: number) => {
     const price = `$${cents / 100}`;
-    return interval === "year" ? t("{price} / year", { price }) : t("{price} / month", { price });
+    return interval === "year" ? t`${price} / year` : t`${price} / month`;
   };
   const tierComputer = (offer: TierOffer) =>
-    t("{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month", {
-      vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus,
-      memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb,
-      hours: offer.computerHours,
-    });
+    t`${ph({ vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus })} vCPU, ${ph({ memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb })} GB, ${ph({ hours: offer.computerHours })} computer hours a month`;
   const changeTier = (offer: TierOffer, cents: number) =>
     Alert.alert(
-      t("Switch to {name}?", { name: offer.name }),
+      t`Switch to ${ph({ name: offer.name })}?`,
       // What the tier gives, then how the change bills.
       `${tierComputer(offer)}\n\n${
         status.state === "trialing"
-          ? t("Your plan becomes {price} when your trial ends.", { price: tierPrice(cents) })
+          ? t`Your plan becomes ${ph({ price: tierPrice(cents) })} when your trial ends.`
           : cents > (ownKeyCents ?? 0)
-            ? t("Your card is charged the prorated difference today.")
-            : t("The unused difference is credited to your next invoice.")
+            ? t`Your card is charged the prorated difference today.`
+            : t`The unused difference is credited to your next invoice.`
       }`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Switch"),
+          text: t`Switch`,
           onPress: () =>
             void action(async () => {
               show(await rpc("billing/changeTier", { tier: offer.tier }));
@@ -163,22 +161,22 @@ export default function BillingScreen() {
     >
       <SettingsGroup>
         <SettingsRow
-          title={t("Plan")}
+          title={t`Plan`}
           detail={
             ownKeyCents
               ? status.byokInterval === "year"
-                ? t("{price} / year", { price: `$${ownKeyCents / 100}` })
-                : t("{price} / month", { price: `$${ownKeyCents / 100}` })
+                ? t`${ph({ price: `$${ownKeyCents / 100}` })} / year`
+                : t`${ph({ price: `$${ownKeyCents / 100}` })} / month`
               : undefined
           }
           value={
             status.state === "trialing" || status.byokFreeUntil
-              ? t("Free trial")
+              ? t`Free trial`
               : plan === "byok"
-                ? t("Your subscription or API key")
+                ? t`Your subscription or API key`
                 : plan === "credits"
-                  ? t("Rakazo credits")
-                  : t("None")
+                  ? t`Rakazo credits`
+                  : t`None`
           }
         />
         {currentTier && tierChange ? (
@@ -209,31 +207,27 @@ export default function BillingScreen() {
         )}
         {endsAt ? (
           <SettingsRow
-            title={status.cancelAtPeriodEnd ? t("Ends") : t("Free until")}
+            title={status.cancelAtPeriodEnd ? t`Ends` : t`Free until`}
             value={formatDate(endsAt)}
           />
         ) : status.access && status.currentPeriodEndsAt ? (
-          <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
+          <SettingsRow title={t`Renews`} value={formatDate(status.currentPeriodEndsAt)} />
         ) : null}
         {yearlySavings !== null && annualCents ? (
           <SettingsRow
-            title={t("Switch to yearly")}
+            title={t`Switch to yearly`}
             value={`−${yearlySavings}%`}
             disabled={pending}
             onPress={() =>
               Alert.alert(
-                t("Switch to yearly?"),
+                t`Switch to yearly?`,
                 status.state === "trialing"
-                  ? t("Your plan becomes {price} / year when your trial ends.", {
-                      price: `$${annualCents / 100}`,
-                    })
-                  : t("Your card is charged {price} today, less the unused part of this month.", {
-                      price: `$${annualCents / 100}`,
-                    }),
+                  ? t`Your plan becomes ${ph({ price: `$${annualCents / 100}` })} / year when your trial ends.`
+                  : t`Your card is charged ${ph({ price: `$${annualCents / 100}` })} today, less the unused part of this month.`,
                 [
-                  { text: t("Cancel"), style: "cancel" },
+                  { text: t`Cancel`, style: "cancel" },
                   {
-                    text: t("Switch"),
+                    text: t`Switch`,
                     onPress: () =>
                       void action(async () => {
                         show(await rpc("billing/switchToYearly"));
@@ -246,7 +240,7 @@ export default function BillingScreen() {
         ) : null}
         {status.canManage ? (
           <SettingsRow
-            title={plan && !status.byokFreeUntil ? t("Change plan") : t("Choose a plan")}
+            title={plan && !status.byokFreeUntil ? t`Change plan` : t`Choose a plan`}
             prominent
             onPress={() => openFromSettingsSheet(router, "/paywall?dismissible=1")}
           />
@@ -256,29 +250,27 @@ export default function BillingScreen() {
         <SettingsGroup
           footer={
             endTrial
-              ? t("Trials get fewer hours to prevent abuse.")
+              ? t`Trials get fewer hours to prevent abuse.`
               : cancelledTrial
-                ? t("Cancelled trials have no computer hours.")
+                ? t`Cancelled trials have no computer hours.`
                 : undefined
           }
         >
-          <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
+          <SettingsRow title={t`Computer hours left`} value={String(status.computerHoursLeft)} />
           {endTrial ? (
             <SettingsRow
-              title={t("Start plan now")}
+              title={t`Start plan now`}
               disabled={pending}
               onPress={() =>
                 Alert.alert(
-                  t("Start your plan now?"),
+                  t`Start your plan now?`,
                   ownKeyCents
-                    ? t("Your trial ends and your card is charged {price} today.", {
-                        price: `$${ownKeyCents / 100}`,
-                      })
-                    : t("Your trial ends and your card is charged today."),
+                    ? t`Your trial ends and your card is charged ${ph({ price: `$${ownKeyCents / 100}` })} today.`
+                    : t`Your trial ends and your card is charged today.`,
                   [
-                    { text: t("Cancel"), style: "cancel" },
+                    { text: t`Cancel`, style: "cancel" },
                     {
-                      text: t("Start plan"),
+                      text: t`Start plan`,
                       onPress: () =>
                         void action(async () => {
                           show(await rpc("billing/endTrial"));
@@ -291,7 +283,7 @@ export default function BillingScreen() {
           ) : null}
           {cancelledTrial && status.canManage && status.hasCustomer ? (
             <SettingsRow
-              title={t("Renew plan")}
+              title={t`Renew plan`}
               disabled={pending}
               onPress={() =>
                 void action(async () => {
@@ -304,15 +296,15 @@ export default function BillingScreen() {
         </SettingsGroup>
       ) : null}
       {referral ? (
-        <SettingsGroup footer={t("Get a free month for each friend who starts a trial.")}>
+        <SettingsGroup footer={t`Get a free month for each friend who starts a trial.`}>
           <SettingsRow
-            title={t("Invite friends")}
+            title={t`Invite friends`}
             detail={
               referral.rewards === 0
                 ? undefined
                 : referral.rewards === 1
-                  ? t("1 free month earned")
-                  : t("{count} free months earned", { count: referral.rewards })
+                  ? t`1 free month earned`
+                  : t`${ph({ count: referral.rewards })} free months earned`
             }
             chevron="right"
             onPress={() => void Share.share({ message: referral.url }).catch(() => undefined)}
@@ -321,29 +313,29 @@ export default function BillingScreen() {
       ) : null}
       {credits ? (
         <SettingsGroup
-          label={t("Credits")}
+          label={t`Credits`}
           footer={
-            recurring ? t("Monthly credits expire at renewal. Top-ups do not expire.") : undefined
+            recurring ? t`Monthly credits expire at renewal. Top-ups do not expire.` : undefined
           }
         >
           <SettingsRow
-            title={t("Available credits")}
+            title={t`Available credits`}
             value={`$${(status.balanceUsd ?? 0).toFixed(2)}`}
           />
           {status.canManage && recurring ? (
             <>
               <MenuView
-                actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
+                actions={creditAmountChoices(amount).map((value) => ({
                   id: String(value),
                   title: `$${value / 100} / month`,
                   state: amount === value ? ("on" as const) : ("off" as const),
                 }))}
                 onPressAction={({ nativeEvent }) =>
-                  setAmount(ModelCreditAmountSchema.parse(Number(nativeEvent.event)))
+                  setAmount(HeldCreditAmountSchema.parse(Number(nativeEvent.event)))
                 }
               >
                 <SettingsRow
-                  title={t("Monthly credits")}
+                  title={t`Monthly credits`}
                   value={`$${amount / 100} / month`}
                   chevron="down"
                   disabled={pending}
@@ -353,13 +345,15 @@ export default function BillingScreen() {
                 <SettingsRow
                   title={
                     amount > (status.monthlyAmountCents ?? 0)
-                      ? t("Upgrade now")
-                      : t("Downgrade at renewal")
+                      ? t`Upgrade now`
+                      : t`Downgrade at renewal`
                   }
                   disabled={pending}
                   onPress={() =>
                     void action(async () => {
-                      await rpc("billing/setMonthlyCredits", { amountCents: amount });
+                      await rpc("billing/setMonthlyCredits", {
+                        amountCents: ModelCreditAmountSchema.parse(amount),
+                      });
                       show(await rpc("billing/refresh"));
                     })
                   }
@@ -385,7 +379,7 @@ export default function BillingScreen() {
               }
             >
               <SettingsRow
-                title={t("Add credits")}
+                title={t`Add credits`}
                 chevron="right"
                 disabled={pending || !status.creditPurchasesEnabled}
               />
@@ -393,7 +387,7 @@ export default function BillingScreen() {
           ) : null}
           {status.canManage && status.funding === "byok" && (status.balanceUsd ?? 0) > 0 ? (
             <SettingsRow
-              title={t("Use Rakazo credits")}
+              title={t`Use Rakazo credits`}
               disabled={pending || !status.creditPurchasesEnabled}
               onPress={() =>
                 void action(async () => {
@@ -408,7 +402,7 @@ export default function BillingScreen() {
       {status.canManage && status.hasCustomer ? (
         <SettingsGroup>
           <SettingsRow
-            title={t("Manage billing")}
+            title={t`Manage billing`}
             chevron="right"
             disabled={pending}
             onPress={() =>

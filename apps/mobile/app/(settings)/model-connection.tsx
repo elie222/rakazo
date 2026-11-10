@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type {
   ModelApiProtocol,
   ModelHeaderRow,
@@ -50,7 +52,6 @@ import { CompatibleEndpointForm } from "../../components/compatible-endpoint-for
 import { DisclosureRow, LimitField } from "../../components/model-connection-fields";
 import { createModelsStyles } from "../../components/model-connection-styles";
 import { NativeActionButton } from "../../components/native-action-button";
-import { useI18n } from "../../lib/i18n";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import {
   MODEL_CONNECT_TIMEOUT_MS,
@@ -83,7 +84,7 @@ export default function ModelConnection() {
   const [credentialId, setCredentialId] = useState(request?.credentialId ?? null);
   const credentialIdRef = useRef(credentialId);
   credentialIdRef.current = credentialId;
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -131,7 +132,7 @@ export default function ModelConnection() {
     const nextError = next.error ?? null;
     setFeedbackAnchor(anchor);
     setError(nextError);
-    setSavedNotice(next.notice === t("Saved.") ? next.notice : null);
+    setSavedNotice(next.notice === t`Saved.` ? next.notice : null);
     const message = nextError ?? next.notice ?? null;
     // VoiceOver keeps focus on the tapped button, so speak the result from here.
     // Saved limits also show their result beside the button that was pressed.
@@ -146,7 +147,7 @@ export default function ModelConnection() {
 
   const load = useCallback(
     async (preferred: ModelSelection = {}) => {
-      if (!request) throw new Error(t("Could not load model settings"));
+      if (!request) throw new Error(t`Could not load model settings`);
       setError(null);
       const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
         rpc("me"),
@@ -238,7 +239,7 @@ export default function ModelConnection() {
       void load()
         .catch((err: unknown) =>
           publishFeedback("connection", {
-            error: errorText(err, t("Could not load model settings")),
+            error: errorText(err, t`Could not load model settings`),
           }),
         )
         .finally(() => setLoading(false));
@@ -356,15 +357,15 @@ export default function ModelConnection() {
         publishFeedback("probe", {
           notice:
             models.length === 0
-              ? t("Server found. Enter a model name.")
+              ? t`Server found. Enter a model name.`
               : models.length === 1
-                ? t("Found {count} model.", { count: 1 })
-                : t("Found {count} models.", { count: models.length }),
+                ? t`Found ${ph({ count: 1 })} model.`
+                : t`Found ${ph({ count: models.length })} models.`,
         });
       },
       onError: (err) =>
         publishFeedback("probe", {
-          error: errorText(err, t("Could not reach this model server")),
+          error: errorText(err, t`Could not reach this model server`),
         }),
     });
   }
@@ -377,12 +378,12 @@ export default function ModelConnection() {
     try {
       await rpc("models/disconnect", { provider: selected.provider, credentialId: credential.id });
       publishFeedback("connection", {
-        notice: t("Disconnected {provider}.", { provider: selectedProviderLabel }),
+        notice: t`Disconnected ${ph({ provider: selectedProviderLabel })}.`,
       });
       router.back();
     } catch (err) {
       publishFeedback("connection", {
-        error: errorText(err, t("Could not disconnect this provider")),
+        error: errorText(err, t`Could not disconnect this provider`),
       });
     } finally {
       setPending(null);
@@ -442,16 +443,12 @@ export default function ModelConnection() {
       publishFeedback(anchor, {
         error:
           connect.field === "maxTokens"
-            ? t("Enter a whole number from 1 to {max} for maximum output tokens.", {
-                max: MAX_MODEL_MAX_TOKENS,
-              })
+            ? t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_MAX_TOKENS })} for maximum output tokens.`
             : connect.field === "maxImagesPerPrompt"
-              ? t("Enter a whole number from 1 to 1000 for the image limit.")
+              ? t`Enter a whole number from 1 to 1000 for the image limit.`
               : connect.field === "maxTokensExceedsContext"
-                ? t("Maximum output tokens must be lower than the context limit.")
-                : t("Enter a whole number from 1 to {max} for the context limit.", {
-                    max: MAX_MODEL_CONTEXT_WINDOW,
-                  }),
+                ? t`Maximum output tokens must be lower than the context limit.`
+                : t`Enter a whole number from 1 to ${ph({ max: MAX_MODEL_CONTEXT_WINDOW })} for the context limit.`,
       });
       return;
     }
@@ -466,10 +463,10 @@ export default function ModelConnection() {
       if (!limitsOnly) setApiKey("");
       if (!savingLimitOnly && (await finishConnecting(activeModelId, saved.id))) return;
       await load({ modelId });
-      publishFeedback(anchor, { notice: t("Saved.") });
+      publishFeedback(anchor, { notice: t`Saved.` });
     } catch (err) {
       publishFeedback(anchor, {
-        error: errorText(err, t("Could not connect this provider")),
+        error: errorText(err, t`Could not connect this provider`),
       });
     } finally {
       setPending(null);
@@ -564,10 +561,7 @@ export default function ModelConnection() {
 
   const serverCredentialsNote = (
     <Text style={styles.secondary}>
-      {t("Uses this server's own {source} credentials to access {provider}.", {
-        source: me?.hostCredentialSource ?? "",
-        provider: selected?.providerName ?? provider,
-      })}
+      {t`Uses this server's own ${ph({ source: me?.hostCredentialSource ?? "" })} credentials to access ${ph({ provider: selected?.providerName ?? provider })}.`}
     </Text>
   );
 
@@ -575,17 +569,17 @@ export default function ModelConnection() {
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
         {endpointPreset ? (
-          <Text style={styles.sectionTitle}>{t("API key")}</Text>
+          <Text style={styles.sectionTitle}>{t`API key`}</Text>
         ) : (
           <DisclosureRow
-            label={t("API key")}
+            label={t`API key`}
             expanded={showApiKey}
             onPress={() => setShowApiKey((visible) => !visible)}
           />
         )}
         {showApiKey || endpointPreset ? (
           <TextInput
-            accessibilityLabel={t("API key")}
+            accessibilityLabel={t`API key`}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="off"
@@ -594,10 +588,10 @@ export default function ModelConnection() {
             onChangeText={updateApiKey}
             placeholder={
               credential?.hasKey
-                ? t("Paste a replacement key")
+                ? t`Paste a replacement key`
                 : endpointPreset
                   ? undefined
-                  : t("Optional")
+                  : t`Optional`
             }
             placeholderTextColor={native.tertiaryLabel}
             secureTextEntry
@@ -613,12 +607,12 @@ export default function ModelConnection() {
           }
           label={
             pending === "connect"
-              ? t("Saving…")
+              ? t`Saving…`
               : isOpenAiCompatible
-                ? t("Save")
+                ? t`Save`
                 : credential
-                  ? t("Replace API key")
-                  : t("Connect API key")
+                  ? t`Replace API key`
+                  : t`Connect API key`
           }
           onPress={() => void connectKey()}
           style={{ marginTop: 12 }}
@@ -631,11 +625,11 @@ export default function ModelConnection() {
   const catalogModelCard =
     !isOpenAiCompatible && selected && credential ? (
       <>
-        <DisclosureRow label={t("Advanced")} expanded={showAdvanced} onPress={toggleAdvanced} />
+        <DisclosureRow label={t`Advanced`} expanded={showAdvanced} onPress={toggleAdvanced} />
         {showAdvanced ? (
           <>
             <LimitField
-              label={t("Maximum output tokens")}
+              label={t`Maximum output tokens`}
               value={maxTokens}
               onChangeText={changeMaxTokens}
               maxLength={String(MAX_MODEL_MAX_TOKENS).length}
@@ -644,9 +638,7 @@ export default function ModelConnection() {
             {credential && limitsDirty ? (
               <NativeActionButton
                 disabled={busy || !routingReady}
-                label={
-                  pending === "connect" && feedbackAnchor === "limits" ? t("Saving…") : t("Save")
-                }
+                label={pending === "connect" && feedbackAnchor === "limits" ? t`Saving…` : t`Save`}
                 onPress={() => void connectKey(true)}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
@@ -666,13 +658,13 @@ export default function ModelConnection() {
             <View style={styles.oauthCard}>
               {oauth.mode === "auth-url" ? (
                 <>
-                  <Text style={styles.secondary}>{t("Finish signing in in your browser:")}</Text>
+                  <Text style={styles.secondary}>{t`Finish signing in in your browser:`}</Text>
                   <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                     <Text style={styles.link}>{oauth.verificationUri}</Text>
                   </Pressable>
-                  <Text style={styles.secondary}>{t("Then paste the code here.")}</Text>
+                  <Text style={styles.secondary}>{t`Then paste the code here.`}</Text>
                   <TextInput
-                    accessibilityLabel={t("Authorization code")}
+                    accessibilityLabel={t`Authorization code`}
                     value={pasteCode}
                     onChangeText={setPasteCode}
                     autoCapitalize="none"
@@ -682,21 +674,19 @@ export default function ModelConnection() {
                   <NativeActionButton
                     disabled={!pasteCode.trim()}
                     fill
-                    label={t("Submit")}
+                    label={t`Submit`}
                     onPress={() => void submitOAuthCode()}
                     prominence="secondary"
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t("Waiting for sign-in — the link expires in about {minutes} minutes.", {
-                      minutes: Math.ceil(oauth.expiresInSeconds / 60),
-                    })}
+                    {t`Waiting for sign-in — the link expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               ) : (
                 <>
                   <Text style={styles.secondary}>
-                    {t("A sign-in page opened — enter this code there:")}
+                    {t`A sign-in page opened — enter this code there:`}
                   </Text>
                   <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                     <Text style={styles.link}>{oauth.verificationUri}</Text>
@@ -704,21 +694,19 @@ export default function ModelConnection() {
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t("Copied") : t("Copy")}
+                    label={codeCopied ? t`Copied` : t`Copy`}
                     onPress={() => copyOAuthCode(oauth.userCode)}
                     prominence="secondary"
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t("Waiting for sign-in — the code expires in about {minutes} minutes.", {
-                      minutes: Math.ceil(oauth.expiresInSeconds / 60),
-                    })}
+                    {t`Waiting for sign-in — the code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               )}
               <NativeActionButton
                 fill
-                label={t("Cancel")}
+                label={t`Cancel`}
                 onPress={() => cancelOAuth()}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
@@ -730,10 +718,10 @@ export default function ModelConnection() {
               fill
               label={
                 oauthPending
-                  ? t("Starting…")
+                  ? t`Starting…`
                   : credential
-                    ? t("Sign in again")
-                    : (selected.oauthLabel ?? t("Sign in"))
+                    ? t`Sign in again`
+                    : (selected.oauthLabel ?? t`Sign in`)
               }
               onPress={() => void startSubscriptionSignIn()}
               prominence="secondary"
@@ -745,9 +733,9 @@ export default function ModelConnection() {
           <View style={styles.keySection}>
             {needsRouting ? (
               <>
-                <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
+                <Text style={styles.sectionTitle}>{t`Account ID`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Account ID")}
+                  accessibilityLabel={t`Account ID`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="off"
@@ -761,9 +749,9 @@ export default function ModelConnection() {
                 />
                 {needsGateway ? (
                   <>
-                    <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
+                    <Text style={styles.sectionTitle}>{t`Gateway ID`}</Text>
                     <TextInput
-                      accessibilityLabel={t("Gateway ID")}
+                      accessibilityLabel={t`Gateway ID`}
                       autoCapitalize="none"
                       autoCorrect={false}
                       autoComplete="off"
@@ -782,17 +770,17 @@ export default function ModelConnection() {
             {acceptsKey ? (
               <>
                 <Text style={styles.sectionTitle}>
-                  {!credential && subscriptionSignIn ? t("Or connect an API key") : t("API key")}
+                  {!credential && subscriptionSignIn ? t`Or connect an API key` : t`API key`}
                 </Text>
                 <TextInput
-                  accessibilityLabel={t("API key")}
+                  accessibilityLabel={t`API key`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="off"
                   editable={!busy}
                   importantForAutofill="no"
                   onChangeText={updateApiKey}
-                  placeholder={credential?.hasKey ? t("Paste a replacement key") : t("sk-…")}
+                  placeholder={credential?.hasKey ? t`Paste a replacement key` : t`sk-…`}
                   placeholderTextColor={native.tertiaryLabel}
                   secureTextEntry
                   style={styles.keyInput}
@@ -810,12 +798,12 @@ export default function ModelConnection() {
               }
               label={
                 pending === "connect" && feedbackAnchor === "connection"
-                  ? t("Saving…")
+                  ? t`Saving…`
                   : gatewayOnlySave
-                    ? t("Save")
+                    ? t`Save`
                     : credential
-                      ? t("Replace API key")
-                      : t("Connect API key")
+                      ? t`Replace API key`
+                      : t`Connect API key`
               }
               onPress={() => void connectKey()}
               prominence={credential ? "secondary" : "primary"}
@@ -825,9 +813,7 @@ export default function ModelConnection() {
         ) : null}
         {selected.auth === "oauth" && !subscriptionSignIn ? (
           <Text style={styles.secondary}>
-            {t(
-              "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.",
-            )}
+            {t`This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.`}
           </Text>
         ) : null}
       </>
@@ -836,20 +822,20 @@ export default function ModelConnection() {
   const connectedStatusRow = credential ? (
     <View style={styles.statusRow}>
       <View style={styles.providerCopy}>
-        <Text style={styles.secondary}>{t("Connected")}</Text>
+        <Text style={styles.secondary}>{t`Connected`}</Text>
       </View>
       <NativeActionButton
         disabled={busy}
         fill={false}
-        label={pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
+        label={pending === "disconnect" ? t`Disconnecting…` : t`Disconnect`}
         onPress={() => {
           Alert.alert(
-            t("Disconnect {name}?", { name: selectedProviderLabel }),
-            t("This removes the connection from every space."),
+            t`Disconnect ${ph({ name: selectedProviderLabel })}?`,
+            t`This removes the connection from every space.`,
             [
-              { text: t("Cancel"), style: "cancel" },
+              { text: t`Cancel`, style: "cancel" },
               {
-                text: t("Disconnect"),
+                text: t`Disconnect`,
                 style: "destructive",
                 onPress: () => void disconnectCredential(),
               },
@@ -897,7 +883,7 @@ export default function ModelConnection() {
             <>
               {serverCredentialsNote}
               <DisclosureRow
-                label={t("Use your own key")}
+                label={t`Use your own key`}
                 expanded={ownKeyProvider === provider}
                 onPress={() =>
                   setOwnKeyProvider((current) => (current === provider ? null : provider))

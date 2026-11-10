@@ -157,7 +157,7 @@ describe("GraphileJobPublisher.enqueue", () => {
 
   type KeyedJob = { attempts: number; maxAttempts: number; runAt: Date; lockedAt?: Date };
 
-  // graphile-worker 0.17.3 add_job: unsafe_dedupe on conflict bumps revision only.
+  // graphile-worker add_job: unsafe_dedupe on conflict bumps revision only.
   // replace sets attempts = 0 and run_at = excluded.run_at, or detaches a locked
   // job and inserts a new one.
   function graphileJobs(jobs: Map<string, KeyedJob>) {

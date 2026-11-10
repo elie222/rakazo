@@ -51,7 +51,6 @@ vi.mock("../components/chat-title-label", () => ({
 }));
 vi.mock("../components/thread-header-styles", () => ({ createThreadHeaderStyles: () => ({}) }));
 vi.mock("./native", () => ({ useThemedStyles: () => ({}) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));

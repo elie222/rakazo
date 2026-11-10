@@ -8,7 +8,7 @@ import type { Attributes, Context, Link, Span, SpanContext, Tracer } from "@open
 import { ROOT_CONTEXT, SpanStatusCode, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { BatchSpanProcessor, NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { getLogContext } from "@rakazo/logging";
 
 // Allowlist metadata: unknown attributes (including future Pi payload fields) stay private.
@@ -124,13 +124,13 @@ export function otelPiContext(
 }
 
 export function createPiTelemetryExporter() {
-  const provider = new NodeTracerProvider({
+  const provider = new TracerProvider({
     resource: resourceFromAttributes({
       "service.name": process.env.OTEL_SERVICE_NAME?.trim() || "rakazo-worker",
     }),
     // The exporter honors standard OTLP endpoint and header env vars, including /v1/traces.
     spanProcessors: [
-      new BatchSpanProcessor(new OTLPTraceExporter(), { exportTimeoutMillis: 2_000 }),
+      new BatchSpanProcessor({ exporter: new OTLPTraceExporter(), exportTimeoutMillis: 2_000 }),
     ],
   });
   return {

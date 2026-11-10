@@ -1,9 +1,10 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem, RpcOutput } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { catalogItemKey, humanizeToolName } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
@@ -45,7 +46,7 @@ export function IntegrationDetail({
   onConnect: () => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
@@ -57,11 +58,11 @@ export function IntegrationDetail({
         <View style={styles.detailTitleRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("Back")}
+            accessibilityLabel={t`Back`}
             onPress={onBack}
             style={styles.backButton}
           >
-            <Text style={styles.link}>{t("Back")}</Text>
+            <Text style={styles.link}>{t`Back`}</Text>
           </Pressable>
           <ConnectorIcon logo={item.logo} name={item.name} size={LOGO_SIZE} />
           <Text numberOfLines={1} style={styles.detailTitle}>
@@ -69,17 +70,17 @@ export function IntegrationDetail({
           </Text>
         </View>
         <NativeActionButton
-          accessibilityLabel={t("Uninstall")}
+          accessibilityLabel={t`Uninstall`}
           disabled={uninstalling || connecting}
           fill={false}
-          label={uninstalling ? t("Working…") : t("Uninstall")}
+          label={uninstalling ? t`Working…` : t`Uninstall`}
           onPress={onUninstall}
           prominence="destructive"
         />
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.section}>{t("Accounts")}</Text>
+        <Text style={styles.section}>{t`Accounts`}</Text>
         {accounts.map((row) => (
           <View key={row.id} style={styles.accountRow}>
             <TextInput
@@ -89,23 +90,23 @@ export function IntegrationDetail({
                 setLabelDrafts((current) => ({ ...current, [row.id]: value }))
               }
               onEndEditing={() => onRename(row)}
-              accessibilityLabel={t("Account label")}
+              accessibilityLabel={t`Account label`}
               style={styles.accountLabel}
             />
             <NativeActionButton
-              accessibilityLabel={t("Remove {name}", { name: row.displayName })}
+              accessibilityLabel={t`Remove ${ph({ name: row.displayName })}`}
               disabled={pending === row.id || uninstalling}
               fill={false}
-              label={pending === row.id ? t("Working…") : t("Remove")}
+              label={pending === row.id ? t`Working…` : t`Remove`}
               onPress={() => onRevoke(row)}
               prominence="destructive"
             />
           </View>
         ))}
         <NativeActionButton
-          accessibilityLabel={t("Add another {name}", { name: item.name })}
+          accessibilityLabel={t`Add another ${ph({ name: item.name })}`}
           disabled={connecting || uninstalling}
-          label={connecting ? t("Working…") : t("Add another")}
+          label={connecting ? t`Working…` : t`Add another`}
           onPress={onConnect}
           prominence="secondary"
         />
@@ -120,10 +121,10 @@ export function IntegrationDetail({
         >
           <Text style={styles.title}>
             {toolsLoading
-              ? t("Tools")
+              ? t`Tools`
               : toolCount === 1
-                ? t("1 tool")
-                : t("{count} tools", { count: toolCount })}
+                ? t`1 tool`
+                : t`${ph({ count: toolCount })} tools`}
           </Text>
           <Chevron expanded={toolsOpen} />
         </Pressable>
@@ -132,10 +133,10 @@ export function IntegrationDetail({
             {toolsLoading ? (
               <ActivityIndicator
                 color={native.secondaryLabel}
-                accessibilityLabel={t("Loading tools…")}
+                accessibilityLabel={t`Loading tools…`}
               />
             ) : tools.length === 0 ? (
-              <Text style={styles.secondary}>{t("No tools available.")}</Text>
+              <Text style={styles.secondary}>{t`No tools available.`}</Text>
             ) : (
               tools.map((tool) => (
                 <Text key={tool.name} style={styles.toolName}>

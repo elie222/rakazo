@@ -1,26 +1,34 @@
-import { polishPluralCategory, translate } from "@rakazo/core";
+import type { Messages } from "@lingui/core";
+import { i18n } from "@lingui/core";
+import { messages as de } from "@rakazo/i18n/locales/de/messages.po";
+import { messages as en } from "@rakazo/i18n/locales/en/messages.po";
+import { messages as es } from "@rakazo/i18n/locales/es/messages.po";
+import { messages as ja } from "@rakazo/i18n/locales/ja/messages.po";
+import { messages as nl } from "@rakazo/i18n/locales/nl/messages.po";
+import { messages as pl } from "@rakazo/i18n/locales/pl/messages.po";
+import { messages as ru } from "@rakazo/i18n/locales/ru/messages.po";
+import { messages as zhCN } from "@rakazo/i18n/locales/zh-CN/messages.po";
+import { messages as zhTW } from "@rakazo/i18n/locales/zh-TW/messages.po";
 import { useSyncExternalStore } from "react";
-import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
-import { ES_MESSAGES, PEER_MESSAGE_FORMS as ES_PEER_FORMS } from "./locales/es";
-import { JA_MESSAGES, PEER_MESSAGE_FORMS as JA_PEER_FORMS } from "./locales/ja";
-import { NL_MESSAGES, PEER_MESSAGE_FORMS as NL_PEER_FORMS } from "./locales/nl";
-import { PL_MESSAGES, PEER_MESSAGE_FORMS as PL_PEER_FORMS } from "./locales/pl";
-import { RU_MESSAGES, PEER_MESSAGE_FORMS as RU_PEER_FORMS } from "./locales/ru";
-import { ZH_MESSAGES, PEER_MESSAGE_FORMS as ZH_PEER_FORMS } from "./locales/zh";
-import { ZH_TW_MESSAGES, PEER_MESSAGE_FORMS as ZH_TW_PEER_FORMS } from "./locales/zh-TW";
+import { installPluralRules } from "./plural-rules";
 import type { UiLocale } from "./ui-locale";
 import { htmlLangForLocale, resolveUiLocale, UI_LOCALE_STORAGE_KEY } from "./ui-locale";
 
-const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
-  "zh-CN": ZH_MESSAGES,
-  "zh-TW": ZH_TW_MESSAGES,
-  ru: RU_MESSAGES,
-  de: DE_MESSAGES,
-  nl: NL_MESSAGES,
-  ja: JA_MESSAGES,
-  es: ES_MESSAGES,
-  pl: PL_MESSAGES,
+const catalogs: Record<UiLocale, Messages> = {
+  en,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+  ru,
+  de,
+  nl,
+  ja,
+  es,
+  pl,
 };
+
+installPluralRules();
+i18n.load(catalogs);
+i18n.activate("en");
 
 let activeLocale: UiLocale = "en";
 const listeners = new Set<() => void>();
@@ -44,17 +52,14 @@ export function dateLocaleForUi(locale: UiLocale = activeLocale): string {
   return locale === "en" ? "en-US" : htmlLangForLocale(locale);
 }
 
-export function t(message: string, values?: Record<string, string | number>): string {
-  return translate(catalogs[activeLocale], message, values);
-}
-
-export function useI18n(): { locale: UiLocale; t: typeof t } {
-  const locale = useSyncExternalStore(subscribeI18n, getActiveUiLocale, getActiveUiLocale);
-  return { locale, t };
+/** The app language, re-rendering when it changes. Strings come from Lingui's `useLingui`. */
+export function useUiLocale(): UiLocale {
+  return useSyncExternalStore(subscribeI18n, getActiveUiLocale, getActiveUiLocale);
 }
 
 export function activateUiLocale(locale: UiLocale): UiLocale {
   activeLocale = locale;
+  i18n.activate(locale);
   emit();
   return locale;
 }
@@ -136,46 +141,7 @@ export async function setUiLocale(locale: UiLocale): Promise<UiLocale> {
 /** Test-only: set the in-memory locale without I/O. */
 export function resetI18nForTests(locale: UiLocale = "en"): void {
   activeLocale = locale;
+  i18n.activate(locale);
   uiLocaleWriteChain = Promise.resolve();
   emit();
-}
-
-/** Counted exchanges use the same locale as the rest of the mobile chrome. */
-export function peerExchangeLabel(
-  count: number,
-  direction: "sent" | "received",
-  peer: string,
-): string {
-  if (count === 1)
-    return direction === "sent"
-      ? t("Messaged {peer}", { peer })
-      : t("Message from {peer}", { peer });
-  const forms: Partial<Record<UiLocale, Partial<Record<Intl.LDMLPluralRule, string>>>> = {
-    ja: JA_PEER_FORMS,
-    "zh-TW": ZH_TW_PEER_FORMS,
-    de: DE_PEER_FORMS,
-    nl: NL_PEER_FORMS,
-    ru: RU_PEER_FORMS,
-    "zh-CN": ZH_PEER_FORMS,
-    es: ES_PEER_FORMS,
-    pl: PL_PEER_FORMS,
-  };
-  // Hermes ships without Intl.PluralRules, so pick the category by hand.
-  const category = pluralCategory(activeLocale, count);
-  const localized = forms[activeLocale];
-  const template = localized?.[category] ?? localized?.other ?? "{count} messages with {peer}";
-  return template.replace("{count}", String(count)).replace("{peer}", peer);
-}
-
-function pluralCategory(locale: UiLocale, count: number): Intl.LDMLPluralRule {
-  if (locale === "zh-CN") return "other";
-  if (locale === "pl") return polishPluralCategory(count);
-  if (locale === "ru") {
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    if (mod10 === 1 && mod100 !== 11) return "one";
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "few";
-    return "many";
-  }
-  return count === 1 ? "one" : "other";
 }

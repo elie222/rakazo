@@ -11,6 +11,12 @@ import {
   ReplyModeSchema,
 } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import {
+  APPS_EVAL_CASES,
+  APPS_FIXTURE_VERSION,
+  APPS_JUDGE_CALIBRATION,
+  APPS_JUDGE_VERSION,
+} from "../evals/apps.js";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
@@ -157,10 +163,15 @@ async function main() {
     },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
+    apps: {
+      cases: APPS_EVAL_CASES,
+      fixtureVersion: APPS_FIXTURE_VERSION,
+      judge: { version: APPS_JUDGE_VERSION, calibration: APPS_JUDGE_CALIBRATION },
+    },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -614,7 +625,7 @@ async function main() {
           pricing,
           judge,
           createApp: async (composio, messaging, witnesses) => {
-            const sandbox = new EvalSandboxProvider();
+            const sandbox = new EvalSandboxProvider(scenario.computer);
             let acceptingCalls = true;
             const cacheDecisions: CacheDecisionMeasurement[] = [];
             const runtime = new PiAgentRuntime({

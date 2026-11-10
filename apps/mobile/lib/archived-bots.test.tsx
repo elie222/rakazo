@@ -75,10 +75,6 @@ vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement("button", { type: "button", onClick: onPress }, label),
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string) => text;
-  return { t, useI18n: () => ({ t }) };
-});
 vi.mock("../components/archived-bot-list", () => ({
   ArchivedBotList: ({
     bots,

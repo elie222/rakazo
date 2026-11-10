@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
-import { runJobKey } from "@rakazo/adapter-kit";
+import { historyCompactJob, runJobKey } from "@rakazo/adapter-kit";
 import {
   CapturingNotificationProvider,
   MessagingTeamChatEmulator,
@@ -11,6 +11,8 @@ import { connectionCacheCapabilities } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
+import type { HostedApp } from "../apps/mcp-host.js";
+import { hostOverMcp } from "../apps/mcp-host.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -98,6 +100,8 @@ export async function runTrial(
     capabilities: { groups: false },
   });
   scenario.configure?.(services);
+  const apps = scenario.apps?.(new Date()) ?? [];
+  const hostedApps: HostedApp[] = [];
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
@@ -124,6 +128,7 @@ export async function runTrial(
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
+
   let phase: FailureCategory = "harness";
   const seenTools = new Map<string, { name: string }>();
   let clearedToolCount = 0;
@@ -154,6 +159,7 @@ export async function runTrial(
     if (!db) return;
     const usage = await db.usageRecord.findMany({
       where: { OR: actorScopes(actors) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     for (const row of usage)
       seenUsage.set(row.id, {
@@ -166,6 +172,11 @@ export async function runTrial(
       });
   };
   try {
+    for (const service of apps) {
+      const hosted = await hostOverMcp(service, randomBytes(24).toString("base64url"));
+      hostedApps.push(hosted);
+      secrets.push(hosted.token, hosted.endpoint);
+    }
     // A forced wake runs now; the agent is told it is the routine's due time instead.
     let clockShiftMs = 0;
     const now = () => new Date(Date.now() + clockShiftMs);
@@ -193,6 +204,15 @@ export async function runTrial(
       if (!signup.ok) throw new EvalFailure("harness", `Fixture signup failed (${signup.status})`);
       cookie = sessionCookieHeader(signup);
       await rpc(app, cookie, "models/connect", options.connection);
+      // Added the way a person adds a remote MCP server: an endpoint and a bearer token.
+      for (const [index, service] of apps.entries())
+        await rpc(app, cookie, "mcp/servers/create", {
+          transport: "streamable_http",
+          slug: service.kind,
+          name: service.displayName,
+          endpoint: hostedApps[index]!.endpoint,
+          secret: hostedApps[index]!.token,
+        });
       for (const provider of scenario.connections ?? ["GMAIL", "CRM", "GITHUB"])
         await rpc(app, cookie, "connections/begin", {
           connectorId: "composio",
@@ -369,6 +389,8 @@ export async function runTrial(
             seq: m.seq,
             role: m.role,
             blocks: [
+              // A reply that used tools stores its steps ahead of its text, as live replies do.
+              ...(m.steps ? [{ kind: "steps", steps: m.steps }] : []),
               ...(m.text ? [{ kind: "text", text: m.text }] : []),
               ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult
@@ -448,6 +470,21 @@ export async function runTrial(
             : {}),
         },
       });
+      if (scenario.history.compact) {
+        // The product's own compaction job summarizes the oldest batch, paid like any turn's.
+        await trial.jobs.enqueue(historyCompactJob(thread.id, actors[actors.length - 1]!.userId));
+        if (!trial.awaitIdle) throw new EvalFailure("harness", "Compaction needs an idle queue");
+        await withinDeadline(trial.awaitIdle(), deadline);
+        const { historyCompactedUpToSeq } = await prisma.thread.findUniqueOrThrow({
+          where: { id: thread.id },
+          select: { historyCompactedUpToSeq: true },
+        });
+        if (historyCompactedUpToSeq === null)
+          throw new EvalFailure(
+            "harness",
+            "Seeded history was not compacted; only the current context strategy compacts",
+          );
+      }
     }
     if (scenario.taughtSkill) {
       // Human-authored fixture setup via the same API as the teaching UI; no model work is prefilled.
@@ -985,6 +1022,7 @@ export async function runTrial(
       records: services.records,
       notes: services.notes,
       calls: services.calls,
+      apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
       routines,
       routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
@@ -1019,6 +1057,16 @@ export async function runTrial(
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
+        ...(apps.length
+          ? {
+              "app-calls": JSON.stringify(
+                Object.fromEntries(apps.map((service) => [service.kind, service.calls])),
+              ),
+              "app-writes": JSON.stringify(
+                Object.fromEntries(apps.map((service) => [service.kind, service.writes])),
+              ),
+            }
+          : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
@@ -1046,8 +1094,36 @@ export async function runTrial(
     result.category = result.status === "passed" ? null : "agent";
     result.reason = result.status === "passed" ? null : "Outcome criteria failed";
     if (result.status === "failed" && handles.harnessIssues?.length) {
-      result.category = "harness";
-      result.reason = handles.harnessIssues.join(" ");
+      if (scenario.shellUnneeded)
+        result.reason = `Outcome criteria failed after the bot chose a command the case does not need: ${handles.harnessIssues.join(" ")}`;
+      else {
+        result.category = "harness";
+        result.reason = handles.harnessIssues.join(" ");
+      }
+    }
+    if (scenario.observe) {
+      const observations: NonNullable<TrialResult["observations"]> = {};
+      for (const [key, value] of Object.entries(scenario.observe(evidence))) {
+        if (typeof value === "boolean") {
+          observations[key] = { present: value };
+          continue;
+        }
+        try {
+          if (!options.judge) throw new Error("no judge");
+          const judgment = await withinDeadline(
+            options.judge(value, AbortSignal.timeout(Math.max(1, deadline - Date.now()))),
+            deadline,
+          );
+          observations[key] = { present: judgment.pass, reason: redact(judgment.reason, secrets) };
+        } catch (error) {
+          // An ungraded behaviour is unknown, never counted as absent.
+          observations[key] = {
+            present: null,
+            reason: `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
+          };
+        }
+      }
+      result.observations = observations;
     }
   } catch (error) {
     result.status = "failed";
@@ -1057,6 +1133,7 @@ export async function runTrial(
       secrets,
     );
   } finally {
+    if (!handles) await Promise.all(hostedApps.map((hosted) => hosted.close()));
     if (handles) {
       try {
         // Stopping each bot covers only its own chat; a member's run can still wait in the
@@ -1077,6 +1154,8 @@ export async function runTrial(
       } catch {
         result.cleanupFailed = true;
       }
+      // After the trial's work stopped, so no run is cut off mid-call.
+      await Promise.all(hostedApps.map((hosted) => hosted.close()));
       try {
         await handles.finalizeBackground?.();
       } catch {
@@ -1105,6 +1184,9 @@ export async function runTrial(
                 },
               }),
               summaryPresent: !!state.historyCompactionSummary?.trim(),
+              ...(scenario.history?.compact
+                ? { summary: redact(state.historyCompactionSummary ?? "", secrets) || null }
+                : {}),
               generation: state.historyCompactionGeneration,
             };
         }

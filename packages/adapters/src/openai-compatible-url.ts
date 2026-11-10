@@ -70,6 +70,18 @@ export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
     .some((entry) => entry.trim() !== "" && normalizeHost(entry.trim()) === normalized);
 }
 
+/**
+ * Inside a container, loopback is the container itself, so a server the person runs
+ * on their own computer is reached through the host address the deployment names.
+ */
+export function loopbackOnHost(url: URL): URL {
+  const host = process.env.RAKAZO_LOOPBACK_HOST?.trim();
+  if (!host || !isLoopbackHost(normalizeHost(url.hostname))) return url;
+  const target = new URL(url);
+  target.hostname = host;
+  return target;
+}
+
 function isBlockedHostname(hostname: string): boolean {
   const normalized = normalizeHost(hostname);
   return (

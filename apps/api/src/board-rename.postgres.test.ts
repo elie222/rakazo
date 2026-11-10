@@ -10,7 +10,7 @@ import { createRouter } from "./router.js";
 // The runtime login, so row-level security applies exactly as it does in a deployment.
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 
-describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
+describe.skipIf(!enabled)("board prefix rename (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
   let actor: Actor;

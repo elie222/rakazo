@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath, ThreadSnapshot } from "@rakazo/contracts";
 import { CLIENT_UPDATE_REQUIRED_STATUS, parseServerHeaders } from "@rakazo/contracts";
 import {
@@ -17,7 +18,6 @@ import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
-import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import {
   newMobileAvatarSnapshotRequest,
@@ -180,10 +180,10 @@ export async function captureApiRequestContext(
   const apiBase = currentApiBase();
   const headers = await authHeaders(spaceId);
   if (apiBase !== currentApiBase()) {
-    throw new Error(t("The server changed while starting the request"));
+    throw new Error(t`The server changed while starting the request`);
   }
   if (generation !== currentSessionGeneration())
-    throw new Error(t("Something went wrong. Try again."));
+    throw new Error(t`Something went wrong. Try again.`);
   return { apiBase, headers, sessionGeneration: generation };
 }
 /** Revoking other sessions also refuses this one until the replacement is saved. */
@@ -661,7 +661,7 @@ async function request(
       consentContext?.sessionGeneration !== undefined &&
       consentContext.sessionGeneration !== currentSessionGeneration()
     )
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     let res: Response;
     const correlation = clientCorrelationHeaders();
     try {
@@ -695,7 +695,7 @@ async function request(
       noteServerReachable(!isUnreachableStatus(res.status));
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
-      throw new Error(t("Update your server to use AI data sharing in this mobile version."));
+      throw new Error(t`Update your server to use AI data sharing in this mobile version.`);
     }
     const parsed: { json?: unknown } = await readBoundedJsonResponse<{ json?: unknown }>(
       res,
