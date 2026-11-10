@@ -63,11 +63,10 @@ server [receives email](./self-host-inbound-email.md).
 Runs when the bot receives a message in Slack. Needs [Slack connected](./messaging-apps.md).
 
 > [!NOTE]
-> Runs started by a webhook, an email or an outside message follow your [approval](./approvals.md)
-> mode and Always allow list, like any other run. Since outside text could steer them, shell
-> commands, file changes and computer use are checked there even though they never ask in your own
-> chats, a site the bot found only in that text is checked before it visits it, and a purchase is
-> refused.
+> A routine run started by a webhook, an email or a Slack message follows your
+> [approval](./approvals.md) mode and Always allow list. Since outside text could steer it, tools
+> that change something are checked even if they never ask in your own chats, and a purchase is
+> refused. Always allow on a tool such as shell or the browser lets outside text use it freely.
 
 ## Test, pause and review
 

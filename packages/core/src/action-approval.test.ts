@@ -222,13 +222,14 @@ describe("isOwnerStartedRun", () => {
   });
 });
 
-it("gates exempt tools that change something only in runs outside text started", () => {
-  for (const name of ["shell", "write_file", "computer_act", "browser_act", "remember"]) {
-    expect(toolRequiresApproval(name, false)).toBe(false);
+it("gates built-ins that change something only in runs outside text started", () => {
+  for (const name of ["shell", "write_file", "computer_act", "remember", "skill_create"]) {
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
     expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
   }
-  for (const name of ["read_file", "computer_observe", "browser_snapshot", "message_user"]) {
+  expect(outsideRunToolRequiresApproval("webhook", "save_shared_memory")).toBe(true);
+  expect(outsideRunToolRequiresApproval("webhook", "add_mcp_server")).toBe(true);
+  for (const name of ["read_file", "computer_observe", "message_user", "ask_user"]) {
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(false);
   }
 });

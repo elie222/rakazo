@@ -32,18 +32,36 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "request_purchase",
 ]);
 
-/** Approval-exempt tools that only look: they stay free even when outside text started the run. */
-const EXEMPT_READ_TOOLS = new Set([
-  "computer_observe",
+/**
+ * Built-ins that only look, or only speak to the owner: free even when outside text started the
+ * run. Anything else, new tools included, is gated there (see outsideRunToolRequiresApproval).
+ */
+const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
+  "ask_user",
+  "attach_file",
   "browser_snapshot",
+  "cloud_agent_status",
+  "computer_observe",
   "list_files",
+  "list_fleet",
+  "list_secrets",
+  "message_user",
+  "purchase_status",
+  "read_email",
   "read_file",
   "read_history",
-  "search_history",
+  "recall_memory",
+  "render_plot",
   "request_takeover",
   "run_subagent",
   "schedule_list",
-  "list_fleet",
+  "scratchpad_list",
+  "search_history",
+  "service_search",
+  "skill_read",
+  "task_catalog",
+  "web_fetch",
+  "web_search",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
@@ -164,15 +182,12 @@ export function toolRequiresApproval(
 }
 
 /**
- * The owner's own runs skip approval for the tools in APPROVAL_EXEMPT_TOOLS. A run a webhook or an
- * email started carries text someone else may have written, so there a tool on that list that
- * changes something (shell, file writes, the computer and browser, memory, schedules) is gated like
- * any other consequential action: Always allow, the approval model or Never ask can still pass it.
+ * A run a webhook or an email started carries text someone else may have written, so a built-in
+ * that changes something is gated there even if the owner's own runs never ask for it. It is gated
+ * like any other consequential action: Always allow, the approval model or Never ask can pass it.
  */
 export function outsideRunToolRequiresApproval(trigger: string, toolName: string): boolean {
-  return (
-    trigger === "webhook" && APPROVAL_EXEMPT_TOOLS.has(toolName) && !EXEMPT_READ_TOOLS.has(toolName)
-  );
+  return trigger === "webhook" && !OUTSIDE_RUN_SAFE_BUILTIN_TOOLS.has(toolName);
 }
 
 /**

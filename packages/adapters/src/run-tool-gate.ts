@@ -833,6 +833,11 @@ async function reviewToolCall(
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
     const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
+    // A webhook run's task prompt carries the delivery, which someone else wrote, so the checker
+    // gets only the owner's routine. With no routine to judge against, a person decides.
+    const outsideRun = run.trigger === "webhook";
+    const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
+    if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
     // A new site is judged on the full URL and the owner's own words only: the task
     // prompt of a webhook or bot-started run carries text someone else wrote.
     const reviewRequest: AutoReviewRequest =
@@ -850,7 +855,7 @@ async function reviewToolCall(
             toolName: name,
             connectorKind,
             args: redactToolArgsForReview(args, ctx.secrets),
-            userTask: redactSecrets(ctx.task.prompt, ctx.secrets),
+            userTask: redactSecrets(outsideRun ? ownerWords : ctx.task.prompt, ctx.secrets),
             botDescription,
             matchingRules: review.matchingRules,
           };
