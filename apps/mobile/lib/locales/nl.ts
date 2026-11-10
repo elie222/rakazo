@@ -404,7 +404,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Failed: "Mislukt",
   "Failed to refresh": "Vernieuwen mislukt",
   "Failed to send message": "Bericht verzenden mislukt",
-  "Failed to stop work": "Werk stoppen mislukt",
   File: "Bestand",
   "Hide {label}": "{label} verbergen",
   Diagram: "Diagram",
@@ -469,8 +468,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Type your answer": "Typ je antwoord",
   Username: "Gebruikersnaam",
   "Waiting for this bot’s response.": "Wachten op het antwoord van deze bot.",
-  "Work stopped, but the thread could not refresh: {detail}":
-    "Werk gestopt, maar de thread kon niet worden vernieuwd: {detail}",
   archived: "gearchiveerd",
   bot: "bot",
   cancelled: "geannuleerd",
@@ -990,6 +987,12 @@ export const NL_MESSAGES: Record<string, string> = {
     "Wachten op aanmelding — de code verloopt over ongeveer {minutes} minuten.",
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Wachten op aanmelding — de link verloopt over ongeveer {minutes} minuten.",
+  "Allow microphone access to dictate.": "Sta microfoontoegang toe om te dicteren.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Sta spraakherkenning toe in Instellingen, of koppel een spraakprovider die transcribeert.",
+  "Could not dictate": "Dicteren lukte niet",
+  Dictate: "Dicteren",
+  "Stop dictating": "Stop met dicteren",
   "Allow microphone access to call a bot.": "Sta microfoontoegang toe om een bot te bellen.",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Sta spraakherkenning toe in Instellingen, of koppel ElevenLabs, OpenAI of Fish Audio.",

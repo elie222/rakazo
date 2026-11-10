@@ -2,6 +2,8 @@ import { readJsonObjectWithin, readResponseWithin } from "./response-bytes.js";
 
 /** How long a client waits for `/api/voice/*` to answer. */
 export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
+/** The most a transcription response may be; a transcript is far smaller. */
+export const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
 /** Matches the server's cap on synthesized audio. */
 export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
