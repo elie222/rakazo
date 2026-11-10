@@ -1,0 +1,54 @@
+# See ../../self-host-kubernetes.md before applying.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rakazo-migrate
+  labels:
+    rakazo.example/phase: migrate
+  namespace: rakazo
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: rakazo-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+      - name: migrate
+        image: ghcr.io/elie222/rakazo/app@sha256:cec37eeb8230131ebf3e8aaf752e09439558d05e3581c6990734e8b4b515adeb
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+            ephemeral-storage: 128Mi
+          limits:
+            cpu: '2'
+            memory: 2Gi
+            ephemeral-storage: 2Gi
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rakazo-secrets
+              key: DATABASE_URL
+        - name: DATABASE_MIGRATION_URL
+          valueFrom:
+            secretKeyRef:
+              name: rakazo-secrets
+              key: DATABASE_MIGRATION_URL
+        command:
+        - node
+        - dist/cli/migrate-database.js
+        workingDir: /app/apps/api

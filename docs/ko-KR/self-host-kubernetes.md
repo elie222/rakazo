@@ -1,0 +1,267 @@
+# k3s에서 Rakazo와 봇 컴퓨터 실행하기
+
+[English](../self-host-kubernetes.md) | 한국어
+
+로그인한 뒤 봇의 **컴퓨터**를 열었습니다. 앱은 보이는데 컴퓨터 화면만 검습니다.
+아직 켜지는 중일까요? 아니면 화면 요청이 로그인 페이지로 빠진 걸까요?
+두 경우는 해결 방법이 다릅니다. 이 문서는 설치를 한 단계씩 확인하면서,
+앱 코드를 고치는 대신 어느 설정을 바꿔야 하는지 찾도록 안내합니다.
+
+## 먼저 앱이 실행될 자리를 마련합니다
+
+한 서버에서 Rakazo를 실행해도 데이터베이스, API, 작업을 처리하는 worker,
+웹 서버가 필요합니다. 클러스터로 옮겨도 각자의 역할은 같습니다.
+Kubernetes는 이 프로세스들을 **Pod**라는 실행 단위로 관리하고,
+**Service**라는 일정한 내부 주소를 붙여 줍니다.
+
+봇에게 주는 컴퓨터도 별도의 Pod입니다. API와 worker가 Kubernetes에 생성과
+명령 실행, 삭제를 요청합니다. 이미 있는
+[`kubernetes` 컴퓨터 제공자](../self-host-sandbox-providers.md#kubernetes)를
+사용하므로 Docker 소켓이나 별도의 앱 패치가 필요하지 않습니다.
+
+```text
+브라우저 → HTTPS 입구 / 선택적 로그인 → 비공개 ingress → web
+                                                       ├─ API → PostgreSQL
+                                                       └─ 컴퓨터 화면
+                                                          ↑
+                                     API + worker → Kubernetes API
+                                                  → 컴퓨터 Pod
+```
+
+[설치 예제](../examples/kubernetes/)는 **새로운 전용 단일 노드 k3s 환경**을
+대상으로 합니다. 로컬 저장소를 쓰고 앱 프로세스를 하나씩 실행합니다.
+기존 Rakazo 네임스페이스에 덮어쓰는 설치나 고가용성 구성은 아닙니다.
+API와 worker가 같은 노드의 데이터 볼륨을 공유하므로, 여러 노드로 늘리려면
+저장 방식부터 다시 설계해야 합니다.
+
+다음 조건을 먼저 확인하세요.
+
+- Kubernetes **1.35 이상**, 정식 `ValidatingAdmissionPolicy` API, 초기 설치용
+  클러스터 관리자 권한이 필요합니다. Pod Security baseline은 v1.35에 맞췄습니다.
+- `local-path` 저장소가 있어야 합니다. 예제는 `kube-system`의 CoreDNS에
+  `k8s-app=kube-dns`, Traefik에 `app.kubernetes.io/name=traefik` 라벨이 있다고
+  가정합니다. 다르면 실제 라벨에 맞추세요.
+- 네트워크 정책을 실제로 적용하는 플러그인이 필요합니다. k3s의 NetworkPolicy
+  처리가 켜져 있어야 합니다. 정책 파일이 존재하는 것과 통신이 차단되는 것은 다릅니다.
+- 이미지, 데이터베이스, 저장된 홈, 실행 중인 컴퓨터 두 대를 담을 디스크 공간이
+  필요합니다. 컴퓨터 한 대의 한도는 CPU 2개와 메모리 4 GiB이며 앱과 서버 몫도
+  남겨야 합니다. local-path 볼륨의 요청 크기는 **디스크 사용량 제한이 아닙니다**.
+
+예제의 앱·컴퓨터 이미지는 공개 리비전
+`235018325032825a5e12f856c4ac0481c168aa5d`의 일치하는 조합으로 고정했습니다.
+재현 가능한 출발점이며 최신 버전을 보장하지 않습니다. 업그레이드할 때는
+일치하는 조합을 선택하고 Job을 포함한 모든 앱 이미지와 컴퓨터 이미지 설정을
+함께 바꾸세요. PostgreSQL은 별도로 18 버전에 고정되어 있습니다.
+
+## 실행하기 전에 설정을 준비합니다
+
+저장소를 내려받은 디렉터리에서 시작합니다.
+
+```sh
+cd docs/examples/kubernetes
+cp config.env.example config.env
+cp installation.env.example installation.env
+```
+
+`config.env`의 공개 주소를 자신의 도메인으로 바꾸고, 소유자 이메일 두 곳도
+바꿉니다. API, 웹, 화면은 같은 HTTPS 출처를 사용하세요.
+`SIGNUPS_ENABLED=false`는 공개 가입을 닫아 둡니다. 첫 계정은 잠시 가입을
+열지 않고 초기 계정 생성 Job으로 만듭니다.
+
+이번에는 API와 worker가 Kubernetes에 요청할 주소를 확인합니다.
+
+```sh
+kubectl get endpoints kubernetes -n default -o wide
+```
+
+이 실제 endpoint의 IPv4 주소에 `/32`를 붙여 `installation.env`의
+`KUBERNETES_API_CIDR`에 넣습니다. 예제는 API와 worker에만 해당 주소의
+TCP 6443을 허용합니다. 포트가 다르면 정책도 바꾸세요. 접속이 안 된다고
+내부 네트워크 전체를 열지는 마세요. 네트워크 플러그인의 Service 주소 변환에
+따라 정책이 확인하는 주소가 달라질 수 있으므로 실제 연결을 확인해야 합니다.
+
+다음으로 비밀값을 한 번만 만듭니다.
+[영문 문서의 비밀 파일 생성 코드](../self-host-kubernetes.md#prepare-settings-before-starting-anything)를
+같은 디렉터리에서 실행하세요. Python 표준 라이브러리로 각각 독립적인 값을
+만들어 `secrets.env`에 소유자만 읽을 수 있는 권한으로 저장합니다.
+기존 파일은 덮어쓰지 않고, 비밀번호를 화면이나 명령 인수로 출력하지 않습니다.
+
+이 파일은 배포 전에 안전하게 백업하세요. 특히 `ENCRYPTION_KEY`를 잃으면
+암호화된 데이터를 읽지 못할 수 있습니다. 로컬 설정 파일은 Git에서 제외됩니다.
+렌더링한 Kubernetes 매니페스트에는 비밀값의 base64 표현이 들어갑니다.
+이는 암호화가 아니므로 이슈에 붙이거나 커밋하면 안 됩니다.
+클러스터의 Secret 암호화와 접근 제한도 설정하세요.
+데이터베이스 소유자 로그인은 PostgreSQL과 마이그레이션 Job만 사용하고,
+앱은 별도의 제한된 실행용 로그인을 사용합니다.
+
+## 결과를 확인할 수 있는 순서로 시작합니다
+
+한 단계를 적용하고 성공을 확인한 뒤 다음으로 넘어갑니다.
+라벨 선택 없이 디렉터리 전체를 한 번에 적용하지 마세요.
+앱보다 데이터베이스와 스키마 준비가 먼저 끝나야 합니다.
+
+```sh
+# 네임스페이스, 저장소, 비밀값, 정책, 내부 Service와 데이터베이스
+kubectl apply -k . -l rakazo.example/phase=foundation
+kubectl -n rakazo rollout status deployment/rakazo-postgres --timeout=300s
+
+# 스키마, 작업 큐, 제한된 데이터베이스 실행 계정
+kubectl apply -k . -l rakazo.example/phase=migrate
+kubectl -n rakazo wait --for=condition=complete job/rakazo-migrate --timeout=300s
+
+# 준비된 데이터베이스에 연결할 앱
+kubectl apply -k . -l rakazo.example/phase=app
+kubectl -n rakazo rollout status deployment/rakazo-api --timeout=300s
+kubectl -n rakazo rollout status deployment/rakazo-worker --timeout=300s
+kubectl -n rakazo rollout status deployment/rakazo-web --timeout=300s
+
+# 공개 가입을 닫은 채 첫 계정 생성
+kubectl apply -k . -l rakazo.example/phase=bootstrap
+kubectl -n rakazo wait --for=condition=complete job/rakazo-bootstrap --timeout=300s
+```
+
+마이그레이션 성공은 데이터베이스가 준비됐다는 뜻입니다. 컴퓨터 화면까지
+준비됐다는 뜻은 아닙니다. 실패한 단계가 있으면 해당 Job이나 Pod의 이벤트와
+로그부터 확인하세요. 처음 이미지를 받는 데에는 시간이 걸릴 수 있습니다.
+대기 시간을 늘려 다운로드를 기다릴 수는 있지만, 이미지 주소 오류나 생성 거부를
+고칠 수는 없습니다.
+
+예제에는 공개 Ingress를 넣지 않았습니다. 먼저 외부 입구에서 Traefik을 거쳐
+`rakazo-web` Service의 5173 포트로 가는 **비공개 경로**를 준비하세요.
+비공개 터널·방화벽 또는 출처 인증 게이트로 그 입구만 접근할 수 있게 해야 합니다.
+호스트 이름을 확인하는 것만으로는 접근을 제한할 수 없습니다.
+데이터베이스, API Service, Kubernetes API, 컴퓨터 Pod 포트를 인터넷에 열지 마세요.
+
+예제의 네트워크 정책은 Traefik에서 web으로 가는 연결을 허용합니다.
+누가 Traefik에 접근할 수 있는지까지 제한하지는 않습니다. DNS를 공개하기 전에
+원본 서버로 우회 접근할 수 없는지 확인하세요. 외부 프록시는 공개 Host와 HTTPS
+전달 정보를 유지하고 WebSocket 연결도 전달해야 합니다.
+
+## 도메인 입구에 로그인을 붙이면 무엇이 달라질까요?
+
+일반 페이지에는 로그인 쿠키가 있으므로 Google 인증 입구를 통과합니다.
+하지만 컴퓨터 화면은 격리된 브라우저 프레임에 표시됩니다. 이 프레임의 요청에는
+**외부 로그인 쿠키가 없을 수 있습니다**. 프록시가 화면 요청을 Google로 보내면
+화면이나 WebSocket 대신 로그인 리다이렉트가 돌아옵니다. 이때는 기다려도
+화면이 나타나지 않습니다.
+
+쿠키 없이도 화면을 볼 권한을 증명할 수 있을까요? Rakazo는 앱 세션을 확인한 뒤
+특정 화면에 대한 권한을 담은 짧은 수명의 암호화 URL을 발급합니다.
+이처럼 URL을 가진 사람이 그 권한을 사용할 수 있는 방식을 **bearer capability**라고
+합니다. 웹 프록시와 API는 만료뿐 아니라 현재 컴퓨터·세션 세대, 실행 상태,
+제어권도 확인합니다. 이 URL 자체를 비밀값처럼 다뤄야 하는 이유입니다.
+
+일반 페이지와 API에는 외부 로그인을 그대로 적용합니다.
+**`/novnc/session/*`만** Rakazo 웹 프록시로 직접 전달해 Rakazo가 자체 권한을
+검사하게 합니다. API와 web의 `SCREEN_PROXY_SECRET`은 같아야 하며 앱 인증용
+비밀값과는 달라야 합니다. 프레임 sandbox나 `X-Frame-Options`를 약하게
+바꾸지 마세요.
+
+[Caddy 예제](../examples/kubernetes/Caddyfile.edge.example)의 프로세스 환경에는
+다음 세 값을 넣습니다.
+
+| 값 | 의미 |
+| --- | --- |
+| `RAKAZO_PUBLIC_HOST` | `app.example.com` 같은 공개 도메인 |
+| `RAKAZO_PRIVATE_UPSTREAM` | 외부 입구만 접근 가능한 ingress 주소와 포트 |
+| `RAKAZO_AUTH_UPSTREAM` | 같은 ingress로 전달하는 비공개 oauth2-proxy 주소와 포트 |
+
+서로 배타적인 두 `handle` 경로 중 하나가 요청을 받습니다. 화면 경로도 전체 URL을
+유지하며 WebSocket을 전달합니다. 예외를 `/novnc/*`, `/api/*`, 도메인 전체로
+넓히지 마세요. 생략하는 것은 외부 쿠키 검사뿐이며 Rakazo 화면 권한 검사는 남습니다.
+
+화면 URL은 모든 계층의 접근 로그, 분석 도구, 오류 보고서, 공유 스크린샷에서
+제외하세요. 예제는 `no-store`, `no-referrer`를 설정하고 접근 로그를 켜지 않지만,
+기존 전역 로그나 CDN 설정도 따로 확인해야 합니다. URL이 유출되면 컴퓨터를
+중지해 무효화하세요. Google에서 로그아웃하는 것만으로 이미 발급된 화면 권한이
+회수되지는 않습니다.
+
+Google 인증 입구가 필요하다면
+[oauth2-proxy의 Google 안내](https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/google/)를
+기준으로 다음을 설정합니다.
+
+1. Google OAuth 클라이언트를 **웹 애플리케이션**으로 만듭니다. 자신의 도메인으로
+   바꾼 `https://app.example.com/oauth2/callback`을 정확히 등록합니다.
+   동의 화면을 설정하고 테스트 중에는 자신의 계정을 테스트 사용자로 추가합니다.
+2. 클라이언트 ID와 secret은 Rakazo 앱 OIDC 설정이 아닌 **oauth2-proxy**에 줍니다.
+   Google 제공자, HTTPS 반환 주소, 보안 쿠키, reverse-proxy 모드를 사용하고
+   쿠키용 비밀값도 따로 만듭니다. 비공개 주소에서만 수신하고 upstream을 앞서
+   만든 비공개 ingress로 지정합니다.
+3. `authenticated_emails_file`에 자신의 전체 이메일 하나만 넣습니다.
+   도메인 전체나 와일드카드 허용을 함께 설정하면 범위가 넓어질 수 있습니다.
+   Google 테스트 사용자 목록이 프록시의 허용목록을 대신하지는 않습니다.
+4. 허용 계정, 다른 계정, 로그아웃한 브라우저로 각각 확인합니다.
+   허용 계정은 Rakazo 로그인 화면에 도착해야 합니다. 그곳에서는 저장해 둔
+   `OWNER_EMAIL`과 `OWNER_PASSWORD`를 사용합니다. 외부 Google 로그인은
+   Rakazo 내부 세션을 자동 생성하지 않습니다.
+
+이 구성은 브라우저 사용을 위한 선택입니다. 모바일·데스크톱 앱, 외부 webhook,
+연동은 다른 진입 설계가 필요할 수 있습니다. 작동시키려고 인증 예외를 넓히지
+마세요. 앱 자체의 SSO는 [계정 안내](../self-host-accounts.md)의 별도 선택지입니다.
+
+## 어느 구간에서 막혔는지 먼저 찾습니다
+
+| 보이는 현상 | 확인할 곳 | 다음 대응 |
+| --- | --- | --- |
+| 컴퓨터 Pod가 Pending | Pod 이벤트, 이미지 다운로드, 용량·할당량 | 진행 중이면 기다리고, 실패 원인이 있으면 그 설정을 고칩니다. |
+| Pod가 만들어지지 않음 | API·worker 로그, RBAC, API 연결 정책, 생성 심사 | 앱에 cluster-admin을 주지 말고 필요한 범위만 확인합니다. |
+| Pod는 Running인데 내부 화면도 없음 | 게이트웨이 로그, 6080 및 6100–6199 포트 | 초기화와 web의 네임스페이스 간 접근을 확인합니다. |
+| 내부 화면은 되는데 외부에서는 Google로 이동 | 브라우저 Network 탭 | `/novnc/session/*` 전달 경로만 바로잡습니다. 실제 URL은 공유하지 않습니다. |
+| 화면 요청이 403 | API·web 비밀값 일치, 만료, 컴퓨터 세대 | 컴퓨터 화면을 다시 열어 새 URL을 받습니다. 권한 검사를 끄지 않습니다. |
+| 페이지는 열리는데 화면이 멈춤 | WebSocket 업그레이드와 프록시 타임아웃 | 유효한 세션에서 101 응답이 오는지 확인합니다. |
+| Pod 장애 뒤 파일이 사라짐 | 마지막 저장된 홈과 백업 | 마지막 저장본을 복구합니다. 이후 변경은 유실될 수 있습니다. |
+
+실제 공개 주소의 앱에서 로그인하고, 컴퓨터 화면 보기·제어권 가져오기·입력·재연결까지
+확인하세요. 다른 출처의 빈 페이지에 iframe을 붙이는 검사는 같은 조건이 아닙니다.
+로그아웃한 상태의 `/`, `/api/...`, `/novnc/`는 계속 외부 인증을 거쳐야 합니다.
+쿠키 없는 `/novnc/session/view/not-a-token/vnc.html` 요청은 403으로 거절되어야
+합니다. 중지했거나 만료된 세션도 재사용할 수 없어야 합니다.
+
+## 봇에게 준 컴퓨터가 넘지 못할 경계
+
+예제는 API와 worker에 `rakazo-sandboxes` 안의 Pod 생성·조회·삭제와 명령 실행만
+허용합니다. 별도의 생성 심사 정책은 고정한 컴퓨터 이미지, 호스트 볼륨 없음,
+추가 컨테이너 없음, 서비스 계정 토큰 없음, Secret 환경변수 참조 없음 등을
+확인합니다. 허용 이미지는 `rakazo-config`에서 읽으며 설정이 없으면 거절합니다.
+컴퓨터 두 대라는 전체 할당량도 둡니다. 사용자별 제한만으로는 모든 사용자의
+총합을 제한할 수 없기 때문입니다.
+
+컴퓨터에는 DNS와 공개 HTTP(S) 통신을 허용하고 해당 허용 규칙에서 내부 IPv4
+대역을 제외합니다. IPv6 외부 통신은 허용하지 않습니다. 다만 **노드 자체와
+메타데이터 주소 접근에는 호스트·네트워크 플러그인 차원의 제어도 필요합니다**.
+Kubernetes 정책을 만능 호스트 방화벽으로 생각하면 안 됩니다. 실제 컴퓨터에서
+웹사이트는 열리되 노드 SSH, 클러스터 API, 데이터베이스, 내부망, 메타데이터에는
+접근할 수 없는지 확인하세요. DNS와 공개 서버 통신은 남으므로 데이터 반출까지
+막는 정책은 아닙니다. 필요한 경우 외부 통신 범위를 더 줄이세요.
+
+이 구성은 호스트 커널을 공유하는 일반 컨테이너입니다. 더 강한 격리가 필요하면
+먼저 해당 런타임을 설치하고 검증한 뒤 `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME`을
+설정하세요. 이름을 적는 것만으로 런타임이 설치되지는 않습니다.
+
+컴퓨터 홈은 시작할 때 복사되고 정상 중지 때 저장되는 **체크포인트** 방식입니다.
+Pod를 잃으면 마지막 저장 이후의 내용은 사라질 수 있습니다. 볼륨을 허용하지 않는
+생성 심사 정책은 선택적 mounted-home 모드도 거부합니다.
+`KUBERNETES_SANDBOX_HOME_CLAIM`을 쓰려면 네임스페이스·볼륨·생성 심사를 함께
+다시 설계해야 합니다.
+
+## 설정 변경과 복구도 순서를 지킵니다
+
+ConfigMap과 Secret 이름은 고정되어 있습니다. 값을 적용해도 실행 중인 프로세스의
+환경변수가 저절로 바뀌지는 않습니다. foundation 단계를 적용한 뒤 관련 Deployment를
+재시작하세요. 컴퓨터 설정을 바꿀 때는 먼저 정상 중지해 홈을 저장합니다.
+기존 Pod는 생성 당시 이미지와 자원 제한을 유지합니다.
+
+업그레이드 전에는 PostgreSQL, 데이터 볼륨, 암호화 키를 백업하고 복원도 시험하세요.
+[업그레이드 안내](../self-host-upgrading.md)에 따라 worker 작업을 마친 뒤 교체합니다.
+이미지를 갱신하고 새 이름의 마이그레이션 Job을 실행해 성공을 확인한 다음 앱을
+배포하세요. 완료된 옛 Job을 재적용한다고 새 마이그레이션이 실행되지는 않습니다.
+첫 계정 생성 Job은 비밀번호 회전 도구가 아닙니다.
+
+이전 이미지·설정·백업을 함께 보관하세요. 앱 롤백은 데이터베이스와 호환되어야 하며,
+이미지만 되돌려 스키마 변경까지 취소할 수는 없습니다. 설치를 재시도하려고
+네임스페이스나 PVC를 삭제하지 마세요. 복구 범위는
+[백업과 복원](../self-host-backups.md)에서 확인할 수 있습니다.
+
+처음의 검은 화면으로 돌아가면 확인할 순서가 생깁니다. 컴퓨터가 켜졌는지,
+web에서 접근할 수 있는지, 외부 입구가 화면 권한을 Rakazo까지 전달했는지입니다.
+각 구간을 따로 확인하면 기다려야 할 때와 설정을 고쳐야 할 때를 구분할 수 있습니다.

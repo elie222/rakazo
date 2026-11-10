@@ -130,6 +130,9 @@ matters more.
 
 ## `kubernetes`
 
+For a staged single-node installation with storage, scoped permissions and network policies,
+see [Kubernetes / k3s installation](./self-host-kubernetes.md) ([한국어](./ko-KR/self-host-kubernetes.md)).
+
 Each computer is one pod in a namespace you choose, created from the published computer image.
 The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
 `KUBECONFIG`), so they normally run in the same cluster. No supervisor or Docker socket is involved.

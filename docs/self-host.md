@@ -124,6 +124,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.
+- [Kubernetes / k3s installation](./self-host-kubernetes.md): a staged single-node recipe,
+  computer isolation and login-gate troubleshooting ([한국어](./ko-KR/self-host-kubernetes.md)).
 - [Storage and encryption](./self-host-storage.md): content encryption, object storage and upload
   limits.
 - [Production deployment](./self-host-production.md): a public single-VM install with automatic

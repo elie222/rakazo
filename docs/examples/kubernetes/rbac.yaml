@@ -1,0 +1,49 @@
+# See ../../self-host-kubernetes.md before applying.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rakazo-controller
+  labels:
+    rakazo.example/phase: foundation
+  namespace: rakazo
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rakazo-computers
+  labels:
+    rakazo.example/phase: foundation
+  namespace: rakazo-sandboxes
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - create
+  - get
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - pods/exec
+  verbs:
+  - create
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rakazo-computers
+  labels:
+    rakazo.example/phase: foundation
+  namespace: rakazo-sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rakazo-computers
+subjects:
+- kind: ServiceAccount
+  name: rakazo-controller
+  namespace: rakazo
