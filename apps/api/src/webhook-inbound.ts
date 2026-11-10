@@ -5,8 +5,9 @@ import { inboundRoutineModelPin } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { accountDeactivated } from "@rakazo/db";
+import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { Context } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
 export const WEBHOOK_SECRET_KIND = "webhook";
@@ -260,6 +261,23 @@ export function inboundDeliveryClientNonce(
   idempotencyKey: string,
 ): string {
   return `${source}:${botId}:${createHash("sha256").update(idempotencyKey).digest("base64url")}`;
+}
+
+/**
+ * Answers an authenticated delivery. A Space being deleted takes none: the sender gets a 409, not
+ * a server error, so the request is not reported as a failure.
+ */
+export async function webhookDeliveryResponse(
+  c: Context,
+  delivery: ReturnType<typeof deliverWebhookEvent>,
+): Promise<Response> {
+  try {
+    return c.json(await delivery);
+  } catch (error) {
+    if (error instanceof SpaceDeletionInProgressError)
+      return c.json({ error: "Space deletion in progress" }, 409);
+    throw error;
+  }
 }
 
 export async function deliverWebhookEvent(

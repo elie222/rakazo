@@ -76,6 +76,29 @@ describe("parseSkillMd", () => {
     expect(String(parsed.frontmatter.literal).endsWith("\n")).toBe(true);
   });
 
+  it("accepts comments after block scalar headers without changing their values", () => {
+    for (const header of [">", ">-", ">2", ">2-", ">-2", "|", "|+", "|2", "|2+", "|+2"]) {
+      for (const separator of [" ", "\t"]) {
+        const doc = (suffix: string) =>
+          `---\nname: Example\ndescription: ${header}${suffix}\n  First # content\n  Second\n---\n\n# Body\n`;
+        const expected = parseSkillMd(doc(""));
+        const parsed = parseSkillMd(doc(`${separator}# header comment`));
+        expect("error" in expected, header).toBe(false);
+        expect(parsed, `${header}${separator}`).toEqual(expected);
+        if ("error" in parsed) continue;
+        expect(parsed.description, header).toBe(
+          header.startsWith(">") ? "First # content Second" : "First # content\nSecond",
+        );
+        expect(parsed.body).toContain("# Body");
+      }
+    }
+  });
+
+  it("does not treat a hash without separation as a block header comment", () => {
+    const parsed = parseSkillMd("---\nname: Example\ndescription: >#comment\n  text\n---\n");
+    expect(parsed).toEqual({ error: "Unexpected indented frontmatter line without a key." });
+  });
+
   it("preserves commas in quoted inline array items through save and reload", () => {
     const cases = [
       { input: '["sales, marketing", "ops"]', expected: ["sales, marketing", "ops"] },

@@ -279,6 +279,12 @@ export class BillingEmulator implements BillingProvider {
     this.cancelAll(customerId);
   }
 
+  async expireOpenCheckouts(customerId: string) {
+    this.checkouts.delete(customerId);
+    this.byokCheckouts.delete(customerId);
+    this.creditCheckouts.delete(customerId);
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(WEBHOOK_SECRET, rawBody, headers, this.now());
   }

@@ -75,6 +75,7 @@ export const MessageView = memo(function MessageView({
   onAddRoutine,
   voiceReady,
   speaking,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
@@ -122,6 +123,8 @@ export const MessageView = memo(function MessageView({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speaking: boolean;
+  /** An active call owns the speaker, so new reads wait until it ends. */
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   /** Opens where an imported item's setup is finished. */
@@ -310,6 +313,8 @@ export const MessageView = memo(function MessageView({
                   variant="text"
                   size="xs"
                   aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                  // Stopping the speech in progress stays available; a call blocks new reads.
+                  disabled={callHoldsSpeaker && !speaking}
                   onClick={speak}
                   className="font-normal"
                 >
@@ -436,7 +441,13 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "subagent") {
-            return <SubagentCard key={i} block={block} />;
+            const { botId } = message;
+            // A saved running card is a background helper's; a live one belongs to this turn.
+            const onStop =
+              botId && !message.id.startsWith("subagent:")
+                ? () => rpc.threads.stopHelper({ botId, messageId: message.id })
+                : undefined;
+            return <SubagentCard key={i} block={block} onStop={onStop} />;
           }
           if (block.kind === "child_bot") {
             return (
@@ -594,6 +605,8 @@ export const MessageView = memo(function MessageView({
                       variant="text"
                       size="xs"
                       aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                      // Stopping the speech in progress stays available; a call blocks new reads.
+                      disabled={callHoldsSpeaker && !speaking}
                       onClick={speak}
                       className="mt-2 font-normal"
                     >

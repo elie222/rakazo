@@ -30,6 +30,7 @@ import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
@@ -74,12 +75,7 @@ export type OAuthMaterial = {
 /** Values that must never appear in model-visible tool results or errors. */
 export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   const values: string[] = [];
-  const add = (value: string | undefined) => {
-    if (!value) return;
-    values.push(value);
-    const bearer = value.match(/^Bearer\s+(.+)$/i);
-    if (bearer?.[1]) values.push(bearer[1]);
-  };
+  const add = (value: string | undefined) => addSecret(values, value);
   add(material.secret);
   add(material.oauth?.tokens?.access_token);
   add(material.oauth?.tokens?.refresh_token);
@@ -107,6 +103,167 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   return [...new Set(values)];
 }
 
+/** Registers a credential and, for a Bearer or Basic value, the credential on its own. */
+function addSecret(values: string[], value: string | undefined): void {
+  if (!value) return;
+  values.push(value);
+  const bearer = value.match(/^(?:Bearer|Basic)\s+(.+)$/i);
+  if (bearer?.[1]) values.push(bearer[1]);
+}
+
+/** Credentials in stdio launch arguments, which the process can echo in output and errors. */
+export function launchArgSecrets(args: string[]): string[] {
+  const values: string[] = [];
+  const add = (value: string | undefined) => addSecret(values, value);
+  const addAssignment = (assignment: string) => {
+    const match = assignment.match(/^([A-Za-z_][\w.-]*)=([\s\S]*)$/);
+    if (match?.[1] && match[2] && isLaunchSecret(match[1], match[2])) add(match[2]);
+  };
+  for (const [index, arg] of args.entries()) {
+    for (const url of urlsIn(arg)) values.push(...urlSecrets(url));
+    const flag = arg.match(/^--?([A-Za-z][\w.-]*)(?:=([\s\S]*))?$/);
+    if (!flag?.[1]) {
+      addAssignment(arg);
+      continue;
+    }
+    const name = flag[1];
+    const next = args[index + 1];
+    const value = flag[2] ?? (next?.startsWith("-") ? undefined : next);
+    if (!value) continue;
+    const normalized = snakeName(name);
+    if (name === "H" || normalized === "header") {
+      const header = value.match(/^([^:]+):\s*([\s\S]*)$/);
+      if (!header?.[1] || !header[2]) continue;
+      const [, headerName, headerValue] = header;
+      // `--header Authorization:Bearer <token>` splits the token into the next argument, which
+      // may itself start with "-"; only an argument shaped like a flag is not the token.
+      if (isAuthHeaderKey(headerName) && /^bearer$/i.test(headerValue)) {
+        const token = args[index + 2];
+        if (flag[2] === undefined && !/^(--|-.$)/.test(token ?? "")) add(token);
+      } else if (
+        isAuthHeaderKey(headerName) ||
+        // Custom auth headers (an API gateway's subscription key) have no standard name, so any
+        // header but the content-negotiation ones follows the configured-header rule.
+        (!/^(accept|content|user-agent|cache-control|connection|host)/i.test(headerName.trim()) &&
+          isLaunchSecret(headerName, headerValue))
+      ) {
+        add(headerValue);
+      }
+    } else if (name === "e" || normalized === "env") {
+      addAssignment(value);
+    } else if (name.length === 1) {
+      // `-y` (as in `npx -y <package>`) takes no value; what follows it is the package.
+      if (name !== "y" && looksLikeOpaqueToken(value)) add(value);
+    } else if (isCredentialArg(name, value)) {
+      add(value);
+    }
+  }
+  return [...new Set(values)];
+}
+
+/** An assignment or header value: the configured env/header rule, or a credential name. */
+function isLaunchSecret(name: string, value: string): boolean {
+  return isConfiguredSecret(snakeName(name), value) || isCredentialArg(name, value);
+}
+
+/** A flag, query, or header value under a credential name. Only explicit credential names
+ * (`api_key`, `password`, `access_key`) take numeric values, so `?key=0` cannot redact every zero. */
+function isCredentialArg(name: string, value: string): boolean {
+  const normalized = snakeName(name);
+  return (
+    isCredentialName(normalized) &&
+    looksLikeSecretValue(value, {
+      allowNumeric: isExplicitCredentialKey(normalized) || NAMED_KEY.test(normalized),
+    })
+  );
+}
+
+/** Key names that say which credential they hold (`access_key`, not a bare `key`). */
+const NAMED_KEY = /(?:^|_)(access_key|private_key|secret_key)$/;
+
+/** Flag and query names that carry a credential (`api_key`, `token`, `client_auth`, `pat`). */
+function isCredentialName(normalized: string): boolean {
+  return (
+    isExplicitCredentialKey(normalized) ||
+    isAmbiguousCredentialKey(normalized) ||
+    NAMED_KEY.test(normalized) ||
+    /^(key|pat|auth)$/.test(normalized) ||
+    // `--client-auth <token>`, but not a switch such as `--no-auth`, whose next argument is not its value.
+    (/_auth$/.test(normalized) && !/^(no|disable|enable|skip|use|require)_/.test(normalized))
+  );
+}
+
+/** `apiKey`, `APIKey`, `api.key` and `api-key` → `api_key`, so they match the snake_case rules. */
+function snakeName(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])|([A-Z])([A-Z][a-z])/g, (_, a, b, c, d) =>
+      a ? `${a}_${b}` : `${c}_${d}`,
+    )
+    .toLowerCase()
+    .replace(/[-.]/g, "_");
+}
+
+/** A one-letter flag's value is a credential only when it reads like a generated token,
+ * not a word, path, or number. */
+function looksLikeOpaqueToken(value: string): boolean {
+  return /^[\w+=.-]{16,}$/.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
+}
+
+/** Each whitespace- or quote-separated word containing `scheme://`, from the scheme on. A scan,
+ * not a global regex, so a long argument cannot make matching quadratic. */
+function urlsIn(text: string): string[] {
+  const urls: string[] = [];
+  for (const word of text.split(/[\s"'<>]+/)) {
+    const separator = word.indexOf("://");
+    let start = separator;
+    while (start > 0 && /[a-z\d+.-]/i.test(word.charAt(start - 1))) start--;
+    while (start < separator && !/[a-z]/i.test(word.charAt(start))) start++;
+    if (start < separator) urls.push(word.slice(start));
+  }
+  return urls;
+}
+
+/** The userinfo of a URL (`user:password@`, or a bare token as the user) and its
+ * credential-named query values. */
+function urlSecrets(text: string): string[] {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return [];
+  }
+  const values: string[] = [];
+  const addEncoded = (value: string) => values.push(value, decodeURIComponentSafe(value));
+  if (url.password) addEncoded(url.password);
+  // An HTTP(S) user name without a password is how a token is passed (`https://<token>@host`);
+  // otherwise, as for `ssh://git@host` or `user:password@`, it counts only when it reads like one.
+  const username = decodeURIComponentSafe(url.username);
+  if (
+    !url.password && /^https?:$/.test(url.protocol)
+      ? username.length >= MIN_NEUTRAL_SECRET_LENGTH
+      : looksLikeOpaqueToken(username)
+  )
+    addEncoded(url.username);
+  for (const pair of url.search.slice(1).split("&")) {
+    const [[key, value] = []] = new URLSearchParams(pair);
+    if (!key || !value) continue;
+    // Both the decoded value and its spelling in the argument, which the server may echo.
+    if (isCredentialArg(key, value)) {
+      addSecret(values, value);
+      values.push(pair.slice(pair.indexOf("=") + 1));
+    }
+  }
+  return values;
+}
+
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Redaction replaces substrings, so a short value under a neutral name would mangle output. */
 const MIN_NEUTRAL_SECRET_LENGTH = 8;
 
@@ -123,6 +280,7 @@ function isAuthHeaderKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/-/g, "_");
   return (
     normalized === "authorization" ||
+    normalized === "proxy_authorization" ||
     normalized === "cookie" ||
     normalized === "set_cookie" ||
     normalized === "x_session" ||
@@ -357,6 +515,46 @@ function requestOfflineAccess(
   authorizationUrl.searchParams.set("scope", [...scopes, OFFLINE_ACCESS].join(" "));
 }
 
+/**
+ * Client-authentication methods this client can perform, most preferred first: a
+ * public client proving itself with PKCE, then a secret in the body, then one in
+ * a Basic header. Anything else (`private_key_jwt`, mTLS) needs key material
+ * this client does not hold.
+ */
+const REGISTRATION_AUTH_METHODS = ["none", "client_secret_post", "client_secret_basic"];
+
+/**
+ * The client-authentication method to register with (RFC 7591).
+ *
+ * A public client -- `none`, holding no secret and proving itself with PKCE -- is
+ * the right shape here, but asserting it unconditionally breaks registration
+ * outright on an authorization server that does not offer it: the server rejects
+ * the whole document with `invalid_client_metadata` rather than registering us
+ * with a method it prefers. So the choice follows what the server advertises
+ * (RFC 8414), narrowed to the methods above.
+ *
+ * When the server advertises nothing, the field is omitted so the server applies
+ * its own default -- `client_secret_basic` per RFC 8414 S2. A registration that
+ * comes back with a client secret is stored and used like any other; the SDK
+ * picks the matching method for the token request from the same metadata.
+ *
+ * A server that advertises methods but none this client can perform is a
+ * different case, and omitting the field there would quietly register for
+ * `client_secret_basic` -- a method it never offered -- leaving a client that
+ * cannot authenticate. Only a client registered out of band can sign in to such
+ * a server, which is what the pre-registered client exists for.
+ */
+function registrationAuthMethod(discovery: OAuthDiscoveryState | undefined): string | undefined {
+  const advertised = discovery?.authorizationServerMetadata?.token_endpoint_auth_methods_supported;
+  if (!Array.isArray(advertised) || advertised.length === 0) return undefined;
+  const usable = REGISTRATION_AUTH_METHODS.find((method) => advertised.includes(method));
+  if (!usable)
+    throw new Error(
+      `${MCP_DYNAMIC_REGISTRATION_UNSUPPORTED} with a client-authentication method this client can perform; it accepts only ${advertised.join(", ")}`,
+    );
+  return usable;
+}
+
 function applyGrant(oauth: OAuthState, grant: TokenGrant): void {
   if (grant.tokens) oauth.tokens = grant.tokens;
   else delete oauth.tokens;
@@ -396,12 +594,18 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     if (!redirectUri) throw new McpReauthorizationRequiredError(this.serverId);
     const hostname = new URL(redirectUri).hostname;
     const applicationType = hostname === "localhost" || hostname === "127.0.0.1" ? "native" : "web";
+    // Only a registration this client is about to make has to match the server; a
+    // pre-registered client was given its method out of band, and this document is
+    // then read for its scope alone.
+    const authMethod = this.material.oauthClient
+      ? undefined
+      : registrationAuthMethod(this.material.oauth?.discoveryState);
     return {
       redirect_uris: [redirectUri],
       client_name: "Rakazo",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      token_endpoint_auth_method: "none",
+      ...(authMethod ? { token_endpoint_auth_method: authMethod } : {}),
       application_type: applicationType,
       ...(this.configuredScope ? { scope: this.configuredScope } : {}),
     } as OAuthClientMetadata;
@@ -861,8 +1065,12 @@ type MaterialSnapshot = {
   secret: { id: string; ciphertext: string } | null;
 };
 
-function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
-  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
+/** Serializes changes to one MCP server's stored credential across the API and worker. */
+export function lockMcpOAuthMaterial(
+  tx: Prisma.TransactionClient,
+  serverId: string,
+): Promise<unknown> {
+  return advisoryLock(tx, "mcp-oauth-material", serverId);
 }
 
 /** One refresh-token grant against the stored authorization server. */
@@ -1233,7 +1441,7 @@ export class McpOAuthBroker {
     // default transaction timeout.
     const { revision } = await withRefreshLock(
       this.prisma,
-      (tx) => lockMaterial(tx, pending.serverId),
+      (tx) => lockMcpOAuthMaterial(tx, pending.serverId),
       async (tx) => {
         const endpoint = pending.stdio ? null : pending.endpoint;
         const snapshot = await this.snapshot(tx, pending.serverId, input, endpoint);
@@ -1397,7 +1605,7 @@ export class McpOAuthBroker {
         () =>
           withRefreshLock(
             this.prisma,
-            (tx) => lockMaterial(tx, serverId),
+            (tx) => lockMcpOAuthMaterial(tx, serverId),
             async (tx) => {
               const snapshot = await this.snapshot(tx, serverId, context, endpoint);
               const material = snapshot.secret
@@ -1555,7 +1763,7 @@ export class McpOAuthBroker {
         stored,
         () =>
           this.prisma.$transaction(async (tx) => {
-            await lockMaterial(tx, serverId);
+            await lockMcpOAuthMaterial(tx, serverId);
             return this.commitMaterial(
               tx,
               serverId,

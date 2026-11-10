@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
 import { useState } from "react";
 import {
@@ -11,11 +12,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api-auth";
 import { mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { promptAccountDeletion } from "../lib/delete-account-prompt";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { forgetSignedIn } from "../lib/returning-user";
 import { continueWithSso } from "../lib/sso";
@@ -32,7 +32,7 @@ export function useAccountDeletion({
 }: {
   onSecurity?: (security: AccountSecurity) => void;
 } = {}) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -57,7 +57,7 @@ export function useAccountDeletion({
     try {
       await action();
     } catch (err) {
-      setError(errorText(err, t("Could not continue")));
+      setError(errorText(err, t`Could not continue`));
     } finally {
       setPending(false);
     }
@@ -85,17 +85,15 @@ export function useAccountDeletion({
         return;
       }
     } catch (err) {
-      setError(errorText(err, t("Could not continue")));
+      setError(errorText(err, t`Could not continue`));
       return;
     }
 
     const prompted = promptAccountDeletion({
-      title: t("Delete your account?"),
-      message: t(
-        "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
-      ),
-      cancelLabel: t("Cancel"),
-      deleteLabel: t("Delete"),
+      title: t`Delete your account?`,
+      message: t`This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.`,
+      cancelLabel: t`Cancel`,
+      deleteLabel: t`Delete`,
       onSubmit: (value) => void submit(value, true),
     });
     if (!prompted) {
@@ -122,7 +120,7 @@ export function useAccountDeletion({
         // an expired proof says so; the switched field asks for the new password.
         if (current.hasPassword) return;
         if (!current.freshOidcAuth && !token) {
-          setError(t("Sign in again"));
+          setError(t`Sign in again`);
           return;
         }
         await deleteAccount(undefined, token);
@@ -131,7 +129,7 @@ export function useAccountDeletion({
       await forgetSignedIn();
       replaceWithSignIn("/sign-in");
     } catch (err) {
-      setError(errorText(err, t("Could not delete account")));
+      setError(errorText(err, t`Could not delete account`));
     } finally {
       setPending(false);
     }
@@ -149,7 +147,7 @@ export function useAccountDeletion({
       <View style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}>
         {Platform.OS !== "ios" ? (
           <Pressable
-            accessibilityLabel={t("Cancel")}
+            accessibilityLabel={t`Cancel`}
             style={StyleSheet.absoluteFill}
             onPress={close}
           />
@@ -167,17 +165,15 @@ export function useAccountDeletion({
           keyboardShouldPersistTaps="handled"
           style={Platform.OS === "ios" ? styles.sheetScroll : styles.dialogScroll}
         >
-          <Text style={styles.dialogTitle}>{t("Delete your account?")}</Text>
+          <Text style={styles.dialogTitle}>{t`Delete your account?`}</Text>
           <Text style={styles.dialogBody}>
-            {t(
-              "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
-            )}
+            {t`This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.`}
           </Text>
           {!security?.hasPassword ? (
             <>
               {security?.sso ? (
                 <NativeActionButton
-                  label={t("Sign in again")}
+                  label={t`Sign in again`}
                   disabled={pending}
                   onPress={() =>
                     void run(async () => {
@@ -188,7 +184,7 @@ export function useAccountDeletion({
               ) : null}
               {security?.emailDeletion ? (
                 <NativeActionButton
-                  label={t("Send deletion code")}
+                  label={t`Send deletion code`}
                   disabled={pending}
                   onPress={() =>
                     void run(async () => {
@@ -202,9 +198,7 @@ export function useAccountDeletion({
           ) : null}
           {security?.hasPassword || codeSent ? (
             <TextInput
-              accessibilityLabel={
-                security?.hasPassword ? t("Current password") : t("Deletion code")
-              }
+              accessibilityLabel={security?.hasPassword ? t`Current password` : t`Deletion code`}
               autoCapitalize="none"
               autoCorrect={false}
               autoFocus
@@ -213,7 +207,7 @@ export function useAccountDeletion({
                 setPassword(next);
                 setError(null);
               }}
-              placeholder={security?.hasPassword ? t("Current password") : t("Deletion code")}
+              placeholder={security?.hasPassword ? t`Current password` : t`Deletion code`}
               placeholderTextColor={native.tertiaryLabel}
               secureTextEntry={security?.hasPassword}
               style={styles.dialogInput}
@@ -228,13 +222,13 @@ export function useAccountDeletion({
           ) : null}
           <View style={styles.dialogActions}>
             <NativeActionButton
-              label={t("Cancel")}
+              label={t`Cancel`}
               disabled={pending}
               onPress={close}
               prominence="plain"
             />
             <NativeActionButton
-              label={t("Delete")}
+              label={t`Delete`}
               disabled={disabled}
               onPress={() => void submit(password)}
               prominence="destructive"

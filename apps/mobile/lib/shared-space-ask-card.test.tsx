@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
+import type { AskWaitingOn } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AskWaitingOn } from "@rakazo/core";
-import type { MobileMessage } from "./api";
+import type { MobileMessage } from "./mobile-types";
 
 vi.mock("react-native", async () => {
   const { createElement } = await import("react");
@@ -68,7 +68,6 @@ vi.mock("../components/vault-item-editor", () => ({ VaultItemEditor: () => null 
 
 import { AskActions } from "../components/AskActions";
 import { AskBlock, waitingOnLabel } from "../components/thread/ask-block";
-import { t } from "./i18n";
 
 type Ask = Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
 
@@ -89,8 +88,8 @@ const questionAsk = { kind: "ask", text: "Which city?", status: "pending" } as A
 
 describe("waitingOnLabel", () => {
   it("names who the card waits on, or falls back when the name is missing", () => {
-    expect(waitingOnLabel({ userId: "casey", name: "Casey" }, t)).toBe("Waiting on Casey");
-    expect(waitingOnLabel({ userId: "casey" }, t)).toBe(
+    expect(waitingOnLabel({ userId: "casey", name: "Casey" })).toBe("Waiting on Casey");
+    expect(waitingOnLabel({ userId: "casey" })).toBe(
       "Only the person who started this can answer it",
     );
   });
@@ -125,7 +124,7 @@ describe("another member's card in a shared space", () => {
             disabled
             onAnswer={async () => {}}
           />
-          <span>{waitingOnLabel(waitingOn, t)}</span>
+          <span>{waitingOnLabel(waitingOn)}</span>
         </>,
       );
     });
@@ -151,7 +150,9 @@ describe("another member's card in a shared space", () => {
         />,
       );
     });
-    const allow = [...container.querySelectorAll("button")].find((b) => b.textContent === "Allow once")!;
+    const allow = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Allow once",
+    )!;
     expect(allow.hasAttribute("disabled")).toBe(false);
     await act(async () => {
       allow.click();

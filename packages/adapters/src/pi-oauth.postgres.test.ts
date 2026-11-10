@@ -6,8 +6,7 @@ import { PostgresRealtimeFanout } from "./realtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
   const databases: Array<ReturnType<typeof createDb>> = [];
@@ -37,6 +36,8 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
       prisma: db.prisma,
       pool: db.pool,
       oauth: await import("./pi-oauth.js"),
+      modelSecret: await import("./model-secret.js"),
+      refresh: await import("./model-credential-refresh.js"),
       credentials: await import("./pi-credentials.js"),
       secretStores: await import("./secret-store-factory.js"),
     };
@@ -64,7 +65,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     await fixture.space.create({
       data: { id, organizationId: id, name: "OAuth test", isDefault: true },
     });
-    const plaintext = owner.oauth.serializeModelSecret({ kind: "oauth", credential });
+    const plaintext = owner.modelSecret.serializeModelSecret({ kind: "oauth", credential });
     const stored = await secrets.put(plaintext, {
       operationId: "test",
       traceId: "test",
@@ -86,7 +87,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     const b = await instance();
     const c = await instance();
     // Separate module graphs: no in-process lock is shared, only the database lock.
-    expect(new Set([a, b, c].map((p) => p.oauth.withModelCredentialLock)).size).toBe(3);
+    expect(new Set([a, b, c].map((p) => p.refresh.withModelCredentialLock)).size).toBe(3);
     const { scope, credential, plaintext, stored, connection } = await seed(a);
     const fixture = asSystem(a.prisma);
 
@@ -107,21 +108,36 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
       credential,
       undefined,
       undefined,
-      c.oauth.refreshStoredModelCredential(c.prisma, secrets, scope, model, "openai-codex", {
+      c.refresh.refreshStoredModelCredential(c.prisma, secrets, scope, model, "openai-codex", {
         oauth,
       }),
     );
 
     const [, started, running] = await Promise.all([
       runAsTenant(scope, () =>
-        a.oauth.refreshExpiredModelCredential(a.prisma, secrets, scope, stored.id, "openai-codex", {
-          oauth,
-        }),
+        a.refresh.refreshExpiredModelCredential(
+          a.prisma,
+          secrets,
+          scope,
+          stored.id,
+          "openai-codex",
+          {
+            oauth,
+          },
+        ),
       ),
       runAsTenant(scope, () =>
-        b.oauth.resolveStoredModelAuth(b.prisma, secrets, scope, model, plaintext, "openai-codex", {
-          oauth,
-        }),
+        b.refresh.resolveStoredModelAuth(
+          b.prisma,
+          secrets,
+          scope,
+          model,
+          plaintext,
+          "openai-codex",
+          {
+            oauth,
+          },
+        ),
       ),
       runAsTenant(scope, () =>
         runner.modify("openai-codex", async (current) =>
@@ -136,7 +152,9 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     expect(started.apiKey).toBe("acc-1");
     expect(running).toMatchObject({ access: "acc-1", refresh: "rt-1" });
     const row = await fixture.secret.findUniqueOrThrow({ where: { id: stored.id } });
-    expect(a.oauth.parseModelSecret(await secrets.load(row.ciphertext, stored.id))).toMatchObject({
+    expect(
+      a.modelSecret.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
+    ).toMatchObject({
       credential: { refresh: "rt-1" },
     });
   });
@@ -153,7 +171,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
 
     await expect(
       runAsTenant(scope, () =>
-        owner.oauth.resolveStoredModelAuth(
+        owner.refresh.resolveStoredModelAuth(
           owner.prisma,
           secrets,
           scope,
@@ -166,7 +184,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     ).rejects.toThrow(owner.oauth.OAUTH_RECONNECT_REQUIRED_ERROR);
     const row = await asSystem(owner.prisma).secret.findUniqueOrThrow({ where: { id: stored.id } });
     expect(
-      owner.oauth.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
+      owner.modelSecret.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
     ).toMatchObject({
       reconnectRequired: true,
     });
@@ -187,7 +205,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
 
     await expect(
       runAsTenant(scope, () =>
-        owner.oauth.resolveStoredModelAuth(
+        owner.refresh.resolveStoredModelAuth(
           owner.prisma,
           secrets,
           scope,
@@ -201,7 +219,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
     // The provider already spent rt-0, so the rotated token must survive the failure.
     const row = await asSystem(owner.prisma).secret.findUniqueOrThrow({ where: { id: stored.id } });
     expect(
-      owner.oauth.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
+      owner.modelSecret.parseModelSecret(await secrets.load(row.ciphertext, stored.id)),
     ).toMatchObject({
       credential: { refresh: "rt-1" },
     });
@@ -238,7 +256,7 @@ describePostgres("model OAuth refresh (PostgreSQL contract)", () => {
 
     const started = Date.now();
     const resolved = await runAsTenant(scope, () =>
-      owner.oauth.resolveStoredModelAuth(
+      owner.refresh.resolveStoredModelAuth(
         owner.prisma,
         store,
         scope,

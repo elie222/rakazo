@@ -1,6 +1,13 @@
 import { useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
@@ -9,6 +16,7 @@ import { SETTINGS_CONTENT_WIDTH, SettingsGroup, SettingsRow } from "../component
 import { VaultSettings } from "../components/VaultSettings";
 import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
+import type { RpcClient } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import {
   ComputerSettingsPanel,
@@ -59,6 +67,7 @@ export function SettingsOverlay({
   onClose,
   onVoiceStatusMaybeChanged,
   onLeftSpace,
+  shellRpc,
 }: {
   /** The space the Space page edits; it need not be the selected space. */
   space?: SettingsSpace | null;
@@ -94,6 +103,8 @@ export function SettingsOverlay({
   onVoiceStatusMaybeChanged?: () => void | Promise<void>;
   /** After leaving a space, with the space the server moved this person to. */
   onLeftSpace?: (spaceId: string, activeSpaceId: string) => void;
+  /** Pinned to the space this window shows; billing acts on it. */
+  shellRpc: RpcClient;
 }) {
   const { t, i18n } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -208,6 +219,9 @@ export function SettingsOverlay({
       ? (space?.name ?? t`Space`)
       : (navItems.find((item) => item.id === section)?.label ??
         (section === "general" ? t`General` : t`Settings`));
+
+  const sectionDescription =
+    section === "space" ? undefined : navItems.find((item) => item.id === section)?.description;
 
   const closeLabel =
     section === "models"
@@ -328,9 +342,16 @@ export function SettingsOverlay({
                     <ChevronLeft className="rtl:rotate-180" />
                   </Button>
                 ) : null}
-                <DialogTitle className="min-w-0 break-words text-heading2 font-medium text-foreground">
-                  {sectionTitle}
-                </DialogTitle>
+                <div className="min-w-0">
+                  <DialogTitle className="break-words text-heading2 font-medium text-foreground">
+                    {sectionTitle}
+                  </DialogTitle>
+                  {sectionDescription ? (
+                    <DialogDescription className="mt-1 text-body text-muted-foreground">
+                      {sectionDescription}
+                    </DialogDescription>
+                  ) : null}
+                </div>
               </div>
               <DialogClose
                 aria-label={closeLabel}
@@ -431,7 +452,9 @@ export function SettingsOverlay({
                       computerSettingsEnabled={computerSettingsEnabled}
                     />
                   ) : null}
-                  {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
+                  {section === "billing" && billingEnabled ? (
+                    <BillingSettingsPanel client={shellRpc} />
+                  ) : null}
                   {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                   {section === "models" ? (
                     <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />

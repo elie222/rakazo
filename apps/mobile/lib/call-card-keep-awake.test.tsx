@@ -94,12 +94,19 @@ vi.mock("../components/glass-icon-button", () => ({
   }) =>
     createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
 }));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
   configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("./session", () => ({
@@ -108,11 +115,6 @@ vi.mock("./session", () => ({
     sessionChange.listeners.add(listener);
     return () => sessionChange.listeners.delete(listener);
   },
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({ t: (text: string) => text }),
-  t: (text: string) => text,
-  getActiveUiLocale: () => "en",
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
@@ -138,6 +140,8 @@ const deps: CallDeps = {
   record: vi.fn(),
   transcribe: vi.fn(),
   send: vi.fn(),
+  answer: vi.fn(),
+  followUp: vi.fn(),
   endCall: async () => undefined,
   speak: async () => undefined,
   watch: () => vi.fn(),

@@ -184,6 +184,7 @@ export function SecretAskCard({
         <VaultTile
           kind={block.credential ? vaultKind(block.credential.auth.type) : null}
           title={form === "login" && block.credential ? siteHost(block.credential.origin) : ""}
+          origin={form === "login" ? block.credential?.origin : undefined}
         />
         <div className="min-w-0 flex-1">
           <div className="text-body-lg font-medium leading-[1.4] text-foreground">

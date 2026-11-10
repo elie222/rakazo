@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   params: {} as { id?: string; botId?: string },
   options: {} as { title?: string; headerRight?: () => ReactNode },
   back: vi.fn(),
-  dispatch: vi.fn(),
   rpc: vi.fn(),
   alert: vi.fn(),
   preventRemove: { active: false, onRemove: null as null | ((event: unknown) => void) },
@@ -26,17 +25,16 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: mocks.rpc }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => mocks.params,
   useRouter: () => ({ back: mocks.back }),
   useNavigation: () => ({
-    dispatch: mocks.dispatch,
     setOptions: (next: typeof mocks.options) => Object.assign(mocks.options, next),
   }),
-}));
-vi.mock("expo-router/react-navigation", () => ({
   usePreventRemove: (active: boolean, onRemove: (event: unknown) => void) => {
     mocks.preventRemove.active = active;
     mocks.preventRemove.onRemove = onRemove;
@@ -190,15 +188,16 @@ it("keeps the edit and stays open when saving fails", async () => {
 });
 
 it("asks before leaving with unsaved changes", async () => {
+  const repeat = vi.fn();
   mocks.rpc.mockResolvedValue([note]);
   await render();
   await type("Draft\n");
-  const action = { type: "GO_BACK" };
-  act(() => mocks.preventRemove.onRemove?.({ data: { action } }));
+  act(() => mocks.preventRemove.onRemove?.({ data: { action: { type: "GO_BACK" } }, repeat }));
   expect(lastAlert().title).toBe("Discard changes?");
-  expect(mocks.dispatch).not.toHaveBeenCalled();
-  lastAlert().press("Discard");
-  expect(mocks.dispatch).toHaveBeenCalledWith(action);
+  expect(repeat).not.toHaveBeenCalled();
+  act(() => lastAlert().press("Discard"));
+  expect(repeat).toHaveBeenCalledOnce();
+  expect(mocks.preventRemove.active).toBe(false);
 });
 
 it("offers the latest version or the edit when the note changed elsewhere", async () => {
@@ -348,9 +347,10 @@ it("does not offer to discard an edit while its save is in flight", async () => 
   await render();
   await type("Saving this\n");
   await headerSave();
-  act(() => mocks.preventRemove.onRemove?.({ data: { action: { type: "GO_BACK" } } }));
+  const repeat = vi.fn();
+  act(() => mocks.preventRemove.onRemove?.({ data: { action: { type: "GO_BACK" } }, repeat }));
   expect(mocks.alert).not.toHaveBeenCalled();
-  expect(mocks.dispatch).not.toHaveBeenCalled();
+  expect(repeat).not.toHaveBeenCalled();
   await act(async () => finishSave({ ...note, content: "Saving this\n", revision: 4 }));
   expect(mocks.back).toHaveBeenCalledTimes(1);
 });

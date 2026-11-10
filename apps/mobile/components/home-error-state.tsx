@@ -1,5 +1,5 @@
+import { useLingui } from "@lingui/react/macro";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import type { LoadFailureKind } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -28,18 +28,18 @@ export function HomeErrorState({
   onRetry: () => void;
   onSignIn: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   // Secondary gray reads faint on the dark page; lift the icon a step there.
   const iconColor = useResolvedAppearance() === "dark" ? native.label : native.secondaryLabel;
   const title =
     kind === "offline"
-      ? t("Could not reach the server")
+      ? t`Could not reach the server`
       : kind === "session"
-        ? t("Your session expired")
+        ? t`Your session expired`
         : kind === "server"
-          ? t("The server had a problem")
-          : t("Could not load chats");
+          ? t`The server had a problem`
+          : t`Could not load chats`;
   const detail = kind === "other" && message !== title ? message : null;
   return (
     <View accessibilityRole="alert" style={styles.container}>
@@ -54,13 +54,13 @@ export function HomeErrorState({
         </View>
       ) : kind === "session" ? (
         <View style={styles.action}>
-          <NativeActionButton label={t("Sign in")} fill={false} onPress={onSignIn} />
+          <NativeActionButton label={t`Sign in`} fill={false} onPress={onSignIn} />
         </View>
       ) : kind !== "server" ? (
         // A server fault is not fixed by retrying right away; pull to refresh still reloads.
         <View style={styles.action}>
           <NativeActionButton
-            label={t("Try again")}
+            label={t`Try again`}
             prominence="secondary"
             size="compact"
             onPress={onRetry}

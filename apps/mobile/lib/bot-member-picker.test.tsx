@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettings from "../app/group-settings";
 import { BotMemberPicker } from "../components/bot-member-picker";
-import type { MobileBot, MobileGroup } from "./api";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 
 const { rpc, back, push, replace } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -17,6 +17,9 @@ const { rpc, back, push, replace } = vi.hoisted(() => ({
   replace: vi.fn(),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 vi.mock("expo-router", () => ({
@@ -68,12 +71,6 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values: Record<string, string | number> = {}) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
-  }),
-}));
 vi.mock("../components/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-action-button", () => ({

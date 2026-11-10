@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
   chmodSync,
   mkdirSync,
@@ -22,6 +23,7 @@ import {
   desktopControlCommand,
   desktopTerminalCommand,
   desktopUrl,
+  desktopWorkCommand,
   ensureScreenCommand,
   interactiveScreenCommand,
   MAX_DESKTOP_DISPLAY,
@@ -34,6 +36,7 @@ import {
   shellQuote,
   stopBrowserProfileCommand,
   stopExtraScreenCommand,
+  TERMINAL_MENU_COMMAND,
   terminalCommand,
 } from "./desktop-runtime.js";
 
@@ -91,7 +94,7 @@ const env = {
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), "desktop-runtime-test-"));
   roots.push(root);
-  const run = (script: string, failLifecycle = false) =>
+  const run = (script: string, failLifecycle = false, input?: string) =>
     spawnSync(
       "bash",
       [
@@ -106,7 +109,7 @@ function fixture() {
             .replaceAll("/tmp/rakazo", root),
         ].join("\n"),
       ],
-      { encoding: "utf8", timeout: 5000 },
+      { encoding: "utf8", timeout: 5000, input },
     );
   const ensure = (bot: string, lease = "run:1", fail = false) =>
     run(managedDesktopCommand(bot, lease, env, `view-${bot}`), fail);
@@ -116,6 +119,104 @@ function fixture() {
 }
 
 describe("shared Linux desktop lifecycle", () => {
+  it("runs work on the matching assignment without changing its lease and preserves stdin", () => {
+    const f = fixture();
+    expect(f.ensure("a").status).toBe(0);
+    const result = f.run(
+      desktopWorkCommand("a", "run:1", 0, "cat; exit 7"),
+      false,
+      "private input\n",
+    );
+    expect(result.stdout).toBe("private input\n");
+    expect(result.status).toBe(7);
+    expect(f.run(desktopWorkCommand("a", undefined, 0, "printf unleased")).stdout).toBe("unleased");
+    const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
+    expect(readFileSync(path.join(f.root, slot), "utf8")).toBe("0\nrun:1\nview-a\n");
+  });
+
+  it("refuses delayed work after its removed slot has been reused", () => {
+    const f = fixture();
+    expect(f.ensure("a").status).toBe(0);
+    const work = desktopWorkCommand("a", "run:1", 0, 'printf touched >"$dir/touched"');
+    expect(f.release("a").status).toBe(0);
+    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=0:view-b");
+    expect(f.run(work).status).toBe(75);
+    expect(readdirSync(f.root)).not.toContain("touched");
+  });
+
+  it("refuses delayed work after its screen is assigned a different slot", () => {
+    const f = fixture();
+    expect(f.ensure("a").status).toBe(0);
+    const work = desktopWorkCommand("a", "run:1", 0, 'printf touched >"$dir/touched"');
+    expect(f.release("a").status).toBe(0);
+    expect(f.ensure("b").status).toBe(0);
+    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
+    expect(f.run(work).status).toBe(75);
+    expect(readdirSync(f.root)).not.toContain("touched");
+  });
+
+  it.each([
+    ["new:2", "run:1"],
+    ["run:1", "new:2"],
+    ["run:1", ""],
+  ])("requires the exact work lease without replacing %s with %s", (current, incoming) => {
+    const f = fixture();
+    expect(f.ensure("a", current).status).toBe(0);
+    const work = desktopWorkCommand("a", incoming, 0, 'printf touched >"$dir/touched"');
+    expect(f.run(work).status).toBe(75);
+    expect(readdirSync(f.root)).not.toContain("touched");
+    const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
+    expect(readFileSync(path.join(f.root, slot), "utf8")).toBe(`0\n${current}\nview-a\n`);
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "keeps a helper's slot reserved until its lifecycle lock is released",
+    async () => {
+      const f = fixture();
+      expect(f.ensure("a").status).toBe(0);
+      const relocate = (command: string) =>
+        command
+          .replaceAll("/tmp/rakazo/desktop-assignments", f.root)
+          .replaceAll("/tmp/rakazo", f.root);
+      const ready = path.join(f.root, "helper-ready");
+      const releasing = path.join(f.root, "release-ready");
+      const helper = spawn("bash", [
+        "-eu",
+        "-c",
+        relocate(
+          desktopWorkCommand("a", "run:1", 0, `printf ready >${shellQuote(ready)}; read -r done`),
+        ),
+      ]);
+      const helperExited = once(helper, "exit");
+      let release: ChildProcess | undefined;
+      try {
+        waitForReady(ready);
+        const lifecycle = readdirSync(f.root).find((name) => name.endsWith(".lifecycle-lock"))!;
+        expect(spawnSync("flock", ["-n", path.join(f.root, lifecycle), "true"]).status).toBe(1);
+        expect(spawnSync("flock", ["-n", path.join(f.root, ".lock"), "true"]).status).toBe(0);
+        release = spawn("bash", [
+          "-eu",
+          "-c",
+          [
+            `printf ready >${shellQuote(releasing)}`,
+            "bash() { return 0; }",
+            relocate(releaseDesktopCommand("a", "run:1", env)),
+          ].join("\n"),
+        ]);
+        const releaseExited = once(release, "exit");
+        waitForReady(releasing);
+        expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
+        helper.stdin.end("done\n");
+        expect((await helperExited)[0]).toBe(0);
+        expect((await releaseExited)[0]).toBe(0);
+        expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=0:view-c");
+      } finally {
+        helper.kill("SIGKILL");
+        release?.kill("SIGKILL");
+      }
+    },
+  );
+
   it("defaults to a loopback gateway without environment options", () => {
     expect(ensureScreenCommand(0, "bot", "view")).toContain("127.0.0.1:6080 8>&-");
     expect(interactiveScreenCommand(true, "control")).toContain("127.0.0.1:6080 8>&-");
@@ -177,148 +278,172 @@ describe("shared Linux desktop lifecycle", () => {
     ).toThrow("invalid screen gateway bind host");
   });
 
-  it("runs a bot's commands on its own assigned display", () => {
-    const f = fixture();
-    f.ensure("becky");
-    f.ensure("beto");
-    const run = (bot: string, argv: string[]) => {
-      const [program, ...args] = screenDisplayArgv(argv, bot, env.displayStart).map((word) =>
-        word.replaceAll("/tmp/rakazo/desktop-assignments", f.root),
+  it.skipIf(process.platform !== "linux")(
+    "runs a bot's commands on its own assigned display",
+    () => {
+      const f = fixture();
+      f.ensure("becky");
+      f.ensure("beto");
+      const run = (bot: string, argv: string[]) => {
+        const [program, ...args] = screenDisplayArgv(argv, bot, env.displayStart).map((word) =>
+          word.replaceAll("/tmp/rakazo/desktop-assignments", f.root),
+        );
+        return spawnSync(program ?? "", args, {
+          encoding: "utf8",
+          env: { PATH: process.env.PATH, DISPLAY: ":1" },
+        });
+      };
+      const printDisplay = ["sh", "-c", 'printf "%s|%s" "$DISPLAY" "$1"', "sh", "a b'c $HOME"];
+
+      expect(run("becky", printDisplay).stdout).toBe(":20|a b'c $HOME");
+      expect(run("beto", printDisplay).stdout).toBe(":21|a b'c $HOME");
+      // No screen yet: the command keeps the display it inherited.
+      expect(run("tori", printDisplay).stdout).toBe(":1|a b'c $HOME");
+      writeFileSync(
+        path.join(f.root, `${createHash("sha256").update("bad").digest("hex").slice(0, 32)}.slot`),
+        "x;1\n",
       );
-      return spawnSync(program ?? "", args, {
-        encoding: "utf8",
-        env: { PATH: process.env.PATH, DISPLAY: ":1" },
-      });
-    };
-    const printDisplay = ["sh", "-c", 'printf "%s|%s" "$DISPLAY" "$1"', "sh", "a b'c $HOME"];
+      expect(run("bad", printDisplay).stdout).toBe(":1|a b'c $HOME");
+      expect(run("beto", ["sh", "-c", "exit 7"]).status).toBe(7);
+    },
+  );
 
-    expect(run("becky", printDisplay).stdout).toBe(":20|a b'c $HOME");
-    expect(run("beto", printDisplay).stdout).toBe(":21|a b'c $HOME");
-    // No screen yet: the command keeps the display it inherited.
-    expect(run("tori", printDisplay).stdout).toBe(":1|a b'c $HOME");
-    writeFileSync(
-      path.join(f.root, `${createHash("sha256").update("bad").digest("hex").slice(0, 32)}.slot`),
-      "x;1\n",
-    );
-    expect(run("bad", printDisplay).stdout).toBe(":1|a b'c $HOME");
-    expect(run("beto", ["sh", "-c", "exit 7"]).status).toBe(7);
-  });
+  it.skipIf(process.platform !== "linux")(
+    "allocates live slots past 1000 bots, keeps assignments across callers, and rejects stale leases",
+    () => {
+      const f = fixture();
+      expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
+      expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
+      expect(f.ensure("a", "new:2").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
+      expect(f.ensure("a", "run:1").status).toBe(75);
+      expect(f.release("a", "run:3").status).toBe(75);
+      expect(f.release("a", "new:1").status).toBe(75);
+      for (let i = 2; i < 1000; i++)
+        writeFileSync(path.join(f.root, `seed-${i}.slot`), `${i}\nseed:1\nunused\n`);
+      expect(f.ensure("bot-1000").stdout).toContain("RAKAZO_DESKTOP=1000:view-bot-1000");
+      expect(f.release("a", "new:2").status).toBe(0);
+      expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=0:view-c");
+      expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
+    },
+  );
 
-  it("allocates live slots past 1000 bots, keeps assignments across callers, and rejects stale leases", () => {
-    const f = fixture();
-    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
-    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
-    expect(f.ensure("a", "new:2").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
-    expect(f.ensure("a", "run:1").status).toBe(75);
-    expect(f.release("a", "run:3").status).toBe(75);
-    expect(f.release("a", "new:1").status).toBe(75);
-    for (let i = 2; i < 1000; i++)
-      writeFileSync(path.join(f.root, `seed-${i}.slot`), `${i}\nseed:1\nunused\n`);
-    expect(f.ensure("bot-1000").stdout).toContain("RAKAZO_DESKTOP=1000:view-bot-1000");
-    expect(f.release("a", "new:2").status).toBe(0);
-    expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=0:view-c");
-    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
-  });
-
-  it("keeps the slot when the shared registry lock cannot be reacquired after the browser stops", () => {
-    const f = fixture();
-    expect(f.ensure("a").status).toBe(0);
-    expect(readdirSync(f.root).some((name) => name.endsWith(".slot"))).toBe(true);
-    const script = releaseDesktopCommand("a", "run:1", env)
-      .replaceAll("/tmp/rakazo/desktop-assignments", f.root)
-      .replaceAll("/tmp/rakazo", f.root);
-    const result = spawnSync(
-      "bash",
-      [
-        "-eu",
-        "-c",
+  it.skipIf(process.platform !== "linux")(
+    "keeps the slot when the shared registry lock cannot be reacquired after the browser stops",
+    () => {
+      const f = fixture();
+      expect(f.ensure("a").status).toBe(0);
+      expect(readdirSync(f.root).some((name) => name.endsWith(".slot"))).toBe(true);
+      const script = releaseDesktopCommand("a", "run:1", env)
+        .replaceAll("/tmp/rakazo/desktop-assignments", f.root)
+        .replaceAll("/tmp/rakazo", f.root);
+      const result = spawnSync(
+        "bash",
         [
-          "calls=0",
-          "flock() {",
-          '  if [ "$1" = "-u" ]; then return 0; fi',
-          "  calls=$((calls + 1))",
-          '  if [ "$calls" -ge 3 ]; then echo "slot lock failed" >&2; return 1; fi',
-          "  return 0",
-          "}",
-          "bash() { return 0; }",
-          script,
-        ].join("\n"),
-      ],
-      { encoding: "utf8", timeout: 5000 },
-    );
-    expect(result.status).not.toBe(0);
-    expect(result.stdout).toContain("RAKAZO_DESKTOP_RELEASED=");
-    expect(readdirSync(f.root).some((name) => name.endsWith(".slot"))).toBe(true);
-  });
+          "-eu",
+          "-c",
+          [
+            "calls=0",
+            "flock() {",
+            '  if [ "$1" = "-u" ]; then return 0; fi',
+            "  calls=$((calls + 1))",
+            '  if [ "$calls" -ge 3 ]; then echo "slot lock failed" >&2; return 1; fi',
+            "  return 0",
+            "}",
+            "bash() { return 0; }",
+            script,
+          ].join("\n"),
+        ],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain("RAKAZO_DESKTOP_RELEASED=");
+      expect(readdirSync(f.root).some((name) => name.endsWith(".slot"))).toBe(true);
+    },
+  );
 
-  it("reports slot removal failure after the browser has stopped", () => {
-    const f = fixture();
-    expect(f.ensure("a").status).toBe(0);
-    const script = releaseDesktopCommand("a", "run:1", env)
-      .replaceAll("/tmp/rakazo/desktop-assignments", f.root)
-      .replaceAll("/tmp/rakazo", f.root);
-    const result = spawnSync(
-      "bash",
-      [
-        "-eu",
-        "-c",
+  it.skipIf(process.platform !== "linux")(
+    "reports slot removal failure after the browser has stopped",
+    () => {
+      const f = fixture();
+      expect(f.ensure("a").status).toBe(0);
+      const script = releaseDesktopCommand("a", "run:1", env)
+        .replaceAll("/tmp/rakazo/desktop-assignments", f.root)
+        .replaceAll("/tmp/rakazo", f.root);
+      const result = spawnSync(
+        "bash",
         [
-          "flock() { :; }",
-          "bash() { return 0; }",
-          "rm() { echo 'slot remove failed' >&2; return 1; }",
-          script,
-        ].join("\n"),
-      ],
-      { encoding: "utf8", timeout: 5000 },
-    );
-    expect(result.status).not.toBe(0);
-    expect(result.stdout).toContain("RAKAZO_DESKTOP_RELEASED=");
-    expect(readdirSync(f.root).some((name) => name.endsWith(".slot"))).toBe(true);
-  });
+          "-eu",
+          "-c",
+          [
+            "flock() { :; }",
+            "bash() { return 0; }",
+            "rm() { echo 'slot remove failed' >&2; return 1; }",
+            script,
+          ].join("\n"),
+        ],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain("RAKAZO_DESKTOP_RELEASED=");
+      expect(readdirSync(f.root).some((name) => name.endsWith(".slot"))).toBe(true);
+    },
+  );
 
-  it("reserves failed startup and teardown slots until a successful retry", () => {
-    const f = fixture();
-    expect(f.ensure("a", "run:1", true).status).toBe(1);
-    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
-    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
-    const failedRelease = f.release("a", "run:1", true);
-    expect(failedRelease.status).toBe(1);
-    expect(failedRelease.stdout).not.toContain("RAKAZO_DESKTOP_RELEASED=");
-    expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=2:view-c");
-    expect(f.release("a").status).toBe(0);
-    expect(f.ensure("d").stdout).toContain("RAKAZO_DESKTOP=0:view-d");
-  });
+  it.skipIf(process.platform !== "linux")(
+    "reserves failed startup and teardown slots until a successful retry",
+    () => {
+      const f = fixture();
+      expect(f.ensure("a", "run:1", true).status).toBe(1);
+      expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
+      expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
+      const failedRelease = f.release("a", "run:1", true);
+      expect(failedRelease.status).toBe(1);
+      expect(failedRelease.stdout).not.toContain("RAKAZO_DESKTOP_RELEASED=");
+      expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=2:view-c");
+      expect(f.release("a").status).toBe(0);
+      expect(f.ensure("d").stdout).toContain("RAKAZO_DESKTOP=0:view-d");
+    },
+  );
 
-  it("does not create a screen on control release and keeps newer fences", () => {
-    const f = fixture();
-    expect(f.run(desktopControlCommand("missing", "run:1", env, false, "token")).status).toBe(0);
-    expect(readdirSync(f.root).filter((name) => name.endsWith(".slot"))).toEqual([]);
-    expect(f.ensure("a", "new:2").status).toBe(0);
-    expect(f.run(desktopControlCommand("a", "old:1", env, true, "token")).status).toBe(75);
-    const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
-    expect(readFileSync(path.join(f.root, slot), "utf8")).toContain("new:2");
-  });
+  it.skipIf(process.platform !== "linux")(
+    "does not create a screen on control release and keeps newer fences",
+    () => {
+      const f = fixture();
+      expect(f.run(desktopControlCommand("missing", "run:1", env, false, "token")).status).toBe(0);
+      expect(readdirSync(f.root).filter((name) => name.endsWith(".slot"))).toEqual([]);
+      expect(f.ensure("a", "new:2").status).toBe(0);
+      expect(f.run(desktopControlCommand("a", "old:1", env, true, "token")).status).toBe(75);
+      const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
+      expect(readFileSync(path.join(f.root, slot), "utf8")).toContain("new:2");
+    },
+  );
 
-  it("keeps a completed run's display for that bot's next run and rejects its stale fence", () => {
-    const f = fixture();
-    expect(f.ensure("a", "run:1").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
-    expect(f.run(desktopControlCommand("a", "run:1", env, false)).status).toBe(0);
-    const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
-    expect(readFileSync(path.join(f.root, slot), "utf8")).toBe("0\nrun:1\nview-a\n");
-    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
-    expect(f.ensure("a", "next:2").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
-    expect(f.run(desktopControlCommand("a", "run:1", env, false)).status).toBe(75);
-    expect(f.release("a", "run:1").status).toBe(75);
-  });
+  it.skipIf(process.platform !== "linux")(
+    "keeps a completed run's display for that bot's next run and rejects its stale fence",
+    () => {
+      const f = fixture();
+      expect(f.ensure("a", "run:1").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
+      expect(f.run(desktopControlCommand("a", "run:1", env, false)).status).toBe(0);
+      const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
+      expect(readFileSync(path.join(f.root, slot), "utf8")).toBe("0\nrun:1\nview-a\n");
+      expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
+      expect(f.ensure("a", "next:2").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
+      expect(f.run(desktopControlCommand("a", "run:1", env, false)).status).toBe(75);
+      expect(f.release("a", "run:1").status).toBe(75);
+    },
+  );
 
-  it("opens a terminal only on an assigned display under the current lease", () => {
-    const f = fixture();
-    expect(f.run(desktopTerminalCommand("missing", "run:1", env, "c", "t", ".")).status).toBe(75);
-    expect(f.ensure("a").status).toBe(0);
-    expect(f.run(desktopTerminalCommand("a", "old:0", env, "c", "t", ".")).status).toBe(75);
-    expect(f.run(desktopTerminalCommand("a", "run:1", env, "c", "t", ".")).status).toBe(0);
-    expect(() => terminalCommand("c", "bad token", ".")).toThrow("invalid terminal token");
-  });
+  it.skipIf(process.platform !== "linux")(
+    "opens a terminal only on an assigned display under the current lease",
+    () => {
+      const f = fixture();
+      expect(f.run(desktopTerminalCommand("missing", "run:1", env, "c", "t", ".")).status).toBe(75);
+      expect(f.ensure("a").status).toBe(0);
+      expect(f.run(desktopTerminalCommand("a", "old:0", env, "c", "t", ".")).status).toBe(75);
+      expect(f.run(desktopTerminalCommand("a", "run:1", env, "c", "t", ".")).status).toBe(0);
+      expect(() => terminalCommand("c", "bad token", ".")).toThrow("invalid terminal token");
+    },
+  );
 
   it("drops libnss_wrapper before the screen browser exec", () => {
     const command = ensureScreenCommand(0, "bot", "token");
@@ -339,7 +464,71 @@ describe("shared Linux desktop lifecycle", () => {
     expect(lines[execAt]).toContain("--restore-last-session");
   });
 
-  it.each([false, true])(
+  it.skipIf(process.platform !== "linux").each([
+    ["readable", false],
+    ["readable", true],
+    ["missing", false],
+    // An unreadable image menu falls back instead of failing the screen. Root reads any mode.
+    ...(process.getuid?.() === 0 ? [] : [["unreadable", false] as const]),
+  ] as const)(
+    "writes a screen's menu from the image menu with its own browser launcher (imageMenu=%s, managed=%s)",
+    (imageMenu, managed) => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-menu-test-"));
+      roots.push(root);
+      if (imageMenu !== "missing") {
+        writeFileSync(
+          path.join(root, "image-menu"),
+          [
+            "[begin] (Rakazo)",
+            "  [exec] (Browser) {rakazo-browser}",
+            "  [exec] (Docs) {rakazo-browser https://example.test}",
+            "  [exec] (Files) {pcmanfm}",
+            "  [exec] (Other) {rakazo-browser-beta}",
+            "[end]",
+            "",
+          ].join("\n"),
+          { mode: imageMenu === "readable" ? 0o644 : 0 },
+        );
+      }
+      const script = (
+        managed
+          ? managedDesktopCommand("bot", "run:1", env, "token")
+          : ensureScreenCommand(0, "bot", "token", env)
+      )
+        .replaceAll("/etc/rakazo/fluxbox/menu", path.join(root, "image-menu"))
+        .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
+        .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root);
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          // Stop right after the menu is written; the managed path runs it in a child bash.
+          ["command() { :; }", "xdpyinfo() { exit 0; }", "export -f command xdpyinfo", script].join(
+            "\n",
+          ),
+        ],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const launcher = path.join(root, "browser-launch-20");
+      expect(readFileSync(path.join(root, "flux-20/.fluxbox/menu"), "utf8")).toBe(
+        imageMenu === "readable"
+          ? [
+              "[begin] (Rakazo)",
+              `  [exec] (Browser) {${launcher}}`,
+              `  [exec] (Docs) {${launcher} https://example.test}`,
+              "  [exec] (Files) {pcmanfm}",
+              "  [exec] (Other) {rakazo-browser-beta}",
+              "[end]",
+              "",
+            ].join("\n")
+          : `[begin] (Desktop)\n[exec] (Browser) {${launcher}}\n[exec] (Terminal) {${TERMINAL_MENU_COMMAND}}\n[end]\n`,
+      );
+    },
+  );
+
+  it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",
     async (failPublish) => {
       const root = mkdtempSync("/tmp/rk-control-");
@@ -421,7 +610,7 @@ describe("shared Linux desktop lifecycle", () => {
     expect(stopExtraScreenCommand(1, "a")).toMatch(/pkill -f .*sockets\/terminal-2-/);
   });
 
-  it.each([DEFAULT_DESKTOP_ENV, env])(
+  it.skipIf(process.platform !== "linux").each([DEFAULT_DESKTOP_ENV, env])(
     "generates valid shell for every lifecycle operation ($displayStart)",
     (environment) => {
       for (const command of [
@@ -442,40 +631,46 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
-  it("skips damaged assignments while reserving their live display markers", () => {
-    const f = fixture();
-    writeFileSync(path.join(f.root, "empty.slot"), "");
-    writeFileSync(path.join(f.root, "invalid.slot"), "broken\nlease:1\ntoken\n");
-    writeFileSync(
-      path.join(f.root, "browser-profile-20"),
-      "/home/user/work/.browser-profiles/live",
-    );
-    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
-    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=2:view-b");
-    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
-  });
+  it.skipIf(process.platform !== "linux")(
+    "skips damaged assignments while reserving their live display markers",
+    () => {
+      const f = fixture();
+      writeFileSync(path.join(f.root, "empty.slot"), "");
+      writeFileSync(path.join(f.root, "invalid.slot"), "broken\nlease:1\ntoken\n");
+      writeFileSync(
+        path.join(f.root, "browser-profile-20"),
+        "/home/user/work/.browser-profiles/live",
+      );
+      expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
+      expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=2:view-b");
+      expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
+    },
+  );
 
-  it("continues resetting valid displays after invalid or out-of-range markers", () => {
-    const f = fixture();
-    for (const display of ["019", "19", "20", "22", "99999", "invalid"])
-      writeFileSync(path.join(f.root, `browser-profile-${display}`), "fixture");
-    const record = path.join(f.root, "stopped");
-    const result = spawnSync(
-      "bash",
-      [
-        "-eu",
-        "-c",
+  it.skipIf(process.platform !== "linux")(
+    "continues resetting valid displays after invalid or out-of-range markers",
+    () => {
+      const f = fixture();
+      for (const display of ["019", "19", "20", "22", "99999", "invalid"])
+        writeFileSync(path.join(f.root, `browser-profile-${display}`), "fixture");
+      const record = path.join(f.root, "stopped");
+      const result = spawnSync(
+        "bash",
         [
-          "pkill() { :; }; sleep() { :; }",
-          `bash() { printf '%s\\n' "$5" >>${shellQuote(record)}; }`,
-          resetDesktopRuntimeCommand(env).replaceAll("/tmp/rakazo", f.root),
-        ].join("\n"),
-      ],
-      { encoding: "utf8", timeout: 5000 },
-    );
-    expect(result.status, result.stderr).toBe(0);
-    expect(readFileSync(record, "utf8")).toBe("0\n2\n");
-  });
+          "-eu",
+          "-c",
+          [
+            "pkill() { :; }; sleep() { :; }",
+            `bash() { printf '%s\\n' "$5" >>${shellQuote(record)}; }`,
+            resetDesktopRuntimeCommand(env).replaceAll("/tmp/rakazo", f.root),
+          ].join("\n"),
+        ],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(record, "utf8")).toBe("0\n2\n");
+    },
+  );
 
   it("stops only the selected VNC transport and keeps the shared gateway", () => {
     const command = stopExtraScreenCommand(1, "a", env);

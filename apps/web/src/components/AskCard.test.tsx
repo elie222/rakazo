@@ -14,8 +14,13 @@ vi.mock("@lingui/react/macro", () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values),
   }),
 }));
+const favicon = vi.hoisted(() => ({ icon: null as string | null, asked: [] as string[] }));
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  useLinkFavicon: (href: string) => {
+    if (href) favicon.asked.push(href);
+    return { icon: href ? favicon.icon : null, unusable: () => undefined };
+  },
 }));
 const { rpc, spaceRpc } = vi.hoisted(() => {
   const client = () => ({
@@ -202,6 +207,37 @@ const loginCard: AskBlock = {
   loginFields: ["ID number", "Phone number", "PIN"],
   status: "pending",
 };
+
+it("marks a login with its site's icon, or else the first letter of the site's own name", async () => {
+  favicon.asked = [];
+  await render({
+    ...loginCard,
+    credential: { ...loginCard.credential!, origin: "https://app.example.com" },
+  });
+  const card = () => container.querySelector('[data-testid="secret-ask-card"]')!;
+  expect(favicon.asked).toContain("https://app.example.com");
+  expect(card().querySelector("img")).toBeNull();
+  expect(card().querySelector("span[aria-hidden]")?.textContent).toBe("E");
+  favicon.icon = "data:image/png;base64,AAAA";
+  try {
+    await render({ ...loginCard });
+    expect(card().querySelector("img")?.getAttribute("src")).toBe(favicon.icon);
+  } finally {
+    favicon.icon = null;
+  }
+});
+
+it("letters an IPv6 login by its first digit, not a bracket", async () => {
+  await render({ ...loginCard, credential: { ...loginCard.credential!, origin: "https://[::1]" } });
+  const tile = container.querySelector('[data-testid="secret-ask-card"] span[aria-hidden]');
+  expect(tile?.textContent).toBe("1");
+});
+
+it("asks for no site icon on a card that is not a login", async () => {
+  favicon.asked = [];
+  await render(secretCard);
+  expect(favicon.asked).toEqual([]);
+});
 
 /** The dialog a login, card or contact card opens; it renders outside the card. */
 function dialog() {

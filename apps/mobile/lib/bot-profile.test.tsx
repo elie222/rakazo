@@ -56,14 +56,19 @@ const {
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
-  loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
   captureApiRequestContext: requestContext,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => session.generation,
+}));
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
@@ -174,16 +179,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => color }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values: Record<string, string | number> = {}) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
-  return {
-    t,
-    useI18n: () => ({ t, locale: "en" }),
-    getActiveUiLocale: () => "en",
-    dateLocaleForUi: () => "en-US",
-  };
-});
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof RoutineHelpers>()),
   deviceTimeZone: () => "Europe/Berlin",

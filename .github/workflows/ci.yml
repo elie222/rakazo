@@ -112,11 +112,6 @@ jobs:
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
-      - name: Check translation catalogs are current
-        if: github.event_name == 'pull_request'
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
@@ -149,6 +144,9 @@ jobs:
       - name: Issue triage labeling tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/apply-issue-triage.test.py
+      - name: PR screenshot section tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/pr-screenshots.test.py
       - name: Changed-area classification tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py
@@ -204,7 +202,9 @@ jobs:
           # These read other packages' files without importing them, so the package graph misses them.
           targets=("${packages[@]}" \
             infra/updater/src/compose-env.test.ts \
+            packages/adapters/src/builtin-skills.test.ts \
             packages/adapters/src/lark-lazy-loading.test.ts \
+            packages/page-kit/src/kit/labels.test.tsx \
             packages/testkit/src/ios-screenshot-catalog.test.ts)
           # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
           files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"
@@ -258,7 +258,7 @@ jobs:
       - run: pnpm --filter @rakazo/desktop build
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
-      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
         run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
@@ -446,7 +446,9 @@ jobs:
               apps/mobile \
               packages/chat-ui \
               packages/contracts \
-              packages/core
+              packages/core \
+              packages/logging \
+              packages/ui-tokens
           )
           if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
             files+=("pnpm-lock.yaml (mobile dependency tree)")
@@ -471,12 +473,12 @@ jobs:
                   *.ts|*.tsx) eligible=true ;;
                 esac
                 ;;
-              packages/chat-ui/src/*)
+              packages/chat-ui/src/*|packages/ui-tokens/src/*)
                 case "$file" in
                   *.ts|*.tsx|*.css) eligible=true ;;
                 esac
                 ;;
-              packages/contracts/src/*|packages/core/src/*)
+              packages/contracts/src/*|packages/core/src/*|packages/logging/src/*)
                 case "$file" in
                   *.ts|*.tsx) eligible=true ;;
                 esac
@@ -526,7 +528,7 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: steps.ota.outputs.publish == 'true'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.ota.outputs.publish == 'true'

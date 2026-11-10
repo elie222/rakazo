@@ -93,6 +93,7 @@ function baseProps(messages: readonly ThreadMessage[]): ComponentProps<typeof Tr
     scrollRequest: null,
     onScrollRequestHandled: vi.fn(),
     followRequest: 0,
+    callHoldsSpeaker: false,
     artifactTarget: { botId: "bot" },
     transcript: foldPeerReplies(messages, { includePeerReceipts: true }),
     showToolActivity: false,

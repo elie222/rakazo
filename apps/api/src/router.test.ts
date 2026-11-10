@@ -48,6 +48,7 @@ import {
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
+import { providerScopeKey } from "./connection-flows.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -56,7 +57,6 @@ import {
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
-import { providerScopeKey } from "./routes/connections.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);
@@ -590,6 +590,33 @@ describe("account preferences", () => {
       });
     },
   );
+
+  it("ends only the calling session's push registration, keeping another session's", async () => {
+    const { deps, actor } = preferencesDeps("robot");
+    const calls: string[] = [];
+    deps.pushTokens = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async () => undefined),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async (userId: string, sessionId: string) => {
+        calls.push(`endSession ${userId} ${sessionId}`);
+      }),
+      remove: vi.fn(async (userId: string) => {
+        calls.push(`remove ${userId}`);
+      }),
+    };
+    // A tablet of the same account holds the registration; the phone's session signs out.
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+    await expect(phone.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`]);
+
+    // Without a session to end, the account-wide registration is still removed.
+    const sessionless = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(sessionless.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`, `remove ${actor.userId}`]);
+  });
 });
 
 describe("billing", () => {
@@ -4426,7 +4453,11 @@ describe("computer terminal and file transfer", () => {
     controlBotId: "bot-1",
   };
 
-  function setup(computer: Record<string, unknown> = {}, maxUploadSizeBytes?: number) {
+  function setup(
+    computer: Record<string, unknown> = {},
+    maxUploadSizeBytes?: number,
+    home?: LocalAgentHomeStore,
+  ) {
     const sandbox = {
       execute: vi.fn(async function* () {
         yield { type: "exit" as const, code: 0 };
@@ -4468,6 +4499,7 @@ describe("computer terminal and file transfer", () => {
     const deps = {
       prisma,
       sandbox,
+      home,
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       env: {
         maxUploadSizeBytes,
@@ -4690,6 +4722,19 @@ describe("computer terminal and file transfer", () => {
       status: 200,
       body: { json: { path: "notes.txt", content: "hello" } },
     });
+  });
+
+  it("answers 404 when a stopped computer's file is gone", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-computer-read-"));
+    try {
+      const { call } = setup({ state: "stopped" }, undefined, new LocalAgentHomeStore(root));
+      await expect(call("readFile", { path: "gone.json" })).resolves.toMatchObject({
+        status: 404,
+        body: { json: { message: "file not found" } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("downloads bytes from a running computer", async () => {
@@ -5829,6 +5874,19 @@ describe("model credential persistence", () => {
     // A new account stays a new account.
     await call(handler, "models/beginOAuth", { provider: "openai-codex", credentialId: null });
     expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
+  });
+
+  it("answers a provider sign-in outage as a retryable 503", async () => {
+    const { deps, handler } = persistDeps();
+    Object.assign(deps.oauthLogins, {
+      begin: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Device code request failed with status 503: {"error":{"code":503}}'),
+        ),
+    });
+    const response = await call(handler, "models/beginOAuth", { provider: "openai-codex" });
+    expect(response.status).toBe(503);
   });
 
   it("tells the user to restart a pasted-code sign-in that is gone", async () => {
@@ -7208,7 +7266,7 @@ describe("bot model auth on save", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -8265,7 +8323,7 @@ describe("openai-compatible enabled models", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -9137,6 +9195,7 @@ describe("threads.endCall", () => {
     const events: { type: string; payload: Record<string, unknown> }[] = [];
     const tx = {
       $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
       thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
       message: {
         findUnique: vi.fn().mockResolvedValue(null),

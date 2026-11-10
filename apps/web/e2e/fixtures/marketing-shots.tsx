@@ -7,7 +7,8 @@ import { createRoot } from "react-dom/client";
 import { AskCard } from "../../src/components/AskCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
-import type { RoutineDraftState } from "../../src/pages/RoutineEditor";
+import type { RoutineDraftState } from "../../src/lib/routine-draft";
+import { rpc } from "../../src/lib/rpc";
 import { RoutineEditor } from "../../src/pages/RoutineEditor";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
 import { BotSettings } from "../../src/pages/shell/bot-panel";
@@ -194,6 +195,8 @@ function RoutineShot() {
         onTestRun={() => undefined}
         onDelete={() => undefined}
         onEnsureWebhook={async () => undefined}
+        onRevealWebhook={async () => undefined}
+        onHideWebhook={() => undefined}
       />
     </main>
   );
@@ -311,6 +314,7 @@ function SubscriptionShot() {
       className="min-h-screen bg-background text-foreground"
     >
       <SettingsOverlay
+        shellRpc={rpc}
         email="ada@example.test"
         name="Ada"
         section="models"

@@ -7,7 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import NewGroup from "../app/new-group";
-import type { MobileBot } from "./api";
+import type { MobileBot } from "./mobile-types";
 
 const {
   rpc,
@@ -35,6 +35,9 @@ const {
   nativeHeader: { current: false },
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./haptics", () => ({ hapticSuccess }));
 vi.mock("./search-inbox", () => ({
@@ -166,13 +169,6 @@ vi.mock("react-native-keyboard-controller", () => ({
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({
-    t: (text: string, values: Record<string, string | number> = {}) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
-  }),
-}));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => nativeHeader.current }));
 vi.mock("../components/glass-icon-button", () => ({
   GlassIconButton: ({

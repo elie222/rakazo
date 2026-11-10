@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  appendEvent,
   asSystem,
   claimSteering,
   createDb,
@@ -9,8 +10,11 @@ import {
   provisionMessagingIdentity,
   runAsSystem,
   runAsTenant,
+  sendUserMessage,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { destroyBot } from "../../../packages/adapters/src/child-bots.js";
+import { publishMessage } from "../../../packages/adapters/src/run-messages.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
 
@@ -78,7 +82,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
    * observed queued on this transaction, so connection checkout or replay delays
    * cannot shorten what the write actually waits.
    */
-  function holdThreadShare() {
+  function holdThreadShare(heldThreadId = threadId) {
     let locked!: (xactId: string) => void;
     const lockTaken = new Promise<string>((resolve) => {
       locked = resolve;
@@ -89,7 +93,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
     });
     const done = system.$transaction(
       async (tx) => {
-        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR SHARE`;
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${heldThreadId} FOR SHARE`;
         const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
           SELECT pg_current_xact_id()::text AS "xactId"`;
         locked(rows[0]?.xactId ?? "");
@@ -146,6 +150,132 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
       sleep(75).then(() => "waiting"),
     ]);
   }
+
+  /**
+   * Runs one thread write behind a held snapshot read and checks it still waits after the
+   * timed hold, then lets it finish and returns its result.
+   */
+  async function writeBehindHold<T>(write: () => Promise<T>, heldThreadId = threadId): Promise<T> {
+    const { lockTaken, open, done } = holdThreadShare(heldThreadId);
+    const xactId = await lockTaken;
+    let probe: Probe | undefined;
+    let work: Promise<T> | undefined;
+    try {
+      // Inside the try, so a failed checkout still opens the gate and drains the reader.
+      probe = await connectProbe();
+      work = write();
+      work.catch(() => undefined);
+      await untilBlocked(probe, xactId);
+      await sleep(THREAD_LOCK_HOLD_MS);
+      // On Prisma's default five-second budget the write has already expired here.
+      expect(await heldOutcome(work)).toBe("waiting");
+      open();
+      return await work;
+    } finally {
+      open();
+      await done.catch(() => undefined);
+      await work?.catch(() => undefined);
+      probe?.release();
+    }
+  }
+
+  it(
+    "delivers an incoming message that waited behind a long thread read",
+    async () => {
+      const clientNonce = randomUUID();
+      await writeBehindHold(() =>
+        runAsTenant({ spaceId, userId }, () =>
+          sendUserMessage(prisma, {
+            spaceId,
+            threadId,
+            botId,
+            userId,
+            blocks: [{ kind: "text", text: "webhook while a snapshot held the thread" }],
+            prompt: "webhook while a snapshot held the thread",
+            trigger: "webhook",
+            clientNonce,
+            createRun: false,
+          }),
+        ),
+      );
+      expect(
+        await system.message.findFirstOrThrow({ where: { threadId, clientNonce } }),
+      ).toMatchObject({ role: "user" });
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
+
+  it(
+    "appends a run event that waited behind a long thread read",
+    async () => {
+      const event = await writeBehindHold(() =>
+        runAsTenant({ spaceId, userId }, () =>
+          appendEvent(prisma, {
+            spaceId,
+            threadId,
+            botId,
+            type: "thread.message.created",
+            payload: {},
+          }),
+        ),
+      );
+      expect(await system.event.findFirst({ where: { threadId, seq: event.seq } })).not.toBeNull();
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
+
+  it(
+    "saves a bot reply that waited behind a long thread read",
+    async () => {
+      const task = await system.task.create({
+        data: { spaceId, botId, threadId, userId, prompt: "reply", status: "running" },
+      });
+      const run = await system.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          taskId: task.id,
+          userId,
+          status: "running",
+          trigger: "user",
+          startedAt: new Date(),
+        },
+      });
+      try {
+        const message = await writeBehindHold(() =>
+          runAsTenant({ spaceId, userId }, () =>
+            publishMessage({ prisma, events: { notify } } as never, run, "bot", [
+              { kind: "text", text: "finished while a snapshot held the thread" },
+            ]),
+          ),
+        );
+        expect(message).toMatchObject({ role: "bot", runId: run.id });
+      } finally {
+        // Keep the active-run set empty for the sends below.
+        await system.run.update({ where: { id: run.id }, data: { status: "cancelled" } });
+      }
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
+
+  it(
+    "writes a standalone thread message that waited behind a long thread read",
+    async () => {
+      // The group-invitation note (announceInvite) is one of this helper's callers.
+      const message = await writeBehindHold(() =>
+        runAsTenant({ spaceId, userId }, () =>
+          createThreadMessage(prisma, {
+            threadId,
+            role: "system",
+            blocks: [{ kind: "meta", text: "added to a group while a snapshot held the thread" }],
+          }),
+        ),
+      );
+      expect(await system.message.findUnique({ where: { id: message.id } })).not.toBeNull();
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
 
   it(
     "sends a message that waited behind a long thread read",
@@ -270,6 +400,57 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
         await done.catch(() => undefined);
         await work.catch(() => undefined);
         probe?.release();
+      }
+    },
+    THREAD_LOCK_HOLD_MS * 4,
+  );
+
+  it(
+    "deletes a bot whose thread a long read held",
+    async () => {
+      const removed = await runAsSystem("test fixture", () =>
+        provisionMessagingIdentity(
+          prisma,
+          { provider: "test", address: `${address}-removed` },
+          { signupsEnabled: undefined, signupAllowlist: undefined },
+        ),
+      );
+      try {
+        const bot = await system.bot.findUniqueOrThrow({
+          where: { id: removed.botId },
+          select: { id: true, spaceId: true, userId: true, name: true, archivedAt: true },
+        });
+        await writeBehindHold(
+          () =>
+            runAsSystem("account deletion", () =>
+              destroyBot(
+                {
+                  prisma: system,
+                  sandbox: {} as never,
+                  home: {} as never,
+                  jobs: { cancel: vi.fn() } as never,
+                },
+                bot,
+                {
+                  operationId: "thread-lock-budget",
+                  traceId: "thread-lock-budget",
+                  spaceId: bot.spaceId,
+                  userId: bot.userId,
+                  botId: bot.id,
+                  signal: new AbortController().signal,
+                },
+                { deleteMemories: true },
+              ),
+            ),
+          removed.threadId,
+        );
+        expect(await system.thread.findUnique({ where: { id: removed.threadId } })).toBeNull();
+      } finally {
+        await system.messagingIdentity.deleteMany({
+          where: { provider: "test", address: `${address}-removed` },
+        });
+        await system.organization.deleteMany({ where: { id: removed.spaceId } });
+        await system.user.deleteMany({ where: { id: removed.userId } });
       }
     },
     THREAD_LOCK_HOLD_MS * 4,

@@ -1,4 +1,5 @@
-import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntimeEvent, BackgroundJob } from "@rakazo/adapter-kit";
+import { messagingProgressJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
@@ -14,6 +15,8 @@ import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
+import type * as RunNotificationsModule from "./run-notifications.js";
+import { notifyRun } from "./run-notifications.js";
 import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
@@ -28,6 +31,11 @@ const vision = vi.hoisted(() => ({ seesImages: false }));
 vi.mock("./model-vision.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ModelVisionModule>()),
   modelAcceptsImageInput: () => vision.seesImages,
+}));
+
+vi.mock("./run-notifications.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof RunNotificationsModule>()),
+  notifyRun: vi.fn(async () => undefined),
 }));
 
 vi.mock("./bot-messages.js", () => ({
@@ -75,6 +83,10 @@ async function runTurn(
     group?: { optional: boolean; namedWhileRunning?: boolean };
     /** The run already put a message in the chat, such as an ask card answered by its button. */
     priorBotMessage?: boolean;
+    /** A messaging run from a 1:1 chat instead of a group channel. */
+    directChat?: boolean;
+    /** The peer message answers a request this bot sent, so the user reads the reply. */
+    repliesToRequest?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -84,7 +96,7 @@ async function runTurn(
     text: "Look again",
     intent,
     hop: 1,
-    repliesToRequest: false,
+    repliesToRequest: options.repliesToRequest ?? false,
   });
   const run = {
     id: "run-1",
@@ -142,6 +154,7 @@ async function runTurn(
   const savedEvents: AppendEventInput[] = [];
   let failMessage = options.failMessageOnce;
   const prisma = {
+    space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -243,7 +256,7 @@ async function runTurn(
             : [],
       ),
       findUnique: vi.fn(async () =>
-        run.trigger === "messaging"
+        run.trigger === "messaging" && !options.directChat
           ? { blocks: [{ kind: "channel_message", channelId: "channel-1" }] }
           : null,
       ),
@@ -296,6 +309,7 @@ async function runTurn(
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "dedicated" }]),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
       const messageCount = messages.length;
@@ -317,6 +331,7 @@ async function runTurn(
     return appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event);
   });
   const pauseRunForInput = vi.fn(async () => ({ continuationRunId: null }));
+  const jobs = { enqueue: vi.fn(async (_job: BackgroundJob) => undefined) };
   vision.seesImages = options.graphical ?? false;
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
@@ -342,7 +357,7 @@ async function runTurn(
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    jobs,
     secrets,
     ...(options.graphical
       ? {
@@ -363,7 +378,17 @@ async function runTurn(
   expect(runtimeRun).toHaveBeenCalled();
   if (!options.runtimeFailure)
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
-  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma, runtimeRun, run };
+  return {
+    finalizeRun,
+    append,
+    pauseRunForInput,
+    messages,
+    savedEvents,
+    prisma,
+    runtimeRun,
+    run,
+    jobs,
+  };
 }
 
 /** Notes saved on the final reply's steps, in order. */
@@ -836,6 +861,53 @@ describe("notes that can't be posted as messages", () => {
     expect(await sent("user", "browser_snapshot", false)).toEqual([]);
     for (const trigger of ["routine", "webhook", "reaction", "bot_message"])
       expect(await sent(trigger, "browser_snapshot")).toEqual([]);
+  });
+});
+
+describe("interim messages in a chat app", () => {
+  const sentOn = (jobs: Awaited<ReturnType<typeof runTurn>>["jobs"]) =>
+    jobs.enqueue.mock.calls
+      .filter(([job]) => job.name === "messaging.progress")
+      .map(([job]) => job);
+  const texts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+
+  it("sends each message_user on once it is posted, not when the run ends", async () => {
+    const run = async (options: { trigger: string; directChat?: boolean }) => {
+      const turn = await runTurn("", false, undefined, [], "fyi", {
+        ...options,
+        replyMode: "messages",
+        runtime: async function* (request) {
+          for (const [index, message] of ["Checking the logs.", "Still looking."].entries())
+            await request.executeTool!("message_user", { message }, `call-${index + 1}`);
+          yield { type: "text", text: "Found it." };
+          yield { type: "done", text: "" };
+        },
+      });
+      return { messages: texts(turn.messages), jobs: sentOn(turn.jobs) };
+    };
+    const chat = await run({ trigger: "messaging", directChat: true });
+    expect(chat.messages).toEqual(["Checking the logs.", "Still looking."]);
+    expect(chat.jobs).toEqual(Array(2).fill(messagingProgressJob("run-1")));
+    // A group run posts once, when it ends; an in-app run has no chat app to reach.
+    const group = await run({ trigger: "messaging" });
+    expect(group).toEqual({ messages: chat.messages, jobs: [] });
+    expect((await run({ trigger: "user" })).jobs).toEqual([]);
+  });
+
+  it("sends a note posted on a long turn on at once", async () => {
+    const { messages, jobs } = await runTurn(
+      "All done.",
+      false,
+      ["Opening the report."],
+      [],
+      "fyi",
+      { trigger: "messaging", directChat: true, startedAt: new Date(Date.now() - 120_000) },
+    );
+    expect(texts(messages)).toEqual(["Opening the report."]);
+    expect(sentOn(jobs)).toEqual([messagingProgressJob("run-1")]);
   });
 });
 
@@ -2081,5 +2153,34 @@ describe("a group member the message named nobody for", () => {
     });
     expect(result.finalizeRun.mock.calls[0]![0].blocks).not.toEqual([]);
     expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+});
+
+describe("completion pushes", () => {
+  const completionPushes = () =>
+    vi.mocked(notifyRun).mock.calls.filter(([, , message]) => message.kind === "completion");
+
+  it("sends none for an agent-to-agent turn that leaves the chat read", async () => {
+    vi.mocked(notifyRun).mockClear();
+    const { finalizeRun } = await runTurn("Pinned.", true, "I will pin it.", [], "request", {
+      trigger: "bot_message",
+    });
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: false }));
+    expect(completionPushes()).toEqual([]);
+  });
+
+  it("sends one for the answer to a request the bot made for the user", async () => {
+    vi.mocked(notifyRun).mockClear();
+    await runTurn("Both bots are pinned.", true, "I will check.", [], "fyi", {
+      trigger: "bot_message",
+      repliesToRequest: true,
+    });
+    expect(completionPushes()).toHaveLength(1);
+  });
+
+  it("sends one for a reply to the user", async () => {
+    vi.mocked(notifyRun).mockClear();
+    await runTurn("Done.", false, "I will check.", [], "fyi", { trigger: "user" });
+    expect(completionPushes()).toHaveLength(1);
   });
 });

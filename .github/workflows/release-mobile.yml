@@ -12,7 +12,7 @@ on:
       ios_build_id:
         description: Retry App Review for an already uploaded EAS iOS build; skips all builds and uploads
         required: false
-        default: ''
+        default: ""
         type: string
 
 permissions:
@@ -51,7 +51,7 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24

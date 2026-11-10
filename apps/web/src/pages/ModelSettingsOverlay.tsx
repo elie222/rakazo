@@ -1,42 +1,36 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  compatibleConnectionName,
   connectionDisplayName,
-  isOllamaCloudBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
+  modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DropdownMenuItem,
   ModelThinkingOptions,
   Spinner,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { ModelCredential } from "../lib/model-auth";
+import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
-import { ModelRoleSettings } from "./ModelRoleSettings";
+import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
-import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
+import { SpaceBotsModelButton } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
 
 export function ModelSettingsOverlay({
@@ -67,6 +61,7 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    endpointPresets,
     error,
     groups,
     handleClose,
@@ -101,13 +96,11 @@ export function ModelSettingsOverlay({
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? [
-            {
-              id: OPENAI_COMPATIBLE_PROVIDER_ID,
-              name: t`Ollama Cloud`,
-              baseUrl: OLLAMA_CLOUD_BASE_URL,
-            },
-          ]
+        ? endpointPresets.map((preset) => ({
+            id: OPENAI_COMPATIBLE_PROVIDER_ID,
+            name: preset.name,
+            baseUrl: preset.baseUrl,
+          }))
         : []),
     ],
     (entry) => entry.id,
@@ -115,7 +108,10 @@ export function ModelSettingsOverlay({
   );
   const providers = allProviders.filter((entry) =>
     entry.baseUrl
-      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      ? !savedCompatibleEndpointMatches(
+          credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl ?? "",
+          entry.baseUrl,
+        )
       : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
@@ -127,11 +123,29 @@ export function ModelSettingsOverlay({
     );
   };
   const providerLabel = (id: string) =>
-    compatibleConnectionName(
-      credentialByProvider.get(id)?.baseUrl,
-      groups.find((group) => group.id === id)?.name ?? id,
-    );
-  // The Ollama Cloud preset shares the compatible provider id with a saved local server.
+    credentialByProvider.get(id)?.endpointName ??
+    groups.find((group) => group.id === id)?.name ??
+    id;
+  // The approval model only judges actions in Auto, so it shows only then. A Space may
+  // inherit Approvals from the account, so its page asks for whichever copy applies there.
+  const queries = useSpaceQueries();
+  const approvalMode = useQuery(
+    queries.autoReview.get.queryOptions({ input: scope === "account" ? { scope } : {} }),
+  ).data?.mode;
+  // Screen work runs on the main model unless it cannot read images, so the computer-use
+  // list shows only then, once one is chosen, or when asked for from the main model's menu.
+  const [computerOpened, setComputerOpened] = useState(false);
+  const mainRole = useModelRole(me, scope, "main");
+  const computerRole = useModelRole(me, scope, "computer");
+  const mainChoice = mainRole?.primary ?? mainRole?.deploymentPrimary ?? null;
+  // The server answers as runs do. A model it could not check may not see, so the list shows.
+  const mainSeesImages = !mainChoice || mainRole?.seesImages === true;
+  const showComputer =
+    computerOpened ||
+    !mainSeesImages ||
+    Boolean(computerRole?.primary || computerRole?.backups.length);
+
+  // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),
@@ -306,44 +320,64 @@ export function ModelSettingsOverlay({
             panel={connectionAt === "main" ? panelFor(true) : null}
             thinking
             onChanged={() => void refresh()}
+            headerAction={
+              // Waits for the main role so its first key is what was already saved.
+              mainRole && !me.needsModel ? (
+                <SpaceBotsModelButton
+                  mainModelKey={`${me.spaceId}:${
+                    mainChoice
+                      ? modelRoleChoiceKey(mainChoice)
+                      : `${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`
+                  }`}
+                />
+              ) : null
+            }
+            primaryMenuItems={
+              showComputer ? null : (
+                <DropdownMenuItem onClick={() => setComputerOpened(true)}>
+                  <Trans>Computer-use model…</Trans>
+                </DropdownMenuItem>
+              )
+            }
           />
-          {me.needsModel ? null : (
-            <SpaceBotsModelNotice
-              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+          {approvalMode === "auto" ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="approval"
+              title={t`Approval model`}
+              defaultLabel={t`Choose a model`}
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
+              onManage={(id, credentialId) =>
+                openConnection({ id, name: id }, null, credentialId, "approval")
+              }
+              panel={connectionAt === "approval" ? panelFor(true) : null}
             />
-          )}
-          <ModelRoleSettings
-            userId={me.userId}
-            spaceId={me.spaceId}
-            scope={scope}
-            credentials={credentials}
-            modelRole="approval"
-            title={t`Approval model`}
-            defaultLabel={t`Choose a model`}
-            providers={providers}
-            providerLabel={providerLabel}
-            onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "approval")
-            }
-            panel={connectionAt === "approval" ? panelFor(true) : null}
-          />
-          <ModelRoleSettings
-            userId={me.userId}
-            spaceId={me.spaceId}
-            scope={scope}
-            credentials={credentials}
-            modelRole="computer"
-            title={t`Computer-use model`}
-            defaultLabel={t`Same as main model`}
-            providers={providers}
-            providerLabel={providerLabel}
-            onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "computer")
-            }
-            panel={connectionAt === "computer" ? panelFor(true) : null}
-          />
+          ) : null}
+          {showComputer ? (
+            <ModelRoleSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              credentials={credentials}
+              modelRole="computer"
+              title={t`Computer-use model`}
+              defaultLabel={
+                mainSeesImages ? t`Same as main model` : t`Choose a model that can see the screen`
+              }
+              providers={providers}
+              providerLabel={providerLabel}
+              onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
+              onManage={(id, credentialId) =>
+                openConnection({ id, name: id }, null, credentialId, "computer")
+              }
+              panel={connectionAt === "computer" ? panelFor(true) : null}
+            />
+          ) : null}
           {scope === "space" ? null : (
             <ProvidersSection
               credentials={credentials}
@@ -382,35 +416,20 @@ export function ModelSettingsOverlay({
           <Trans>No model catalog is available.</Trans>
         </p>
       )}
-      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Disconnect {disconnectName}?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>This removes the connection from every space.</Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={pending === "disconnect"}
-              onClick={() => {
-                setConfirmDisconnect(false);
-                setConnectionAt(null);
-                intentRef.current = null;
-                void disconnectCredential();
-              }}
-            >
-              <Trans>Disconnect</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onCancel={() => setConfirmDisconnect(false)}
+        title={<Trans>Disconnect {disconnectName}?</Trans>}
+        description={<Trans>This removes the connection from every space.</Trans>}
+        confirmDisabled={pending === "disconnect"}
+        onConfirm={() => {
+          setConfirmDisconnect(false);
+          setConnectionAt(null);
+          intentRef.current = null;
+          void disconnectCredential();
+        }}
+        confirmLabel={<Trans>Disconnect</Trans>}
+      />
     </>
   );
 
@@ -425,10 +444,7 @@ export function ModelSettingsOverlay({
         if (!open) handleClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
-      >
+      <DialogContent showCloseButton={false} size="2xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <DialogTitle className="text-heading2 font-medium text-foreground">
             <Trans>Models</Trans>

@@ -1,5 +1,5 @@
 import type { ConnectorRegistry } from "@rakazo/adapters";
-import type { Actor, MessageBlock } from "@rakazo/contracts";
+import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
 import {
   appConnectCard,
   connectedAppBlocks,
@@ -91,6 +91,39 @@ async function post(
   });
   await deps.events.notify(target.threadId, committed.event.seq);
   return committed.message.id;
+}
+
+/** Every managed provider's apps; a provider that fails or takes over 15s is left out. */
+export async function managedAppCatalog(
+  connectors: ConnectorRegistry,
+  actor: Actor,
+  operationId: string,
+  botId?: string,
+  timeoutMs = 15_000,
+): Promise<ConnectionCatalogItem[]> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  // A provider may ignore the signal, so the wait itself gives up when it fires.
+  const givenUp = new Promise<ConnectionCatalogItem[]>((resolve) => {
+    signal.addEventListener("abort", () => resolve([]), { once: true });
+  });
+  const catalogs = await Promise.all(
+    connectors.managedProviders().map((provider) =>
+      Promise.race([
+        provider
+          .catalog({
+            operationId,
+            traceId: operationId,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId,
+            signal,
+          })
+          .catch(() => []),
+        givenUp,
+      ]),
+    ),
+  );
+  return catalogs.flat();
 }
 
 /** Sentinel answerId for a focus card the user dismissed without choosing. */
@@ -259,23 +292,7 @@ export async function chooseFocus(
     false,
   );
 
-  const providers = deps.connectors.managedProviders();
-  const catalog = (
-    await Promise.all(
-      providers.map((provider) =>
-        provider
-          .catalog({
-            operationId: "onboarding.choose",
-            traceId: "onboarding.choose",
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            botId: bot.id,
-            signal: AbortSignal.timeout(15_000),
-          })
-          .catch(() => []),
-      ),
-    )
-  ).flat();
+  const catalog = await managedAppCatalog(deps.connectors, actor, "onboarding.choose", bot.id);
   const cards: MessageBlock[] = option.apps.flatMap((slug) => {
     const entry = matchAppCatalog(catalog, slug);
     return entry ? [appConnectCard(entry)] : [];

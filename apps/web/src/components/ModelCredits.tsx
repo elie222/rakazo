@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
+import type {
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+  HeldCreditAmount,
+  MODEL_CREDIT_AMOUNTS,
+} from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
   ByokTierSchema,
@@ -7,8 +13,10 @@ import {
   byokYearlySavingsPercent,
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
+  creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
-  MODEL_CREDIT_AMOUNTS,
+  HeldCreditAmountSchema,
+  isCancelledTrial,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import {
@@ -48,9 +56,9 @@ import {
   formatBillingPrice,
 } from "../lib/billing";
 import type { RpcClient } from "../lib/rpc";
-import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
@@ -201,12 +209,12 @@ export function CreditAmountSelect({
   onChange,
   monthly = false,
 }: {
-  value: CreditAmount;
-  onChange: (amount: CreditAmount) => void;
+  value: HeldCreditAmount;
+  onChange: (amount: HeldCreditAmount) => void;
   monthly?: boolean;
 }) {
   const { t, i18n } = useLingui();
-  const items = MODEL_CREDIT_AMOUNTS.map((amount) => ({
+  const items = creditAmountChoices(value).map((amount) => ({
     value: amount,
     label: monthly
       ? formatMonthlyUsd(amount, i18n.locale)
@@ -216,7 +224,7 @@ export function CreditAmountSelect({
     <Select
       value={value}
       onValueChange={(next) => {
-        if (next !== null) onChange(ModelCreditAmountSchema.parse(next));
+        if (next !== null) onChange(HeldCreditAmountSchema.parse(next));
       }}
       items={items}
     >
@@ -241,9 +249,11 @@ export function CreditAmountSelect({
 
 export function CreditChoice({
   status,
+  client,
   dismissible = false,
 }: {
   status: BillingStatus;
+  client: RpcClient;
   dismissible?: boolean;
 }) {
   const { t, i18n } = useLingui();
@@ -275,12 +285,12 @@ export function CreditChoice({
     setError(null);
     try {
       if (ownKey && status.byokFreeUntil) {
-        go((await rpc.billing.checkout({ interval })).url);
+        go((await client.billing.checkout({ interval })).url);
       } else if (ownKey) {
-        const { url } = await rpc.billing.selectFunding({ funding: "byok", interval });
+        const { url } = await client.billing.selectFunding({ funding: "byok", interval });
         go(url ?? "/onboarding");
       } else {
-        const { url } = await rpc.billing.purchaseCredits({
+        const { url } = await client.billing.purchaseCredits({
           amountCents: amount,
           monthly: true,
         });
@@ -385,7 +395,11 @@ export function CreditChoice({
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
-            <CreditAmountSelect monthly value={amount} onChange={setAmount} />
+            <CreditAmountSelect
+              monthly
+              value={amount}
+              onChange={(next) => setAmount(ModelCreditAmountSchema.parse(next))}
+            />
             <p className="text-body text-muted-foreground">
               <Trans>All {credit} goes to model usage.</Trans>
             </p>
@@ -430,9 +444,15 @@ export function ModelCreditsSettings({
   client: RpcClient;
 }) {
   const { t, i18n } = useLingui();
-  const [amount, setAmount] = useState<CreditAmount>(
-    ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(status.monthlyAmountCents),
-  );
+  const recurring =
+    status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
+  const [chosenAmount, setChosenAmount] = useState<CreditAmount | null>(null);
+  // Follows the plan until the owner picks an offered amount; only a live plan keeps a retired one.
+  const amount: HeldCreditAmount =
+    chosenAmount ??
+    (recurring ? HeldCreditAmountSchema : ModelCreditAmountSchema)
+      .catch(DEFAULT_MONTHLY_CREDIT_AMOUNT)
+      .parse(status.monthlyAmountCents);
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
@@ -461,8 +481,6 @@ export function ModelCreditsSettings({
       setPending(false);
     }
   }
-  const recurring =
-    status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
   const freeUntil = status.byokFreeUntil
     ? formatBillingDate(status.byokFreeUntil, i18n.locale || "en")
     : null;
@@ -658,77 +676,76 @@ export function ModelCreditsSettings({
                 <Trans>Start plan now</Trans>
               </Button>
             </>
+          ) : isCancelledTrial(status) ? (
+            <>
+              <p className="mt-2 text-body text-muted-foreground">
+                <Trans>Cancelled trials have no computer hours.</Trans>
+              </p>
+              {status.canManage && status.hasCustomer ? (
+                <Button
+                  className="mt-5"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() =>
+                    void action(async () => {
+                      const { url } = await client.billing.portal();
+                      window.location.assign(url);
+                    })
+                  }
+                >
+                  <Trans>Renew plan</Trans>
+                </Button>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}
-      <AlertDialog open={endTrialOpen} onOpenChange={setEndTrialOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Start your plan now?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {price ? (
-                <Trans>Your trial ends and your card is charged {price} today.</Trans>
-              ) : (
-                <Trans>Your trial ends and your card is charged today.</Trans>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={() =>
-                void action(async () => {
-                  setEndTrialOpen(false);
-                  await client.billing.endTrial();
-                  await refresh();
-                })
-              }
-            >
-              <Trans>Start plan</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={yearlyOpen} onOpenChange={setYearlyOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Switch to yearly?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {status.state === "trialing" ? (
-                <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
-              ) : (
-                <Trans>
-                  Your card is charged {annualPrice} today, less the unused part of this month.
-                </Trans>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={() =>
-                void action(async () => {
-                  setYearlyOpen(false);
-                  await client.billing.switchToYearly();
-                  await refresh();
-                })
-              }
-            >
-              <Trans>Switch</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={endTrialOpen}
+        onCancel={() => setEndTrialOpen(false)}
+        variant="default"
+        title={<Trans>Start your plan now?</Trans>}
+        description={
+          price ? (
+            <Trans>Your trial ends and your card is charged {price} today.</Trans>
+          ) : (
+            <Trans>Your trial ends and your card is charged today.</Trans>
+          )
+        }
+        confirmDisabled={pending}
+        onConfirm={() =>
+          void action(async () => {
+            setEndTrialOpen(false);
+            await client.billing.endTrial();
+            await refresh();
+          })
+        }
+        confirmLabel={<Trans>Start plan</Trans>}
+      />
+      <ConfirmDialog
+        open={yearlyOpen}
+        onCancel={() => setYearlyOpen(false)}
+        variant="default"
+        title={<Trans>Switch to yearly?</Trans>}
+        description={
+          status.state === "trialing" ? (
+            <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
+          ) : (
+            <Trans>
+              Your card is charged {annualPrice} today, less the unused part of this month.
+            </Trans>
+          )
+        }
+        confirmDisabled={pending}
+        onConfirm={() =>
+          void action(async () => {
+            setYearlyOpen(false);
+            await client.billing.switchToYearly();
+            await refresh();
+          })
+        }
+        confirmLabel={<Trans>Switch</Trans>}
+      />
       <AlertDialog
         open={tierTarget !== null}
         onOpenChange={(open) => {
@@ -777,7 +794,13 @@ export function ModelCreditsSettings({
             <Trans>Monthly credits</Trans>
           </h3>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <CreditAmountSelect monthly value={amount} onChange={setAmount} />
+            <CreditAmountSelect
+              monthly
+              value={amount}
+              onChange={(next) =>
+                setChosenAmount(ModelCreditAmountSchema.safeParse(next).data ?? null)
+              }
+            />
             <Button
               variant="secondary"
               disabled={
@@ -788,11 +811,13 @@ export function ModelCreditsSettings({
               onClick={() =>
                 void action(async () => {
                   if (recurring) {
-                    await client.billing.setMonthlyCredits({ amountCents: amount });
+                    await client.billing.setMonthlyCredits({
+                      amountCents: ModelCreditAmountSchema.parse(amount),
+                    });
                     await refresh();
                   } else {
                     const { url } = await client.billing.purchaseCredits({
-                      amountCents: amount,
+                      amountCents: ModelCreditAmountSchema.parse(amount),
                       monthly: true,
                     });
                     window.location.assign(url);
@@ -873,7 +898,10 @@ export function ModelCreditsSettings({
               <Trans>One-time purchase. Credits do not expire.</Trans>
             </DialogDescription>
           </DialogHeader>
-          <CreditAmountSelect value={topupAmount} onChange={setTopupAmount} />
+          <CreditAmountSelect
+            value={topupAmount}
+            onChange={(next) => setTopupAmount(ModelCreditAmountSchema.parse(next))}
+          />
           <Button
             disabled={pending}
             onClick={() =>

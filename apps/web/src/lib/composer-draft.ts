@@ -5,9 +5,54 @@ export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
 const COMPOSER_NONCE_STORAGE_PREFIX = "rakazo.composerNonce.";
 
-type ComposerDraftSubmission = { text: string; bindingRecord: string | null };
+/** `appended`: words added from outside the composer while this send was in flight. */
+type ComposerDraftSubmission = { text: string; bindingRecord: string | null; appended?: string };
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
 const acceptedListeners = new Map<string, Set<(text: string) => void>>();
+const replacedDrafts = createKeyedListeners<string>();
+
+/** The composer showing a chat follows its saved draft when something else rewrites it. */
+export const subscribeComposerDraftReplaced = replacedDrafts.subscribe;
+
+function savedDraftOf(submission: ComposerDraftSubmission): string {
+  return submission.appended ? `${submission.text} ${submission.appended}` : submission.text;
+}
+
+/**
+ * Adds words to a chat's saved draft from outside its composer, such as a dictation that
+ * finished after the chat was left. A composer showing that chat shows them. A send still in
+ * flight from that draft keeps its settlement: once accepted, only the added words remain.
+ */
+export function appendComposerDraftText(threadKey: string, text: string): void {
+  const saved = readComposerDraft(threadKey);
+  const next = saved ? `${saved} ${text}` : text;
+  const pending = pendingSubmissions.get(threadKey);
+  // Only a draft still holding the in-flight text and its mention bindings belongs to that
+  // send; another tab can rebind the same text to another mention.
+  const inFlight =
+    pending &&
+    savedDraftOf(pending) === saved &&
+    readBindingRecord(threadKey) === pending.bindingRecord
+      ? pending
+      : null;
+  writeComposerDraft(threadKey, next, undefined, readComposerDraftBindings(threadKey));
+  if (inFlight) {
+    inFlight.appended = inFlight.appended ? `${inFlight.appended} ${text}` : text;
+    inFlight.bindingRecord = readBindingRecord(threadKey);
+    pendingSubmissions.set(threadKey, inFlight);
+  }
+  replacedDrafts.emit(threadKey, next);
+}
+
+/** Rewrites a chat's saved draft from outside its composer; a composer showing it follows. */
+export function replaceComposerDraft(
+  threadKey: string,
+  text: string,
+  bindings: readonly ComposerMentionBinding[],
+): void {
+  writeComposerDraft(threadKey, text, undefined, bindings);
+  replacedDrafts.emit(threadKey, text);
+}
 
 export function beginComposerDraftSubmission(
   threadKey: string,
@@ -30,10 +75,15 @@ export function settleComposerDraftSubmission(
   pendingSubmissions.delete(threadKey);
   if (
     !accepted ||
-    readComposerDraft(threadKey) !== submission.text ||
+    readComposerDraft(threadKey) !== savedDraftOf(submission) ||
     readBindingRecord(threadKey) !== submission.bindingRecord
   )
     return;
+  if (submission.appended) {
+    writeComposerDraft(threadKey, submission.appended);
+    replacedDrafts.emit(threadKey, submission.appended);
+    return;
+  }
   writeComposerDraft(threadKey, "");
   for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
 }

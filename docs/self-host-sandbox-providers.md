@@ -6,13 +6,13 @@ for the sharing and persistence contract.
 
 ## Quick pick
 
-| Goal | Set | Also need |
-| --- | --- | --- |
-| Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
-| UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
-| Managed remote desktop | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat) |
-| One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
-| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus` | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| Goal                                                    | Set                                                         | Also need                                                                                                                             |
+| ------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Docker computers                                  | `SANDBOX_PROVIDER=docker`                                   | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor                                                              |
+| UI only, no computers                                   | `SANDBOX_PROVIDER=none`                                     | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN`                                            |
+| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
+| One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                               | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
+| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                    | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -102,22 +102,30 @@ Resource ceilings, network isolation and shared folders for these computers are 
 
 ### Bot browser
 
-The published computer image uses Chromium. To use Brave instead, build the image with
-`BROWSER=brave` and point Compose at it:
+The published computer image uses Chromium. To use Google Chrome or Brave instead, build the image
+with `BROWSER=chrome` or `BROWSER=brave` and point Compose at it:
 
 ```bash
-docker build --build-arg BROWSER=brave -t rakazo-computer-brave infra/sandboxes/computer
+docker build --build-arg BROWSER=chrome -t rakazo-computer-chrome infra/sandboxes/computer
 ```
 
 ```env
-RAKAZO_COMPUTER_IMAGE=rakazo-computer-brave
+RAKAZO_COMPUTER_IMAGE=rakazo-computer-chrome
 RAKAZO_COMPUTER_IMAGE_TAG=latest
 ```
 
 The image holds one browser, and `rakazo-browser` launches whichever is installed. A locally built
 image is not on a registry, so start the stack with `bash install-images.sh --pull-never` after
 pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are disabled by managed
-policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
+policy.
+
+`BROWSER=chrome` installs Google Chrome stable from Google's apt repository and checks Google's
+signing key by fingerprint. Google publishes Chrome for amd64 only, so the build fails on other
+platforms; build those with the default. Chrome identifies itself as Google Chrome and ships the
+Widevine module that some sites expect, where Debian's Chromium reports a plain Chromium brand and
+has no Widevine. Some payment and sign-in risk checks may count that profile against the device.
+
+Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
 
 ## `kubernetes`
@@ -126,14 +134,14 @@ Each computer is one pod in a namespace you choose, created from the published c
 The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
 `KUBECONFIG`), so they normally run in the same cluster. No supervisor or Docker socket is involved.
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `KUBERNETES_SANDBOX_NAMESPACE` | `rakazo-sandboxes` | Namespace for computer pods; it must exist |
-| `KUBERNETES_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a digest in production |
-| `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME` | unset | For example `kata` or `gvisor` for a VM or user-space kernel boundary |
-| `KUBERNETES_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` | unset | Container limits, such as `2` and `4Gi` |
-| `KUBERNETES_SANDBOX_POD_LABELS` / `_POD_ANNOTATIONS` | unset | JSON objects of strings, merged into every pod |
-| `KUBERNETES_SANDBOX_READY_TIMEOUT_MS` | `120000` | How long a new pod has to become ready |
+| Variable                                             | Default                                | Notes                                                                 |
+| ---------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------- |
+| `KUBERNETES_SANDBOX_NAMESPACE`                       | `rakazo-sandboxes`                     | Namespace for computer pods; it must exist                            |
+| `KUBERNETES_SANDBOX_COMPUTER_IMAGE`                  | `ghcr.io/elie222/rakazo/computer:edge` | Pin a digest in production                                            |
+| `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME`              | unset                                  | For example `kata` or `gvisor` for a VM or user-space kernel boundary |
+| `KUBERNETES_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT`     | unset                                  | Container limits, such as `2` and `4Gi`                               |
+| `KUBERNETES_SANDBOX_POD_LABELS` / `_POD_ANNOTATIONS` | unset                                  | JSON objects of strings, merged into every pod                        |
+| `KUBERNETES_SANDBOX_READY_TIMEOUT_MS`                | `120000`                               | How long a new pod has to become ready                                |
 
 Each pod runs the image's own user (uid 1000) with no service account token and no service links,
 with all Linux capabilities dropped, privilege escalation off and the runtime's default seccomp
@@ -190,14 +198,14 @@ command's uid needs the `oci.uid` and `oci.gid` keys). The API and
 worker call the Incus REST API with a client certificate; no supervisor or Docker socket is
 involved.
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `INCUS_SANDBOX_URL` | none | The Incus API, such as `https://incus.example.test:8443` |
-| `INCUS_SANDBOX_CLIENT_CERT` / `_CLIENT_KEY` | none | PEM client certificate and key; `\n` escapes are accepted. API and worker only |
-| `INCUS_SANDBOX_SERVER_CERT` | unset | The server's own certificate (`incus info` shows it), trusted exactly. Unset uses the system CAs and the URL's host name |
-| `INCUS_SANDBOX_PROJECT` | `default` | Use a project of its own, below |
-| `INCUS_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a release tag or digest in production |
-| `INCUS_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` / `_PROCESS_LIMIT` | `2` / `2GiB` / `2048` | Incus `limits.cpu`, `limits.memory` and `limits.processes` of each computer |
+| Variable                                                       | Default                                | Notes                                                                                                                    |
+| -------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `INCUS_SANDBOX_URL`                                            | none                                   | The Incus API, such as `https://incus.example.test:8443`                                                                 |
+| `INCUS_SANDBOX_CLIENT_CERT` / `_CLIENT_KEY`                    | none                                   | PEM client certificate and key; `\n` escapes are accepted. API and worker only                                           |
+| `INCUS_SANDBOX_SERVER_CERT`                                    | unset                                  | The server's own certificate (`incus info` shows it), trusted exactly. Unset uses the system CAs and the URL's host name |
+| `INCUS_SANDBOX_PROJECT`                                        | `default`                              | Use a project of its own, below                                                                                          |
+| `INCUS_SANDBOX_COMPUTER_IMAGE`                                 | `ghcr.io/elie222/rakazo/computer:edge` | Pin a release tag or digest in production                                                                                |
+| `INCUS_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` / `_PROCESS_LIMIT` | `2` / `2GiB` / `2048`                  | Incus `limits.cpu`, `limits.memory` and `limits.processes` of each computer                                              |
 
 Computers without the URL, certificate or key fall back to `none`.
 
@@ -272,13 +280,13 @@ keeps it between stops, so nothing is copied in or out. Commands run in PowerShe
 screenshots and input go through the desktop's MCP gateway. Stopping the last computer on it
 powers the desktop off; deleting one removes only its home folder, never the desktop.
 
-| Variable | Notes |
-| --- | --- |
+| Variable                                            | Notes                                                                                                                                    |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | RAM user allowed `ecd:DescribeDesktops`, `ecd:StartDesktops`, `ecd:StopDesktops` and `appstream-center:GetAuthCode`. API and worker only |
-| `WUYING_REGION_ID` | Defaults to `cn-hangzhou` |
-| `WUYING_DESKTOP_ID` | The cloud computer, assigned to the end user below |
-| `WUYING_END_USER_ID` | Screen logins are issued for this user |
-| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
+| `WUYING_REGION_ID`                                  | Defaults to `cn-hangzhou`                                                                                                                |
+| `WUYING_DESKTOP_ID`                                 | The cloud computer, assigned to the end user below                                                                                       |
+| `WUYING_END_USER_ID`                                | Screen logins are issued for this user                                                                                                   |
+| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN`               | The desktop's MCP gateway and its bearer token                                                                                           |
 
 The web and Electron screen is drawn by the Wuying Web SDK in `/computer-screen/screen.html`, served by
 the web app. Mobile rejects the custom screen URL and does not embed this SDK. The
@@ -308,16 +316,16 @@ Runs API/web without provisioning bot computers.
 
 Set `SANDBOX_PROVIDER` to exactly one of:
 
-| Value | Credential | Notes |
-| --- | --- | --- |
-| `e2b` | `E2B_API_KEY` | Hosted sandboxes |
-| `novita` | `NOVITA_API_KEY` | Build the desktop template first; optional `SANDBOX_TEMPLATE` |
-| `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
-| `boat` | `BOAT_API_KEY` | Optional `BOAT_API_URL` (see `.env.example`) |
-| `boxd` | `BOXD_API_KEY` | Optional `BOXD_ORG` to create computers in a boxd organization |
-| `createos` | `CREATEOS_SANDBOX_API_KEY` | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS` |
-| `railway` | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
-| `wuying` | `WUYING_*` (below) | One existing Wuying cloud computer (Windows) |
+| Value      | Credential                                       | Notes                                                                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e2b`      | `E2B_API_KEY`                                    | Hosted sandboxes                                                                                                                                                                                                                                          |
+| `novita`   | `NOVITA_API_KEY`                                 | Build the desktop template first; optional `SANDBOX_TEMPLATE`                                                                                                                                                                                             |
+| `daytona`  | `DAYTONA_API_KEY`                                | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`                                                                                                                                                                                          |
+| `boat`     | `BOAT_API_KEY`                                   | Optional `BOAT_API_URL` (see `.env.example`)                                                                                                                                                                                                              |
+| `boxd`     | `BOXD_API_KEY`                                   | Optional `BOXD_ORG` to create computers in a boxd organization                                                                                                                                                                                            |
+| `createos` | `CREATEOS_SANDBOX_API_KEY`                       | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS`                                                                                                                                                                 |
+| `railway`  | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
+| `wuying`   | `WUYING_*` (below)                               | One existing Wuying cloud computer (Windows)                                                                                                                                                                                                              |
 
 Remote paths still need a working API/worker; they do not replace Postgres or
 the web UI. They require egress to the provider. For air-gapped hosts prefer

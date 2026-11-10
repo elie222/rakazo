@@ -1,6 +1,7 @@
 """Classify pull-request merge commits in disposable repositories, without network access."""
 
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -46,6 +47,19 @@ def write(path, text="changed\n"):
         (root / path).write_text(text)
 
     return change
+
+
+def vitest_config_files(config):
+    """Workspace files a Vitest config names, with or without `./`; test globs and installed
+    packages are not files it loads."""
+    paths = set()
+    # Each quote kind closes only itself, on its own line, so an apostrophe in a comment
+    # cannot pair with the next string's quote.
+    for match in re.finditer(r""""([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`""", config):
+        path = next(text for text in match.groups() if text is not None).removeprefix("./")
+        if re.match(r"(apps|packages)/", path) and not re.search(r"[*?{}\[\]]|/node_modules/", path):
+            paths.add(path)
+    return sorted(paths)
 
 
 AREAS = ("web", "e2e", "server", "native", "compose", "all_packages")
@@ -94,6 +108,7 @@ class ChangedAreasTests(unittest.TestCase):
                 expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
             ),
             (".agents/skills/pr-watch/pr-digest", expect("all_packages")),
+            (".agents/skills/translate/catalog-gaps.ts", expect("all_packages")),
             ("packages/core/README.md", expect(*EVERY_BROWSER_AREA)),
             ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
             ("pnpm-lock.yaml", expect(*AREAS)),
@@ -105,6 +120,26 @@ class ChangedAreasTests(unittest.TestCase):
         for path, expected in cases:
             with self.subTest(path=path):
                 self.assertEqual(areas(write(path)), expected)
+
+    def test_files_the_root_vitest_config_loads_count_for_every_package(self):
+        # Every package's tests load these, but no package depends on the one that holds them.
+        paths = vitest_config_files((SCRIPT.parents[2] / "vitest.config.ts").read_text())
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertEqual(areas(write(path))["all_packages"], "true")
+
+    def test_vitest_config_files_are_found_with_or_without_a_leading_dot(self):
+        config = """
+          include: ["packages/*/src/**/*.test.{ts,tsx}"],
+          setupFiles: ["./packages/a/src/setup.ts", 'packages/b/src/extra-setup.ts'],
+          replacement: new URL(`./apps/c/src/stub.ts`, import.meta.url),
+          replacement: "./packages/d/node_modules/e/index.tsx",
+        """
+        self.assertEqual(
+            vitest_config_files(config),
+            ["apps/c/src/stub.ts", "packages/a/src/setup.ts", "packages/b/src/extra-setup.ts"],
+        )
 
     def test_a_rename_out_of_the_web_app_counts_its_old_path(self):
         def move(root):

@@ -1,5 +1,6 @@
 import type { AssistantMessage, Model, ToolCall } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { beforeEach, expect, it, vi } from "vitest";
 import type * as AutoReviewModule from "./auto-review.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -226,6 +227,8 @@ function fixture(runId = "run-1") {
   };
   const choice = { modelId: "main-a" };
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    space: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     usageRecord: {
@@ -327,6 +330,7 @@ function fixture(runId = "run-1") {
   const runtime = new PiAgentRuntime();
   const runtimeRun = vi.fn(runtime.run.bind(runtime));
   const browserAct = vi.fn(async () => ({ ok: true }));
+  const browserPage = { available: true };
   const shutdown = new AbortController();
   const executor = createRunExecutor({
     shutdownSignal: shutdown.signal,
@@ -346,7 +350,10 @@ function fixture(runId = "run-1") {
       describe: () => ({ capabilities: { graphical: true } }),
       releaseScreen: vi.fn(async () => undefined),
     },
-    browser: { describe: () => ({ capabilities: { page: true } }), act: browserAct },
+    browser: {
+      describe: () => ({ capabilities: { page: browserPage.available } }),
+      act: browserAct,
+    },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     events: {
@@ -364,6 +371,7 @@ function fixture(runId = "run-1") {
     effects,
     choice,
     browserAct,
+    browserPage,
     runtimeRun,
     finalizeRun,
     prisma,
@@ -512,6 +520,25 @@ it("does not dispatch an approved pending action or transition after cancellatio
   expect(f.browserAct).not.toHaveBeenCalled();
   expect(fake.stream).not.toHaveBeenCalled();
   expect(f.effect.status).toBe("approved");
+});
+it("retries without an error report while the paused action's tool is offline", async () => {
+  const f = await paused();
+  f.effect.status = "approved";
+  f.browserPage.available = false;
+  const sink = createTestSink();
+  installLogger(createLogger({ service: "test", sinks: [sink] }));
+  try {
+    await expect(f.run()).rejects.toMatchObject({
+      cause: { name: "PausedTurnToolsUnavailableError" },
+    });
+  } finally {
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  }
+  expect(sink.events.filter((event) => event.message === "run setup failed")).toEqual([
+    expect.objectContaining({ level: "warn" }),
+  ]);
+  expect(fake.stream).not.toHaveBeenCalled();
+  expect(f.browserAct).not.toHaveBeenCalled();
 });
 it.each([
   { provider: "anthropic" },

@@ -241,21 +241,27 @@ export function VoiceSettingsOverlay({
     const sent = connection.current;
     markPending("connect");
     try {
-      await rpc.voice.connect({
-        scope,
-        provider: selected.id,
-        apiKey: sentApiKey.trim(),
-        // The server drops this voice when the address or speech model really changed.
-        voiceId: voiceId || undefined,
-        ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
-        ...(selfHosted
-          ? {
-              baseUrl: baseUrl.trim(),
-              ttsModel: ttsModel.trim() || undefined,
-              sttModel: sttModel.trim() || undefined,
-            }
-          : {}),
-      });
+      let connected: VoiceCredential;
+      try {
+        connected = await rpc.voice.connect({
+          scope,
+          provider: selected.id,
+          apiKey: sentApiKey.trim(),
+          // The server drops this voice when the address or speech model really changed.
+          voiceId: voiceId || undefined,
+          ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
+          ...(selfHosted
+            ? {
+                baseUrl: baseUrl.trim(),
+                ttsModel: ttsModel.trim() || undefined,
+                sttModel: sttModel.trim() || undefined,
+              }
+            : {}),
+        });
+      } catch (err) {
+        setError(errorText(err, t`Could not connect this voice provider`));
+        return;
+      }
       // A key typed while the connect ran was not saved; keep it for the next try.
       setApiKey((current) => (current === sentApiKey ? "" : current));
       // The connect saved the voice the server kept for these values, and the
@@ -266,10 +272,19 @@ export function VoiceSettingsOverlay({
       for (const field of CONNECTION_FIELDS) {
         if (connection.current[field] === sent[field]) edited.current.delete(field);
       }
-      await refresh(selected.id, { keepForm: true });
       setNotice(t`Connected ${selected.name}.`);
-    } catch (err) {
-      setError(errorText(err, t`Could not connect this voice provider`));
+      // The saved connection (the server may have picked another voice for a new address) shows
+      // at once in untouched fields, so a failed read after it cannot leave stale values to send.
+      const nextCredentials = credentials.some((entry) => entry.provider === connected.provider)
+        ? credentials.map((entry) => (entry.provider === connected.provider ? connected : entry))
+        : [...credentials, connected];
+      setCredentials(nextCredentials);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), nextCredentials);
+      void showProvider(selected.id, nextCredentials, true).catch(() => undefined);
+      // The connect is saved; a failed read after it only leaves the form behind.
+      await refresh(selected.id, { keepForm: true }).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
@@ -298,10 +313,16 @@ export function VoiceSettingsOverlay({
     markPending("voice");
     setError(null);
     try {
-      await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
-      await refresh(selected?.id, { keepForm: true });
-    } catch (err) {
-      setError(errorText(err, t`Could not save that voice`));
+      try {
+        await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
+      } catch (err) {
+        setError(errorText(err, t`Could not save that voice`));
+        return;
+      }
+      // The voice is saved; a failed read after it only leaves the form behind.
+      await refresh(selected?.id, { keepForm: true }).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
@@ -491,8 +512,11 @@ export function VoiceSettingsOverlay({
                   disabled={busy || !canConnect}
                   onClick={() => void connectKey()}
                 >
+                  {/* A keyless option has nothing to connect; choosing it turns voice on. */}
                   {pending === "connect" ? (
                     <Trans>Connecting…</Trans>
+                  ) : keyless ? (
+                    <Trans>Turn on</Trans>
                   ) : credential && selfHosted ? (
                     <Trans>Reconnect</Trans>
                   ) : credential ? (
@@ -513,6 +537,8 @@ export function VoiceSettingsOverlay({
                 >
                   {pending === "disconnect" ? (
                     <Trans>Disconnecting…</Trans>
+                  ) : keyless ? (
+                    <Trans>Turn off</Trans>
                   ) : (
                     <Trans>Disconnect</Trans>
                   )}

@@ -1,6 +1,7 @@
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
 import { AttachmentValidationError } from "@rakazo/core";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { EmailInboundDeps } from "./email-inbound.js";
@@ -26,6 +27,7 @@ function email(overrides: Partial<InboundEmail> = {}): InboundEmail {
     key: "<m-1@example.test>",
     from: { address: "owner@example.test", name: "Owner" },
     authenticated: true,
+    unauthenticatedReason: null,
     temporaryFailure: false,
     to: ["helper@bots.test"],
     cc: [],
@@ -45,7 +47,7 @@ function setup(
     message?: InboundEmail;
     bot?: Record<string, unknown> | null;
     routines?: Array<Record<string, unknown>>;
-    owner?: { email: string; emailVerified?: boolean };
+    owner?: { email: string; emailVerified?: boolean; deactivatedAt?: Date | null };
     storeAttachment?: EmailInboundDeps["storeAttachment"];
     /** Messages the bot saved in the last day. */
     savedToday?: number;
@@ -159,6 +161,16 @@ describe("inbound email route", () => {
     expect(sent.prompt).toContain("wire money");
     expect(sent.clientNonce).toMatch(/^email:bot-1:/);
     expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts and drops mail for a bot whose Space is being deleted", async () => {
+    const { post, sendUserMessage } = setup();
+    sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+
+    const response = await post("Helper+receipts@Bots.test");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, ignored: expect.any(String) });
   });
 
   it("asks the relay to retry when a signature could not be checked yet", async () => {
@@ -316,6 +328,41 @@ describe("inbound email route", () => {
 
     expect(storeAttachment).not.toHaveBeenCalled();
     expect(saveEmail.mock.calls[0]?.[0].data.attachments).toEqual([{ name: "a.pdf" }]);
+  });
+
+  it("drops mail for a deactivated owner's bot without saving it or its files", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>();
+    const { post, saveEmail, sendUserMessage, readEmail } = setup({
+      storeAttachment,
+      owner: { email: "owner@example.test", emailVerified: true, deactivatedAt: new Date() },
+      message: email({
+        attachments: [{ name: "a.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) }],
+      }),
+    });
+
+    expect(await (await post()).json()).toEqual({ ok: true, ignored: "owner deactivated" });
+    expect(readEmail).not.toHaveBeenCalled();
+    expect(storeAttachment).not.toHaveBeenCalled();
+    expect(saveEmail).not.toHaveBeenCalled();
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stranger's files apart from the owner's same-name files", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({ id: "a-1", ...attachment, size: 1 }),
+    );
+    const message = (address: string) =>
+      email({
+        from: { address, name: "" },
+        attachments: [
+          { name: "report.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) },
+        ],
+      });
+
+    await setup({ routines: [], storeAttachment, message: message("someone@shop.test") }).post();
+    await setup({ routines: [], storeAttachment, message: message("owner@example.test") }).post();
+
+    expect(storeAttachment.mock.calls.map(([input]) => input.standalone)).toEqual([true, false]);
   });
 
   it("saves signed mail that doesn't name the bot as unverified, without its files", async () => {

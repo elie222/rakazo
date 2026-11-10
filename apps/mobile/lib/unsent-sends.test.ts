@@ -19,6 +19,9 @@ vi.mock("react-native", () => ({
   AppState: { addEventListener: () => ({ remove: () => {} }) },
 }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   isServerReachable: vi.fn(),
@@ -52,7 +55,6 @@ vi.mock("./thread-feedback", () => ({
   sendWaitingMessages: vi.fn(async () => undefined),
   unsentSendsReadable: vi.fn(() => true),
 }));
-vi.mock("./i18n", () => ({ t: (message: string) => `translated: ${message}` }));
 
 const { notDelivered } = vi.mocked(configureUnsentSends).mock.calls[0]![0];
 function attempt(error: string): SendAttempt {
@@ -70,11 +72,11 @@ describe("notDelivered", () => {
   it("offers Models settings and cancellation for the missing-model rejection", () => {
     notDelivered(attempt(` ${MODEL_REQUIRED_SEND_ERROR} `));
     const [title, message, buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
-    expect(title).toBe("translated: Add an AI model to keep chatting");
+    expect(title).toBe("Add an AI model to keep chatting");
     expect(message).toBeUndefined();
     expect(buttons).toEqual([
-      { text: "translated: Not Now", style: "cancel" },
-      { text: "translated: Add model", onPress: expect.any(Function), isPreferred: true },
+      { text: "Not Now", style: "cancel" },
+      { text: "Add model", onPress: expect.any(Function), isPreferred: true },
     ]);
     expect(router.push).not.toHaveBeenCalled();
     buttons![1]!.onPress!();
@@ -82,7 +84,7 @@ describe("notDelivered", () => {
   });
   it("keeps the existing alert for unrelated errors", () => {
     notDelivered(attempt("Rejected"));
-    expect(Alert.alert).toHaveBeenCalledWith("translated: Failed to send message", "Rejected");
+    expect(Alert.alert).toHaveBeenCalledWith("Failed to send message", "Rejected");
     expect(router.push).not.toHaveBeenCalled();
   });
 });

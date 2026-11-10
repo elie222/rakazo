@@ -111,9 +111,7 @@ export function ActivityList({
     groups,
   });
   // Filters narrow runs, so unread chats step aside and their matching runs stay in Recent.
-  const recentRows = filtersOn
-    ? filteredRecent.filter((run) => !sections.attention.includes(run))
-    : sections.recent;
+  const recentRows = filtersOn ? sections.settled : sections.recent;
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const section = (key: string, title: string, count: number, defaultOpen: boolean) => ({
     title,
@@ -136,14 +134,7 @@ export function ActivityList({
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
 
   return (
-    <div
-      className={
-        hasAnyRuns || unreadCount > 0 || filtersOn || filtersExpanded
-          ? "mb-2 border-b border-border pb-2"
-          : undefined
-      }
-      data-testid="activity-list"
-    >
+    <div data-testid="activity-list">
       <ActivityFilters
         filters={filters}
         onChange={onFiltersChange}
@@ -164,6 +155,10 @@ export function ActivityList({
       ) : !error && filtersOn && hasAnyRuns && !hasVisibleRuns ? (
         <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
           <Trans>No runs match these filters.</Trans>
+        </p>
+      ) : !error && !hasAnyRuns && unreadCount === 0 ? (
+        <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
+          <Trans>No runs yet</Trans>
         </p>
       ) : null}
 

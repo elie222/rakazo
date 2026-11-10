@@ -88,6 +88,7 @@ function renderView(
         onAddRoutine={vi.fn()}
         voiceReady={false}
         speaking={false}
+        callHoldsSpeaker={false}
         onSpeak={vi.fn()}
         onOpenComputer={vi.fn()}
         showToolActivity={false}
@@ -221,6 +222,7 @@ it("keeps an edit made after a save when the saved status arrives late", async (
         onAddRoutine={vi.fn()}
         voiceReady={false}
         speaking={false}
+        callHoldsSpeaker={false}
         onSpeak={vi.fn()}
         onOpenComputer={vi.fn()}
         showToolActivity={false}
@@ -319,6 +321,29 @@ it("speaks the message it renders", () => {
   expect(onSpeak.mock.calls[0]?.[0]).toMatchObject({ id: "message" });
 });
 
+it("disables starting a read while a call holds the speaker, keeping stop available", () => {
+  renderView("bot", [{ kind: "text", text: "Hello" }], {
+    voiceReady: true,
+    callHoldsSpeaker: true,
+  });
+  const startButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Speak this reply"]'),
+  ];
+  expect(startButtons().length).toBeGreaterThan(0);
+  for (const button of startButtons()) expect(button.disabled).toBe(true);
+
+  renderView("bot", [{ kind: "text", text: "Hello" }], {
+    voiceReady: true,
+    callHoldsSpeaker: true,
+    speaking: true,
+  });
+  const stopButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Stop speaking"]'),
+  ];
+  expect(stopButtons().length).toBeGreaterThan(0);
+  for (const button of stopButtons()) expect(button.disabled).toBe(false);
+});
+
 it("opens one counted peer line without an inline reply toggle", () => {
   const open = vi.fn();
   renderView(
@@ -362,4 +387,27 @@ it("sends a settings Undo through the chat's space client", async () => {
   const undo = [...container.querySelectorAll("button")].find((b) => b.textContent === "Undo");
   await act(async () => undo?.click());
   expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
+});
+
+it("stops a background helper from its saved running card, never a turn's live one", () => {
+  const spaceRpc = { threads: { stopHelper: vi.fn(async () => ({ ok: true })) } };
+  const helper = (id: string): ThreadMessage => ({
+    id,
+    threadId: "thread",
+    seq: 1,
+    role: "bot",
+    botId: "bot-1",
+    createdAt: new Date().toISOString(),
+    blocks: [{ kind: "subagent", agentId: id, name: "scout", task: "venues", status: "running" }],
+  });
+  const stopButton = () =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Stop");
+  renderView("bot", [], { message: helper("subagent:live"), rpc: spaceRpc as never });
+  expect(stopButton()).toBeUndefined();
+  renderView("bot", [], { message: helper("card-1"), rpc: spaceRpc as never });
+  act(() => stopButton()?.click());
+  expect(spaceRpc.threads.stopHelper).toHaveBeenCalledExactlyOnceWith({
+    botId: "bot-1",
+    messageId: "card-1",
+  });
 });

@@ -1,20 +1,29 @@
 // @vitest-environment jsdom
 
+import type * as CoreModule from "@rakazo/core";
+import { reduceThreadSnapshot } from "@rakazo/core";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type * as ApiModule from "./api";
-import type { MobileSnapshot } from "./api";
-import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
+import { rpc } from "./api";
+import { subscribeThread } from "./api-live";
 import { hapticSuccess } from "./haptics";
+import type { MobileSnapshot } from "./mobile-types";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import { useThreadLiveSubscription } from "./thread-live";
 import type { PinnedThreadWindow } from "./thread-window";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
-  applyMobileThreadEvent: vi.fn(),
+}));
+vi.mock("@rakazo/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof CoreModule>()),
+  reduceThreadSnapshot: vi.fn(),
 }));
 const session = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
@@ -48,7 +57,7 @@ describe("thread foreground subscription", () => {
       deliver = onEvent as unknown as typeof deliver;
       await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
     });
-    vi.mocked(applyMobileThreadEvent).mockReturnValue(snapshot);
+    vi.mocked(reduceThreadSnapshot).mockReturnValue(snapshot);
     const refresh = vi
       .fn()
       .mockResolvedValueOnce(snapshot)
@@ -63,12 +72,14 @@ describe("thread foreground subscription", () => {
         foreground: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread,
         pinnedAroundRef: ref(null),
         jumpScrollTarget: ref(null),
         jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
         snapRef: ref(snapshot),
+        terminalRunIds: ref(new Set<string>()),
         readVisibleTarget: ref(null),
         showSavedThread: vi.fn(),
         refresh,
@@ -104,8 +115,8 @@ describe("thread foreground subscription", () => {
   });
 
   it("keeps group member status right in older history, where no refresh corrects it", async () => {
-    const actual = await vi.importActual<typeof ApiModule>("./api");
-    vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+    const actual = await vi.importActual<typeof CoreModule>("@rakazo/core");
+    vi.mocked(reduceThreadSnapshot).mockImplementation(actual.reduceThreadSnapshot);
     vi.mocked(rpc).mockResolvedValue({ cursor: 10, threadId: "thread-1" } as never);
     let deliver: (event: LiveEvent & { botId?: string; createdAt?: string }) => void = () => {};
     vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
@@ -134,12 +145,14 @@ describe("thread foreground subscription", () => {
         focused: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref<string | null>("thread-1"),
         pinnedAroundRef: ref(null),
         jumpScrollTarget: ref(null),
         jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
         snapRef,
+        terminalRunIds: ref(new Set<string>()),
         readVisibleTarget: ref(null),
         showSavedThread: vi.fn(),
         refresh,
@@ -176,8 +189,8 @@ describe("thread foreground subscription", () => {
   });
 
   it("confirms live completions once and suppresses failures, hidden chats and catch-up events", async () => {
-    const actual = await vi.importActual<typeof ApiModule>("./api");
-    vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+    const actual = await vi.importActual<typeof CoreModule>("@rakazo/core");
+    vi.mocked(reduceThreadSnapshot).mockImplementation(actual.reduceThreadSnapshot);
     type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
     let deliver: (event: Event) => void = () => {};
     vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
@@ -208,12 +221,14 @@ describe("thread foreground subscription", () => {
         foreground,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref("thread-1"),
         pinnedAroundRef: ref(null),
         jumpScrollTarget: ref(null),
         jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
         snapRef,
+        terminalRunIds: ref(new Set<string>()),
         readVisibleTarget: ref(null),
         showSavedThread: vi.fn(),
         refresh,
@@ -284,8 +299,8 @@ describe("thread foreground subscription", () => {
     "replays feedback without rewinding a newer snapshot (head retry %s)",
     async (retryHead) => {
       if (retryHead) vi.useFakeTimers();
-      const actual = await vi.importActual<typeof ApiModule>("./api");
-      vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+      const actual = await vi.importActual<typeof CoreModule>("@rakazo/core");
+      vi.mocked(reduceThreadSnapshot).mockImplementation(actual.reduceThreadSnapshot);
       type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
       let deliver: (event: Event) => void = () => {};
       const cursors: number[] = [];
@@ -332,12 +347,14 @@ describe("thread foreground subscription", () => {
           foreground,
           readOnly: false,
           sessionEpoch: 1,
+          userId: "user-1",
           historyEpoch: ref(0),
           expandedHistoryThread: ref("thread-1"),
           pinnedAroundRef: ref(null),
           jumpScrollTarget: ref(null),
           jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
           snapRef,
+          terminalRunIds: ref(new Set<string>()),
           readVisibleTarget: ref(null),
           showSavedThread: vi.fn(),
           refresh,
@@ -374,7 +391,7 @@ describe("thread foreground subscription", () => {
         deliver(event("run.completed", 14, "covered-run"));
         deliver(event("run.started", 15, "covered-run"));
         expect(hapticSuccess).toHaveBeenCalledTimes(1);
-        expect(applyMobileThreadEvent).not.toHaveBeenCalled();
+        expect(reduceThreadSnapshot).not.toHaveBeenCalled();
         expect(commitSnap).not.toHaveBeenCalled();
         expect(snapRef.current).toBe(snapshot);
         deliver(event("run.started", 16, "live-run"));
@@ -398,7 +415,7 @@ describe("thread foreground subscription", () => {
       await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
     });
     vi.mocked(rpc).mockResolvedValue({ cursor: 10, threadId: "thread-1" } as never);
-    const snapshot = { cursor: 15 } as MobileSnapshot;
+    const snapshot = { cursor: 17 } as MobileSnapshot;
     const snapRef = ref<MobileSnapshot | null>(snapshot);
     const readVisibleTarget = ref<string | null>("bot-1");
     const markReadIfVisible = vi.fn();
@@ -413,12 +430,14 @@ describe("thread foreground subscription", () => {
         foreground: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref(null),
         pinnedAroundRef: ref(null),
         jumpScrollTarget: ref(null),
         jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
         snapRef,
+        terminalRunIds: ref(new Set<string>()),
         readVisibleTarget,
         showSavedThread: vi.fn(),
         refresh,
@@ -446,9 +465,22 @@ describe("thread foreground subscription", () => {
       });
       expect(markReadIfVisible).toHaveBeenCalledOnce();
       expect(readVisibleTarget.current).toBeNull();
-      deliver({ type: "bot.updated", seq: 14, botId: "bot-1", createdAt: "1970-01-01T00:00:00Z" });
+      // In a shared space another member's message is new here too; the viewer's own is not.
+      const sentBy = (id: string, seq: number) =>
+        deliver({
+          type: "thread.message.created",
+          seq,
+          botId: "bot-1",
+          createdAt: "1970-01-01T00:00:00Z",
+          payload: { role: "user", author: { id, name: id } },
+        });
+      sentBy("user-1", 14);
+      expect(markReadIfVisible).toHaveBeenCalledOnce();
+      sentBy("user-2", 15);
+      expect(markReadIfVisible).toHaveBeenCalledTimes(2);
+      deliver({ type: "bot.updated", seq: 16, botId: "bot-1", createdAt: "1970-01-01T00:00:00Z" });
       expect(refreshMentionBots).toHaveBeenCalledOnce();
-      expect(applyMobileThreadEvent).not.toHaveBeenCalled();
+      expect(reduceThreadSnapshot).not.toHaveBeenCalled();
       expect(commitSnap).not.toHaveBeenCalled();
       expect(snapRef.current).toBe(snapshot);
       expect(refresh).toHaveBeenCalledOnce();
@@ -461,8 +493,8 @@ describe("thread foreground subscription", () => {
     "bounds a slow feedback lookup and handles HTTP %s without holding up chat",
     async (status) => {
       vi.useFakeTimers();
-      const actual = await vi.importActual<typeof ApiModule>("./api");
-      vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+      const actual = await vi.importActual<typeof CoreModule>("@rakazo/core");
+      vi.mocked(reduceThreadSnapshot).mockImplementation(actual.reduceThreadSnapshot);
       type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
       let deliver: (event: Event) => void = () => {};
       vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
@@ -499,12 +531,14 @@ describe("thread foreground subscription", () => {
           foreground: true,
           readOnly: false,
           sessionEpoch: 1,
+          userId: "user-1",
           historyEpoch: ref(0),
           expandedHistoryThread: ref("thread-1"),
           pinnedAroundRef: ref(null),
           jumpScrollTarget: ref(null),
           jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
           snapRef,
+          terminalRunIds: ref(new Set<string>()),
           readVisibleTarget: ref(null),
           showSavedThread: vi.fn(),
           refresh,
@@ -566,8 +600,8 @@ describe("thread foreground subscription", () => {
 
   it("recovers feedback on a 500 ms connection without delaying live chat or refocusing", async () => {
     vi.useFakeTimers();
-    const actual = await vi.importActual<typeof ApiModule>("./api");
-    vi.mocked(applyMobileThreadEvent).mockImplementation(actual.applyMobileThreadEvent);
+    const actual = await vi.importActual<typeof CoreModule>("@rakazo/core");
+    vi.mocked(reduceThreadSnapshot).mockImplementation(actual.reduceThreadSnapshot);
     type Event = Parameters<Parameters<typeof subscribeThread>[2]>[0];
     let deliver: (event: Event) => void = () => {};
     vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
@@ -618,12 +652,14 @@ describe("thread foreground subscription", () => {
         foreground: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref("thread-1"),
         pinnedAroundRef: ref(null),
         jumpScrollTarget: ref(null),
         jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
         snapRef,
+        terminalRunIds: ref(new Set<string>()),
         readVisibleTarget: ref(null),
         showSavedThread: vi.fn(),
         refresh,
@@ -676,7 +712,7 @@ describe("thread foreground subscription", () => {
         deliver = onEvent as unknown as typeof deliver;
         await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
       });
-      vi.mocked(applyMobileThreadEvent).mockImplementation((_snapshot, event) => {
+      vi.mocked(reduceThreadSnapshot).mockImplementation((_snapshot, event) => {
         applied.push(event.seq ?? -1);
         return snapshot;
       });
@@ -694,6 +730,7 @@ describe("thread foreground subscription", () => {
         jumpScrollTarget: ref<string | null>(mode === "search" ? "message-1" : null),
         jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
         snapRef: ref<MobileSnapshot | null>(snapshot),
+        terminalRunIds: ref(new Set<string>()),
         readVisibleTarget: ref<string | null>(null),
       };
       function Probe({ botId, foreground }: { botId: string; foreground: boolean }) {
@@ -702,6 +739,7 @@ describe("thread foreground subscription", () => {
           foreground,
           readOnly: false,
           sessionEpoch: 1,
+          userId: "user-1",
           messageId: mode === "search" ? "message-1" : undefined,
           ...refs,
           showSavedThread: vi.fn(),

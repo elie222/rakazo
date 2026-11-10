@@ -76,23 +76,19 @@ vi.mock("../components/sheet-header", () => ({
     headerRight: { label, onPress, disabled },
   }),
 }));
-vi.mock("./api", async () => {
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({ currentApiBase: () => server.base }));
+vi.mock("./api-server", () => ({ resetApiBase: api.reset, saveApiBase: api.save }));
+vi.mock("./endpoint", async () => {
   const endpoint = await vi.importActual<typeof Endpoint>("./endpoint");
   return {
+    ...endpoint,
     apiBaseWarning: () => null,
-    currentApiBase: () => server.base,
-    defaultApiBase: endpoint.defaultApiBase,
-    normalizeApiBase: endpoint.normalizeApiBase,
     probeApiBase: api.probe,
-    resetApiBase: api.reset,
-    saveApiBase: api.save,
     usesCustomApiBase: () => server.custom,
   };
 });
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ locale: "en", t: (text: string) => text }),
-}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));

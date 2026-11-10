@@ -1,11 +1,14 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset } from "@rakazo/core";
+import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
 import { useBotEmail } from "../components/bot-email";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { GrowingTextInput } from "../components/growing-text-input";
+import { MenuPickerMenu } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { RoutineEmailTrigger } from "../components/routine-email-trigger";
 import { RoutineScheduleEditor } from "../components/routine-schedule-editor";
@@ -17,17 +20,16 @@ import {
   SettingsSwitch,
 } from "../components/settings-group";
 import { rpc } from "../lib/api";
-import { dateLocaleForUi, useI18n } from "../lib/i18n";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
-import { deviceTimeZone, routineTriggerRows } from "../lib/routine";
-import type { RoutineDraft } from "../lib/routine-draft";
+import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routine";
+import type { MobileRoutineDraft } from "../lib/routine-draft";
 import {
-  draftFromRoutine,
-  emptyRoutineDraft,
   routineDraftChanged,
   routineSaveRequest,
   routineScheduleLocked,
+  routineWithDraftTriggers,
 } from "../lib/routine-draft";
 import {
   removeBotRoutine,
@@ -41,7 +43,7 @@ import { errorText } from "../lib/user-error";
 export default function RoutineDetail() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const { botId, botName, routineId, origin } = useLocalSearchParams<{
     botId?: string;
     botName?: string;
@@ -61,13 +63,13 @@ export default function RoutineDetail() {
   const creating = Boolean(botId) && !routineId;
   const routine = routines?.find((item) => item.id === routineId) ?? null;
   const error = !botId
-    ? t("Routine link is incomplete")
+    ? t`Routine link is incomplete`
     : creating || routine
       ? null
       : failedSinceShown
-        ? errorText(loadError, t("Could not load routine"))
+        ? errorText(loadError, t`Could not load routine`)
         : readSinceShown
-          ? t("This routine no longer exists")
+          ? t`This routine no longer exists`
           : null;
   const loading = !creating && !routine && !error;
   const editable = creating || (routine !== null && routine.editable !== false);
@@ -81,7 +83,7 @@ export default function RoutineDetail() {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {loading || error ? <Stack.Screen options={{ title: t("Routine") }} /> : null}
+      {loading || error ? <Stack.Screen options={{ title: t`Routine` }} /> : null}
       {loading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
       {error ? <Text style={{ color: tokens.destructive, fontSize: 15 }}>{error}</Text> : null}
       {botId && editable && (creating || editing) ? (
@@ -127,7 +129,8 @@ function RoutineView({
   onEdit: () => void;
 }) {
   const tokens = useMobileTokens();
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const router = useRouter();
   const [running, setRunning] = useState(false);
   const triggers = routineTriggerRows(routine, deviceTimeZone());
@@ -135,7 +138,7 @@ function RoutineView({
     !routine.active || !routine.nextRunAt
       ? null
       : routine.scheduleDelayed
-        ? t("Schedule delayed")
+        ? t`Schedule delayed`
         : new Date(routine.nextRunAt).toLocaleString(dateLocaleForUi(locale), {
             weekday: "short",
             month: "short",
@@ -150,7 +153,7 @@ function RoutineView({
     try {
       await rpc("routines/testRun", { routineId: routine.id });
     } catch (cause) {
-      Alert.alert(t("Could not run routine"), errorText(cause, t("Try again.")));
+      Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`));
     } finally {
       setRunning(false);
     }
@@ -174,7 +177,7 @@ function RoutineView({
                   unstable_headerRightItems: () => [
                     {
                       type: "button" as const,
-                      label: t("Test run"),
+                      label: t`Run now`,
                       icon: { type: "sfSymbol" as const, name: "play" },
                       disabled: running,
                       onPress: () => void testRun(),
@@ -184,7 +187,7 @@ function RoutineView({
               : {
                   headerRight: () => (
                     <GlassIconButton
-                      accessibilityLabel={t("Test run")}
+                      accessibilityLabel={t`Run now`}
                       ios="play"
                       android="play"
                       disabled={running}
@@ -198,19 +201,19 @@ function RoutineView({
       <SettingsGroup>
         <SettingsSwitch
           key="active"
-          label={t("Active")}
+          label={t`Active`}
           value={routine.active}
           // Only the routine's creator can pause or resume it.
           disabled={!editable}
           onChange={(active) =>
             setRoutineActive(botId, routine, active, (cause) =>
-              Alert.alert(t("Could not update routine"), errorText(cause, t("Try again."))),
+              Alert.alert(t`Could not update routine`, errorText(cause, t`Try again.`)),
             )
           }
         />
       </SettingsGroup>
       <View style={{ gap: 7 }}>
-        <SettingsLabel>{t("Instruction")}</SettingsLabel>
+        <SettingsLabel>{t`Instruction`}</SettingsLabel>
         <Text
           selectable
           style={{
@@ -227,17 +230,17 @@ function RoutineView({
           {routine.prompt}
         </Text>
       </View>
-      <SettingsGroup label={t("When to run")}>
+      <SettingsGroup label={t`When to run`}>
         {triggers.map((trigger) => (
           <SettingsRow key={trigger} title={trigger} />
         ))}
-        {nextRun ? <SettingsRow key="next" title={t("Next run")} value={nextRun} /> : null}
+        {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
           key="runs"
           accessibilityRole="button"
-          title={t("Run history")}
+          title={t`Run history`}
           chevron="right"
           onPress={() =>
             router.push({ pathname: "/routine-runs", params: { routineId: routine.id, botName } })
@@ -247,12 +250,12 @@ function RoutineView({
           <SettingsRow
             key="thread"
             accessibilityRole="button"
-            title={t("Open conversation")}
+            title={t`Open conversation`}
             chevron="right"
             onPress={() =>
               router.push({
                 pathname: "/thread",
-                params: { botId, name: botName ?? t("Bot") },
+                params: { botId, name: botName ?? t`Bot` },
               })
             }
           />
@@ -264,7 +267,7 @@ function RoutineView({
             key="edit"
             accessibilityRole="button"
             tinted
-            title={t("Edit routine")}
+            title={t`Edit routine`}
             onPress={onEdit}
           />
         </SettingsGroup>
@@ -290,10 +293,10 @@ function RoutineEditor({
   onDeleted: () => void;
 }) {
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   // The routine as it was when Edit opened; a save sends only what changed since.
   const [base] = useState(routine);
-  const [draft, setDraft] = useState<RoutineDraft>(() =>
+  const [draft, setDraft] = useState<MobileRoutineDraft>(() =>
     base ? draftFromRoutine(base) : emptyRoutineDraft(),
   );
   const [saving, setSaving] = useState(false);
@@ -302,6 +305,9 @@ function RoutineEditor({
   const email = useBotEmail(botId);
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
+  // Triggers set up on web stay listed here so the person sees them and can remove them.
+  const kept = base ? routineWithDraftTriggers(base, draft) : null;
+  const webTriggers = kept ? routineWebTriggers(kept) : [];
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -313,7 +319,7 @@ function RoutineEditor({
     return () => subscription.remove();
   }, [base, onCancel]);
 
-  function update(partial: Partial<RoutineDraft>) {
+  function update(partial: Partial<MobileRoutineDraft>) {
     setSaveError(null);
     setDraft((current) => ({ ...current, ...partial }));
   }
@@ -325,10 +331,10 @@ function RoutineEditor({
     if ("error" in request) {
       setSaveError(
         request.error === "name"
-          ? t("Name this routine.")
+          ? t`Name this routine.`
           : request.error === "prompt"
-            ? t("Write what this routine should do.")
-            : t("Add a trigger to run this routine."),
+            ? t`Write what this routine should do.`
+            : t`Add a trigger to run this routine.`,
       );
       return;
     }
@@ -342,7 +348,7 @@ function RoutineEditor({
     try {
       onSaved(await saveBotRoutine(botId, request));
     } catch (cause) {
-      setSaveError(errorText(cause, t("Could not save routine")));
+      setSaveError(errorText(cause, t`Could not save routine`));
     } finally {
       busy.current = false;
       setSaving(false);
@@ -353,19 +359,19 @@ function RoutineEditor({
     const target = base;
     if (!target || busy.current) return;
     Alert.alert(
-      target.name.trim() ? t('Delete "{name}"?', { name: target.name }) : t("Delete this routine?"),
-      t("This permanently deletes the routine and its run history."),
+      target.name.trim() ? t`Delete "${ph({ name: target.name })}"?` : t`Delete this routine?`,
+      t`This permanently deletes the routine and its run history.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Delete"),
+          text: t`Delete`,
           style: "destructive",
           onPress: () => {
             busy.current = true;
             void removeBotRoutine(botId, target.id)
               .then(onDeleted)
               .catch((cause) =>
-                Alert.alert(t("Could not delete routine"), errorText(cause, t("Try again."))),
+                Alert.alert(t`Could not delete routine`, errorText(cause, t`Try again.`)),
               )
               .finally(() => {
                 busy.current = false;
@@ -384,12 +390,12 @@ function RoutineEditor({
     <>
       <Stack.Screen
         options={{
-          title: base ? t("Edit routine") : t("New routine"),
+          title: base ? t`Edit routine` : t`New routine`,
           ...(base ? { headerBackVisible: false, gestureEnabled: false } : {}),
           headerLeft: base
             ? () => (
                 <GlassIconButton
-                  accessibilityLabel={t("Cancel")}
+                  accessibilityLabel={t`Cancel`}
                   ios="xmark"
                   android="close"
                   onPress={onCancel}
@@ -398,7 +404,7 @@ function RoutineEditor({
             : undefined,
           headerRight: () => (
             <NativeActionButton
-              label={t("Save")}
+              label={t`Save`}
               size="compact"
               disabled={!canSave}
               busy={saving}
@@ -413,7 +419,7 @@ function RoutineEditor({
                       unstable_headerLeftItems: () => [
                         {
                           type: "button" as const,
-                          label: t("Cancel"),
+                          label: t`Cancel`,
                           icon: { type: "sfSymbol" as const, name: "xmark" },
                           onPress: onCancel,
                         },
@@ -423,7 +429,7 @@ function RoutineEditor({
                 unstable_headerRightItems: () => [
                   {
                     type: "button" as const,
-                    label: t("Save"),
+                    label: t`Save`,
                     icon: { type: "sfSymbol" as const, name: "checkmark" },
                     variant: "prominent" as const,
                     tintColor: tokens.primary,
@@ -441,62 +447,99 @@ function RoutineEditor({
       <SettingsGroup>
         <SettingsInputRow
           key="name"
-          accessibilityLabel={t("Name")}
-          placeholder={t("Name")}
+          accessibilityLabel={t`Name`}
+          placeholder={t`Name`}
           maxLength={80}
           value={draft.name}
           onChangeText={(name) => update({ name })}
         />
       </SettingsGroup>
       <View style={{ gap: 7 }}>
-        <SettingsLabel>{t("Instruction")}</SettingsLabel>
+        <SettingsLabel>{t`Instruction`}</SettingsLabel>
         <GrowingTextInput
-          label={t("Instruction")}
+          label={t`Instruction`}
           value={draft.prompt}
           onChangeText={(prompt) => update({ prompt })}
           backgroundColor={native.groupedCell}
           fontSize={17}
         />
       </View>
-      {locked ? null : (
+      {/* A one-shot's schedule is fixed, but web triggers on it can still be removed. */}
+      {locked && !webTriggers.length ? null : (
         <View style={{ gap: 12 }}>
-          <SettingsLabel>{t("When to run")}</SettingsLabel>
-          {draft.schedules.map((schedule, index) => (
-            <RoutineScheduleEditor
-              // Schedules have no id. The rows keep no state of their own, so a position will do.
-              key={index}
-              value={schedule}
-              onChange={(next) =>
-                update({
-                  schedules: draft.schedules.map((item, at) => (at === index ? next : item)),
-                })
-              }
-              onRemove={() =>
-                update({ schedules: draft.schedules.filter((_, at) => at !== index) })
-              }
-            />
-          ))}
-          <SettingsGroup>
-            {/* A change trigger checks on its own interval, so it never shares a schedule. */}
-            {base?.watch ? null : (
-              <SettingsRow
-                key="add"
-                accessibilityRole="button"
-                tinted
-                title={t("Add schedule")}
-                onPress={() => update({ schedules: [...draft.schedules, defaultCronPreset()] })}
-              />
-            )}
-            {email.address && !draft.emailSenders ? (
-              <SettingsRow
-                key="email"
-                accessibilityRole="button"
-                tinted
-                title={t("Add email trigger")}
-                onPress={() => update({ emailSenders: "owner" })}
-              />
-            ) : null}
-          </SettingsGroup>
+          <SettingsLabel>{t`When to run`}</SettingsLabel>
+          {locked
+            ? null
+            : draft.schedules.map((schedule, index) => (
+                <RoutineScheduleEditor
+                  // Schedules have no id. The rows keep no state of their own, so a position will do.
+                  key={index}
+                  value={schedule}
+                  onChange={(next) =>
+                    update({
+                      schedules: draft.schedules.map((item, at) => (at === index ? next : item)),
+                    })
+                  }
+                  onRemove={() =>
+                    update({ schedules: draft.schedules.filter((_, at) => at !== index) })
+                  }
+                />
+              ))}
+          {webTriggers.length ? (
+            <SettingsGroup>
+              {webTriggers.map((trigger) => (
+                <MenuPickerMenu
+                  key={trigger.key}
+                  label={trigger.label}
+                  value=""
+                  choices={[
+                    {
+                      key: "remove",
+                      label: t`Remove ${ph({ name: trigger.label })}`,
+                      destructive: true,
+                    },
+                  ]}
+                  onChange={() =>
+                    update(
+                      trigger.key === "webhookEnabled" || trigger.key === "githubEnabled"
+                        ? { [trigger.key]: false }
+                        : { [trigger.key]: null },
+                    )
+                  }
+                >
+                  <SettingsRow
+                    title={trigger.label}
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel={trigger.label}
+                  />
+                </MenuPickerMenu>
+              ))}
+            </SettingsGroup>
+          ) : null}
+          {locked ? null : (
+            <SettingsGroup>
+              {/* A change trigger checks on its own interval, so it never shares a schedule. */}
+              {kept?.watch ? null : (
+                <SettingsRow
+                  key="add"
+                  accessibilityRole="button"
+                  tinted
+                  title={t`Add schedule`}
+                  onPress={() => update({ schedules: [...draft.schedules, defaultCronPreset()] })}
+                />
+              )}
+              {email.address && !draft.emailSenders ? (
+                <SettingsRow
+                  key="email"
+                  accessibilityRole="button"
+                  tinted
+                  title={t`Add email trigger`}
+                  onPress={() => update({ emailSenders: "owner" })}
+                />
+              ) : null}
+            </SettingsGroup>
+          )}
         </View>
       )}
       {draft.emailSenders ? (
@@ -515,7 +558,7 @@ function RoutineEditor({
             key="delete"
             accessibilityRole="button"
             destructive
-            title={t("Delete routine")}
+            title={t`Delete routine`}
             onPress={confirmDelete}
           />
         </SettingsGroup>

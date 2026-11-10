@@ -17,11 +17,16 @@ import type {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
+import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import { isSandboxGoneError } from "./sandbox-errors.js";
+import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
@@ -101,7 +106,13 @@ export function remoteDesktopCreateOptions(botId: string, apiKey: string) {
 }
 
 // How the SDKs report a sandbox that is not running. Sandboxes pause on timeout, so this usually
-// means paused rather than deleted; only a failed resume proves the sandbox is gone.
+// means paused rather than deleted; only a failed resume proves the sandbox is gone. Newer SDKs
+// name the error instead, including one for a sandbox they could not reach to check.
+const SANDBOX_NOT_RUNNING_NAMES = new Set([
+  "SandboxNotFoundError",
+  "SandboxNotRunningError",
+  "SandboxUnreachableError",
+]);
 const SANDBOX_NOT_RUNNING =
   /likely due to sandbox timeout|killed or reached its end of life|probably not running anymore/i;
 
@@ -111,7 +122,7 @@ const COMMAND_DEADLINE = /^deadline_exceeded|exceeding 'timeoutMs'/;
 function isSandboxNotRunning(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error.name === "SandboxNotFoundError" || SANDBOX_NOT_RUNNING.test(error.message))
+    (SANDBOX_NOT_RUNNING_NAMES.has(error.name) || SANDBOX_NOT_RUNNING.test(error.message))
   );
 }
 
@@ -333,7 +344,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   ): AsyncIterable<ProcessEvent> {
     const request = onBotScreen(requested, context, DISPLAY_START);
     const result = await this.run(computer, sandboxCommandArgv(request).map(shellQuote).join(" "), {
-      cwd: remoteCwd(request.cwd),
+      cwd: workspaceCwd(REMOTE_WORKSPACE, request.cwd, ["/home/user"]),
       envs: request.env,
       signal: context.signal,
       timeoutMs: boundedSandboxCommandTimeoutMs(request.timeoutMs),
@@ -460,27 +471,17 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     await this.desktops.stopBrowsers(computer, context);
-    let batch: PortableFile[] = [];
-    let batchBytes = 0;
-    const flush = async () => {
+    const batcher = new PortableFileBatcher<PortableFile>(32, (file) => file.content.byteLength);
+    const flush = async (batch: PortableFile[]) => {
       if (!batch.length) return;
-      const files = batch;
-      await this.use(computer, (desktop) => writeRemoteFiles(desktop, files, context));
-      batch = [];
-      batchBytes = 0;
+      await this.use(computer, (desktop) => writeRemoteFiles(desktop, batch, context));
     };
     for await (const file of files) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (
-        batch.length >= 32 ||
-        batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES
-      ) {
-        await flush();
-      }
-      batch.push(file);
-      batchBytes += file.content.byteLength;
+      const full = batcher.add(file);
+      if (full) await flush(full);
     }
-    await flush();
+    await flush(batcher.take());
     // Imported browser profiles remain dormant until their owning bot needs a desktop.
   }
 
@@ -700,25 +701,6 @@ async function* walkRemoteWorkspace(
   for (const relative of directories) yield* walkRemoteWorkspace(desktop, relative, context);
 }
 
-function remoteCwd(cwd: string | undefined): string {
-  if (
-    !cwd ||
-    cwd === "." ||
-    cwd === "/" ||
-    cwd === "/home/rakazo" ||
-    cwd === "/home/user" ||
-    cwd === REMOTE_WORKSPACE
-  ) {
-    return REMOTE_WORKSPACE;
-  }
-  const relative = cwd.startsWith(`${REMOTE_WORKSPACE}/`)
-    ? cwd.slice(REMOTE_WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return workspacePath(REMOTE_WORKSPACE, relative);
-}
-
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
@@ -733,7 +715,5 @@ function isBeingKilled(error: unknown): boolean {
 
 /** Named so isSandboxGoneError lets callers replace the sandbox. */
 function sandboxGoneError(label: string, id: string, cause: unknown): Error {
-  return Object.assign(new Error(`${label} sandbox ${id} is being deleted`, { cause }), {
-    name: "SandboxNotFoundError",
-  });
+  return sandboxNotFoundError(`${label} sandbox ${id} is being deleted`, { cause });
 }
