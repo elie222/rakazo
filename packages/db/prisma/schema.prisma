@@ -86,6 +86,7 @@ model User {
   pushToken                   PushToken?
   callPushDevices             CallPushDevice[]
   workActivityTokens          WorkActivityToken[]
+  workActivityStartTokens     WorkActivityStartToken[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -177,6 +178,23 @@ model WorkActivityToken {
   @@index([userId])
   @@index([sessionId])
   @@map("work_activity_tokens")
+}
+
+/// A phone the server may start a live status card on when the user's bots get to work elsewhere.
+model WorkActivityStartToken {
+  tokenDigest String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the phone; it starts no cards once that session ends. No FK, as for push tokens.
+  sessionId String
+  ciphertext String
+  /// The last card started on this phone, so each stretch of work starts at most one.
+  startedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("work_activity_start_tokens")
 }
 
 model EmailSend {

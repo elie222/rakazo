@@ -67,7 +67,7 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 export interface RouterDeps {
   pushTokens: PushTokenStore;
   /** Absent when the deployment cannot update a phone's live status card. */
-  workActivities?: Pick<WorkActivities, "register">;
+  workActivities?: Pick<WorkActivities, "register" | "registerStarts">;
   /** Stops a call's ring on the owner's other devices once it is settled. */
   notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
