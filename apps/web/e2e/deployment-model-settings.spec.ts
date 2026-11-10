@@ -27,10 +27,11 @@ test("an admin adds a provider for everyone without their own", async ({ page },
   if (!environmentDefault || !addedModel)
     throw new Error("The catalog lists too few key providers");
   const providerName = (entry: ModelCatalogEntry) => entry.providerName ?? entry.provider;
-  const connection = (models: ModelCatalogEntry[], saved: boolean) => ({
+  const connection = (models: ModelCatalogEntry[], saved: boolean, open: boolean) => ({
     provider: models[0]!.provider,
     name: providerName(models[0]!),
     saved,
+    open,
     models: models.map((model) => ({ id: model.id, label: model.label })),
   });
   let settings: DeploymentModelSettings = {
@@ -38,7 +39,7 @@ test("an admin adds a provider for everyone without their own", async ({ page },
     effectiveDefault: { provider: environmentDefault.provider, modelId: environmentDefault.id },
     allowedModels: null,
     effectiveAllowedModels: [`${environmentDefault.provider}:*`],
-    connections: [connection(environment, false)],
+    connections: [connection(environment, false, true)],
     providers: [...keyed.values()].map(([entry]) => ({
       id: entry!.provider,
       name: providerName(entry!),
@@ -53,16 +54,23 @@ test("an admin adds a provider for everyone without their own", async ({ page },
   );
   await page.route(/\/rpc\/models\/deployment\/connect(\?|$)/, (route) => {
     connects.push((route.request().postDataJSON() as { json?: unknown }).json);
-    settings = { ...settings, connections: [...settings.connections, connection(added, true)] };
+    settings = {
+      ...settings,
+      connections: [...settings.connections, connection(added, true, false)],
+    };
     return route.fulfill({ json: { json: settings } });
   });
   await page.route(/\/rpc\/models\/deployment\/update(\?|$)/, (route) => {
-    const update = (route.request().postDataJSON() as { json: { allowedModels: string[] } }).json;
+    // The server edits the list; the switch only says which connection opens or closes.
+    const update = (
+      route.request().postDataJSON() as { json: { open: { provider: string; open: boolean } } }
+    ).json;
     updates.push(update);
     settings = {
       ...settings,
-      allowedModels: update.allowedModels,
-      effectiveAllowedModels: update.allowedModels,
+      connections: settings.connections.map((entry) =>
+        entry.provider === update.open.provider ? { ...entry, open: update.open.open } : entry,
+      ),
     };
     return route.fulfill({ json: { json: settings } });
   });
@@ -96,9 +104,7 @@ test("an admin adds a provider for everyone without their own", async ({ page },
   expect(connects).toEqual([
     { provider: addedModel.provider, apiKey: "test-deployment-model-key" },
   ]);
-  expect(updates).toEqual([
-    { allowedModels: [`${environmentDefault.provider}:*`, `${addedModel.provider}:*`] },
-  ]);
+  expect(updates).toEqual([{ open: { provider: addedModel.provider, open: true } }]);
   await members.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "deployment-model-settings");
 });
