@@ -14,6 +14,8 @@ import {
   groupUsageModels,
   isFailedUsageRecord,
   last7DaysUsage,
+  localDayModelRows,
+  localDayTotals,
   usageDetailRecords,
   usageRangeTotals,
   usageRecordTokens,
@@ -27,7 +29,6 @@ export default function UsageDetail() {
   const { t, locale } = useI18n();
   const styles = useThemedStyles(createUsageStyles);
   const [range, setRange] = useState<UsageRange>("today");
-  const [todaySummary, setTodaySummary] = useState<UsageSummary | null>(null);
   const [totalSummary, setTotalSummary] = useState<UsageSummary | null>(null);
   const [records, setRecords] = useState<UsageRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,12 +38,7 @@ export default function UsageDetail() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const [today, total, list] = await Promise.all([
-        rpc("usage/summary", { days: 1 }),
-        rpc("usage/summary"),
-        rpc("usage/list"),
-      ]);
-      setTodaySummary(today);
+      const [total, list] = await Promise.all([rpc("usage/summary"), rpc("usage/list")]);
       setTotalSummary(total);
       setRecords(list);
     } catch (err) {
@@ -61,22 +57,31 @@ export default function UsageDetail() {
   const count = useMemo(() => new Intl.NumberFormat(dateLocaleForUi(locale)), [locale]);
   const tokens = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
   const today = useMemo(() => new Date(), []);
-  const todayTotals = usageRangeTotals(todaySummary);
+  // "Today" is the local calendar day, summed from the records themselves —
+  // not the rolling 24h window — so it lines up with the detail list.
+  const todayTotals = useMemo(() => localDayTotals(records, today), [records, today]);
+  const todayModels = useMemo(() => localDayModelRows(records, today), [records, today]);
+  const todayRecords = useMemo(() => usageDetailRecords(records, true, today), [records, today]);
   const totalTotals = usageRangeTotals(totalSummary);
-  const activeSummary = range === "today" ? todaySummary : totalSummary;
   const activeTotals = range === "today" ? todayTotals : totalTotals;
+  const activeModels = range === "today" ? todayModels : totalSummary?.models;
   const botNameById = useMemo(
     () => new Map((totalSummary?.bots ?? []).map((bot) => [bot.botId, bot.botName])),
     [totalSummary],
   );
   const trend = useMemo(
-    () => last7DaysUsage(totalSummary?.daily, today, t("Today")),
-    [totalSummary, today, t],
+    () => last7DaysUsage(totalSummary?.daily, today, t("Today"), records),
+    [totalSummary, today, t, records],
   );
   const trendMax = Math.max(1, ...trend.map((day) => day.tokens));
   const models = useMemo(
-    () => groupUsageModels(activeSummary?.models, records, activeTotals.totalTokens),
-    [activeSummary, records, activeTotals.totalTokens],
+    () =>
+      groupUsageModels(
+        activeModels,
+        range === "today" ? todayRecords : records,
+        activeTotals.totalTokens,
+      ),
+    [activeModels, todayRecords, records, activeTotals.totalTokens, range],
   );
   const detailRecords = useMemo(
     () => usageDetailRecords(records, range === "today", today),
