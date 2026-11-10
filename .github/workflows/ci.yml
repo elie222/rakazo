@@ -132,6 +132,11 @@ jobs:
       - name: Host operations safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
+      - name: Backup and restore self-tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: |
+          bash scripts/backup.test.sh
+          bash scripts/restore.test.sh
       - name: Preview startup tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/preview/start.test.py
