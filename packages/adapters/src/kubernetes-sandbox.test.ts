@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
@@ -157,6 +158,39 @@ describe("KubernetesSandboxProvider", () => {
     );
     await assertSandboxWorkspaceContract(provider, provisioned, context);
     await provider.destroy(provisioned, context);
+  });
+
+  describe("when the exec connection is refused", () => {
+    class SocketErrorEvent {
+      readonly #status: number;
+      constructor(status: number) {
+        this.#status = status;
+      }
+      get error() {
+        return new Error(`Unexpected server response: ${this.#status}`);
+      }
+    }
+
+    it("keeps the reason", async () => {
+      expect(JSON.stringify(new SocketErrorEvent(503))).toBe("{}");
+      const failure = await providerFor({}, vi.fn().mockRejectedValue(new SocketErrorEvent(503)))
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ message: "Unexpected server response: 503" });
+      expect(isSandboxGoneError(failure)).toBe(false);
+    });
+
+    it("reports a missing pod as a computer that is gone", async () => {
+      const failure = await providerFor({}, vi.fn().mockRejectedValue(new SocketErrorEvent(404)))
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(isSandboxGoneError(failure)).toBe(true);
+      expect((failure as Error).cause).toMatchObject({
+        message: "Unexpected server response: 404",
+      });
+    });
   });
 
   it("validates the immutable computer image without package installation", async () => {

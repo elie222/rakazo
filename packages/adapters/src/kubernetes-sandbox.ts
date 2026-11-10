@@ -633,15 +633,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
           ),
         );
         await Promise.race([
-          connecting.then((connected) => {
-            socket = connected;
-            if (done) {
-              connected.close();
-              return;
-            }
-            connected.onclose = () => finish(1);
-            connected.onerror = (event) => fail(event.error ?? new Error("Kubernetes exec failed"));
-          }, fail),
+          connecting.then(
+            (connected) => {
+              socket = connected;
+              if (done) {
+                connected.close();
+                return;
+              }
+              connected.onclose = () => finish(1);
+              connected.onerror = (event) => fail(execSocketError(event));
+            },
+            (event) => fail(execSocketError(event)),
+          ),
           completed,
         ]);
       }
@@ -659,6 +662,17 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       stderr?.destroy();
     }
   }
+}
+
+/** A socket reports failure with an event whose fields are not enumerable, so it logs as `{}`. */
+function execSocketError(event: unknown): unknown {
+  const { error, message } = event as { error?: unknown; message?: string };
+  const reason =
+    event instanceof Error ? event : (error ?? new Error(message || "Kubernetes exec failed"));
+  // The handshake is refused with a 404 when the pod is gone, as it is once a computer has stopped.
+  return reason instanceof Error && /Unexpected server response: 404\b/.test(reason.message)
+    ? sandboxNotFoundError("Kubernetes pod not found", { cause: reason })
+    : reason;
 }
 
 let kubernetesModule: Promise<typeof KubernetesClient> | undefined;
