@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
@@ -9,6 +10,7 @@ import {
   inferAttachmentMimeType,
   normalizeVoiceTranscript,
   promptTextForAttachments,
+  toolStepsHistoryText,
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
@@ -447,5 +449,92 @@ describe("artifactTypeLabel", () => {
 
   it("falls back to the subtype for a type without a known extension", () => {
     expect(artifactTypeLabel("application/x-custom")).toBe("X-CUST");
+  });
+});
+
+describe("tool step history", () => {
+  it("lists each step with its count and the note written before it", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "steps",
+          steps: [
+            { label: "Searched the web", count: 2 },
+            { label: "Shell", count: 1, note: "Installing\n\nthe extension." },
+          ],
+        },
+        { kind: "text", text: "Installed." },
+      ]),
+    ).toBe(
+      "[tool calls this reply made]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
+    );
+  });
+
+  it("lists at most 40 steps", () => {
+    const steps = Array.from({ length: 45 }, (_, index) => ({ label: `Tool ${index}`, count: 1 }));
+    const text = blocksToAgentHistoryText([{ kind: "steps", steps }]);
+    expect(text).toContain("- Tool 39\n- …and 5 more");
+    expect(text).not.toContain("Tool 40");
+  });
+
+  it("skips malformed imported steps instead of throwing", () => {
+    const blocks = [
+      { kind: "steps", steps: "nope" },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, note: 42 }, { count: 1 }] },
+    ] as unknown as MessageBlock[];
+    expect(blocksToAgentHistoryText(blocks)).toBe("[tool calls this reply made]\n- Shell");
+  });
+
+  it("keeps full notes and every step when asked", () => {
+    const steps = Array.from({ length: 45 }, (_, index) => ({
+      label: `Tool ${index}`,
+      count: 1,
+      note: index === 44 ? `${"a".repeat(400)} needle` : undefined,
+    }));
+    const text = toolStepsHistoryText(steps, { full: true });
+    expect(text).toContain("Tool 44");
+    expect(text).toContain("needle");
+    expect(text).not.toContain("more");
+  });
+
+  it("shortens an oversized imported label in the replayed list only", () => {
+    const steps = [{ label: "x".repeat(5_000), count: 1 }];
+    expect(toolStepsHistoryText(steps)).toBe(`[tool calls this reply made]\n- ${"x".repeat(80)}…`);
+    expect(toolStepsHistoryText(steps, { full: true })).toContain("x".repeat(5_000));
+  });
+
+  it("shortens a long note", () => {
+    const text = blocksToAgentHistoryText([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
+    ]);
+    expect(text).toBe(`[tool calls this reply made]\n- Shell: ${"a".repeat(300)}…`);
+  });
+
+  it("says how each step's calls ended, and leaves steps without outcomes as they were", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "steps",
+          steps: [
+            { label: "Shell", count: 2, outcomes: { succeeded: 2 }, note: "Installing it." },
+            { label: "Computer", count: 3, outcomes: { succeeded: 1, failed: 1, stopped: 1 } },
+            { label: "Read file", count: 2, outcomes: { failed: 1 } },
+            { label: "Web search", count: 1 },
+          ],
+        },
+      ]),
+    ).toBe(
+      [
+        "[tool calls this reply made]",
+        "- Shell ×2 (succeeded): Installing it.",
+        "- Computer ×3 (1 succeeded, 1 failed, 1 stopped)",
+        "- Read file ×2 (1 failed)",
+        "- Web search",
+      ].join("\n"),
+    );
+  });
+
+  it("renders nothing for an empty steps block", () => {
+    expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
   });
 });

@@ -12,8 +12,7 @@ import {
 } from "./user-device-gateway.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 class Socket extends EventEmitter implements UserDeviceSocket {
   sent: Array<{ type: string; id?: string }> = [];

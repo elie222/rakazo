@@ -15,6 +15,7 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
   MODEL_REQUIRED_SEND_ERROR,
@@ -886,6 +887,56 @@ export async function sendThreadMessage(
         replyQuote,
         clientNonce: input.clientNonce,
       });
+      // A bare "stop" while any member, or a helper it started, works is the Stop button,
+      // as in a bot's own chat.
+      const working =
+        !routineRuns.length && isStopMessage(input)
+          ? await tx.run.findFirst({
+              where: {
+                OR: [
+                  { threadId: target.threadId, botId: { in: memberBotIds } },
+                  {
+                    trigger: BACKGROUND_HELPER_TRIGGER,
+                    sourceMessage: { threadId: target.threadId },
+                  },
+                ],
+                status: { in: [...ACTIVE_RUN_STATUSES] },
+              },
+              select: { id: true, taskId: true, botId: true, status: true, userId: true },
+            })
+          : null;
+      if (working) {
+        await touchGroupUpdatedAt(tx, target.groupId);
+        const event = await appendEventInTransaction(tx, {
+          spaceId: actor.spaceId,
+          threadId: target.threadId,
+          botId: working.botId,
+          type: "thread.message.created",
+          payload: {
+            messageId: message.id,
+            seq: message.seq,
+            role: "user",
+            blocks,
+            author,
+            callId,
+            // The stopped run is the receipt a retry of this send replays.
+            runIds: [working.id],
+            replyToMessageId,
+            replyQuote,
+            replyPreview,
+          },
+        });
+        // Steering is cleared for the members locked above, not the earlier snapshot.
+        const stop = await cancelThreadRuns(
+          actor,
+          { ...target, memberBotIds },
+          { botId: working.botId },
+        )(tx);
+        return { message, runs: [working], routineRuns, eventSeq: event.seq, stop };
+      }
+      if (input.noModel) {
+        throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+      }
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;

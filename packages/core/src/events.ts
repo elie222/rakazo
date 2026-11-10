@@ -383,7 +383,40 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
-export type ToolStep = { label: string; count: number; note?: string };
+export type ToolStepOutcome = "succeeded" | "failed" | "stopped";
+export type ToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number];
+
+/**
+ * Records how each call ended on the step it shows as. `calls` lists every step a call made, in
+ * call order (a connector call can make several). If they stop lining up with the steps, the
+ * steps are returned as they were rather than credited to the wrong step.
+ */
+export function withToolStepOutcomes(
+  segments: readonly MessageBlock[],
+  calls: readonly { label: string; outcome: ToolStepOutcome | undefined }[],
+): MessageBlock[] {
+  let next = 0;
+  const annotated: MessageBlock[] = [];
+  for (const block of segments) {
+    if (block.kind !== "steps") {
+      annotated.push(block);
+      continue;
+    }
+    const steps: ToolStep[] = [];
+    for (const step of block.steps) {
+      const outcomes: NonNullable<ToolStep["outcomes"]> = {};
+      for (let index = 0; index < step.count; index += 1) {
+        const call = calls[next++];
+        if (call?.label !== step.label) return [...segments];
+        if (call.outcome) outcomes[call.outcome] = (outcomes[call.outcome] ?? 0) + 1;
+      }
+      const { outcomes: _previous, ...rest } = step;
+      steps.push(Object.keys(outcomes).length > 0 ? { ...rest, outcomes } : rest);
+    }
+    annotated.push({ ...block, steps });
+  }
+  return annotated;
+}
 
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
   const label = humanizeToolName(toolName);

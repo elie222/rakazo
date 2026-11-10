@@ -5,8 +5,7 @@ import { issueMessagingLinkCode, provisionMessagingIdentity } from "./messaging.
 import { asSystem, runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   const provider = "sendblue";

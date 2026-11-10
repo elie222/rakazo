@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { IncomingBotCall, SpaceBot, SpaceNavigation } from "@rakazo/contracts";
 import type { ringingCall } from "@rakazo/core";
 import {
@@ -15,7 +16,6 @@ import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
 import { subscribeIncomingCallEvents } from "./api-live";
 import { endCall, getSnapshot, startCall, subscribe as subscribeCall } from "./call-session";
-import { t } from "./i18n";
 import { registerCallPushToken } from "./push";
 import { serverHeaders } from "./server-headers";
 import { currentSessionGeneration, loadSessionToken, registerSessionDiskCache } from "./session";
@@ -282,11 +282,11 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       // The session changed mid-answer: rpc drops the hang-up below locally, because its
       // context belongs to the old generation, so the server keeps the call answered.
       if (generation !== currentSessionGeneration())
-        throw new Error(t("Something went wrong. Try again."));
+        throw new Error(t`Something went wrong. Try again.`);
       const voice = await rpc("voice/status", {}, { requestContext: context });
       if (generation !== currentSessionGeneration())
-        throw new Error(t("Something went wrong. Try again."));
-      if (nativeEnded.has(target.callId)) throw new Error(t("This call is no longer ringing."));
+        throw new Error(t`Something went wrong. Try again.`);
+      if (nativeEnded.has(target.callId)) throw new Error(t`This call is no longer ringing.`);
       // Answering during a call replaces it, like a phone's end-and-accept.
       if (getSnapshot()) endCall();
       activeNativeCall = target.callId;
@@ -443,10 +443,10 @@ export function startIncomingCalls() {
   void Notifications.setNotificationCategoryAsync?.("incoming-call", [
     {
       identifier: "decline",
-      buttonTitle: t("Decline"),
+      buttonTitle: t`Decline`,
       options: { opensAppToForeground: true, isDestructive: true },
     },
-    { identifier: "answer", buttonTitle: t("Answer"), options: { opensAppToForeground: true } },
+    { identifier: "answer", buttonTitle: t`Answer`, options: { opensAppToForeground: true } },
   ]).catch(() => undefined);
   const refresh = () => {
     const generation = currentSessionGeneration();

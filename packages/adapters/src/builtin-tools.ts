@@ -11,6 +11,7 @@ import {
   FLEET_TOOL_NAMES,
   GenerateSecretInput,
   HISTORY_QUERIES_MAX_BYTES,
+  HISTORY_SEARCH_KINDS,
   LOGIN_FIELD_LIMIT,
   PAID_REQUEST_METHODS,
   PURCHASE_CARD_FIELDS,
@@ -986,7 +987,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "search_history",
     description:
-      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. Provide exactly one of query or queries. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
+      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -995,10 +996,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           minLength: 1,
           maxLength: 500,
           description:
-            "Single keyword search. Provide query or queries, never both; one is required.",
+            "Single keyword search. Provide query or queries, never both; one is required unless kinds is set.",
         },
         queries: {
-          description: `Keyword variants instead of query. Provide query or queries, never both; one is required. Combined normalized JSON must fit within ${HISTORY_QUERIES_MAX_BYTES} UTF-8 bytes.`,
+          description: `Keyword variants instead of query. Provide query or queries, never both; one is required unless kinds is set. Combined normalized JSON must fit within ${HISTORY_QUERIES_MAX_BYTES} UTF-8 bytes.`,
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 500 },
           minItems: 1,
@@ -1008,11 +1009,14 @@ export const builtinAgentTools: ConnectorTool[] = [
         botId: { type: "string" },
         kinds: {
           description:
-            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, or bot text replies.",
+            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, bot text replies, or replies that used tools (tool_work). Without query, lists the newest of them.",
           type: "array",
-          items: { type: "string", enum: ["bot_messages", "user_messages", "bot_replies"] },
+          items: {
+            type: "string",
+            enum: [...HISTORY_SEARCH_KINDS],
+          },
           minItems: 1,
-          maxItems: 3,
+          maxItems: HISTORY_SEARCH_KINDS.length,
         },
         offset: {
           type: "integer",
@@ -1041,6 +1045,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "object",
           properties: { queries: { type: "array", items: { type: "string" } } },
           required: ["queries"],
+        },
+        {
+          type: "object",
+          properties: { kinds: { type: "array" }, query: false, queries: false },
+          required: ["kinds"],
         },
       ],
     },

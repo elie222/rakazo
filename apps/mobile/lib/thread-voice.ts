@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { memberName, resolvePersonaColorDef } from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
@@ -15,7 +17,6 @@ import {
 import { loadCallGreetingEnabled } from "./call-sounds";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
-import { useI18n } from "./i18n";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 import { blockText } from "./mobile-types";
 import { currentSessionGeneration } from "./session";
@@ -128,7 +129,7 @@ export function useSpeakMessages({
   displayName?: string;
   mentionBots: MobileBot[];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   return useCallback(
     (message: MobileMessage) => {
@@ -157,14 +158,12 @@ export function useSpeakMessages({
       void speakQueue(items)
         .then((spoken) => {
           if (!spoken)
-            Alert.alert(t("Could not speak"), t("Add a voice provider in Voice settings."), [
-              { text: t("Cancel"), style: "cancel" },
-              { text: t("Open Voice"), onPress: () => router.push("/voice") },
+            Alert.alert(t`Could not speak`, t`Add a voice provider in Voice settings.`, [
+              { text: t`Cancel`, style: "cancel" },
+              { text: t`Open Voice`, onPress: () => router.push("/voice") },
             ]);
         })
-        .catch((err: unknown) =>
-          Alert.alert(t("Could not speak"), errorText(err, t("Try again."))),
-        );
+        .catch((err: unknown) => Alert.alert(t`Could not speak`, errorText(err, t`Try again.`)));
     },
     [botId, displayName, mentionBots, members, visibleMessages],
   );
@@ -188,7 +187,7 @@ export function useThreadVoiceCall({
   /** The bot whose chat is open now. */
   activeBotId: RefObject<string | undefined>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const voiceCallStarting = useRef(false);
 
@@ -196,12 +195,12 @@ export function useThreadVoiceCall({
   function callGreeting(botName: string, callerName: string | undefined, switchedHere: boolean) {
     if (switchedHere) {
       return callerName
-        ? t("{bot} here. Hi {name}.", { bot: botName, name: callerName })
-        : t("{bot} here.", { bot: botName });
+        ? t`${ph({ bot: botName })} here. Hi ${ph({ name: callerName })}.`
+        : t`${ph({ bot: botName })} here.`;
     }
     return callerName
-      ? t("Hello {name}, {bot} here.", { name: callerName, bot: botName })
-      : t("Hello, {bot} here.", { bot: botName });
+      ? t`Hello ${ph({ name: callerName })}, ${ph({ bot: botName })} here.`
+      : t`Hello, ${ph({ bot: botName })} here.`;
   }
 
   /**
@@ -232,16 +231,16 @@ export function useThreadVoiceCall({
       }
       if (plan.kind === "dictation") {
         Alert.alert(
-          t("Calls need transcription"),
-          t("Allow speech recognition in Settings, or connect a voice provider that transcribes."),
+          t`Calls need transcription`,
+          t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
           [
-            { text: t("Not now"), style: "cancel" },
-            { text: t("Open Voice"), onPress: () => router.push("/voice") },
+            { text: t`Not now`, style: "cancel" },
+            { text: t`Open Voice`, onPress: () => router.push("/voice") },
           ],
         );
         return;
       }
-      const botName = displayName ?? t("Bot");
+      const botName = displayName ?? t`Bot`;
       // The call keeps the Space it starts in: an organization or Space switch mid-call must
       // not move its turns, speech or hang-up to another Space.
       const requestContext: ApiRequestContext = await captureApiRequestContext();

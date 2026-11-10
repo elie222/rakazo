@@ -12,7 +12,7 @@ on:
       ios_build_id:
         description: Retry App Review for an already uploaded EAS iOS build; skips all builds and uploads
         required: false
-        default: ''
+        default: ""
         type: string
 
 permissions:

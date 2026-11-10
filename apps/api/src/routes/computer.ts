@@ -633,6 +633,10 @@ export function computerRoutes(ctx: RouterContext) {
             if (error instanceof Error && error.message.startsWith("agent home file exceeds ")) {
               throw new ORPCError("BAD_REQUEST", { message: "file is too large to preview" });
             }
+            // The file browser can ask for a file deleted since it last listed.
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+              throw new ORPCError("NOT_FOUND", { message: "file not found" });
+            }
             throw error;
           }
         }

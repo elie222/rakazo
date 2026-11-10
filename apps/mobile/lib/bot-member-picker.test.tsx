@@ -71,12 +71,6 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values: Record<string, string | number> = {}) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
-  }),
-}));
 vi.mock("../components/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-action-button", () => ({

@@ -179,16 +179,6 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => color }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values: Record<string, string | number> = {}) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
-  return {
-    t,
-    useI18n: () => ({ t, locale: "en" }),
-    getActiveUiLocale: () => "en",
-    dateLocaleForUi: () => "en-US",
-  };
-});
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof RoutineHelpers>()),
   deviceTimeZone: () => "Europe/Berlin",

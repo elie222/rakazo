@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { replyAttachment } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
@@ -7,7 +9,6 @@ import Animated, { interpolate, useAnimatedStyle, useSharedValue } from "react-n
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { useI18n } from "../../lib/i18n";
 import type { MobileMessage } from "../../lib/mobile-types";
 import type { PendingAttachment } from "../../lib/thread-attachments";
 import type { ThreadColumnPadding } from "../../lib/thread-edges";
@@ -53,7 +54,7 @@ export function ThreadComposerDock({
   children: ReactNode;
 }) {
   const tokens = mobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const insets = useSafeAreaInsets();
   // Frame by frame, including a swipe that drags the keyboard down.
   const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
@@ -196,7 +197,7 @@ export function ThreadComposerDock({
                     {attachment.name}
                   </Text>
                   <Pressable
-                    accessibilityLabel={t("Remove {name}", { name: attachment.name })}
+                    accessibilityLabel={t`Remove ${ph({ name: attachment.name })}`}
                     onPress={() => onRemoveAttachment(attachment.id)}
                   >
                     <NativeSymbol
