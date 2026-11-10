@@ -4,7 +4,8 @@ import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import { runAsSystemInTransaction } from "./row-security.js";
 
-/** Journal deltas include outstanding holds and survive deleting bots or organizations. */
+/** Attributed credit deltas include holds and survive deletion. Legacy baselines cannot
+ * distinguish hosted spend from personal-key usage, so they cannot be assigned to a user. */
 async function committedModelCredits(tx: Prisma.TransactionClient, userId: string) {
   const [row] = await tx.$queryRaw<{ micros: bigint }[]>`
     SELECT COALESCE(-SUM("amountMicros"), 0)::bigint AS micros

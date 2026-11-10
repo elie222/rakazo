@@ -64,12 +64,18 @@ node dist/cli/model-credit-cap.js status customer@example.test
 node dist/cli/model-credit-cap.js clear customer@example.test
 ```
 
-The amount is a **total USD ceiling**, not an additional allowance. It counts recorded model
+The amount is a **total recorded USD ceiling**, not an additional allowance. It counts model
 spend and outstanding reservations across all their organizations, bots and runs. For example,
 a person who has used $1.50 has $0.50 left under a $2 cap. Set zero to stop new hosted model
 calls. Setting or clearing a cap is audited; it does not reactivate an account, change its
 balance, cancel renewal, or refund a payment. Reactivate a deactivated person separately after
 setting their cap.
+
+Only hosted charges recorded with per-user attribution in the credit journal count. Earlier
+baseline records do not reliably identify whose hosted credits were spent; usage baselines
+also include personal-key activity. Those records are excluded rather than guessed. This is
+not a complete lifetime-spend total for people who used credits before per-user journaling.
+The operator command reports this boundary alongside the allowance.
 
 The cap has no automatic reset or expiry, and credit purchases cannot lift it. At the limit,
 new hosted calls fail with “Usage limit reached. Contact support to continue.” Sign-in and

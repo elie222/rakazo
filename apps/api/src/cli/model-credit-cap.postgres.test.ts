@@ -31,7 +31,9 @@ dbTests("operator model credit cap command", { timeout: 120_000 }, () => {
       expect((await command("set", email.toUpperCase(), "2.000001")).stdout).toContain(
         "Cap: $2.000001",
       );
-      expect((await command("status", email)).stdout).toContain("Remaining: $2.000001");
+      const status = (await command("status", email)).stdout;
+      expect(status).toContain("Remaining: $2.000001");
+      expect(status).toContain("Usage before per-user credit journaling is excluded.");
       expect(
         (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).deactivatedAt,
       ).toEqual(deactivatedAt);

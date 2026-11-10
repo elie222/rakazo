@@ -41,7 +41,7 @@ try {
         : await setModelCreditCap(prisma, user.id, action === "clear" ? null : capMicros);
     const usd = (micros: bigint) => `$${(Number(micros) / 1_000_000).toFixed(6)}`;
     process.stdout.write(
-      `Cap: ${status.capMicros === null ? "none" : usd(status.capMicros)}\nCommitted (including holds): ${usd(status.committedMicros)}\nRemaining: ${status.remainingMicros === null ? "unlimited by cap" : usd(status.remainingMicros)}\n`,
+      `Cap: ${status.capMicros === null ? "none" : usd(status.capMicros)}\nRecorded committed (including holds): ${usd(status.committedMicros)}\nRemaining: ${status.remainingMicros === null ? "unlimited by cap" : usd(status.remainingMicros)}\nUsage before per-user credit journaling is excluded.\n`,
     );
   });
 } finally {

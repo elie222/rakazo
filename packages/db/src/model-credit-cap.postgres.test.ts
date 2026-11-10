@@ -64,6 +64,30 @@ dbTests("operator model credit caps", () => {
     await expect(reserve(0.000001)).rejects.toThrow(MODEL_CREDIT_CAP_REACHED_ERROR);
   });
 
+  it("excludes ambiguous legacy baselines while enforcing attributed hosted charges", async () => {
+    await prisma.billingAuditEvent.createMany({
+      data: [
+        {
+          source: `baseline:credit:${randomUUID()}`,
+          kind: "baseline",
+          organizationId: organizations[0]!,
+          amountMicros: -10_000_000n,
+          details: { amountMicros: "-10000000", pending: false },
+        },
+        {
+          source: `baseline:usage:${randomUUID()}`,
+          kind: "usage_baseline",
+          userId,
+          details: { costUsd: 20, userId },
+        },
+      ],
+    });
+    await setModelCreditCap(prisma, userId, 2_000_000n);
+    expect((await modelCreditCapStatus(prisma, userId)).committedMicros).toBe(0n);
+    await reserve(2);
+    await expect(reserve(0.01)).rejects.toThrow(MODEL_CREDIT_CAP_REACHED_ERROR);
+  });
+
   it("serializes concurrent reservations for the same user across organizations", async () => {
     await setModelCreditCap(prisma, userId, 2_000_000n);
     const calls = await Promise.allSettled(organizations.map((id) => reserve(1.5, id)));
