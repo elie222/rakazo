@@ -5,8 +5,10 @@ const native = vi.hoisted(() => ({
   refreshWorkActivity: vi.fn(async () => undefined),
   endWorkActivity: vi.fn(async () => undefined),
   token: undefined as undefined | ((event: { token: string }) => void),
-  addListener(_name: string, callback: (event: { token: string }) => void) {
-    native.token = callback;
+  startToken: undefined as undefined | ((event: { token: string }) => void),
+  addListener(name: string, callback: (event: { token: string }) => void) {
+    if (name === "onWorkActivityStartToken") native.startToken = callback;
+    else native.token = callback;
     return { remove() {} };
   },
 }));
@@ -86,6 +88,17 @@ it("ends the card only when the server says nothing would update it", async () =
   expect(native.endWorkActivity).toHaveBeenCalledOnce();
 });
 
+it("hands the phone's token for starting cards to the server", async () => {
+  rpc.mockResolvedValueOnce({ ok: true });
+  native.startToken!({ token: "cd" });
+  await settle();
+  expect(rpc).toHaveBeenCalledWith("notifications/registerWorkActivityStarts", { token: "cd" });
+  // A failed request is asked again on the next open.
+  rpc.mockRejectedValueOnce(new Error("offline"));
+  native.startToken!({ token: "cd" });
+  await settle();
+});
+
 it("asks again on launch and whenever the app opens, and ends the card on sign-out", async () => {
   startWorkActivities();
   expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
@@ -94,9 +107,12 @@ it("asks again on launch and whenever the app opens, and ends the card on sign-o
   app.appState!("active");
   expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
 
+  native.refreshWorkActivity.mockClear();
   app.session!();
   await settle();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
+  // A new sign-in hands both tokens to its session.
+  expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
   app.token = "";
   // A change still landing, or a keychain read that failed, is not a sign-out.
   app.ready = 0;

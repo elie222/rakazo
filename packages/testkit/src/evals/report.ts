@@ -127,14 +127,29 @@ export function summarize(results: readonly TrialResult[]) {
   });
 }
 
+/** Domains reserved for examples (RFC 2606) can only hold fixture data, so they stay readable. */
+const RESERVED_DOMAIN = /(?:^|[.@])example(?:\.(?:com|net|org))?$/i;
+/** Keeps a fixture link's scheme, host and path; its query and fragment could carry anything. */
+function fixtureUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (!RESERVED_DOMAIN.test(parsed.hostname) || parsed.username || parsed.password) return null;
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Report content comes from synthetic fixtures, but model output is still untrusted. */
 export function redact(text: string, secrets: readonly string[] = []): string {
   let safe = text;
   for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length))
     safe = safe.replaceAll(secret, "[redacted]");
   return safe
-    .replace(/(?:https?|postgres(?:ql)?):\/\/[^\s<>"']+/gi, "[url]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
+    .replace(/(?:https?|postgres(?:ql)?):\/\/[^\s<>"']+/gi, (url) => fixtureUrl(url) ?? "[url]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, (email) =>
+      RESERVED_DOMAIN.test(email) ? email : "[email]",
+    )
     .replace(/(?:\/Users\/|\/home\/)[^\s"']+/g, "[local-path]")
     .replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(

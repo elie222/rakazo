@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LoginSecretValue, loginCardFields } from "@rakazo/contracts";
 import { useEffect, useRef, useState } from "react";
@@ -5,7 +7,6 @@ import type { TextInputInstance } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { useSecretSheetClose } from "../lib/secret-sheet-close";
 import type { LoginFieldRow } from "./login-fields-editor";
@@ -38,14 +39,14 @@ export function SecretAskSheet({
   /** `remember` is false when "Save to Vault" was turned off: the login is for this run only. */
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [fields, setFields] = useState<LoginFieldRow[]>(() =>
     loginCardFields(loginFields).map((field, id) => ({ ...field, id })),
   );
-  const labels = loginFields ?? [t("Username"), t("Password")];
+  const labels = loginFields ?? [t`Username`, t`Password`];
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -70,7 +71,7 @@ export function SecretAskSheet({
     try {
       await onSave(answer, remember);
     } catch {
-      setError(t("Could not send answer"));
+      setError(t`Could not send answer`);
     } finally {
       setSubmitting(false);
     }
@@ -98,12 +99,12 @@ export function SecretAskSheet({
         ]}
       >
         <View style={styles.header}>
-          <NativeActionButton label={t("Cancel")} onPress={close} prominence="plain" />
+          <NativeActionButton label={t`Cancel`} onPress={close} prominence="plain" />
           <NativeActionButton
             disabled={incomplete}
             busy={submitting}
             fill={false}
-            label={remember ? t("Save") : t("Continue")}
+            label={remember ? t`Save` : t`Continue`}
             onPress={() => void save()}
             prominence={incomplete ? "plain" : "primary"}
           />
@@ -120,7 +121,7 @@ export function SecretAskSheet({
           <Text style={styles.destination}>{destination}</Text>
           {replacedSite ? (
             <Text style={styles.replaced}>
-              {t("Replaces the login saved for {site}", { site: replacedSite })}
+              {t`Replaces the login saved for ${ph({ site: replacedSite })}`}
             </Text>
           ) : null}
           <LoginFieldsEditor
@@ -133,9 +134,9 @@ export function SecretAskSheet({
             onSubmit={() => void save()}
           />
           <View style={[styles.group, styles.row]}>
-            <Text style={styles.switchLabel}>{t("Save to Vault")}</Text>
+            <Text style={styles.switchLabel}>{t`Save to Vault`}</Text>
             <NativeSwitch
-              accessibilityLabel={t("Save to Vault")}
+              accessibilityLabel={t`Save to Vault`}
               disabled={submitting || closing}
               value={remember}
               onValueChange={setRemember}

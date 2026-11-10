@@ -97,14 +97,27 @@ vi.mock("./native", () => ({
   native: { label: "#000", page: "#fff", secondaryLabel: "#666", tertiaryLabel: "#999" },
   useThemedStyles: (factory: () => object) => factory(),
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string | number>) =>
+vi.mock("@lingui/react/macro", () => {
+  const interpolate = (text: string, values?: Record<string, string | number>) =>
     values
       ? text.replace(/\{(\w+)\}/g, (match, key: string) =>
           key in values ? String(values[key]) : match,
         )
       : text;
-  return { t, useI18n: () => ({ t }) };
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + part + String(values[index] ?? ""), "");
+  return {
+    useLingui: () => ({
+      t,
+      i18n: {
+        _: (descriptor: {
+          id?: string;
+          message?: string;
+          values?: Record<string, string | number>;
+        }) => interpolate(descriptor.message ?? descriptor.id ?? "", descriptor.values),
+      },
+    }),
+  };
 });
 vi.mock("./user-error", () => ({ errorText: () => "error" }));
 

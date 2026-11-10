@@ -1,9 +1,21 @@
-import type { AiRecipient } from "@rakazo/contracts";
-import { AI_DATA_DISCLOSURES, AI_PRIVACY_URL } from "@rakazo/contracts";
+import { ph, t } from "@lingui/core/macro";
+import type { AiDataUse, AiRecipient } from "@rakazo/contracts";
+import { AI_PRIVACY_URL } from "@rakazo/contracts";
 import { Alert, AppState, Linking } from "react-native";
-import { t } from "./i18n";
 
 export const FOREGROUND_FALLBACK_MS = 400;
+
+/** What a provider receives for one use of AI data. */
+export function aiDataDisclosure(use: AiDataUse): string {
+  switch (use) {
+    case "model":
+      return t`Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.`;
+    case "voice":
+      return t`Your recordings are sent for transcription, and text you play is sent to generate speech.`;
+    case "memory":
+      return t`Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context.`;
+  }
+}
 
 export function promptAiConsent(
   recipient: AiRecipient,
@@ -73,18 +85,18 @@ export function promptAiConsent(
       dialogOpen = true;
       let privacyPolicyPressed = false;
       Alert.alert(
-        t("Share data with {name}?", { name: recipient.name }),
+        t`Share data with ${ph({ name: recipient.name })}?`,
         [
           recipient.detail,
-          t(AI_DATA_DISCLOSURES[recipient.use]),
-          t("You can turn this off in Account → AI data sharing."),
+          aiDataDisclosure(recipient.use),
+          t`You can turn this off in Account → AI data sharing.`,
         ]
           .filter(Boolean)
           .join("\n\n"),
         [
-          { text: t("Not now"), style: "cancel", onPress: () => finish(false) },
+          { text: t`Not now`, style: "cancel", onPress: () => finish(false) },
           {
-            text: t("Privacy policy"),
+            text: t`Privacy policy`,
             onPress: () => {
               // The button callback is the deterministic lifecycle point on both platforms.
               // RN only maps onDismiss on Android, and Android consumes a button callback
@@ -114,7 +126,7 @@ export function promptAiConsent(
               );
             },
           },
-          { text: t("Allow"), onPress: () => finish(true) },
+          { text: t`Allow`, onPress: () => finish(true) },
         ],
         {
           cancelable: true,

@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
@@ -13,7 +15,6 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { AvatarRow } from "../lib/avatar-life";
-import { useI18n } from "../lib/i18n";
 import { formatSnoozeWake, formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
 import { botNeedsAttention } from "../lib/inbox-spaces";
@@ -72,13 +73,13 @@ export function ConversationRow({
   accessibilityHint?: string;
 }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { i18n } = useLingui();
   const compact = useContext(CompactRowsContext);
   const openChatId = useContext(SelectedChatContext);
   const selected = chatId !== undefined && openChatId === chatId;
   const rowActions = actions.map((action) => ({
     name: action,
-    label: t(INBOX_ROW_ACTIONS[action].label),
+    label: i18n._(INBOX_ROW_ACTIONS[action].label),
   }));
   return (
     <DragSafePressable
@@ -127,12 +128,12 @@ export function ConversationRow({
 /** The way back to archived chats, at the very end of the list in the section heading style. */
 export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: () => void }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   if (count < 1) return null;
   return (
     <DragSafePressable
       accessibilityRole="button"
-      accessibilityLabel={`${t("Archived")}, ${count}`}
+      accessibilityLabel={`${t`Archived`}, ${count}`}
       onPress={onPress}
       style={({ pressed }) => [
         // Laid out like a section header, so it lines up with them whatever sits above it.
@@ -141,7 +142,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
         pressed && styles.rowPressed,
       ]}
     >
-      <Text style={styles.sectionTitle}>{t("Archived")}</Text>
+      <Text style={styles.sectionTitle}>{t`Archived`}</Text>
       <Text style={styles.sectionCount}>{count}</Text>
       <NativeSymbol
         ios="chevron.right"
@@ -156,12 +157,12 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
 /** One line above the inbox when a question, approval or failure is waiting. */
 export function NeedsYouRow({ count, onPress }: { count: number; onPress: () => void }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   if (count < 1) return null;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${t("Needs you")}, ${count}`}
+      accessibilityLabel={`${t`Needs you`}, ${count}`}
       onPress={onPress}
       style={({ pressed }) => [
         styles.sectionToggle,
@@ -170,7 +171,7 @@ export function NeedsYouRow({ count, onPress }: { count: number; onPress: () => 
       ]}
     >
       <NativeSymbol ios="tray.full" android="mail-unread-outline" size={16} color={native.label} />
-      <Text style={styles.needsYouTitle}>{t("Needs you")}</Text>
+      <Text style={styles.needsYouTitle}>{t`Needs you`}</Text>
       <Text style={styles.sectionCount}>{count}</Text>
       <NativeSymbol
         ios="chevron.right"
@@ -199,12 +200,12 @@ export function SectionToggle({
   onPress: () => void;
 } & Pick<PressableProps, "onLongPress" | "accessibilityActions" | "onAccessibilityAction">) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={
-        collapsed ? t("Expand {name}", { name: title }) : t("Collapse {name}", { name: title })
+        collapsed ? t`Expand ${ph({ name: title })}` : t`Collapse ${ph({ name: title })}`
       }
       accessibilityState={{ expanded: !collapsed }}
       accessibilityValue={count === undefined ? undefined : { text: String(count) }}
@@ -261,7 +262,7 @@ export const PinnedTiles = memo(function PinnedTiles({
   onBotAction: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
   onGroupAction: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 }) {
-  const { t } = useI18n();
+  const { i18n } = useLingui();
   const styles = useThemedStyles(createHomeStyles);
   const selectedId = useContext(SelectedChatContext);
   // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
@@ -288,7 +289,7 @@ export const PinnedTiles = memo(function PinnedTiles({
             accessibilityState={{ selected: selectedId === id }}
             accessibilityActions={actions.map((action) => ({
               name: action,
-              label: t(INBOX_ROW_ACTIONS[action].label),
+              label: i18n._(INBOX_ROW_ACTIONS[action].label),
             }))}
             onAccessibilityAction={(event) => {
               const action = actions.find((item) => item === event.nativeEvent.actionName);
@@ -364,10 +365,10 @@ function chatTime(
   chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
   day: number,
   now: number,
-  t: (text: string) => string,
+  woke: string,
 ) {
   if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
-  if (chatWoke(chat, now)) return t("Woke");
+  if (chatWoke(chat, now)) return woke;
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
 }
 
@@ -449,18 +450,18 @@ export const BotRow = memo(function BotRow({
   onLongPress?: (bot: MobileBot | SpaceBot) => void;
   onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
 } & RowMenuProps) {
-  const { t } = useI18n();
-  const preview = previewSnippet(bot.preview, 40) || t("No messages yet");
-  const time = chatTime(bot, day, now, t);
+  const { t } = useLingui();
+  const preview = previewSnippet(bot.preview, 40) || t`No messages yet`;
+  const time = chatTime(bot, day, now, t`Woke`);
   const working = isRunWorking(bot.status);
   const waiting = useWaitingOnYou(bot);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
-    working ? t("Working…") : null,
-    waiting ? t("Needs attention") : null,
-    bot.notifyOnFinish === false ? t("notifications silenced") : null,
-    bot.unread ? t("unread") : null,
+    working ? t`Working…` : null,
+    waiting ? t`Needs attention` : null,
+    bot.notifyOnFinish === false ? t`notifications silenced` : null,
+    bot.unread ? t`unread` : null,
     time,
     preview,
   ]
@@ -476,7 +477,7 @@ export const BotRow = memo(function BotRow({
       unread={bot.unread || waiting}
       accessibilityLabel={label}
       accessibilityHint={
-        onLongPress || onAction ? t("Long press to pin, move, or silence notifications") : undefined
+        onLongPress || onAction ? t`Long press to pin, move, or silence notifications` : undefined
       }
       onPress={() => onPress(bot)}
       onLongPress={onLongPress ? () => onLongPress(bot) : onAction ? holdForMenu : undefined}
@@ -534,10 +535,10 @@ export const GroupRow = memo(function GroupRow({
   onLongPress?: (group: MobileGroup | SpaceGroup) => void;
   onAction?: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 } & RowMenuProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = chatTime(group, day, now, t);
+  const time = chatTime(group, day, now, t`Woke`);
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow
@@ -546,11 +547,11 @@ export const GroupRow = memo(function GroupRow({
       preview={preview}
       time={time}
       unread={group.unread}
-      accessibilityLabel={[group.name, group.unread ? t("unread") : null, time, preview]
+      accessibilityLabel={[group.name, group.unread ? t`unread` : null, time, preview]
         .filter(Boolean)
         .join(", ")}
       accessibilityHint={
-        onLongPress || onAction ? t("Long press to pin or move to a section") : undefined
+        onLongPress || onAction ? t`Long press to pin or move to a section` : undefined
       }
       onPress={() => onPress(group)}
       onLongPress={onLongPress ? () => onLongPress(group) : onAction ? holdForMenu : undefined}

@@ -178,7 +178,7 @@ profile_browser_pid() {
 # The profile scan above is capped at 0.4s. The spawn poll is those two bounds plus
 # a little shell, so a forward that fails after the scan is still reported.
 open_live_browser_url() {
-  timeout 1.6 python3 - "$@" <<'PY'
+  timeout 1.6 /usr/bin/python3 -I - "$@" <<'PY'
 import json
 import sys
 import time

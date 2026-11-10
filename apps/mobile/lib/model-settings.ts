@@ -1,6 +1,6 @@
+import { t } from "@lingui/core/macro";
 import { router } from "expo-router";
 import { Alert } from "react-native";
-import { t } from "./i18n";
 
 export function openModelSettings(spaceId?: string) {
   router.push(
@@ -9,8 +9,8 @@ export function openModelSettings(spaceId?: string) {
 }
 
 export function askToAddModel(spaceId?: string) {
-  Alert.alert(t("Add an AI model to keep chatting"), undefined, [
-    { text: t("Not Now"), style: "cancel" },
-    { text: t("Add model"), onPress: () => openModelSettings(spaceId), isPreferred: true },
+  Alert.alert(t`Add an AI model to keep chatting`, undefined, [
+    { text: t`Not Now`, style: "cancel" },
+    { text: t`Add model`, onPress: () => openModelSettings(spaceId), isPreferred: true },
   ]);
 }

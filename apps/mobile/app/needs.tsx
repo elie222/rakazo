@@ -1,7 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import type { AttentionItem } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useIsFocused, useRouter } from "expo-router";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,7 +27,6 @@ import {
   attentionTitle,
 } from "../lib/attention";
 import { useForegroundPoll } from "../lib/foreground-poll";
-import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { ATTENTION_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { queryClient, rpcQuery } from "../lib/query";
@@ -34,7 +34,12 @@ import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NeedsYouScreen() {
-  const { t } = useI18n();
+  const { t, i18n } = useLingui();
+  const translate = useCallback(
+    (message: string, values?: Record<string, string | number>) =>
+      i18n._({ id: message, message, values }),
+    [i18n],
+  );
   const router = useRouter();
   const isFocused = useIsFocused();
   const tokens = mobileTokens();
@@ -53,7 +58,7 @@ export default function NeedsYouScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const items = query.data?.items ?? [];
-  const sections = attentionSections(items, t);
+  const sections = attentionSections(items, translate);
 
   // The first poll run would duplicate the fetch useQuery already made on mount; a later
   // focus re-enables the poll and refreshes at once.
@@ -83,7 +88,7 @@ export default function NeedsYouScreen() {
       });
       await queryClient.invalidateQueries({ queryKey: attentionQuery.queryKey });
     } catch (error) {
-      Alert.alert(t("Could not answer this card."), errorText(error, t("Please try again.")));
+      Alert.alert(t`Could not answer this card.`, errorText(error, t`Please try again.`));
     } finally {
       setBusy(null);
     }
@@ -101,7 +106,7 @@ export default function NeedsYouScreen() {
   if (query.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
       </View>
     );
   }
@@ -109,9 +114,9 @@ export default function NeedsYouScreen() {
   if (query.error && !query.data) {
     return (
       <View style={[styles.center, sideInsets]}>
-        <Text style={styles.emptyTitle}>{t("Could not load what needs you.")}</Text>
+        <Text style={styles.emptyTitle}>{t`Could not load what needs you.`}</Text>
         <NativeActionButton
-          label={t("Try again")}
+          label={t`Try again`}
           prominence="secondary"
           onPress={() => void query.refetch()}
         />
@@ -134,7 +139,7 @@ export default function NeedsYouScreen() {
       }
     >
       {query.error ? (
-        <Text style={styles.error}>{errorText(query.error, t("Could not refresh."))}</Text>
+        <Text style={styles.error}>{errorText(query.error, t`Could not refresh.`)}</Text>
       ) : null}
       {!items.length ? (
         <View style={styles.center}>
@@ -144,7 +149,7 @@ export default function NeedsYouScreen() {
             size={30}
             color={tokens.faintForeground}
           />
-          <Text style={styles.emptyTitle}>{t("Nothing needs you")}</Text>
+          <Text style={styles.emptyTitle}>{t`Nothing needs you`}</Text>
         </View>
       ) : (
         sections.map((section) => (
@@ -165,9 +170,9 @@ export default function NeedsYouScreen() {
                         />
                       </View>
                       <View style={styles.cardBody}>
-                        <Text style={styles.title}>{attentionTitle(item, t)}</Text>
+                        <Text style={styles.title}>{attentionTitle(item, translate)}</Text>
                         <Text style={styles.detail} numberOfLines={3}>
-                          {attentionDetail(item, t)}
+                          {attentionDetail(item, translate)}
                         </Text>
                       </View>
                       <Text style={styles.time}>{formatActivityRelativeTime(item.createdAt)}</Text>
@@ -191,7 +196,7 @@ export default function NeedsYouScreen() {
                         />
                       ))}
                       <NativeActionButton
-                        label={t("Open chat")}
+                        label={t`Open chat`}
                         variant="text"
                         prominence="secondary"
                         onPress={() => router.push(attentionHref(item))}

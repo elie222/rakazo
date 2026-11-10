@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { askActionLabel } from "./ask-action-label";
-import { resetI18nForTests, t } from "./i18n";
-
-const fakeT = (message: string, values?: Record<string, string | number>) =>
-  message.replace(/\{site\}/g, () => String(values?.site));
+import { resetI18nForTests } from "./i18n";
 
 describe("askActionLabel", () => {
   afterEach(() => resetI18nForTests());
@@ -14,7 +11,7 @@ describe("askActionLabel", () => {
     ["allow", "cancelled", "Cancel"],
     ["deny", "cancelled", "Cancel"],
   ] as const)("prioritizes %s's %s outcome", (id, outcome, expected) => {
-    expect(askActionLabel({ id, label: "Server label", outcome }, { approval: true }, fakeT)).toBe(
+    expect(askActionLabel({ id, label: "Server label", outcome }, { approval: true })).toBe(
       expected,
     );
   });
@@ -27,15 +24,13 @@ describe("askActionLabel", () => {
     ["deny", undefined, "Deny"],
     ["custom", undefined, "Server label"],
   ])("labels approval action %s with site %s", (id, site, expected) => {
-    expect(askActionLabel({ id, label: "Server label" }, { approval: true, site }, fakeT)).toBe(
-      expected,
-    );
+    expect(askActionLabel({ id, label: "Server label" }, { approval: true, site })).toBe(expected);
   });
 
   it.each(["Allow in this space", "Allow for this chat"])(
     "labels the user's-computer allow from %s as covering the space",
     (label) => {
-      expect(askActionLabel({ id: "allow", label }, { approval: true }, fakeT)).toBe(
+      expect(askActionLabel({ id: "allow", label }, { approval: true })).toBe(
         "Allow in this space",
       );
     },
@@ -49,7 +44,6 @@ describe("askActionLabel", () => {
           askActionLabel(
             { id, label: "Server label", outcome },
             { approval: false, site: "example.test" },
-            fakeT,
           ),
         ).toBe("Server label");
       }
@@ -62,7 +56,6 @@ describe("askActionLabel", () => {
       askActionLabel(
         { id: "always", label: "Server label" },
         { approval: true, site: "example.test" },
-        t,
       ),
     ).toBe("example.test immer erlauben");
   });

@@ -22,6 +22,7 @@ import {
   desktopControlCommand,
   desktopTerminalCommand,
   desktopUrl,
+  desktopWorkCommand,
   managedDesktopCommand,
   releaseDesktopCommand,
   screenDisplayArgv,
@@ -253,18 +254,23 @@ export class LinuxDesktop {
     context: AdapterContext,
   ): Promise<PageBrowserResult> {
     if (!this.host.runWithInput) throw new Error("This computer has no page browser.");
-    const { layout, env } = await this.ensure(computer, context);
+    const { layout, env, key } = await this.ensure(computer, context);
     const result = await this.host.runWithInput(
       computer,
-      [
-        `DISPLAY=${layout.display}`,
-        `RAKAZO_CDP_PORT=${layout.debugPort}`,
-        // Uploads are confined to the bot's home, which is the workspace here.
-        `HOME=${shellQuote(env.workspaceDir)}`,
-        "RAKAZO_BROWSER_ARGS_STDIN=1",
-        "/usr/local/bin/rakazo-page-browser",
-        request.command,
-      ].join(" "),
+      desktopWorkCommand(
+        key,
+        context.screenLeaseId,
+        layout.displayNumber - env.displayStart,
+        [
+          `DISPLAY=${layout.display}`,
+          `RAKAZO_CDP_PORT=${layout.debugPort}`,
+          // Uploads are confined to the bot's home, which is the workspace here.
+          `HOME=${shellQuote(env.workspaceDir)}`,
+          "RAKAZO_BROWSER_ARGS_STDIN=1",
+          "/usr/local/bin/rakazo-page-browser",
+          request.command,
+        ].join(" "),
+      ),
       // Origin-bound fills carry saved logins and cards.
       `${JSON.stringify(request)}\n`,
       PAGE_BROWSER_TIMEOUT_MS,
