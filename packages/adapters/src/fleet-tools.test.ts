@@ -1268,12 +1268,14 @@ describe("updateChildBot", () => {
     },
   );
 
-  it("mutes the child's chat for the person whose run asked, not for everyone", async () => {
+  function childMute(profileWrite: () => Promise<unknown>) {
     const { prisma } = fakeFleet({ bots });
     const tx = {
       $queryRaw: vi.fn(async () => [{ nextMessageSeq: 3 }]),
       threadRead: { upsert: vi.fn(async () => ({})) },
-      bot: { update: vi.fn().mockRejectedValue(new Error("write reached")) },
+      bot: { update: vi.fn(profileWrite) },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      event: { create: vi.fn(async () => ({ id: "event-1", seq: 1, createdAt: new Date() })) },
     };
     prisma.$transaction.mockImplementation(async (write) => write(tx));
     // The bot notifies everyone who never chose, the asker included.
@@ -1286,16 +1288,39 @@ describe("updateChildBot", () => {
         })),
       },
     });
+    return { prisma, tx };
+  }
+
+  it("mutes the child's chat for the person whose run asked, not for everyone", async () => {
+    const { prisma, tx } = childMute(async () => ({
+      id: "bot-child",
+      name: "Child",
+      description: "",
+    }));
     await expect(
       updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", notify_on_finish: false }),
-    ).rejects.toThrow("write reached");
+    ).resolves.toEqual({ ok: true });
+    expect(tx.bot.update).toHaveBeenCalledWith(expect.objectContaining({ data: {} }));
     expect(tx.threadRead.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { threadId_userId: { threadId: "thread-bot-child", userId: run.userId } },
         update: { muted: true },
       }),
     );
-    expect(tx.bot.update).toHaveBeenCalledWith(expect.objectContaining({ data: {} }));
+  });
+
+  it("leaves the mute alone when the child's profile write is refused", async () => {
+    const { prisma, tx } = childMute(async () => {
+      throw new Error("refused");
+    });
+    await expect(
+      updateChildBot(writeDeps(prisma), run, {
+        bot_id: "bot-child",
+        name: "Helper",
+        notify_on_finish: false,
+      }),
+    ).rejects.toThrow("refused");
+    expect(tx.threadRead.upsert).not.toHaveBeenCalled();
   });
 
   it.each([true, false])("writes boolean dailyCheckIns: %j", async (dailyCheckIns) => {

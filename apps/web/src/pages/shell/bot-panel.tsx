@@ -355,7 +355,10 @@ export function BotSettings({
         nextAvatarSet !== acceptedAutomatic.current.avatarSet
           ? { avatarSet: nextAvatarSet }
           : {}),
-        notifyOnFinish: nextNotify,
+        // The member's own mute, which the chat menu also sets: only a change here is sent.
+        ...(nextNotify !== acceptedAutomatic.current.notifyOnFinish
+          ? { notifyOnFinish: nextNotify }
+          : {}),
         computerMode,
         memoryScope,
         autoSpeak,

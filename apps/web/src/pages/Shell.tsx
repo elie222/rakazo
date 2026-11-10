@@ -448,6 +448,8 @@ function SpaceShell() {
     redirectKeepingOverlay,
     openSpaceChat: openSpaceChatRef,
   });
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
   const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
     bots,
     botsRef,
@@ -460,6 +462,7 @@ function SpaceShell() {
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
       },
       meId: userId,
+      groupsRef,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({

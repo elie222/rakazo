@@ -1,4 +1,4 @@
-import { displayIdentityResult, displayMessageBlock } from "@rakazo/core";
+import { chatListed, displayIdentityResult, displayMessageBlock } from "@rakazo/core";
 import { beforeEach, expect, it, vi } from "vitest";
 import { resetI18nForTests } from "./i18n";
 import { identityLabels } from "./identity-display";
@@ -124,6 +124,9 @@ const bot = {
   parentBotId: "parent-a",
   // Kept, so an offline inbox still leaves a snoozed chat out of the list.
   snoozedUntil: "2026-10-11T09:00:00.000Z",
+  // And a hidden one, and still marks a muted one.
+  muted: true,
+  hidden: false,
 };
 const group = {
   id: "group-a",
@@ -132,6 +135,8 @@ const group = {
   preview: "",
   updatedAt: "2026-10-10T12:30:00.000Z",
   snoozedUntil: "2026-10-11T09:00:00.000Z",
+  muted: false,
+  hidden: true,
 };
 const navigation = {
   current: {
@@ -177,6 +182,14 @@ beforeEach(() => {
 });
 
 const verified = { ...scope };
+it("keeps a hidden unread chat out of the list and the badge before the first live load", () => {
+  writeSavedInbox(scope, navigation, me);
+  const restored = readSavedInbox(scope)!;
+  const away = { ...restored.groups[0]!, unread: true };
+  expect(chatListed(away, Date.parse("2026-10-10T12:00:00.000Z"))).toBe(false);
+  expect(chatListed(restored.bots[0]!, Date.parse("2026-10-12T12:00:00.000Z"))).toBe(true);
+});
+
 it("round trips only what the inbox shows", () => {
   expect(readSavedInbox(scope)).toBeNull();
   writeSavedInbox(scope, navigation, me);

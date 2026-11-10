@@ -15,6 +15,8 @@ vi.mock("@rakazo/db", () => ({
     userId === "user-1" ? 2 : 5,
   chatHoldsFor: async (_: unknown, _threadId: string, userIds: string[]) =>
     new Map(userIds.flatMap((userId) => (holds.has(userId) ? [[userId, holds.get(userId)]] : []))),
+  chatMutedByDefault: (bot?: { notifyOnFinish: boolean } | null) =>
+    bot ? !bot.notifyOnFinish : false,
   unhideChatFor: async (_: unknown, _threadId: string, userId: string) => {
     unhidden.push(userId);
   },
@@ -226,6 +228,15 @@ describe("notifications in a shared Space", () => {
     await notifyRun(help.value, run, { ...message, kind: "help" });
     expect(recipients(help.send)).toEqual(["user-1"]);
     expect(unhidden).toEqual(["user-1"]);
+  });
+
+  it("brings back a hidden chat whose bot is silent by its own switch, without a push", async () => {
+    hold("user-1", { hidden: true });
+    const { value, send, publish } = deps({ notifyOnFinish: false });
+    await notifyRun(value, run, { ...message, kind: "help" });
+    expect(unhidden).toEqual(["user-1"]);
+    expect(send).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("brings a hidden chat back even where nobody can be alerted", async () => {

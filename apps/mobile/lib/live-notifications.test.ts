@@ -148,6 +148,19 @@ describe("after a chat's notifications change", () => {
     });
     expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["a"]]);
   });
+
+  it("clears a muted group's notifications, pushed or posted on the device", async () => {
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      { request: { identifier: "push", content: { data: { groupId: "group-1" } } } },
+      { request: { identifier: "native", content: { data: { "rakazo.groupId": "group-1" } } } },
+      { request: { identifier: "other", content: { data: { groupId: "group-2" } } } },
+    ] as never);
+    await afterChatNotifyChange("", "", "", { groupId: "group-1", notify: false });
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([
+      ["push"],
+      ["native"],
+    ]);
+  });
 });
 
 describe("when the session ends", () => {

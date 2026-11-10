@@ -217,23 +217,33 @@ export async function dismissThreadNotifications(target: NotificationThreadTarge
   );
 }
 
-/** Brings this device in line after a chat's notifications were turned on or off. */
+/**
+ * Brings this device in line after a chat's notifications were turned on or off: polling starts
+ * again with the new setting, and a silenced chat's notifications leave the shade.
+ */
 export async function afterChatNotifyChange(
   endpoint: string,
   token: string,
   spaceId: string,
-  change: { botId: string; threadId?: string; notify: boolean },
+  change:
+    | { botId: string; threadId?: string; notify: boolean }
+    | { groupId: string; notify: boolean },
 ): Promise<void> {
   // Android also discards replies retained before this bot's own chat was muted.
   await resumeLiveNotifications(
     endpoint,
     token,
     spaceId,
-    change.notify ? undefined : change.botId,
+    !change.notify && "botId" in change ? change.botId : undefined,
   ).catch(() => undefined);
-  if (!change.notify && change.threadId) {
-    await dismissThreadNotifications({ threadId: change.threadId }).catch(() => undefined);
-  }
+  if (change.notify) return;
+  const target =
+    "groupId" in change
+      ? { groupId: change.groupId }
+      : change.threadId
+        ? { threadId: change.threadId }
+        : null;
+  if (target) await dismissThreadNotifications(target).catch(() => undefined);
 }
 
 export async function openLiveNotificationSettings(): Promise<void> {

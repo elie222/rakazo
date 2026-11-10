@@ -899,6 +899,8 @@ export async function completeRun(ctx: RunContext) {
     outcome: "completed",
     blocks,
     markUnread: !groupSilentEnd && marksUnread,
+    // An answer to another bot's request goes back to that bot; the person hears its reply.
+    forBot: run.trigger === "bot_message" && !marksUnread,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();

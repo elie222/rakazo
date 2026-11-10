@@ -852,14 +852,6 @@ export async function updateChildBot(
     };
   }
   const { notifyOnFinish, ...profileData } = patch;
-  // Notifications are each member's own, so this mutes or unmutes for whoever asked.
-  if (notifyOnFinish !== undefined) {
-    await setBotNotifyFor(
-      deps.prisma,
-      { botId: child.id, spaceId: run.spaceId, userId: run.userId },
-      notifyOnFinish,
-    );
-  }
   await commitBotUpdate({
     prisma: deps.prisma,
     notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -869,6 +861,15 @@ export async function updateChildBot(
     emitBotUpdated: true,
     data: profileData,
   });
+  // After the profile, which is what can refuse: a refused update leaves notifications alone.
+  // They are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: child.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   return { ok: true };
 }
 
@@ -1361,14 +1362,6 @@ export async function updateOwnBotFromTool(
     };
   }
   const { notifyOnFinish, ...profile } = patch;
-  // Notifications are each member's own, so this mutes or unmutes for whoever asked.
-  if (notifyOnFinish !== undefined) {
-    await setBotNotifyFor(
-      deps.prisma,
-      { botId: bot.id, spaceId: run.spaceId, userId: run.userId },
-      notifyOnFinish,
-    );
-  }
   const updated = await deps.prisma.bot.update({
     where: { id: bot.id },
     data: profile,
@@ -1381,6 +1374,15 @@ export async function updateOwnBotFromTool(
       dailyCheckIns: true,
     },
   });
+  // After the profile, which is what can refuse: a refused update leaves notifications alone.
+  // They are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: bot.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   try {
     await deps.events.append({
       spaceId: run.spaceId,

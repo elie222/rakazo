@@ -1,4 +1,4 @@
-import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
+import type { Bot, ChatAlert, Group, ProductEvent } from "@rakazo/contracts";
 import { isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
@@ -23,6 +23,8 @@ type ChatAlertOptions = {
   openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
   /** The signed-in person, whose own messages never notify them. */
   meId: string | undefined;
+  /** The open space's groups as they are now, so a mute or hide holds back their notifications. */
+  groupsRef: RefObject<Group[]>;
 };
 
 // A click must not reach a shell that has gone, so the shell closes what it showed.
@@ -47,7 +49,7 @@ function openChatOnClick(
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat, meId }: ChatAlertOptions,
+  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef }: ChatAlertOptions,
 ) {
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
@@ -65,9 +67,17 @@ export function useBrowserNotifications(
         ? alert.groupId === activeGroupId.current
         : !activeGroupId.current && alert.botId === activeBotId.current;
       // The open chat's own stream alerts for its replies and failures; only a takeover is missed.
+      // A muted or hidden chat's stream stays quiet, so the server's alerts, which for such a chat
+      // are only the viewer's own questions, takeovers and failures, speak for it.
+      const openChat = !isOpen
+        ? undefined
+        : alert.groupId
+          ? groupsRef.current.find((group) => group.id === alert.groupId)
+          : botsRef.current.find((bot) => bot.id === alert.botId);
+      const streamSpeaks = !openChat?.muted && !openChat?.hidden;
       if (
         isOpen &&
-        (alert.kind !== "takeover" ||
+        ((alert.kind !== "takeover" && streamSpeaks) ||
           (document.visibilityState === "visible" && document.hasFocus()))
       )
         return;
@@ -134,12 +144,16 @@ export function useBrowserNotifications(
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
+    // Read when it is shown, so a chat muted or hidden while permission was pending stays quiet.
+    const chat =
+      pending.groupId === undefined
+        ? currentBot
+        : groupsRef.current.find((group) => group.id === pending.groupId);
     const result = deliverNativeBrowserNotification(
       pending.event,
       currentBot.name || pending.botName,
       {
-        // A group's own mute was checked when the notification was first held.
-        enabled: pending.groupId !== undefined || (!currentBot.muted && !currentBot.hidden),
+        enabled: Boolean(chat && !chat.muted && !chat.hidden),
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
@@ -170,8 +184,6 @@ export function useBrowserNotifications(
       initialCursor: number,
       streamReady: boolean,
       botName: string,
-      /** Asked only for an event that would otherwise notify: not for a muted or hidden chat. */
-      enabled: () => boolean,
       groupId: string | undefined,
     ) => {
       const botId = event.botId;
@@ -186,7 +198,7 @@ export function useBrowserNotifications(
         notifiedEventIds: notifiedBrowserEvents.current,
         meId: meIdRef.current,
       });
-      if (!eligible || !enabled()) return;
+      if (!eligible) return;
       const pending = {
         event,
         botId,

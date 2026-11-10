@@ -278,6 +278,8 @@ class RakazoNotificationService : Service() {
         putString("rakazo.spaceId", run.spaceId)
         putString("rakazo.botId", run.botId)
         putString("rakazo.threadId", run.threadId)
+        // A group's notifications can then be dismissed when the group is muted or hidden.
+        if (run.groupId != null) putString("rakazo.groupId", run.groupId)
       })
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)

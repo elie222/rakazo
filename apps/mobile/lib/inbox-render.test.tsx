@@ -15,7 +15,7 @@ import { onInboxChanged } from "./inbox-changes";
 import { retainInboxValue } from "./inbox-retention";
 import type { InboxItem, InboxSpace } from "./inbox-spaces";
 import { inboxItemKey, spaceInboxItems } from "./inbox-spaces";
-import type { MobileBot } from "./mobile-types";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 import { useCollapsedSections } from "./use-collapsed-sections";
 import { useInboxDay } from "./use-inbox-day";
 import { usePublishSearchInbox } from "./use-publish-search-inbox";
@@ -217,6 +217,7 @@ vi.mock("../components/bot-avatar", () => ({
     ui.avatars.push(identity);
     return <b data-identity={identity} data-muted={String(Boolean(muted))} data-motion={motion} />;
   },
+  MutedBadge: () => <s data-muted-badge />,
 }));
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => null }));
 // Rows in the current space carry the iOS swipe host and its long-press menu.
@@ -519,6 +520,36 @@ it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scr
   const bot = { id: "bot-p", name: "Pinned", preview: "", pinned: true } as MobileBot;
   render(<List items={[{ type: "pinned", chats: [{ kind: "bot", bot }] }]} />);
   expect(container.querySelector('[data-row="pinned"] b[data-identity="bot-p"]')).not.toBeNull();
+});
+
+it("marks a muted pinned group as a muted pinned bot is marked", () => {
+  const bot = { id: "bot-p", name: "Scout", preview: "", pinned: true, notifyOnFinish: false };
+  const group = {
+    id: "group-p",
+    name: "Crew",
+    preview: "",
+    pinned: true,
+    muted: true,
+    members: [],
+  };
+  render(
+    <List
+      items={[
+        {
+          type: "pinned",
+          chats: [
+            { kind: "bot", bot: bot as MobileBot },
+            { kind: "group", group: group as unknown as MobileGroup },
+          ],
+        },
+      ]}
+    />,
+  );
+  expect(rowLabels()).toEqual(["Scout, notifications silenced", "Crew, notifications silenced"]);
+  expect(container.querySelector('b[data-identity="bot-p"]')?.getAttribute("data-muted")).toBe(
+    "true",
+  );
+  expect(container.querySelectorAll("[data-muted-badge]")).toHaveLength(1);
 });
 
 it("collapses a section from its heading and keeps the choice for the account", async () => {

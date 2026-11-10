@@ -37,14 +37,20 @@ export function snoozedUntilFor(thread: {
 }
 
 /**
- * Whether this person muted the chat. Until they choose, a bot's chat follows the bot's own
- * notification setting, so a chat that was silent stays silent; a group is not muted.
+ * Muted for anyone who never muted or unmuted the chat: a bot's own chat follows the bot's own
+ * notification setting, so a chat that was silent stays silent. Pass no bot for a group, which is
+ * never muted until someone chooses.
  */
+export function chatMutedByDefault(bot?: { notifyOnFinish: boolean } | null): boolean {
+  return bot ? !bot.notifyOnFinish : false;
+}
+
+/** Whether this person muted the chat, its default deciding until they choose. */
 export function mutedFor(
   thread: { reads: Array<{ muted: boolean | null }> },
   bot?: { notifyOnFinish: boolean } | null,
 ): boolean {
-  return thread.reads[0]?.muted ?? (bot ? !bot.notifyOnFinish : false);
+  return thread.reads[0]?.muted ?? chatMutedByDefault(bot);
 }
 
 export function hiddenFor(thread: { reads: Array<{ hidden: boolean }> }): boolean {
@@ -213,13 +219,18 @@ export async function setThreadMuteFor(prisma: PrismaClient, reader: Reader, mut
 /** Hides the chat from one person's list, or brings it back. */
 export async function setThreadHiddenFor(prisma: PrismaClient, reader: Reader, hidden: boolean) {
   if (!hidden) {
-    await prisma.threadRead.updateMany({
-      where: { threadId: reader.threadId, userId: reader.userId, hidden: true },
-      data: { hidden: false },
-    });
+    await unhide(prisma, reader.threadId, reader.userId);
     return;
   }
   await upsertOwnState(prisma, reader, { hidden });
+}
+
+/** In whatever database context the caller runs. */
+function unhide(prisma: PrismaClient, threadId: string, userId: string) {
+  return prisma.threadRead.updateMany({
+    where: { threadId, userId, hidden: true },
+    data: { hidden: false },
+  });
 }
 
 async function upsertOwnState(
@@ -277,13 +288,10 @@ export async function chatHoldsFor(
   );
 }
 
-/** Brings a chat one person hid back to their list, as when it needs them. */
+/** Brings a chat one person hid back to their list when it needs them, from a job or a run. */
 export async function unhideChatFor(prisma: PrismaClient, threadId: string, userId: string) {
   await runAsSystem("bring a hidden chat back for a member", () =>
-    prisma.threadRead.updateMany({
-      where: { threadId, userId, hidden: true },
-      data: { hidden: false },
-    }),
+    unhide(prisma, threadId, userId),
   );
 }
 

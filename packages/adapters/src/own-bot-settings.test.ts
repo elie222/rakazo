@@ -381,8 +381,22 @@ it("update_bot turns notifications off for the person who asked, not the whole s
   expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: {} }));
   expect(result).toMatchObject({ ok: true, notifyOnFinish: false });
 
-  // Asking for what is already so records nothing.
+  // A refused profile write leaves notifications alone.
   upsert.mockClear();
+  update.mockRejectedValueOnce(new Error("refused"));
+  await expect(
+    updateOwnBotFromTool(
+      { prisma, events: { append: vi.fn() } } as never,
+      { id: "run-1", userId: "user-1", spaceId: "space-1", sourceMessageId: null },
+      "thread-1",
+      { id: "bot-1", name: "Scout" },
+      { name: "Finder", notifyOnFinish: true },
+      {} as never,
+    ),
+  ).rejects.toThrow("refused");
+  expect(upsert).not.toHaveBeenCalled();
+
+  // Asking for what is already so records nothing.
   await updateOwnBotFromTool(
     { prisma, events: { append: vi.fn() } } as never,
     { id: "run-1", userId: "user-1", spaceId: "space-1", sourceMessageId: null },

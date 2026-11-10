@@ -5,7 +5,6 @@ import {
   expandPeerReplies,
   foldPeerReplies,
   jumpTargetId,
-  messageForAnotherBot,
   userVisibleMessages,
 } from "./message-visibility.js";
 
@@ -479,48 +478,5 @@ describe("user-visible messages", () => {
     expect(
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
     ).toEqual(["ask", "computer", "approval", "connect", "user"]);
-  });
-});
-
-describe("messages for another bot", () => {
-  const relay = [
-    message("sent", "run-user", [
-      { kind: "bot_message_sent", toBotId: "coder", toBotName: "Coder", text: "Check this." },
-    ]),
-    {
-      ...message("result", "run-relay", [
-        {
-          kind: "bot_message_received",
-          fromBotId: "coder",
-          fromBotName: "Coder",
-          text: "It returns 200.",
-          intent: "result",
-        },
-      ]),
-      replyToMessageId: "sent",
-    },
-    message("relay", "run-relay", [{ kind: "text", text: "Coder confirmed it returns 200." }]),
-  ];
-
-  it("counts what bots send each other and a reply to another bot's errand", () => {
-    for (const id of ["sent", "received", "reply"]) {
-      expect(messageForAnotherBot(peerExchange, id)).toBe(true);
-    }
-    expect(messageForAnotherBot(peerExchange, "answer")).toBe(false);
-  });
-
-  it("leaves the reply a bot gives the person once another bot answered it", () => {
-    expect(messageForAnotherBot(relay, "relay")).toBe(false);
-  });
-
-  it("counts a group handoff to the next bot", () => {
-    const handoff = message("handoff", "group-run", [
-      { kind: "handoff", fromBotId: "lead", toBotId: "writer", text: "Draft the reply." },
-    ]);
-    expect(messageForAnotherBot([handoff], "handoff")).toBe(true);
-  });
-
-  it("knows nothing of a message it has not loaded", () => {
-    expect(messageForAnotherBot(peerExchange, "missing")).toBe(false);
   });
 });

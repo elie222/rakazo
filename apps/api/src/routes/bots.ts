@@ -357,12 +357,17 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
+        // The source's notifyOnFinish is the viewer's own mute; the copy gets the bot's setting.
+        const stored = await deps.prisma.bot.findFirst({
+          where: { id: source.id, spaceId: context.actor.spaceId },
+          select: { notifyOnFinish: true },
+        });
         const duplicate = await repos
           .createBot(context.actor, {
             name: duplicateBotName(source.name),
             description: source.description,
             instructions: source.instructions,
-            notifyOnFinish: source.notifyOnFinish,
+            notifyOnFinish: stored?.notifyOnFinish ?? true,
             dailyCheckIns: source.dailyCheckIns,
             color: source.color,
             avatarSet: resolveBotAvatarSet(source.avatarSet),

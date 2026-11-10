@@ -183,6 +183,23 @@ describe("reconcileStuckWork", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("brings a hidden stuck chat back even with no push provider", async () => {
+    const run = candidate("waiting_input", 5);
+    const prisma = noticePrisma(run, []);
+    prisma.threadRead.findMany = vi.fn(async () => [
+      { userId: "user-1", snoozedUntil: null, hidden: true, muted: null },
+    ]) as never;
+    const { jobs } = publisher();
+
+    await reconcileStuckWork({ prisma, jobs, now, batchSize: 100 });
+
+    expect(prisma.threadRead.updateMany).toHaveBeenCalledWith({
+      where: { threadId: run.threadId, userId: run.userId, hidden: true },
+      data: { hidden: false },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("does not stamp a reminder until Expo has a token to deliver it", async () => {
     const tokens = new MemoryPushTokenStore();
     const run = candidate("waiting_input", 5);

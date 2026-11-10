@@ -10,7 +10,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { ChatHold, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { chatHoldsFor, countUnreadInboxChats, unhideChatFor } from "@rakazo/db";
+import { chatHoldsFor, chatMutedByDefault, countUnreadInboxChats, unhideChatFor } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
@@ -49,17 +49,18 @@ async function runNotice(
   if (!source) return null;
   return {
     routineNotify: routine?.notify ?? null,
-    mutedByDefault: !source.thread.groupId && !source.bot.notifyOnFinish,
+    mutedByDefault: chatMutedByDefault(source.thread.groupId ? null : source.bot),
     groupId: source.thread.groupId,
     bot: source.bot,
   };
 }
 
 /**
- * Whether the person whose run it is hears its question, takeover or failure. They do even in a
- * chat they muted, snoozed or hid, since only they can answer it; a hidden chat comes back to
- * their list for it. Until they mute or unmute the chat themselves, a bot whose own notification
- * switch is off stays as silent as it always was, questions included.
+ * A run's question, takeover or failure needs the person whose run it is: a chat they hid comes
+ * back to their list for it, and they hear of it even in a chat they muted, snoozed or hid, since
+ * only they can answer. Until they mute or unmute the chat themselves, a bot whose own
+ * notification switch is off stays as silent as it always was, questions included; its chat
+ * still comes back.
  */
 export async function ownerHearsRun(
   prisma: PrismaClient,
@@ -67,9 +68,8 @@ export async function ownerHearsRun(
   mutedByDefault: boolean,
 ): Promise<boolean> {
   const hold = (await chatHoldsFor(prisma, run.threadId, [run.userId])).get(run.userId);
-  if ((hold?.muted ?? null) === null && mutedByDefault) return false;
   if (hold?.hidden) await unhideChatFor(prisma, run.threadId, run.userId);
-  return true;
+  return (hold?.muted ?? null) !== null || !mutedByDefault;
 }
 
 export async function notifyRun(
@@ -185,7 +185,7 @@ export async function notifyMemberMessage(
     },
     groupId: thread.groupId,
     bot: thread.groupId ? undefined : (thread.bot ?? undefined),
-    mutedByDefault: !thread.groupId && thread.bot?.notifyOnFinish === false,
+    mutedByDefault: chatMutedByDefault(thread.groupId ? null : thread.bot),
   });
 }
 

@@ -246,6 +246,7 @@ export const PinnedTiles = memo(function PinnedTiles({
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
+        const muted = chat.kind === "bot" ? chat.bot.notifyOnFinish === false : chat.group.muted;
         const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
         const runAction = (action: InboxRowAction) =>
           chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
@@ -255,7 +256,7 @@ export const PinnedTiles = memo(function PinnedTiles({
           <Pressable
             key={`${chat.kind}-${id}`}
             accessibilityRole="button"
-            accessibilityLabel={name}
+            accessibilityLabel={muted ? `${name}, ${t("notifications silenced")}` : name}
             accessibilityState={{ selected: selectedId === id }}
             accessibilityActions={actions.map((action) => ({
               name: action,
@@ -280,11 +281,11 @@ export const PinnedTiles = memo(function PinnedTiles({
                 identity={chat.bot.id}
                 size={avatarSize}
                 status={chat.bot.status}
-                muted={chat.bot.notifyOnFinish === false}
+                muted={muted}
                 motion="lazy"
               />
             ) : (
-              <GroupAvatar members={chat.group.members} size={avatarSize} />
+              <MutableGroupAvatar group={chat.group} size={avatarSize} />
             )}
             <PinnedName chat={chat} name={name} />
           </Pressable>
@@ -342,14 +343,14 @@ function chatTime(
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
 }
 
-/**
- * Whether the viewer muted the chat; unknown for a group on a server that can't mute one. A bot's
- * notification setting is the viewer's mute, on servers old and new.
- */
-export function chatMuted(
-  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
-): boolean | undefined {
-  return "notifyOnFinish" in chat ? chat.notifyOnFinish === false : chat.muted;
+/** A group's avatar, with the bell while the viewer has it muted. */
+function MutableGroupAvatar({ group, size }: { group: MobileGroup | SpaceGroup; size: number }) {
+  return (
+    <View>
+      <GroupAvatar members={group.members} size={size} />
+      {group.muted ? <MutedBadge size={size} /> : null}
+    </View>
+  );
 }
 
 /** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
@@ -381,7 +382,7 @@ export function ChatSwipe({
       rowKey={rowKey}
       unread={chat.unread}
       pinned={chat.pinned}
-      muted={chatMuted(chat)}
+      muted={chat.muted}
       hidden={chat.hidden}
       sectionId={chat.sectionId}
       sections={sections}
@@ -544,12 +545,7 @@ export const GroupRow = memo(function GroupRow({
       onLongPress={onLongPress ? () => onLongPress(group) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
-      avatar={
-        <View>
-          <GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />
-          {group.muted ? <MutedBadge size={INBOX_ROW.avatarSize} /> : null}
-        </View>
-      }
+      avatar={<MutableGroupAvatar group={group} size={INBOX_ROW.avatarSize} />}
     />
   );
   return onAction ? (

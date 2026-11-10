@@ -30,14 +30,12 @@ import { NativeActionButton } from "./native-action-button";
 import { NativeSheet, useNativeSheet } from "./native-sheet";
 import { NativeSymbol } from "./native-symbol";
 
-export type BotOrganizationUpdate = {
-  pinned?: boolean;
-  sectionId?: string | null;
-  /** The viewer's own: no pushes or alerts from the chat. */
-  muted?: boolean;
-  /** The viewer's own: out of their list, still working. */
-  hidden?: boolean;
-};
+/** One change to a chat, sent as one request. Mute and hide are the viewer's own. */
+export type BotOrganizationUpdate =
+  | { pinned: boolean }
+  | { sectionId: string | null }
+  | { muted: boolean }
+  | { hidden: boolean };
 
 export function BotOrganizeModal({
   bot,

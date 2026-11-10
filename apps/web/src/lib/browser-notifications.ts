@@ -2,6 +2,7 @@ import type { ProductEvent } from "@rakazo/contracts";
 import {
   displayName,
   memberMessageAlerts,
+  messageForAnotherBot,
   messageUnreadFor,
   payloadAuthor,
   plainTextFromMarkdown,
@@ -61,6 +62,7 @@ export function shouldNotifyBrowser(
   const notifiable =
     (event.type === "thread.message.created" &&
       messageUnreadFor(event.payload, context.meId) &&
+      !messageForAnotherBot(event.payload) &&
       (event.payload.role === "bot" || memberMessageAlerts(event.payload))) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";

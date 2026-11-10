@@ -43,13 +43,8 @@ function useChatChoice<K extends keyof ChatChoices>(
   return useCallback(
     (chat: SnoozeTarget, value: ChatChoices[K]) => {
       const apply = (next: ChatChoices[K]) => {
-        // A bot's own notification setting is the viewer's mute, so its settings show it too.
-        const change =
-          key === "muted" && chat.kind === "bot"
-            ? { muted: next, notifyOnFinish: !next }
-            : { [key]: next };
         const set = <T extends { id: string }>(chats: T[]) =>
-          chats.map((item) => (item.id === chat.id ? { ...item, ...change } : item));
+          chats.map((item) => (item.id === chat.id ? { ...item, [key]: next } : item));
         if (chat.spaceId === openSpaceId) {
           if (chat.kind === "bot") setBots(set);
           else setGroups(set);

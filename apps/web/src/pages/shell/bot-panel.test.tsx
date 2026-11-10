@@ -494,6 +494,17 @@ describe("BotSettings bot management saves", () => {
 });
 
 describe("BotSettings description saves", () => {
+  it("leaves the member's mute off a save that does not switch it", async () => {
+    await render();
+    await setDescription("Invoices");
+    await clickSave();
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("notifyOnFinish");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[id$="-notify-finish"]')!.click(),
+    );
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ notifyOnFinish: false });
+  });
+
   it("leaves instructions off a save that does not edit the description", async () => {
     await render();
     await clickSave();

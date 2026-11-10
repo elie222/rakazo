@@ -14,6 +14,7 @@ import {
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  chatMutedByDefault,
   expireStuckRun,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
@@ -158,7 +159,7 @@ function readyStuckRun(
 
 /** Reminders are for the person whose run it is, as its questions are. */
 function ownerHears(prisma: PrismaClient, run: StuckCandidate): Promise<boolean> {
-  return ownerHearsRun(prisma, run, !run.thread.groupId && !run.bot.notifyOnFinish);
+  return ownerHearsRun(prisma, run, chatMutedByDefault(run.thread.groupId ? null : run.bot));
 }
 
 type StuckNoticePayload = {
@@ -210,9 +211,11 @@ async function remindStuckRun(
   },
   run: StuckCandidate,
 ) {
-  // A skipped push (notices off, no provider, or no push token yet) stays unmarked
-  // so a later sweep can still remind during this same wait.
-  if (!deps.notifications || !(await ownerHears(deps.prisma, run))) return;
+  // Asked first, so a hidden chat comes back even where no push can be sent. A skipped push
+  // (notices off, no provider, or no push token yet) stays unmarked so a later sweep can still
+  // remind during this same wait.
+  const hears = await ownerHears(deps.prisma, run);
+  if (!deps.notifications || !hears) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(

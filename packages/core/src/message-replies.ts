@@ -85,6 +85,26 @@ export function memberMessageAlerts(message: {
   );
 }
 
+/**
+ * Whether a new message is one bot talking to another rather than to the people in the chat: a
+ * message it sent another bot, a group handoff, or what it wrote while answering another bot's
+ * request, which the server marks. Such a message alerts nobody; the reply that bot then gives
+ * the person does.
+ */
+export function messageForAnotherBot(message: { blocks?: unknown; forBot?: unknown }): boolean {
+  if (message.forBot === true) return true;
+  const blocks = Array.isArray(message.blocks) ? (message.blocks as unknown[]) : [];
+  return blocks.some(
+    (block) =>
+      !!block &&
+      typeof block === "object" &&
+      "kind" in block &&
+      (block.kind === "bot_message_sent" ||
+        block.kind === "bot_message_received" ||
+        block.kind === "handoff"),
+  );
+}
+
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {
   return quote ? quote.replace(/\s+/gu, " ") : (preview || fallback || "").split(/\r?\n/u)[0] || "";
 }

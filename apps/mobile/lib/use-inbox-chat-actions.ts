@@ -68,28 +68,26 @@ export function useInboxChatActions({
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       update: BotOrganizationUpdate,
     ) => {
-      const { muted, hidden, ...organize } = update;
       const target = chatTarget(kind, chat.id);
-      // A bot's own notification setting is the viewer's mute, which older servers know too.
-      const settings =
-        kind === "bot" && muted !== undefined ? { ...organize, notifyOnFinish: !muted } : organize;
-      if (kind === "group" && muted !== undefined) {
-        await chatRpc(chat.spaceId, "threads/mute", { ...target, muted });
-      }
-      if (hidden !== undefined) await chatRpc(chat.spaceId, "threads/hide", { ...target, hidden });
-      if (Object.keys(settings).length > 0) {
-        await chatRpc(chat.spaceId, `${kind}s/update`, { ...target, ...settings });
-      }
-      if (kind === "bot" && muted !== undefined) {
+      // One request per change; the server maps a bot's mute onto its own notification setting.
+      if ("muted" in update) await chatRpc(chat.spaceId, "threads/mute", { ...target, ...update });
+      else if ("hidden" in update) {
+        await chatRpc(chat.spaceId, "threads/hide", { ...target, ...update });
+      } else await chatRpc(chat.spaceId, `${kind}s/update`, { ...target, ...update });
+      // A hidden chat holds its news as a muted one does, so either brings the device in line.
+      const quiet = "muted" in update ? update.muted : "hidden" in update ? update.hidden : null;
+      if (quiet !== null) {
         await afterChatNotifyChange(
           currentApiBase(),
           await loadSessionToken(),
           selectedSpaceId() ?? "",
-          {
-            botId: chat.id,
-            threadId: "threadId" in chat ? chat.threadId : undefined,
-            notify: !muted,
-          },
+          kind === "bot"
+            ? {
+                botId: chat.id,
+                threadId: "threadId" in chat ? chat.threadId : undefined,
+                notify: !quiet,
+              }
+            : { groupId: chat.id, notify: !quiet },
         );
       }
       await loadBots();
