@@ -448,8 +448,9 @@ export function BotSettings({
         notifyOnFinish: nextNotify,
       };
       if (pendingConnection !== undefined) {
-        await connectionQuery.refetch();
-        setPendingConnection(undefined);
+        // A failed refresh leaves the previous answer cached, so the saved pick stays on screen.
+        const refreshed = await connectionQuery.refetch();
+        if (!refreshed.isError) setPendingConnection(undefined);
       }
       if (nextName) savedNameRef.current = nextName;
       savedDescriptionRef.current = nextDescription;

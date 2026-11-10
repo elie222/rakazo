@@ -8882,6 +8882,32 @@ describe("openai-compatible enabled models", () => {
     expect(prisma.userBotModelConnection.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("leaves a small edit of a bot on the default model outside the connection transaction", async () => {
+    const { call, prisma } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    Object.assign(await prisma.bot.findFirst(), { modelProvider: null, modelId: null });
+
+    await expect(call("bots/update", { botId: "bot-1", pinned: true })).resolves.toMatchObject({
+      status: 200,
+    });
+
+    expect(prisma.userBotModelConnection.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("removes a member's chosen connection when a bot on the default model gets one", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+    Object.assign(await prisma.bot.findFirst(), { modelProvider: null, modelId: null });
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "X" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, botId: "bot-1" },
+    });
+  });
+
   it("removes a member's chosen connection when asked to", async () => {
     const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
     state.credential.userPreferences = [];

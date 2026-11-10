@@ -598,6 +598,58 @@ describe("BotSettings thinking options", () => {
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
   });
 
+  it("keeps showing a saved connection when the refresh after saving fails", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    const connection = { provider: "anthropic", hasKey: true, isDefault: false };
+    const opus = {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-opus",
+      label: "Claude Opus",
+      billing: "",
+    };
+    vi.mocked(rpc.models.credentials).mockResolvedValue([
+      { ...connection, id: "sub", label: "Claude subscription" },
+      { ...connection, id: "api", label: "Anthropic API key" },
+    ]);
+    vi.mocked(rpc.models.list).mockResolvedValue([opus, { ...opus, managed: true }]);
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: "sub", pinned: true });
+    await render("Billing", { modelProvider: "anthropic", modelId: "claude-opus" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
+        .click(),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const model = container.querySelector('[id$="-model"]') as HTMLSelectElement;
+    await act(async () => {
+      model.value = "api@@anthropic::claude-opus";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    );
+    if (!save) throw new Error("Missing save button");
+    vi.mocked(rpc.bots.modelConnection).mockRejectedValue(new Error("offline"));
+    await act(async () => save.click());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelConnectionId: "api" });
+    expect(model.value).toBe("api@@anthropic::claude-opus");
+    expect(container.textContent).toContain("Could not load model settings");
+    vi.mocked(rpc.models.credentials).mockResolvedValue([]);
+    vi.mocked(rpc.models.list).mockResolvedValue([]);
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
+  });
+
   it("says so when the bot's connection cannot be loaded", async () => {
     i18n.load("en", {});
     i18n.activate("en");

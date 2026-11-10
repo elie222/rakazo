@@ -451,13 +451,13 @@ export function botsRoutes(ctx: RouterContext) {
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
-        const modelMoved =
-          !existing.modelProvider ||
-          !botModelConnectionApplies(
-            { provider: existing.modelProvider, modelId: existing.modelId ?? "" },
-            provider ?? "",
-            modelId,
-          );
+        const modelMoved = existing.modelProvider
+          ? !botModelConnectionApplies(
+              { provider: existing.modelProvider, modelId: existing.modelId ?? "" },
+              provider ?? "",
+              modelId,
+            )
+          : Boolean(provider);
         const modelConnection =
           input.modelConnectionId && provider && modelId
             ? {
