@@ -288,11 +288,12 @@ test("a webhook delivery shows as one line that opens to what the bot got", asyn
   const line = delivery.getByRole("button", { name: "CRM sync" });
   await expect(line).toBeVisible();
   await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
-  await expect(transcript.getByText("ada@example.test")).toHaveCount(0);
+  const prompt = delivery.getByTestId("delivery-message-prompt");
+  await expect(prompt).toBeHidden();
   await captureScreenshot(page, testInfo, "routine-webhook-delivery");
 
   await line.click();
-  const prompt = delivery.getByTestId("delivery-message-prompt");
+  await expect(prompt).toBeVisible();
   await expect(prompt).toContainText('Run routine "CRM sync"');
   await expect(prompt).toContainText('"email": "ada@example.test"');
   await captureScreenshot(page, testInfo, "routine-webhook-delivery-open");
