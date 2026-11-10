@@ -247,7 +247,7 @@ export const PinnedTiles = memo(function PinnedTiles({
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
-        const muted = chat.kind === "bot" ? chat.bot.notifyOnFinish === false : chat.group.muted;
+        const muted = chatMuted(chat.kind === "bot" ? chat.bot : chat.group) === true;
         const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
         const runAction = (action: InboxRowAction) =>
           chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
@@ -457,7 +457,7 @@ export const BotRow = memo(function BotRow({
     bot.name,
     working ? t`Working…` : null,
     waiting ? t`Needs attention` : null,
-    bot.notifyOnFinish === false ? t`notifications silenced` : null,
+    chatMuted(bot) ? t`notifications silenced` : null,
     bot.unread ? t`unread` : null,
     time,
     preview,
@@ -488,7 +488,7 @@ export const BotRow = memo(function BotRow({
             identity={bot.id}
             size={INBOX_ROW.avatarSize}
             status={bot.status}
-            muted={bot.notifyOnFinish === false}
+            muted={chatMuted(bot) === true}
             motion="lazy"
           />
         </AvatarRow>

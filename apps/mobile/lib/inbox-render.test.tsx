@@ -552,6 +552,25 @@ it("marks a muted pinned group as a muted pinned bot is marked", () => {
   expect(container.querySelectorAll("[data-muted-badge]")).toHaveLength(1);
 });
 
+it("takes a pinned bot's mute from the server's muted over its notification setting", () => {
+  const bot = (id: string, muted: boolean) =>
+    ({ id, name: id, preview: "", pinned: true, notifyOnFinish: muted, muted }) as MobileBot;
+  render(
+    <List
+      items={[
+        {
+          type: "pinned",
+          chats: [
+            { kind: "bot", bot: bot("quiet", true) },
+            { kind: "bot", bot: bot("loud", false) },
+          ],
+        },
+      ]}
+    />,
+  );
+  expect(rowLabels()).toEqual(["quiet, notifications silenced", "loud"]);
+});
+
 it("collapses a section from its heading and keeps the choice for the account", async () => {
   ui.loadCollapsedSections.mockReset().mockResolvedValue(null);
   ui.saveCollapsedSections.mockReset();
