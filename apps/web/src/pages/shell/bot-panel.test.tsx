@@ -505,6 +505,18 @@ describe("BotSettings description saves", () => {
     expect(onSave.mock.lastCall?.[0]).toMatchObject({ notifyOnFinish: false });
   });
 
+  it("follows a mute made in the chat menu, which leaves the bot's updatedAt alone", async () => {
+    await render();
+    const notify = () =>
+      container.querySelector<HTMLButtonElement>('button[id$="-notify-finish"]')!;
+    expect(notify().getAttribute("aria-checked")).toBe("true");
+    await render("Billing", { muted: true });
+    expect(notify().getAttribute("aria-checked")).toBe("false");
+    // Turning it back on is a change, so it is saved.
+    await act(async () => notify().click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ notifyOnFinish: true });
+  });
+
   it("leaves instructions off a save that does not edit the description", async () => {
     await render();
     await clickSave();

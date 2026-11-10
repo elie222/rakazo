@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityNotificationsEnabled, activityPreview } from "./runs.js";
+import { activityNotificationsEnabled, activityPreview, runNeedsOwner } from "./runs.js";
 
 describe("run activity copy", () => {
   it.each([
@@ -152,6 +152,13 @@ describe("run activity notification preference", () => {
     expect(own([])).toBe(false);
     expect(own([{ muted: null, hidden: true }])).toBe(false);
     expect(own([], "group-1")).toBe(true);
+  });
+
+  it("counts the viewer's own failed or waiting run as needing them, so Android alerts for it", () => {
+    for (const status of ["failed", "waiting_input", "waiting_takeover"])
+      expect(runNeedsOwner({ userId: "user-1", status }, "user-1")).toBe(true);
+    expect(runNeedsOwner({ userId: "user-1", status: "completed" }, "user-1")).toBe(false);
+    expect(runNeedsOwner({ userId: "user-2", status: "failed" }, "user-1")).toBe(false);
   });
 });
 
