@@ -25,6 +25,9 @@ vi.mock("@boatdev/sdk", () => {
 vi.mock("@boxd-sh/sdk", () => {
   throw new Error("boxd SDK loaded on default path");
 });
+vi.mock("@insforge/instabox-sdk", () => {
+  throw new Error("instabox SDK loaded on default path");
+});
 vi.mock("@daytona/sdk", () => {
   throw new Error("Daytona SDK loaded on default path");
 });
@@ -54,7 +57,7 @@ describe("optional provider loading", () => {
     ).toBe("docker");
     expect((await createRunSandbox("none", {})).describe().id).toBe("none");
     expect((await createSandboxProvider("wuying", {})).describe().id).toBe("none");
-    for (const kind of ["daytona", "boat", "boxd"]) {
+    for (const kind of ["daytona", "boat", "boxd", "instabox"]) {
       expect((await createSandboxProvider(kind, {})).describe().id).toBe("none");
     }
   });

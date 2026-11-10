@@ -6,13 +6,13 @@ for the sharing and persistence contract.
 
 ## Quick pick
 
-| Goal                                                    | Set                                                         | Also need                                                                                                                             |
-| ------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Local Docker computers                                  | `SANDBOX_PROVIDER=docker`                                   | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor                                                              |
-| UI only, no computers                                   | `SANDBOX_PROVIDER=none`                                     | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN`                                            |
-| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
-| One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                               | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
-| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                    | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| Goal                                                    | Set                                                                      | Also need                                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Docker computers                                  | `SANDBOX_PROVIDER=docker`                                                | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor                                                              |
+| UI only, no computers                                   | `SANDBOX_PROVIDER=none`                                                  | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN`                                            |
+| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
+| One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                                            | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
+| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -323,6 +323,7 @@ Set `SANDBOX_PROVIDER` to exactly one of:
 | `daytona`  | `DAYTONA_API_KEY`                                | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`                                                                                                                                                                                          |
 | `boat`     | `BOAT_API_KEY`                                   | Optional `BOAT_API_URL` (see `.env.example`)                                                                                                                                                                                                              |
 | `boxd`     | `BOXD_API_KEY`                                   | Optional `BOXD_ORG` to create computers in a boxd organization                                                                                                                                                                                            |
+| `instabox` | `INSTABOX_API_KEY`                               | Computers start in the key's organization; see [instabox computers](#instabox-computers)                                                                                                                                                                  |
 | `createos` | `CREATEOS_SANDBOX_API_KEY`                       | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS`                                                                                                                                                                 |
 | `railway`  | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
 | `wuying`   | `WUYING_*` (below)                               | One existing Wuying cloud computer (Windows)                                                                                                                                                                                                              |
@@ -333,7 +334,7 @@ the web UI. They require egress to the provider. For air-gapped hosts prefer
 
 A run starts its computer only when it first uses a computer tool. With idle sleep on,
 a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
-(E2B, Daytona, Boat, boxd, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
+(E2B, Daytona, Boat, boxd, instabox, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
 (default 2 hours) up in one stretch, even with background work or an open screen, unless
 a run is executing on it, a user is in control of its screen, or a coding agent CLI (Codex,
 Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An agent waiting
@@ -485,6 +486,19 @@ The desktop is served on the machine's own public HTTPS address; every screen an
 still needs its own token, which the desktop gateway checks. Stopping a computer suspends it
 with its memory, so programs it was running continue when it resumes.
 
+### instabox computers
+
+instabox computers start from instabox's own desktop image, which already has Chromium; the
+first start installs the rest of the desktop tools in a few seconds. They are created without
+the instabox account's vault, so secrets saved on that account never reach a bot's computer.
+
+The desktop is served on the computer's public HTTPS address; every screen and terminal still
+needs its own token, which the desktop gateway checks. Stopping a computer suspends it with its
+memory. instabox also pauses a computer after 30 idle minutes, later than the default
+`SANDBOX_IDLE_MS`, so Rakazo normally stops it first. One key's computers share its account's
+limits on requests at once (API calls, and connections to screens and terminals), so a
+deployment with many active computers at the same time can see them slow down.
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that
@@ -495,7 +509,7 @@ docker compose --env-file .env -f docker-compose.images.yml up -d
 curl -fsS http://127.0.0.1:3100/internal/health
 ```
 
-Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boat`, or `boxd`).
+Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boat`, `boxd`, or `instabox`).
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.
