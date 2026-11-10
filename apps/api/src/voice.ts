@@ -261,6 +261,37 @@ export async function loadDefaultVoiceCredential(
   return loadVoiceCredential(deps, actor, undefined, scope, signal);
 }
 
+/** Keep refresh failures and linked-connection refusals safe for display. */
+export async function withVoiceConnection<T>(
+  provider: string,
+  linked: boolean,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!linked) throw error;
+    const name = voiceCatalogEntry(provider)?.name ?? provider;
+    if (error instanceof VoiceAccountError) {
+      if (error.code === "VOICE_KEY_REJECTED") {
+        throw new VoiceAccountError(
+          error.code,
+          `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
+        );
+      }
+      throw error;
+    }
+    getLogger().warn("voice could not use the model connection", {
+      provider,
+      reason: error instanceof Error ? error.name : "unknown",
+    });
+    throw new VoiceAccountError(
+      undefined,
+      `Couldn't use the ${name} connection from Models. Try again.`,
+    );
+  }
+}
+
 /** The connection and the bearer its provider takes, read from a model connection if linked. */
 export async function loadVoiceCredential(
   deps: VoiceDeps,
@@ -278,14 +309,19 @@ export async function loadVoiceCredential(
   });
   if (!secret) return null;
   const plaintext = await deps.secrets.load(secret.ciphertext, secret.id);
-  const apiKey = await resolveVoiceKey(
-    { prisma: deps.prisma, secretStore: deps.secrets },
-    { userId: actor.userId, spaceId: actor.spaceId },
-    cred.provider,
-    plaintext,
-    signal,
+  const linked =
+    isModelConnectionVoiceSecret(plaintext) &&
+    Boolean(voiceCatalogEntry(cred.provider)?.modelConnection);
+  const apiKey = await withVoiceConnection(cred.provider, linked, () =>
+    resolveVoiceKey(
+      { prisma: deps.prisma, secretStore: deps.secrets },
+      { userId: actor.userId, spaceId: actor.spaceId },
+      cred.provider,
+      plaintext,
+      signal,
+    ),
   );
-  return { cred, apiKey };
+  return { cred, apiKey, linked };
 }
 
 export async function resolveVoiceTarget(
@@ -380,14 +416,18 @@ export async function persistVoiceCredential(
       isModelConnectionVoiceSecret(plaintext) && verified.code === "VOICE_KEY_REJECTED";
     throw new ORPCError("BAD_REQUEST", {
       message: refusedLink
-        ? `${voiceCatalogEntry(input.provider)?.name ?? input.provider} didn't accept your Models connection for voice. Paste an API key instead.`
+        ? `${voiceCatalogEntry(input.provider)?.name ?? input.provider} didn't accept the Models connection for voice. Paste an API key.`
         : (verified.message ?? "That key was rejected."),
     });
   }
   let voiceId = choicesChanged ? "" : (input.voiceId?.trim() ?? "");
   let validVoiceIds: string[] = [];
   if (!voiceId) {
-    const voices = await provider.listVoices(apiKey, voiceContext(actor, input.signal));
+    const voices = await withVoiceConnection(
+      input.provider,
+      isModelConnectionVoiceSecret(plaintext),
+      () => provider.listVoices(apiKey, voiceContext(actor, input.signal)),
+    );
     voiceId = voices[0]?.id ?? "";
     validVoiceIds = voices.map((voice) => voice.id);
   }
@@ -613,15 +653,17 @@ export async function synthesizeVoice(
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
   const provider = await voiceProviderFor(deps, target.cred.provider);
-  return provider.synthesize(
-    {
-      text,
-      voiceId: target.voiceId,
-      apiKey: target.apiKey,
-      model: target.cred.speechModel || undefined,
-      signal: input.signal,
-    },
-    voiceContext(actor, input.signal),
+  return withVoiceConnection(target.cred.provider, target.linked, () =>
+    provider.synthesize(
+      {
+        text,
+        voiceId: target.voiceId,
+        apiKey: target.apiKey,
+        model: target.cred.speechModel || undefined,
+        signal: input.signal,
+      },
+      voiceContext(actor, input.signal),
+    ),
   );
 }
 
@@ -641,15 +683,17 @@ export async function transcribeVoice(
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return provider.transcribe(
-    {
-      audio: input.audio,
-      mimeType: input.mimeType || "audio/webm",
-      language: input.language,
-      apiKey: loaded.apiKey,
-      signal: input.signal,
-    },
-    voiceContext(actor, input.signal),
+  return withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
+    provider.transcribe!(
+      {
+        audio: input.audio,
+        mimeType: input.mimeType || "audio/webm",
+        language: input.language,
+        apiKey: loaded.apiKey,
+        signal: input.signal,
+      },
+      voiceContext(actor, input.signal),
+    ),
   );
 }
 
@@ -669,9 +713,11 @@ export async function transcribeInboundVoice(
   if (!loaded) return null;
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
-  const { text } = await provider.transcribe(
-    { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
-    voiceContext(owner, input.signal),
+  const { text } = await withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
+    provider.transcribe!(
+      { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
+      voiceContext(owner, input.signal),
+    ),
   );
   return text;
 }
@@ -784,13 +830,16 @@ function voiceHttpError(c: Context, error: unknown) {
   if (error instanceof VoiceAccountError) {
     getLogger().warn("voice provider account rejected the request", {
       route: c.req.path,
-      reason: error.code ?? error.message,
+      reason: error.code ?? error.name,
     });
     return c.json({ error: error.message, code: error.code }, voiceAccountErrorStatus(error.code));
   }
-  const message = error instanceof Error ? error.message : "Voice request failed.";
-  // Message only: request bodies, keys and audio never reach the log.
-  getLogger().warn("voice request failed", { route: c.req.path, reason: message });
+  const message = "Voice request failed. Try again.";
+  // Log only the error kind; provider response text can contain credentials.
+  getLogger().warn("voice request failed", {
+    route: c.req.path,
+    reason: error instanceof Error ? error.name : "unknown",
+  });
   if (isVoiceProviderFailure(error)) markExpectedFailure();
   return c.json({ error: message }, 502);
 }

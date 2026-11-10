@@ -26,6 +26,7 @@ import {
   voiceCredentialHasKey,
   voiceCredentialPlaintext,
   voiceCredentialServer,
+  withVoiceConnection,
 } from "./voice.js";
 
 describe("toVoiceStatus", () => {
@@ -1276,7 +1277,7 @@ describe("persistVoiceCredential", () => {
       await expect(
         persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" }),
       ).rejects.toMatchObject({
-        message: "xAI didn't accept your Models connection for voice. Paste an API key instead.",
+        message: "xAI didn't accept the Models connection for voice. Paste an API key.",
       });
       expect(put).not.toHaveBeenCalled();
     });
@@ -1457,5 +1458,34 @@ describe("transcribeInboundVoice", () => {
       }),
     ).resolves.toBeNull();
     expect(transcribe).not.toHaveBeenCalled();
+  });
+});
+
+describe("linked voice failures", () => {
+  it("hides refresh and provider response text", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", level: "warn", sinks: [sink] }));
+    try {
+      await expect(
+        withVoiceConnection("xai", true, async () => {
+          throw new Error("private provider response");
+        }),
+      ).rejects.toThrow("Couldn't use the xAI connection from Models. Try again.");
+      expect(JSON.stringify(sink.events)).not.toContain("private provider response");
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
+
+  it("offers disconnect and a key when a linked bearer is rejected", async () => {
+    await expect(
+      withVoiceConnection("xai", true, async () => {
+        throw new VoiceAccountError("VOICE_KEY_REJECTED", "check the key");
+      }),
+    ).rejects.toMatchObject({
+      code: "VOICE_KEY_REJECTED",
+      message:
+        "xAI didn't accept the Models connection for voice. Disconnect and paste an API key.",
+    });
   });
 });

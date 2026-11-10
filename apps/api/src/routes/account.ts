@@ -59,6 +59,7 @@ import {
   voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
+  withVoiceConnection,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, withHeartbeats } from "./shared.js";
@@ -538,10 +539,11 @@ export function accountRoutes(ctx: RouterContext) {
             )
           : await loadDefaultVoiceCredential(deps, context.actor, input.scope, context.signal);
         if (!row) return [];
-        return (await voiceProviderFor(deps, row.cred.provider)).listVoices(
-          row.apiKey,
-          voiceContext(context.actor, context.signal),
-          { language: input.language },
+        const provider = await voiceProviderFor(deps, row.cred.provider);
+        return withVoiceConnection(row.cred.provider, row.linked, () =>
+          provider.listVoices(row.apiKey, voiceContext(context.actor, context.signal), {
+            language: input.language,
+          }),
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
