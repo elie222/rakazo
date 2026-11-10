@@ -167,9 +167,19 @@ const loadingFaceUsers = new Map<string, Promise<void>>();
 const faceListeners = new Set<() => void>();
 /** Bumped on every face or subscription change; the gallery cache keys off it. */
 let facesVersion = 0;
-let galleryCacheKey = "";
-let galleryCache: { id: ExpressionFaceSlot; image: ImageSourcePropType; customized: boolean }[] =
-  [];
+/**
+ * One gallery per (account, bot) for the current faces version. A single slot
+ * tore useSyncExternalStore: two mounted consumers with different keys kept
+ * evicting each other's snapshot, so getSnapshot returned a new array on
+ * every call and React threw "Maximum update depth exceeded" (the blank
+ * retry screen on /bot-settings, whose userId is undefined until `me`
+ * loads while the chat behind it already has one).
+ */
+let galleryCacheVersion = -1;
+const galleryCache = new Map<
+  string,
+  { id: ExpressionFaceSlot; image: ImageSourcePropType; customized: boolean }[]
+>();
 
 function notifyFaces() {
   facesVersion += 1;
@@ -323,11 +333,16 @@ function galleryFor(
   userId: string | undefined,
   botId: string | undefined,
 ): { id: ExpressionFaceSlot; image: ImageSourcePropType; customized: boolean }[] {
-  const key = `${userId ?? ""}:${botId ?? ""}:${facesVersion}`;
-  if (key === galleryCacheKey) return galleryCache;
-  galleryCache = chiefExpressionGallery(userId, botId);
-  galleryCacheKey = key;
-  return galleryCache;
+  if (galleryCacheVersion !== facesVersion) {
+    galleryCache.clear();
+    galleryCacheVersion = facesVersion;
+  }
+  const key = `${userId ?? ""}:${botId ?? ""}`;
+  const cached = galleryCache.get(key);
+  if (cached) return cached;
+  const gallery = chiefExpressionGallery(userId, botId);
+  galleryCache.set(key, gallery);
+  return gallery;
 }
 
 /** The chief pack's faces, live: a replace or subscription re-renders the gallery. */

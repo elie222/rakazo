@@ -393,4 +393,58 @@ describe("expression faces", () => {
       true,
     );
   });
+
+  it("keeps two consumers with different keys on stable snapshots", async () => {
+    const mod = await import("./expression-avatar");
+    let seenLoaded = mod.chiefExpressionGallery("user-1", "bot-1");
+    let seenBare = mod.chiefExpressionGallery(undefined, "bot-1");
+    function Loaded() {
+      seenLoaded = mod.useExpressionFaces("user-1", "bot-1");
+      return null;
+    }
+    function Bare() {
+      seenBare = mod.useExpressionFaces(undefined, "bot-1");
+      return null;
+    }
+    const tree = () => createElement("div", null, createElement(Loaded), createElement(Bare));
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    // The chat's avatar already has its account; /bot-settings mounts with
+    // no account until `me` loads. A single-slot gallery cache tore the
+    // store here: each getSnapshot evicted the other's, so React threw
+    // "Maximum update depth exceeded" and the screen showed only Retry.
+    act(() => {
+      root?.render(tree());
+    });
+    expect(seenLoaded).toHaveLength(6);
+    expect(seenBare).toHaveLength(6);
+    // Let the loaded account's stored faces settle, so no notify is pending.
+    await waitFor(() => store.getItemAsync.mock.calls.length >= 2);
+    const loadedBefore = seenLoaded;
+    const bareBefore = seenBare;
+    act(() => {
+      root?.render(tree());
+    });
+    expect(seenLoaded).toBe(loadedBefore);
+    expect(seenBare).toBe(bareBefore);
+    // A shared face change re-renders both in one commit; neither snapshot
+    // may be rebuilt out from under the other.
+    act(() => {
+      mod.setExpressionFace("user-1", "bot-1", "thinking", {
+        uri: "file:///doc/expression-faces/user-1/bot-1-thinking-local.jpg",
+        source: "local",
+      });
+    });
+    await waitForSaves(1);
+    expect(seenLoaded).toHaveLength(6);
+    expect(seenBare).toHaveLength(6);
+    const loadedAfter = seenLoaded;
+    const bareAfter = seenBare;
+    act(() => {
+      root?.render(tree());
+    });
+    expect(seenLoaded).toBe(loadedAfter);
+    expect(seenBare).toBe(bareAfter);
+  });
 });
