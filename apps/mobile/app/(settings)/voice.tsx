@@ -1,5 +1,12 @@
+import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
+import type {
+  ModelCredential,
+  VoiceCatalogEntry,
+  VoiceCredential,
+  VoiceInfo,
+  VoiceStatus,
+} from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -20,6 +27,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
+import { TextFieldDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
@@ -54,6 +62,8 @@ const voiceReads = (target: SettingsTarget) => {
     catalog: rpcQuery("voice/catalog", undefined, spaceId),
     credentials: rpcQuery("voice/credentials", input, spaceId),
     status: rpcQuery("voice/status", input, spaceId),
+    // Connections from the Models page whose keys a voice connection can borrow.
+    modelCredentials: rpcQuery("models/credentials", undefined, spaceId),
   };
 };
 const voicesRead = (target: SettingsTarget, provider: string) =>
@@ -73,11 +83,20 @@ function cachedVoiceSettings(target: SettingsTarget) {
   const catalog = queryClient.getQueryData(reads.catalog.queryKey);
   const credentials = queryClient.getQueryData(reads.credentials.queryKey);
   const status = queryClient.getQueryData(reads.status.queryKey);
+  const modelCredentials = queryClient.getQueryData(reads.modelCredentials.queryKey);
   if (!catalog || !credentials || !status) return null;
   const provider = pickProvider(catalog, status);
   const credential = credentials.find((entry) => entry.provider === provider);
   const voices = credential ? queryClient.getQueryData(voicesRead(target, provider).queryKey) : [];
-  return { catalog, credentials, status, provider, credential, voices: voices ?? [] };
+  return {
+    catalog,
+    credentials,
+    status,
+    provider,
+    credential,
+    voices: voices ?? [],
+    modelCredentials: modelCredentials ?? [],
+  };
 }
 
 /**
@@ -96,6 +115,9 @@ export default function VoiceSettings() {
   const [cached] = useState(() => cachedVoiceSettings(target));
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
+  const [modelCredentials, setModelCredentials] = useState<ModelCredential[]>(
+    cached?.modelCredentials ?? [],
+  );
   const [status, setStatus] = useState<VoiceStatus | null>(cached?.status ?? null);
   const [voices, setVoices] = useState<VoiceInfo[]>(cached?.voices ?? []);
   const [provider, setProvider] = useState(cached?.provider ?? "");
@@ -115,6 +137,9 @@ export default function VoiceSettings() {
   const loadRevision = useRef(0);
   const speechModelSave = useRef<string | null>(null);
   const [deviceVoice, setDeviceVoice] = useState(false);
+  // The custom voice dialog: any voice id the provider accepts, also when the list is empty.
+  const [customVoiceOpen, setCustomVoiceOpen] = useState(false);
+  const [customVoice, setCustomVoice] = useState("");
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(!deviceSettings);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
@@ -142,10 +167,12 @@ export default function VoiceSettings() {
       if (!opening) edited.current.clear();
       const reads = voiceReads(target);
       const reuse = { reuse: opening };
-      const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
+      const [nextCatalog, nextCredentials, nextStatus, nextModelCredentials] = await Promise.all([
         fetchFresh(queryClient, reads.catalog, reuse),
         fetchFresh(queryClient, reads.credentials, reuse),
         fetchFresh(queryClient, reads.status, reuse),
+        // A failed models read must not hide the voice settings it decorates.
+        fetchFresh(queryClient, reads.modelCredentials, reuse).catch(() => []),
       ]);
       if (revision !== loadRevision.current) return;
       setLoadError(null);
@@ -154,6 +181,7 @@ export default function VoiceSettings() {
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
       setStatus(nextStatus);
+      setModelCredentials(nextModelCredentials);
       selectedProvider.current = selected;
       setProvider(selected);
       const cred = nextCredentials.find((entry) => entry.provider === selected);
@@ -343,6 +371,8 @@ export default function VoiceSettings() {
 
   const selected = catalog.find((entry) => entry.id === provider);
   const credential = credentials.find((entry) => entry.provider === provider);
+  // A saved voice outside the provider's list is a custom one and stays visible as such.
+  const customVoiceSelected = Boolean(voiceId) && !voices.some((voice) => voice.id === voiceId);
   const hiddenSelfHosted =
     !catalog.some((entry) => entry.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
     credentials.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
@@ -350,6 +380,45 @@ export default function VoiceSettings() {
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const keyless = Boolean(selected?.keyless);
   const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  /** Model connections from the Models page whose stored key this provider can borrow.
+   * Hosted borrows need a stored api_key (OAuth logins have none the server can copy);
+   * a self-hosted speech server can run keyless, so only the endpoint must be compatible. */
+  const borrowable = modelCredentials.filter((entry) =>
+    selfHosted
+      ? entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID && entry.authKind === "openai_compatible"
+      : entry.provider === selected?.id && entry.authKind === "api_key" && entry.hasKey,
+  );
+
+  /** Connects with the key of a model connection, so nothing has to be pasted here. */
+  async function connectFromModel(credentialId: string) {
+    if (!selected || pending !== null) return;
+    setPending("connect");
+    setError(null);
+    if (status) setLoadError(null);
+    try {
+      await rpc("voice/connect", {
+        provider: selected.id,
+        scope,
+        modelCredentialId: credentialId,
+        apiKey: "",
+        // Like a normal connect: keep the chosen voice and typed models where they apply.
+        voiceId: voiceId || undefined,
+        ...(selfHosted
+          ? {
+              baseUrl: baseUrl.trim(),
+              ttsModel: ttsModel.trim() || undefined,
+              sttModel: sttModel.trim() || undefined,
+            }
+          : {}),
+      });
+      setApiKey("");
+      await load(selected.id);
+    } catch (err) {
+      setError(errorText(err, t`Could not connect`));
+    } finally {
+      setPending(null);
+    }
+  }
 
   async function connect() {
     if (!selected || !canConnect) return;
@@ -542,6 +611,21 @@ export default function VoiceSettings() {
         ) : null}
         {selected && deviceVoiceReady && !deviceVoice ? (
           <>
+            {borrowable.length ? (
+              <>
+                <Text style={styles.fieldLabel}>{t`Use a key from the Models page`}</Text>
+                {borrowable.map((entry) => (
+                  <NativeActionButton
+                    key={entry.id}
+                    disabled={pending !== null}
+                    label={t`Use ${ph({ connection: entry.label })}`}
+                    prominence="secondary"
+                    onPress={() => void connectFromModel(entry.id)}
+                    style={styles.borrowButton}
+                  />
+                ))}
+              </>
+            ) : null}
             {selfHosted ? (
               <TextInput
                 accessibilityLabel={t`Server URL`}
@@ -641,7 +725,7 @@ export default function VoiceSettings() {
                 />
               </>
             ) : null}
-            {voices.length ? (
+            {credential ? (
               <View style={[styles.group, styles.voices]}>
                 {voices.map((voice, index) => (
                   <Pressable
@@ -661,9 +745,54 @@ export default function VoiceSettings() {
                     {voiceId === voice.id ? <Checkmark /> : null}
                   </Pressable>
                 ))}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t`Custom voice…`}
+                  accessibilityState={{ selected: customVoiceSelected }}
+                  disabled={pending !== null}
+                  onPress={() => {
+                    setCustomVoice(customVoiceSelected ? voiceId : "");
+                    setCustomVoiceOpen(true);
+                  }}
+                  style={({ pressed }) => [
+                    styles.groupRow,
+                    (voices.length > 0 || customVoiceSelected) && styles.groupDivider,
+                    pending !== null && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.voiceLabel, styles.customVoiceLabel]}>
+                    {t`Custom voice…`}
+                  </Text>
+                  {customVoiceSelected ? <Checkmark /> : null}
+                </Pressable>
               </View>
             ) : null}
           </>
+        ) : null}
+        {customVoiceOpen ? (
+          <TextFieldDialog
+            title={t`Custom voice`}
+            label={t`Voice name or ID`}
+            submitLabel={t`Save`}
+            value={customVoice}
+            error={null}
+            saving={pending === "voice"}
+            input={{
+              autoCapitalize: "none",
+              autoCorrect: false,
+              maxLength: 120,
+              placeholder: "alloy",
+            }}
+            onChange={setCustomVoice}
+            onSubmit={(value) => {
+              const next = value.trim();
+              if (!next || pending !== null) return;
+              setCustomVoiceOpen(false);
+              void chooseVoice(next);
+            }}
+            onClose={() => setCustomVoiceOpen(false)}
+          />
         ) : null}
         {deviceSettings && (deviceVoice || status?.ready) ? (
           <NativeActionButton
@@ -736,6 +865,7 @@ function createVoiceStyles() {
     rowCopy: { flex: 1 },
     cardTitle: { color: native.label, fontSize: 16 },
     fieldLabel: { color: native.label, marginTop: 16 },
+    borrowButton: { marginTop: 8 },
     input: {
       marginTop: 8,
       borderRadius: 12,
@@ -748,5 +878,6 @@ function createVoiceStyles() {
     pressed: { opacity: 0.7 },
     voices: { marginTop: 12 },
     voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
+    customVoiceLabel: { color: native.secondaryLabel },
   });
 }

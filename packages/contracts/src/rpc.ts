@@ -1554,6 +1554,8 @@ export const appContract = {
             provider: z.string(),
             /** Optional for a self-hosted server and for providers without keys. */
             apiKey: z.string().max(4096).default(""),
+            /** Reuse the key of this model connection instead of pasting one. */
+            modelCredentialId: Id.optional(),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */
@@ -1565,7 +1567,12 @@ export const appContract = {
           })
           .superRefine((input, ctx) => {
             // Hosted keys are checked by the server, which knows which providers are keyless.
-            if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID && !input.baseUrl?.trim()) {
+            // A borrowed model connection carries its own base URL.
+            if (
+              input.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
+              !input.modelCredentialId &&
+              !input.baseUrl?.trim()
+            ) {
               ctx.addIssue({ code: "custom", path: ["baseUrl"], message: "Enter a server URL." });
             }
           }),

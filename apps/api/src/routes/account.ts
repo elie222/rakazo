@@ -58,6 +58,7 @@ import {
   voiceContext,
   voiceCredentialServer,
   voiceProviderFor,
+  voiceSecretFromModelCredential,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, withHeartbeats } from "./shared.js";
@@ -481,19 +482,30 @@ export function accountRoutes(ctx: RouterContext) {
           }),
         );
       }),
-      connect: authed.voice.connect.handler(async ({ context, input }) =>
-        persistVoiceCredential(deps, context.actor, {
+      connect: authed.voice.connect.handler(async ({ context, input }) => {
+        let apiKey = input.apiKey;
+        let baseUrl = input.baseUrl;
+        // A borrowed model key needs no pasting; the connection's endpoint comes with it.
+        if (input.modelCredentialId) {
+          const borrowed = await voiceSecretFromModelCredential(deps, context.actor, {
+            modelCredentialId: input.modelCredentialId,
+            voiceProvider: input.provider,
+          });
+          apiKey = borrowed.apiKey;
+          baseUrl = borrowed.baseUrl ?? baseUrl;
+        }
+        return persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
-          plaintext: input.apiKey,
+          plaintext: apiKey,
           voiceId: input.voiceId,
           speechModel: input.speechModel,
-          baseUrl: input.baseUrl,
+          baseUrl,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
           scope: input.scope,
           signal: context.signal,
-        }),
-      ),
+        });
+      }),
       disconnect: authed.voice.disconnect.handler(async ({ context, input }) =>
         disconnectVoiceCredential(deps, context.actor, { provider: input.provider }),
       ),

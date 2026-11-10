@@ -11,6 +11,7 @@ import {
   NoVoiceConfigured,
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   openAiCompatibleVoiceServer,
+  parseModelSecret,
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
@@ -198,6 +199,45 @@ export function voiceCredentialPlaintext(input: {
       message: error instanceof Error ? error.message : "That server URL is not valid.",
     });
   }
+}
+
+/**
+ * The key of a model connection, borrowed for a voice connection. A hosted voice provider
+ * takes the same key as its model connection (OpenAI, ElevenLabs, Cartesia…); a self-hosted
+ * speech server takes an OpenAI-compatible endpoint wholesale, key and base URL both.
+ */
+export async function voiceSecretFromModelCredential(
+  deps: VoiceDeps,
+  actor: Actor,
+  input: { modelCredentialId: string; voiceProvider: string },
+): Promise<{ apiKey: string; baseUrl?: string }> {
+  const row = await deps.prisma.userModelCredential.findFirst({
+    where: { id: input.modelCredentialId, userId: actor.userId },
+  });
+  if (!row) {
+    throw new ORPCError("NOT_FOUND", { message: "That model connection was not found." });
+  }
+  const secret = await deps.prisma.secret.findFirst({
+    where: { id: row.secretId, userId: actor.userId, spaceId: null },
+  });
+  if (!secret) {
+    throw new ORPCError("NOT_FOUND", { message: "That model connection has no stored key." });
+  }
+  const stored = parseModelSecret(await deps.secrets.load(secret.ciphertext, secret.id));
+  if (input.voiceProvider !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID) {
+    if (row.provider !== input.voiceProvider || stored.kind !== "api_key") {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "That model connection cannot be used for this voice provider.",
+      });
+    }
+    return { apiKey: stored.key };
+  }
+  if (row.provider !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID || stored.kind !== "openai_compatible") {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "A self-hosted voice needs an OpenAI-compatible model connection.",
+    });
+  }
+  return { apiKey: stored.apiKey ?? "", baseUrl: stored.baseUrl };
 }
 
 /** Empty clears the speech model override. Anything else must be a header-safe model id. */

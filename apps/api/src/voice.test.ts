@@ -24,6 +24,7 @@ import {
   voiceChoicesChanged,
   voiceCredentialPlaintext,
   voiceCredentialServer,
+  voiceSecretFromModelCredential,
 } from "./voice.js";
 
 describe("toVoiceStatus", () => {
@@ -1164,5 +1165,71 @@ describe("transcribeInboundVoice", () => {
       }),
     ).resolves.toBeNull();
     expect(transcribe).not.toHaveBeenCalled();
+  });
+});
+
+describe("voiceSecretFromModelCredential", () => {
+  function depsWith(rows: { model?: unknown; secret?: unknown }) {
+    return {
+      prisma: {
+        userModelCredential: { findFirst: vi.fn().mockResolvedValue(rows.model ?? null) },
+        secret: { findFirst: vi.fn().mockResolvedValue(rows.secret ?? null) },
+      },
+      secrets: {
+        load: vi.fn().mockImplementation((ciphertext: string) => Promise.resolve(ciphertext)),
+      },
+    } as unknown as VoiceDeps;
+  }
+
+  it("borrows a hosted provider's model key for its own voice provider", async () => {
+    const deps = depsWith({
+      model: { id: "mc1", provider: "openai", secretId: "s1" },
+      secret: { id: "s1", ciphertext: JSON.stringify({ kind: "api_key", key: "sk-shared" }) },
+    });
+    await expect(
+      voiceSecretFromModelCredential(deps, actor, {
+        modelCredentialId: "mc1",
+        voiceProvider: "openai",
+      }),
+    ).resolves.toEqual({ apiKey: "sk-shared" });
+  });
+
+  it("borrows an OpenAI-compatible endpoint wholesale for the self-hosted voice", async () => {
+    const deps = depsWith({
+      model: { id: "mc2", provider: "openai-compatible", secretId: "s2" },
+      secret: {
+        id: "s2",
+        ciphertext: JSON.stringify({
+          kind: "openai_compatible",
+          baseUrl: "http://100.64.0.10:8810/v1",
+          apiKey: "local-key",
+        }),
+      },
+    });
+    await expect(
+      voiceSecretFromModelCredential(deps, actor, {
+        modelCredentialId: "mc2",
+        voiceProvider: "openai-compatible",
+      }),
+    ).resolves.toEqual({ apiKey: "local-key", baseUrl: "http://100.64.0.10:8810/v1" });
+  });
+
+  it("refuses a provider the connection cannot speak for, and a missing connection", async () => {
+    const deps = depsWith({
+      model: { id: "mc3", provider: "openai", secretId: "s3" },
+      secret: { id: "s3", ciphertext: JSON.stringify({ kind: "api_key", key: "sk-other" }) },
+    });
+    await expect(
+      voiceSecretFromModelCredential(deps, actor, {
+        modelCredentialId: "mc3",
+        voiceProvider: "elevenlabs",
+      }),
+    ).rejects.toThrow("That model connection cannot be used for this voice provider.");
+    await expect(
+      voiceSecretFromModelCredential(depsWith({}), actor, {
+        modelCredentialId: "missing",
+        voiceProvider: "openai",
+      }),
+    ).rejects.toThrow("not found");
   });
 });
