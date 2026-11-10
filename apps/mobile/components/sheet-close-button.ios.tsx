@@ -8,12 +8,12 @@ import {
   frame,
   shapes,
 } from "@expo/ui/swift-ui/modifiers";
+import { useLingui } from "@lingui/react/macro";
 import { View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 export function SheetCloseButton({ onPress }: { onPress: () => void }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   return (
     <View style={{ width: 30, height: 44 }}>
@@ -22,10 +22,7 @@ export function SheetCloseButton({ onPress }: { onPress: () => void }) {
         ignoreSafeArea="container"
         style={{ width: 44, height: 44, transform: [{ translateX: -7 }] }}
       >
-        <Button
-          onPress={onPress}
-          modifiers={[buttonStyle("plain"), accessibilityLabel(t("Close"))]}
-        >
+        <Button onPress={onPress} modifiers={[buttonStyle("plain"), accessibilityLabel(t`Close`)]}>
           <ZStack
             modifiers={[
               frame({ width: 30, height: 30 }),

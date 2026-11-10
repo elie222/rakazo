@@ -91,7 +91,7 @@ export function NativeLink({
   accessibilityLabel?: string;
 }) {
   const open = useContext(OpenLinkContext);
-  const onPress = (event: { defaultPrevented: boolean }) => {
+  const onPress = (event: { defaultPrevented?: boolean }) => {
     if (!event.defaultPrevented) open(href);
   };
   return block ? (

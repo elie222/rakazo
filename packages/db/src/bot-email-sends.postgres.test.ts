@@ -5,8 +5,7 @@ import { createDb } from "./client.js";
 import { asSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("bot email send limits (PostgreSQL)", () => {
   const userId = `email-sends-${process.pid}-${Date.now()}`;

@@ -290,16 +290,6 @@ vi.mock("./haptics", () => ({
     return () => haptics.listeners.delete(listener);
   },
 }));
-vi.mock("./i18n", () => {
-  // Stable across renders, as the real hook's is.
-  const i18n = { t: (text: string) => text, locale: "en" };
-  return {
-    dateLocaleForUi: () => "en",
-    getActiveUiLocale: () => "en",
-    t: (text: string) => text,
-    useI18n: () => i18n,
-  };
-});
 vi.mock("./live-notifications", () => ({
   canPostPromotedNotifications: vi.fn(async () => false),
   DEFAULT_LIVE_NOTIFICATION_SETTINGS: {},

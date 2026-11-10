@@ -20,8 +20,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   sandboxAllowance: vi.fn(async () => null),
 }));
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("own-key plan", () => {
   const stamp = `${process.pid}-${Date.now()}`;
   const userId = `byok-owner-${stamp}`,

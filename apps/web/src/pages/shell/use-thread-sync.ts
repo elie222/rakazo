@@ -139,6 +139,21 @@ export function useThreadSync({
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const readerScrollEpoch = useRef(0);
+  const pendingSnaps = useRef(new Set<number>());
+  useEffect(() => {
+    const onScroll = (event: Event) => {
+      if (event.target === messageScroll.current) readerScrollEpoch.current += 1;
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("scroll", onScroll, true);
+      readerScrollEpoch.current += 1;
+      for (const frame of pendingSnaps.current) window.cancelAnimationFrame(frame);
+      pendingSnaps.current.clear();
+    };
+  }, [messageScroll]);
+
   // A very fast run can finish over SSE while its threads.send response is still
   // returning. Do not let that late receipt resurrect terminal work as queued.
   const terminalRunReceipts = useRef(new Set<string>());
@@ -155,17 +170,36 @@ export function useThreadSync({
     const queuedElement = messageScroll.current;
     if (!queuedElement) return;
     const queuedScrollTop = queuedElement.scrollTop;
-    window.requestAnimationFrame(() => {
+    const epoch = historyEpoch.current;
+    const readerEpoch = readerScrollEpoch.current;
+    const botId = activeBotId.current;
+    const groupId = activeGroupId.current;
+    const frame = window.requestAnimationFrame(() => {
+      pendingSnaps.current.delete(frame);
+      if (
+        epoch !== historyEpoch.current ||
+        readerEpoch !== readerScrollEpoch.current ||
+        botId !== activeBotId.current ||
+        groupId !== activeGroupId.current
+      )
+        return;
       const element = messageScroll.current;
+      if (!element) return;
       if (transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop)) {
-        queuedElement.scrollTop = queuedElement.scrollHeight;
+        element.scrollTop = element.scrollHeight;
+      } else if (element !== queuedElement && !queuedElement.isConnected) {
+        // A bot switch remounts the transcript, so the queued element is the
+        // detached one. The scroll epoch still guards the replacement's reader position.
+        element.scrollTop = element.scrollHeight;
       }
     });
+    pendingSnaps.current.add(frame);
   }
 
   async function refreshGroupThread(id: string, signal?: AbortSignal) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+    const readerEpoch = readerScrollEpoch.current;
+    const preRequestElement = messageScroll.current;
+    const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
     const snap = await rpc.threads.get({ groupId: id }, signal ? { signal } : undefined);
@@ -177,6 +211,11 @@ export function useThreadSync({
       computerRef.current,
       expandedHistoryThread.current === snap.threadId,
     );
+    // Re-read the scroller: the await gave a chat switch time to remount the
+    // transcript, so the pre-request element may now be detached. The replacement
+    // can start at the top; only stick if no scroll occurred during the load.
+    const scrollElement = messageScroll.current;
+    const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
     if (!computerOpenRef.current) commitComputer(null);
@@ -185,7 +224,8 @@ export function useThreadSync({
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
     if (
       stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      readerEpoch === readerScrollEpoch.current &&
+      (transcriptRemounted || !scrollElement || transcriptIsNearEnd(scrollElement)) &&
       expandedHistoryThread.current !== snap.threadId
     ) {
       snapTranscriptToEndAfterFrame();
@@ -194,8 +234,9 @@ export function useThreadSync({
   }
 
   async function refreshThread(id: string, signal?: AbortSignal) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+    const readerEpoch = readerScrollEpoch.current;
+    const preRequestElement = messageScroll.current;
+    const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const epoch = historyEpoch.current;
     const request = ++threadRefreshEpoch.current;
@@ -210,6 +251,11 @@ export function useThreadSync({
     ) {
       return snap;
     }
+    // Re-read the scroller: the await gave a bot switch time to remount the
+    // transcript, so the pre-request element may now be detached. The replacement
+    // can start at the top; only stick if no scroll occurred during the load.
+    const scrollElement = messageScroll.current;
+    const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     const reconciled = reconcileRefreshedThread(
       snapshotRef.current,
       snap,
@@ -222,7 +268,8 @@ export function useThreadSync({
     cacheComputerFor(id, { computer: reconciled.computer });
     if (
       stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      readerEpoch === readerScrollEpoch.current &&
+      (transcriptRemounted || !scrollElement || transcriptIsNearEnd(scrollElement)) &&
       expandedHistoryThread.current !== snap.threadId
     ) {
       snapTranscriptToEndAfterFrame();

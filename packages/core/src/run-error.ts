@@ -41,6 +41,9 @@ export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
 export const MODEL_CREDITS_EXHAUSTED_ERROR =
   "Not enough model credits. Add credits in Billing or connect your own API key.";
 
+/** An operator-set usage ceiling; buying credits does not lift it. */
+export const MODEL_CREDIT_CAP_REACHED_ERROR = "Usage limit reached. Contact support to continue.";
+
 /** A run in a billing organization without a paid plan, credits, or free period. */
 export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep running bots.";
 
@@ -119,6 +122,7 @@ const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
   ...MODEL_CONNECTION_RUN_ERRORS,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
+  MODEL_CREDIT_CAP_REACHED_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   ...stuckWorkStatusMessages(),
@@ -212,7 +216,7 @@ const MALFORMED_KEY_HEADER =
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
-  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model|only supports (?:the )?(?:\/|[\w ./-]{1,40}\b(?:endpoint|API)\b))|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
+  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model|only supports (?:the )?(?:\/|[\w ./-]{1,40}\b(?:endpoint|API)\b))|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b|\bDEGRADED function cannot be invoked\b/i;
 
 export type RunErrorRecovery = "connection" | "model" | "plan";
 
@@ -483,6 +487,9 @@ export function normalizeRunError(
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 401 ||
+    // A personal access token pasted where the provider only accepts its own sign-in token.
+    (!(status !== undefined && status >= 500) &&
+      /\bpersonal access tokens are not supported\b/i.test(signals)) ||
     ((status === 403 ||
       /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token (?:has|is) expired\b|\binvalidated oauth token\b|\bapi key is not scoped to a workspace\b/i.test(
         signals,

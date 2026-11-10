@@ -47,7 +47,6 @@ vi.mock("./api", () => ({
 vi.mock("./api-server", () => ({
   clearSpace: async () => true,
 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: vi.fn() }));
 
 registerSessionDiskCache((sameAccount?: boolean) => {

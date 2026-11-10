@@ -1,4 +1,4 @@
-FROM node:24.22.1-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a AS build
+FROM node:24.22.2-bookworm@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40 AS build
 # pnpm lives in the image so containers start without downloading it.
 ENV COREPACK_HOME=/usr/local/share/corepack
 RUN corepack enable
@@ -7,7 +7,7 @@ WORKDIR /app
 # install. pnpm gets a partial workspace: every package listed in pnpm-workspace.yaml
 # needs its manifest below, or --frozen-lockfile fails. The store is a cache mount, so
 # a lockfile change reuses whatever was already downloaded.
-COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 RUN corepack install && chmod -R a+rX "${COREPACK_HOME}"
 COPY --chmod=755 patches patches
 COPY --chmod=755 apps/api/package.json apps/api/
@@ -23,6 +23,7 @@ COPY --chmod=755 packages/chat-ui/package.json packages/chat-ui/
 COPY --chmod=755 packages/contracts/package.json packages/contracts/
 COPY --chmod=755 packages/core/package.json packages/core/
 COPY --chmod=755 packages/db/package.json packages/db/
+COPY --chmod=755 packages/i18n/package.json packages/i18n/
 COPY --chmod=755 packages/logging/package.json packages/logging/
 COPY --chmod=755 packages/memory/package.json packages/memory/
 COPY --chmod=755 packages/page-kit/package.json packages/page-kit/
@@ -44,9 +45,16 @@ COPY --chmod=755 . .
 RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
+# The runtime keeps production dependencies only; build and test tooling stays in this stage.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+  find . -name node_modules -type d -prune -exec rm -rf {} + \
+  && pnpm install --frozen-lockfile --prod --prefer-offline \
+  --store-dir=/pnpm/store --cpu=current --os=current \
+  --filter="@rakazo/api..." --filter="@rakazo/worker..." \
+  --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..."
 RUN rm -rf apps/desktop apps/mobile apps/www docs examples
 
-FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
+FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
 # Prisma's migration engine detects and links against OpenSSL.

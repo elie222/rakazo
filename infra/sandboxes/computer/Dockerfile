@@ -48,6 +48,7 @@ RUN /tmp/apt-security.sh
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
 # with no privilege escalation, so nothing can be installed at runtime.
 # Compilers stay in the builder stage; heavier toolchains are a separate call.
+# Debian names fd-find's binary fdfind, so the image links it as fd.
 ARG BROWSER
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
@@ -79,10 +80,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     jq \
-    ripgrep \
-    fd-find \
-    file \
-    sqlite3 \
     openssh-client \
     unzip \
     xclip \
@@ -90,16 +87,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     pandoc \
     python3-openpyxl \
+    ripgrep \
+    fd-find \
+    file \
+    sqlite3 \
   && rm -rf /var/lib/apt/lists/* \
-  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
-  && rg --version \
-  && fd --version \
-  && file --version \
-  && sqlite3 --version \
   && pdftotext -v \
   && pdfinfo -v \
   && pandoc --version \
   && python3 -c 'import openpyxl; print(openpyxl.__version__)' \
+  && rg --version \
+  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+  && fd --version \
+  && file --version \
+  && sqlite3 --version \
   && groupadd --gid 1000 rakazo \
   && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
   && mkdir -p /etc/rakazo/fluxbox /etc/chromium/policies/managed /etc/brave/policies/managed /etc/opt/chrome/policies/managed \

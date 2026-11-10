@@ -7,17 +7,17 @@ Organization owners and admins can export it as JSON Lines, and operators can fo
 
 ## What is recorded
 
-| Action | When |
-| --- | --- |
-| `tool.call` | A bot ran a consequential tool, or was refused one by a rule (`outcome` is `success`, `failure` or `denied`) |
-| `approval.decided` | A person allowed or denied an action a bot asked for |
-| `approval.auto_reviewed` | The auto-reviewer judged an action (`metadata.decision`) |
-| `approval.policy.changed` | Approval mode, allow/block rules, or a space setting changed |
-| `credential.created`, `credential.changed`, `credential.deleted`, `credential.revealed` | Model, MCP, connector, voice, memory, vault and bot secrets |
-| `space.created`, `space.renamed`, `space.deleted` | Spaces |
-| `auth.sign_in`, `auth.sign_out`, `auth.password.changed`, `auth.passkey.*`, `auth.session.revoked`, `device.*` | Account security, recorded in each organization the account belongs to |
-| `auth.account.deactivated`, `auth.account.reactivated` | The identity provider ([directory provisioning](./self-host-accounts.md#directory-provisioning-scim)) or the operator turned an account off or back on; the actor is the system, labelled `directory` or `operator` |
-| `audit_log.exported` | Someone exported the audit log |
+| Action                                                                                                         | When                                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tool.call`                                                                                                    | A bot ran a consequential tool, or was refused one by a rule (`outcome` is `success`, `failure` or `denied`)                                                                                                        |
+| `approval.decided`                                                                                             | A person allowed or denied an action a bot asked for                                                                                                                                                                |
+| `approval.auto_reviewed`                                                                                       | The auto-reviewer judged an action (`metadata.decision`)                                                                                                                                                            |
+| `approval.policy.changed`                                                                                      | Approval mode, allow/block rules, or a space setting changed                                                                                                                                                        |
+| `credential.created`, `credential.changed`, `credential.deleted`, `credential.revealed`                        | Model, MCP, connector, voice, memory, vault and bot secrets                                                                                                                                                         |
+| `space.created`, `space.renamed`, `space.deleted`                                                              | Spaces                                                                                                                                                                                                              |
+| `auth.sign_in`, `auth.sign_out`, `auth.password.changed`, `auth.passkey.*`, `auth.session.revoked`, `device.*` | Account security, recorded in each organization the account belongs to                                                                                                                                              |
+| `auth.account.deactivated`, `auth.account.reactivated`                                                         | The identity provider ([directory provisioning](./self-host-accounts.md#directory-provisioning-scim)) or the operator turned an account off or back on; the actor is the system, labelled `directory` or `operator` |
+| `audit_log.exported`                                                                                           | Someone exported the audit log                                                                                                                                                                                      |
 
 Each event has the time, actor (user, bot or system, with a display label), action, target,
 outcome, space, run and chat ids, the client address and user agent for people, and a few

@@ -67,8 +67,11 @@ retries let long turns survive brief provider failures.
 
 Model timeouts are configurable in milliseconds. Invalid or out-of-range values retain their
 defaults. Longer timeouts can help when several bots share a local inference server that queues
-requests. Provider SDKs and HTTP transports may impose independent timeout limits, so these
-settings do not guarantee that every provider supports arbitrarily long waits.
+requests. For `RAKAZO_LOCAL_MODELS` servers and compatible model connections added in the app,
+these settings are the only limits Rakazo applies, and a stream that is cut off names why in the
+run's error details, such as `terminated (other side closed)`. Built-in providers still drop a
+response after 5 minutes without data, and a proxy or load balancer in between may cut off a
+silent stream sooner.
 
 - `MODEL_STREAM_TIMEOUT_MS` (default `120000`, range `1000`–`2147483647`) is the time budget
   for retrying the same model. It also controls the wait for response headers when using the
@@ -102,12 +105,12 @@ callbacks.
 
 ## Feature switches
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `TICKET_BOARD_ENABLED` | `false` | Turns on the ticket board. Set it on the API and worker. |
-| `USER_DEVICES_ENABLED` | on | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker. |
-| `PI_SESSION_RECORDING` | off | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
-| `PRIVACY_POLICY_URL` | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API. |
+| Variable               | Default         | Effect                                                                                                                                                  |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TICKET_BOARD_ENABLED` | `false`         | Turns on the ticket board. Set it on the API and worker.                                                                                                |
+| `USER_DEVICES_ENABLED` | on              | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
+| `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
+| `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
 
 ## Database roles
 

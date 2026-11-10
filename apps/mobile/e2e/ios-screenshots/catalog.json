@@ -45,7 +45,7 @@
     "id": "compose",
     "title": "Compose",
     "flow": "flows/compose.yaml",
-    "screens": ["new-space", "new-group"]
+    "screens": ["new-space", "new-bot", "new-group"]
   },
   {
     "id": "split-view",

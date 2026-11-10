@@ -317,7 +317,7 @@ function writeSavedFile(
 
   while (total > SAVED_CHATS_MAX_BYTES) evict(threads);
   file.create({ overwrite: true });
-  file.write(text);
+  file.writeSync(text);
 }
 
 export function writeSavedThread(

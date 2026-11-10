@@ -734,6 +734,44 @@ describe("ObjectAgentHomeStore", () => {
     });
   });
 
+  it("removes folders from a remote computer's copy saved elsewhere during removal", async () => {
+    const { store, otherHost } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const worker = await otherHost();
+    const hydrate = store.hydrate.bind(store);
+    let saved = false;
+    store.hydrate = async (...args) => {
+      await hydrate(...args);
+      if (saved) return;
+      saved = true;
+      await worker.commit(
+        "team-1",
+        await staged({ "bots/gone/notes.txt": "deleted bot", "shared/plan.txt": "new work" }),
+        context,
+      );
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({ "shared/plan.txt": "new work" });
+  });
+
+  it("never replaces a Docker computer's copy saved elsewhere during removal", async () => {
+    const { store, rows, otherHost } = await setup(["team-1"]);
+    rows[0]!.kind = "docker";
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const worker = await otherHost();
+    const hydrate = store.hydrate.bind(store);
+    store.hydrate = async (...args) => {
+      await hydrate(...args);
+      await worker.commit("team-1", await staged({ "shared/plan.txt": "new work" }), context);
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "The cached home is older than its stored revision",
+    );
+  });
+
   it("leaves the folders to a retry when the stored copy cannot be saved", async () => {
     const { store, storage, otherHost } = await setup(["team-1"]);
     await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
