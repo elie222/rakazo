@@ -672,7 +672,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
     `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,
   );
   file.create({ overwrite: true });
-  file.write(bytesToBase64(bytes), { encoding: "base64" });
+  file.writeSync(bytesToBase64(bytes), { encoding: "base64" });
   const player = createAudioPlayer({ uri: file.uri }, { keepAudioSessionActive: onCall });
   try {
     await new Promise<void>((resolve, reject) => {

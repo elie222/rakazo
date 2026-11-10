@@ -400,7 +400,6 @@ export const PL_MESSAGES: Record<string, string> = {
   Failed: "Błąd",
   "Failed to refresh": "Nie udało się odświeżyć",
   "Failed to send message": "Nie udało się wysłać wiadomości",
-  "Failed to stop work": "Nie udało się zatrzymać pracy",
   File: "Plik",
   "Hide {label}": "Ukryj {label}",
   Diagram: "Diagram",
@@ -465,8 +464,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Type your answer": "Wpisz odpowiedź",
   Username: "Nazwa użytkownika",
   "Waiting for this bot’s response.": "Oczekiwanie na odpowiedź tego bota.",
-  "Work stopped, but the thread could not refresh: {detail}":
-    "Praca została zatrzymana, ale nie udało się odświeżyć wątku: {detail}",
   archived: "zarchiwizowane",
   bot: "bot",
   cancelled: "anulowano",
@@ -499,6 +496,7 @@ export const PL_MESSAGES: Record<string, string> = {
   Minimal: "Minimalny",
   Model: "Model",
   Name: "Nazwa",
+  "Name your Bot": "Nazwij swojego bota",
   "Read replies aloud": "Czytaj odpowiedzi na głos",
   Save: "Zapisz",
   "Saving…": "Zapisywanie…",
@@ -580,7 +578,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Name this routine.": "Nadaj nazwę tej rutynie.",
   "New routine": "Nowa rutyna",
   "Remove schedule": "Usuń harmonogram",
-  "Test run": "Uruchomienie testowe",
+  "Run now": "Uruchom teraz",
   "Time of day": "Pora dnia",
   Unit: "Jednostka",
   "When to run": "Kiedy uruchamiać",
@@ -989,6 +987,12 @@ export const PL_MESSAGES: Record<string, string> = {
     "Oczekiwanie na logowanie. Kod wygaśnie za około {minutes} min.",
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Oczekiwanie na logowanie. Link wygaśnie za około {minutes} min.",
+  "Allow microphone access to dictate.": "Zezwól na dostęp do mikrofonu, aby dyktować.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Zezwól na rozpoznawanie mowy w Ustawieniach lub połącz dostawcę głosu, który transkrybuje.",
+  "Could not dictate": "Nie udało się dyktować",
+  Dictate: "Dyktuj",
+  "Stop dictating": "Zatrzymaj dyktowanie",
   "Allow microphone access to call a bot.": "Zezwól na dostęp do mikrofonu, aby zadzwonić do bota.",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Zezwól na rozpoznawanie mowy w Ustawieniach lub połącz ElevenLabs, OpenAI albo Fish Audio.",

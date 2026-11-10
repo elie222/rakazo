@@ -1,11 +1,36 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Switch, Textarea } from "@rakazo/ui-web";
-import { Eye, GitBranch, Globe, Mail, MessageSquare, X } from "lucide-react";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+  Switch,
+  Textarea,
+} from "@rakazo/ui-web";
+import {
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  GitBranch,
+  Globe,
+  Mail,
+  MessageSquare,
+  MoreHorizontal,
+  RefreshCw,
+  X,
+} from "lucide-react";
+import type { ReactNode } from "react";
 import { useId } from "react";
 import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { authClient } from "../../lib/auth";
+import { useCopyText } from "../../lib/copy-text";
 import type { RoutineWatchDraft } from "../../lib/routine-draft";
 
 export function WatchTriggerCard({
@@ -61,10 +86,10 @@ export function WatchTriggerCard({
         {watch.kind === "files" ? (
           <Textarea
             aria-label={t`Files or folders, one per line`}
-            placeholder={"inbox/\nreports/latest.csv"}
+            placeholder="reports/latest.csv"
             value={watch.paths}
             onChange={(e) => onChange({ ...watch, paths: e.target.value })}
-            rows={3}
+            className="min-h-0"
           />
         ) : null}
         {watch.kind === "command" ? (
@@ -258,6 +283,8 @@ export function InboundTriggerCard({
   configured,
   onRemove,
   onRotate,
+  onReveal,
+  onHide,
 }: {
   kind: "webhook" | "github";
   saved: boolean;
@@ -266,28 +293,15 @@ export function InboundTriggerCard({
   configured: boolean;
   onRemove: () => void;
   onRotate: () => void;
+  onReveal: () => void;
+  onHide: () => void;
 }) {
   const { t } = useLingui();
-  const pending = !saved;
-  const placeholder = t`Available after the routine is saved`;
-  // GitHub delivery URL and signature header are fixed by bot id / protocol, so show
-  // them before save. The shared secret still needs a saved routine to mint.
-  const postValue = kind === "github" || !pending ? path : placeholder;
-  const keyValue = pending
-    ? placeholder
-    : (secret ?? (configured ? t`Saved. Rotate to reveal.` : placeholder));
-  const headerValue =
+  const hidden = "••••••••";
+  const credential =
     kind === "github"
-      ? "X-Hub-Signature-256: sha256=…"
-      : pending
-        ? placeholder
-        : secret
-          ? `Authorization: Bearer ${secret}`
-          : configured
-            ? "Authorization: Bearer …"
-            : placeholder;
-  const cellClass =
-    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-label text-foreground/75";
+      ? { label: t`Secret`, value: secret ?? hidden }
+      : { label: t`Header`, value: `Authorization: Bearer ${secret ?? hidden}` };
 
   return (
     <div className="rounded-xl border border-border p-3">
@@ -300,6 +314,28 @@ export function InboundTriggerCard({
         <span className="flex-1 text-body-lg text-foreground">
           {kind === "github" ? <Trans>Git event</Trans> : <Trans>When a webhook fires</Trans>}
         </span>
+        {saved && configured ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t`Key options`}
+                  className="text-muted-foreground"
+                />
+              }
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto">
+              <DropdownMenuItem onClick={onRotate}>
+                <RefreshCw />
+                <Trans>Rotate key</Trans>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
         <Button
           variant="ghost"
           size="icon-xs"
@@ -310,32 +346,63 @@ export function InboundTriggerCard({
           <X />
         </Button>
       </div>
-      <div className="mt-2.5 space-y-2.5 text-body">
-        <div className="block text-muted-foreground/70">
-          <Trans>POST to</Trans>
-          <div className={`mt-1 ${cellClass}`}>{postValue}</div>
+      {saved && configured ? (
+        <div className="mt-2.5 space-y-2">
+          <CopyRow label={t`URL`} value={path} />
+          <CopyRow label={credential.label} value={credential.value} copyable={Boolean(secret)}>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={secret ? t`Hide key` : t`Show key`}
+              onClick={secret ? onHide : onReveal}
+              className="text-muted-foreground"
+            >
+              {secret ? <EyeOff /> : <Eye />}
+            </Button>
+          </CopyRow>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground/70">
-          <span className="shrink-0">
-            <Trans>key</Trans>
-          </span>
-          <div className={`min-w-0 flex-1 ${cellClass}`}>{keyValue}</div>
-        </div>
-        <div className="block text-muted-foreground/70">
-          <Trans>header</Trans>
-          <div className={`mt-1 ${cellClass}`}>{headerValue}</div>
-        </div>
-        {saved && configured && !secret ? (
-          <Button
-            variant="link"
-            size="xs"
-            onClick={onRotate}
-            className="px-0 text-muted-foreground"
-          >
-            <Trans>Rotate key</Trans>
-          </Button>
-        ) : null}
-      </div>
+      ) : (
+        <p className="mt-1.5 px-0.5 text-body-sm text-muted-foreground">
+          <Trans>Available after saving</Trans>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** One labelled value a sender pastes into another service, with a copy button. */
+function CopyRow({
+  label,
+  value,
+  copyable = true,
+  children,
+}: {
+  label: string;
+  value: string;
+  copyable?: boolean;
+  /** Extra controls before the copy button. */
+  children?: ReactNode;
+}) {
+  const { t } = useLingui();
+  const [copied, copy] = useCopyText();
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg bg-muted py-0.5 pr-0.5 pl-2.5">
+      <span className="w-14 shrink-0 text-label text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-label text-foreground/75">
+        {value}
+      </span>
+      {children}
+      {copyable ? (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={copied ? t`Copied` : t`Copy ${label}`}
+          onClick={() => copy(value)}
+          className="text-muted-foreground"
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      ) : null}
     </div>
   );
 }

@@ -51,7 +51,7 @@ msgstr "{0, plural, one {# 个技能} other {# 个技能}}"
 #. placeholder {0}: chosen.length
 #: src/components/integrations/space-availability.tsx
 msgid "{0, plural, one {# space} other {# spaces}}"
-msgstr "{0, plural, one {# 个工作区} other {# 个工作区}}"
+msgstr "{0, plural, one {# 个空间} other {# 个空间}}"
 
 #. placeholder {0}: server.health.toolCount
 #: src/pages/McpServersOverlay.tsx
@@ -147,7 +147,7 @@ msgstr "{amount} / {period}"
 
 #: src/pages/shell/dialogs.tsx
 msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
-msgstr "{botCount, plural, other {删除 {name} 及其 # 个机器人？}}"
+msgstr "{botCount, plural, other {删除 {name} 及其 # 个 Bot？}}"
 
 #: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
@@ -553,7 +553,7 @@ msgstr "1 小时"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
-msgstr "1 个工作区"
+msgstr "1 个空间"
 
 #: src/pages/BotContextMenu.tsx
 msgid "3 hours"
@@ -587,7 +587,7 @@ msgstr "每周汇总你关注话题的最新变化"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
-msgstr "约 {kb} KB 的记忆不再提供给机器人。"
+msgstr "约 {kb} KB 的记忆不再提供给 Bot。"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -644,7 +644,7 @@ msgstr "{name} 的操作"
 
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
-msgstr "工作区操作"
+msgstr "空间操作"
 
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/RoutineEditor.tsx
@@ -701,7 +701,6 @@ msgstr "请填写服务器名称。"
 msgid "Add a stdio command."
 msgstr "请填写 stdio 命令。"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
 msgid "Add a trigger to run this routine."
 msgstr "添加触发器以运行此例程。"
@@ -757,7 +756,7 @@ msgstr "添加通行密钥"
 
 #: src/pages/model-settings/providers-section.tsx
 msgid "Add provider"
-msgstr "添加提供方"
+msgstr "添加提供商"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add rule"
@@ -813,12 +812,12 @@ msgstr "地址第 2 行"
 msgid "Adds"
 msgstr "将添加"
 
+#: src/lib/cron.ts
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "高级"
@@ -852,7 +851,7 @@ msgstr "全部文件"
 
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
-msgstr "所有工作区"
+msgstr "所有空间"
 
 #: src/pages/ActivityList.tsx
 msgid "All statuses"
@@ -868,7 +867,7 @@ msgstr "允许"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
-msgstr "允许跨空间机器人通信"
+msgstr "允许跨空间 Bot 通信"
 
 #: src/components/AskCard.tsx
 msgid "Allow in this space"
@@ -936,7 +935,7 @@ msgstr "金额"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
-msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
+msgstr "此提供商存储的是 API 密钥，不是订阅登录。"
 
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -952,7 +951,7 @@ msgstr "集成工具"
 
 #: src/lib/activity-list-filters.ts
 msgid "Another agent"
-msgstr "其他 Agent"
+msgstr "其他智能体"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Another assistant"
@@ -1064,7 +1063,7 @@ msgstr "请在屏幕上批准或拒绝。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
-msgstr "批准此服务器后，Agent 才能使用它的工具。"
+msgstr "批准此服务器后，智能体才能使用它的工具。"
 
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Approved"
@@ -1164,7 +1163,7 @@ msgstr "授权"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
-msgstr "授权此服务器后，Agent 才能使用其工具。将打开弹窗。"
+msgstr "授权此服务器后，智能体才能使用其工具。将打开弹窗。"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Auto"
@@ -1175,8 +1174,8 @@ msgid "Automated senders"
 msgstr "自动发送者"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "Available after the routine is saved"
-msgstr "保存例行任务后可用"
+msgid "Available after saving"
+msgstr "保存后可用"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -1334,7 +1333,7 @@ msgstr "Bot 和浏览器自动化"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
-msgstr "机器人使用给它发消息的人的账号"
+msgstr "Bot 使用给它发消息的人的账号"
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1525,7 +1524,7 @@ msgstr "聊天设置"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Chat with your bot from Slack."
-msgstr "在 Slack 中与你的机器人聊天。"
+msgstr "在 Slack 中与你的 Bot 聊天。"
 
 #: src/pages/settings-nav.ts
 msgid "Chat with your bots from other apps."
@@ -1598,7 +1597,7 @@ msgstr "正在检查…"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
-msgstr "选择机器人形状和颜色，或上传图片"
+msgstr "选择 Bot 形状和颜色，或上传图片"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/shell/composer-error.tsx
@@ -1615,7 +1614,7 @@ msgstr "设置新密码"
 
 #: src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
-msgstr "选择提供方"
+msgstr "选择提供商"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Choose backup"
@@ -1935,7 +1934,7 @@ msgstr "连接模型"
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "Connect a model in Settings before running bots."
-msgstr "运行机器人前，请先在设置中连接模型。"
+msgstr "运行 Bot 前，请先在设置中连接模型。"
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -1953,7 +1952,7 @@ msgstr "连接 MCP 服务器“{name}”"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Connect memory provider"
-msgstr "连接记忆提供方"
+msgstr "连接记忆提供商"
 
 #: src/components/ModelCredits.tsx
 msgid "Connect my own"
@@ -1965,7 +1964,7 @@ msgstr "连接 OAuth"
 
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
-msgstr "请先连接此模型的提供方。"
+msgstr "请先连接此模型的提供商。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -2072,6 +2071,7 @@ msgstr "对话"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/model-step.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
@@ -2088,6 +2088,10 @@ msgstr "复制"
 #: src/components/vault/BotEmailAddresses.tsx
 msgid "Copy {address}"
 msgstr "复制 {address}"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Copy {label}"
+msgstr "复制 {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2157,7 +2161,7 @@ msgstr "无法修改密码"
 
 #: src/components/integrations/space-availability.tsx
 msgid "Could not change where this is available"
-msgstr "无法更改可用的工作区"
+msgstr "无法更改可用范围"
 
 #: src/components/pages/PageViewHost.tsx
 msgid "Could not change who can view this page. Try again."
@@ -2200,11 +2204,11 @@ msgstr "无法连接 {0}"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not connect this provider"
-msgstr "无法连接此提供方"
+msgstr "无法连接此提供商"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not connect this voice provider"
-msgstr "无法连接此语音提供方"
+msgstr "无法连接此语音提供商"
 
 #: src/pages/shell/use-computer.tsx
 msgid "Could not connect to the computer screen"
@@ -2243,7 +2247,7 @@ msgstr "无法创建分组"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create space"
-msgstr "无法创建工作区"
+msgstr "无法创建空间"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not create the bot"
@@ -2287,7 +2291,7 @@ msgstr "无法删除技能"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete space"
-msgstr "无法删除工作区"
+msgstr "无法删除空间"
 
 #: src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
@@ -2295,7 +2299,7 @@ msgstr "无法删除此产物。"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
-msgstr "无法断开记忆提供方"
+msgstr "无法断开记忆提供商"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not disconnect OAuth"
@@ -2303,11 +2307,11 @@ msgstr "无法断开 OAuth"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not disconnect this provider"
-msgstr "无法断开此提供方"
+msgstr "无法断开此提供商"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not disconnect this voice provider"
-msgstr "无法断开此语音提供方"
+msgstr "无法断开此语音提供商"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not dismiss"
@@ -2344,7 +2348,7 @@ msgstr "无法安装插件"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not leave space"
-msgstr "无法退出工作区"
+msgstr "无法退出空间"
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
@@ -2525,7 +2529,7 @@ msgstr "无法重命名分组"
 
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
-msgstr "无法重命名工作区"
+msgstr "无法重命名空间"
 
 #: src/components/pages/PagesList.tsx
 #: src/components/pages/PageViewHost.tsx
@@ -2632,6 +2636,10 @@ msgstr "无法发送"
 msgid "Could not show the credential"
 msgstr "无法显示凭据"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not show the webhook key"
+msgstr "无法显示 Webhook 密钥"
+
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
 msgstr "无法登录"
@@ -2679,7 +2687,7 @@ msgstr "无法更新账单"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not update bot access"
-msgstr "无法更新机器人访问权限"
+msgstr "无法更新 Bot 访问权限"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
@@ -2781,13 +2789,13 @@ msgid "Create organization"
 msgstr "创建组织"
 
 #: src/pages/RoutineList.tsx
-msgid "Create Routine"
-msgstr "新建例行任务"
+msgid "Create routine"
+msgstr "创建例行任务"
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Create space"
-msgstr "创建工作区"
+msgstr "创建空间"
 
 #: src/pages/Auth.tsx
 msgid "Create your Rakazo"
@@ -2863,7 +2871,7 @@ msgstr "自定义{label}"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
-msgstr "自定义机器人头像"
+msgstr "自定义 Bot 头像"
 
 #: src/components/SpendingLimitSettings.tsx
 msgid "Daily"
@@ -2988,11 +2996,11 @@ msgstr "删除分组"
 #: src/pages/shell/shell-dialogs.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
-msgstr "删除工作区"
+msgstr "删除空间"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Delete this Space's credentials?"
-msgstr "要删除此工作区的凭据吗？"
+msgstr "要删除此空间的凭据吗？"
 
 #: src/pages/shell/message-view.tsx
 msgid "deleted"
@@ -3350,17 +3358,13 @@ msgstr "每{n}小时{minute}分"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
-msgstr "此空间中的所有机器人都会读取并更新这些笔记。"
+msgstr "此空间中的所有 Bot 都会读取并更新这些笔记。"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "每天"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "每小时"
 
@@ -3377,23 +3381,13 @@ msgstr "所有消息"
 msgid "Every Monday"
 msgstr "每周一"
 
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every month"
-msgstr "每月"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every week"
-msgstr "每周"
-
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
-msgstr "这里的每个人都能看到它的聊天、机器人和记忆"
+msgstr "这里的每个人都能看到它的聊天、Bot 和记忆"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
-msgstr "此 Bot 所在工作区的所有人都能读取它从 {linkApp} 收到的对话。"
+msgstr "此 Bot 所在空间的所有人都能读取它从 {linkApp} 收到的对话。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -3493,7 +3487,7 @@ msgstr "文件"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
-msgstr "计算机上的文件或文件夹"
+msgstr "电脑上的文件或文件夹"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
@@ -3501,7 +3495,7 @@ msgstr "文件或文件夹，每行一个"
 
 #: src/pages/Artifacts.tsx
 msgid "Files your bots create, like reports, docs and images, collect here."
-msgstr "你的机器人创建的文件，例如报告、文档和图片，都会汇集在这里。"
+msgstr "你的 Bot 创建的文件，例如报告、文档和图片，都会汇集在这里。"
 
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
@@ -3509,7 +3503,7 @@ msgstr "筛选 Bot"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by bot"
-msgstr "按机器人筛选"
+msgstr "按 Bot 筛选"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3704,7 +3698,7 @@ msgid "Hang up, then enter the code on screen."
 msgstr "请挂断，然后输入屏幕上的代码。"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "header"
+msgid "Header"
 msgstr "请求头"
 
 #: src/components/vault/VaultItemDetail.tsx
@@ -3742,6 +3736,10 @@ msgstr "隐藏"
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Hide"
 msgstr "隐藏"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Hide key"
+msgstr "隐藏密钥"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -3797,7 +3795,7 @@ msgstr "频率"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "How other bots see it"
-msgstr "其他机器人如何了解它"
+msgstr "其他 Bot 如何了解它"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -3843,7 +3841,7 @@ msgstr "导入"
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
-msgstr "导入 Agent"
+msgstr "导入智能体"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Import data"
@@ -3945,8 +3943,7 @@ msgstr "集成域名"
 msgid "Integrations"
 msgstr "集成"
 
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Interval"
 msgstr "间隔"
 
@@ -4037,8 +4034,8 @@ msgid "Keep tool results whole"
 msgstr "保留完整工具结果"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "key"
-msgstr "密钥"
+msgid "Key options"
+msgstr "密钥选项"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4092,7 +4089,7 @@ msgstr "允许 Bot 使用这台电脑"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
+msgstr "让 Bot 在 MEMORY.md 之外，按语义保存和回忆事实。"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4171,7 +4168,7 @@ msgstr "正在加载预览…"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
-msgstr "正在加载语音提供方…"
+msgstr "正在加载语音提供商…"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -4261,7 +4258,7 @@ msgstr "管理 MCP 服务器"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Manage other bots"
-msgstr "管理其他机器人"
+msgstr "管理其他 Bot"
 
 #: src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -4418,7 +4415,7 @@ msgstr "来自 {peer} 的消息"
 
 #: src/lib/activity-list-filters.ts
 msgid "Message from another agent"
-msgstr "来自其他 Agent 的消息"
+msgstr "来自其他智能体的消息"
 
 #: src/pages/shell/composer.tsx
 msgid "Message…"
@@ -4515,7 +4512,7 @@ msgstr "模型"
 
 #: src/components/ModelCredits.tsx
 msgid "Models at provider cost"
-msgstr "按提供方成本计费的模型"
+msgstr "按提供商成本计费的模型"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -4547,6 +4544,10 @@ msgstr "每月额度"
 #: src/components/ModelCredits.tsx
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "每月额度在续订时到期。充值额度不会过期。"
+
+#: src/lib/cron.ts
+msgid "Monthly on the 1st"
+msgstr "每月 1 日"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -4747,7 +4748,7 @@ msgstr "新建技能"
 
 #: src/pages/shell/dialogs.tsx
 msgid "New space"
-msgstr "新建工作区"
+msgstr "新建空间"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
@@ -4791,7 +4792,7 @@ msgstr "无认证"
 
 #: src/components/integrations/agent-access.tsx
 msgid "No bots"
-msgstr "没有机器人"
+msgstr "没有 Bot"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4840,7 +4841,7 @@ msgstr "未列出模型。"
 
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
-msgstr "未找到 OpenClaw、Hermes 或 Agent 文档。"
+msgstr "未找到 OpenClaw、Hermes 或智能体文档。"
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -4865,6 +4866,10 @@ msgstr "不重置"
 msgid "No results"
 msgstr "无结果"
 
+#: src/pages/RoutineList.tsx
+msgid "No routines yet"
+msgstr "还没有例行任务"
+
 #: src/components/markdown-copy.tsx
 msgid "No rows"
 msgstr "无行"
@@ -4873,7 +4878,7 @@ msgstr "无行"
 msgid "No runs match these filters."
 msgstr "没有符合筛选的运行记录。"
 
-#: src/pages/RoutineRunHistory.tsx
+#: src/pages/ActivityList.tsx
 msgid "No runs yet"
 msgstr "还没有运行记录"
 
@@ -4983,6 +4988,7 @@ msgid "Offline"
 msgstr "离线"
 
 #: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "On a schedule"
 msgstr "按计划"
 
@@ -5014,6 +5020,10 @@ msgstr "仅输入 {codeHost} 发给你的验证码。"
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "仅我"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can see its webhook key."
+msgstr "只有 Bot 的创建者才能查看它的 Webhook 密钥。"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -5208,7 +5218,7 @@ msgstr "页面"
 
 #: src/components/pages/PagesList.tsx
 msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
-msgstr "此机器人为你创建的页面会显示在这里。请它做一个仪表板、跟踪表或计划即可创建。"
+msgstr "此 Bot 为你创建的页面会显示在这里。让 Bot 做一个仪表板、跟踪表或计划，即可生成。"
 
 #: src/components/pages/PagesList.tsx
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
@@ -5374,10 +5384,6 @@ msgstr "插件"
 msgid "Post \"No changes\" in chat"
 msgstr "在聊天中发布“无变化”"
 
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "POST to"
-msgstr "POST 到"
-
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "PR reviewer"
 msgstr "PR 审查员"
@@ -5422,7 +5428,7 @@ msgstr "私有"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "Private workspace with its own bots and groups."
-msgstr "单独的工作区，有自己的 Bot 和群组。"
+msgstr "独立的空间，有自己的 Bot 和群组。"
 
 #: src/pages/plugins/use-catalog-browse.ts
 msgid "Productivity"
@@ -5444,11 +5450,11 @@ msgstr "协议"
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
-msgstr "提供方"
+msgstr "提供商"
 
 #: src/pages/model-settings/providers-section.tsx
 msgid "Providers"
-msgstr "提供方"
+msgstr "提供商"
 
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
@@ -5694,7 +5700,7 @@ msgstr "要移除 {memberName} 吗？"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
-msgstr "要移除 {secretName} 吗？机器人将无法再使用它。"
+msgstr "要移除 {secretName} 吗？Bot 将无法再使用它。"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Remove {site}"
@@ -5713,7 +5719,7 @@ msgstr "移除邮件触发器"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
-msgstr "从所有工作区移除？"
+msgstr "从所有空间移除？"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
@@ -5727,7 +5733,7 @@ msgstr "移除请求头"
 msgid "Remove message trigger"
 msgstr "移除消息触发器"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Remove schedule"
 msgstr "移除计划"
 
@@ -5942,7 +5948,7 @@ msgstr "返回 Rakazo"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
-msgstr "请检查提供方设置并重新测试。"
+msgstr "请检查提供商设置并重新测试。"
 
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "Reviews pull requests waiting on you"
@@ -5993,6 +5999,10 @@ msgstr "运行时间"
 msgid "Run history"
 msgstr "运行记录"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Run now"
+msgstr "立即运行"
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
 msgstr "运行时间必须是将来的时间。"
@@ -6021,7 +6031,7 @@ msgstr "运行"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
-msgstr "这个 Bot 收到该提供方发来的已验证消息时会运行。"
+msgstr "这个 Bot 收到该提供商发来的已验证消息时会运行。"
 
 #: src/pages/plugins/use-catalog-browse.ts
 msgid "Sales & CRM"
@@ -6082,10 +6092,6 @@ msgstr "已保存，但列表刷新失败"
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "已保存。"
-
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "Saved. Rotate to reveal."
-msgstr "已保存。轮换后可查看。"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -6163,7 +6169,7 @@ msgstr "搜索 Bot"
 
 #: src/pages/shell/command-palette.tsx
 msgid "Search bots, actions, and settings"
-msgstr "搜索机器人、操作和设置"
+msgstr "搜索 Bot、操作和设置"
 
 #: src/pages/plugins/add-menu.tsx
 #: src/pages/plugins/domain-search.tsx
@@ -6210,6 +6216,10 @@ msgstr "搜索：{0}"
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "正在搜索…"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Secret"
+msgstr "密钥"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6384,6 +6394,10 @@ msgstr "显示全部"
 msgid "Show bots"
 msgstr "显示 Bot"
 
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Show key"
+msgstr "显示密钥"
+
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "显示列表"
@@ -6470,7 +6484,7 @@ msgstr "网站"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Sites you sign in to stay signed in for everyone in this space"
-msgstr "你登录的网站会对此工作区的所有人保持登录"
+msgstr "你登录的网站会对此空间的所有人保持登录"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Skill"
@@ -6581,15 +6595,15 @@ msgstr "分拣新邮件并起草回复"
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr "工作区"
+msgstr "空间"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
-msgstr "工作区默认"
+msgstr "空间默认"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Spaces"
-msgstr "工作区"
+msgstr "空间"
 
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -6728,7 +6742,7 @@ msgstr "流式回复"
 
 #: src/lib/identity-display.ts
 msgid "subagent"
-msgstr "子 Agent"
+msgstr "子智能体"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/model-step.tsx
@@ -6858,10 +6872,6 @@ msgstr "测试 API 密钥"
 msgid "Test connection"
 msgstr "测试连接"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Test run"
-msgstr "测试运行"
-
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Testing"
 msgstr "测试"
@@ -6880,7 +6890,7 @@ msgstr "Bot 可以使用该文件，但看不到图片内容。"
 
 #: src/components/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
-msgstr "Bot 的浏览器会对此工作区的所有人保持登录"
+msgstr "Bot 的浏览器会对此空间的所有人保持登录"
 
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -6915,7 +6925,7 @@ msgstr "所有者可能已关闭其链接或删除了它。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
-msgstr "提供方正在限制请求频率。"
+msgstr "提供商正在限制请求频率。"
 
 #: src/lib/computer-screen.ts
 msgid "The screen connection closed."
@@ -6931,7 +6941,7 @@ msgstr "屏幕链接已过期。"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
-msgstr "所选记忆提供方在此构建中不可用。"
+msgstr "所选记忆提供商在此构建中不可用。"
 
 #: src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
@@ -7096,15 +7106,15 @@ msgstr "将永久删除全部消息并停止当前工作。聊天仍可使用。
 
 #: src/lib/model-connection-preflight.ts
 msgid "This provider cannot be tested without saving."
-msgstr "此提供方必须先保存才能测试。"
+msgstr "此提供商必须先保存才能测试。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "This provider is not connected yet."
-msgstr "此提供方尚未连接。"
+msgstr "此提供商尚未连接。"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "This removes the connection from every space."
-msgstr "这会从所有工作区移除这个连接。"
+msgstr "这会从所有空间移除这个连接。"
 
 #: src/pages/Auth.tsx
 msgid "This reset link is invalid or expired"
@@ -7129,7 +7139,7 @@ msgstr "此服务器的工具结果超出模型容量。请关闭该服务器的
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
-msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供方。"
+msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供商。"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 msgid "This template was just updated. Check it again."
@@ -7425,6 +7435,10 @@ msgstr "上传"
 msgid "Urgent"
 msgstr "紧急"
 
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "URL"
+msgstr "URL"
+
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
@@ -7619,8 +7633,6 @@ msgid "week"
 msgstr "周"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "工作日"
 
@@ -7642,7 +7654,7 @@ msgstr "它的记忆怎么处理？"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What can this space use?"
-msgstr "这个工作区可以使用什么？"
+msgstr "这个空间可以使用什么？"
 
 #: src/components/SignupSurvey.tsx
 msgid "What do you most want Rakazo to help with?"
@@ -7900,11 +7912,11 @@ msgstr "试用期的电脑时长已用完。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
-msgstr "你的语音提供方额度已用完。"
+msgstr "你的语音提供商额度已用完。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
-msgstr "你的语音提供方拒绝了该密钥。"
+msgstr "你的语音提供商拒绝了该密钥。"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "ZIP or postal code"

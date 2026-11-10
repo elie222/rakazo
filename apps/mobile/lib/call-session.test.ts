@@ -16,6 +16,7 @@ import {
   endCallBeforeSessionEnd,
   getSnapshot,
   hangUp,
+  recordClip,
   SIGN_OUT_HANG_UP_MS,
   setCallProviderTranscribe,
   startCall,
@@ -2013,6 +2014,29 @@ describe("mobile call recording without metering", () => {
     audio.status = {};
     audio.uri = null;
     files.base64 = async () => "";
+  });
+
+  it("leaves a call's audio mode alone and switches recording on only for a dictated clip", async () => {
+    const { record: _record, ...deps } = fakes().deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.record).toHaveBeenCalledOnce();
+    endCall();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(audio.setAudioMode).not.toHaveBeenCalled();
+
+    const stopped = new AbortController();
+    const clip = recordClip(new AbortController().signal, stopped.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.setAudioMode).toHaveBeenCalledWith(
+      expect.objectContaining({ allowsRecording: true }),
+    );
+    stopped.abort();
+    await vi.advanceTimersByTimeAsync(200);
+    await clip;
+    expect(audio.setAudioMode).toHaveBeenLastCalledWith(
+      expect.objectContaining({ allowsRecording: false }),
+    );
   });
 
   it("ends the clip before the cap and sends nothing for silence", async () => {

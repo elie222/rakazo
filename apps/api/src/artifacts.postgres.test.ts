@@ -7,8 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createOwnedArtifact, listSpaceArtifacts } from "./artifacts.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("artifact upload nonce (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;

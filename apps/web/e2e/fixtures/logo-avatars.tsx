@@ -1,7 +1,7 @@
 import type { ProductEvent } from "@rakazo/contracts";
+import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import type { LogoAvatarActivity } from "@rakazo/core";
 import {
-  BOT_COLOR_LIST,
   createLogoAvatarActivityStore,
   initialLogoAvatarSignals,
   logoAvatarActivity,

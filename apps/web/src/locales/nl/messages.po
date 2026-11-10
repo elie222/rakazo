@@ -701,7 +701,6 @@ msgstr "Voeg een servernaam toe."
 msgid "Add a stdio command."
 msgstr "Voeg een stdio-commando toe."
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
 msgid "Add a trigger to run this routine."
 msgstr "Voeg een trigger toe om deze routine uit te voeren."
@@ -813,12 +812,12 @@ msgstr "Adresregel 2"
 msgid "Adds"
 msgstr "Bevat"
 
+#: src/lib/cron.ts
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "Geavanceerd"
@@ -1175,8 +1174,8 @@ msgid "Automated senders"
 msgstr "Geautomatiseerde afzenders"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "Available after the routine is saved"
-msgstr "Beschikbaar zodra de routine is opgeslagen"
+msgid "Available after saving"
+msgstr "Beschikbaar na opslaan"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2072,6 +2071,7 @@ msgstr "Gesprekken"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/model-step.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
@@ -2088,6 +2088,10 @@ msgstr "Kopiëren"
 #: src/components/vault/BotEmailAddresses.tsx
 msgid "Copy {address}"
 msgstr "{address} kopiëren"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Copy {label}"
+msgstr "{label} kopiëren"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2632,6 +2636,10 @@ msgstr "Versturen mislukt"
 msgid "Could not show the credential"
 msgstr "Kan de gegevens niet tonen"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not show the webhook key"
+msgstr "Webhooksleutel tonen mislukt"
+
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
 msgstr "Aanmelden mislukt"
@@ -2781,7 +2789,7 @@ msgid "Create organization"
 msgstr "Organisatie maken"
 
 #: src/pages/RoutineList.tsx
-msgid "Create Routine"
+msgid "Create routine"
 msgstr "Routine aanmaken"
 
 #: src/components/AskCard.tsx
@@ -3353,14 +3361,10 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Alle bots in deze space lezen deze notities en houden ze bij."
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Elke dag"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Elk uur"
 
@@ -3376,16 +3380,6 @@ msgstr "Elk bericht"
 #: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Elke maandag"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every month"
-msgstr "Elke maand"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every week"
-msgstr "Elke week"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -3704,8 +3698,8 @@ msgid "Hang up, then enter the code on screen."
 msgstr "Hang op en voer daarna de code op het scherm in."
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "header"
-msgstr "header"
+msgid "Header"
+msgstr "Header"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3742,6 +3736,10 @@ msgstr "Verborgen"
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Hide"
 msgstr "Verbergen"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Hide key"
+msgstr "Sleutel verbergen"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -3945,8 +3943,7 @@ msgstr "Integratiedomein"
 msgid "Integrations"
 msgstr "Integraties"
 
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Interval"
 msgstr "Interval"
 
@@ -4037,8 +4034,8 @@ msgid "Keep tool results whole"
 msgstr "Toolresultaten volledig houden"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "key"
-msgstr "sleutel"
+msgid "Key options"
+msgstr "Sleutelopties"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4548,6 +4545,10 @@ msgstr "Maandelijks tegoed"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Maandelijks tegoed vervalt bij verlenging. Opwaarderingen vervallen niet."
 
+#: src/lib/cron.ts
+msgid "Monthly on the 1st"
+msgstr "Maandelijks op de 1e"
+
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4865,6 +4866,10 @@ msgstr "Niet resetten"
 msgid "No results"
 msgstr "Geen resultaten"
 
+#: src/pages/RoutineList.tsx
+msgid "No routines yet"
+msgstr "Nog geen routines"
+
 #: src/components/markdown-copy.tsx
 msgid "No rows"
 msgstr "Geen rijen"
@@ -4873,7 +4878,7 @@ msgstr "Geen rijen"
 msgid "No runs match these filters."
 msgstr "Geen runs komen overeen met deze filters."
 
-#: src/pages/RoutineRunHistory.tsx
+#: src/pages/ActivityList.tsx
 msgid "No runs yet"
 msgstr "Nog geen runs"
 
@@ -4983,6 +4988,7 @@ msgid "Offline"
 msgstr "Offline"
 
 #: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "On a schedule"
 msgstr "Op een schema"
 
@@ -5014,6 +5020,10 @@ msgstr "Voer alleen een code in die {codeHost} je heeft gestuurd."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Alleen ik"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can see its webhook key."
+msgstr "Alleen de maker van de bot kan de webhooksleutel zien."
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -5374,10 +5384,6 @@ msgstr "Plugins"
 msgid "Post \"No changes\" in chat"
 msgstr "Plaats \"No changes\" in de chat"
 
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "POST to"
-msgstr "POST naar"
-
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "PR reviewer"
 msgstr "PR-reviewer"
@@ -5727,7 +5733,7 @@ msgstr "Header verwijderen"
 msgid "Remove message trigger"
 msgstr "Berichttrigger verwijderen"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Remove schedule"
 msgstr "Schema verwijderen"
 
@@ -5993,6 +5999,10 @@ msgstr "Uitvoeren om"
 msgid "Run history"
 msgstr "Rungeschiedenis"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Run now"
+msgstr "Nu uitvoeren"
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
 msgstr "Het uitvoertijdstip moet in de toekomst liggen."
@@ -6082,10 +6092,6 @@ msgstr "Opgeslagen, maar het vernieuwen van de lijst mislukte"
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "Opgeslagen."
-
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "Saved. Rotate to reveal."
-msgstr "Opgeslagen. Vernieuw de sleutel om deze te tonen."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -6210,6 +6216,10 @@ msgstr "Zoeken: {0}"
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "Bezig met zoeken…"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Secret"
+msgstr "Geheim"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6383,6 +6393,10 @@ msgstr "Alles tonen"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "Bots tonen"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Show key"
+msgstr "Sleutel tonen"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -6857,10 +6871,6 @@ msgstr "API-sleutel testen"
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "Verbinding testen"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Test run"
-msgstr "Testrun"
 
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Testing"
@@ -7425,6 +7435,10 @@ msgstr "Uploaden"
 msgid "Urgent"
 msgstr "Dringend"
 
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "URL"
+msgstr "URL"
+
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Gebruik"
@@ -7619,8 +7633,6 @@ msgid "week"
 msgstr "week"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Werkdagen"
 

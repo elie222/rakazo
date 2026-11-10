@@ -34,6 +34,7 @@ vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fa
 vi.mock("./routine", () => ({
   deviceTimeZone: () => "UTC",
   routineTriggerRows: () => ["Every day at 9:00 AM"],
+  routineWebTriggers: () => [],
 }));
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) =>
@@ -44,6 +45,7 @@ vi.mock("../components/settings-group", () => ({
     createElement("span", null, title, value),
   SettingsSwitch: () => null,
 }));
+vi.mock("../components/menu-picker", () => ({ MenuPickerMenu: () => null }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
 vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
 vi.mock("../components/bot-email", () => ({

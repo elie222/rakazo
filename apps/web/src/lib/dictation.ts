@@ -1,9 +1,11 @@
 import { t } from "@lingui/core/macro";
 import {
   cancelResponseBody,
+  MAX_TRANSCRIPTION_RESPONSE_BYTES,
   readJsonObjectWithin,
   recognitionLocaleTag,
   speechLocaleTag,
+  VOICE_RESPONSE_TIMEOUT_MS,
   withAbort,
 } from "@rakazo/core";
 import { desktopBridge } from "./desktop.js";
@@ -44,8 +46,6 @@ const ENDPOINT_SILENCE_MS = 1200;
 const ENDPOINT_TICK_MS = 80;
 const SILENCE_RMS = 0.035;
 export const MAX_ENDPOINT_RECORDING_MS = 30_000;
-export const TRANSCRIPTION_RESPONSE_TIMEOUT_MS = 70_000;
-export const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
 const WEB_SPEECH_SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
 
@@ -614,7 +614,7 @@ export class Dictation {
     const couldNotTranscribe = t`Could not transcribe that recording.`;
     const timer = setTimeout(
       () => abort.abort(new Error(timedOutMessage)),
-      TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
+      VOICE_RESPONSE_TIMEOUT_MS,
     );
     try {
       const audioBase64 = await blobToBase64(blob);

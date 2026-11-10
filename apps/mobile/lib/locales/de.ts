@@ -409,7 +409,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Failed: "Fehlgeschlagen",
   "Failed to refresh": "Aktualisieren fehlgeschlagen",
   "Failed to send message": "Nachricht konnte nicht gesendet werden",
-  "Failed to stop work": "Arbeit konnte nicht gestoppt werden",
   File: "Datei",
   "Hide {label}": "{label} ausblenden",
   Diagram: "Diagramm",
@@ -474,8 +473,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Type your answer": "Gib deine Antwort ein",
   Username: "Benutzername",
   "Waiting for this bot’s response.": "Warten auf die Antwort dieses Bots.",
-  "Work stopped, but the thread could not refresh: {detail}":
-    "Arbeit gestoppt, aber der Thread konnte nicht aktualisiert werden: {detail}",
   archived: "archiviert",
   bot: "Bot",
   cancelled: "abgebrochen",
@@ -508,6 +505,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Minimal: "Minimal",
   Model: "Modell",
   Name: "Name",
+  "Name your Bot": "Benenne deinen Bot",
   "Read replies aloud": "Antworten vorlesen",
   Save: "Speichern",
   "Saving…": "Wird gespeichert…",
@@ -590,7 +588,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Name this routine.": "Gib der Routine einen Namen.",
   "New routine": "Neue Routine",
   "Remove schedule": "Zeitplan entfernen",
-  "Test run": "Testlauf",
+  "Run now": "Jetzt ausführen",
   "Time of day": "Uhrzeit",
   Unit: "Einheit",
   "When to run": "Ausführungszeit",
@@ -997,6 +995,12 @@ export const DE_MESSAGES: Record<string, string> = {
     "Warte auf Anmeldung — der Code läuft in etwa {minutes} Minuten ab.",
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Warte auf Anmeldung — der Link läuft in etwa {minutes} Minuten ab.",
+  "Allow microphone access to dictate.": "Erlaube den Mikrofonzugriff, um zu diktieren.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Erlaube die Spracherkennung in den Einstellungen oder verbinde einen Sprachanbieter, der transkribiert.",
+  "Could not dictate": "Diktieren nicht möglich",
+  Dictate: "Diktieren",
+  "Stop dictating": "Diktieren beenden",
   "Allow microphone access to call a bot.": "Erlaube den Mikrofonzugriff, um einen Bot anzurufen.",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Erlaube die Spracherkennung in den Einstellungen oder verbinde ElevenLabs, OpenAI oder Fish Audio.",

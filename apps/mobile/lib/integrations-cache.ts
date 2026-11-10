@@ -126,7 +126,7 @@ export function writeIntegrationsCache(
   try {
     const file = cacheFile(scope);
     file.create({ overwrite: true });
-    file.write(JSON.stringify({ key: scopeKey(scope), ...snapshot }));
+    file.writeSync(JSON.stringify({ key: scopeKey(scope), ...snapshot }));
   } catch {
     // Disk cache is optional; storage failures must not block connection actions.
   }

@@ -393,7 +393,6 @@ export const ES_MESSAGES: Record<string, string> = {
   Failed: "Falló",
   "Failed to refresh": "No se pudo actualizar",
   "Failed to send message": "No se pudo enviar el mensaje",
-  "Failed to stop work": "No se pudo detener el trabajo",
   File: "Archivo",
   "Hide {label}": "Ocultar {label}",
   Diagram: "Diagrama",
@@ -456,8 +455,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Type your answer": "Escribe tu respuesta",
   Username: "Nombre de usuario",
   "Waiting for this bot’s response.": "Esperando la respuesta de este bot.",
-  "Work stopped, but the thread could not refresh: {detail}":
-    "El trabajo se detuvo, pero el hilo no se pudo actualizar: {detail}",
   archived: "archivado",
   bot: "bot",
   cancelled: "cancelado",
@@ -488,6 +485,7 @@ export const ES_MESSAGES: Record<string, string> = {
   Minimal: "Mínimo",
   Model: "Modelo",
   Name: "Nombre",
+  "Name your Bot": "Ponle nombre a tu bot",
   "Name this bot": "Nombra este bot",
   "Read replies aloud": "Leer respuestas en voz alta",
   Save: "Guardar",
@@ -569,7 +567,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Name this routine.": "Ponle un nombre a esta rutina.",
   "New routine": "Nueva rutina",
   "Remove schedule": "Quitar horario",
-  "Test run": "Ejecución de prueba",
+  "Run now": "Ejecutar ahora",
   "Time of day": "Hora del día",
   Unit: "Unidad",
   "When to run": "Cuándo ejecutar",
@@ -939,6 +937,12 @@ export const ES_MESSAGES: Record<string, string> = {
     "Esperando el inicio de sesión. El código vence en unos {minutes} minutos.",
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Esperando el inicio de sesión. El enlace vence en unos {minutes} minutos.",
+  "Allow microphone access to dictate.": "Permite el acceso al micrófono para dictar.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Permite el reconocimiento de voz en Ajustes o conecta un proveedor de voz que transcriba.",
+  "Could not dictate": "No se pudo dictar",
+  Dictate: "Dictar",
+  "Stop dictating": "Dejar de dictar",
   "Allow microphone access to call a bot.": "Permite el acceso al micrófono para llamar a un bot.",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Permite el reconocimiento de voz en Configuración o conecta ElevenLabs, OpenAI o Fish Audio.",

@@ -30,7 +30,7 @@ vi.mock("expo-file-system", () => ({
   File: class {
     uri = "file:///cache/rakazo-voice.mp3";
     create() {}
-    write() {}
+    writeSync() {}
     delete() {}
   },
   Paths: { cache: "cache" },

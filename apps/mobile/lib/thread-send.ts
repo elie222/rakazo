@@ -35,8 +35,8 @@ import { errorText } from "./user-error";
 import { startWorkActivity } from "./work-activity";
 
 /**
- * What the chat sends: composer messages with their reply and attachments, retries, stopping
- * work, ask answers and reactions, and slash actions.
+ * What the chat sends: composer messages with their reply and attachments, retries, ask
+ * answers and reactions, and slash actions.
  */
 export function useThreadSend({
   botId,
@@ -85,7 +85,6 @@ export function useThreadSend({
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
   const replyPage = useRef<{ id: string; title: string } | null>(null);
-  const [sending, setSending] = useState(false);
   const preparingSend = useRef(false);
 
   useEffect(() => {
@@ -144,7 +143,7 @@ export function useThreadSend({
     if (readOnly || importingShare.current) return;
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
-    if ((!initialBotTarget && !initialGroupTarget) || sending || preparingSend.current) return;
+    if ((!initialBotTarget && !initialGroupTarget) || preparingSend.current) return;
     const originThreadKey = initialGroupTarget ?? initialBotTarget;
     const submitted = composerRef.current?.snapshot();
     if (!submitted) return;
@@ -288,36 +287,6 @@ export function useThreadSend({
   afterDeliveredRef.current = afterDelivered;
   useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
 
-  async function stop() {
-    if (readOnly) return;
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || sending) return;
-    setSending(true);
-    try {
-      await rpc(
-        "threads/stop",
-        targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
-      );
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        Alert.alert(t("Failed to stop work"), errorText(err, t("Try again.")));
-      }
-      setSending(false);
-      return;
-    }
-    try {
-      await refresh();
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        const detail = errorText(err, t("Failed to refresh"));
-        setError(t("Work stopped, but the thread could not refresh: {detail}", { detail }));
-      }
-    } finally {
-      setSending(false);
-    }
-  }
-
   const answer = useCallback(
     (
       message: MobileMessage,
@@ -380,10 +349,8 @@ export function useThreadSend({
     setQuoteTarget,
     receivePageReply,
     composerEmptied,
-    sending,
     send,
     retry,
-    stop,
     answer,
     react,
     runSlashAction,

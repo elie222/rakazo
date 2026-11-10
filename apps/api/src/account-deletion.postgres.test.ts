@@ -36,8 +36,7 @@ import { deleteAccountContent } from "./account-deletion.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("account deletion on bot computers (PostgreSQL)", () => {
   let prisma: PrismaClient;

@@ -71,6 +71,25 @@ describe("Stripe prepaid model credits", () => {
       "2000",
     );
   });
+  it("asks the bank to confirm the buyer of every credit purchase", async () => {
+    const { provider, requests } = fixture();
+    for (const [amountCents, monthly] of [
+      [1000, true],
+      [1000, false],
+    ] as const)
+      await provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents,
+        monthly,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      });
+    expect(
+      requests
+        .filter((r) => r.path === "/v1/checkout/sessions" && r.params.has("mode"))
+        .map((r) => r.params.get("payment_method_options[card][request_three_d_secure]")),
+    ).toEqual(["any", "any"]);
+  });
   it("looks up a monthly price once, not on every checkout", async () => {
     const { provider, requests } = fixture();
     const checkout = () =>
@@ -338,6 +357,52 @@ describe("Stripe prepaid model credits", () => {
       }),
     ).rejects.toThrow("Invalid credit amount");
     expect(requests).toHaveLength(0);
+  });
+  it("no longer sells retired amounts but still counts what was paid for them", async () => {
+    const { provider, requests } = fixture({
+      "/v1/charges": {
+        data: [
+          {
+            id: "ch_retired",
+            payment_intent: "pi_retired",
+            currency: "usd",
+            paid: true,
+            captured: true,
+            disputed: false,
+            amount: 50000,
+            amount_refunded: 0,
+          },
+        ],
+        has_more: false,
+      },
+      "/v1/checkout/sessions": {
+        data: [
+          {
+            id: "cs_retired",
+            mode: "payment",
+            payment_status: "paid",
+            currency: "usd",
+            amount_total: 50000,
+            payment_intent: "pi_retired",
+            metadata: { rakazo_credit_cents: "50000" },
+          },
+        ],
+        has_more: false,
+      },
+    });
+    await expect(
+      provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents: 50000,
+        monthly: true,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      }),
+    ).rejects.toThrow("Invalid credit amount");
+    expect(requests).toHaveLength(0);
+    expect(await provider.listCreditPurchases("cus_fixture")).toEqual([
+      { id: "cs_retired", amountCents: 50000 },
+    ]);
   });
   it("reads only settled credit payments, deducts refunds, and ignores legacy invoices", async () => {
     const { provider } = fixture({

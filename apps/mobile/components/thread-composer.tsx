@@ -26,8 +26,9 @@ import {
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { ViewStyle } from "react-native";
+import type { TextInputInstance, ViewStyle } from "react-native";
 import {
+  ActivityIndicator,
   AppState,
   Pressable,
   ScrollView,
@@ -36,6 +37,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { useComposerDictation } from "../lib/composer-dictation";
 import type { ComposerDraftScope } from "../lib/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import { useI18n } from "../lib/i18n";
@@ -82,13 +84,11 @@ type ThreadComposerProps = {
   attachmentIds: string[];
   botId?: string;
   onCall: boolean;
-  working: boolean;
   sending: boolean;
   styles: { circleButton: ViewStyle; composerFill: ViewStyle };
   attachActions: MenuAction[];
   attachFrom: (source: string) => void;
   send: () => Promise<void>;
-  stop: () => Promise<void>;
   startVoiceCall: () => Promise<void>;
   onSlashAction: (action: SlashActionId) => void;
   /** The composer holds no text: the last of it was deleted or sent. */
@@ -107,13 +107,11 @@ export function ThreadComposer({
   attachmentIds,
   botId,
   onCall,
-  working,
   sending,
   styles,
   attachActions,
   attachFrom,
   send,
-  stop,
   startVoiceCall,
   onSlashAction,
   onEmptied,
@@ -129,7 +127,7 @@ export function ThreadComposer({
   const textScale = Math.min(fontScale, MAX_FONT_SCALE);
   const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
   const draftRef = useRef(saved.text);
@@ -153,6 +151,39 @@ export function ThreadComposer({
     setMentionBindings(next);
   }
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
+  // Dictated words follow the text that was there when the mic opened. Once someone edits the
+  // box meanwhile, later words are dropped instead of overwriting the edit.
+  const dictatedBase = useRef<string | null>(null);
+  const dictated = useRef("");
+  function showDictation(words: string, final = false) {
+    let base = dictatedBase.current;
+    if (base === null) return;
+    // Live words never overwrite an edit; a provider's one-off transcript joins the edited text.
+    if (draftRef.current !== dictated.current) {
+      if (!final) return;
+      base = draftRef.current;
+    }
+    const next = !words ? base : base.trim() ? `${base.trimEnd()} ${words}` : words;
+    dictated.current = next;
+    draftRef.current = next;
+    setDraft(next);
+    const end = next.length;
+    pendingNativeEdit.current = null;
+    nativeSelection.current = { start: end, end };
+    selectionHistory.current = [nativeSelection.current];
+    completedSelection.current = null;
+    setSelection(nativeSelection.current);
+    setMentionQuery(null);
+    setSlashQuery(null);
+  }
+  const dictation = useComposerDictation({ disabled: onCall, onWords: showDictation });
+  function toggleDictation() {
+    if (dictation.status === "idle") {
+      dictatedBase.current = draftRef.current;
+      dictated.current = draftRef.current;
+    }
+    dictation.toggle();
+  }
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
@@ -192,6 +223,7 @@ export function ThreadComposer({
       attachmentIds,
     }),
     reset: () => {
+      dictation.cancel();
       // Empty the native field as well. It measures its height from the text it last reported,
       // so clearing only the draft would leave it as tall as the message just sent.
       inputRef.current?.clear();
@@ -388,6 +420,8 @@ export function ThreadComposer({
   } as const;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
+  // Sending resets the box, which would drop words a provider is still transcribing.
+  const sendBlocked = sending || !canSend || dictation.status === "transcribing";
 
   return (
     <>
@@ -737,7 +771,37 @@ export function ThreadComposer({
               </TextInput>
             </Pressable>
           </View>
-          {!canSend && botId && !onCall ? (
+          {onCall ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={dictation.status === "idle" ? t("Dictate") : t("Stop dictating")}
+              disabled={dictation.status === "transcribing"}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              onPress={toggleDictation}
+              style={{ marginBottom: 8 }}
+            >
+              <GlassSurface
+                tint={dictation.status === "idle" ? undefined : tokens.foreground}
+                style={composerPillStyle}
+                fallbackStyle={{
+                  backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
+                }}
+              >
+                {dictation.status === "transcribing" ? (
+                  <ActivityIndicator size="small" color={tokens.background} />
+                ) : (
+                  <NativeSymbol
+                    ios={dictation.status === "listening" ? "mic.fill" : "mic"}
+                    android={dictation.status === "listening" ? "mic" : "mic-outline"}
+                    size={15}
+                    color={dictation.status === "idle" ? tokens.mutedForeground : tokens.background}
+                  />
+                )}
+              </GlassSurface>
+            </Pressable>
+          )}
+          {/* No call while dictation still owns the microphone or its words are on the way. */}
+          {!canSend && botId && !onCall && dictation.status === "idle" ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("Call")}
@@ -762,10 +826,10 @@ export function ThreadComposer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("Send")}
-              disabled={sending || !canSend}
+              disabled={sendBlocked}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void send()}
-              style={{ marginBottom: 8, opacity: sending || !canSend ? 0.5 : 1 }}
+              style={{ marginBottom: 8, opacity: sendBlocked ? 0.5 : 1 }}
             >
               <GlassSurface
                 tint={tokens.primary}
@@ -782,22 +846,6 @@ export function ThreadComposer({
             </Pressable>
           )}
         </GlassSurface>
-        {working ? (
-          <Pressable
-            accessibilityLabel={t("Stop")}
-            disabled={sending}
-            onPress={() => void stop()}
-            style={{ width: 44, height: 44, opacity: sending ? 0.5 : 1 }}
-          >
-            <GlassSurface
-              shape="circle"
-              style={styles.circleButton}
-              fallbackStyle={{ borderColor: tokens.glassStroke, borderWidth: 1 }}
-            >
-              <NativeSymbol ios="stop.fill" android="stop" size={15} color={tokens.foreground} />
-            </GlassSurface>
-          </Pressable>
-        ) : null}
       </View>
     </>
   );

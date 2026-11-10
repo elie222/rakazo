@@ -318,7 +318,7 @@ export function VaultItemDetail({
     <div data-testid="vault-item-detail" className="flex flex-col gap-4">
       <VaultPageHeader
         title={item.title}
-        leading={<VaultTile kind={kind} title={item.title} />}
+        leading={<VaultTile kind={kind} title={item.title} origin={item.origin} />}
         subtitle={
           kind ? (
             one[kind]

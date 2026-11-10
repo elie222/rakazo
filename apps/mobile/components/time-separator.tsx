@@ -15,7 +15,8 @@ export function TimeSeparator({ createdAt }: { createdAt?: string }) {
         color: mobileTokens().faintForeground,
         ...typeScale.caption,
         textAlign: "center",
-        marginVertical: 12,
+        marginTop: 16,
+        marginBottom: 4,
       }}
     >
       {formatTimeSeparator(createdAt, dateLocaleForUi(locale), {

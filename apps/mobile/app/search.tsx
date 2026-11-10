@@ -1,6 +1,8 @@
 import { botColors, typeScale } from "@rakazo/ui-tokens";
+import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { TextInputInstance } from "react-native";
 import {
   Alert,
   FlatList,
@@ -42,13 +44,13 @@ const kindIcons = {
 export default function SearchSheet() {
   const { t, locale } = useI18n();
   const router = useRouter();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const insets = useSafeAreaInsets();
   const gutters = readableGutters(useWindowDimensions().width, insets);
-  const field = useRef<TextInput>(null);
+  const field = useRef<TextInputInstance>(null);
   const opening = useRef(false);
   const attempt = useRef(0);
   const focused = useRef(false);
@@ -65,9 +67,17 @@ export default function SearchSheet() {
 
   useFocusEffect(
     useCallback(() => {
-      focused.current = true;
-      opening.current = false;
-      const unsubscribe = navigation.addListener("beforeRemove", cancelOpen);
+      const arm = () => {
+        focused.current = true;
+        opening.current = false;
+      };
+      arm();
+      // A native dismissal blurs the sheet only once its animation ends, so a pending open is
+      // cancelled as soon as the sheet starts closing, and re-armed if the gesture is abandoned.
+      const unsubscribe = navigation.addListener("transitionStart", (event) => {
+        if (event.data.closing) cancelOpen();
+        else arm();
+      });
       return () => {
         cancelOpen();
         unsubscribe();
@@ -218,7 +228,7 @@ export default function SearchSheet() {
           paddingBottom: insets.bottom + 16,
         }}
         ListEmptyComponent={
-          error ? null : (
+          error ? undefined : (
             <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
           )
         }
@@ -235,7 +245,7 @@ export default function SearchSheet() {
                 onPress={retry}
               />
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item }) => (
           <Pressable

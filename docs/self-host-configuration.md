@@ -36,6 +36,7 @@ commands, add `-f docker-compose.override.yml` after the base file.
 All of these are optional:
 
 ```env
+RAKAZO_EXTRA_AUTH_ORIGINS=   # extra origins allowed to sign in and call the API; see below
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
 SCIM_BEARER_TOKEN=        # lets your identity provider add and remove accounts; see self-host-accounts.md
@@ -82,14 +83,31 @@ settings do not guarantee that every provider supports arbitrarily long waits.
   OpenAI-compatible model or speech connection added in the app. `RAKAZO_LOCAL_MODELS` servers
   and built-in providers retain Node's own connection timeout.
 
+### Reaching Rakazo from a second address
+
+Sign-in and API calls are accepted only from `WEB_ORIGIN`, `API_URL`, `BETTER_AUTH_URL` and the
+mobile app. If you also open the same install from another address, such as a Tailscale name or a
+LAN IP, the browser or desktop app gets `403 INVALID_ORIGIN`. List that address in
+`RAKAZO_EXTRA_AUTH_ORIGINS`, comma-separated:
+
+```env
+RAKAZO_EXTRA_AUTH_ORIGINS=https://rakazo.your-tailnet.ts.net,http://192.168.1.20:5173
+```
+
+Each entry must be a bare origin (scheme, host, optional port; no path). `https://` is accepted for
+any host. `http://` is accepted only for loopback, `.local`, and private-network IPs (RFC 1918 and
+Tailscale's 100.64.0.0/10). Anything else is ignored and logged as a warning. Only origins you list
+are trusted; the default is none. `WEB_ORIGIN` stays the address used in links, passkeys and OAuth
+callbacks.
+
 ## Feature switches
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `TICKET_BOARD_ENABLED` | `false` | Turns on the ticket board. Set it on the API and worker. |
-| `USER_DEVICES_ENABLED` | on | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker. |
-| `PI_SESSION_RECORDING` | off | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
-| `PRIVACY_POLICY_URL` | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API. |
+| Variable               | Default         | Effect                                                                                                                                                  |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TICKET_BOARD_ENABLED` | `false`         | Turns on the ticket board. Set it on the API and worker.                                                                                                |
+| `USER_DEVICES_ENABLED` | on              | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
+| `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
+| `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
 
 ## Database roles
 

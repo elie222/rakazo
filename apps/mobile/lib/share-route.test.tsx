@@ -9,24 +9,23 @@ const state = vi.hoisted(() => ({
   cancel: vi.fn(),
   dismissTo: vi.fn(),
   reset: vi.fn(),
-  beforeRemove: undefined as
+  allowRemoval: vi.fn(),
+  guarded: false,
+  blocked: undefined as
     | undefined
-    | ((event: {
-        preventDefault: () => void;
-        data: { action: { payload?: { name: string } } };
-      }) => void),
+    | ((event: { data: { action: { payload?: { name: string } } }; repeat: () => void }) => void),
 }));
 const router = { dismissTo: state.dismissTo };
-const navigation = {
-  dispatch: state.reset,
-  addListener: (_name: string, listener: typeof state.beforeRemove) => {
-    state.beforeRemove = listener;
-    return () => {
-      state.beforeRemove = undefined;
-    };
+const navigation = { dispatch: state.reset };
+vi.mock("expo-router", () => ({
+  useRouter: () => router,
+  useNavigation: () => navigation,
+  usePreventRemove: (guarded: boolean, blocked: typeof state.blocked) => {
+    state.guarded = guarded;
+    state.blocked = blocked;
+    return state.allowRemoval;
   },
-};
-vi.mock("expo-router", () => ({ useRouter: () => router, useNavigation: () => navigation }));
+}));
 vi.mock("./incoming-share", () => ({
   getIncomingShare: () => state.pending,
   subscribeIncomingShare: () => () => {},
@@ -86,24 +85,31 @@ describe("share route", () => {
   });
   it("preserves the pending share while redirecting to sign-in", async () => {
     await render();
-    const preventDefault = vi.fn();
-    state.beforeRemove?.({ preventDefault, data: { action: { payload: { name: "sign-in" } } } });
+    expect(state.guarded).toBe(true);
+    const repeat = vi.fn();
+    await act(async () =>
+      state.blocked?.({ data: { action: { payload: { name: "sign-in" } } }, repeat }),
+    );
+    expect(repeat).toHaveBeenCalledOnce();
+    expect(state.allowRemoval).toHaveBeenCalledOnce();
+    expect(state.guarded).toBe(false);
     expect(state.cancel).not.toHaveBeenCalled();
-    expect(preventDefault).not.toHaveBeenCalled();
     expect(state.dismissTo).not.toHaveBeenCalled();
   });
   it("cancels on native back or dismissal", async () => {
     await render();
-    const preventDefault = vi.fn();
-    await act(async () => state.beforeRemove?.({ preventDefault, data: { action: {} } }));
-    expect(preventDefault).toHaveBeenCalledOnce();
+    const repeat = vi.fn();
+    await act(async () => state.blocked?.({ data: { action: {} }, repeat }));
+    expect(repeat).not.toHaveBeenCalled();
+    expect(state.allowRemoval).toHaveBeenCalledOnce();
     expect(state.cancel).toHaveBeenCalledOnce();
     expect(state.dismissTo).toHaveBeenCalledWith("/");
   });
   it("preserves the share for the selected thread and removes the target screen", async () => {
     await render();
     await act(async () => container.querySelectorAll("button")[1]?.click());
-    state.beforeRemove?.({ preventDefault: vi.fn(), data: { action: {} } });
+    expect(state.guarded).toBe(false);
+    expect(state.allowRemoval).toHaveBeenCalledOnce();
     expect(state.cancel).not.toHaveBeenCalled();
     expect(state.dismissTo).not.toHaveBeenCalled();
     expect(state.reset).toHaveBeenCalledWith({

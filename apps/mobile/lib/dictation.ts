@@ -1,5 +1,5 @@
 /**
- * On-device dictation for calls, mirroring the web store's endpoint mode: the recognizer
+ * On-device dictation for calls and the composer, mirroring the web store's endpoint mode: the recognizer
  * reports words, and only a quiet gap measured here ends a turn. The recognizer's own
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
@@ -62,6 +62,12 @@ type Session = {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
+  /** Quiet gap that ends the utterance. */
+  endpointMs: number;
+  /** The caller chose the gap, so the silence timer alone ends a quiet session. */
+  ownEndpoint: boolean;
+  /** The words last reported, so a repeated result is not mistaken for new speech. */
+  reported: string;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -136,13 +142,23 @@ export function stop(): void {
   }
 }
 
-/** Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it. */
+/** Ends the running session now and delivers what it heard. */
+export function finishListening(): void {
+  if (active) finish(active, "idle");
+}
+
+/**
+ * Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it.
+ * A caller's own `endpointMs` also counts from the start, so a mic that never hears
+ * anything closes too.
+ */
 export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
+  endpointMs?: number;
 }): Promise<void> {
   // A cancelled request can arrive after a newer session started; it must not stop that one.
   if (opts.signal?.aborted) return;
@@ -160,6 +176,9 @@ export async function listen(opts: {
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
+    endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+    ownEndpoint: opts.endpointMs !== undefined,
+    reported: "",
     subs: [],
     carried: "",
     heard: "",
@@ -184,7 +203,15 @@ export async function listen(opts: {
     start(session);
   } catch {
     giveUp(session, "failed", "start-failed");
+    return;
   }
+  if (session.ownEndpoint) armSilence(session);
+}
+
+/** Ends the utterance once nothing new is heard for the session's quiet gap. */
+function armSilence(session: Session): void {
+  clearTimeout(session.silence);
+  session.silence = setTimeout(() => finish(session, "idle"), session.endpointMs);
 }
 
 function start(session: Session): void {
@@ -227,11 +254,13 @@ function onResult(session: Session, event: ResultEvent): void {
   }
   const text = join(session.carried, session.heard);
   if (!text) return;
+  // With the caller's own pause limit, only new words count as being heard.
+  if (session.ownEndpoint && text === session.reported) return;
+  session.reported = text;
   session.onInterim?.(text);
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
-  clearTimeout(session.silence);
-  session.silence = setTimeout(() => finish(session), ENDPOINT_SILENCE_MS);
+  armSilence(session);
 }
 
 function onEnd(session: Session): void {
@@ -244,8 +273,12 @@ function onEnd(session: Session): void {
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
     const failed = session.transientError && !session.carried;
-    giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
-    return;
+    // A recognizer that keeps failing gives up; one that just ended quietly during a pause
+    // keeps restarting when the caller's own silence timer decides when the pause is over.
+    if (failed || !session.ownEndpoint) {
+      giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
+      return;
+    }
   }
   clearTimeout(session.restart);
   const delay = session.backoff;

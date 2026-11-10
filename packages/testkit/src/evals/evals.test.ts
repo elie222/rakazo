@@ -510,6 +510,15 @@ describe("eval run controls and reporting", () => {
       ),
     ).toBe("[redacted] [url] [email] [local-path] [redacted] token=x");
   });
+  it("keeps fixture links and addresses on the reserved .example domain", () => {
+    expect(
+      redact(
+        "https://files.example.com/d/1-v3 dana@juniperrow.example https://user:pw@db.example/x https://files.example.com/d/2?sig=private#frag",
+      ),
+    ).toBe(
+      "https://files.example.com/d/1-v3 dana@juniperrow.example [url] https://files.example.com/d/2",
+    );
+  });
 });
 
 it("requires following rich diagnostic result cursors before the verified result", async () => {

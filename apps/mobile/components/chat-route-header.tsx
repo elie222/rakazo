@@ -25,7 +25,7 @@ export type ChatSplit = { split: boolean; inboxHidden: boolean; foldActive?: boo
  * title its data without changing the buttons' shape.
  */
 export function chatRouteHeader(
-  route: { key: string; params?: object },
+  route: { key?: string; params?: object },
   t: (text: string) => string,
   { split, inboxHidden, foldActive }: ChatSplit,
   canInvite = false,
@@ -37,7 +37,7 @@ export function chatRouteHeader(
   return {
     headerTitleAlign: "center",
     ...threadEdgeOptions(),
-    headerTitle: () => <ChatHeaderTitle routeKey={route.key} params={params} />,
+    headerTitle: () => <ChatHeaderTitle routeKey={route.key ?? ""} params={params} />,
     ...threadHeaderRight({
       inGroup: Boolean(groupId),
       readOnly,

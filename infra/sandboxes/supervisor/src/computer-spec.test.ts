@@ -741,6 +741,22 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/import openpyxl/);
   });
 
+  it("ships search and inspection tools agents reach for", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+    expect(dockerfile).toMatch(/\bripgrep\b/);
+    expect(dockerfile).toMatch(/\bfd-find\b/);
+    // "file" is a common word in the Dockerfile; anchor it to the package list.
+    expect(dockerfile).toMatch(/^ {4}file \\/m);
+    expect(dockerfile).toMatch(/\bsqlite3\b/);
+    // Debian names fd-find's binary fdfind; the image exposes it as fd.
+    expect(dockerfile).toMatch(/ln -s \/usr\/bin\/fdfind \/usr\/local\/bin\/fd/);
+    expect(dockerfile).toMatch(/rg --version/);
+    expect(dockerfile).toMatch(/fd --version/);
+    expect(dockerfile).toMatch(/file --version/);
+    expect(dockerfile).toMatch(/sqlite3 --version/);
+  });
+
   it.skipIf(process.platform === "win32")(
     "delivers desktop menu exec arguments intact through /bin/sh",
     () => {
@@ -1761,6 +1777,8 @@ describe("graphical computer spec", () => {
               "spec = importlib.util.spec_from_file_location('control', sys.argv[1])",
               "module = importlib.util.module_from_spec(spec)",
               "spec.loader.exec_module(module)",
+              // The fixture launcher lives outside the image's trusted command folders.
+              "module.CHILD_PATH = sys.argv[3] + ':' + module.CHILD_PATH",
               "argv = ['env', 'DISPLAY=:1', 'rakazo-browser', sys.argv[2]]",
               "try:",
               "    module.run_control_argv(argv, ':1')",
@@ -1772,6 +1790,7 @@ describe("graphical computer spec", () => {
             ].join("\n"),
             path.join(root, "control.py"),
             "https://example.com/unanswered",
+            bin,
           ],
           { env: launchEnv, encoding: "utf8" },
         );

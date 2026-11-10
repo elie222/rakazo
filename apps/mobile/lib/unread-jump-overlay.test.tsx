@@ -45,7 +45,7 @@ vi.mock("../components/unread-jump-pill", () => ({
   UnreadJumpPill: () => null,
 }));
 
-import { useUnreadJumpPills } from "../components/unread-jump-overlay";
+import { UnreadJumpOverlay, useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { useHeaderHeightIfAny } from "./floating-header";
 
 type Pills = ReturnType<typeof useUnreadJumpPills<unknown>>;
@@ -117,9 +117,10 @@ describe("useUnreadJumpPills", () => {
       cell.props.onLayout({ nativeEvent: { layout: { y, height } } });
     });
   const edgeAt = (index: number) => {
-    const edge = (pills.overlay as ReactElement<{ children: ReactElement[] }>).props.children[
-      index
-    ];
+    // The overlay is the pill component; its own output holds one edge per direction.
+    const overlay = pills.overlay as ReactElement<Parameters<typeof UnreadJumpOverlay>[0]>;
+    const edge = (UnreadJumpOverlay(overlay.props) as ReactElement<{ children: ReactElement[] }>)
+      .props.children[index];
     return edge as ReactElement<{
       entering?: unknown;
       exiting?: unknown;
