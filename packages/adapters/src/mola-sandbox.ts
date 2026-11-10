@@ -888,126 +888,179 @@ export class MolaSandboxProvider implements SandboxProvider {
 
     if (this.apiMode === "cloud") {
       // Cloud (mola-cp): content field expects plain UTF-8 text (no base64 decoding)
-      // For binary/non-UTF-8 files, write via exec or write_file with base64 staging
+      // nginx client_max_body_size 1m includes the entire JSON envelope
 
       // Strict UTF-8 validation: byte-exact round-trip
       const decoded = buffer.toString("utf-8");
       const reencoded = Buffer.from(decoded, "utf-8");
       const isUtf8 = buffer.equals(reencoded);
 
-      if (isUtf8 && decoded.length <= 1_048_576) {
-        // UTF-8 text file within write_file limit: send as plain text
+      // Check if UTF-8 text fits in a single write_file request
+      // Measure serialized JSON body size including overhead and escaping
+      if (isUtf8) {
+        const requestBody = JSON.stringify({
+          action: "write_file",
+          path: fullPath,
+          content: decoded,
+        });
+        const bodyBytes = Buffer.byteLength(requestBody, "utf-8");
+        // Safe limit: 950 KiB to stay well under 1 MiB nginx limit
+        const SAFE_BODY_LIMIT = 950 * 1024;
+
+        if (bodyBytes <= SAFE_BODY_LIMIT) {
+          // Small UTF-8 text: send directly
+          await this.executeAction(
+            computer.providerRef,
+            {
+              action: "write_file",
+              path: fullPath,
+              content: decoded,
+            },
+            { signal: context.signal },
+          );
+          return;
+        }
+      }
+
+      // Binary or large UTF-8: stage via base64 chunks
+      const base64Content = buffer.toString("base64");
+      const EXEC_COMMAND_LIMIT = 32_768;
+      // Chunk size: 900 KiB base64 (multiple of 4), leaving room for JSON envelope
+      const BASE64_CHUNK_SIZE = 921_600; // 900 * 1024
+
+      // Single small file: use exec with base64 -d
+      // Max base64 in `printf '%s' '<b64>' | base64 -d > <path>` ~32700 chars
+      const singleExecMaxBase64 = 32_700;
+
+      if (base64Content.length <= singleExecMaxBase64) {
+        const command = `printf '%s' ${shellQuote(base64Content)} | base64 -d > ${shellQuote(fullPath)}`;
+        if (command.length > EXEC_COMMAND_LIMIT) {
+          throw new Error(
+            `Binary file too large for single exec: command ${command.length} > ${EXEC_COMMAND_LIMIT}`,
+          );
+        }
         await this.executeAction(
           computer.providerRef,
           {
-            action: "write_file",
-            path: fullPath,
-            content: decoded,
+            action: "exec",
+            command,
+            timeout: 30,
           },
           { signal: context.signal },
         );
       } else {
-        // Binary file or large UTF-8: write base64 via write_file to temp files, then decode
-        const base64Content = buffer.toString("base64");
-        const EXEC_COMMAND_LIMIT = 32_768;
-        const WRITE_FILE_CONTENT_LIMIT = 1_048_576;
+        // Large file: write base64 chunks via write_file, then decode with pipefail check
+        const tempFiles: string[] = [];
+        try {
+          for (
+            let i = 0, offset = 0;
+            offset < base64Content.length;
+            i++, offset += BASE64_CHUNK_SIZE
+          ) {
+            const chunk = base64Content.slice(offset, offset + BASE64_CHUNK_SIZE);
+            const tempFile = `${fullPath}.b64part${i}`;
+            tempFiles.push(tempFile);
 
-        // Single small file: use exec with base64 -d
-        // Max base64 in `printf '%s' '<b64>' | base64 -d > <path>` with quoted paths ~32706 chars
-        const singleExecMaxBase64 = 32_700;
+            // Verify serialized body stays under limit
+            const chunkBody = JSON.stringify({
+              action: "write_file",
+              path: tempFile,
+              content: chunk,
+            });
+            const chunkBytes = Buffer.byteLength(chunkBody, "utf-8");
+            if (chunkBytes > 1_000_000) {
+              throw new Error(`Chunk ${i} body too large: ${chunkBytes} bytes`);
+            }
 
-        if (base64Content.length <= singleExecMaxBase64) {
-          const command = `printf '%s' ${shellQuote(base64Content)} | base64 -d > ${shellQuote(fullPath)}`;
-          if (command.length > EXEC_COMMAND_LIMIT) {
-            throw new Error(
-              `Binary file too large for single exec: command ${command.length} > ${EXEC_COMMAND_LIMIT}`,
+            await this.executeAction(
+              computer.providerRef,
+              {
+                action: "write_file",
+                path: tempFile,
+                content: chunk,
+              },
+              { signal: context.signal },
             );
           }
-          await this.executeAction(
+
+          // Concatenate and decode all parts with pipefail
+          const partsArgs = tempFiles.map(shellQuote).join(" ");
+          // Use bash with pipefail to detect missing parts
+          const catCommand = `bash -c 'set -o pipefail; cat ${partsArgs} | base64 -d > ${shellQuote(fullPath)}'`;
+          if (catCommand.length > EXEC_COMMAND_LIMIT) {
+            throw new Error(
+              `Too many temp files: cat command ${catCommand.length} > ${EXEC_COMMAND_LIMIT}`,
+            );
+          }
+
+          // Cloud: exec timeout 50s max, HTTP timeout 60s
+          const execTimeout = 50;
+          const httpTimeout = 60_000;
+
+          const catResult = await this.executeAction(
             computer.providerRef,
             {
               action: "exec",
-              command,
-              timeout: 30,
+              command: catCommand,
+              timeout: execTimeout,
             },
-            { signal: context.signal },
+            { signal: context.signal, timeoutMs: httpTimeout },
           );
-        } else {
-          // Large binary: write base64 chunks via write_file, then decode all at once
-          const tempFiles: string[] = [];
-          try {
-            for (
-              let i = 0, offset = 0;
-              offset < base64Content.length;
-              i++, offset += WRITE_FILE_CONTENT_LIMIT
-            ) {
-              const chunk = base64Content.slice(offset, offset + WRITE_FILE_CONTENT_LIMIT);
-              const tempFile = `${fullPath}.b64part${i}`;
-              tempFiles.push(tempFile);
 
-              await this.executeAction(
-                computer.providerRef,
-                {
-                  action: "write_file",
-                  path: tempFile,
-                  content: chunk,
-                },
-                { signal: context.signal },
-              );
+          // Check for failures
+          if (catResult.data?.exit_code !== 0) {
+            // Cleanup failed dest and parts
+            const cleanupCommand = `rm -f ${shellQuote(fullPath)} ${partsArgs}`;
+            if (cleanupCommand.length <= EXEC_COMMAND_LIMIT) {
+              try {
+                await this.executeAction(
+                  computer.providerRef,
+                  { action: "exec", command: cleanupCommand, timeout: 10 },
+                  { signal: context.signal },
+                );
+              } catch {
+                // Ignore cleanup errors
+              }
             }
+            throw new Error(
+              `File decode failed with exit ${catResult.data?.exit_code}: ${catResult.data?.stderr || "unknown error"}`,
+            );
+          }
 
-            // Concatenate and decode all parts
-            const catCommand = `cat ${tempFiles.map(shellQuote).join(" ")} | base64 -d > ${shellQuote(fullPath)}`;
-            if (catCommand.length > EXEC_COMMAND_LIMIT) {
-              throw new Error(
-                `Too many temp files: cat command ${catCommand.length} > ${EXEC_COMMAND_LIMIT}`,
-              );
-            }
+          // Cleanup temp files on success
+          const rmCommand = `rm -f ${partsArgs}`;
+          if (rmCommand.length <= EXEC_COMMAND_LIMIT) {
             await this.executeAction(
               computer.providerRef,
               {
                 action: "exec",
-                command: catCommand,
-                timeout: 60,
+                command: rmCommand,
+                timeout: 10,
               },
               { signal: context.signal },
             );
-
-            // Cleanup temp files
-            const rmCommand = `rm -f ${tempFiles.map(shellQuote).join(" ")}`;
-            if (rmCommand.length <= EXEC_COMMAND_LIMIT) {
-              await this.executeAction(
-                computer.providerRef,
-                {
-                  action: "exec",
-                  command: rmCommand,
-                  timeout: 10,
-                },
-                { signal: context.signal },
-              );
-            }
-          } catch (error) {
-            // Cleanup on failure
-            if (tempFiles.length > 0) {
-              const rmCommand = `rm -f ${tempFiles.map(shellQuote).join(" ")}`;
-              if (rmCommand.length <= EXEC_COMMAND_LIMIT) {
-                try {
-                  await this.executeAction(
-                    computer.providerRef,
-                    {
-                      action: "exec",
-                      command: rmCommand,
-                      timeout: 10,
-                    },
-                    { signal: context.signal },
-                  );
-                } catch {
-                  // Ignore cleanup errors
-                }
+          }
+        } catch (error) {
+          // Cleanup on exception
+          if (tempFiles.length > 0) {
+            const cleanupCommand = `rm -f ${shellQuote(fullPath)} ${tempFiles.map(shellQuote).join(" ")}`;
+            if (cleanupCommand.length <= EXEC_COMMAND_LIMIT) {
+              try {
+                await this.executeAction(
+                  computer.providerRef,
+                  {
+                    action: "exec",
+                    command: cleanupCommand,
+                    timeout: 10,
+                  },
+                  { signal: context.signal },
+                );
+              } catch {
+                // Ignore cleanup errors
               }
             }
-            throw error;
           }
+          throw error;
         }
       }
     } else {

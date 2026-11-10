@@ -796,7 +796,7 @@ describe("MolaSandboxProvider", () => {
         botId: "bot-write-large",
       };
 
-      // Mock write_file for first part, second part, then cat/decode, then rm
+      // Mock write_file for 3 parts, then cat/decode, then rm
       fetchMock
         .mockResolvedValueOnce(
           mockFetchResponse(200, {
@@ -809,13 +809,18 @@ describe("MolaSandboxProvider", () => {
           }),
         )
         .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { ok: true, path: "/home/dev/rakazo-home/large.bin.b64part2" },
+          }),
+        )
+        .mockResolvedValueOnce(
           mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
         )
         .mockResolvedValueOnce(
           mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
         );
 
-      // Binary that requires 2 write_file chunks: 1.5MB raw -> ~2MB base64
+      // Binary that requires 3 write_file chunks: 1.5MB raw -> ~2MB base64 -> 3 chunks @ 900KB each
       const largeBinary = new Uint8Array(1_500_000);
       for (let i = 0; i < largeBinary.length; i++) {
         largeBinary[i] = i % 256;
@@ -830,41 +835,155 @@ describe("MolaSandboxProvider", () => {
         createMockContext(),
       );
 
-      // Should have: 2 write_file calls for parts, 1 exec for cat|base64, 1 exec for rm
-      expect(fetchMock).toHaveBeenCalledTimes(4);
+      // Should have: 3 write_file calls for parts, 1 exec for cat|base64, 1 exec for rm
+      expect(fetchMock).toHaveBeenCalledTimes(5);
 
-      // First two calls should be write_file with content (base64 chunks)
-      const part0Call = fetchMock.mock.calls[0];
-      if (!part0Call) throw new Error("Part 0 call not made");
-      const part0Body = JSON.parse((part0Call[1] as RequestInit).body as string);
-      expect(part0Body.action).toBe("write_file");
-      expect(part0Body.path).toContain(".b64part0");
-      expect(part0Body.content.length).toBeLessThanOrEqual(1048576);
+      // First three calls should be write_file with content (base64 chunks of 900 KiB)
+      for (let i = 0; i < 3; i++) {
+        const partCall = fetchMock.mock.calls[i];
+        if (!partCall) throw new Error(`Part ${i} call not made`);
+        const partBody = JSON.parse((partCall[1] as RequestInit).body as string);
+        expect(partBody.action).toBe("write_file");
+        expect(partBody.path).toContain(`.b64part${i}`);
+        // First two chunks are 900 KiB, last is remainder
+        if (i < 2) {
+          expect(partBody.content.length).toBe(921600);
+        } else {
+          expect(partBody.content.length).toBeLessThanOrEqual(921600);
+        }
+        // Verify serialized body stays under 1 MiB
+        const partSerialized = (partCall[1] as RequestInit).body as string;
+        expect(Buffer.byteLength(partSerialized, "utf-8")).toBeLessThan(1_000_000);
+      }
 
-      const part1Call = fetchMock.mock.calls[1];
-      if (!part1Call) throw new Error("Part 1 call not made");
-      const part1Body = JSON.parse((part1Call[1] as RequestInit).body as string);
-      expect(part1Body.action).toBe("write_file");
-      expect(part1Body.path).toContain(".b64part1");
-      expect(part1Body.content.length).toBeLessThanOrEqual(1048576);
-
-      // Third call should be exec with cat and base64 -d
-      const catCall = fetchMock.mock.calls[2];
+      // Fourth call should be exec with bash pipefail, cat and base64 -d
+      const catCall = fetchMock.mock.calls[3];
       if (!catCall) throw new Error("Cat call not made");
       const catBody = JSON.parse((catCall[1] as RequestInit).body as string);
       expect(catBody.action).toBe("exec");
+      expect(catBody.command).toContain("bash -c");
+      expect(catBody.command).toContain("set -o pipefail");
       expect(catBody.command).toContain("cat");
       expect(catBody.command).toContain("base64 -d");
       expect(catBody.command).toContain("large.bin");
       expect(catBody.command.length).toBeLessThanOrEqual(32768);
+      // Cloud: timeout 50s
+      expect(catBody.timeout).toBe(50);
 
-      // Fourth call should be rm cleanup
-      const rmCall = fetchMock.mock.calls[3];
+      // Fifth call should be rm cleanup
+      const rmCall = fetchMock.mock.calls[4];
       if (!rmCall) throw new Error("Rm call not made");
       const rmBody = JSON.parse((rmCall[1] as RequestInit).body as string);
       expect(rmBody.action).toBe("exec");
       expect(rmBody.command).toContain("rm -f");
       expect(rmBody.command.length).toBeLessThanOrEqual(32768);
+    });
+
+    it("routes large UTF-8 text through staging on Cloud", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-large-text";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-text",
+      };
+
+      // Mock write_file for 2 parts, then cat/decode, then rm
+      fetchMock
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { ok: true, path: "/home/dev/rakazo-home/large.txt.b64part0" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { ok: true, path: "/home/dev/rakazo-home/large.txt.b64part1" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+        )
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+        );
+
+      // Large UTF-8 text: 1MB text -> ~1.33MB base64 -> 2 chunks
+      const largeText = "a".repeat(1_000_000);
+
+      await provider.writeFile(
+        computer,
+        {
+          path: "large.txt",
+          content: new TextEncoder().encode(largeText),
+        },
+        createMockContext(),
+      );
+
+      // Should use staging: 2 write_file, 1 cat, 1 rm
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+
+      // First call: write_file with base64 chunk
+      const part0Call = fetchMock.mock.calls[0];
+      if (!part0Call) throw new Error("Part 0 call not made");
+      const part0Body = JSON.parse((part0Call[1] as RequestInit).body as string);
+      expect(part0Body.action).toBe("write_file");
+      expect(part0Body.path).toContain(".b64part0");
+
+      // Third call: exec with bash pipefail, cat and base64 -d
+      const catCall = fetchMock.mock.calls[2];
+      if (!catCall) throw new Error("Cat call not made");
+      const catBody = JSON.parse((catCall[1] as RequestInit).body as string);
+      expect(catBody.action).toBe("exec");
+      expect(catBody.command).toContain("bash -c");
+      expect(catBody.command).toContain("set -o pipefail");
+      expect(catBody.timeout).toBe(50);
+    });
+
+    it("verifies serialized body size stays under 950 KiB on Cloud", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-body-size";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-size",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, {
+          data: { ok: true, path: "/home/dev/rakazo-home/test.txt", bytes_written: 500000 },
+        }),
+      );
+
+      // UTF-8 text that fits after JSON serialization
+      const text = "x".repeat(500_000);
+
+      await provider.writeFile(
+        computer,
+        {
+          path: "test.txt",
+          content: new TextEncoder().encode(text),
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+
+      // Check serialized body size
+      const serializedBody = (call[1] as RequestInit).body as string;
+      const bodyBytes = Buffer.byteLength(serializedBody, "utf-8");
+      expect(bodyBytes).toBeLessThanOrEqual(950 * 1024);
     });
   });
 });
