@@ -2133,4 +2133,67 @@ describe("thread model picker sheet", () => {
       modelId: "vendor/model-3",
     });
   });
+
+  it("opens the picker when the current model is no longer offered", async () => {
+    // A provider that hit its spending limit leaves the bot on a model no
+    // connection offers any more; the picker must still open and let the
+    // user pick a replacement instead of crashing on the saved row.
+    const limitedBot = {
+      ...threadBot,
+      modelProvider: "deepseek",
+      modelId: "deepseek-v4",
+    };
+    function Harness() {
+      const [mainOverride, setMainOverride] = useState<ThreadModelSave | null>(null);
+      const [sheetRole, setSheetRole] = useState<ThreadModelPickerRole | null>(null);
+      return (
+        <>
+          <ThreadComposerChips
+            botId="bot-fixture"
+            currentBot={limitedBot}
+            userId="user-fixture"
+            catalog={catalog as MobileModel[]}
+            mainOverride={mainOverride}
+            computerChoice={mocks.computerPrimary}
+            onPickModel={setSheetRole}
+            favoriteCount={0}
+            onOpenFavorites={() => undefined}
+            backgroundLabel="Default"
+            onOpenBackground={() => undefined}
+            onOpenBackup={() => undefined}
+          />
+          {sheetRole ? (
+            <ThreadModelPickerSheet
+              visible
+              role={sheetRole}
+              botId="bot-fixture"
+              userId="user-fixture"
+              selectedKey="deepseek::deepseek-v4"
+              onClose={() => setSheetRole(null)}
+              onSaved={(choice) => {
+                if (sheetRole === "main") setMainOverride(choice);
+              }}
+            />
+          ) : null}
+        </>
+      );
+    }
+    await act(async () => root.render(<Harness />));
+    expect(chipCard("Main model")?.getAttribute("aria-label")).toBe("Main model: deepseek-v4");
+    await act(async () => chipCard("Main model")!.click());
+    expect(sheetRows().length).toBeGreaterThan(0);
+    expect(sheetRows().map((row) => row.textContent)).toContain("deepseek-v4");
+    await act(async () =>
+      sheetRows()
+        .find((row) => row.textContent === "Model 3")!
+        .click(),
+    );
+    expect(mocks.update).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      modelProvider: "openrouter",
+      modelId: "vendor/model-3",
+    });
+    expect(sheetRows()).toHaveLength(0);
+    expect(chipCard("Main model")?.getAttribute("aria-label")).toBe("Main model: Model 3");
+  });
 });
