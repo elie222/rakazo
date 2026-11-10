@@ -1175,7 +1175,7 @@ msgstr "自動送信者"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
-msgstr ""
+msgstr "保存後に利用できます"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2091,7 +2091,7 @@ msgstr "{address} をコピー"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
-msgstr ""
+msgstr "{label} をコピー"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2638,7 +2638,7 @@ msgstr "認証情報を表示できませんでした"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
-msgstr ""
+msgstr "Webhookキーを表示できませんでした"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
@@ -2790,7 +2790,7 @@ msgstr "組織を作成"
 
 #: src/pages/RoutineList.tsx
 msgid "Create routine"
-msgstr ""
+msgstr "ルーティンを作成"
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3699,7 +3699,7 @@ msgstr "通話を終了してから、画面に表示されたコードを入力
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr ""
+msgstr "ヘッダー"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3739,7 +3739,7 @@ msgstr "非表示"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
-msgstr ""
+msgstr "キーを非表示"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -4035,7 +4035,7 @@ msgstr "ツールの結果をそのまま保持"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Key options"
-msgstr ""
+msgstr "キーのオプション"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4547,7 +4547,7 @@ msgstr "月間クレジットは更新時に失効します。追加購入分は
 
 #: src/lib/cron.ts
 msgid "Monthly on the 1st"
-msgstr ""
+msgstr "毎月1日"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -4868,7 +4868,7 @@ msgstr "結果なし"
 
 #: src/pages/RoutineList.tsx
 msgid "No routines yet"
-msgstr ""
+msgstr "ルーティンはまだありません"
 
 #: src/components/markdown-copy.tsx
 msgid "No rows"
@@ -5023,7 +5023,7 @@ msgstr "自分のみ"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
-msgstr ""
+msgstr "Webhookキーを表示できるのはボットの作成者のみです。"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -6001,7 +6001,7 @@ msgstr "実行履歴"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run now"
-msgstr ""
+msgstr "今すぐ実行"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
@@ -6219,7 +6219,7 @@ msgstr "検索中…"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Secret"
-msgstr ""
+msgstr "シークレット"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6396,7 +6396,7 @@ msgstr "ボットを表示"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
-msgstr ""
+msgstr "キーを表示"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -7437,7 +7437,7 @@ msgstr "緊急"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "URL"
-msgstr ""
+msgstr "URL"
 
 #: src/pages/settings-nav.ts
 msgid "Usage"

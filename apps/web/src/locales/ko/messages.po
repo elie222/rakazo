@@ -1175,7 +1175,7 @@ msgstr "자동 발신자"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
-msgstr ""
+msgstr "저장 후 사용 가능"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2091,7 +2091,7 @@ msgstr "{address} 복사"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
-msgstr ""
+msgstr "{label} 복사"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2638,7 +2638,7 @@ msgstr "자격 증명을 표시할 수 없습니다"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
-msgstr ""
+msgstr "웹훅 키를 표시할 수 없습니다"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
@@ -2790,7 +2790,7 @@ msgstr "조직 만들기"
 
 #: src/pages/RoutineList.tsx
 msgid "Create routine"
-msgstr ""
+msgstr "자동 실행 만들기"
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3699,7 +3699,7 @@ msgstr "전화를 끊은 다음 화면에 표시된 코드를 입력하세요."
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr ""
+msgstr "헤더"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3739,7 +3739,7 @@ msgstr "숨기기"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
-msgstr ""
+msgstr "키 숨기기"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -4035,7 +4035,7 @@ msgstr "도구 결과 전체 유지"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Key options"
-msgstr ""
+msgstr "키 옵션"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4547,7 +4547,7 @@ msgstr "월간 크레딧은 갱신 시 만료됩니다. 충전한 크레딧은 �
 
 #: src/lib/cron.ts
 msgid "Monthly on the 1st"
-msgstr ""
+msgstr "매월 1일"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -4868,7 +4868,7 @@ msgstr "검색 결과가 없습니다"
 
 #: src/pages/RoutineList.tsx
 msgid "No routines yet"
-msgstr ""
+msgstr "아직 자동 실행이 없습니다"
 
 #: src/components/markdown-copy.tsx
 msgid "No rows"
@@ -5023,7 +5023,7 @@ msgstr "나만"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
-msgstr ""
+msgstr "봇을 만든 사람만 웹훅 키를 볼 수 있습니다."
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -6001,7 +6001,7 @@ msgstr "실행 기록"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run now"
-msgstr ""
+msgstr "지금 실행"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
@@ -6219,7 +6219,7 @@ msgstr "검색 중…"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Secret"
-msgstr ""
+msgstr "시크릿"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6396,7 +6396,7 @@ msgstr "봇 표시"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
-msgstr ""
+msgstr "키 표시"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -7437,7 +7437,7 @@ msgstr "긴급"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "URL"
-msgstr ""
+msgstr "URL"
 
 #: src/pages/settings-nav.ts
 msgid "Usage"

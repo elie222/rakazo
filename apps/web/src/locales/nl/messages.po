@@ -1175,7 +1175,7 @@ msgstr "Geautomatiseerde afzenders"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
-msgstr ""
+msgstr "Beschikbaar na opslaan"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2091,7 +2091,7 @@ msgstr "{address} kopiëren"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
-msgstr ""
+msgstr "{label} kopiëren"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2638,7 +2638,7 @@ msgstr "Kan de gegevens niet tonen"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
-msgstr ""
+msgstr "Webhooksleutel tonen mislukt"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
@@ -2790,7 +2790,7 @@ msgstr "Organisatie maken"
 
 #: src/pages/RoutineList.tsx
 msgid "Create routine"
-msgstr ""
+msgstr "Routine aanmaken"
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3699,7 +3699,7 @@ msgstr "Hang op en voer daarna de code op het scherm in."
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr ""
+msgstr "Header"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3739,7 +3739,7 @@ msgstr "Verbergen"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
-msgstr ""
+msgstr "Sleutel verbergen"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -4035,7 +4035,7 @@ msgstr "Toolresultaten volledig houden"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Key options"
-msgstr ""
+msgstr "Sleutelopties"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4547,7 +4547,7 @@ msgstr "Maandelijks tegoed vervalt bij verlenging. Opwaarderingen vervallen niet
 
 #: src/lib/cron.ts
 msgid "Monthly on the 1st"
-msgstr ""
+msgstr "Maandelijks op de 1e"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -4868,7 +4868,7 @@ msgstr "Geen resultaten"
 
 #: src/pages/RoutineList.tsx
 msgid "No routines yet"
-msgstr ""
+msgstr "Nog geen routines"
 
 #: src/components/markdown-copy.tsx
 msgid "No rows"
@@ -5023,7 +5023,7 @@ msgstr "Alleen ik"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
-msgstr ""
+msgstr "Alleen de maker van de bot kan de webhooksleutel zien."
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -6001,7 +6001,7 @@ msgstr "Rungeschiedenis"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run now"
-msgstr ""
+msgstr "Nu uitvoeren"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
@@ -6219,7 +6219,7 @@ msgstr "Bezig met zoeken…"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Secret"
-msgstr ""
+msgstr "Geheim"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6396,7 +6396,7 @@ msgstr "Bots tonen"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
-msgstr ""
+msgstr "Sleutel tonen"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -7437,7 +7437,7 @@ msgstr "Dringend"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "URL"
-msgstr ""
+msgstr "URL"
 
 #: src/pages/settings-nav.ts
 msgid "Usage"

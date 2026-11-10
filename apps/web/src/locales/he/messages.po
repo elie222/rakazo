@@ -1175,7 +1175,7 @@ msgstr "שולחים אוטומטיים"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
-msgstr ""
+msgstr "זמין לאחר השמירה"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2091,7 +2091,7 @@ msgstr "העתקת {address}"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
-msgstr ""
+msgstr "העתקת {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2638,7 +2638,7 @@ msgstr "לא ניתן היה להציג את פרטי הגישה"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
-msgstr ""
+msgstr "לא ניתן היה להציג את מפתח ה-webhook"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
@@ -2790,7 +2790,7 @@ msgstr "יצירת ארגון"
 
 #: src/pages/RoutineList.tsx
 msgid "Create routine"
-msgstr ""
+msgstr "יצירת רוטינה"
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3699,7 +3699,7 @@ msgstr "יש לנתק את השיחה ואז להזין את הקוד שעל ה�
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr ""
+msgstr "Header"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3739,7 +3739,7 @@ msgstr "הסתרה"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
-msgstr ""
+msgstr "הסתרת המפתח"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -4035,7 +4035,7 @@ msgstr "שמירת תוצאות כלים במלואן"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Key options"
-msgstr ""
+msgstr "אפשרויות המפתח"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4547,7 +4547,7 @@ msgstr "הקרדיטים החודשיים פגים בחידוש. טעינות נ
 
 #: src/lib/cron.ts
 msgid "Monthly on the 1st"
-msgstr ""
+msgstr "ב-1 בכל חודש"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -4868,7 +4868,7 @@ msgstr "אין תוצאות"
 
 #: src/pages/RoutineList.tsx
 msgid "No routines yet"
-msgstr ""
+msgstr "עדיין אין רוטינות"
 
 #: src/components/markdown-copy.tsx
 msgid "No rows"
@@ -5023,7 +5023,7 @@ msgstr "רק אני"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
-msgstr ""
+msgstr "רק יוצר הבוט יכול לראות את מפתח ה-webhook שלו."
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -6001,7 +6001,7 @@ msgstr "היסטוריית הרצות"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run now"
-msgstr ""
+msgstr "הרצה עכשיו"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
@@ -6219,7 +6219,7 @@ msgstr "מחפש…"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Secret"
-msgstr ""
+msgstr "סוד"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6396,7 +6396,7 @@ msgstr "הצגת בוטים"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
-msgstr ""
+msgstr "הצגת המפתח"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -7437,7 +7437,7 @@ msgstr "דחוף"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "URL"
-msgstr ""
+msgstr "URL"
 
 #: src/pages/settings-nav.ts
 msgid "Usage"

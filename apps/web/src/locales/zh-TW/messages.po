@@ -1176,7 +1176,7 @@ msgstr "自動化傳送者"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
-msgstr ""
+msgstr "儲存後即可使用"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2092,7 +2092,7 @@ msgstr "複製 {address}"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
-msgstr ""
+msgstr "複製 {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2639,7 +2639,7 @@ msgstr "無法顯示憑證"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
-msgstr ""
+msgstr "無法顯示 Webhook 金鑰"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
@@ -2791,7 +2791,7 @@ msgstr "建立組織"
 
 #: src/pages/RoutineList.tsx
 msgid "Create routine"
-msgstr ""
+msgstr "建立例行任務"
 
 #: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3700,7 +3700,7 @@ msgstr "請結束通話，再輸入螢幕上的驗證碼。"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr ""
+msgstr "標頭"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3740,7 +3740,7 @@ msgstr "隱藏"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
-msgstr ""
+msgstr "隱藏金鑰"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -4036,7 +4036,7 @@ msgstr "保留完整工具結果"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Key options"
-msgstr ""
+msgstr "金鑰選項"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4548,7 +4548,7 @@ msgstr "每月額度在續訂時到期。單次加值額度不會過期。"
 
 #: src/lib/cron.ts
 msgid "Monthly on the 1st"
-msgstr ""
+msgstr "每月 1 日"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -4869,7 +4869,7 @@ msgstr "無結果"
 
 #: src/pages/RoutineList.tsx
 msgid "No routines yet"
-msgstr ""
+msgstr "尚無例行任務"
 
 #: src/components/markdown-copy.tsx
 msgid "No rows"
@@ -5024,7 +5024,7 @@ msgstr "僅限我"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
-msgstr ""
+msgstr "只有機器人的建立者才能查看它的 Webhook 金鑰。"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -6002,7 +6002,7 @@ msgstr "執行紀錄"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run now"
-msgstr ""
+msgstr "立即執行"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
@@ -6220,7 +6220,7 @@ msgstr "正在搜尋…"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Secret"
-msgstr ""
+msgstr "密鑰"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6397,7 +6397,7 @@ msgstr "顯示機器人"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
-msgstr ""
+msgstr "顯示金鑰"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -7438,7 +7438,7 @@ msgstr "緊急"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "URL"
-msgstr ""
+msgstr "網址"
 
 #: src/pages/settings-nav.ts
 msgid "Usage"
