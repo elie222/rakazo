@@ -1,4 +1,4 @@
-import { BoxdSandboxProvider } from "../boxd-sandbox.js";
+import { createBoxdSandboxProvider } from "../boxd-sandbox.js";
 
 const apiKey = process.env.BOXD_API_KEY?.trim();
 if (!apiKey) {
@@ -7,7 +7,7 @@ if (!apiKey) {
 }
 
 const org = process.env.BOXD_ORG?.trim();
-const provider = new BoxdSandboxProvider({ apiKey, ...(org ? { org } : {}) });
+const provider = await createBoxdSandboxProvider({ apiKey, ...(org ? { org } : {}) });
 const { name, built } = await provider.buildComputerSnapshot();
 process.stdout.write(
   built ? `Built boxd snapshot ${name}.\n` : `boxd snapshot ${name} is already ready.\n`,

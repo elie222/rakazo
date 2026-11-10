@@ -5,8 +5,7 @@ import { asSystem, runAsTenant } from "./row-security.js";
 import { sandboxRunHours } from "./sandbox-allowance.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("computer allowance hours (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;

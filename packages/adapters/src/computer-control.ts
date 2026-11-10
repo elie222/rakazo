@@ -1,35 +1,24 @@
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { recordComputerRunEnd } from "@rakazo/db";
+import { hasActiveComputerControl, recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+
+// Who holds a computer's user control is decided in one place, next to the computer rows.
+export {
+  anotherPersonHoldsControl,
+  hasActiveComputerControl,
+  holdsUserControl,
+  userControlHeldBy,
+} from "@rakazo/db";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
 
 export function takeoverLeaseMs(): number {
   const raw = Number(process.env.COMPUTER_TAKEOVER_TTL_MS ?? DEFAULT_TAKEOVER_LEASE_MS);
   return Number.isFinite(raw) && raw >= 1_000 ? raw : DEFAULT_TAKEOVER_LEASE_MS;
-}
-
-export function hasActiveComputerControl(
-  computer:
-    | {
-        controlHolder: string;
-        controlLeaseId: string | null;
-        controlLeaseExpiresAt: Date | null;
-      }
-    | null
-    | undefined,
-  now = new Date(),
-): boolean {
-  return Boolean(
-    computer?.controlHolder === "user" &&
-      computer.controlLeaseId &&
-      computer.controlLeaseExpiresAt &&
-      computer.controlLeaseExpiresAt.getTime() > now.getTime(),
-  );
 }
 
 /** User takeover of this bot with no run bound to it. Maintenance may claim it. */
@@ -130,6 +119,7 @@ export async function clearInactiveUserComputerControl(
     data: {
       controlHolder: "none",
       controlLeaseId: null,
+      controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
       controlRunId: null,
@@ -233,6 +223,7 @@ export async function expireComputerControl(
       data: {
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,

@@ -102,7 +102,7 @@ export function PeerMessagesOverlay({
         >
           <div>{desktop ? <WindowChrome /> : null}</div>
           <DialogTitle
-            className="flex min-w-0 max-w-full items-center justify-self-center gap-2 rounded-full bg-muted px-4 py-2 text-[13px] font-medium"
+            className="flex min-w-0 max-w-full items-center justify-self-center gap-2 rounded-full bg-muted px-4 py-2 text-body-sm font-medium"
             dir="auto"
           >
             <BotAvatar avatarSet={botAvatarSet} color={botColor} identity={botId} size={20} />
@@ -135,7 +135,7 @@ export function PeerMessagesOverlay({
         {history.data !== undefined && history.isError && !history.isFetching ? (
           <div
             role="alert"
-            className="flex items-center justify-center gap-2 px-4 pt-3 text-[13px] text-destructive"
+            className="flex items-center justify-center gap-2 px-4 pt-3 text-body-sm text-destructive"
           >
             <Trans>Could not load this chat.</Trans>
             <Button variant="link" size="xs" onClick={() => void history.refetch()}>
@@ -144,11 +144,11 @@ export function PeerMessagesOverlay({
           </div>
         ) : null}
         {!historyReady ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+          <div className="grid flex-1 place-items-center px-8 text-center text-body text-muted-foreground/80">
             <Spinner aria-label={t`Loading…`} />
           </div>
         ) : historyFailed ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+          <div className="grid flex-1 place-items-center px-8 text-center text-body text-muted-foreground/80">
             <div className="flex flex-col items-center gap-3">
               <Trans>Could not load this chat.</Trans>
               <Button variant="outline" size="sm" onClick={() => void history.refetch()}>
@@ -157,7 +157,7 @@ export function PeerMessagesOverlay({
             </div>
           </div>
         ) : !conversation || conversation.messages.length === 0 ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+          <div className="grid flex-1 place-items-center px-8 text-center text-body text-muted-foreground/80">
             <Trans>No messages with {peerBotName} yet.</Trans>
           </div>
         ) : (
@@ -182,13 +182,13 @@ export function PeerMessagesOverlay({
                     }`}
                   >
                     <div
-                      className="mb-1 text-[12px] font-medium"
+                      className="mb-1 text-label font-medium"
                       style={{ color: sent ? botColor : peerBotColor }}
                       dir="auto"
                     >
                       {sent ? botName : peerBotName}
                     </div>
-                    <div className="text-[14.5px] leading-[1.5] text-foreground/90" dir="auto">
+                    <div className="text-body-lg leading-[1.5] text-foreground/90" dir="auto">
                       <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
                       {peerMessage.blocks?.map((block, index) =>
                         block.kind === "image" ? (

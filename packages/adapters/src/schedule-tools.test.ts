@@ -1,5 +1,6 @@
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
@@ -766,8 +767,12 @@ describe("schedule tool persistence", () => {
     ).rejects.toThrow("deactivate failed");
   });
 
-  it("scopes group list and cancel to the current thread without narrowing DMs", async () => {
-    const findMany = vi.fn(async () => []);
+  it("lists a group's routines from every chat but cancels only the group's own", async () => {
+    const findMany = vi.fn(async () => [
+      { id: "routine-dm", name: "Daily check", crons: ["0 8 * * *"], threadId: "dm-thread-1" },
+      { id: "routine-group", name: "Digest", crons: ["0 9 * * *"], threadId: "group-thread-1" },
+      { id: "routine-default", name: "Weekly", crons: ["0 9 * * 1"], threadId: null },
+    ]);
     const findFirst = vi.fn(async () => null);
     const deps = {
       prisma: {
@@ -778,27 +783,26 @@ describe("schedule tool persistence", () => {
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
 
-    await listSchedulesFromTool(deps, {
+    const listed = await listSchedulesFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
-      threadId: "group-thread-1",
+      groupThreadId: "group-thread-1",
     });
     expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          spaceId: "ws-1",
-          botId: "bot-1",
-          userId: "user-1",
-          threadId: "group-thread-1",
-        },
-      }),
+      expect.objectContaining({ where: { spaceId: "ws-1", botId: "bot-1" } }),
+    );
+    expect(listed.routines.map(({ routineId, inThisChat }) => [routineId, inThisChat])).toEqual([
+      ["routine-dm", false],
+      ["routine-group", true],
+      ["routine-default", false],
+    ]);
+    expect(listed.note).toBe(
+      "inThisChat marks the routines this group chat can change; change the others from the bot's own chat.",
     );
 
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       routineId: "routine-1",
     });
@@ -808,7 +812,6 @@ describe("schedule tool persistence", () => {
         where: {
           spaceId: "ws-1",
           botId: "bot-1",
-          userId: "user-1",
           threadId: "group-thread-1",
           id: "routine-1",
         },
@@ -816,23 +819,24 @@ describe("schedule tool persistence", () => {
     );
 
     findMany.mockClear();
-    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1", userId: "user-1" });
+    const direct = await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1" });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1" },
+        where: { spaceId: "ws-1", botId: "bot-1" },
       }),
     );
+    expect(direct.routines[0]).not.toHaveProperty("inThisChat");
+    expect(direct).not.toHaveProperty("note");
 
     findFirst.mockClear();
     await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       routineId: "routine-1",
     });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1", id: "routine-1" },
+        where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1" },
       }),
     );
   });
@@ -924,7 +928,7 @@ describe("schedule_create with a watch", () => {
     expect(result).toMatchObject({ error: "Bot not found." });
     expect(d.prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: base.botId, spaceId: base.spaceId, userId: base.userId, archivedAt: null },
+        where: { id: base.botId, spaceId: base.spaceId, archivedAt: null },
       }),
     );
     expect(create).not.toHaveBeenCalled();
@@ -971,7 +975,6 @@ describe("cancelScheduleFromTool", () => {
     const input = {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       name: "Daily",
     };
@@ -985,7 +988,6 @@ describe("cancelScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
       },
@@ -1089,7 +1091,10 @@ describe("updateScheduleFromTool", () => {
     const cancel = vi.fn(async () => undefined);
     const append = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, updateMany } },
+      prisma: {
+        routine: { findFirst, updateMany, count: vi.fn(async () => 0) },
+        run: { updateManyAndReturn: vi.fn(async () => []) },
+      },
       events: { append },
       jobs: { enqueue, cancel },
     } as unknown as Parameters<typeof updateScheduleFromTool>[0];
@@ -1122,6 +1127,26 @@ describe("updateScheduleFromTool", () => {
       expect(append).not.toHaveBeenCalled();
     },
   );
+
+  it("takes over another member's schedule and restarts its watch baseline", async () => {
+    const { findFirst, updateMany, update } = setup();
+    await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        id: "routine-1",
+        bot: { archivedAt: null },
+      },
+      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+    });
+  });
 
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();
@@ -1294,11 +1319,23 @@ describe("updateScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
         bot: { archivedAt: null },
       },
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("tells a group run that a routine from another chat is changed there", async () => {
+    const { findFirst, updateMany, update } = setup(null);
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "routine-1" } as never);
+    await expect(update({ prompt: "x", scopeThreadId: "group-thread-1" })).resolves.toEqual({
+      error: "That routine is not this group chat's. Change it from the bot's own chat.",
+    });
+    expect(findFirst).toHaveBeenLastCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+      select: { id: true },
     });
     expect(updateMany).not.toHaveBeenCalled();
   });

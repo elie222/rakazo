@@ -1,14 +1,7 @@
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset } from "@rakazo/core";
-import { describe, expect, it, vi } from "vitest";
-import {
-  draftFromRoutine,
-  emptyRoutineDraft,
-  routineDraftChanged,
-  routineSaveRequest,
-} from "./routine-draft";
-
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
+import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
+import { describe, expect, it } from "vitest";
+import { routineDraftChanged, routineSaveRequest } from "./routine-draft";
 
 const routine: Routine = {
   id: "routine-1",
@@ -22,6 +15,7 @@ const routine: Routine = {
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   modelProvider: null,
   modelId: null,
   thinkingLevel: null,
@@ -84,6 +78,42 @@ describe("routineSaveRequest", () => {
       update: { routineId: "routine-1", crons: [] },
     });
     expect(routineSaveRequest(draft, routine, "bot-1", "UTC")).toEqual({ error: "trigger" });
+  });
+
+  it("creates and changes an email trigger, and needs a trigger once it goes", () => {
+    const draft = {
+      ...emptyRoutineDraft(),
+      name: "Mail",
+      prompt: "File it.",
+      emailSenders: "owner" as const,
+    };
+    expect(routineSaveRequest(draft, null, "bot-1", "UTC")).toMatchObject({
+      create: { crons: [], emailSenders: "owner" },
+    });
+
+    const mailed = { ...routine, crons: [], emailSenders: "owner" as const };
+    const widened = { ...draftFromRoutine(mailed), emailSenders: "domain" as const };
+    expect(routineSaveRequest(widened, mailed, "bot-1", "UTC")).toEqual({
+      update: { routineId: "routine-1", emailSenders: "domain" },
+    });
+    const removed = { ...draftFromRoutine(mailed), emailSenders: null };
+    expect(routineSaveRequest(removed, mailed, "bot-1", "UTC")).toEqual({ error: "trigger" });
+  });
+
+  it("removes a trigger set up on web, and needs another once the last one goes", () => {
+    const hooked = { ...routine, crons: [], webhookEnabled: true, githubEnabled: true };
+    const opened = draftFromRoutine(hooked);
+    expect(
+      routineSaveRequest({ ...opened, webhookEnabled: false }, hooked, "bot-1", "UTC"),
+    ).toEqual({ update: { routineId: "routine-1", webhookEnabled: false } });
+    expect(
+      routineSaveRequest(
+        { ...opened, webhookEnabled: false, githubEnabled: false },
+        hooked,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ error: "trigger" });
   });
 
   it("never rewrites a one-shot's schedule", () => {

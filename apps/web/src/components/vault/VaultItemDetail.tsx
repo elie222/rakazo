@@ -51,8 +51,8 @@ function DetailRow({
       data-testid={testId}
       className="flex min-h-11 items-center gap-3 border-t border-border py-2 first:border-t-0"
     >
-      <span className="w-28 shrink-0 text-[12.5px] text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 whitespace-pre-line break-words text-[14px]">{children}</span>
+      <span className="w-28 shrink-0 text-body-sm text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 whitespace-pre-line break-words text-body">{children}</span>
       {action}
       {copy ? <CopyButton text={copy} /> : null}
     </div>
@@ -183,7 +183,7 @@ export function VaultItemDetail({
             copy={field.value}
             action={index === 0 ? showButton : undefined}
           >
-            <span className={field.hidden ? "font-mono text-[13px]" : undefined}>
+            <span className={field.hidden ? "font-mono text-body-sm" : undefined}>
               {field.value}
             </span>
           </DetailRow>
@@ -198,7 +198,7 @@ export function VaultItemDetail({
         );
       rows.push(
         <DetailRow key="password" label={t`Password`} action={showButton}>
-          <span className="font-mono text-[13px]">{MASK}</span>
+          <span className="font-mono text-body-sm">{MASK}</span>
         </DetailRow>,
       );
     }
@@ -213,13 +213,15 @@ export function VaultItemDetail({
         action={showButton}
         testId="vault-item-card-number"
       >
-        <span className="font-mono text-[13px] tabular-nums">{number ?? `•••• ${card.last4}`}</span>
+        <span className="font-mono text-body-sm tabular-nums">
+          {number ?? `•••• ${card.last4}`}
+        </span>
       </DetailRow>,
       <DetailRow key="expiry" label={t`Expires`} copy={cardExpiry(card)}>
         {cardExpiry(card)}
       </DetailRow>,
       <DetailRow key="cvc" label={t`Security code`} copy={revealedCard?.cvc}>
-        <span className="font-mono text-[13px]">
+        <span className="font-mono text-body-sm">
           {revealedCard ? (revealedCard.cvc ?? "") : "•••"}
         </span>
       </DetailRow>,
@@ -271,7 +273,7 @@ export function VaultItemDetail({
       const variable = `$${commandVariableName(item.name)}`;
       rows.push(
         <DetailRow key="variable" label={t`Variable`} copy={variable}>
-          <span className="font-mono text-[13px]">{variable}</span>
+          <span className="font-mono text-body-sm">{variable}</span>
         </DetailRow>,
       );
     } else {
@@ -300,7 +302,7 @@ export function VaultItemDetail({
         action={showButton}
         testId="vault-item-value"
       >
-        <span className="break-all font-mono text-[13px]">{revealedValue ?? MASK}</span>
+        <span className="break-all font-mono text-body-sm">{revealedValue ?? MASK}</span>
       </DetailRow>,
     );
   }
@@ -316,7 +318,7 @@ export function VaultItemDetail({
     <div data-testid="vault-item-detail" className="flex flex-col gap-4">
       <VaultPageHeader
         title={item.title}
-        leading={<VaultTile kind={kind} title={item.title} />}
+        leading={<VaultTile kind={kind} title={item.title} origin={item.origin} />}
         subtitle={
           kind ? (
             one[kind]
@@ -328,13 +330,13 @@ export function VaultItemDetail({
       />
       {rows.length ? <div>{rows}</div> : null}
       {error ? (
-        <p role="alert" className="text-[13px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
       {confirmingRemove ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[13px] text-foreground">
+          <p className="text-body-sm text-foreground">
             <Trans>Remove {secretName}? Bots will no longer be able to use it.</Trans>
           </p>
           <div className="flex gap-2">

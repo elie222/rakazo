@@ -13,6 +13,9 @@ afterEach(() => {
   vi.resetModules();
 });
 
+/** The Authorization header of the last request the fixture server received. */
+let lastAuthorization: string | undefined;
+
 /** Runs one real turn against a fake OpenAI-compatible server and returns the request it received. */
 async function wireRequest(
   env: Record<string, string>,
@@ -29,6 +32,7 @@ async function wireRequest(
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      lastAuthorization = request.headers.authorization;
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.end(
         `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "Ready" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
@@ -130,5 +134,26 @@ describe("local model reasoning on the wire", () => {
       RAKAZO_LOCAL_REASONING_MODELS: "example-model",
     });
     expect(listed.reasoning_effort).toBe("medium");
+  });
+});
+
+describe("local model server key on the wire", () => {
+  it("sends RAKAZO_LOCAL_MODELS_API_KEY as the bearer token", async () => {
+    await wireRequest({ ...localServer, RAKAZO_LOCAL_MODELS_API_KEY: " local-server-test-key " });
+    expect(lastAuthorization).toBe("Bearer local-server-test-key");
+  });
+
+  it("keeps the placeholder key when RAKAZO_LOCAL_MODELS_API_KEY is unset", async () => {
+    await wireRequest({ ...localServer, RAKAZO_LOCAL_MODELS_API_KEY: "" });
+    expect(lastAuthorization).toBe("Bearer local");
+  });
+
+  it("never sends it to a user's own OpenAI-compatible connection", async () => {
+    await wireRequest(
+      { ...localServer, RAKAZO_LOCAL_MODELS_API_KEY: "local-server-test-key" },
+      { apiKey: "connection-test-key" },
+      "openai-compatible",
+    );
+    expect(lastAuthorization).toBe("Bearer connection-test-key");
   });
 });

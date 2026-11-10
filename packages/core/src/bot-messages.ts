@@ -5,6 +5,9 @@ import { escapePromptData } from "./prompt-data.js";
 
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
 
+/** Bots that hit the limit tend to resend the text in chunks; the error steers them to files. */
+export const BOT_MESSAGE_TOO_LONG = `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.`;
+
 /**
  * Default for how many bot-started deliveries may chain before the next one is
  * refused. Messaging is fire-and-forget, so nothing stops two bots replying to
@@ -146,6 +149,7 @@ export function renderGroupMembersContext(
   groupName: string,
   members: readonly BotAddress[],
   self: Pick<BotAddress, "id" | "name">,
+  sharedSpace = false,
 ): string {
   const name = escapeDirectoryField(groupName.trim());
   const selfName = escapeDirectoryField(self.name.trim());
@@ -157,7 +161,9 @@ export function renderGroupMembersContext(
     "<group_members>",
     ...formatBotRosterLines(members),
     "</group_members>",
-    'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
+    sharedSpace
+      ? 'In the conversation so far, messages from other members and from the people in this space start with "[Name]:", and your own earlier messages carry no label. Never begin your replies with a label.'
+      : 'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
     "Post in this shared thread. When another teammate is genuinely needed for a distinct next stage, use handoff_to_bot instead of telling the user to switch chats.",
     "A handoff transfers ownership. Complete a stage handed to you yourself, then post its result here. Do not hand it back merely to report or ask the previous bot to do the same work. Never bounce a stage between members. One bot owns each stage.",
     BOT_DELIBERATION_GUIDANCE,

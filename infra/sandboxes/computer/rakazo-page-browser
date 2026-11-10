@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Serve the page-browser commands on the Chromium showing on this computer's DISPLAY.
 
 agent-browser (pinned in the image) attaches to that Chromium over CDP and browses. This wrapper
@@ -352,10 +352,18 @@ class AgentBrowser:
         info = os.lstat(self.home)
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
             raise RuntimeError("The page browser's own folder is not this user's")
-        # Its own configuration, never one from the bot's home or working folder.
+        # Its own configuration, never one from the bot's home or working folder. Replaced whole, never
+        # rewritten in place: a call for another screen may be starting agent-browser on it right now.
         self.config = os.path.join(self.home, "config.json")
-        with open(self.config, "w", encoding="utf-8") as config:
-            config.write("{}")
+        fd, staged = tempfile.mkstemp(dir=self.home, prefix=".config-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as config:
+                config.write("{}")
+            os.replace(staged, self.config)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(staged)
+            raise
         self.session = f"display-{port}"
         # When set, every command answers by then or is given up.
         self.deadline: float | None = None
@@ -1020,7 +1028,8 @@ class PageBrowser:
             first = self.purchases().desktop(args)
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
                     "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
-                    **({"total": first["total"]} if first and first.get("total") else {})} if first else None
+                    **({"total": first["total"]} if first and first.get("total") else {}),
+                    **({"items": first["items"]} if first and first.get("items") else {})} if first else None
         return {"ok": True, "url": "", "title": "", **self.purchases().where(), "site": site, "purchase": purchase}
 
     # -- commands ---------------------------------------------------------------------------------
@@ -1443,6 +1452,13 @@ class CdpClient(page_secrets.CdpClient):
         # browser makes their requests, so the page has no document for them.
         self.download_links: list[float] = []
 
+    def _skipped_event(self, head: bytes) -> None:
+        super()._skipped_event(head)
+        # A download of a huge data: URL still begins: Chromium sends its guid before the url.
+        begun = re.match(rb'\{"method":"Browser.downloadWillBegin","params":\{"frameId":"[^"]*","guid":"([0-9A-Fa-f-]+)"', head)
+        if begun:
+            self._handle_event({"method": "Browser.downloadWillBegin", "params": {"guid": begun.group(1).decode()}})
+
     def _handle_event(self, message: dict[str, Any]) -> None:
         super()._handle_event(message)
         method = message.get("method")
@@ -1826,16 +1842,28 @@ PURCHASE_HELPERS = r"""
   const SURROUNDINGS = "header, nav, footer, aside, [role=banner], [role=navigation], [role=contentinfo], [role=complementary]";
   const NOTICE = /cookie|consent|gdpr|onetrust/i;
   const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
-  const CARD_NAMING = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|(?<![a-z])(?:cvv2?|cvc2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|מספר[\s_-]*כרטיס|כרטיס[\s_-]*אשראי/i;
+  // What only a payment card's field is called. "Card number" alone is not: membership, frequent-flyer and ID
+  // cards have numbers too, and a payment card's form also asks for its security code.
+  const CARD_NAMING = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/i;
   // A gift card, voucher or coupon number is not the card that pays.
   const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה/i;
+  const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|מספר[\s_-]*כרטיס/i;
+  const CARD_COMPANION = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)/i;
+  const namingOf = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
+    ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
   function cardLike(el) {
     if (!(el instanceof HTMLInputElement) || !["text", "tel", "number", "password"].includes(el.type) || !visible(el)) return false;
     const tokens = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
     if (CARD_TOKENS.some((token) => tokens.includes(token))) return true;
-    const naming = [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
-      ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
-    return CARD_NAMING.test(naming) && !NOT_A_CARD.test(naming);
+    const naming = namingOf(el);
+    if (NOT_A_CARD.test(naming)) return false;
+    if (CARD_NAMING.test(naming)) return true;
+    // A card number counts beside a security code or a month/year expiry, which an ID or membership card
+    // form does not ask for.
+    if (!CARD_NUMBER.test(naming)) return false;
+    const around = el.form ? [...el.form.elements] : [...el.getRootNode().querySelectorAll("input")];
+    return around.some((other) => other !== el && other instanceof HTMLInputElement && visible(other)
+      && CARD_COMPANION.test(namingOf(other)));
   }
   // Inputs of the page and of its open shadow trees, where some checkouts draw their card fields.
   function deepInputs(root = document, found = []) {
@@ -1944,15 +1972,109 @@ PURCHASE_HELPERS = r"""
   }
   // Page text is cut by characters, not code units, so a cut never leaves half an emoji.
   const cut = (text, max) => Array.from(text).slice(0, max).join("");
+  // An order line ends with its one amount: "Oat milk 1L × 2 $8.40", "Delivery 6,00 €", "Discount -$5.00". A
+  // minus sign right before the amount is kept, so a credit never reads as a charge.
+  const LINE_AMOUNT = new RegExp(`[-−]?(?:${MONEY.source})$`, "i");
+  // Between two parts of a line that end and start with a digit: "2" and "150,00 €" in two cells are not "2 150,00 €".
+  const APART = "\u001f";
+  const ANY_AMOUNT = new RegExp(MONEY.source, "i");
+  const SUBTOTAL = /sub-?\s?total|סכום ביניים/i;
+  // A line that is itself a total says so in whole words: "Totally Oats" is an item.
+  const TOTAL_LINE = new RegExp(`(?<!\\p{L})(?:${TOTAL.source})(?!\\p{L})`, "iu");
+  // What the shopper sees: an element hidden by its own style, or by a transparent or hidden ancestor, is not.
+  const seen = (el) => visible(el) && (el.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) ?? true);
+  // Text drawn in a transparent color, or at no size, is on the page but not in front of the shopper.
+  const inkless = (el) => {
+    const style = window.getComputedStyle(el);
+    return parseFloat(style.fontSize) === 0 || /^(?:transparent|rgba\([^)]*,\s*0\))$/.test(style.color.trim());
+  };
+  // A choice is not an order line, and nor is an offer to add something: a delivery option or an extra names
+  // its price too. Other controls, such as a quantity picker or Remove, may sit in a line; their words are not read.
+  const CHOICES = "label, input[type=radio], input[type=checkbox], [role=radio], [role=checkbox], [role=switch], "
+    + "[role=option]";
+  const CONTROLS = `input:not([type=hidden]), select, textarea, button, [role=button], [role=spinbutton], [contenteditable], ${CHOICES}`;
+  const OFFER = /^(?:add|select|choose|include|upgrade|הוסף|הוספה|בחר)(?:\s|$)/;
+  const offers = (el) => [...el.querySelectorAll("button, a, [role=button]")]
+    .some((control) => wordsOf(control).some((word) => OFFER.test(phrase(word))));
+  const PAGE_EDGES = "header, nav, footer, [role=banner], [role=navigation], [role=contentinfo]";
+  // What an element shows, with a space between its parts so "6" and "$3.00" in two cells stay apart.
+  function shownText(el) {
+    let text = "";
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(), parts = 0; node && parts < 40; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      const part = tidy(node.data);
+      if (part && parent && !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(parent.tagName) && seen(parent) && !inkless(parent)
+          && !parent.closest(CONTROLS)) {
+        // A price split over tags ("$", "3", ".", "00") is one amount; two numbers side by side are not.
+        const within = (/\d$/.test(text) && /^[.,]/.test(part)) || (/[$€£₪¥.,]$/.test(text) && /^\d/.test(part));
+        text += (!text || within ? "" : /\d$/.test(text) && /^\d/.test(part) ? APART : " ") + part;
+        parts += 1;
+      }
+    }
+    return text;
+  }
+  // The order lines the checkout lists above its total, as the page words them: each a name and the amount
+  // at its end, such as an item with its quantity and price, delivery or tax. Read back from the total no further
+  // than a card field, so a summary beside the card form is not mixed with the page above it. None without a total.
+  // Order lines are a courtesy on the card: past this many milliseconds the page lists none, so a huge page never
+  // slows the purchase check itself.
+  const ITEMS_BUDGET_MS = 200;
+  function orderItems() {
+    const until = performance.now() + ITEMS_BUDGET_MS;
+    const all = [...(document.body?.querySelectorAll("*") || [])];
+    const small = (el, max) => (el.textContent || "").length <= max && !el.closest(CONTROLS) && !el.closest(PAGE_EDGES);
+    // The last totals of the page, found from its end, and the stretch of the page just above them.
+    const totals = [];
+    let last = -1;
+    for (let i = all.length - 1; i >= Math.max(0, all.length - 20000) && totals.length < 5; i--) {
+      if (performance.now() > until) return [];
+      const el = all[i];
+      if (small(el, 200) && TOTAL.test(el.textContent) && !SUBTOTAL.test(el.textContent) && visible(el)) {
+        totals.push(el);
+        if (last < 0) last = i;
+      }
+    }
+    if (!totals.length) return [];
+    const rows = [];
+    for (const el of all.slice(Math.max(0, last - 3000), last + 1).reverse()) {
+      if (rows.length >= 400) break;
+      if (performance.now() > until) return [];
+      if (!small(el, 400) || !ANY_AMOUNT.test(el.textContent) || el.querySelector(CHOICES)
+          || !seen(el) || offers(el)) continue;
+      const text = shownText(el);
+      const amount = text.length <= 160 ? text.match(LINE_AMOUNT)?.[0] : "";
+      const name = amount ? text.slice(0, -amount.length).replaceAll(APART, " ").replace(/[\s:·•–—-]+$/u, "") : "";
+      // A name with an amount of its own may be several lines read as one, which would put one line's price on
+      // another's name: left out. Whole, so the bot's secrets are found and hidden before the card cuts it.
+      if (/\p{L}/u.test(name) && !ANY_AMOUNT.test(name)) rows.unshift({ el, name, amount });
+    }
+    // The line itself, not the list or row group around it.
+    const lines = rows.filter((row) => !rows.some((other) => other !== row && row.el.contains(other.el)));
+    const cards = pageCards();
+    const before = (a, b) => Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
+    // The last total first; an earlier one when the last has nothing listed above it.
+    for (const total of totals) {
+      const found = [];
+      for (const line of [...lines].reverse()) {
+        if (!before(line.el, total) || line.el.contains(total)) continue;
+        if (cards.some((card) => before(line.el, card) && before(card, total))) break;
+        if (!TOTAL_LINE.test(line.name) && !SUBTOTAL.test(line.name)) found.unshift({ name: line.name, amount: line.amount });
+      }
+      if (found.length) return found.slice(0, 30);
+    }
+    return [];
+  }
   // What the card shows: the button's text, and the amount the button names or else the page's total.
   // `words`: everything the control says, so an amount only its aria label names is the one shown.
   // A button that names another amount than the page's total also reports the total, which the spending
-  // limit counts if larger.
+  // limit counts if larger. `items`: the order lines the page lists, when it lists any.
   function shownPurchase(reason, label, words = [label]) {
     const named = words.map((word) => moneyIn(word, false)).find(Boolean) || "";
     const total = totalShown();
+    const items = orderItems();
     return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
-      ...(named && total && total !== named ? { total } : {}) };
+      ...(named && total && total !== named ? { total } : {}), ...(items.length ? { items } : {}) };
   }
   // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
   function purchaseOf(el, frame) {
@@ -2042,6 +2164,11 @@ INVISIBLE = re.compile("[\U000E0000-\U000E007F​-‏⁠-⁤‪-‮⁦-⁩﻿]")
 # What the card shows when not even the page's own signals can be read: the check asks rather than allows.
 UNREADABLE_PURCHASE = {"reason": "unreadable", "label": "", "amount": "", "amountFrom": "page"}
 DESKTOP_DEADLINE_SECONDS = 8.0
+# Chromium's answer for a world whose document the tab has just replaced, and how long the check waits
+# for the new one.
+DOCUMENT_GONE = "Cannot find context with specified id"
+DOCUMENT_GONE_TRIES = 5
+DOCUMENT_GONE_WAIT_SECONDS = 0.2
 # Elements that hold another document.
 FRAME_ELEMENTS = ("IFRAME", "FRAME", "OBJECT", "EMBED")
 
@@ -2090,10 +2217,20 @@ class Purchases:
     def site(self) -> str:
         """The top page's host. Each check starts here, in the world of the document the tab shows now: an
         earlier step may have navigated."""
-        top = page_secrets.main_frame(self.client, self.session)["id"]
-        self.client.context_id = page_secrets.world_in(self.client, self.session, top)
-        host = page_secrets.eval_json(self.client, self.session, "location.host")
-        return host if isinstance(host, str) else ""
+        tries = DOCUMENT_GONE_TRIES
+        while True:
+            try:
+                top = page_secrets.main_frame(self.client, self.session)["id"]
+                self.client.context_id = page_secrets.world_in(self.client, self.session, top)
+                host = page_secrets.eval_json(self.client, self.session, "location.host")
+                return host if isinstance(host, str) else ""
+            except RuntimeError as error:
+                # The tab replaced its document between finding the world and reading it, as a login's
+                # redirect does: read the new one. A page that keeps doing it still fails, and asks.
+                tries -= 1
+                if DOCUMENT_GONE not in str(error) or not tries:
+                    raise
+                time.sleep(DOCUMENT_GONE_WAIT_SECONDS)
 
     def asked_with_frames(self, session: str, world: int | None, call: str) -> dict[str, Any] | None:
         """`call` (with a %s for whether the page shows a payment provider's frame), asked again with one."""

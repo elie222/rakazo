@@ -32,20 +32,12 @@ vi.mock("react-native-reanimated", () => ({
   FadeOut: { duration: () => ({ reduceMotion: () => "fade-out" }) },
   ReduceMotion: { System: "system" },
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values?: Record<string, string | number>) =>
-      text
-        .replace("{count}", String(values?.count ?? ""))
-        .replace("{label}", String(values?.label ?? "")),
-  }),
-}));
 vi.mock("../components/unread-jump-pill", () => ({
   UNREAD_JUMP_PILL_HEIGHT: 38,
   UnreadJumpPill: () => null,
 }));
 
-import { useUnreadJumpPills } from "../components/unread-jump-overlay";
+import { UnreadJumpOverlay, useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { useHeaderHeightIfAny } from "./floating-header";
 
 type Pills = ReturnType<typeof useUnreadJumpPills<unknown>>;
@@ -117,9 +109,10 @@ describe("useUnreadJumpPills", () => {
       cell.props.onLayout({ nativeEvent: { layout: { y, height } } });
     });
   const edgeAt = (index: number) => {
-    const edge = (pills.overlay as ReactElement<{ children: ReactElement[] }>).props.children[
-      index
-    ];
+    // The overlay is the pill component; its own output holds one edge per direction.
+    const overlay = pills.overlay as ReactElement<Parameters<typeof UnreadJumpOverlay>[0]>;
+    const edge = (UnreadJumpOverlay(overlay.props) as ReactElement<{ children: ReactElement[] }>)
+      .props.children[index];
     return edge as ReactElement<{
       entering?: unknown;
       exiting?: unknown;

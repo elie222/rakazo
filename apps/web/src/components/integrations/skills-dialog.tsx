@@ -12,10 +12,11 @@ import {
   Field,
   FieldLabel,
   Input,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, X } from "lucide-react";
+import { ChevronLeft, LayoutTemplate, X } from "lucide-react";
 import { useState } from "react";
 import { useSpaceQueries } from "../../lib/query";
 import { AgentSkills } from "../../pages/KnowledgeSection";
@@ -38,7 +39,13 @@ function skillCount(install: CapabilityInstall) {
 }
 
 /** Your skills in this space, the skills plugins added, and skill packs to browse. */
-export function SkillsDialog({ onClose }: { onClose: () => void }) {
+export function SkillsDialog({
+  onClose,
+  onOpenTemplates,
+}: {
+  onClose: () => void;
+  onOpenTemplates?: () => void;
+}) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -106,9 +113,9 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         <div data-testid="skills-git-import" className="max-w-xl space-y-6">
           <div className="flex items-center gap-2">
             {back(() => setImporting(false))}
-            <h2 className="text-[17px] font-medium text-foreground">
+            <SectionHeading as="h2" variant="heading">
               <Trans>From GitHub</Trans>
-            </h2>
+            </SectionHeading>
           </div>
           <form
             className="space-y-4"
@@ -145,7 +152,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
     return (
       <div className="space-y-8">
         <section data-testid="your-skills">
-          <h3 className="mb-2 px-2.5 text-[14px] font-medium text-muted-foreground">
+          <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
             <Trans>Your skills</Trans>
           </h3>
           <div className="px-2.5">
@@ -154,7 +161,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         </section>
         {skillSets.length ? (
           <section data-testid="plugin-skill-sets">
-            <h3 className="mb-2 px-2.5 text-[14px] font-medium text-muted-foreground">
+            <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
               <Trans>Plugins</Trans>
             </h3>
             <div className="grid grid-cols-2 gap-2">
@@ -170,8 +177,8 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
                   >
                     <PluginLogo name={set.name} logo={set.logo} site={set.site} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium">{set.name}</span>
-                      <span className="block truncate text-[13px] text-muted-foreground">
+                      <span className="block truncate text-body-lg font-medium">{set.name}</span>
+                      <span className="block truncate text-body-sm text-muted-foreground">
                         <Plural value={skillCount(install)} one="# skill" other="# skills" />
                       </span>
                     </span>
@@ -182,7 +189,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
           </section>
         ) : null}
         <section data-testid="skill-packs-section">
-          <h3 className="mb-2 px-2.5 text-[14px] font-medium text-muted-foreground">
+          <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
             <Trans>Browse</Trans>
           </h3>
           <Input
@@ -201,7 +208,7 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
           {catalog.error || catalog.data?.unavailableRegistries.length ? (
             <div
               role="alert"
-              className="mb-4 flex items-center gap-3 text-sm text-muted-foreground"
+              className="mb-4 flex items-center gap-3 text-body text-muted-foreground"
             >
               <Trans>Some plugins could not be loaded.</Trans>
               <Button variant="outline" size="sm" onClick={() => void catalog.refetch()}>
@@ -237,15 +244,23 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         if (!open) onClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[680px] max-h-[calc(100%-2rem)] w-[920px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[920px]"
-      >
+      <DialogContent showCloseButton={false} size="xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>Skills</Trans>
           </DialogTitle>
           <div className="flex items-center gap-2">
+            {!selection && !importing && onOpenTemplates ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="open-bot-templates"
+                onClick={onOpenTemplates}
+              >
+                <LayoutTemplate />
+                <Trans>Templates</Trans>
+              </Button>
+            ) : null}
             {!selection && !importing ? (
               <Button variant="ghost" size="sm" onClick={() => setImporting(true)}>
                 <Trans>From GitHub</Trans>

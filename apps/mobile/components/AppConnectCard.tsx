@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
 import { appConnectedInput, waitForConnection } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
@@ -6,7 +8,6 @@ import type { ViewProps } from "react-native";
 import { Linking, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
@@ -28,7 +29,7 @@ export function AppConnectCard({
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const [busy, setBusy] = useState(false);
@@ -71,10 +72,10 @@ export function AppConnectCard({
         setLocalStatus("connected");
         return;
       }
-      setError(t("Authorization timed out. Please try again."));
+      setError(t`Authorization timed out. Please try again.`);
     } catch (reason) {
       if (!controller.signal.aborted) {
-        setError(errorText(reason, t("Could not authorize this app")));
+        setError(errorText(reason, t`Could not authorize this app`));
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -86,7 +87,7 @@ export function AppConnectCard({
 
   return (
     <View
-      accessibilityLabel={t("{name} connection", { name: block.name })}
+      accessibilityLabel={t`${ph({ name: block.name })} connection`}
       style={{
         width: "100%",
         borderRadius: 18,
@@ -113,7 +114,7 @@ export function AppConnectCard({
         {view.showAuthorize && !readOnly && threadId ? (
           <NativeActionButton
             label={view.actionLabel}
-            accessibilityLabel={t("Connect {name}", { name: block.name })}
+            accessibilityLabel={t`Connect ${ph({ name: block.name })}`}
             fill={false}
             busy={busy}
             style={{ alignSelf: "center" }}

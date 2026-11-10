@@ -46,9 +46,12 @@ export async function saveLastBotId(botId: string, spaceId: string | null) {
   });
 }
 
-/** The record belongs to the Space it was saved in; another Space or organization starts without it. */
+/**
+ * The record belongs to the Space it was saved in; another Space or organization starts without
+ * it. One saved with no Space selected matches only while none is selected.
+ */
 function inSelectedSpace(record: { spaceId?: unknown }): boolean {
-  return typeof record.spaceId !== "string" || record.spaceId === selectedSpaceId();
+  return (record.spaceId ?? null) === selectedSpaceId();
 }
 
 export async function loadLastBotId() {

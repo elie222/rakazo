@@ -149,3 +149,16 @@ export const SpendingStatusSchema = z.object({
   shown: z.boolean(),
 });
 export type SpendingStatus = z.infer<typeof SpendingStatusSchema>;
+
+/** A payment a bot made with the user's approval. Minor units. */
+export const SpendingPaymentSchema = z.object({
+  id: z.string(),
+  /** The checkout's host. */
+  site: z.string(),
+  amount: z.number().int().positive(),
+  currency: z.string(),
+  /** Null once the bot is gone or out of the user's reach. */
+  botName: z.string().nullable(),
+  createdAt: IsoDate,
+});
+export type SpendingPayment = z.infer<typeof SpendingPaymentSchema>;

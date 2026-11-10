@@ -177,6 +177,7 @@ function fixture(
           historyCompactedUpToSeq: null,
         }),
       },
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       deploymentSettings: {
         findUnique: async () => ({
           defaultModelProvider: model.provider,
@@ -199,6 +200,7 @@ function fixture(
         findFirst: async () => ({ id: "fixture-key", ciphertext: "fixture-ciphertext" }),
       },
       $queryRaw: async () => [],
+      $executeRaw: async () => 0,
       $transaction: async (action: (tx: unknown) => Promise<unknown>) => action(prisma),
       externalEffect: {
         ...empty,

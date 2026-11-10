@@ -22,7 +22,7 @@ const testDesktop = {
 };
 
 /** An in-memory deployment settings row and secret table behind the calls the config makes. */
-function makeDeps(options: { admin?: boolean } = {}) {
+function makeDeps(options: { admin?: boolean; computerSettingsEnabled?: boolean } = {}) {
   const state = {
     settings: null as null | {
       computerProvider: string | null;
@@ -76,6 +76,7 @@ function makeDeps(options: { admin?: boolean } = {}) {
     env: {
       sandboxProvider: "docker",
       adminEmails: options.admin === false ? [] : ["admin@example.com"],
+      computerSettingsEnabled: options.computerSettingsEnabled ?? true,
     },
     resolveHostname: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
     verifyConnection: vi.fn(async () => undefined),
@@ -93,6 +94,18 @@ describe("computer provider settings", () => {
         values: testDesktop,
       }),
     ).rejects.toThrow("Admins only");
+  });
+
+  it("offers no providers and refuses one unless the deployment enables computer settings", async () => {
+    const { deps, state } = makeDeps({ computerSettingsEnabled: false });
+    await expect(getComputerProviderSettings(deps, actor)).resolves.toMatchObject({
+      provider: "default",
+      providers: [],
+    });
+    await expect(
+      updateComputerProviderSettings(deps, actor, { provider: "desktop", values: testDesktop }),
+    ).rejects.toThrow("This deployment cannot use computer settings");
+    expect(state.secrets.size).toBe(0);
   });
 
   it("checks the desktop, stores the connection encrypted and never returns secrets", async () => {
@@ -252,6 +265,19 @@ function makeAccountDeps(sandboxProvider = "docker") {
 
 describe("an account's own computer", () => {
   const other = { userId: "user-2", spaceId: "space-1", email: "other@example.com" } as never;
+
+  it("offers no providers and refuses one unless the deployment enables computer settings", async () => {
+    const { deps, rows } = makeAccountDeps();
+    deps.env.computerSettingsEnabled = false;
+    await expect(getAccountComputerSettings(deps, actor)).resolves.toMatchObject({ providers: [] });
+    await expect(
+      updateAccountComputerSettings(deps, actor, { provider: "desktop", values: testDesktop }),
+    ).rejects.toThrow("This deployment cannot use account computer settings");
+    await expect(
+      updateAccountComputerSettings(deps, actor, { provider: "default", values: {} }),
+    ).resolves.toMatchObject({ provider: "default", providers: [] });
+    expect(rows).toEqual([]);
+  });
 
   it("lets any account save its own desktop, kept to that account", async () => {
     const { deps, rows } = makeAccountDeps();

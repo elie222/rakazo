@@ -19,8 +19,7 @@ import { deleteOrganization } from "./account-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 /** One owner and their first two organizations, each addressed through its own space. */
 async function ownerWithOrganizations(prisma: PrismaClient, stamp: string, name: string) {
@@ -195,6 +194,17 @@ class FlakyByokEmulator extends BillingEmulator {
   }
 }
 
+/**
+ * Like a hosted provider, opening an own-key checkout first expires the customer's open
+ * sessions, so a creation that then fails leaves none payable.
+ */
+class ExpiringFlakyByokEmulator extends FlakyByokEmulator {
+  override async createByokCheckout(input: Parameters<BillingEmulator["createByokCheckout"]>[0]) {
+    this.byokCheckouts.delete(input.customerId);
+    return super.createByokCheckout(input);
+  }
+}
+
 /** A provider whose cancellation fails on demand. */
 class FlakyCancelEmulator extends BillingEmulator {
   failCancellation = false;
@@ -265,6 +275,46 @@ class GatedFailingByokEmulator extends BillingEmulator {
     if (this.fail) throw new Error("provider unavailable");
     return super.createByokCheckout(input);
   }
+}
+
+/**
+ * Holds the next subscription read until the test lets it go, and fails own-key checkout
+ * creation on demand, as an aborted call does.
+ */
+class GatedSyncEmulator extends FlakyByokEmulator {
+  private readonly entered = deferred();
+  private readonly gate = deferred();
+  private armed = false;
+
+  arm() {
+    this.armed = true;
+    return this.entered.promise;
+  }
+
+  release() {
+    this.gate.resolve();
+  }
+
+  override async getCustomerSubscription(customerId: string) {
+    if (this.armed) {
+      this.armed = false;
+      this.entered.resolve();
+      await this.gate.promise;
+    }
+    return super.getCustomerSubscription(customerId);
+  }
+}
+
+/** The provider as another request sees it, whose own-key checkout call fails. */
+function failingByokCheckout(provider: BillingEmulator): BillingEmulator {
+  return new Proxy(provider, {
+    get(target, property) {
+      if (property === "createByokCheckout")
+        return async () => Promise.reject(new Error("provider unavailable"));
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 /** A database whose own-key hold extension fails, while every other write works. */
@@ -342,9 +392,9 @@ dbTests("own-key trial hold lifecycle", () => {
     expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
   });
 
-  it("keeps an earlier open session's hold when a reopened checkout fails", async () => {
+  it("frees the trial when a reopened checkout fails after the earlier session expired", async () => {
     const owner = await ownerWith("reopenfail");
-    const provider = new FlakyByokEmulator(`hold-reopen-${stamp}`);
+    const provider = new ExpiringFlakyByokEmulator(`hold-reopen-${stamp}`);
     const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
     await service.selectFunding(owner.first.actor, "byok");
     provider.failByokCheckout = true;
@@ -352,7 +402,197 @@ dbTests("own-key trial hold lifecycle", () => {
       "provider unavailable",
     );
     provider.failByokCheckout = false;
+    // Opening the second session expired the first, so no session holds the owner's trial.
+    const first = await customerOf(owner.first.organizationId);
+    expect(provider.byokCheckouts.get(first)).toBeUndefined();
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBe(TRIAL_DAYS);
+  });
+
+  it("keeps the trial used when a reopen fails after the earlier trial checkout was paid", async () => {
+    const owner = await ownerWith("paidreopen");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-paid-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    const first = await customerOf(owner.first.organizationId);
+    // The owner pays the trial checkout; its webhook has not been processed yet.
+    provider.completeByokCheckout(first);
+    const reopening = createBillingService({
+      prisma,
+      provider: failingByokCheckout(provider),
+      webOrigin: "https://example.test",
+    });
+    // The reopen gives its new hold back when its own checkout call fails.
+    await expect(reopening.selectFunding(owner.first.actor, "byok")).rejects.toThrow(
+      "provider unavailable",
+    );
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+  });
+
+  it("leaves a newer checkout's hold alone when an older one lost its lease while syncing", async () => {
+    const owner = await ownerWith("syncleaselost");
+    const provider = new GatedSyncEmulator(`hold-syncleaselost-${stamp}`);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    const syncing = provider.arm();
+    const older = service.selectFunding(owner.first.actor, "byok");
+    await syncing;
+    // The older request's provider reads outlast its lease, and a newer request takes it over.
+    await prisma.billingAccount.updateMany({
+      where: { organizationId: owner.first.organizationId },
+      data: { checkoutLeaseExpiresAt: new Date(0) },
+    });
+    await service.selectFunding(owner.first.actor, "byok");
+    const first = await customerOf(owner.first.organizationId);
+    expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
+    // The older request resumes; its own checkout call then fails, as an aborted one does.
+    provider.failByokCheckout = true;
+    provider.release();
+    await expect(older).rejects.toThrow();
+    provider.failByokCheckout = false;
+    // The newer session is still payable, so it keeps holding the owner's trial.
+    expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
+    await service.selectFunding(owner.second.actor, "byok");
+    const second = await customerOf(owner.second.organizationId);
+    expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+  });
+
+  it("leaves a newer checkout's hold alone when an older one lost its lease while writing", async () => {
+    const owner = await ownerWith("writeleaselost");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-write-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    // The older request runs on an API instance with a one-connection pool, and its own
+    // checkout call fails, as an aborted one does.
+    const stalled = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "stalled" });
+    const olderService = createBillingService({
+      prisma: asSystem(stalled.prisma),
+      provider: failingByokCheckout(provider),
+      webOrigin: "https://example.test",
+    });
+    const blocker = await db.pool.connect();
+    try {
+      await service.selectFunding(owner.first.actor, "byok");
+      // Another write holds the owner's row, so the older request's hold write waits on it.
+      await blocker.query("BEGIN");
+      await blocker.query('SELECT id FROM "user" WHERE id = $1 FOR UPDATE', [owner.userId]);
+      const older = olderService.selectFunding(owner.first.actor, "byok").catch((error) => error);
+      await expect
+        .poll(
+          async () =>
+            (
+              await db.pool.query(
+                "SELECT 1 FROM pg_stat_activity WHERE application_name = 'stalled' AND wait_event_type = 'Lock' AND query LIKE 'UPDATE%user%'",
+              )
+            ).rowCount,
+          { interval: 10, timeout: 5_000 },
+        )
+        .toBe(1);
+      // The lease lapses during the wait; the write waits for the lease row once that is locked.
+      void prisma.billingAccount
+        .updateMany({
+          where: { organizationId: owner.first.organizationId },
+          data: { checkoutLeaseExpiresAt: new Date(0) },
+        })
+        .then();
+      const newer = service.selectFunding(owner.first.actor, "byok");
+      // Unrelated work queued on the older instance's pool delays its next statement.
+      const queued = stalled.pool.query("SELECT pg_sleep(2)");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await blocker.query("COMMIT");
+      await newer;
+      const first = await customerOf(owner.first.organizationId);
+      expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
+      await queued;
+      await expect(older).resolves.toBeInstanceOf(Error);
+      // The newer session is still payable, so it keeps holding the owner's trial.
+      await service.selectFunding(owner.second.actor, "byok");
+      const second = await customerOf(owner.second.organizationId);
+      expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+    } finally {
+      await blocker.query("ROLLBACK").catch(() => {});
+      blocker.release();
+      await stalled.prisma.$disconnect();
+      await stalled.pool.end();
+    }
+  }, 20_000);
+
+  it("lets go of the lease row when its hold write waits on a locked owner row", async () => {
+    const owner = await ownerWith("ownerlocked");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-locked-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const waiting = createDb(process.env.DATABASE_URL!, { applicationName: "owner-locked" });
+    const waitingService = createBillingService({
+      prisma: asSystem(waiting.prisma),
+      provider,
+      webOrigin: "https://example.test",
+    });
+    const blocker = await db.pool.connect();
+    try {
+      await service.selectFunding(owner.first.actor, "byok");
+      await blocker.query("BEGIN");
+      await blocker.query('SELECT id FROM "user" WHERE id = $1 FOR UPDATE', [owner.userId]);
+      const reopen = waitingService
+        .selectFunding(owner.first.actor, "byok")
+        .catch((error) => error);
+      await expect
+        .poll(
+          async () =>
+            (
+              await db.pool.query(
+                "SELECT 1 FROM pg_stat_activity WHERE application_name = 'owner-locked' AND wait_event_type = 'Lock' AND query LIKE 'UPDATE%user%'",
+              )
+            ).rowCount,
+          { interval: 10, timeout: 5_000 },
+        )
+        .toBe(1);
+      // While the owner row stays locked, the lease row must come free within the bound, so
+      // renewals and other organizations' work do not queue behind it.
+      const leaseRowFree = async () =>
+        db.pool
+          .query('SELECT 1 FROM billing_accounts WHERE "organizationId" = $1 FOR UPDATE NOWAIT', [
+            owner.first.organizationId,
+          ])
+          .then(
+            () => true,
+            () => false,
+          );
+      await expect.poll(leaseRowFree, { interval: 50, timeout: 4_000 }).toBe(true);
+      await blocker.query("COMMIT");
+      const error = await reopen;
+      expect(error).toMatchObject({
+        code: "CONFLICT",
+        message: "Billing is busy; try again shortly",
+      });
+      // The reopen wrote nothing, so the first session keeps holding the owner's trial.
+      await service.selectFunding(owner.second.actor, "byok");
+      const second = await customerOf(owner.second.organizationId);
+      expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();
+    } finally {
+      await blocker.query("ROLLBACK").catch(() => {});
+      blocker.release();
+      await waiting.prisma.$disconnect();
+      await waiting.pool.end();
+    }
+  }, 20_000);
+
+  it("keeps an earlier open session's hold when expiring it fails", async () => {
+    const owner = await ownerWith("expirefail");
+    const provider = new BillingEmulator({ modelCredits: true, namespace: `hold-expire-${stamp}` });
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await service.selectFunding(owner.first.actor, "byok");
+    const expire = vi
+      .spyOn(provider, "expireOpenCheckouts")
+      .mockRejectedValue(new Error("provider unavailable"));
+    await expect(service.selectFunding(owner.first.actor, "byok")).rejects.toThrow(
+      "provider unavailable",
+    );
+    expire.mockRestore();
     // The first session is still payable, so it keeps holding the owner's trial.
+    const first = await customerOf(owner.first.organizationId);
+    expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
     await service.selectFunding(owner.second.actor, "byok");
     const second = await customerOf(owner.second.organizationId);
     expect(provider.byokCheckouts.get(second)?.trialDays).toBeUndefined();

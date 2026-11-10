@@ -5,9 +5,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { ModelConnectInputSchema } from "@rakazo/contracts";
+import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  APPS_EVAL_CASES,
+  APPS_FIXTURE_VERSION,
+  APPS_JUDGE_CALIBRATION,
+  APPS_JUDGE_VERSION,
+} from "../evals/apps.js";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
@@ -62,6 +67,7 @@ import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
+import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
@@ -91,11 +97,16 @@ async function main() {
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
       "max-tool-calls": { type: "string", default: "30" },
+      "reply-mode": { type: "string" },
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
   if (values["cases-file"] && values.suite !== "tool-choice")
     throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
+  if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
+  if (values["reply-mode"] && values.suite === "approval")
+    throw new Error("--reply-mode sets the trial's bots; the approval suite has none");
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
@@ -148,10 +159,15 @@ async function main() {
     },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
+    apps: {
+      cases: APPS_EVAL_CASES,
+      fixtureVersion: APPS_FIXTURE_VERSION,
+      judge: { version: APPS_JUDGE_VERSION, calibration: APPS_JUDGE_CALIBRATION },
+    },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
@@ -209,6 +225,7 @@ async function main() {
       maxOutputTokens: values["max-output-tokens"] ? Number(values["max-output-tokens"]) : null,
     },
     controls,
+    replyMode: replyMode.data,
     strategy: strategies.length === 1 ? strategies[0] : "comparison",
     strategies,
     executionOrder:
@@ -508,7 +525,7 @@ async function main() {
   }
   // This CLI owns a disposable database. Never migrate or evaluate against an inherited database.
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-evals-"));
-  let postgres: StartedPostgreSqlContainer | undefined;
+  let postgres: DisposablePostgres | undefined;
   let stopRequested = false;
   const stop = new AbortController();
   const requestStop = () => {
@@ -518,8 +535,9 @@ async function main() {
   process.on("SIGINT", requestStop);
   process.on("SIGTERM", requestStop);
   try {
-    postgres = await startPostgres(stop.signal);
-    const databaseUrl = postgres.getConnectionUri();
+    const started = await startPostgres(stop.signal);
+    postgres = started;
+    const databaseUrl = started.getConnectionUri();
     Object.assign(process.env, {
       ...disposableDatabaseEnv(databaseUrl),
       WAKEUP_DRIVER: "memory",
@@ -594,11 +612,12 @@ async function main() {
       trials[i] = {
         ...(await runTrial(scenario, planned.trial, {
           ...controls,
+          replyMode: replyMode.data,
           connection,
           pricing,
           judge,
           createApp: async (composio, messaging, witnesses) => {
-            const sandbox = new EvalSandboxProvider();
+            const sandbox = new EvalSandboxProvider(scenario.computer);
             let acceptingCalls = true;
             const cacheDecisions: CacheDecisionMeasurement[] = [];
             const runtime = new PiAgentRuntime({

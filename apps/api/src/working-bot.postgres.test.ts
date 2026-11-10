@@ -11,7 +11,14 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { resolveThreadTarget, stopThreadRuns, threadSnapshot } from "./thread-target.js";
+import { threadSnapshot } from "./thread-snapshot.js";
+import {
+  cancelThreadRuns,
+  STOPPED_BY_MESSAGE_NOTE,
+  stoppedRoutineNote,
+  stopThreadRuns,
+} from "./thread-stop.js";
+import { resolveThreadTarget } from "./thread-target.js";
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 
@@ -76,7 +83,7 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
             status,
           );
           expect(
-            (await repos.listSpaceBotsForSpaces(actor, [actor.spaceId])).find(
+            (await repos.listSpaceBotsForSpaces([actor.spaceId], actor.userId)).find(
               (row) => row.id === bot.id,
             )?.status,
           ).toBe(status);
@@ -85,7 +92,7 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
               ?.status,
           ).toBe(status);
           expect(
-            (await groups.listSpaceGroupsForSpaces(actor, [actor.spaceId]))[0]?.members.find(
+            (await groups.listSpaceGroupsForSpaces([actor.spaceId], actor.userId))[0]?.members.find(
               (row) => row.botId === bot.id,
             )?.status,
           ).toBe(status);
@@ -157,6 +164,145 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
           run: null,
           activeRuns: [],
         });
+      });
+    } finally {
+      await runAsSystem("test fixture cleanup", async () => {
+        await prisma.organization.delete({ where: { id: identity.spaceId } });
+        await prisma.user.delete({ where: { id: identity.userId } });
+      });
+      await prisma.$disconnect();
+      await pool.end();
+    }
+  });
+
+  it("names a working routine and notes it in the chat when it is stopped", async () => {
+    const { prisma, pool } = createDb(process.env.DATABASE_URL!);
+    const identity = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider: "sendblue", address: `routine-fixture-${crypto.randomUUID()}` },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    const actor: Actor = { ...identity, email: "fixture@example.test", isDeploymentOwner: false };
+    try {
+      await runAsTenant(actor, async () => {
+        const bot = await createRepos(prisma).createBot(actor, {
+          description: "",
+          instructions: "",
+          notifyOnFinish: true,
+          name: "Sample Helper",
+        });
+        const target = await resolveThreadTarget(prisma, actor, { botId: bot.id });
+        const scope = {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          botId: bot.id,
+          threadId: target.threadId,
+        };
+        const routine = await prisma.routine.create({
+          data: {
+            ...scope,
+            name: "Sample inbox sweep",
+            prompt: "Sweep the sample inbox",
+            crons: [],
+          },
+        });
+        const task = await prisma.task.create({
+          data: { ...scope, prompt: "Sweep the sample inbox", status: "running" },
+        });
+        const run = await prisma.run.create({
+          data: {
+            ...scope,
+            taskId: task.id,
+            status: "running",
+            trigger: "routine",
+            routineId: routine.id,
+          },
+        });
+
+        const snapshot = await threadSnapshot({ prisma }, target);
+        expect(snapshot.activeRuns).toEqual([
+          expect.objectContaining({ id: run.id, routineName: "Sample inbox sweep" }),
+        ]);
+        const other = await prisma.routine.create({
+          data: { ...scope, name: "Sample report", prompt: "Write the sample report", crons: [] },
+        });
+        const sameName = await prisma.routine.create({
+          data: {
+            ...scope,
+            name: "Sample inbox sweep",
+            prompt: "Sweep the shared inbox",
+            crons: [],
+          },
+        });
+        await prisma.run.createMany({
+          data: [
+            {
+              ...scope,
+              taskId: task.id,
+              status: "queued",
+              trigger: "routine",
+              routineId: routine.id,
+            },
+            {
+              ...scope,
+              taskId: task.id,
+              status: "queued",
+              trigger: "routine",
+              routineId: other.id,
+            },
+            {
+              ...scope,
+              taskId: task.id,
+              status: "queued",
+              trigger: "routine",
+              routineId: sameName.id,
+            },
+          ],
+        });
+
+        await stopThreadRuns(
+          {
+            prisma,
+            sandbox: {} as SandboxProvider,
+            events: { notify: vi.fn().mockResolvedValue(undefined) } as unknown as ThreadEvents,
+          },
+          actor,
+          target,
+        );
+        const noteTexts = async () =>
+          (
+            await prisma.message.findMany({
+              where: { threadId: target.threadId, role: "system", botId: bot.id },
+              orderBy: { seq: "asc" },
+              select: { blocks: true },
+            })
+          ).map((message) => (message.blocks as Array<{ text: string }>)[0]?.text);
+        expect((await noteTexts()).sort()).toEqual(
+          [
+            stoppedRoutineNote("Sample inbox sweep"),
+            stoppedRoutineNote("Sample inbox sweep"),
+            stoppedRoutineNote("Sample report"),
+          ].sort(),
+        );
+
+        await prisma.run.createMany({
+          data: [
+            {
+              ...scope,
+              taskId: task.id,
+              status: "running",
+              trigger: "routine",
+              routineId: other.id,
+            },
+            { ...scope, taskId: task.id, status: "queued", trigger: "user" },
+          ],
+        });
+        await prisma.$transaction(cancelThreadRuns(actor, target, { botId: bot.id }));
+        expect((await noteTexts()).slice(3).sort()).toEqual(
+          [stoppedRoutineNote("Sample report"), STOPPED_BY_MESSAGE_NOTE].sort(),
+        );
       });
     } finally {
       await runAsSystem("test fixture cleanup", async () => {

@@ -1,20 +1,18 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
-import { Button, Skeleton } from "@rakazo/ui-web";
+import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../components/ModelCredits";
 import { billingDateLabel, formatBillingPrice } from "../lib/billing";
-import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
+import type { RpcClient } from "../lib/rpc";
 
-export function BillingSettingsPanel() {
+/** `client` is the window's space: another tab can select another organization at any time. */
+export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const { t, i18n } = useLingui();
   const locale = i18n.locale || "en";
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  // Another tab can select another organization while this panel shows this one's
-  // prices, so every billing request stays on the space the panel opened for.
-  const [client] = useState(() => createSpaceRpc(selectedSpaceId()));
 
   useEffect(() => {
     let active = true;
@@ -29,7 +27,7 @@ export function BillingSettingsPanel() {
     return () => {
       active = false;
     };
-  }, [t]);
+  }, [client, t]);
 
   async function openPortal() {
     if (pending) return;
@@ -77,12 +75,12 @@ export function BillingSettingsPanel() {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {status ? (
-            <h3 className="text-heading3 font-medium text-foreground">{stateLabel}</h3>
+            <SectionHeading variant="heading">{stateLabel}</SectionHeading>
           ) : error ? null : (
             <Skeleton className="h-5 w-24" />
           )}
           {price ? (
-            <p className="mt-3 flex flex-wrap gap-x-2 text-[14px] text-foreground/75">
+            <p className="mt-3 flex flex-wrap gap-x-2 text-body text-foreground/75">
               <span>{price}</span>
               {seats > 1 ? (
                 <span className="text-muted-foreground">
@@ -92,7 +90,7 @@ export function BillingSettingsPanel() {
             </p>
           ) : null}
           {dateLabel ? (
-            <p className="mt-2 text-[12.5px] text-muted-foreground/80">{dateLabel}</p>
+            <p className="mt-2 text-body-sm text-muted-foreground/80">{dateLabel}</p>
           ) : null}
         </div>
         {status?.canManage && status.hasCustomer ? (
@@ -107,7 +105,7 @@ export function BillingSettingsPanel() {
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-sm text-destructive">
+        <p role="alert" className="mt-3 text-body text-destructive">
           {error}
         </p>
       ) : null}

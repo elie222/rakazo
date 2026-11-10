@@ -14,8 +14,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRunExecutor } from "./executor.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 type Identity = { userId: string; spaceId: string; botId: string; threadId: string };
 
@@ -104,6 +103,31 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
     expect(await system.task.findUniqueOrThrow({ where: { id: queued.taskId } })).toMatchObject({
       status: "cancelled",
     });
+  });
+
+  it("starts a teammate's follow-up that waited behind a stopped run", async () => {
+    const erin = await person();
+    const teammate = await person();
+    const running = await run(erin, "running");
+    const message = await system.message.create({
+      data: {
+        threadId: erin.threadId,
+        seq: 1_000,
+        role: "user",
+        authorUserId: teammate.userId,
+        blocks: [{ kind: "text", text: "Also this" }],
+      },
+    });
+    await system.steeringMessage.create({
+      data: { messageId: message.id, botId: erin.botId, userId: teammate.userId },
+    });
+    await deactivate(erin);
+
+    expect(await cancelDeactivatedAccountRuns(system, { notify }, erin.userId)).toBe(1);
+    expect(await status(running.id)).toBe("cancelled");
+    expect(
+      await system.run.findFirstOrThrow({ where: { threadId: erin.threadId, status: "queued" } }),
+    ).toMatchObject({ userId: teammate.userId, sourceMessageId: message.id });
   });
 
   it("announces each chat whose runs were stopped, even when a later chat fails", async () => {

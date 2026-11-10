@@ -229,22 +229,33 @@ export function withOutputBudget(
   };
 }
 
+/** "Unsupported reasoning effort", "invalid reasoning_effort", "reasoning effort is not supported". */
+const UNSUPPORTED_REASONING_EFFORT =
+  /\b(?:unsupported|invalid) reasoning[ _]effort\b|\breasoning[ _]effort\b[^.;:\n]{0,30}?\b(?:not supported|unsupported|invalid)\b/i;
+
 const REASONING_EFFORT_CHOICES =
-  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values are)\b([^.}"]*)/i;
+  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
 
 /**
  * The thinking levels of a model whose endpoint rejected `reasoning_effort` and listed the values
  * it accepts, with the rest mapped out so the request clamps to an accepted one. Off sends no
- * effort when the endpoint refuses the off value. Undefined when the error lists nothing usable.
+ * effort when the endpoint refuses the off value, or refuses an effort without listing any.
+ * Undefined when the error gives nothing usable.
  */
 export function acceptedReasoningEfforts(
   model: Model<Api>,
   errorMessage: string | undefined,
 ): ThinkingLevelMap | undefined {
   const listed = errorMessage?.match(REASONING_EFFORT_CHOICES)?.[1]?.toLowerCase().match(/\w+/g);
-  if (!listed) return undefined;
-  const accepted = new Set(listed);
   const current = model.thinkingLevelMap ?? {};
+  if (!listed) {
+    // Some gateways refuse an effort without naming the accepted ones ("Unsupported reasoning
+    // effort"). The off value is the one a model most often lacks, so off then sends no effort.
+    return typeof current.off === "string" && UNSUPPORTED_REASONING_EFFORT.test(errorMessage ?? "")
+      ? { ...current, off: null }
+      : undefined;
+  }
+  const accepted = new Set(listed);
   const levels: ThinkingLevelMap = {};
   for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"] as const) {
     const effort = current[level] ?? (level === "xhigh" || level === "max" ? null : level);

@@ -75,7 +75,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           "content-type": "application/json",
           accept: "audio/mpeg",
         },
-        body: JSON.stringify({ text: request.text, model_id: MODEL }),
+        body: JSON.stringify({ text: request.text, model_id: request.model?.trim() || MODEL }),
         signal,
       },
     );

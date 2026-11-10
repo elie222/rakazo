@@ -239,7 +239,11 @@ group requests are refused. Rotating it means changing the value and restarting 
   It ends every sign-in and paired computer, removes notification registrations, cancels runs
   they started, skips their routines, and refuses any new sign-in, run, webhook delivery or
   message from their linked chat apps. Their bots, chats, memory, files and connections stay.
-  Turning them back on restores sign-in, and routines resume from their next scheduled time.
+  They also leave every shared space someone else invited them into, as if removed: what they
+  made there passes to that space's owner, and their routines there are paused. Spaces they own
+  stay theirs.
+  Turning them back on restores sign-in and their own spaces, and routines there resume from
+  their next scheduled time. Shared spaces they left need a new invite.
 - **Adding a deleted person again** with the same external id finds their existing account.
 
 Without an identity provider, the operator can do the same from the API container:

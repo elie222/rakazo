@@ -14,12 +14,14 @@ import {
   BillingCheckoutCompletedError,
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
+  BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
 import type { BillingCancellationReason, ByokTier } from "@rakazo/contracts";
 import {
   BILLING_CANCELLATION_REASONS,
   BYOK_TIERS,
   ByokTierSchema,
+  HeldCreditAmountSchema,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
@@ -113,6 +115,7 @@ class StripeRequestError extends Error {
   constructor(
     message: string,
     readonly type: string | undefined,
+    readonly status: number,
   ) {
     super(message);
     this.name = "StripeRequestError";
@@ -196,7 +199,8 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async createCreditCheckout(input: BillingCreditCheckoutRequest) {
-    if (!creditAmount(String(input.amountCents))) throw new Error("Invalid credit amount");
+    if (!ModelCreditAmountSchema.safeParse(input.amountCents).success)
+      throw new Error("Invalid credit amount");
     if (input.monthly) {
       await this.expireOpenCheckouts(input.customerId);
       // Credits include the own-key plan, which sync ends once credits start.
@@ -213,6 +217,8 @@ export class StripeBillingProvider implements BillingProvider {
         customer: input.customerId,
         mode: input.monthly ? "subscription" : "payment",
         allowed_payment_method_types: ["card"],
+        // Credits are spent like cash; a bank-confirmed buyer moves fraud losses to the bank.
+        payment_method_options: { card: { request_three_d_secure: "any" } },
         adaptive_pricing: { enabled: false },
         line_items: [
           input.monthly
@@ -245,7 +251,8 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async setMonthlyCredits(customerId: string, amountCents: number) {
-    if (!creditAmount(String(amountCents))) throw new Error("Invalid credit amount");
+    if (!ModelCreditAmountSchema.safeParse(amountCents).success)
+      throw new Error("Invalid credit amount");
     const subscription = (await this.listSubscriptions(customerId)).find(
       (s) =>
         creditAmount(s.metadata?.rakazo_credit_cents) &&
@@ -658,10 +665,15 @@ export class StripeBillingProvider implements BillingProvider {
       toSnapshot(chosen.subscription, chosen.status).cancelAtPeriodEnd
     )
       return;
-    // Bills the first period now; a declined card fails the request and the trial runs on.
+    // Bills the first period now. A card that is declined or needs confirming fails the request
+    // with 402, and the trial runs on.
     await this.request("POST", `/v1/subscriptions/${encodeURIComponent(chosen.subscription.id)}`, {
       trial_end: "now",
       payment_behavior: "error_if_incomplete",
+    }).catch((error: unknown) => {
+      if (error instanceof StripeRequestError && error.status === 402)
+        throw new BillingPaymentNotCompletedError({ cause: error });
+      throw error;
     });
   }
 
@@ -708,7 +720,7 @@ export class StripeBillingProvider implements BillingProvider {
     return parseStripeWebhook(this.config.webhookSecret, rawBody, headers, this.now());
   }
 
-  private async expireOpenCheckouts(customerId: string): Promise<void> {
+  async expireOpenCheckouts(customerId: string): Promise<void> {
     const seen = new Set<string>();
     for (;;) {
       const query = encodeStripeForm({ customer: customerId, status: "open", limit: 100 });
@@ -814,6 +826,7 @@ export class StripeBillingProvider implements BillingProvider {
       throw new StripeRequestError(
         `Stripe request failed (${response.status})${message ? `: ${message}` : ""}`,
         error?.type,
+        response.status,
       );
     }
   }
@@ -1050,6 +1063,6 @@ function isByokPlan(subscription: StripeSubscription) {
 }
 
 function creditAmount(value: string | undefined): number | undefined {
-  const parsed = ModelCreditAmountSchema.safeParse(Number(value));
+  const parsed = HeldCreditAmountSchema.safeParse(Number(value));
   return parsed.success ? parsed.data : undefined;
 }

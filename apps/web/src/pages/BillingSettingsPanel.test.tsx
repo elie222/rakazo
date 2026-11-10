@@ -56,6 +56,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import { createSpaceRpc } from "../lib/rpc";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 
 /** A trialing own-key plan whose trial can be ended from the panel. */
@@ -111,7 +112,7 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<BillingSettingsPanel />);
+    root.render(<BillingSettingsPanel client={createSpaceRpc("space-a")} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
@@ -137,6 +138,36 @@ it("sends the panel's confirmations to the space it opened for", async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
+  const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
+  expect(endTrial).toMatchObject({ spaceId: "space-a" });
+  act(() => root.unmount());
+  container.remove();
+});
+
+it("acts on the window's space when another tab switched before the panel opened", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // This window shows space-a; another tab selected space-b before Billing opened here.
+  const client = createSpaceRpc("space-a");
+  localStorage.setItem("rakazo:space-id", "space-b");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<BillingSettingsPanel client={client} />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(requests[0]).toMatchObject({
+    url: expect.stringContaining("/billing/status"),
+    spaceId: "space-a",
+  });
+
+  await act(async () => {
+    button(container, "Start plan now").click();
+  });
+  await act(async () => {
+    button(container, "Start plan").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
   expect(endTrial).toMatchObject({ spaceId: "space-a" });
   act(() => root.unmount());

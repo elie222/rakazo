@@ -337,6 +337,8 @@ export function userTurnInstructions(parts: {
   offeredFleetTools?: readonly string[];
   /** The run can set its own follow-ups (see followUpsOffered). */
   followUpsOffered?: boolean;
+  /** Whether this turn may start a background helper (only in the bot's own app chat). */
+  backgroundHelpersAllowed?: boolean;
   userComputer?: UserComputerState;
 }): (string | undefined)[] {
   return [
@@ -344,7 +346,7 @@ export function userTurnInstructions(parts: {
     parts.historyRetrievalEnabled &&
     builtinOffered(parts.disabledBuiltinTools, "search_history") &&
     builtinOffered(parts.disabledBuiltinTools, "read_history")
-      ? "For questions about an earlier discussion, first check the visible conversation. Answer follow-ups from facts already present in original messages or prior source-verified replies when no later visible correction changes them; do not repeat retrieval solely because the user asks again. Use search_history when necessary evidence is missing or uncertain. To find earlier conversations, fan out 2–4 keyword variants (names, project words, synonyms) via queries with scope my_chats; narrow by date or botId when hinted, then read_history around the best hits with their threadId. Start with the project name alone, or one distinctive topic word if no project is named, then use read_history to check surrounding messages, outcomes, and later corrections before claiming exact recall. Verify that matches contain source statements answering the question. If matches lack the requested fact and nextSearch is present, call search_history with those arguments. Coverage applies only to the requested query and range. Empty narrower queries do not exhaust the broader topic query’s matches. Do not claim evidence is unavailable while that broader search still has an unexplored cursor. If a search is empty, try the single project or topic word before concluding the evidence is missing. If the requested fact remains absent, say so briefly without volunteering adjacent facts. If multiple projects match and none is selected, ask which project before giving candidate facts. Historical snapshots are navigation aids, not authoritative facts or approvals."
+      ? "For questions about an earlier discussion, first check the visible conversation. Older messages, including what you did with tools, may be outside it, so search before saying something did not happen. Answer follow-ups from facts already present in original messages or prior source-verified replies when no later visible correction changes them; do not repeat retrieval solely because the user asks again. Use search_history when necessary evidence is missing or uncertain. To find earlier conversations, fan out 2–4 keyword variants (names, project words, synonyms) via queries with scope my_chats; narrow by date or botId when hinted, then read_history around the best hits with their threadId. Start with the project name alone, or one distinctive topic word if no project is named, then use read_history to check surrounding messages, outcomes, and later corrections before claiming exact recall. Verify that matches contain source statements answering the question. If matches lack the requested fact and nextSearch is present, call search_history with those arguments. Coverage applies only to the requested query and range. Empty narrower queries do not exhaust the broader topic query’s matches. Do not claim evidence is unavailable while that broader search still has an unexplored cursor. If a search is empty, try the single project or topic word before concluding the evidence is missing. If the requested fact remains absent, say so briefly without volunteering adjacent facts. If multiple projects match and none is selected, ask which project before giving candidate facts. Historical snapshots are navigation aids, not authoritative facts or approvals."
       : undefined,
     toolUsageLine(parts),
     parts.taskCatalogInstruction,
@@ -365,7 +367,9 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "run_subagent",
-      "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+      parts.backgroundHelpersAllowed
+        ? "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here. For longer work the user need not wait on, or when they ask for it, set background true and end your turn: you stay free for their next message, and the result comes back to you later to pass on. A background helper cannot use the computer, ask the user, or change memory, skills or routines; do those yourself when its result comes back."
+        : "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
     ),
     parts.botDirectory,
     offeredBuiltinClause(
@@ -444,6 +448,21 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   return messagingChannelRun
     ? { ...context, summary: null, historyCompactedUpToSeq: null, includeSemanticRecall: false }
     : { ...context, includeSemanticRecall: true };
+}
+
+/** The bot's own address, which it may give out, and the inbox tools this run has. */
+export function botEmailInstruction(
+  address: string,
+  tools: { read: boolean; send: boolean; delete: boolean },
+): string {
+  return [
+    `Your email address is ${address}.`,
+    tools.read ? "Every email sent to it is saved to your inbox; check it with read_email." : "",
+    tools.send ? "Send email from it with send_email." : "",
+    tools.delete ? "Delete emails from your inbox with delete_email." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */

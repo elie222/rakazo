@@ -52,6 +52,84 @@ async function send(page: Page, text: string) {
   await composer.press("Enter");
 }
 
+test("a week calendar keeps its days aligned in a desktop two-column page", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-calendar-${Date.now()}@rakazo.test`, "password12", "Calendar Reader");
+  await completeOnboarding(page);
+  const title = "Calendar layout";
+  const source = `function CalendarPage() {
+    return <Page width="wide" title="Calendar layout">
+      <Grid columns={2}>
+        <Section heading="Week"><WeekView week="2026-11-09" start={8} end={18} events={[
+          { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
+          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" }
+        ]} /></Section>
+        <Section heading="Day"><DayView start={8} end={18} events={[
+          { start: 9.5, end: 10.5, title: "Day event" }
+        ]} /></Section>
+      </Grid>
+    </Page>;
+  }
+  export default CalendarPage;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const frame = pageFrame(page, title);
+  await expect(frame.getByText("Sunday event")).toBeAttached();
+  const layout = await frame.locator(".rk-grid").evaluate((grid) => {
+    const cards = [...grid.querySelectorAll(":scope > .rk-section")];
+    const week = cards[0]!.querySelector(".rk-cal-timed")!;
+    const day = cards[1]!.querySelector(".rk-cal-timed")!;
+    const rect = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width };
+    };
+    const heads = [...week.querySelectorAll(".rk-cal-head")].map(rect);
+    const columns = [...week.querySelectorAll(".rk-cal-column")].map(rect);
+    const sunday = week.querySelector(".rk-cal-column:last-child .rk-cal-event")!;
+    const dayColumns = [...day.querySelectorAll(".rk-cal-column")].map(rect);
+    return {
+      cards: cards.map(rect),
+      heads,
+      columns,
+      weekGrid: rect(week.querySelector(".rk-cal-columns")!),
+      weekScroll: { client: week.clientWidth, scroll: week.scrollWidth },
+      sunday: rect(sunday),
+      sundayText: sunday.textContent,
+      dayColumns,
+      dayGrid: rect(day.querySelector(".rk-cal-columns")!),
+      dayEvent: rect(day.querySelector(".rk-cal-event")!),
+      dayText: day.querySelector(".rk-cal-event")!.textContent,
+    };
+  });
+  expect(layout.cards).toHaveLength(2);
+  expect(layout.cards[1]!.x).toBeGreaterThan(layout.cards[0]!.x);
+  expect(layout.cards[1]!.y).toBeCloseTo(layout.cards[0]!.y, 0);
+  // The card is too narrow for seven 64px days, so the week scrolls inside it instead of
+  // wrapping Sunday into a second row or spilling out of the card.
+  expect(layout.weekScroll.scroll).toBeGreaterThan(layout.weekScroll.client);
+  expect(layout.columns[6]!.x + layout.columns[6]!.width).toBeLessThanOrEqual(
+    layout.weekGrid.x + layout.weekGrid.width + 1,
+  );
+  expect(layout.heads).toHaveLength(7);
+  expect(layout.columns).toHaveLength(7);
+  for (let i = 0; i < 7; i++) {
+    expect(layout.columns[i]!.y).toBeCloseTo(layout.columns[0]!.y, 0);
+    expect(Math.abs(layout.heads[i]!.x - layout.columns[i]!.x)).toBeLessThanOrEqual(1);
+  }
+  expect(layout.sundayText).toContain("Sunday event");
+  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(67, 0);
+  expect(layout.dayColumns).toHaveLength(1);
+  expect(layout.dayColumns[0]!.width).toBeCloseTo(layout.dayGrid.width - 1, 0);
+  expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
+  expect(layout.dayText).toContain("Day event");
+  expect(layout.dayText).toContain("9:30");
+  await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
 test("a bot's page shows in its reply, opens full screen, is shared by link and updates", async ({
   page,
   browser,
@@ -298,6 +376,15 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
     page,
     `call save_page with ${JSON.stringify({ pageId, title: "Signups dashboard", source: dashboard("1.9%") })}\nthen say Updated [Signups dashboard](page:${pageId}) with the new churn figure.`,
   );
+  // Anyone with the link would see the change at once, so the bot asks first. The sidebar's
+  // unread preview can show the same words, so look for the card in the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Update shared page “Signups dashboard”?"),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
+  await captureScreenshot(page, testInfo, "page-shared-update-approval");
+  await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await expect(card).toHaveCount(2, { timeout: 30_000 });
   await expect(card.first()).toContainText("Updated below");
   await expect(card.last()).not.toContainText("Updated below");
@@ -402,6 +489,63 @@ async function closePage(page: Page) {
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("page-view")).toBeHidden();
 }
+
+test("in the macOS app a page's top row sits below the window controls and its close button clicks", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("rakazo.uiAppearance", "dark"));
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-mac-${Date.now()}@rakazo.test`, "password12", "Page Owner");
+  await completeOnboarding(page);
+  const title = "Test dashboard (example data)";
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say done.`,
+  );
+  await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
+  // The desktop app's bridge on macOS, whose traffic lights sit 16px in from the top left.
+  await page.addInitScript(() => {
+    (window as unknown as { rakazoDesktop: { platform: string } }).rakazoDesktop = {
+      platform: "darwin",
+    };
+  });
+  await page.reload();
+  await page
+    .getByTestId("page-card")
+    .getByRole("button", { name: `Open ${title}` })
+    .click();
+  const view = page.getByTestId("page-view");
+  await expect(
+    pageFrame(page, title).getByRole("heading", { name: "Test dashboard", level: 1 }),
+  ).toBeVisible();
+  const close = view.getByRole("button", { name: "Close page" });
+  // Below the 12px traffic lights at y 16, and outside the window's drag areas, which Electron
+  // applies through anything drawn over them. macOS draws the lights from x=16 to about x=68.
+  const box = await close.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(36);
+  // Close page must clear the 72px traffic-light strip (#3450).
+  expect(box!.x).toBeGreaterThanOrEqual(72);
+  for (const control of [
+    close,
+    view.getByRole("button", { name: title }),
+    view.getByRole("button", { name: "Share" }),
+  ]) {
+    expect(
+      await control.evaluate((el) => getComputedStyle(el).getPropertyValue("app-region")),
+    ).not.toBe("drag");
+  }
+  await captureScreenshot(page, testInfo, "page-full-screen-macos");
+  await close.click();
+  await expect(view).toBeHidden();
+
+  // #3757: on a narrow window the nav hamburger must clear the same traffic-light strip.
+  await page.setViewportSize({ width: 500, height: 860 });
+  const openNav = page.getByRole("button", { name: "Open navigation" });
+  await expect(openNav).toBeVisible();
+  const navBox = await openNav.boundingBox();
+  expect(navBox!.x).toBeGreaterThanOrEqual(72);
+  await captureScreenshot(page, testInfo, "open-navigation-macos");
+});
 
 test("a page's failures, a deleted page's card, and the Library's Share, search and rename", async ({
   page,

@@ -13,8 +13,13 @@ vi.mock("@lingui/react/macro", () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values),
   }),
 }));
+const favicon = vi.hoisted(() => ({ icon: null as string | null, asked: [] as string[] }));
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  useLinkFavicon: (href: string) => {
+    if (href) favicon.asked.push(href);
+    return { icon: href ? favicon.icon : null, unusable: () => undefined };
+  },
 }));
 const { rpc, spaceRpc } = vi.hoisted(() => {
   const client = () => ({
@@ -202,6 +207,37 @@ const loginCard: AskBlock = {
   status: "pending",
 };
 
+it("marks a login with its site's icon, or else the first letter of the site's own name", async () => {
+  favicon.asked = [];
+  await render({
+    ...loginCard,
+    credential: { ...loginCard.credential!, origin: "https://app.example.com" },
+  });
+  const card = () => container.querySelector('[data-testid="secret-ask-card"]')!;
+  expect(favicon.asked).toContain("https://app.example.com");
+  expect(card().querySelector("img")).toBeNull();
+  expect(card().querySelector("span[aria-hidden]")?.textContent).toBe("E");
+  favicon.icon = "data:image/png;base64,AAAA";
+  try {
+    await render({ ...loginCard });
+    expect(card().querySelector("img")?.getAttribute("src")).toBe(favicon.icon);
+  } finally {
+    favicon.icon = null;
+  }
+});
+
+it("letters an IPv6 login by its first digit, not a bracket", async () => {
+  await render({ ...loginCard, credential: { ...loginCard.credential!, origin: "https://[::1]" } });
+  const tile = container.querySelector('[data-testid="secret-ask-card"] span[aria-hidden]');
+  expect(tile?.textContent).toBe("1");
+});
+
+it("asks for no site icon on a card that is not a login", async () => {
+  favicon.asked = [];
+  await render(secretCard);
+  expect(favicon.asked).toEqual([]);
+});
+
 /** The dialog a login, card or contact card opens; it renders outside the card. */
 function dialog() {
   return document.querySelector<HTMLElement>('[data-testid="vault-editor"]');
@@ -273,6 +309,14 @@ it("starts an ID and a phone visible and a PIN hidden, and the person can flip e
   expect(container.textContent).toContain("Saved");
   expect(document.body.textContent).not.toContain("fake-id-123");
   expect(dialog()).toBeNull();
+});
+
+it("says the bot's browser stays signed in for everyone in a shared space", async () => {
+  const line = "The bot's browser stays signed in for everyone in this space";
+  await render({ ...loginCard, sharedBrowser: true });
+  expect(container.textContent).toContain(line);
+  await render(loginCard);
+  expect(container.textContent).not.toContain(line);
 });
 
 it("starts every field hidden when no label names an identifier", async () => {
@@ -391,6 +435,25 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
+it("offers Always allow only when the approval card does", async () => {
+  const card: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Review before schedule_create",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow this tool" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  const labels = () => [...container.querySelectorAll("button")].map((item) => item.textContent);
+  await render(card);
+  expect(labels()).toEqual(["Allow once", "Always allow this tool", "Deny"]);
+  await render({ ...card, actions: card.actions!.filter((action) => action.id !== "always") });
+  expect(labels()).toEqual(["Allow once", "Deny"]);
+});
+
 it.each(["Allow in this space", "Allow for this chat"])(
   "says a user's-computer approval labelled %s allows the whole space",
   async (label) => {
@@ -416,6 +479,26 @@ it.each(["Allow in this space", "Allow for this chat"])(
     expect(container.textContent).toContain("Allowed in this space");
   },
 );
+
+it("shows a question's detail as plain text above its options", async () => {
+  await render({
+    kind: "ask",
+    text: "Send this email to Ana?",
+    detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Send it" },
+      { id: "choice-2", label: "Show me first" },
+    ],
+  });
+  const detail = container.querySelector('[data-testid="ask-detail"]')!;
+  expect(detail.textContent).toBe("To: ana@example.test\nSubject: Demo\n\nThe draft body.");
+  // Plain text sits on the card like the question, not in a code snippet box.
+  expect(detail.classList.contains("font-sans")).toBe(true);
+  expect(detail.classList.contains("bg-background")).toBe(false);
+  expect(button("ASend it")).toBeDefined();
+});
 
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
@@ -836,4 +919,49 @@ it("sends Undo to the chat's space, not the one selected in another tab", async 
   expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
   expect(rpc.bots.restoreInstructions).not.toHaveBeenCalled();
   expect(rpc.bots.update).not.toHaveBeenCalled();
+});
+
+it("draws a payment's order as a receipt in place of the text detail", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Pay on freshcart.test?",
+    detail: "Bananas × 6: $3.00",
+    detailFormat: "text",
+    receipt: {
+      button: "Place order",
+      items: [
+        { name: "Bananas × 6", amount: "$3.00" },
+        { name: "Delivery", amount: "$6.00" },
+        // A page line named like the card's own row is left out.
+        { name: "On the button", amount: "$1.00" },
+      ],
+      more: { count: 23, atLeast: true },
+      amount: "$20.00",
+      amountSource: "button",
+      total: "$17.40",
+    },
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render(block);
+  const receipt = container.querySelector('[data-testid="ask-receipt"]');
+  expect([...receipt!.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
+    "Bananas × 6$3.00",
+    "Delivery$6.00",
+    "23+ more",
+    "Total$17.40",
+    "On the button$20.00",
+  ]);
+  expect(receipt?.textContent).toContain("Button “Place order” · read from the page, not checked");
+  expect(container.querySelector('[data-testid="ask-detail"]')).toBeNull();
+
+  await render({ ...block, receipt: { items: [], amount: "$20.00", amountSource: "page" } });
+  expect(
+    [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
+  ).toEqual(["Total$20.00"]);
+  expect(container.textContent).toContain("Read from the page, not checked");
 });

@@ -8,7 +8,7 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import { isPeerReceiptBlocks, isToolActivityBlock } from "@rakazo/core";
+import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -56,6 +56,7 @@ export const MessageView = memo(function MessageView({
   canAnswer,
   canDismiss,
   message,
+  meId,
   mentions,
   pages,
   isPageSuperseded,
@@ -73,6 +74,7 @@ export const MessageView = memo(function MessageView({
   onAddRoutine,
   voiceReady,
   speaking,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
@@ -87,6 +89,8 @@ export const MessageView = memo(function MessageView({
   canAnswer: boolean;
   canDismiss: boolean;
   message: ThreadMessage;
+  /** The signed-in person; anyone else's message is named and set apart. */
+  meId?: string;
   /** Bots this reply announces, named inline in its text. */
   mentions?: readonly ChildBotBlock[];
   /** Pages saved just before this reply, drawn under its text. */
@@ -116,6 +120,8 @@ export const MessageView = memo(function MessageView({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speaking: boolean;
+  /** An active call owns the speaker, so new reads wait until it ends. */
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   /** Opens where an imported item's setup is finished. */
@@ -177,6 +183,8 @@ export const MessageView = memo(function MessageView({
   );
   const speak = () => onSpeak(message);
   const replyBotId = message.replyPreview?.botId ?? replyParent?.botId;
+  const author = message.role === "user" ? otherAuthor(message.author, meId) : undefined;
+  const replyAuthor = otherAuthor(message.replyPreview?.author ?? replyParent?.author, meId);
   const speakerBot = message.botId ? peerBot?.(message.botId) : undefined;
   const speakerColorDef = useMemo(
     () => resolvePersonaColorDef(message.botId ?? "bot", speakerBot?.color),
@@ -186,7 +194,7 @@ export const MessageView = memo(function MessageView({
     <>
       {speakerName ? (
         <div
-          className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight"
+          className="mb-1.5 flex items-center gap-2 text-body-sm font-semibold tracking-tight"
           dir="auto"
           style={{ color: speakerColorDef.hex }}
         >
@@ -198,6 +206,13 @@ export const MessageView = memo(function MessageView({
           />
           {speakerName}
         </div>
+      ) : author ? (
+        <div
+          className="mb-1.5 text-end text-body-sm font-semibold tracking-tight text-muted-foreground"
+          dir="auto"
+        >
+          {author.name}
+        </div>
       ) : null}
       <ReplyLine
         target={artifactTarget}
@@ -205,7 +220,7 @@ export const MessageView = memo(function MessageView({
         fallbackText={replyParent ? previewMessageText(replyParent) : undefined}
         author={
           (message.replyPreview?.role ?? replyParent?.role) === "user"
-            ? t`You`
+            ? (replyAuthor?.name ?? t`You`)
             : ((replyBotId ? peerBot(replyBotId)?.name : undefined) ??
               memberName?.(replyBotId) ??
               t`Bot`)
@@ -252,7 +267,7 @@ export const MessageView = memo(function MessageView({
           <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
             <div
               data-testid="message-bot-bubble"
-              className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
+              className="max-w-full space-y-2.5 rounded-2xl bg-muted px-[18px] py-3 text-body-lg text-foreground"
               dir="auto"
             >
               {visibleNarrationBlocks.map((block, i) => {
@@ -295,6 +310,8 @@ export const MessageView = memo(function MessageView({
                   variant="text"
                   size="xs"
                   aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                  // Stopping the speech in progress stays available; a call blocks new reads.
+                  disabled={callHoldsSpeaker && !speaking}
                   onClick={speak}
                   className="font-normal"
                 >
@@ -337,7 +354,7 @@ export const MessageView = memo(function MessageView({
             return (
               <div
                 key={i}
-                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
+                className="flex items-center justify-center gap-2 py-1 text-body text-muted-foreground"
               >
                 <span>
                   ↪ {to} ← {from}
@@ -380,7 +397,7 @@ export const MessageView = memo(function MessageView({
             return (
               <div
                 key={i}
-                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
+                className="flex items-center justify-center gap-2 py-1 text-body text-muted-foreground"
               >
                 <span className="shrink-0">
                   {messageProviderLabel(block.provider, block.transport)}
@@ -395,7 +412,7 @@ export const MessageView = memo(function MessageView({
             return (
               <div
                 key={i}
-                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
+                className="flex items-center justify-center gap-2 py-1 text-body text-muted-foreground"
               >
                 <span className="text-warning">◷</span>
                 <span>{block.text}</span>
@@ -410,7 +427,7 @@ export const MessageView = memo(function MessageView({
               >
                 <div
                   data-testid="message-bot-bubble"
-                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
+                  className="max-w-full rounded-2xl bg-muted px-[18px] py-3 text-body-lg text-foreground"
                   dir="auto"
                 >
                   <ChatMarkdown streaming renderMention={renderMention} onOpenPage={openPage}>
@@ -421,11 +438,17 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "subagent") {
-            return <SubagentCard key={i} block={block} />;
+            const { botId } = message;
+            // A saved running card is a background helper's; a live one belongs to this turn.
+            const onStop =
+              botId && !message.id.startsWith("subagent:")
+                ? () => rpc.threads.stopHelper({ botId, messageId: message.id })
+                : undefined;
+            return <SubagentCard key={i} block={block} onStop={onStop} />;
           }
           if (block.kind === "child_bot") {
             return (
-              <div key={i} className="flex items-center gap-1.5 text-[15.5px]">
+              <div key={i} className="flex items-center gap-1.5 text-body-lg">
                 <BotMention
                   block={block}
                   color={peerBot(block.botId)?.color}
@@ -544,7 +567,12 @@ export const MessageView = memo(function MessageView({
                 <div
                   data-testid="message-user-bubble"
                   data-quote-message-id={quoteMessageId}
-                  className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-body1 text-chat-user-foreground"
+                  className={cn(
+                    "max-w-full whitespace-pre-wrap wrap-anywhere rounded-2xl px-[18px] py-3 text-body-lg",
+                    author
+                      ? "bg-muted text-foreground/90"
+                      : "bg-chat-user text-chat-user-foreground",
+                  )}
                   dir="auto"
                 >
                   <LinkifiedText onOpenPage={openPage}>{block.text}</LinkifiedText>
@@ -561,7 +589,7 @@ export const MessageView = memo(function MessageView({
               >
                 <div
                   data-testid="message-bot-bubble"
-                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-body1 text-foreground"
+                  className="max-w-full rounded-2xl bg-muted px-[18px] py-3 text-body-lg text-foreground"
                   dir="auto"
                 >
                   <div data-quote-message-id={quoteMessageId}>
@@ -574,6 +602,8 @@ export const MessageView = memo(function MessageView({
                       variant="text"
                       size="xs"
                       aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                      // Stopping the speech in progress stays available; a call blocks new reads.
+                      disabled={callHoldsSpeaker && !speaking}
                       onClick={speak}
                       className="mt-2 font-normal"
                     >
@@ -588,9 +618,9 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "card") {
             return (
               <div key={i} className="flex justify-start">
-                <div className="flex flex-col gap-2 rounded-[20px] bg-muted px-5 py-4">
+                <div className="flex flex-col gap-2 rounded-2xl bg-muted px-5 py-4">
                   {block.lines.map((line) => (
-                    <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
+                    <div key={line.k} className="flex items-baseline gap-2.5 text-body-lg">
                       <span className="text-success">✓</span>
                       <span className="font-semibold text-foreground">{line.k}</span>
                       <span className="text-muted-foreground">→</span>
@@ -634,16 +664,16 @@ export const MessageView = memo(function MessageView({
                 className="w-[340px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[15px] font-medium text-foreground">
+                  <span className="text-body-lg font-medium text-foreground">
                     <Trans>Computer</Trans>
                   </span>
                   <span
                     className={
                       block.state === "Needs you"
-                        ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
+                        ? "rounded-full bg-warning/15 px-[11px] py-1 text-body-sm text-warning"
                         : block.state === "Skipped"
-                          ? "rounded-full bg-foreground/10 px-[11px] py-1 text-[13px] text-muted-foreground"
-                          : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                          ? "rounded-full bg-foreground/10 px-[11px] py-1 text-body-sm text-muted-foreground"
+                          : "rounded-full bg-success/15 px-[11px] py-1 text-body-sm text-success"
                     }
                   >
                     {block.state === "Needs you"
@@ -655,7 +685,7 @@ export const MessageView = memo(function MessageView({
                           : block.state}
                   </span>
                 </div>
-                <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
+                <div className="my-2.5 text-body-lg leading-[1.5] text-foreground/75">
                   <ChatMarkdown>{block.text}</ChatMarkdown>
                 </div>
                 <Button

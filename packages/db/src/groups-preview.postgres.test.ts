@@ -9,8 +9,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 import { createSpaceForMember } from "./spaces.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 /** Rows Postgres returned for one statement that reads `messages`. */
 interface MessageRead {
@@ -194,7 +193,12 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
       });
       await prisma.thread.update({
         where: { id: created.threadId },
-        data: { nextMessageSeq: count, unread },
+        data: {
+          nextMessageSeq: count,
+          ...(unread
+            ? { reads: { create: { spaceId: who.spaceId, userId: who.userId, unread } } }
+            : {}),
+        },
       });
       await prisma.$executeRaw`
         UPDATE chat_groups SET "updatedAt" = ${updatedAt} WHERE id = ${created.id}
@@ -276,7 +280,7 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
     const groups = createGroupRepos(prisma);
     const { result: listed, rowCount } = await messageRowsDuring("listSpaceGroupsForSpaces", () =>
       runAsSystem("cross-space group previews", () =>
-        groups.listSpaceGroupsForSpaces(actor, [otherSpaceId]),
+        groups.listSpaceGroupsForSpaces([otherSpaceId], owner.userId),
       ),
     );
     expect(

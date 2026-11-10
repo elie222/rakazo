@@ -129,7 +129,7 @@ export const DOWNLOAD_MARKDOWN = `# Download Rakazo
 - [macOS](https://rakazo.com/api/download?platform=mac)
 - [Windows](https://rakazo.com/api/download?platform=windows)
 - [Linux](https://rakazo.com/api/download?platform=linux)
-- [iPhone](${IOS_APP_URL})
+- [iPhone, iPhone Duo, and iPad](${IOS_APP_URL})
 - [Android](${ANDROID_APP_STORE_URL})
 - [Web](${APP_URL})
 
@@ -153,7 +153,7 @@ Rakazo processes account details, user-provided bot content, connection informat
 
 Before submitting content or starting AI work, the Rakazo mobile app names the configured recipients, explains the data and purpose, and asks permission. Messages, relevant history, instructions, memories, attachments, screenshots, and connected-app content may be sent to model services for responses and tasks, including scheduled tasks. Recorded audio may be sent for transcription and text for speech generation. Conversation summaries, memories, queries, and bot and Space identifiers may be sent to a configured memory service.
 
-Supported connections include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, Cursor, custom model servers, ElevenLabs, Cartesia, Fish Audio, and Supermemory. The mobile disclosure identifies the configured services. Gateways forward requests to model providers according to their routing settings and provider agreements. The mobile permission flow does not modify provider routing or promise zero retention.
+Supported connections include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, Cursor, custom model servers, ElevenLabs, Cartesia, Fish Audio, xAI, and Supermemory. The mobile disclosure identifies the configured services. Gateways forward requests to model providers according to their routing settings and provider agreements. The mobile permission flow does not modify provider routing or promise zero retention.
 
 Permission records include the recipient, Space, disclosure version, and time. Choose Not now to decline, or withdraw permission in Account → AI data sharing for new mobile actions. Stop existing runs and disable routines separately. Withdrawal cannot recall data already sent. Web, desktop, and self-hosted server workflows do not use this mobile permission flow.
 
@@ -166,13 +166,13 @@ Read the [complete privacy policy](https://rakazo.com/privacy/) for account info
 
 export const TERMS_MARKDOWN = `# Rakazo terms
 
-Last updated: November 4, 2026
+Last updated: November 6, 2026
 
 These terms are an agreement between you and Inbox Zero Inc. for the Rakazo service we host, the Rakazo apps, and rakazo.com. The Rakazo source code is governed by the Apache License 2.0, which does not grant rights to the Rakazo name or logo, and self-hosted deployments are the operator's responsibility.
 
 You are responsible for your account and for actions your bots take on your behalf, including in scheduled routines; give bots only the access they need and require approval for actions that are hard to undo. AI output can be wrong, so review it before relying on it, and do not use the Service where an error could cause serious harm. Do not use the Service to break the law, send spam or malware, access systems without authorization, abuse its computers, or violate the terms of connected providers. You keep ownership of your content and bot output, and you pay any fees charged by third-party services, including usage on your own API keys.
 
-Free trials convert to a paid plan when they end unless cancelled before then. Fair use on hosted plans is the computer-hours a month listed for your plan on the [pricing page](https://rakazo.com/pricing/) and 5 computers running at once per account; computers sleep when idle, there are no charges for computer use beyond the plan, and we may slow or pause usage beyond these limits. Self-hosted deployments have no such limits. Paid plans renew automatically until cancelled and are charged through Stripe. Cancel at any time from billing settings or by emailing [hello@rakazo.com](mailto:hello@rakazo.com); access continues until the end of the paid period. Payments are non-refundable and not prorated except where required by law. Charges made in error are refunded when reported within 30 days. If we close your account or stop offering the Service for reasons other than a violation of these terms, we refund prepaid fees for the unused period. Consumers in the EU and UK can withdraw from a new subscription within 14 days and are refunded less the value of the Service already provided.
+Free trials convert to a paid plan when they end unless cancelled before then. Fair use on hosted plans is the computer-hours a month listed for your plan on the [pricing page](https://rakazo.com/pricing/) and 5 computers running at once per account; computers sleep when idle, there are no charges for computer use beyond the plan, and we may slow or pause usage beyond these limits. Self-hosted deployments have no such limits. Paid plans renew automatically until cancelled and are charged through Stripe. Cancel at any time from billing settings or by emailing [hello@rakazo.com](mailto:hello@rakazo.com); access continues until the end of the paid period. Payments are non-refundable and not prorated except where required by law. Credits, including top-ups, are used up by the work your bots do, whatever its outcome, and used credits are not refunded. Charges made in error are refunded when reported within 30 days. If we close your account or stop offering the Service for reasons other than a violation of these terms, we refund prepaid fees for the unused period. Consumers in the EU and UK can withdraw from a new subscription within 14 days and are refunded less the value of the Service already provided. For credits, that means a refund of the credits not yet used.
 
 The Service is provided as is. Our liability is limited to the greater of what you paid us in the previous 12 months or US$100, except where the law does not allow a limit. Delaware law governs these terms.
 
@@ -218,7 +218,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
 - [Sandboxes for AI agents](https://rakazo.com/sandboxes/): where bot computers can run, compared, with a page per provider. Each page has a Markdown version.
 - [Integration platforms for AI agents](https://rakazo.com/integration-platforms/): Composio, Pipedream, MCP servers and API connectors compared, with a page for each. Each page has a Markdown version.
-- [Voice providers for AI agents](https://rakazo.com/voice-providers/): ElevenLabs, OpenAI, Cartesia, Fish Audio, self-hosted speech servers and macOS voices compared, with a page for each. Each page has a Markdown version.
+- [Voice providers for AI agents](https://rakazo.com/voice-providers/): ElevenLabs, OpenAI, Cartesia, Fish Audio, xAI, self-hosted speech servers and macOS voices compared, most with a page of their own. Each page has a Markdown version.
 - [Submit a plugin](https://rakazo.com/plugins/submit/): list a plugin in the Rakazo marketplace. [Markdown with the API](https://rakazo.com/plugins/submit.md).
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)

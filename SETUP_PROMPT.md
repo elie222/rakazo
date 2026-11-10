@@ -91,7 +91,7 @@ Before making changes, ask me these concise questions:
    - Add a deployment-wide `OPENROUTER_API_KEY` to `.env`.
    - Connect during Rakazo onboarding with a provider API key or with ChatGPT Plus/Pro, GitHub Copilot, or SuperGrok / X Premium.
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
-3. Do I want a managed app catalog? If yes, choose Composio (`COMPOSIO_API_KEY`) or Pipedream Connect (`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID`); otherwise leave them empty. Explain that this is optional and that users can still add Treg, HTTPS MCP, or OpenAPI sources in the app.
+3. Do I want a managed app catalog? If yes, choose Composio (`COMPOSIO_API_KEY`) or Pipedream Connect (`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID`); otherwise leave them empty. Explain that this is optional and that users can still add HTTPS MCP or OpenAPI sources in the app.
 4. Set up the web app only (recommended), or also launch the Electron desktop shell after the web stack works?
 5. Which email should the initial ordinary account use? There is no administrator account or first-signup privilege. Keep deployment configuration in `.env` and server operations in deployment tooling. Without email delivery, keep `SIGNUPS_ENABLED=false` and create that account privately with the documented server-side bootstrap command; never treat an unverified public signup as proof of identity.
 
@@ -133,12 +133,12 @@ Setup:
 
 Verification:
 
-- Request `http://127.0.0.1:3100/internal/health`. Require `ok: true`, `runtime: "pi"`, `sandbox: "docker"`, `jobs: "graphile"`, and `realtime: "postgres"`. Expect `composio: true` only when its key was configured and `pipedream: true` only when all Pipedream settings were configured. `revision` is `null` unless `GIT_SHA` is set.
+- Request `http://127.0.0.1:3100/internal/health`. Require `ok: true`, `runtime: "pi"`, `sandbox: "docker"`, `jobs: "graphile"`, and `realtime: "postgres"`. Expect `integrations` to include `"composio"` only when its key was configured and `"pipedream"` only when all Pipedream settings were configured. `revision` is `null` unless `GIT_SHA` is set.
 - Open `http://127.0.0.1:5173` in a browser. If browser automation is available, use it for non-sensitive steps; otherwise give me the exact UI steps.
 - Create a local test account with clearly fake data, complete first-run onboarding, and create a test bot. Do not use personal data.
 - If a model is connected, send a harmless test message and confirm the bot replies. If model setup was deferred, explicitly report that the stack is healthy but a first message will fail until a provider is configured; do not call the setup fully usable without that caveat.
 - Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
-- Open Integrations. If neither managed catalog was configured, confirm the view still offers Treg, HTTPS MCP, and OpenAPI sources. If one was configured, verify its app catalog loads without exposing any key or client secret.
+- Open Integrations. If neither managed catalog was configured, confirm the view still offers HTTPS MCP and OpenAPI sources. If one was configured, verify its app catalog loads without exposing any key or client secret.
 - Run `pnpm test` and `pnpm check`. Report failures with the relevant output; do not claim success if either fails.
 - If I requested Electron, leave the web stack running and then launch `pnpm --filter @rakazo/desktop dev`. Verify the shell loads the same app. Let me make the Docker-versus-This-Mac choice because This Mac grants bots access under my OS account.
 

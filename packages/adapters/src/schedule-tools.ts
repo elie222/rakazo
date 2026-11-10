@@ -14,11 +14,12 @@ import {
   wallClock,
   zonedDateTime,
 } from "@rakazo/core";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { runAsSystemInTransaction } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 import { localDateTime } from "./current-time.js";
+import { finishRoutineHandover } from "./routine-handover.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
@@ -70,6 +71,29 @@ export type ResolvedSchedule =
 export function isScheduleValueProvided(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   return typeof value !== "string" || value.trim().length > 0;
+}
+
+/** The timing fields every schedule tool takes; only schedule_create also takes `watch`. */
+export const SCHEDULE_TIMING_FIELDS = [
+  "cron",
+  "every",
+  "unit",
+  "runAt",
+  "delayMinutes",
+  "delaySeconds",
+] as const;
+
+/** A schedule tool call's timing arguments and `startAt`, before blanks are dropped. */
+export function scheduleTimingArgs(args: Record<string, unknown>) {
+  return {
+    cron: args.cron,
+    every: args.every,
+    unit: args.unit,
+    runAt: args.runAt,
+    delayMinutes: args.delayMinutes,
+    delaySeconds: args.delaySeconds,
+    startAt: args.startAt,
+  };
 }
 
 export function compactScheduleInput(input: Record<string, unknown>): Record<string, unknown> {
@@ -569,16 +593,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
     name: String(args.name ?? ""),
     prompt: String(args.prompt ?? ""),
     timezone: args.timezone ? String(args.timezone) : undefined,
-    schedule: compactScheduleInput({
-      cron: args.cron,
-      every: args.every,
-      unit: args.unit,
-      runAt: args.runAt,
-      delayMinutes: args.delayMinutes,
-      delaySeconds: args.delaySeconds,
-      startAt: args.startAt,
-      watch: args.watch,
-    }),
+    schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
   };
 }
 
@@ -664,9 +679,9 @@ async function createWatchFromTool(
   const parsed = scheduleWatch(input.schedule);
   if (!parsed.success) return { error: parsed.error };
   try {
-    // Match routine editing's owner/space boundary before creating unattended work.
+    // Match routine editing's space boundary before creating unattended work.
     const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: input.spaceId, userId: input.userId, archivedAt: null },
+      where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
       include: { computer: true },
     });
     if (!bot) return { error: "Bot not found." };
@@ -729,21 +744,20 @@ async function createWatchFromTool(
   };
 }
 
-/** List bot routines, optionally restricted to the current group thread. */
+/**
+ * List bot routines (every member's) from every chat. In a group, each says whether it posts
+ * in that group (`inThisChat`), the only ones the group can change.
+ */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { spaceId: string; botId: string; userId: string; threadId?: string },
+  input: { spaceId: string; botId: string; groupThreadId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
-    where: {
-      spaceId: input.spaceId,
-      botId: input.botId,
-      userId: input.userId,
-      ...(input.threadId ? { threadId: input.threadId } : {}),
-    },
+    where: { spaceId: input.spaceId, botId: input.botId },
     orderBy: { createdAt: "desc" },
   });
   return {
+    ...(input.groupThreadId ? { note: GROUP_LIST_NOTE } : {}),
     routines: rows.map((row) => ({
       routineId: row.id,
       name: row.name,
@@ -754,11 +768,29 @@ export async function listSchedulesFromTool(
       oneShot: isOneShotRoutineCrons(row.crons),
       ...describeRoutineTiming(row),
       ...(row.watch ? { watch: row.watch, lastCheck: row.watchState ?? null } : {}),
+      ...(input.groupThreadId ? { inThisChat: row.threadId === input.groupThreadId } : {}),
     })),
   };
 }
 
-const TIMING_FIELDS = ["cron", "every", "unit", "runAt", "delayMinutes", "delaySeconds"] as const;
+const GROUP_LIST_NOTE =
+  "inThisChat marks the routines this group chat can change; change the others from the bot's own chat.";
+
+/**
+ * Why a group run cannot find a routine. One the bot has outside the group (`where`, without the
+ * group's thread) can be changed from the bot's own chat, which reaches all of its routines.
+ */
+async function groupNotFoundError(
+  prisma: ScheduleToolDeps["prisma"],
+  where: Prisma.RoutineWhereInput,
+) {
+  const elsewhere = await prisma.routine.findFirst({ where, select: { id: true } });
+  return {
+    error: elsewhere
+      ? "That routine is not this group chat's. Change it from the bot's own chat."
+      : "Schedule not found.",
+  };
+}
 
 /**
  * The pending occurrence a timezone move keeps. A new timezone alone keeps the next run's
@@ -818,13 +850,21 @@ export async function updateScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
-    userId: input.userId,
     ...(input.scopeThreadId ? { threadId: input.scopeThreadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, id: routineId, bot: { archivedAt: null } },
   });
-  if (!existing) return { error: "Schedule not found." };
+  if (!existing) {
+    return input.scopeThreadId
+      ? groupNotFoundError(deps.prisma, {
+          spaceId: input.spaceId,
+          botId: input.botId,
+          id: routineId,
+          bot: { archivedAt: null },
+        })
+      : { error: "Schedule not found." };
+  }
 
   let timezone = existing.timezone;
   if (input.timezone !== undefined) {
@@ -834,7 +874,9 @@ export async function updateScheduleFromTool(
     }
     timezone = parsed.data;
   }
-  const hasTiming = TIMING_FIELDS.some((field) => isScheduleValueProvided(input.schedule[field]));
+  const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
+    isScheduleValueProvided(input.schedule[field]),
+  );
   const retime =
     hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
   if (!retime && name === undefined && prompt === undefined && input.active === undefined) {
@@ -892,11 +934,17 @@ export async function updateScheduleFromTool(
   const { count } = await deps.prisma.routine.updateMany({
     where: {
       ...scope,
+      userId: existing.userId,
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
     },
     data: {
+      // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
+      // starts a fresh baseline from the new owner's accounts.
+      ...(existing.userId === input.userId
+        ? {}
+        : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
@@ -913,6 +961,13 @@ export async function updateScheduleFromTool(
   if (timingChanged) {
     if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
     else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
+  }
+  if (existing.userId !== input.userId) {
+    await finishRoutineHandover(deps, {
+      id: existing.id,
+      previousUserId: existing.userId,
+      userId: input.userId,
+    });
   }
 
   try {
@@ -946,7 +1001,7 @@ export async function cancelScheduleFromTool(
   input: {
     spaceId: string;
     botId: string;
-    userId: string;
+    /** In a group, only that thread's routines. */
     threadId?: string;
     routineId?: string;
     name?: string;
@@ -961,13 +1016,20 @@ export async function cancelScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
-    userId: input.userId,
     ...(input.threadId ? { threadId: input.threadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, ...(routineId ? { id: routineId } : { name: name! }) },
   });
-  if (!existing) return { error: "Schedule not found." };
+  if (!existing) {
+    return input.threadId
+      ? groupNotFoundError(deps.prisma, {
+          spaceId: input.spaceId,
+          botId: input.botId,
+          ...(routineId ? { id: routineId } : { name: name! }),
+        })
+      : { error: "Schedule not found." };
+  }
 
   // The scope is part of the delete, so the routine cannot change hands between the read and it.
   const { count } = await deps.prisma.routine.deleteMany({ where: { ...scope, id: existing.id } });

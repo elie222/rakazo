@@ -73,7 +73,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   if (pages.isError && items.length === 0) {
     return (
       <div role="alert" className="flex flex-col items-start gap-2 px-1 py-2">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-body-sm text-muted-foreground">
           <Trans>Couldn't load pages.</Trans>
         </p>
         <Button size="sm" variant="outline" onClick={() => void pages.refetch()}>
@@ -85,7 +85,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   const searchable = query !== "" || items.length >= SEARCH_FROM || pages.hasNextPage;
   if (items.length === 0 && !searchable) {
     return (
-      <p className="px-1 py-2 text-[13px] text-muted-foreground">
+      <p className="px-1 py-2 text-body-sm text-muted-foreground">
         {groupId ? (
           <Trans>
             Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to
@@ -113,10 +113,10 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   const pinned = items.filter((page) => page.pinned);
   const rest = items.filter((page) => !page.pinned);
   const row = (page: PageSummary) => (
-    <li key={page.id} className="flex items-center rounded-[10px] hover:bg-accent">
+    <li key={page.id} className="flex items-center rounded-md hover:bg-accent">
       {renaming?.id === page.id ? (
         <div className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2">
-          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-muted">
+          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-muted">
             <PageIcon className="h-5 w-4" />
           </span>
           <input
@@ -135,23 +135,23 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
                 setRenaming(null);
               }
             }}
-            className="h-8 min-w-0 flex-1 rounded-[8px] bg-background px-2 text-[14px] text-foreground ring-1 ring-ring outline-none"
+            className="h-8 min-w-0 flex-1 rounded-sm bg-background px-2 text-body text-foreground ring-1 ring-ring outline-none"
           />
         </div>
       ) : (
         <button
           type="button"
           onClick={() => openPage(page.id)}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-muted text-foreground">
+          <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-muted text-foreground">
             <PageIcon className="h-5 w-4" />
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[14px] leading-5 text-foreground" dir="auto">
+            <span className="truncate text-body text-foreground" dir="auto">
               {page.title}
             </span>
-            <span className="flex items-center gap-1 text-[12px] leading-4 text-muted-foreground">
+            <span className="flex items-center gap-1 text-label text-muted-foreground">
               {page.visibility === "link" ? (
                 <>
                   <Globe aria-hidden="true" className="size-3" strokeWidth={1.8} />
@@ -200,7 +200,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
   return (
     <div data-testid="bot-pages" className="flex flex-col gap-3">
       {searchable ? (
-        <label className="flex h-9 items-center gap-2 rounded-[10px] bg-muted px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring">
+        <label className="flex h-9 items-center gap-2 rounded-md bg-muted px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring">
           <Search aria-hidden="true" className="size-4 shrink-0" />
           <input
             type="search"
@@ -208,21 +208,21 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
             placeholder={t`Find a page`}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
         </label>
       ) : null}
       {rename.isError ? (
-        <p role="alert" className="px-2 text-[12px] text-destructive">
+        <p role="alert" className="px-2 text-label text-destructive">
           <Trans>Could not rename this page. Try again.</Trans>
         </p>
       ) : pin.isError ? (
-        <p role="alert" className="px-2 text-[12px] text-destructive">
+        <p role="alert" className="px-2 text-label text-destructive">
           <Trans>Could not pin this page. Try again.</Trans>
         </p>
       ) : null}
       {items.length === 0 ? (
-        <p className="px-2 py-1 text-[13px] text-muted-foreground">
+        <p className="px-2 py-1 text-body-sm text-muted-foreground">
           <Trans>No pages match “{query}”.</Trans>
         </p>
       ) : null}
@@ -237,7 +237,7 @@ function OwnerPages({ botId, groupId }: { botId?: string; groupId?: string }) {
       {rest.length ? <ul className="flex flex-col">{rest.map(row)}</ul> : null}
       {pages.isError ? (
         // A later read failed (Show more, or reading the list again): the pages above may be stale.
-        <div role="alert" className="flex items-center gap-2 px-2 text-[12px] text-destructive">
+        <div role="alert" className="flex items-center gap-2 px-2 text-label text-destructive">
           <Trans>Couldn't load pages.</Trans>
           <Button
             size="sm"

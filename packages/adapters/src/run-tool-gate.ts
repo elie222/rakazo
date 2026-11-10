@@ -5,10 +5,10 @@ import type {
   ConnectorCall,
   ToolBatch,
 } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
+  BACKGROUND_HELPER_TRIGGER,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
@@ -31,7 +31,6 @@ import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
 import {
@@ -71,23 +70,29 @@ import {
   recordEffect,
   uncertainEffectError,
 } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
+import { callPaidService } from "./run-tools-integrations.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
 import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
+import { refusal } from "./tool-refusal.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
+
+const WEBHOOK_RUN_ASK_REASON =
+  "Asked because a webhook started this run. Always allow doesn't skip this.";
 
 type ApprovalCard = {
   reviewReason: string | undefined;
   summary: FleetCardSummary | undefined;
   batch: ToolBatch | undefined;
+  onceOnly: boolean;
 };
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
@@ -187,6 +192,22 @@ export async function gateToolCall(
           declaredReadOnlyFor(toolName),
         ),
       ));
+  // A background helper only reads, whatever the approval mode or rules: a connector call
+  // runs only when every action it names is declared read-only.
+  if (
+    run.trigger === BACKGROUND_HELPER_TRIGGER &&
+    viaConnector &&
+    !catalogControlRead &&
+    (unidentifiedAction ||
+      approvalToolNames.some((toolName) => declaredReadOnlyFor(toolName) !== true))
+  ) {
+    return {
+      result: refusal(
+        "helper_read_only",
+        `${name} can change something, and a background helper may only read. Don't retry; say in your result what the bot should do.`,
+      ),
+    };
+  }
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   // paid_request with only a purchase id sends the request its approval already named.
@@ -194,9 +215,15 @@ export async function gateToolCall(
     SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
   const fetchUrl = sendsToSite ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
   const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
-  if (sendsToSite && !fetchSite) return { result: { error: "url must be an http(s) URL" } };
+  if (sendsToSite && !fetchSite)
+    return { result: refusal("fetch_url_invalid", "url must be an http(s) URL") };
   if (fetchUrl && fetchUrl.length > MAX_FETCH_URL_LENGTH)
-    return { result: { error: `url must be at most ${MAX_FETCH_URL_LENGTH} characters` } };
+    return {
+      result: refusal(
+        "fetch_url_too_long",
+        `url must be at most ${MAX_FETCH_URL_LENGTH} characters`,
+      ),
+    };
   // The card, the stored effect and the request all use the URL the gate checked.
   if (fetchUrl) {
     args = { ...args, url: fetchUrl };
@@ -274,12 +301,14 @@ export async function gateToolCall(
       ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    paying ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
+  // These ask in every run, whatever started it.
+  const mandatoryInAnyRun =
+    paying || commandWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
+  const requiresMandatoryApproval = mandatoryInAnyRun || requiresUnattendedApproval;
+  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
+  // on their card would save a rule that never takes effect.
+  const asksEveryTime =
+    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
@@ -353,10 +382,10 @@ export async function gateToolCall(
   if (paying && run.trigger === "webhook" && plan !== "deny") {
     await auditToolCall(ctx, name, "denied", { reason: "purchase_unattended" });
     return {
-      result: {
-        error:
-          "This would complete a purchase, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.",
-      },
+      result: refusal(
+        "purchase_needs_approval_unattended",
+        "This would complete a purchase, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.",
+      ),
     };
   }
   if (plan === "deny") {
@@ -364,12 +393,12 @@ export async function gateToolCall(
       reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
     });
     return {
-      result: {
-        error:
-          approvalResolved.decision === "deny"
-            ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
-            : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
-      },
+      result: refusal(
+        "approval_denied",
+        approvalResolved.decision === "deny"
+          ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
+          : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
+      ),
     };
   }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
@@ -386,7 +415,7 @@ export async function gateToolCall(
     const refused = await pagePaymentPrecheck(deps.prisma, spender, spends);
     if (refused) {
       await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
-      return { result: { error: refused } };
+      return { result: refusal("spending_limit", refused) };
     }
   }
   let reviewReason: string | undefined;
@@ -474,7 +503,7 @@ export async function gateToolCall(
       where: { id: applied.effect.id, status: "intended" },
       data: { status: "denied", result: { refused: "repeat" } },
     });
-    return { result: { error: DENIED_ACTION_ERROR } };
+    return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
 
   const runAutoReview = async () => {
@@ -529,11 +558,29 @@ export async function gateToolCall(
       });
     }
     return {
-      result: { error: `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.` },
+      result: refusal(
+        "fetch_needs_approval_unattended",
+        `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.`,
+      ),
     };
   }
 
   const needsApproval = gateDecision === "ask";
+  // Nobody sees a background helper's thread, so a card there would wait forever.
+  if (needsApproval && run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    if (applied) {
+      await deps.prisma.externalEffect.updateMany({
+        where: { id: applied.effect.id, status: "intended" },
+        data: { status: "denied" },
+      });
+    }
+    return {
+      result: refusal(
+        "helper_cannot_ask_approval",
+        `${name} needs the owner's approval, and a background helper cannot ask. Don't retry; say in your result what the bot should ask for.`,
+      ),
+    };
+  }
   const call = createToolCall(ctx, {
     name,
     args,
@@ -546,7 +593,20 @@ export async function gateToolCall(
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
   });
-  const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
+  // Only when the webhook overrode the owner's Always allow; cards every run shows say nothing.
+  const webhookForcedAsk =
+    requiresUnattendedApproval &&
+    !mandatoryInAnyRun &&
+    !request.heldForApproval &&
+    siteGate !== "new" &&
+    !unidentifiedAction &&
+    approvalResolved.source === "always_allow";
+  const card = {
+    reviewReason: webhookForcedAsk ? WEBHOOK_RUN_ASK_REASON : reviewReason,
+    summary: request.fleetSummary,
+    batch: connectorTool?.batch,
+    onceOnly: asksEveryTime || webhookForcedAsk,
+  };
 
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
@@ -712,6 +772,16 @@ async function settleToolUncertainty(
     )
       return recovered;
   }
+  if (call.name === "service_call") {
+    const recovered = await callPaidService(ctx, call).catch(() => undefined);
+    // Only an answer the provider settled carries a cost; anything else stays uncertain.
+    if (
+      recovered &&
+      "cost_usd" in recovered &&
+      (await completeEffect(ctx.deps, effectId, "executing", recovered))
+    )
+      return recovered;
+  }
   return settleUncertainEffect(ctx.deps.prisma, effectId, toolName, call.args);
 }
 
@@ -760,11 +830,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   if (!paused) {
     throw new Error("Could not pause this run for approval; try sending again.");
   }
-  if (paused.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

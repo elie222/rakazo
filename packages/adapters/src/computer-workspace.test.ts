@@ -17,6 +17,7 @@ import path from "node:path";
 import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkpointAndStopComputer,
@@ -24,6 +25,8 @@ import {
   checkpointRunComputerWorkspace,
   deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
+  PORTABLE_TRANSFER_BATCH_BYTES,
+  PortableFileBatcher,
   removeComputerWorkspaceDirectories,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
@@ -708,6 +711,41 @@ describe("Team bot folder cleanup", () => {
     expect(commandSignal?.aborted).toBe(true);
   });
 
+  it("does not report a removal the cleanup deadline cut short as an error", async () => {
+    const { prisma } = deletedBots("deleted-bot");
+    const execute = vi.fn((_computer: ComputerRef, request: CommandRequest, commandContext) => {
+      const { signal } = commandContext as typeof context;
+      return (async function* () {
+        if (!request.argv.includes("deleted-bot")) {
+          yield { type: "stdout" as const, data: "bots/deleted-bot\n" };
+          yield { type: "exit" as const, code: 0 };
+          return;
+        }
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+        yield { type: "stderr" as const, data: "command aborted\n" };
+        yield { type: "exit" as const, code: 130 };
+      })();
+    });
+    const warn = vi.fn();
+    const error = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn, error } as never);
+    try {
+      await removeDeletedBotWorkspaces(
+        { prisma, sandbox: { execute } as unknown as SandboxProvider },
+        computer,
+        "workspace",
+        context,
+        20,
+      );
+      await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      logger.mockRestore();
+    }
+    expect(warn).toHaveBeenCalledWith("computer cleanup ran out of time");
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["bots", ".."],
     ["bots", "../shared"],
@@ -760,3 +798,19 @@ function localWorkspaceSandbox(workspace: string) {
     },
   } as unknown as SandboxProvider;
 }
+
+describe("PortableFileBatcher", () => {
+  it("hands back a batch once a file would pass the file count or the byte budget", () => {
+    const batcher = new PortableFileBatcher<number>(2, (size) => size);
+    const sent = [1, 2, 3, PORTABLE_TRANSFER_BATCH_BYTES, 4].map((size) => batcher.add(size));
+    expect(sent).toEqual([undefined, undefined, [1, 2], [3], [PORTABLE_TRANSFER_BATCH_BYTES]]);
+    expect(batcher.take()).toEqual([4]);
+    expect(batcher.take()).toEqual([]);
+  });
+
+  it("hands back an empty batch when an oversized file comes first", () => {
+    const batcher = new PortableFileBatcher<number>(8, (size) => size);
+    expect(batcher.add(PORTABLE_TRANSFER_BATCH_BYTES + 1)).toEqual([]);
+    expect(batcher.take()).toEqual([PORTABLE_TRANSFER_BATCH_BYTES + 1]);
+  });
+});

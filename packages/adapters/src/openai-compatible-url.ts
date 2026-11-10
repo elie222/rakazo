@@ -1,9 +1,11 @@
+import type { CompatibleEndpointPreset } from "@rakazo/contracts";
 import {
   ipVersion,
   isCloudMetadataHost,
   isLinkLocalAddress,
   isLoopbackHost,
   isNonPublicAddress,
+  matchCompatibleEndpointPreset,
   normalizeHost,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -12,6 +14,15 @@ import {
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+
+/** Hosted compatible services the catalog offers by name. Each one needs a key. */
+export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
+  { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+];
+
+export function compatibleEndpointPreset(baseUrl: string | undefined) {
+  return matchCompatibleEndpointPreset(COMPATIBLE_ENDPOINT_PRESETS, baseUrl);
+}
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";
@@ -25,6 +36,18 @@ export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
   return (process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS ?? "")
     .split(",")
     .some((entry) => entry.trim() !== "" && normalizeHost(entry.trim()) === normalized);
+}
+
+/**
+ * Inside a container, loopback is the container itself, so a server the person runs
+ * on their own computer is reached through the host address the deployment names.
+ */
+export function loopbackOnHost(url: URL): URL {
+  const host = process.env.RAKAZO_LOOPBACK_HOST?.trim();
+  if (!host || !isLoopbackHost(normalizeHost(url.hostname))) return url;
+  const target = new URL(url);
+  target.hostname = host;
+  return target;
 }
 
 function isBlockedHostname(hostname: string): boolean {
@@ -42,7 +65,7 @@ function isBlockedHostname(hostname: string): boolean {
 export type OpenAiCompatibleUrlPolicy = { allowPublic?: boolean; allowPrivate?: boolean };
 
 export const PRIVATE_MODEL_ENDPOINT_MESSAGE =
-  "Private model endpoints require operator authorization.";
+  "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.";
 
 export function assertAllowedOpenAiCompatibleUrl(
   raw: string,

@@ -9,6 +9,13 @@ import { CallCard } from "../components/CallCard";
 import { rpc } from "./api";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
+import { hapticImpact } from "./haptics";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 const { activeTags, platform, sessionChange, startBackground, stopBackground, useKeepAwake } =
   vi.hoisted(() => ({
@@ -77,13 +84,29 @@ vi.mock("react-native", () => {
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
 });
-vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
+vi.mock("../components/glass-icon-button", () => ({
+  GlassIconButton: ({
+    accessibilityLabel,
+    onPress,
+  }: {
+    accessibilityLabel: string;
+    onPress: () => void;
+  }) =>
+    createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
+}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
   configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("./session", () => ({
@@ -92,11 +115,6 @@ vi.mock("./session", () => ({
     sessionChange.listeners.add(listener);
     return () => sessionChange.listeners.delete(listener);
   },
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({ t: (text: string) => text }),
-  t: (text: string) => text,
-  getActiveUiLocale: () => "en",
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
@@ -122,6 +140,8 @@ const deps: CallDeps = {
   record: vi.fn(),
   transcribe: vi.fn(),
   send: vi.fn(),
+  answer: vi.fn(),
+  followUp: vi.fn(),
   endCall: async () => undefined,
   speak: async () => undefined,
   watch: () => vi.fn(),
@@ -163,6 +183,21 @@ describe("CallCard background lifetime", () => {
     container.remove();
     activeTags.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("uses explicit hang-up feedback only when the Hang up button is pressed", async () => {
+    act(() => root.render(<CallCard />));
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    });
+    vi.mocked(hapticImpact).mockClear();
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Hang up"]');
+    expect(button).not.toBeNull();
+    await act(async () => button?.click());
+    expect(hapticImpact).toHaveBeenCalledOnce();
+    expect(container.querySelector('[aria-label="Hang up"]')).toBeNull();
+    await act(async () => endCall());
+    expect(hapticImpact).toHaveBeenCalledOnce();
   });
 
   it("keeps the screen awake while the native service has not started", async () => {

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -629,6 +630,15 @@ class PurchaseTest(unittest.TestCase):
         self.assertEqual(result["purchase"]["amount"], "$5")
         self.assertEqual(result["purchase"]["total"], "$10")
 
+    def test_purchase_check_passes_on_the_order_lines_the_page_lists(self):
+        items = [{"name": "Bananas \u00d7 6", "amount": "$3.00"}, {"name": "Delivery", "amount": "$6.00"}]
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": items})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["items"], items)
+        # A page that lists none sends none, as before.
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": []})
+        self.assertNotIn("items", page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})["purchase"])
+
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
         result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}]})
@@ -689,6 +699,36 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(json.loads(printed.call_args.args[0]),
                              {"ok": True, "site": "", "purchase": None, "url": listing[0]["url"] if listing else "",
                               "title": ""})
+
+
+class PurchaseSiteTest(unittest.TestCase):
+    """The world a check starts in, while the tab may be replacing its document."""
+
+    GONE = RuntimeError("Runtime.evaluate failed: {'code': -32000, 'message': 'Cannot find context with specified id'}")
+
+    def site(self, worlds):
+        """What site() answers, or raises, when world_in answers `worlds` in turn."""
+        found = object.__new__(RealPurchases)
+        found.client, found.session = Mock(), "page"
+        with patch.object(secrets, "main_frame", return_value={"id": "top"}), \
+                patch.object(secrets, "world_in", side_effect=worlds) as world_in, \
+                patch.object(secrets, "eval_json", return_value="tickets.example.test"), \
+                patch.object(helper.time, "sleep"):
+            try:
+                return found.site(), world_in.call_count
+            except RuntimeError as error:
+                return error, world_in.call_count
+
+    def test_a_document_replaced_while_the_check_starts_is_read_again(self):
+        self.assertEqual(self.site([self.GONE, 7]), ("tickets.example.test", 2))
+
+    def test_a_page_that_keeps_losing_its_document_still_fails_and_asks(self):
+        error, _ = self.site([self.GONE] * 10)
+        self.assertIs(error, self.GONE)
+
+    def test_another_failure_is_not_retried(self):
+        other = RuntimeError("Runtime.evaluate failed: too large")
+        self.assertEqual(self.site([other, 7]), (other, 1))
 
 
 class DesktopPurchaseTest(unittest.TestCase):
@@ -1105,6 +1145,28 @@ class AgentBrowserTest(unittest.TestCase):
         self.assertNotIn("private text", json.dumps(run.call_args.args))
         self.assertIn("private text", run.call_args.kwargs["input"])
         self.assertEqual(run.call_args.kwargs["cwd"], browser.home)
+
+    def test_replaces_its_settings_whole_while_another_call_reads_them(self):
+        # Every call on the computer, one per screen, writes the same settings file, and agent-browser
+        # refuses one it reads half written: the file another call has open must stay whole.
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            config.write_text('{"before": true}', encoding="utf-8")
+            with config.open(encoding="utf-8") as reading:
+                helper.AgentBrowser(9223)
+                self.assertEqual(reading.read(), '{"before": true}')
+            self.assertEqual(config.read_text(encoding="utf-8"), "{}")
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
+
+    def test_leaves_no_staged_settings_file_when_the_swap_fails(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            with patch.object(helper.os, "replace", side_effect=PermissionError("denied")):
+                with self.assertRaises(PermissionError):
+                    helper.AgentBrowser(9223)
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
 
     def test_refuses_a_browser_agent_browser_started_itself(self):
         launched = [{"success": True, "result": {"lifecycle": {"launched": True}}}]
@@ -1894,6 +1956,123 @@ class SavedLoginTest(unittest.TestCase):
             browser = LoginFrameBrowser(focus_in_frame=True, frame_check=check)
             with self.subTest(check=check), self.assertRaisesRegex(secrets.Refused, error):
                 secrets.fill_focused(browser.client, "page", dict(self.STEP))
+
+
+class FrameSocket:
+    """A socket that hands out its bytes a few at a time, as a network would."""
+
+    def __init__(self, data, step=1000):
+        self.data, self.step = bytearray(data), step
+
+    def recv(self, size):
+        taken = bytes(self.data[:min(size, self.step)])
+        del self.data[:len(taken)]
+        return taken
+
+    def settimeout(self, _):
+        pass
+
+
+def ws_frame(payload, mask=None):
+    n = len(payload)
+    header = bytearray([0x81])
+    mask_bit = 0x80 if mask else 0
+    if n < 126:
+        header.append(mask_bit | n)
+    elif n < 65536:
+        header += bytes([mask_bit | 126]) + n.to_bytes(2, "big")
+    else:
+        header += bytes([mask_bit | 127]) + n.to_bytes(8, "big")
+    if mask:
+        return bytes(header) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return bytes(header) + payload
+
+
+class CdpFrameTest(unittest.TestCase):
+    BIG = 3 * 1024 * 1024
+
+    def client(self, *frames):
+        client = secrets.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(b"".join(frames))
+        return client
+
+    def event(self, size):
+        return json.dumps({"method": "Network.requestWillBeSent", "params": {"url": "data:image/png;base64," + "A" * size}}).encode()
+
+    def test_an_oversized_event_is_skipped_and_the_next_message_is_read(self):
+        small = json.dumps({"method": "Page.loadEventFired", "params": {}}).encode()
+        for mask in (None, b"\x01\x02\x03\x04"):
+            with self.subTest(masked=bool(mask)):
+                client = self.client(ws_frame(self.event(self.BIG), mask), ws_frame(small, mask))
+                self.assertEqual(client._read_frame(), small)
+                self.assertEqual(len(client._buf), 0)
+
+    def test_a_skipped_frame_is_not_held_in_memory(self):
+        client = self.client(ws_frame(self.event(self.BIG)))
+        client._sock.data.extend(ws_frame(b"{}"))
+        peak = 0
+        original = client._drain
+
+        def drain():
+            nonlocal peak
+            original()
+            peak = max(peak, len(client._buf))
+        client._drain = drain
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertLess(peak, 128 * 1024)
+
+    def test_skipping_resumes_after_a_read_times_out(self):
+        small = b'{"method": "A"}'
+        client = self.client(ws_frame(self.event(self.BIG)), ws_frame(small))
+        real = client._sock
+        calls = [0]
+
+        class Flaky(FrameSocket):
+            def recv(self, size):
+                calls[0] += 1
+                if calls[0] % 7 == 0:
+                    raise socket.timeout()
+                return real.recv(size)
+        client._sock = Flaky(b"")
+        for _ in range(10000):
+            try:
+                self.assertEqual(client._read_frame(), small)
+                break
+            except socket.timeout:
+                continue
+        else:
+            self.fail("never finished")
+
+    def test_an_oversized_reply_fails_only_its_own_request(self):
+        for mask in (None, b"\x09\x08\x07\x06"):
+            with self.subTest(masked=bool(mask)):
+                reply = json.dumps({"id": 7, "result": {"data": "A" * self.BIG}}).encode()
+                client = self.client(ws_frame(reply, mask))
+                client._next_id = 7
+                with patch.object(secrets.os, "urandom", return_value=b"1234"), \
+                        patch.object(client, "_send"), self.assertRaisesRegex(RuntimeError, "Runtime.evaluate failed.*too large"):
+                    client.call("Runtime.evaluate", timeout_s=5)
+
+    def test_an_oversized_download_still_begins(self):
+        begin = json.dumps({"method": "Browser.downloadWillBegin", "params": {
+            "frameId": "F1", "guid": "0a1b-2c3d", "url": "data:text/csv;base64," + "A" * self.BIG,
+            "suggestedFilename": "export.csv"}}, separators=(",", ":")).encode()
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(ws_frame(begin) + ws_frame(b"{}"))
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(list(client.downloads), ["0a1b-2c3d"])
+
+    def test_an_oversized_navigation_counts_for_every_frame(self):
+        navigated = json.dumps({"method": "Page.frameNavigated", "params": {
+            "frame": {"id": "F1", "url": "data:text/html;base64," + "A" * self.BIG}}}, separators=(",", ":")).encode()
+        client = self.client(ws_frame(navigated), ws_frame(b"{}"))
+        before = client.navigations("S1", "F2")
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(client.navigations("S1", "F2"), before + 1)
+
+    def test_a_frame_just_under_the_limit_is_still_read(self):
+        payload = self.event(secrets.MAX_FRAME_BYTES - 200)
+        self.assertEqual(self.client(ws_frame(payload))._read_frame(), payload)
 
 
 class DownloadTest(unittest.TestCase):

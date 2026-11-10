@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   isBackgroundRunTrigger,
   redactSecrets,
   resolveBotAddress,
@@ -11,18 +12,18 @@ import {
   messageConnectedAgent,
   respondAgentConnection,
 } from "./agent-connections.js";
+import { startBackgroundHelper } from "./background-helpers.js";
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import { handoffToGroupBot } from "./group-handoff.js";
 import type { RunContext } from "./run-context.js";
-import { publishMessage } from "./run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
   flushProgress,
-  nextProgressNonce,
   progressSinceBudgetStart,
+  publishInterimMessage,
   publishMidTurnNarration,
   showNarrationStatus,
 } from "./run-progress.js";
@@ -165,6 +166,16 @@ async function sharedFiles(
 }
 
 /**
+ * Checked before any file is read or copied: shared paths are added to the message, so a blank
+ * one must be caught first, and an oversized one would leave copies behind for nothing.
+ */
+function messageError(ctx: RunContext, message: unknown): string | undefined {
+  const text = redactSecrets(String(message ?? ""), ctx.secrets).trim();
+  if (!text) return "message is required";
+  if (text.length > BOT_MESSAGE_MAX_LENGTH) return BOT_MESSAGE_TOO_LONG;
+}
+
+/**
  * The message as delivered: shared paths are listed where the recipient reads its task. The list
  * counts toward the message limit, so a message it would push over is refused with the room left.
  */
@@ -223,15 +234,30 @@ export const messagingTools: ToolHandlers = {
   async request_takeover() {
     return { ok: true };
   },
-  async run_subagent(_ctx, call) {
+  async run_subagent(ctx, call) {
     const { args } = call;
+    if (args.background === true) {
+      return call.finish(
+        await startBackgroundHelper(ctx, {
+          name:
+            String(args.name ?? "helper")
+              .trim()
+              .slice(0, 80) || "helper",
+          task: redactSecrets(String(args.task ?? "").trim(), ctx.secrets),
+          instructions: redactSecrets(String(args.instructions ?? "").trim(), ctx.secrets),
+          modelProvider: String(args.model_provider ?? "").trim(),
+          modelId: String(args.model_id ?? "").trim(),
+          executionId: call.executionId,
+          effectKey: call.effectKey,
+        }),
+      );
+    }
     return {
       ok: true,
       result: String(args.task ?? "done."),
     };
   },
   async message_user(ctx, call) {
-    const { deps, run } = ctx;
     const { args } = call;
     const { reply } = ctx.state;
     const rawMessage = redactSecrets(String(args.message ?? ""), ctx.secrets);
@@ -247,7 +273,11 @@ export const messagingTools: ToolHandlers = {
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
     // A mid-task message handled meanwhile may have granted a new allowance; keep it.
     reply.steeringReplyPending ||= answering;
-    if (!canPublishDurableProgress(reply) && !canPostLongTaskHeadsUp(ctx)) {
+    if (
+      ctx.replyMode === "chat" &&
+      !canPublishDurableProgress(reply) &&
+      !canPostLongTaskHeadsUp(ctx)
+    ) {
       return call.finish({
         ok: true,
         note: midTurnProgressBudgetUsed(progressSinceBudgetStart(reply))
@@ -255,9 +285,12 @@ export const messagingTools: ToolHandlers = {
           : `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
       });
     }
-    await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, nextProgressNonce(ctx));
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    await publishInterimMessage(ctx, text, true);
+    // The person already has this message; notes written before it are no longer a missing answer.
+    if (ctx.replyMode === "messages") {
+      reply.workingNotes.length = 0;
+      reply.lastDiscardedMidTurnNarration = "";
+    }
     return call.finish(
       truncated
         ? {
@@ -271,8 +304,8 @@ export const messagingTools: ToolHandlers = {
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;
     const { args, effectKey } = call;
-    // Shared paths are added to the message, so a blank one must be caught before they are.
-    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,
@@ -354,8 +387,8 @@ export const messagingTools: ToolHandlers = {
     const { args, effectKey } = call;
     const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
     if (!groupId) return call.finish({ error: "group_id is required outside a group chat" });
-    // Shared paths are added to the message, so a blank one must be caught before they are.
-    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,

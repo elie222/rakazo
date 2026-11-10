@@ -86,6 +86,9 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: mocks.rpc }));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },
@@ -94,11 +97,6 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({}),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
-  return { t, useI18n: () => ({ t }), dateLocaleForUi: () => "en-US" };
-});
 vi.mock("./user-error", () => ({ errorText: () => "failure" }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: mocks.removeFromSearchInbox }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));

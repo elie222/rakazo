@@ -8,10 +8,16 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  activeThreadRuns,
   anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
   isRunWorking,
+  isThreadSnapshotEvent,
+  messageUnreadFor,
+  reconcileRefreshedThread,
+  reduceThreadSnapshot,
+  rememberTerminalRun,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -28,13 +34,9 @@ import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
-  activeThreadRuns,
   isComputerStatusEvent,
-  isThreadSnapshotEvent,
   prependThreadMessagePage,
-  reconcileRefreshedThread,
   reduceComputerStatus,
-  reduceThreadSnapshot,
 } from "../../lib/thread-events";
 import {
   firstVisibleTranscriptRow,
@@ -87,6 +89,7 @@ export function useThreadSync({
   notifyBrowserForEvent,
   markBotReadIfVisible,
   markGroupReadOnReply,
+  meId,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -105,6 +108,8 @@ export function useThreadSync({
   notifyBrowserForEvent: ReturnType<typeof useBrowserNotifications>["notifyBrowserForEvent"];
   markBotReadIfVisible: (botId: string) => void;
   markGroupReadOnReply: (groupId: string) => void;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  meId: string | undefined;
 }) {
   const {
     snapshot,
@@ -360,13 +365,7 @@ export function useThreadSync({
         ),
       beforeEvent: (event) => {
         webLogoAvatarActivity.apply(avatarSource, event);
-        if (isRunTerminalEvent(event) && event.runId) {
-          terminalRunReceipts.current.add(event.runId);
-          if (terminalRunReceipts.current.size > 100) {
-            const oldest = terminalRunReceipts.current.values().next().value;
-            if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
-          }
-        }
+        rememberTerminalRun(terminalRunReceipts.current, event);
       },
       applyEvent: (event) =>
         applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
@@ -379,7 +378,7 @@ export function useThreadSync({
           true,
           currentBot?.name ?? active.name,
           currentBot?.notifyOnFinish ?? false,
-          false,
+          undefined,
         );
         if (event.type === "thread.cleared") resetHistory();
         if (event.type === "bot.archived") {
@@ -401,7 +400,7 @@ export function useThreadSync({
           if (blocks.some((block) => block.kind === "child_bot")) {
             void sidebarRefresh.invalidate().catch(() => undefined);
           }
-          if (event.payload.role === "bot") markBotReadIfVisible(active.id);
+          if (messageUnreadFor(event.payload, meId)) markBotReadIfVisible(active.id);
         }
         if (
           isRunTerminalEvent(event) ||
@@ -411,6 +410,10 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
+          // In a shared Space the event does not say who took control; the snapshot does.
+          if (event.type === "computer.takeover.granted" && computerRef.current?.shared) {
+            void snapshotRefresh.invalidate().catch(() => undefined);
+          }
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
@@ -424,7 +427,7 @@ export function useThreadSync({
       const left = snapshotRef.current;
       if (left?.botId === active.id && !left.groupId) queryClient.setQueryData(threadKey, left);
     };
-  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
+  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent, meId]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -475,9 +478,9 @@ export function useThreadSync({
           true,
           eventBot?.name ?? activeGroup.name,
           true,
-          true,
+          groupId,
         );
-        if (event.type === "thread.message.created" && event.payload.role === "bot") {
+        if (event.type === "thread.message.created" && messageUnreadFor(event.payload, meId)) {
           markGroupReadOnReply(groupId);
         }
         if (event.type === "thread.message.created") {
@@ -510,7 +513,7 @@ export function useThreadSync({
       const left = snapshotRef.current;
       if (left?.groupId === groupId) queryClient.setQueryData(threadKey, left);
     };
-  }, [activeGroup?.id, groupId, notifyBrowserForEvent, markGroupReadOnReply]);
+  }, [activeGroup?.id, groupId, notifyBrowserForEvent, markGroupReadOnReply, meId]);
 
   // Memoized children take these, so they stay referentially stable across renders.
   const refreshThreadRef = useRef(refreshThread);

@@ -21,6 +21,7 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   crossSpaceCommunication: "cross_space",
   dailyCheckIns: "daily_check_ins",
   fleetManagement: "fleet_management",
+  replyMode: "reply_mode",
   disabledBuiltinTools: "tools",
 };
 

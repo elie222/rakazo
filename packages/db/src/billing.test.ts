@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hasModelAccess, ownerHadTrial } from "./billing.js";
+import { hasModelAccess, memberHasModelAccess, ownerHadTrial } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 
 describe("model access", () => {
@@ -47,5 +47,15 @@ describe("one trial per person", () => {
     await expect(ownerHadTrial(client, "user-1", "managed")).resolves.toBe(true);
     await expect(ownerHadTrial(client, "user-1", "byok")).resolves.toBe(true);
     expect(findFirst).not.toHaveBeenCalled();
+  });
+});
+
+it("looks up the membership by space and user alone when given a whole run", async () => {
+  const findUnique = vi.fn().mockResolvedValue(null);
+  const client = { spaceMember: { findUnique } } as unknown as PrismaClient;
+  const run = { id: "run-1", botId: "bot-1", spaceId: "space-1", userId: "user-1" };
+  await memberHasModelAccess(client, run);
+  expect(findUnique.mock.calls[0]?.[0].where).toEqual({
+    spaceId_userId: { spaceId: "space-1", userId: "user-1" },
   });
 });

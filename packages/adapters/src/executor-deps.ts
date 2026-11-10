@@ -11,9 +11,11 @@ import type {
   MediaGenerationProvider,
   MemoryStore,
   NotificationProvider,
+  PaidServiceProvider,
   PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
+  TransactionalEmailProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
@@ -55,6 +57,10 @@ export interface ExecutorDeps {
   onTicketChange?: TicketChangeNotifier;
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
+  /** The domain bot email addresses are on; absent when this server receives no email. */
+  inboundEmailDomain?: string;
+  /** Sends a bot's email from its own address; absent when this server sends no email. */
+  email?: TransactionalEmailProvider;
   phoneCallCooldownMinutes?: number;
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */
@@ -63,6 +69,7 @@ export interface ExecutorDeps {
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
   mediaGeneration?: MediaGenerationProvider;
+  paidServices?: PaidServiceProvider;
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
   secretHttp?: RemoteTransportDependencies;

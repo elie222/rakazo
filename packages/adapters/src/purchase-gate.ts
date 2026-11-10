@@ -21,6 +21,8 @@ export type PurchaseApproval = {
   amountSource: "button" | "page";
   /** The page's total beside a button that names its own amount, when the page shows one. */
   total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none. */
+  items?: Array<{ name: string; amount: string }>;
 };
 
 // Empty when the check failed and the page is unknown.
@@ -30,10 +32,42 @@ const INVISIBLE = /[\u{E0000}-\u{E007F}​-‏⁠-⁤‪-‮⁦-⁩﻿]/gu;
 const pageText = (text: string, max: number) =>
   Array.from(text.replace(INVISIBLE, "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 
+// The card's own row labels, in its text and its receipt; the apps also drop their translations.
+const CARD_LABEL = /^(?:button|(?:amount )?on the button|total)\b/i;
+// The page reads at most this many order lines; a longer order may have more.
+const MAX_ITEMS = 30;
+// The card lists this many order lines; a longer order shows one fewer and how many more there are.
+const CARD_ITEMS = 8;
+
+/** Order lines as the card shows them: page text, cut short, at most MAX_ITEMS. Anything else is dropped. */
+function withItems(
+  value: unknown,
+  shown: (text: string, max: number) => string = pageText,
+): Pick<PurchaseApproval, "items"> {
+  const items = (Array.isArray(value) ? value.slice(0, MAX_ITEMS) : []).flatMap((item) => {
+    const { name, amount } = (item ?? {}) as Record<string, unknown>;
+    // A line the page names like one of the card's own reads as the card's, not the page's: left out.
+    if (
+      typeof name !== "string" ||
+      typeof amount !== "string" ||
+      CARD_LABEL.test(pageText(name, 80))
+    )
+      return [];
+    // Control characters are page noise, not words: they read as spaces.
+    const plain = (text: string) => text.replace(/\p{Cc}/gu, " ");
+    const line = { name: shown(plain(name), 80), amount: shown(plain(amount), 40) };
+    return line.name && line.amount ? [line] : [];
+  });
+  return items.length ? { items } : {};
+}
+
 /** A purchase approval as the persisted request holds it, or nothing when it is not one. */
 export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { steps, site, label, amount, amountSource, total } = value as Record<string, unknown>;
+  const { steps, site, label, amount, amountSource, total, items } = value as Record<
+    string,
+    unknown
+  >;
   if (
     !Array.isArray(steps) ||
     !steps.every((step) => Number.isInteger(step) && step >= 0 && step < 24) ||
@@ -50,6 +84,7 @@ export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined
     amount,
     amountSource: amountSource === "button" ? "button" : "page",
     ...(typeof total === "string" && total ? { total } : {}),
+    ...withItems(items),
   };
 }
 
@@ -62,11 +97,28 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
       lines: ["The page could not be checked, so this may complete a payment."],
     };
   }
+  const items = purchase.items ?? [];
+  const listed = items.length > CARD_ITEMS ? items.slice(0, CARD_ITEMS - 1) : items;
   return {
     onceOnly: true,
     title: `Pay on ${cardName(purchase.site)}?`,
+    receipt: {
+      ...(purchase.label ? { button: purchase.label } : {}),
+      items: listed,
+      ...(items.length > listed.length
+        ? { more: { count: items.length - listed.length, atLeast: items.length >= MAX_ITEMS } }
+        : {}),
+      ...(purchase.amount ? { amount: purchase.amount } : {}),
+      amountSource: purchase.amountSource,
+      ...(purchase.total && purchase.total !== purchase.amount ? { total: purchase.total } : {}),
+    },
+    // The same order as text, for anywhere that cannot draw the receipt.
     lines: [
       ...(purchase.label ? [`Button: "${purchase.label}"`] : []),
+      ...listed.map((item) => `${item.name}: ${item.amount}`),
+      ...(items.length > listed.length
+        ? [`and ${items.length - listed.length}${items.length < MAX_ITEMS ? "" : "+"} more`]
+        : []),
       ...(purchase.amount
         ? [
             `${purchase.amountSource === "button" ? "Amount on the button" : "Total on the page"}: ${purchase.amount}`,
@@ -75,7 +127,9 @@ export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummar
       ...(purchase.total && purchase.total !== purchase.amount
         ? [`Total on the page: ${purchase.total}`]
         : []),
-      "The button label and total are read from the page. The bot has not checked them.",
+      items.length
+        ? "The button label, items and total are read from the page. The bot has not checked them."
+        : "The button label and total are read from the page. The bot has not checked them.",
     ],
   };
 }
@@ -197,9 +251,10 @@ export async function detectPurchase(
     found = { ...unchecked, steps: [] };
   }
   if (!found) return undefined;
-  // Page text is stored with the approval: a value the run must keep secret never goes with it.
+  // Page text is stored with the approval: a value the run must keep secret never goes with it, not even
+  // the start of one, so the whole text is redacted before it is cut.
   const shown = (text: string, max: number) =>
-    String(redactConnectorPayload(pageText(text, max), ctx.secrets));
+    pageText(String(redactConnectorPayload(pageText(text, 1_000), ctx.secrets)), max);
   return {
     steps: found.steps,
     site: found.site,
@@ -207,5 +262,6 @@ export async function detectPurchase(
     amount: shown(found.amount, 40),
     amountSource: found.amountSource === "button" ? "button" : "page",
     ...(found.total ? { total: shown(found.total, 40) } : {}),
+    ...withItems(found.items, shown),
   };
 }

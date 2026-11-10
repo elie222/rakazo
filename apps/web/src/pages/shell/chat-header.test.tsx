@@ -2,6 +2,7 @@
 
 import type { BillingStatus, Bot } from "@rakazo/contracts";
 import { BOT_COLORS } from "@rakazo/contracts";
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -20,9 +21,11 @@ vi.mock("@lingui/react/macro", () => ({
   Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
     (value === 1 ? one : other).replace("#", String(value)),
 }));
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { useCopyText } = await importOriginal<typeof UiWeb>();
   const Plain = ({ children }: { children?: ReactNode }) => <>{children}</>;
   return {
+    useCopyText,
     BotAvatar: () => null,
     Input: (props: Record<string, unknown>) => <input {...props} />,
     GroupAvatar: () => null,
@@ -63,6 +66,8 @@ afterEach(() => {
   container.remove();
   billing.status = null;
   writeText.mockClear();
+  delete window.rakazoDesktop;
+  vi.unstubAllGlobals();
 });
 
 function renderHeader({ inGroup = false } = {}) {
@@ -88,6 +93,21 @@ function renderHeader({ inGroup = false } = {}) {
 }
 
 const gift = () => container.querySelector<HTMLButtonElement>('[aria-label="Invite a friend"]');
+
+it("clears the macOS traffic lights beside Open navigation on a narrow desktop window", () => {
+  window.rakazoDesktop = { platform: "darwin" } as never;
+  renderHeader();
+  expect(container.querySelector('[aria-label="Open navigation"]')!.className).toContain(
+    "md:hidden",
+  );
+  const spacer = container.querySelector<HTMLElement>('[aria-hidden="true"].app-drag');
+  expect(spacer?.className).toContain("md:hidden");
+  expect(spacer?.style.width).toBe("72px");
+
+  delete window.rakazoDesktop;
+  renderHeader();
+  expect(container.querySelector(".app-drag")).toBeNull();
+});
 
 it("shows no gift when the account cannot invite", () => {
   billing.status = { referral: null };

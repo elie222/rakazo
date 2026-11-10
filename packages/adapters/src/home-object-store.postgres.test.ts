@@ -12,8 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaAgentHomeRecords } from "./home-object-store.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("agent home storage records (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;

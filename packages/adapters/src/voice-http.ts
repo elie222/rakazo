@@ -9,6 +9,11 @@ export const MAX_SYNTHESIZED_AUDIO_BYTES = 16 * 1024 * 1024;
 export const MAX_SPEAK_CHARS = 2000;
 export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
 
+/** Header-safe speech model id. A connection override wins over the deployment default. */
+export function isSpeechModelId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
+}
+
 /** Client disconnect plus a hard deadline — `context.signal` is always set. */
 export function voiceDeadline(signal: AbortSignal, ms: number): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
@@ -79,7 +84,7 @@ export async function readVoiceJson(
   }
 }
 
-function detail(body: unknown): string {
+export function voiceErrorDetail(body: unknown): string {
   if (!body || typeof body !== "object") return "";
   const record = body as Record<string, unknown>;
   if (typeof record.detail === "string" && record.detail.trim()) return record.detail.trim();
@@ -128,7 +133,7 @@ export function voiceHttpError(
   what: string,
   body: unknown,
 ): string {
-  const theirs = detail(body);
+  const theirs = voiceErrorDetail(body);
   if (status === 401 || status === 403) {
     // ElevenLabs also answers 401 for spent quota and missing key permissions.
     const reason = reasonCode(body);
@@ -159,7 +164,7 @@ const BILLING_MESSAGE =
 
 /**
  * A failure the user fixes in their provider account. 402 is spent credit (Fish Audio,
- * Cartesia), OpenAI sends 429 `insufficient_quota` or a billing message, and ElevenLabs
+ * Cartesia), OpenAI sends 429 `insufficient_quota` or a billing message, ElevenLabs
  * sends 401 `quota_exceeded`. Other 401s and 403s are a rejected key.
  */
 export function voiceAccountIssue(
@@ -168,7 +173,8 @@ export function voiceAccountIssue(
 ): VoiceAccountErrorCode | undefined {
   if (status === 402) return "VOICE_OUT_OF_CREDIT";
   if (status === 429) {
-    return openAiErrorCode(body) === "insufficient_quota" || BILLING_MESSAGE.test(detail(body))
+    return openAiErrorCode(body) === "insufficient_quota" ||
+      BILLING_MESSAGE.test(voiceErrorDetail(body))
       ? "VOICE_OUT_OF_CREDIT"
       : undefined;
   }
@@ -211,14 +217,11 @@ export async function verifyVoiceHttpGet(options: {
       signal: voiceDeadline(options.signal, 20_000),
     });
     if (res.ok) return { ok: true };
+    const body = await readVoiceJson(res);
     return {
       ok: false,
-      message: voiceHttpError(
-        res.status,
-        options.provider,
-        "checking that key",
-        await readVoiceJson(res),
-      ),
+      message: voiceHttpError(res.status, options.provider, "checking that key", body),
+      code: voiceAccountIssue(res.status, body),
     };
   } catch {
     return {

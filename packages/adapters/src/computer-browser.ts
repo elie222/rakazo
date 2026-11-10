@@ -7,6 +7,7 @@ import type {
   BrowserProvider,
   BrowserPurchaseCheckRequest,
   BrowserPurchaseCheckResult,
+  BrowserPurchaseItem,
   BrowserSnapshotNode,
   BrowserSnapshotRequest,
   BrowserSnapshotResult,
@@ -30,6 +31,10 @@ const UNCHECKED_PURCHASE: NonNullable<BrowserPurchaseCheckResult["purchase"]> = 
   amount: "",
   amountSource: "page",
 };
+
+const isPurchaseItem = (item: unknown): item is BrowserPurchaseItem =>
+  typeof (item as BrowserPurchaseItem | null)?.name === "string" &&
+  typeof (item as BrowserPurchaseItem).amount === "string";
 
 /**
  * Whether a failed purchase check means this computer cannot check at all, rather than that the check
@@ -274,6 +279,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
           amount?: unknown;
           amountFrom?: unknown;
           total?: unknown;
+          items?: unknown;
         }
       | null
       | undefined;
@@ -289,6 +295,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         amount: typeof found.amount === "string" ? found.amount : "",
         amountSource: found.amountFrom === "button" ? "button" : "page",
         ...(typeof found.total === "string" && found.total ? { total: found.total } : {}),
+        ...(Array.isArray(found.items) ? { items: found.items.filter(isPurchaseItem) } : {}),
       },
     };
   }

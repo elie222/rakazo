@@ -18,6 +18,7 @@ function harness(
   const runCreate = vi.fn(async () => ({ id: "run-b" }));
   const messageCreate = vi.fn(async (_args: unknown) => ({ id: "message-1" }));
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async (..._args: unknown[]) => [{ id: "group-1" }]),
     chatGroup: {
       findFirst: vi.fn(async () => ({
@@ -431,7 +432,7 @@ describe("explicit group destinations", () => {
     expect(h.deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
   });
 
-  it("rejects unavailable, unowned, or cross-space groups", async () => {
+  it("rejects unavailable or cross-space groups", async () => {
     const h = privateTurn();
     h.tx.$queryRaw.mockResolvedValue([]);
     await expect(
@@ -441,7 +442,7 @@ describe("explicit group destinations", () => {
       }),
     ).resolves.toMatchObject({ error: "group is no longer available" });
     expect(h.messageCreate).not.toHaveBeenCalled();
-    expect(h.tx.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["group-1", run.spaceId, run.userId]);
+    expect(h.tx.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["group-1", run.spaceId]);
   });
 
   it("requires both bots to be active members of the destination", async () => {
@@ -476,7 +477,7 @@ describe("explicit group destinations", () => {
   });
 });
 
-it("discovers only active groups the bot belongs to under the same owner and space", async () => {
+it("discovers only active groups the bot belongs to in its space, whoever created them", async () => {
   const findMany = vi.fn(async () => []);
   await expect(
     loadBotGroupDirectory({ chatGroup: { findMany } } as unknown as PrismaClient, run),
@@ -485,7 +486,6 @@ it("discovers only active groups the bot belongs to under the same owner and spa
     expect.objectContaining({
       where: {
         spaceId: run.spaceId,
-        userId: run.userId,
         archivedAt: null,
         members: { some: { botId: run.botId, bot: { archivedAt: null } } },
         thread: { isNot: null },

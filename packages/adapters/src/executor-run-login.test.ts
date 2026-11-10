@@ -142,6 +142,7 @@ async function runTool(
     (["name", "origin"] as const).every((key) => !(key in where) || row[key] === where[key]);
   const prisma = recordingPrisma(
     {
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: async () => run,
         findUniqueOrThrow: async () => run,

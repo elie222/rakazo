@@ -1,8 +1,8 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import type { MobileBot, MobileGroup } from "../lib/api";
-import { useI18n } from "../lib/i18n";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useResolvedAppearance } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { LongPressMenu } from "./long-press-menu";
@@ -29,7 +29,7 @@ export function ArchivedBotList({
   onRestoreGroup,
 }: ArchivedBotListProps) {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const scheme = useResolvedAppearance();
   return (
     <ScrollView
@@ -43,10 +43,10 @@ export function ArchivedBotList({
             key={bot.id}
             colorScheme={scheme}
             actions={[
-              { id: "restore", title: t("Restore"), attributes: { disabled: pending } },
+              { id: "restore", title: t`Restore`, attributes: { disabled: pending } },
               {
                 id: "delete",
-                title: t("Delete"),
+                title: t`Delete`,
                 attributes: { destructive: true, disabled: pending },
               },
             ]}
@@ -80,12 +80,12 @@ export function ArchivedBotList({
           <MenuView
             key={`group-${group.id}`}
             colorScheme={scheme}
-            actions={[{ id: "restore", title: t("Restore"), attributes: { disabled: pending } }]}
+            actions={[{ id: "restore", title: t`Restore`, attributes: { disabled: pending } }]}
             onPressAction={() => onRestoreGroup(group)}
           >
             <View
               accessible
-              accessibilityLabel={`${group.name}, ${t("Group")}`}
+              accessibilityLabel={`${group.name}, ${t`Group`}`}
               style={{
                 minHeight: 54,
                 paddingHorizontal: 16,

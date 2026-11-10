@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
-import { createGroupRepos, lockOwnedGroup } from "./groups.js";
+import { createGroupRepos, lockSpaceGroup } from "./groups.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { createRepos } from "./repos.js";
@@ -155,7 +155,7 @@ describePostgres("group and thread lock order (PostgreSQL)", () => {
 
       groupWriter = system.$transaction(
         async (tx) => {
-          await lockOwnedGroup(tx, { spaceId, userId }, groupId);
+          await lockSpaceGroup(tx, { spaceId }, groupId);
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         },
         { timeout: TRANSACTION_TIMEOUT_MS },

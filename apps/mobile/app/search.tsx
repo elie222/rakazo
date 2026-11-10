@@ -1,6 +1,9 @@
+import { useLingui } from "@lingui/react/macro";
 import { botColors, typeScale } from "@rakazo/ui-tokens";
+import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { TextInputInstance } from "react-native";
 import {
   Alert,
   FlatList,
@@ -20,9 +23,10 @@ import { GroupAvatar } from "../components/group-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { readableGutters } from "../lib/adaptive-layout";
-import { currentApiBase, selectedSpaceId, selectSpace, spaceSelectionSeq } from "../lib/api";
+import { currentApiBase, selectedSpaceId, spaceSelectionSeq } from "../lib/api";
+import { selectSpace } from "../lib/api-server";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
+import { useUiLocale } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { getSearchInbox, subscribeSearchInbox } from "../lib/search-inbox";
 import type { SearchSheetRow } from "../lib/search-sheet";
@@ -39,15 +43,16 @@ const kindIcons = {
 } as const;
 
 export default function SearchSheet() {
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const router = useRouter();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const insets = useSafeAreaInsets();
   const gutters = readableGutters(useWindowDimensions().width, insets);
-  const field = useRef<TextInput>(null);
+  const field = useRef<TextInputInstance>(null);
   const opening = useRef(false);
   const attempt = useRef(0);
   const focused = useRef(false);
@@ -64,9 +69,17 @@ export default function SearchSheet() {
 
   useFocusEffect(
     useCallback(() => {
-      focused.current = true;
-      opening.current = false;
-      const unsubscribe = navigation.addListener("beforeRemove", cancelOpen);
+      const arm = () => {
+        focused.current = true;
+        opening.current = false;
+      };
+      arm();
+      // A native dismissal blurs the sheet only once its animation ends, so a pending open is
+      // cancelled as soon as the sheet starts closing, and re-armed if the gesture is abandoned.
+      const unsubscribe = navigation.addListener("transitionStart", (event) => {
+        if (event.data.closing) cancelOpen();
+        else arm();
+      });
       return () => {
         cancelOpen();
         unsubscribe();
@@ -107,7 +120,7 @@ export default function SearchSheet() {
         )
           return;
         if (!selected) {
-          Alert.alert(t("Could not switch spaces"), t("Try again."));
+          Alert.alert(t`Could not switch spaces`, t`Try again.`);
           return;
         }
       }
@@ -150,7 +163,7 @@ export default function SearchSheet() {
       >
         <GlassIconButton
           testID="search-sheet-close"
-          accessibilityLabel={t("Close")}
+          accessibilityLabel={t`Close`}
           ios="xmark"
           android="close"
           size={44}
@@ -171,11 +184,11 @@ export default function SearchSheet() {
           <TextInput
             ref={field}
             testID="search-sheet-field"
-            accessibilityLabel={t("Search")}
+            accessibilityLabel={t`Search`}
             autoFocus
             value={query}
             onChangeText={setQuery}
-            placeholder={t("Search")}
+            placeholder={t`Search`}
             placeholderTextColor={tokens.mutedForeground}
             autoCorrect={false}
             autoCapitalize="none"
@@ -187,7 +200,7 @@ export default function SearchSheet() {
           {Platform.OS === "android" && query ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t("Clear")}
+              accessibilityLabel={t`Clear`}
               hitSlop={8}
               onPress={() => {
                 setQuery("");
@@ -217,8 +230,8 @@ export default function SearchSheet() {
           paddingBottom: insets.bottom + 16,
         }}
         ListEmptyComponent={
-          error ? null : (
-            <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
+          error ? undefined : (
+            <Text style={styles.empty}>{loading ? t`Searching…` : t`No results`}</Text>
           )
         }
         ListFooterComponent={
@@ -228,13 +241,13 @@ export default function SearchSheet() {
                 {error}
               </Text>
               <NativeActionButton
-                label={t("Try again")}
+                label={t`Try again`}
                 prominence="secondary"
                 size="compact"
                 onPress={retry}
               />
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item }) => (
           <Pressable

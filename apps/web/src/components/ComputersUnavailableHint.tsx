@@ -96,7 +96,7 @@ export function ComputersUnavailableHint({
       ) : null}
 
       {showUnavailableCopy ? (
-        <p className="text-[13px] leading-relaxed text-muted-foreground">
+        <p className="text-body-sm leading-relaxed text-muted-foreground">
           {failureMessage ? (
             <Trans>
               Could not verify computer setup ({failureMessage}). Fix the connection, then check

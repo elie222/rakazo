@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ToolCallStreak } from "@rakazo/core";
 import { trackToolCallStreak } from "@rakazo/core";
+import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
 import { toolResultError } from "./tool-result-error.js";
 
 const LOOP_GUARD_STOP_PREFIX = "I got stuck calling ";
@@ -11,12 +12,17 @@ const LOOP_GUARD_STOP_PATTERN = new RegExp(
   `^${LOOP_GUARD_STOP_PREFIX}.+${LOOP_GUARD_STOP_COUNT_PATTERN}\\d+${LOOP_GUARD_STOP_SUFFIX.replaceAll(".", "\\.")}$`,
 );
 
-export function loopGuardStopText(toolName: string, streak: ToolCallStreak): string {
+/** Whether the run stopped on one call repeated exactly, and the count its stop message gives. */
+export function loopGuardStop(streak: ToolCallStreak): { identical: boolean; count: number } {
   // Short of the similar limit, only a repeated failure stops a run, and that is an identical one.
   const identical =
     streak.count >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS ||
     (streak.shapeCount ?? 0) < MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS;
-  const count = identical ? streak.count : toolCallStreakLength(streak);
+  return { identical, count: identical ? streak.count : toolCallStreakLength(streak) };
+}
+
+export function loopGuardStopText(toolName: string, streak: ToolCallStreak): string {
+  const { identical, count } = loopGuardStop(streak);
   return `${LOOP_GUARD_STOP_PREFIX}${toolName} with ${identical ? "" : "nearly "}the same input ${count}${LOOP_GUARD_STOP_SUFFIX}`;
 }
 
@@ -116,14 +122,19 @@ export function advanceToolCallLoopGuard(
   previousResult?: string,
   response?: number,
 ): { streak: LoopGuardStreak; stuck: boolean } {
-  let next = trackToolCallStreak(streak, name, args);
+  // Preserve JSON's optional-field handling, then compare objects independently of field order.
+  const serialized = JSON.stringify(args);
+  const canonicalArgs =
+    serialized === undefined ? undefined : JSON.parse(stableJsonValue(JSON.parse(serialized)));
+  let next = trackToolCallStreak(streak, name, canonicalArgs);
   if (response !== undefined && response === streak.response && next.shape === streak.shape)
     return { streak, stuck: false };
   const same = next.key === streak.key;
   const seen = (same && streak.results) || [];
   const fresh = previousResult !== undefined && !seen.includes(previousResult);
   const restart = same && fresh && seen.length > 0;
-  if (restart) next = trackToolCallStreak({ ...streak, count: 1, shapeCount: 1 }, name, args);
+  if (restart)
+    next = trackToolCallStreak({ ...streak, count: 1, shapeCount: 1 }, name, canonicalArgs);
   const results = fresh
     ? [...seen, previousResult].slice(-MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS)
     : seen;
