@@ -253,3 +253,8 @@ jobs:
           fi
           python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
+          if [[ -s $out/section.md ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=screenshots" --silent
+          else
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/screenshots" --silent || true
+          fi
