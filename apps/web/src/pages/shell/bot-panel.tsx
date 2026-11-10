@@ -268,7 +268,11 @@ export function BotSettings({
     };
     const saved = JSON.parse(savedAdvanced) as unknown[];
     const next = advancedValues(bot);
-    if (modelKey === saved[0]) setModelKey(next[0]);
+    if (modelKey === saved[0]) {
+      setModelKey(next[0]);
+      // A connection picked for the model that just left does not apply to this one.
+      if (next[0] !== saved[0]) setPendingConnection(undefined);
+    }
     if (thinkingLevel === saved[1]) setThinkingLevel(next[1]);
     if (computerMode === saved[2]) setComputerMode(next[2]);
     if (memoryScope === saved[3]) setMemoryScope(next[3]);

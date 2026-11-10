@@ -545,6 +545,59 @@ describe("BotSettings thinking options", () => {
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
   });
 
+  it("drops a picked connection when another session changes the model", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    const connection = { provider: "anthropic", hasKey: true, isDefault: false };
+    const model = (id: string) => ({
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id,
+      label: id,
+      billing: "",
+    });
+    vi.mocked(rpc.models.credentials).mockResolvedValue([
+      { ...connection, id: "sub", label: "Claude subscription" },
+      { ...connection, id: "api", label: "Anthropic API key" },
+    ]);
+    vi.mocked(rpc.models.list).mockResolvedValue([model("claude-opus"), model("claude-sonnet")]);
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: "sub", pinned: true });
+    const updatedAt = new Date(2_000).toISOString();
+    await render("Billing", { modelProvider: "anthropic", modelId: "claude-opus", updatedAt });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
+        .click(),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const select = container.querySelector('[id$="-model"]') as HTMLSelectElement;
+    await act(async () => {
+      select.value = "api@@anthropic::claude-opus";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    await render("Billing", {
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet",
+      updatedAt: new Date(3_000).toISOString(),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {});
+    await clickSave();
+
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("modelConnectionId");
+    vi.mocked(rpc.models.credentials).mockResolvedValue([]);
+    vi.mocked(rpc.models.list).mockResolvedValue([]);
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
+  });
+
   it("asks again which connection runs the bot when another session changes its model", async () => {
     i18n.load("en", {});
     i18n.activate("en");
