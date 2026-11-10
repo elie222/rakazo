@@ -252,7 +252,7 @@ it("anchors Load earlier on the first visible row, not the whole height delta", 
   act(() => root.unmount());
 });
 
-it("snaps a remounted transcript to the end when the refresh lands", async () => {
+it.each([false, true])("snaps a remounted transcript for group=%s", async (inGroup) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   // The reader is at the end of bot A when the refresh starts; the bot switch
   // to A remounts the transcript before the response arrives, detaching the
@@ -276,7 +276,7 @@ it("snaps a remounted transcript to the end when the refresh lands", async () =>
     messages: [],
   } as unknown as ThreadSnapshot;
   const input = syncInput({
-    inGroup: false,
+    inGroup,
     get: () => Promise.resolve(snapshot),
     commitSnapshot: vi.fn(),
   });
@@ -291,7 +291,9 @@ it("snaps a remounted transcript to the end when the refresh lands", async () =>
 
   // The switch remounts the transcript while the request is in flight: start
   // the refresh, swap the scroller before its continuation runs.
-  const pending = controls.refreshThread("bot-1");
+  const pending = inGroup
+    ? controls.refreshGroupThread("group-1")
+    : controls.refreshThread("bot-1");
   detached.isConnected = false;
   held.current = mounted as unknown as HTMLDivElement;
   await act(async () => void (await pending));
@@ -302,3 +304,132 @@ it("snaps a remounted transcript to the end when the refresh lands", async () =>
   expect(mounted.scrollTop).toBe(1200);
   act(() => root.unmount());
 });
+
+it.each([false, true])(
+  "preserves reader intent and cleans up frames for group=%s",
+  async (inGroup) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const runFrames = () => {
+      const queued = [...frames.values()];
+      frames.clear();
+      for (const callback of queued) callback(0);
+    };
+    const scroller = () => {
+      const element = document.createElement("div");
+      Object.defineProperties(element, {
+        scrollHeight: { value: 1200 },
+        clientHeight: { value: 100 },
+      });
+      document.body.append(element);
+      return element;
+    };
+    const held = ref<HTMLDivElement | null>(scroller());
+    held.current!.scrollTop = 1100;
+    const snapshot = {
+      botId: "bot-1",
+      threadId: "thread-1",
+      messages: [],
+    } as unknown as ThreadSnapshot;
+    let read = deferred<ThreadSnapshot>();
+    const input = syncInput({ inGroup, get: () => read.promise, commitSnapshot: vi.fn() });
+    input.thread = { ...input.thread, messageScroll: held };
+    let controls!: ReturnType<typeof useThreadSync>;
+    function Probe() {
+      controls = useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    const refresh = () =>
+      inGroup ? controls.refreshGroupThread("group-1") : controls.refreshThread("bot-1");
+    const replace = () => {
+      held.current?.remove();
+      held.current = scroller();
+    };
+    const finish = async () => {
+      await act(async () => {
+        read.resolve(snapshot);
+        await read.promise;
+      });
+      read = deferred<ThreadSnapshot>();
+    };
+
+    // A reader who scrolls the replacement while loading retains their position.
+    void refresh();
+    replace();
+    held.current!.scrollTop = 300;
+    held.current!.dispatchEvent(new Event("scroll"));
+    await finish();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(300);
+
+    // Starting above the end never opts into sticking.
+    void refresh();
+    await finish();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(300);
+
+    // Replacement after the response still snaps if the reader has not moved.
+    held.current!.scrollTop = 1100;
+    void refresh();
+    await finish();
+    replace();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(1200);
+
+    // Scrolling a replacement before the frame cancels that snap too.
+    void refresh();
+    await finish();
+    replace();
+    held.current!.scrollTop = 200;
+    held.current!.dispatchEvent(new Event("scroll"));
+    runFrames();
+    expect(held.current?.scrollTop).toBe(200);
+
+    // A response for a chat left during the async load must not queue a snap.
+    held.current!.scrollTop = 1100;
+    void refresh();
+    input.activeBotId.current = "bot-2";
+    input.activeGroupId.current = "group-2";
+    replace();
+    await finish();
+    expect(frames.size).toBe(0);
+    expect(held.current?.scrollTop).toBe(0);
+    input.activeBotId.current = inGroup ? undefined : "bot-1";
+    input.activeGroupId.current = inGroup ? "group-1" : undefined;
+
+    // A queued frame cannot move a different chat.
+    held.current!.scrollTop = 1100;
+    void refresh();
+    await finish();
+    input.activeBotId.current = "bot-2";
+    input.activeGroupId.current = "group-2";
+    replace();
+    runFrames();
+    expect(held.current?.scrollTop).toBe(0);
+
+    input.activeBotId.current = inGroup ? undefined : "bot-1";
+    input.activeGroupId.current = inGroup ? "group-1" : undefined;
+    held.current!.scrollTop = 1100;
+    void refresh();
+    await finish();
+    expect(frames.size).toBe(1);
+    const lateRefresh = refresh();
+    act(() => root.unmount());
+    expect(frames.size).toBe(0);
+    await finish();
+    await lateRefresh;
+    expect(frames.size).toBe(0);
+    held.current?.remove();
+    vi.restoreAllMocks();
+  },
+);
