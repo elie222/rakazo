@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const account = vi.hoisted(() => ({ load: (_me: unknown) => {} }));
 
 vi.mock("../lib/rpc", () => ({
+  selectedSpaceId: () => null,
   rpc: {
     me: vi.fn(
       () =>
@@ -42,6 +43,7 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 
+import { rpc } from "../lib/rpc";
 import { OnboardingPage } from "./Onboarding";
 
 beforeEach(() => {
@@ -117,6 +119,13 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
     [...document.querySelectorAll("button")]
       .find((button) => button.textContent === "Find models")!
       .click(),
+  );
+  // Onboarding probes the endpoint the same way model settings does.
+  expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalledWith(
+    expect.objectContaining({
+      baseUrl: "https://models.example.test/v1",
+      apiProtocol: "chat-completions",
+    }),
   );
   await act(async () =>
     document.querySelector<HTMLElement>('[aria-label="Models from server"]')!.click(),

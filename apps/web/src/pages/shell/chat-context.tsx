@@ -68,7 +68,7 @@ export function TimeSeparator({ createdAt, locale }: { createdAt: string; locale
   return (
     <h3
       data-testid="time-separator"
-      className="my-3 select-none text-center text-xs font-normal text-muted-foreground"
+      className="mt-5 select-none text-center text-label font-normal text-muted-foreground"
     >
       {formatTimeSeparator(createdAt, locale, { today: t`Today`, yesterday: t`Yesterday` })}
     </h3>
@@ -84,7 +84,7 @@ export function UnreadDivider({ afterSeparator = false }: { afterSeparator?: boo
       className={`flex select-none items-center gap-2.5 pb-2 ${afterSeparator ? "pt-0" : "pt-3.5"}`}
     >
       <span aria-hidden="true" className="h-px flex-1 bg-unread opacity-50" />
-      <span className="text-[12px] leading-4 font-semibold uppercase tracking-[0.5px] text-unread">
+      <span className="text-label font-semibold uppercase tracking-[0.5px] text-unread">
         <span aria-hidden="true">{t`New`}</span>
         <span className="sr-only">{t`New messages`}</span>
       </span>
@@ -127,7 +127,7 @@ export function ComposerReplyPreview({
   return (
     <div
       data-testid="reply-chip"
-      className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-muted px-3 py-1.5 text-[13px]"
+      className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-muted px-3 py-1.5 text-body-sm"
     >
       {attachment?.kind === "image" && target ? (
         <ReplyThumbnail attachment={attachment} target={target} />
@@ -171,7 +171,7 @@ export function ReplyLine({
       <div
         data-testid="reply-parent-preview"
         className={cn(
-          "mb-1 truncate text-xs text-muted-foreground",
+          "mb-1 truncate text-label text-muted-foreground",
           message.role === "user" && "text-end",
         )}
       >{t`Original message unavailable`}</div>
@@ -194,7 +194,7 @@ export function ReplyLine({
         onClick={() => {
           if (message.replyToMessageId) onJump?.(message.replyToMessageId);
         }}
-        className="mb-1 flex min-w-0 max-w-full items-center gap-1 text-start text-xs text-muted-foreground hover:text-foreground"
+        className="mb-1 flex min-w-0 max-w-full items-center gap-1 text-start text-label text-muted-foreground hover:text-foreground"
         dir="auto"
       >
         <span aria-hidden="true">↩ </span>

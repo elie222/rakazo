@@ -1,11 +1,22 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
+import type {
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+  HeldCreditAmount,
+  MODEL_CREDIT_AMOUNTS,
+} from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
+  ByokTierSchema,
+  byokTierChangeOffered,
   byokYearlySavingsPercent,
   byokYearlySwitchSavings,
+  COMPUTER_SIZE_SPECS,
+  creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
-  MODEL_CREDIT_AMOUNTS,
+  HeldCreditAmountSchema,
+  isCancelledTrial,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import {
@@ -44,11 +55,13 @@ import {
   formatBillingDate,
   formatBillingPrice,
 } from "../lib/billing";
-import { rpc } from "../lib/rpc";
+import type { RpcClient } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
 
 /** Subscription states that still bill: access now, or resumed from the billing portal. */
 const LIVE_STATES: BillingStatus["state"][] = [
@@ -80,7 +93,7 @@ function ByokIntervalToggle({
 }) {
   const { t } = useLingui();
   const savings = byokYearlySavingsPercent(monthlyCents, annualCents);
-  const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
+  const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
   return (
     <ToggleGroup
       aria-label={t`Billing period`}
@@ -102,17 +115,106 @@ function ByokIntervalToggle({
   );
 }
 
+/** What a tier costs every `interval`; null when it is not offered at that interval. */
+function tierPriceCents(offer: TierOffer, interval: ByokInterval): number | null {
+  return interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
+}
+
+/** "8 vCPU, 16 GB, 100 computer hours a month" */
+function useTierComputer() {
+  const { t } = useLingui();
+  return (offer: TierOffer) => {
+    const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
+    const hours = offer.computerHours;
+    return t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
+  };
+}
+
+/** The own-key plan's tiers at `interval`, each with its price and computer. */
+function ByokTierSelect({
+  tiers,
+  interval,
+  value,
+  disabled,
+  onChange,
+}: {
+  tiers: TierOffer[];
+  interval: ByokInterval;
+  value: ByokTier;
+  disabled?: boolean;
+  onChange: (offer: TierOffer) => void;
+}) {
+  const { t, i18n } = useLingui();
+  const computer = useTierComputer();
+  const offered = tiers.flatMap((offer) => {
+    const cents = tierPriceCents(offer, interval);
+    return cents === null
+      ? []
+      : [
+          {
+            offer,
+            price: formatBillingPrice(
+              { amount: cents, currency: "usd", interval, intervalCount: 1 },
+              i18n.locale,
+            ),
+          },
+        ];
+  });
+  return (
+    <Select
+      value={value}
+      disabled={disabled}
+      onValueChange={(next) => {
+        const chosen = offered.find(({ offer }) => offer.tier === next);
+        if (chosen) onChange(chosen.offer);
+      }}
+      items={offered.map(({ offer }) => ({ value: offer.tier, label: offer.name }))}
+    >
+      <SelectTrigger aria-label={t`Plan`} className="min-w-28">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
+        alignItemWithTrigger={false}
+        align="start"
+        className="w-auto min-w-(--anchor-width)"
+      >
+        <SelectGroup>
+          {offered.map(({ offer, price }) => (
+            <SelectItem key={offer.tier} value={offer.tier} className="py-2">
+              <span className="flex flex-col gap-0.5">
+                <span>
+                  {offer.name} · {price}
+                </span>
+                <span className="text-label text-muted-foreground">{computer(offer)}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** The free period's subscribe button, at the chosen tier and interval. */
+function SubscribeLabel({ price, annualPrice }: { price: string; annualPrice: string | null }) {
+  return annualPrice ? (
+    <Trans>Subscribe for {annualPrice} / year</Trans>
+  ) : (
+    <Trans>Subscribe for {price} / month</Trans>
+  );
+}
+
 export function CreditAmountSelect({
   value,
   onChange,
   monthly = false,
 }: {
-  value: CreditAmount;
-  onChange: (amount: CreditAmount) => void;
+  value: HeldCreditAmount;
+  onChange: (amount: HeldCreditAmount) => void;
   monthly?: boolean;
 }) {
   const { t, i18n } = useLingui();
-  const items = MODEL_CREDIT_AMOUNTS.map((amount) => ({
+  const items = creditAmountChoices(value).map((amount) => ({
     value: amount,
     label: monthly
       ? formatMonthlyUsd(amount, i18n.locale)
@@ -122,20 +224,20 @@ export function CreditAmountSelect({
     <Select
       value={value}
       onValueChange={(next) => {
-        if (next !== null) onChange(ModelCreditAmountSchema.parse(next));
+        if (next !== null) onChange(HeldCreditAmountSchema.parse(next));
       }}
       items={items}
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className="w-full rounded-xl pr-3 pl-4 text-base data-[size=default]:h-12"
+        className="w-full rounded-xl pr-3 pl-4 text-body-lg data-[size=default]:h-12"
       >
         <SelectValue />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false} align="start">
         <SelectGroup>
           {items.map((item) => (
-            <SelectItem key={item.value} value={item.value} className="py-2 text-base">
+            <SelectItem key={item.value} value={item.value} className="py-2 text-body-lg">
               {item.label}
             </SelectItem>
           ))}
@@ -147,9 +249,11 @@ export function CreditAmountSelect({
 
 export function CreditChoice({
   status,
+  client,
   dismissible = false,
 }: {
   status: BillingStatus;
+  client: RpcClient;
   dismissible?: boolean;
 }) {
   const { t, i18n } = useLingui();
@@ -163,8 +267,8 @@ export function CreditChoice({
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
-  const { logOut, signingOut } = useSignOut("/sign-in", () => setError(true));
+  const [error, setError] = useState<string | null>(null);
+  const { logOut, signingOut } = useSignOut("/sign-in", setError);
   // A choice that answers after the plans were closed must not leave the app.
   const closed = useRef(false);
   useEffect(() => {
@@ -178,22 +282,24 @@ export function CreditChoice({
   }
   async function choose(ownKey: boolean) {
     setPending(true);
-    setError(false);
+    setError(null);
     try {
       if (ownKey && status.byokFreeUntil) {
-        go((await rpc.billing.checkout({ interval })).url);
+        go((await client.billing.checkout({ interval })).url);
       } else if (ownKey) {
-        const { url } = await rpc.billing.selectFunding({ funding: "byok", interval });
+        const { url } = await client.billing.selectFunding({ funding: "byok", interval });
         go(url ?? "/onboarding");
       } else {
-        const { url } = await rpc.billing.purchaseCredits({
+        const { url } = await client.billing.purchaseCredits({
           amountCents: amount,
           monthly: true,
         });
         go(url);
       }
     } catch {
-      setError(true);
+      setError(t`Could not open billing`);
+    } finally {
+      // Desktop opens the URL in the system browser and this page stays, so re-enable.
       setPending(false);
     }
   }
@@ -211,7 +317,7 @@ export function CreditChoice({
       <div className="grid gap-4 min-[480px]:grid-cols-2">
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-medium">
+            <h2 className="text-heading3 font-medium">
               <Trans>Your subscription or API key</Trans>
             </h2>
           </CardHeader>
@@ -219,7 +325,7 @@ export function CreditChoice({
             {status.byokPriceCents && status.byokAnnualPriceCents ? (
               <div className="flex h-12 items-center justify-between gap-3">
                 <p className="flex items-baseline gap-1">
-                  <span className="text-3xl font-medium tracking-tight">
+                  <span className="text-display font-medium tracking-tight">
                     {formatBillingAmount(
                       interval === "year"
                         ? Math.round(status.byokAnnualPriceCents / 12)
@@ -228,7 +334,7 @@ export function CreditChoice({
                       i18n.locale,
                     )}
                   </span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-body text-muted-foreground">
                     <Trans>/ month</Trans>
                   </span>
                 </p>
@@ -240,7 +346,7 @@ export function CreditChoice({
                 />
               </div>
             ) : (
-              <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
+              <p className="flex h-12 items-center text-display font-medium tracking-tight">
                 {status.byokPriceCents ? (
                   formatMonthlyUsd(status.byokPriceCents, i18n.locale)
                 ) : (
@@ -248,10 +354,10 @@ export function CreditChoice({
                 )}
               </p>
             )}
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               <Trans>Works with your ChatGPT or Claude plan.</Trans>
             </p>
-            <ul className="space-y-3 text-sm">
+            <ul className="space-y-3 text-body">
               {features.map((feature) => (
                 <li key={feature} className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -284,16 +390,20 @@ export function CreditChoice({
         </Card>
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-medium">
-              <Trans>Rakazo credits</Trans>
+            <h2 className="text-heading3 font-medium">
+              <Trans>Credits</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
-            <CreditAmountSelect monthly value={amount} onChange={setAmount} />
-            <p className="text-sm text-muted-foreground">
+            <CreditAmountSelect
+              monthly
+              value={amount}
+              onChange={(next) => setAmount(ModelCreditAmountSchema.parse(next))}
+            />
+            <p className="text-body text-muted-foreground">
               <Trans>All {credit} goes to model usage.</Trans>
             </p>
-            <ul className="space-y-3 text-sm">
+            <ul className="space-y-3 text-body">
               {[...features, t`Models at provider cost`].map((feature) => (
                 <li key={feature} className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -306,7 +416,7 @@ export function CreditChoice({
             <Button
               className="w-full"
               disabled={pending || !status.canManage || !status.creditPurchasesEnabled}
-              aria-label={t`Subscribe to Rakazo credits`}
+              aria-label={t`Subscribe to credits`}
               onClick={() => void choose(false)}
             >
               <Trans>Subscribe</Trans>
@@ -315,8 +425,8 @@ export function CreditChoice({
         </Card>
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          <Trans>Could not open billing</Trans>
+        <p role="alert" className="text-body text-destructive">
+          {error}
         </p>
       ) : null}
     </div>
@@ -326,21 +436,33 @@ export function CreditChoice({
 export function ModelCreditsSettings({
   status,
   refresh,
+  client,
 }: {
   status: BillingStatus;
   refresh: () => Promise<void>;
+  /** Bound to the space the billing panel opened for, not the current selection. */
+  client: RpcClient;
 }) {
   const { t, i18n } = useLingui();
-  const [amount, setAmount] = useState<CreditAmount>(
-    ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(status.monthlyAmountCents),
-  );
+  const recurring =
+    status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
+  const [chosenAmount, setChosenAmount] = useState<CreditAmount | null>(null);
+  // Follows the plan until the owner picks an offered amount; only a live plan keeps a retired one.
+  const amount: HeldCreditAmount =
+    chosenAmount ??
+    (recurring ? HeldCreditAmountSchema : ModelCreditAmountSchema)
+      .catch(DEFAULT_MONTHLY_CREDIT_AMOUNT)
+      .parse(status.monthlyAmountCents);
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [endTrialOpen, setEndTrialOpen] = useState(false);
   const [yearlyOpen, setYearlyOpen] = useState(false);
+  const [tierTarget, setTierTarget] = useState<TierOffer | null>(null);
+  const [checkoutTier, setCheckoutTier] = useState<ByokTier>("standard");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
+  const computer = useTierComputer();
   const balance = new Intl.NumberFormat(i18n.locale, {
     style: "currency",
     currency: "USD",
@@ -359,8 +481,6 @@ export function ModelCreditsSettings({
       setPending(false);
     }
   }
-  const recurring =
-    status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
   const freeUntil = status.byokFreeUntil
     ? formatBillingDate(status.byokFreeUntil, i18n.locale || "en")
     : null;
@@ -391,33 +511,81 @@ export function ModelCreditsSettings({
         }
       : null;
   const yearlySavings = byokYearlySwitchSavings(status);
+  const tiers = status.byokTiers ?? [];
+  const currentTier = tiers.find(
+    (offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier),
+  );
+  const tierChange = byokTierChangeOffered(status) && currentTier;
+  const subscribedInterval = status.byokInterval ?? "month";
+  const tierTargetName = tierTarget?.name;
+  const tierTargetPrice = tierTarget && tierPriceCents(tierTarget, subscribedInterval);
+  const tierTargetLabel = tierTargetPrice
+    ? formatBillingPrice(
+        {
+          amount: tierTargetPrice,
+          currency: "usd",
+          interval: subscribedInterval,
+          intervalCount: 1,
+        },
+        i18n.locale,
+      )
+    : null;
+  // A free period subscribes at the tier it picks; without tiers, the plan's own prices apply.
+  const checkoutOffer = tiers.find((offer) => offer.tier === checkoutTier);
+  const checkoutMonthlyCents = checkoutOffer?.monthlyPriceCents ?? status.byokPriceCents;
+  const checkoutAnnualCents = checkoutOffer
+    ? checkoutOffer.annualPriceCents
+    : status.byokAnnualPriceCents;
+  const checkoutPrice = checkoutMonthlyCents
+    ? formatBillingAmount(checkoutMonthlyCents, "usd", i18n.locale)
+    : null;
+  const checkoutAnnualPrice = checkoutAnnualCents
+    ? formatBillingAmount(checkoutAnnualCents, "usd", i18n.locale)
+    : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
       {ownKeyPlan ? (
         <div data-testid="own-key-plan" className="rounded-xl border border-border p-5">
-          <h3 className="text-sm text-muted-foreground">
+          <h3 className="text-body text-muted-foreground">
             <Trans>Your subscription or API key</Trans>
           </h3>
-          <p className="mt-2 text-3xl font-medium tabular-nums">{ownKeyPlan.price}</p>
+          <p className="mt-2 text-display font-medium tabular-nums">{ownKeyPlan.price}</p>
           {ownKeyPlan.date ? (
-            <p className="mt-2 text-sm text-muted-foreground">{ownKeyPlan.date}</p>
+            <p className="mt-2 text-body text-muted-foreground">{ownKeyPlan.date}</p>
           ) : null}
-          {yearlySavings !== null ? (
-            <Button
-              className="mt-5"
-              variant="secondary"
-              disabled={pending}
-              onClick={() => setYearlyOpen(true)}
-            >
-              <Trans>Switch to yearly</Trans>
-              <span className="text-success">−{yearlySavings}%</span>
-            </Button>
+          {currentTier ? (
+            <p className="mt-2 text-body text-muted-foreground">
+              {tierChange
+                ? computer(currentTier)
+                : `${currentTier.name} · ${computer(currentTier)}`}
+            </p>
+          ) : null}
+          {tierChange || yearlySavings !== null ? (
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {tierChange ? (
+                <ByokTierSelect
+                  tiers={tiers}
+                  interval={subscribedInterval}
+                  value={currentTier.tier}
+                  disabled={pending}
+                  onChange={(offer) => {
+                    if (offer.tier !== currentTier.tier) setTierTarget(offer);
+                  }}
+                />
+              ) : null}
+              {yearlySavings !== null ? (
+                <Button variant="secondary" disabled={pending} onClick={() => setYearlyOpen(true)}>
+                  <Trans>Switch to yearly</Trans>
+                  <span className="text-success">−{yearlySavings}%</span>
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}
       <div className="rounded-xl border border-border p-5">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm text-muted-foreground">
+          <h3 className="text-body text-muted-foreground">
             <Trans>Available credits</Trans>
           </h3>
           <Button
@@ -430,8 +598,8 @@ export function ModelCreditsSettings({
             <Trans>Refresh</Trans>
           </Button>
         </div>
-        <p className="mt-2 text-3xl font-medium tabular-nums">{balance}</p>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-display font-medium tabular-nums">{balance}</p>
+        <p className="mt-2 text-body text-muted-foreground">
           {status.funding === "byok" && freeUntil ? (
             <Trans>Using your API key. Free plan ends {freeUntil}.</Trans>
           ) : status.funding === "byok" ? (
@@ -442,29 +610,40 @@ export function ModelCreditsSettings({
         </p>
         {status.canManage ? (
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            {freeUntil && status.byokPriceCents && status.byokAnnualPriceCents ? (
+            {freeUntil && tiers.length > 1 ? (
+              <ByokTierSelect
+                tiers={tiers}
+                interval={interval}
+                value={checkoutTier}
+                disabled={pending}
+                onChange={(offer) => setCheckoutTier(offer.tier)}
+              />
+            ) : null}
+            {freeUntil && checkoutMonthlyCents && checkoutAnnualCents ? (
               <ByokIntervalToggle
-                monthlyCents={status.byokPriceCents}
-                annualCents={status.byokAnnualPriceCents}
+                monthlyCents={checkoutMonthlyCents}
+                annualCents={checkoutAnnualCents}
                 value={interval}
                 onChange={setByokInterval}
               />
             ) : null}
-            {freeUntil && price ? (
+            {freeUntil && checkoutPrice ? (
               <Button
                 disabled={pending}
                 onClick={() =>
                   void action(async () => {
-                    const { url } = await rpc.billing.checkout({ interval });
+                    const { url } = await client.billing.checkout({
+                      interval: checkoutAnnualPrice ? interval : "month",
+                      ...(checkoutOffer ? { tier: checkoutTier } : {}),
+                    });
                     window.location.assign(url);
                   })
                 }
               >
-                {annualPrice && interval === "year" ? (
-                  <Trans>Subscribe for {annualPrice} / year</Trans>
-                ) : (
-                  <Trans>Subscribe for {price} / month</Trans>
-                )}
+                <SubscribeLabel
+                  price={checkoutPrice}
+                  annualPrice={interval === "year" ? checkoutAnnualPrice : null}
+                />
               </Button>
             ) : null}
             <Button
@@ -479,13 +658,13 @@ export function ModelCreditsSettings({
       </div>
       {status.computerHoursLeft != null ? (
         <div className="rounded-xl border border-border p-5">
-          <h3 className="text-sm text-muted-foreground">
+          <h3 className="text-body text-muted-foreground">
             <Trans>Computer hours left</Trans>
           </h3>
-          <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+          <p className="mt-2 text-display font-medium tabular-nums">{status.computerHoursLeft}</p>
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Trials get fewer hours to prevent abuse.</Trans>
               </p>
               <Button
@@ -497,55 +676,94 @@ export function ModelCreditsSettings({
                 <Trans>Start plan now</Trans>
               </Button>
             </>
+          ) : isCancelledTrial(status) ? (
+            <>
+              <p className="mt-2 text-body text-muted-foreground">
+                <Trans>Cancelled trials have no computer hours.</Trans>
+              </p>
+              {status.canManage && status.hasCustomer ? (
+                <Button
+                  className="mt-5"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() =>
+                    void action(async () => {
+                      const { url } = await client.billing.portal();
+                      window.location.assign(url);
+                    })
+                  }
+                >
+                  <Trans>Renew plan</Trans>
+                </Button>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}
-      <AlertDialog open={endTrialOpen} onOpenChange={setEndTrialOpen}>
+      <ConfirmDialog
+        open={endTrialOpen}
+        onCancel={() => setEndTrialOpen(false)}
+        variant="default"
+        title={<Trans>Start your plan now?</Trans>}
+        description={
+          price ? (
+            <Trans>Your trial ends and your card is charged {price} today.</Trans>
+          ) : (
+            <Trans>Your trial ends and your card is charged today.</Trans>
+          )
+        }
+        confirmDisabled={pending}
+        onConfirm={() =>
+          void action(async () => {
+            setEndTrialOpen(false);
+            await client.billing.endTrial();
+            await refresh();
+          })
+        }
+        confirmLabel={<Trans>Start plan</Trans>}
+      />
+      <ConfirmDialog
+        open={yearlyOpen}
+        onCancel={() => setYearlyOpen(false)}
+        variant="default"
+        title={<Trans>Switch to yearly?</Trans>}
+        description={
+          status.state === "trialing" ? (
+            <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
+          ) : (
+            <Trans>
+              Your card is charged {annualPrice} today, less the unused part of this month.
+            </Trans>
+          )
+        }
+        confirmDisabled={pending}
+        onConfirm={() =>
+          void action(async () => {
+            setYearlyOpen(false);
+            await client.billing.switchToYearly();
+            await refresh();
+          })
+        }
+        confirmLabel={<Trans>Switch</Trans>}
+      />
+      <AlertDialog
+        open={tierTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setTierTarget(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              <Trans>Start your plan now?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {price ? (
-                <Trans>Your trial ends and your card is charged {price} today.</Trans>
-              ) : (
-                <Trans>Your trial ends and your card is charged today.</Trans>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={() =>
-                void action(async () => {
-                  setEndTrialOpen(false);
-                  await rpc.billing.endTrial();
-                  await refresh();
-                })
-              }
-            >
-              <Trans>Start plan</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={yearlyOpen} onOpenChange={setYearlyOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Switch to yearly?</Trans>
+              <Trans>Switch to {tierTargetName}?</Trans>
             </AlertDialogTitle>
             <AlertDialogDescription>
               {status.state === "trialing" ? (
-                <Trans>Your plan becomes {annualPrice} / year when your trial ends.</Trans>
+                <Trans>Your plan becomes {tierTargetLabel} when your trial ends.</Trans>
+              ) : (tierTargetPrice ?? 0) > (status.byokPriceCents ?? 0) ? (
+                <Trans>Your card is charged the prorated difference today.</Trans>
               ) : (
-                <Trans>
-                  Your card is charged {annualPrice} today, less the unused part of this month.
-                </Trans>
+                <Trans>The unused difference is credited to your next invoice.</Trans>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -557,8 +775,10 @@ export function ModelCreditsSettings({
               disabled={pending}
               onClick={() =>
                 void action(async () => {
-                  setYearlyOpen(false);
-                  await rpc.billing.switchToYearly();
+                  const tier = tierTarget?.tier;
+                  setTierTarget(null);
+                  if (!tier) return;
+                  await client.billing.changeTier({ tier });
                   await refresh();
                 })
               }
@@ -574,7 +794,13 @@ export function ModelCreditsSettings({
             <Trans>Monthly credits</Trans>
           </h3>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <CreditAmountSelect monthly value={amount} onChange={setAmount} />
+            <CreditAmountSelect
+              monthly
+              value={amount}
+              onChange={(next) =>
+                setChosenAmount(ModelCreditAmountSchema.safeParse(next).data ?? null)
+              }
+            />
             <Button
               variant="secondary"
               disabled={
@@ -585,11 +811,13 @@ export function ModelCreditsSettings({
               onClick={() =>
                 void action(async () => {
                   if (recurring) {
-                    await rpc.billing.setMonthlyCredits({ amountCents: amount });
+                    await client.billing.setMonthlyCredits({
+                      amountCents: ModelCreditAmountSchema.parse(amount),
+                    });
                     await refresh();
                   } else {
-                    const { url } = await rpc.billing.purchaseCredits({
-                      amountCents: amount,
+                    const { url } = await client.billing.purchaseCredits({
+                      amountCents: ModelCreditAmountSchema.parse(amount),
                       monthly: true,
                     });
                     window.location.assign(url);
@@ -617,7 +845,7 @@ export function ModelCreditsSettings({
               disabled={pending}
               onClick={() =>
                 void action(async () => {
-                  const { url } = await rpc.billing.portal();
+                  const { url } = await client.billing.portal();
                   window.location.assign(url);
                 })
               }
@@ -633,7 +861,7 @@ export function ModelCreditsSettings({
           disabled={pending || !status.creditPurchasesEnabled}
           onClick={() =>
             void action(async () => {
-              await rpc.billing.selectFunding({ funding: "credits" });
+              await client.billing.selectFunding({ funding: "credits" });
               window.location.reload();
             })
           }
@@ -647,7 +875,7 @@ export function ModelCreditsSettings({
           disabled={pending}
           onClick={() =>
             void action(async () => {
-              const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+              const { url } = await client.billing.selectFunding({ funding: "byok" });
               window.location.assign(url ?? "/app?settings=models");
             })
           }
@@ -656,7 +884,7 @@ export function ModelCreditsSettings({
         </Button>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-body text-destructive">
           <Trans>Could not update billing</Trans>
         </p>
       ) : null}
@@ -670,12 +898,15 @@ export function ModelCreditsSettings({
               <Trans>One-time purchase. Credits do not expire.</Trans>
             </DialogDescription>
           </DialogHeader>
-          <CreditAmountSelect value={topupAmount} onChange={setTopupAmount} />
+          <CreditAmountSelect
+            value={topupAmount}
+            onChange={(next) => setTopupAmount(ModelCreditAmountSchema.parse(next))}
+          />
           <Button
             disabled={pending}
             onClick={() =>
               void action(async () => {
-                const { url } = await rpc.billing.purchaseCredits({
+                const { url } = await client.billing.purchaseCredits({
                   amountCents: topupAmount,
                   monthly: false,
                 });

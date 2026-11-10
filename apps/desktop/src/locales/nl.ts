@@ -191,7 +191,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Previous Bot": "Vorige bot",
   "Command Menu…": "Opdrachtmenu…",
   "Toggle Sidebar": "Navigatiekolom tonen/verbergen",
-  "Search…": "Zoek…",
+  "Find…": "Zoek…",
+  "Search Bots…": "Bots zoeken…",
   "The window closed before the app loaded.":
     "Het venster werd gesloten voordat de app was geladen.",
+  "New Group Chat": "Nieuwe groepschat",
+  "Connect Apps…": "Apps koppelen…",
+  "Chat Details": "Chatdetails",
+  Help: "Help",
+  "Keyboard Shortcuts": "Sneltoetsen",
 };

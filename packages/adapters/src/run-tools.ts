@@ -1,5 +1,5 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
-import { toolResultTaintsRun } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
@@ -7,8 +7,13 @@ import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
-import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
+import {
+  BACKGROUND_HELPER_TOOL_NAMES,
+  BUILTIN_AGENT_TOOL_NAMES,
+  PAGE_BROWSER_TOOL_NAMES,
+} from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { emailTools } from "./run-tools-email.js";
 import { feedbackTools } from "./run-tools-feedback.js";
 import { fileTools } from "./run-tools-files.js";
 import { fleetTools } from "./run-tools-fleet.js";
@@ -47,6 +52,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(purchaseTools),
   ...Object.entries(preferenceTools),
   ...Object.entries(feedbackTools),
+  ...Object.entries(emailTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 
@@ -65,6 +71,16 @@ export async function applyTool(
   _route?: unknown,
   observer?: AgentToolExecutionObserver,
 ) {
+  // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down
+  // the own path everywhere: preparation, the stored approval, the handler and the check below.
+  if (
+    name === "update_bot" &&
+    typeof args.bot_id === "string" &&
+    args.bot_id.trim() === ctx.bot.id
+  ) {
+    const { bot_id: _self, ...own } = args;
+    args = own;
+  }
   try {
     return await dispatchTool(ctx, name, args, executionId, observer);
   } finally {
@@ -93,6 +109,17 @@ async function dispatchTool(
   if (ctx.tools.disabled.has(name)) {
     return { error: "This tool is disabled for this bot." };
   }
+  // Only offered tools reach the model, but a runtime can still emit any name, and a connector
+  // tool named like a local one still runs the local handler.
+  if (
+    ctx.run.trigger === BACKGROUND_HELPER_TRIGGER &&
+    (BUILTIN_AGENT_TOOL_NAMES.has(name) || TOOL_HANDLERS.has(name)) &&
+    !BACKGROUND_HELPER_TOOL_NAMES.has(name)
+  ) {
+    return {
+      error: `${name} is not available to a background helper. Don't retry; say in your result what the bot should do.`,
+    };
+  }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return { error: "Page browser is unavailable on this computer." };
   }
@@ -101,6 +128,11 @@ async function dispatchTool(
   }
   const request = await resolveToolRequest(ctx, name, args, executionId);
   if ("error" in request) return request;
+  // A catalog call resolves to a connector tool after the checks above; one named like a local
+  // tool (message_agent, cloud_agent_*, ...) would otherwise run that local handler instead.
+  if (request.catalogRemapped && toolHandler(request.name) !== connectorTool) {
+    return { error: "Connector tool name conflicts with a built-in tool" };
+  }
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
   noteComputerTaskStep(ctx.state.reply, request.name);

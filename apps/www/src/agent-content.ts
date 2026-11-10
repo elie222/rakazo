@@ -1,5 +1,17 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
+import {
+  INTEGRATION_PLATFORMS,
+  integrationPlatformMarkdown,
+  integrationPlatformPath,
+  integrationPlatformsHubMarkdown,
+} from "./integration-platforms";
 import { SANDBOXES, sandboxesHubMarkdown, sandboxMarkdown, sandboxPath } from "./sandboxes";
+import {
+  VOICE_PROVIDERS,
+  voiceProviderMarkdown,
+  voiceProviderPath,
+  voiceProvidersHubMarkdown,
+} from "./voice-providers";
 import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
@@ -84,6 +96,8 @@ ${home.cta.copy}
 - [Docs](https://rakazo.com/docs/)
 - [Integrations](https://rakazo.com/integrations/)
 - [Sandboxes for AI agents](https://rakazo.com/sandboxes/)
+- [Integration platforms for AI agents](https://rakazo.com/integration-platforms/)
+- [Voice providers for AI agents](https://rakazo.com/voice-providers/)
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
@@ -152,13 +166,13 @@ Read the [complete privacy policy](https://rakazo.com/privacy/) for account info
 
 export const TERMS_MARKDOWN = `# Rakazo terms
 
-Last updated: October 27, 2026
+Last updated: November 6, 2026
 
 These terms are an agreement between you and Inbox Zero Inc. for the Rakazo service we host, the Rakazo apps, and rakazo.com. The Rakazo source code is governed by the Apache License 2.0, which does not grant rights to the Rakazo name or logo, and self-hosted deployments are the operator's responsibility.
 
 You are responsible for your account and for actions your bots take on your behalf, including in scheduled routines; give bots only the access they need and require approval for actions that are hard to undo. AI output can be wrong, so review it before relying on it, and do not use the Service where an error could cause serious harm. Do not use the Service to break the law, send spam or malware, access systems without authorization, abuse its computers, or violate the terms of connected providers. You keep ownership of your content and bot output, and you pay any fees charged by third-party services, including usage on your own API keys.
 
-Free trials convert to a paid plan when they end unless cancelled before then. Fair use on hosted plans is up to 100 computer-hours a month and 5 computers running at once per account; computers sleep when idle, there are no charges for computer use beyond the plan, and we may slow or pause usage beyond these limits. Self-hosted deployments have no such limits. Paid plans renew automatically until cancelled and are charged through Stripe. Cancel at any time from billing settings or by emailing [hello@rakazo.com](mailto:hello@rakazo.com); access continues until the end of the paid period. Payments are non-refundable and not prorated except where required by law. Charges made in error are refunded when reported within 30 days. If we close your account or stop offering the Service for reasons other than a violation of these terms, we refund prepaid fees for the unused period. Consumers in the EU and UK can withdraw from a new subscription within 14 days and are refunded less the value of the Service already provided.
+Free trials convert to a paid plan when they end unless cancelled before then. Fair use on hosted plans is the computer-hours a month listed for your plan on the [pricing page](https://rakazo.com/pricing/) and 5 computers running at once per account; computers sleep when idle, there are no charges for computer use beyond the plan, and we may slow or pause usage beyond these limits. Self-hosted deployments have no such limits. Paid plans renew automatically until cancelled and are charged through Stripe. Cancel at any time from billing settings or by emailing [hello@rakazo.com](mailto:hello@rakazo.com); access continues until the end of the paid period. Payments are non-refundable and not prorated except where required by law. Credits, including top-ups, are used up by the work your bots do, whatever its outcome, and used credits are not refunded. Charges made in error are refunded when reported within 30 days. If we close your account or stop offering the Service for reasons other than a violation of these terms, we refund prepaid fees for the unused period. Consumers in the EU and UK can withdraw from a new subscription within 14 days and are refunded less the value of the Service already provided. For credits, that means a refund of the credits not yet used.
 
 The Service is provided as is. Our liability is limited to the greater of what you paid us in the previous 12 months or US$100, except where the law does not allow a limit. Delaware law governs these terms.
 
@@ -203,6 +217,8 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Docs](https://rakazo.com/docs/): getting started, using Rakazo, and self-hosting. Each page has a Markdown version.
 - [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
 - [Sandboxes for AI agents](https://rakazo.com/sandboxes/): where bot computers can run, compared, with a page per provider. Each page has a Markdown version.
+- [Integration platforms for AI agents](https://rakazo.com/integration-platforms/): Composio, Pipedream, MCP servers and API connectors compared, with a page for each. Each page has a Markdown version.
+- [Voice providers for AI agents](https://rakazo.com/voice-providers/): ElevenLabs, OpenAI, Cartesia, Fish Audio, self-hosted speech servers and macOS voices compared, with a page for each. Each page has a Markdown version.
 - [Submit a plugin](https://rakazo.com/plugins/submit/): list a plugin in the Rakazo marketplace. [Markdown with the API](https://rakazo.com/plugins/submit.md).
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)
@@ -287,6 +303,16 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/alternatives", roundupMarkdown()],
   ...ALTERNATIVES.map((page) => [`/${page.slug}`, alternativeMarkdown(page)] as const),
   ["/sandboxes", sandboxesHubMarkdown()],
+  ["/integration-platforms", integrationPlatformsHubMarkdown()],
+  ["/voice-providers", voiceProvidersHubMarkdown()],
+  ...VOICE_PROVIDERS.map(
+    (provider) =>
+      [voiceProviderPath(provider.slug).slice(0, -1), voiceProviderMarkdown(provider)] as const,
+  ),
+  ...INTEGRATION_PLATFORMS.map(
+    (platform) =>
+      [integrationPlatformPath(platform.slug).slice(0, -1), integrationPlatformMarkdown(platform)] as const,
+  ),
   ...SANDBOXES.map(
     (sandbox) => [sandboxPath(sandbox.slug).slice(0, -1), sandboxMarkdown(sandbox)] as const,
   ),

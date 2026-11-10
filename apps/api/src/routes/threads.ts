@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { settleCallRequest } from "@rakazo/adapters";
-import type { Actor, ProductEvent } from "@rakazo/contracts";
+import type { Actor } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
@@ -17,13 +17,17 @@ import {
   createExternalConversationRepos,
   createThreadMessageInTransaction,
   IsolationError,
-  lockOwnedGroup,
+  isUniqueViolation,
+  loadMessageAuthor,
+  lockSpaceGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
-import { withSerializableRetry } from "../serializable-retry.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
@@ -32,31 +36,32 @@ import {
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "../thread-message-pages.js";
-import type { ThreadTarget } from "../thread-target.js";
+import { reactToThreadMessage } from "../thread-reactions.js";
 import {
-  isStopMessage,
   markThreadRead,
   markThreadUnreadFrom,
-  reactToThreadMessage,
+  setThreadSnooze,
+  setThreadUnreadState,
+} from "../thread-read-state.js";
+import { threadSnapshot } from "../thread-snapshot.js";
+import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
+import type { ThreadTarget } from "../thread-target.js";
+import {
+  replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
-  setThreadUnreadState,
-  stopThreadRuns,
   threadHead,
-  threadSnapshot,
 } from "../thread-target.js";
 import { mapBotSecretInputError } from "./bots.js";
-import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
   computerContext,
-  HEARTBEAT_MS,
-  isUniqueViolation,
+  HEARTBEAT,
   modelSetup,
-  SESSION_RECHECK_MS,
   THREAD_MESSAGE_PAGE_SIZE,
+  withHeartbeats,
 } from "./shared.js";
 
 /** Deterministic nonce for a call's marker message. The unique (threadId, clientNonce)
@@ -109,9 +114,12 @@ export function threadsRoutes(ctx: RouterContext) {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
     // A bot with its own runnable model needs no main model, and stopping work needs none.
+    const replied =
+      target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
     const noModel =
-      setup.needsModel && !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)));
-    if (noModel && (target.kind !== "bot" || !isStopMessage(input))) {
+      setup.needsModel &&
+      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
+    if (noModel && !isStopMessage(input)) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
@@ -158,7 +166,7 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
           includeArchived: true,
         });
-        return threadSnapshot(deps, target);
+        return threadSnapshot(deps, target, context.actor.userId);
       }),
       messages: authed.threads.messages.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
@@ -178,59 +186,30 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
         const backgroundRunCache = new Map<string, Promise<boolean>>();
-        const follow = deps.events.follow(target.threadId, input.cursor, context.signal);
-        // A half-open stream looks identical to an idle one, so punctuate silence:
-        // the client treats any frame as liveness and reconnects once they stop.
-        let pending: Promise<IteratorResult<ProductEvent>> | undefined;
-        // Auth ran once when the stream opened. Re-check before delivering more, so a signed-out
-        // or revoked session stops within SESSION_RECHECK_MS, or at the next heartbeat when idle.
-        let authorizedAt = Date.now();
-        const assertStillAuthorized = async () => {
-          if (!context.stillAuthorized || Date.now() - authorizedAt < SESSION_RECHECK_MS) return;
-          if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
-          authorizedAt = Date.now();
-        };
-        try {
-          while (!context.signal?.aborted) {
-            pending ??= follow.next();
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const next = await Promise.race([
-              pending,
-              new Promise<"silent">((resolve) => {
-                timer = setTimeout(() => resolve("silent"), HEARTBEAT_MS);
-              }),
-            ]).finally(() => clearTimeout(timer));
-            if (next === "silent") {
-              await assertStillAuthorized();
-              // Keep `pending` so the in-flight read stays the next event in order.
-              yield {
-                id: "heartbeat",
-                spaceId: context.actor.spaceId,
-                threadId: target.threadId,
-                // A bot thread's id is not the bot. Groups have no single bot, so the thread id stands in.
-                botId: target.kind === "bot" ? target.botId : target.threadId,
-                seq: 0,
-                type: "heartbeat",
-                createdAt: new Date().toISOString(),
-                payload: {},
-              };
-              continue;
-            }
-            pending = undefined;
-            if (next.done) return;
-            const event = next.value;
-            // Filtered peer events also restart the heartbeat, so check before skipping them.
-            await assertStillAuthorized();
-            if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-              if (!shouldForwardPeerThreadEvent(event)) continue;
-            } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
-              if (!shouldForwardBackgroundThreadEvent(event)) continue;
-            }
-            yield event;
+        const events = withHeartbeats(context, (signal) =>
+          deps.events.follow(target.threadId, input.cursor, signal),
+        );
+        for await (const event of events) {
+          if (event === HEARTBEAT) {
+            yield {
+              id: "heartbeat",
+              spaceId: context.actor.spaceId,
+              threadId: target.threadId,
+              // A bot thread's id is not the bot. Groups have no single bot, so the thread id stands in.
+              botId: target.kind === "bot" ? target.botId : target.threadId,
+              seq: 0,
+              type: "heartbeat",
+              createdAt: new Date().toISOString(),
+              payload: {},
+            };
+            continue;
           }
-        } finally {
-          // Not awaited: closing can queue behind a read that the abort has not landed on yet.
-          void follow.return(undefined).catch(() => {});
+          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
+            if (!shouldForwardPeerThreadEvent(event)) continue;
+          } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
+            if (!shouldForwardBackgroundThreadEvent(event)) continue;
+          }
+          yield event;
         }
       }),
       send: authed.threads.send.handler(({ context, input }) => send(context.actor, input)),
@@ -277,7 +256,7 @@ export function threadsRoutes(ctx: RouterContext) {
             sent = await send(actor, input, startRoutines);
           } else {
             // Only the routines: they all commit or none does.
-            const started = await withSerializableRetry(() =>
+            const started = await withTransactionRetry(() =>
               deps.prisma.$transaction(startRoutines),
             );
             for (const run of started) {
@@ -328,6 +307,11 @@ export function threadsRoutes(ctx: RouterContext) {
       stop: authed.threads.stop.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
+        return { ok: true as const };
+      }),
+      stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await stopThreadRuns(deps, context.actor, target, input.messageId);
         return { ok: true as const };
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
@@ -388,6 +372,7 @@ export function threadsRoutes(ctx: RouterContext) {
             threadId: target.threadId,
             botId: target.botId,
             userId: context.actor.userId,
+            authorUserId: context.actor.userId,
             blocks: [{ kind: "text", text: input.text }],
             prompt: input.text,
             trigger: "follow_up",
@@ -409,7 +394,7 @@ export function threadsRoutes(ctx: RouterContext) {
             });
             if (existing) return null;
           }
-          await lockOwnedGroup(tx, context.actor, target.groupId);
+          await lockSpaceGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
             where: {
               id: target.groupId,
@@ -424,18 +409,23 @@ export function threadsRoutes(ctx: RouterContext) {
           const message = await createThreadMessageInTransaction(tx, {
             threadId: target.threadId,
             role: "user",
+            authorUserId: context.actor.userId,
             blocks,
             clientNonce: input.clientNonce,
           });
+          const author = await loadMessageAuthor(tx, context.actor.userId);
           const active = await tx.run.findFirst({
             where: {
               threadId: target.threadId,
               botId,
               status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
             },
-            select: { id: true },
+            select: { id: true, userId: true },
           });
           let run: { id: string } | null = null;
+          // Another person's message waits for a run of its own, which acts with their
+          // accounts, rather than joining the one under way.
+          const ownRunId = active?.userId === context.actor.userId ? active.id : null;
           if (!active) {
             const task = await tx.task.create({
               data: {
@@ -463,26 +453,23 @@ export function threadsRoutes(ctx: RouterContext) {
             await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
           } else {
             await tx.steeringMessage.create({
-              data: {
-                messageId: message.id,
-                botId,
-                userId: context.actor.userId,
-                runId: active.id,
-              },
+              data: { messageId: message.id, botId, userId: context.actor.userId, runId: ownRunId },
             });
-            await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+            if (ownRunId) {
+              await tx.message.update({ where: { id: message.id }, data: { runId: ownRunId } });
+            }
           }
           const event = await appendEventInTransaction(tx, {
             spaceId: context.actor.spaceId,
             threadId: target.threadId,
             botId,
             type: "thread.message.created",
-            runId: run?.id ?? active?.id,
-            payload: { messageId: message.id, role: "user", blocks },
+            runId: run?.id ?? ownRunId ?? undefined,
+            payload: { messageId: message.id, role: "user", blocks, author },
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq, message };
-        });
+        }, THREAD_LOCK_TRANSACTION_OPTIONS);
         if (committed) {
           deps.analytics?.capture(
             context.actor.userId,
@@ -679,6 +666,11 @@ export function threadsRoutes(ctx: RouterContext) {
         } else {
           await setThreadUnreadState(deps.prisma, context.actor, target, true);
         }
+        return { ok: true as const };
+      }),
+      snooze: authed.threads.snooze.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setThreadSnooze(deps.prisma, context.actor, target, input.until);
         return { ok: true as const };
       }),
     },

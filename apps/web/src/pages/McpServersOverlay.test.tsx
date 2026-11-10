@@ -689,3 +689,35 @@ it("keeps the first server's form open until saving it has finished", async () =
     await act(async () => root.unmount());
   }
 });
+
+it("links callback mismatches in MCP settings to the shared recovery guide", async () => {
+  mocks.list.mockReset().mockResolvedValue([
+    {
+      ...server("remote"),
+      transport: "streamable_http",
+      endpoint: "https://mcp.example.test/mcp",
+    },
+  ]);
+  vi.mocked(connectMcpOauth).mockRejectedValueOnce(
+    Object.assign(new Error("Sign-in configuration mismatch"), {
+      code: "MCP_OAUTH_REDIRECT_MISMATCH",
+    }),
+  );
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const connectButton = () =>
+    Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Connect OAuth",
+    );
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(connectButton()).toBeDefined());
+    await act(async () => connectButton()?.click());
+    expect(host.querySelector('[role="alert"] a')?.getAttribute("href")).toBe(
+      "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+    );
+    expect(connectButton()?.disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

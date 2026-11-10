@@ -52,6 +52,22 @@ class FakeSink(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class BaseImageTests(unittest.TestCase):
+    def test_literal_base_images_are_pinned_by_digest(self):
+        for dockerfile in sorted(ROOT.parent.rglob("Dockerfile*")):
+            stages = set()
+            for number, line in enumerate(dockerfile.read_text().splitlines(), 1):
+                parts = line.split()
+                if not parts or parts[0].upper() != "FROM":
+                    continue
+                image = next(part for part in parts[1:] if not part.startswith("--"))
+                if "$" not in image and image.lower() not in stages and image != "scratch":
+                    with self.subTest(file=str(dockerfile.relative_to(ROOT.parent)), line=number):
+                        self.assertRegex(image, r"@sha256:[0-9a-f]{64}$")
+                if len(parts) >= 4 and parts[-2].upper() == "AS":
+                    stages.add(parts[-1].lower())
+
+
 class AuditShipTests(unittest.TestCase):
     KEYS = audit_ship.parse_known_keys("SHA256:known/key+1= SHA256:laptopkey=laptop")
 

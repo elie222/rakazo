@@ -10,8 +10,10 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
+  createEarlierFileQueue,
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
@@ -562,5 +564,95 @@ describe("recent thread files", () => {
         '- "screenshot.png" (image/png, 3 bytes): "attachments/image-1.png"',
       ].join("\n"),
     );
+  });
+});
+
+describe("files listed by history tools", () => {
+  it("marks the workspace dirty for a new copy so the run checkpoint keeps it", async () => {
+    const block = {
+      kind: "file" as const,
+      artifactId: "lease",
+      name: "lease.md",
+      mimeType: "text/markdown",
+      size: 5,
+    };
+    const writeFile = vi.fn();
+    const markWorkspaceDirty = vi.fn();
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([{ ...block, id: "lease", storageKey: "stored" }]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: { get: vi.fn().mockResolvedValue(new Uint8Array(5)) } as unknown as ArtifactStore,
+      sandbox: {
+        readFile: vi.fn().mockRejectedValue(new Error("missing")),
+        writeFile,
+      } as unknown as SandboxProvider,
+    };
+    const input = {
+      context: {
+        operationId: "run",
+        traceId: "run",
+        spaceId: "space",
+        userId: "user",
+        botId: "bot",
+        signal: new AbortController().signal,
+      },
+      computer: async () => ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+      computerMode: "dedicated" as const,
+      markWorkspaceDirty,
+    };
+    const files = await materializeEarlierFiles(deps, [block], input);
+    expect(files.map((file) => file.path)).toEqual(["attachments/lease.md"]);
+    expect(writeFile).toHaveBeenCalledOnce();
+    expect(markWorkspaceDirty).toHaveBeenCalledOnce();
+    // Recent-turn files are copied again on every computer start, so they stay out of it.
+    markWorkspaceDirty.mockClear();
+    await materializeRecentThreadFiles(
+      deps,
+      [{ id: "m", role: "user" }],
+      [{ id: "m", blocks: [block] }],
+      {
+        ...input,
+        maxTurns: 3,
+      },
+    );
+    expect(markWorkspaceDirty).not.toHaveBeenCalled();
+  });
+});
+
+describe("earlier file queue", () => {
+  const file = (artifactId: string) => ({
+    kind: "file" as const,
+    artifactId,
+    name: `${artifactId}.md`,
+    mimeType: "text/markdown",
+    size: 1,
+  });
+
+  it("keeps the newest listings, once each, and queues a file again after it was taken", () => {
+    const queue = createEarlierFileQueue(2);
+    queue.add([file("a"), file("b"), file("a")]);
+    queue.add([file("c")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "c"]);
+    expect(queue.take()).toEqual([]);
+    // Listing it again retries a copy that failed.
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
+  });
+
+  it("skips files already copied to this computer until a new one starts", () => {
+    const queue = createEarlierFileQueue();
+    queue.add([file("a"), file("b")]);
+    const taken = queue.take();
+    queue.copiedTo(taken, [
+      { name: "a.md", mimeType: "text/markdown", size: 1, path: "attachments/a.md" },
+    ]);
+    queue.add([file("a"), file("b")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["b"]);
+    queue.computerStarted();
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
   });
 });

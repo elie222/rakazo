@@ -10,16 +10,25 @@ monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-u
 amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
 The hosted computer is included in both paths, and monthly credits include the own-key plan.
 
-`BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price for new
-subscriptions; existing subscribers keep the price they signed up at. `null` makes it
-free and ends paid own-key subscriptions at their period end. `BYOK_ANNUAL_PRICE_CENTS` offers the
-same plan billed yearly, shown as its monthly equivalent; `null` offers it monthly only. Monthly
-subscribers can switch to yearly from Billing, which charges the yearly price less the unused part
-of the month. It is offered only to a paid-up plan that is not cancelling, has no monthly credits,
-and saves money. Billing reads a plan's period from its price on every sync, so a switch made in the
-Stripe billing portal also shows correctly. Portal plan switching skips those checks and allows
-both directions, including yearly back to monthly with its own proration, so enable it only if
-that is acceptable; the yearly price exists after the first yearly checkout or switch. Runs check
+`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro and Max, each with
+a monthly and yearly price, a monthly computer allowance and a computer size. New organizations
+start on Standard; existing subscribers keep the price they signed up at. A `null` Standard monthly
+price makes the plan free, hides the other tiers, and ends paid own-key subscriptions at their
+period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on Pro
+or Max hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
+`rakazo_byok_<tier>_<monthly|yearly>_<cents>` (Standard's keys name no tier), so keep those keys
+on any price you create by hand. Before selling a tier, make sure the sandbox account can run its
+computer size; a computer that cannot start at its size starts at its current one.
+
+Subscribers can change tier from Billing at the same interval, and monthly subscribers can switch
+to yearly, which charges the yearly price less the unused part of the month. A tier change charges
+the prorated difference now, and a downgrade credits the unused difference to the next invoice.
+A downgrade is refused while this period's computer use is above the smaller tier's allowance.
+Both are offered only to a paid-up plan that is not cancelling and has no monthly credits; the
+yearly switch also only when it saves money. Billing reads a plan's period and tier from its price
+on every sync, so a switch made in the Stripe billing portal also shows correctly. Portal plan
+switching skips those checks and allows both directions, including yearly back to monthly with its
+own proration, so enable it only if that is acceptable; the yearly price exists after the first yearly checkout or switch. Runs check
 access on the server, so a lapsed organization's bots and routines stop until it subscribes.
 
 ## Model credits
@@ -43,6 +52,44 @@ retain their funding source across renewal: unused monthly holds expire when rel
 purchased top-ups remain available. Prorated upgrades share the original period end. Expiration
 creates a financial journal delta and runs before balance reads, reservations, settlements, and
 background recovery. Unclassified legacy balances are preserved as non-expiring funds.
+
+## Reviewing an account's credit usage
+
+An operator can cap a person's total hosted model-credit usage without deactivating their
+account. From the API container, run:
+
+```sh
+node dist/cli/model-credit-cap.js set customer@example.test 2
+node dist/cli/model-credit-cap.js status customer@example.test
+node dist/cli/model-credit-cap.js clear customer@example.test
+```
+
+The amount is a **total recorded USD ceiling**, not an additional allowance. It counts model
+spend and outstanding reservations across all their organizations, bots and runs. For example,
+a person who has used $1.50 has $0.50 left under a $2 cap. Set zero to stop new hosted model
+calls. Setting or clearing a cap is audited; it does not reactivate an account, change its
+balance, cancel renewal, or refund a payment. Reactivate a deactivated person separately after
+setting their cap.
+
+Only hosted charges recorded with per-user attribution in the credit journal count. Earlier
+baseline records do not reliably identify whose hosted credits were spent; usage baselines
+also include personal-key activity. Those records are excluded rather than guessed. This is
+not a complete lifetime-spend total for people who used credits before per-user journaling.
+The operator command reports this boundary alongside the allowance.
+
+The cap has no automatic reset or expiry, and credit purchases cannot lift it. At the limit,
+new hosted calls fail with “Usage limit reached. Contact support to continue.” Sign-in and
+personal model connections remain available. Reservations may stop a call before the displayed
+remaining amount reaches zero because its maximum estimated cost must fit. Calls already
+admitted can finish; actual provider charges above their reserved estimate can exceed the cap.
+Unknown usage keeps its hold until reconciled. Deleting an organization does not erase usage
+from the cap, because it is counted from the durable journal.
+
+Uncapped calls read only the nullable user setting alongside their existing credit account
+lock, with no added database round trips or history scans. Only capped calls lock the person's
+row and sum their indexed journal. Automatic assignment and timed caps are not enabled.
+Deploy the API and worker changes before relying on enforcement; the previous release ignores
+the new nullable setting while a rolling deployment finishes.
 
 ## Accounting
 

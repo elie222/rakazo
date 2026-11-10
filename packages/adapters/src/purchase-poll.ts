@@ -13,6 +13,7 @@ import {
   PENDING_PURCHASE_STATUSES,
   PURCHASE_POLL_MS,
 } from "./purchase-service.js";
+import { releaseUnpaidPurchase } from "./spending-gate.js";
 
 /** Providers expire approval requests after 30 minutes; stop asking a little later. */
 export const PURCHASE_POLL_DEADLINE_MS = 35 * 60_000;
@@ -113,8 +114,10 @@ async function settle(
     ]);
     const attached = thread.count > 0 && Boolean(member) && Boolean(bot);
     const pending = PENDING_PURCHASE_STATUSES.has(next.status);
-    // Nobody is left to tell once the bot, its chat or its owner is gone, or the chat was cleared.
-    const nextPollAt = pending && attached ? new Date(Date.now() + PURCHASE_POLL_MS) : null;
+    // Nobody is left to tell once the bot, its chat or its owner is gone, or the chat was cleared, so
+    // nothing is woken; the purchase is still polled until it settles or expires, so a purchase that
+    // never went through stops counting against the spending limit.
+    const nextPollAt = pending ? new Date(Date.now() + PURCHASE_POLL_MS) : null;
     const wake = attached && WAKE_STATUSES.has(next.status) && next.status !== purchase.wokenStatus;
     // The updatedAt fence makes a concurrent poll or purchase_status write win once.
     const updated = await tx.purchase.updateMany({
@@ -127,6 +130,7 @@ async function settle(
       },
     });
     if (!updated.count) return null;
+    await releaseUnpaidPurchase(tx, purchase.operationKey, next.status);
     if (!wake) return { nextPollAt };
     const clientNonce = `purchase-wake:${purchase.id}:${next.status}`;
     // A status that comes back (approved, needs_action, approved) already woke the bot once.

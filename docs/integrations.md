@@ -27,7 +27,7 @@ The **+** in **Integrations** adds tools that aren't in the catalog:
 - **MCP server**: any remote MCP server at an HTTPS address. **Browse MCP servers** searches a public
   directory of them.
 - **OpenAPI** and **GraphQL**: point at an API's description and the bot can call it.
-- **Treg** and **Executor**: tool gateways that connect with one access token.
+- **Executor**: a tool gateway that connects with one access token.
 - **From GitHub**: install a plugin from its repository. See [Build a plugin](./build-a-plugin.md).
 
 Choose an authentication method (**No auth**, **Bearer token** or **API key header**) and then
@@ -36,7 +36,7 @@ Choose an authentication method (**No auth**, **Bearer token** or **API key head
 **Manage MCP servers** lists every server you've added, with **Test connection**, OAuth sign-in, and
 which bots can use each one.
 
-During one bot run, every call to an MCP server added under **Integrations** (Treg, Executor or
+During one bot run, every call to an MCP server added under **Integrations** (Executor or
 your own MCP URL) reuses one session, so servers that keep state in the session (a paused step
 you confirm mid-run, for example) see the same session until the run ends. Two runs never share
 such a session, and each closes when its run ends or after about ten minutes without a call. A
@@ -44,6 +44,16 @@ paused step can be resumed only while the run continues in the same Rakazo insta
 window and within the server's own pause window (Executor keeps a pause for about four minutes).
 After ten idle minutes, or when the run continues on another instance, the next call opens a fresh
 session.
+
+## Apps in chat
+
+Some MCP servers come with an app: a small interactive view of a tool's result, such as a chart,
+map or board. When a bot uses one of those tools, the app shows in the chat above the bot's reply,
+in the web, desktop and mobile apps.
+
+Apps run sandboxed. An app sees only that tool call and its result, reaches only the sites its
+server declares, and can't call tools or see your account. A link in an app asks before it opens,
+and a message an app suggests goes into the message box for you to send.
 
 ## Choose which bots use what
 

@@ -83,7 +83,7 @@ export function ComputerProviderSettings({
 
   if (!draft || !settings) {
     return error ? (
-      <p role="alert" className="mt-3 text-[13px] text-destructive">
+      <p role="alert" className="mt-3 text-body-sm text-destructive">
         {error}
       </p>
     ) : null;
@@ -124,74 +124,75 @@ export function ComputerProviderSettings({
           void save();
         }}
       >
-        <Field>
-          <FieldLabel htmlFor={selectId}>
-            <Trans>New computers run on</Trans>
-          </FieldLabel>
-          <NativeSelect
-            id={selectId}
-            value={draft.provider}
-            onChange={(event) =>
-              set({
-                provider: event.target.value,
-                values: event.target.value === settings.provider ? settings.values : {},
-              })
-            }
-            className="w-full"
-          >
-            <NativeSelectOption value="default">
-              {t`Deployment default (${settings.defaultProvider})`}
-            </NativeSelectOption>
-            {settings.providers.map((provider) => (
-              <NativeSelectOption key={provider.id} value={provider.id}>
-                {provider.displayName}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </Field>
-        {descriptor?.fields.map((field) => {
-          const saved =
-            draft.provider === settings.provider &&
-            settings.savedSecrets[field.key] &&
-            !descriptor.fields.some(
-              (candidate) =>
-                candidate.kind === "url" &&
-                draft.values[candidate.key] !== settings.values[candidate.key],
-            );
-          const change = (value: string) =>
-            set({ values: { ...draft.values, [field.key]: value } });
-          return field.kind === "select" ? (
-            <Field key={field.key}>
-              <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
-              <NativeSelect
-                id={`${selectId}-${field.key}`}
+        {/* Edits made while a save is in flight would be replaced by what it saved. */}
+        <fieldset className="contents" disabled={pending}>
+          <Field>
+            <FieldLabel htmlFor={selectId}>
+              <Trans>New computers run on</Trans>
+            </FieldLabel>
+            <NativeSelect
+              id={selectId}
+              value={draft.provider}
+              onChange={(event) =>
+                set({
+                  provider: event.target.value,
+                  values: event.target.value === settings.provider ? settings.values : {},
+                })
+              }
+              className="w-full"
+            >
+              <NativeSelectOption value="default">{t`Default`}</NativeSelectOption>
+              {settings.providers.map((provider) => (
+                <NativeSelectOption key={provider.id} value={provider.id}>
+                  {provider.displayName}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          {descriptor?.fields.map((field) => {
+            const saved =
+              draft.provider === settings.provider &&
+              settings.savedSecrets[field.key] &&
+              !descriptor.fields.some(
+                (candidate) =>
+                  candidate.kind === "url" &&
+                  draft.values[candidate.key] !== settings.values[candidate.key],
+              );
+            const change = (value: string) =>
+              set({ values: { ...draft.values, [field.key]: value } });
+            return field.kind === "select" ? (
+              <Field key={field.key}>
+                <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
+                <NativeSelect
+                  id={`${selectId}-${field.key}`}
+                  value={draft.values[field.key] ?? ""}
+                  onChange={(event) => change(event.target.value)}
+                  required={field.required}
+                >
+                  <NativeSelectOption value="" />
+                  {field.options?.map((option) => (
+                    <NativeSelectOption key={option.value} value={option.value}>
+                      {option.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+            ) : (
+              <TextField
+                key={field.key}
+                label={fieldLabel(field)}
                 value={draft.values[field.key] ?? ""}
-                onChange={(event) => change(event.target.value)}
-                required={field.required}
-              >
-                <NativeSelectOption value="" />
-                {field.options?.map((option) => (
-                  <NativeSelectOption key={option.value} value={option.value}>
-                    {option.label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </Field>
-          ) : (
-            <TextField
-              key={field.key}
-              label={fieldLabel(field)}
-              value={draft.values[field.key] ?? ""}
-              onChange={change}
-              required={field.required && !saved}
-              secret={field.kind === "secret"}
-              type={field.kind === "url" ? "url" : "text"}
-              placeholder={saved ? t`Saved` : undefined}
-            />
-          );
-        })}
+                onChange={change}
+                required={field.required && !saved}
+                secret={field.kind === "secret"}
+                type={field.kind === "url" ? "url" : "text"}
+                placeholder={saved ? t`Saved` : undefined}
+              />
+            );
+          })}
+        </fieldset>
         {error ? (
-          <p role="alert" className="text-[13px] text-destructive">
+          <p role="alert" className="text-body-sm text-destructive">
             {error}
           </p>
         ) : null}
@@ -205,7 +206,7 @@ export function ComputerProviderSettings({
       {scope === "deployment" &&
       settings.providers.some((provider) => provider.capabilities.perAccount) ? (
         <Collapsible className="mt-4">
-          <CollapsibleTrigger className="text-[13px] text-muted-foreground">
+          <CollapsibleTrigger className="text-body-sm text-muted-foreground">
             <Trans>My computers</Trans>
           </CollapsibleTrigger>
           <CollapsibleContent>

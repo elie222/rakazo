@@ -19,6 +19,7 @@ import {
   assertHttpsForKeyedOpenAiCompatibleUrl,
   normalizeOpenAiCompatibleBaseUrl,
 } from "./openai-compatible-url.js";
+import { OPENAI_VOICES } from "./openai-voice.js";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
 import {
   readVoiceAudio,
@@ -27,6 +28,7 @@ import {
   speechUploadName,
   voiceDeadline,
   voiceHttpError,
+  voiceLanguageHint,
   voiceRequestError,
 } from "./voice-http.js";
 
@@ -219,7 +221,7 @@ function voiceInfo(id: string, name?: string): VoiceInfo {
   };
 }
 
-/** Shown when the server has no voice list. af_heart first: it becomes the default. */
+/** Shown when a Kokoro server has no voice list. af_heart first: it becomes the default. */
 const KOKORO_FALLBACK_VOICES = [
   "af_heart",
   "af_bella",
@@ -230,6 +232,11 @@ const KOKORO_FALLBACK_VOICES = [
   "bm_george",
   "bm_fable",
 ].map((id) => voiceInfo(id));
+
+/** Other speech models, including hosted gateways, take the standard OpenAI voice names. */
+function fallbackVoices(ttsModel: string): VoiceInfo[] {
+  return /kokoro/i.test(ttsModel) ? KOKORO_FALLBACK_VOICES : OPENAI_VOICES;
+}
 
 /**
  * OpenAI has no voice list endpoint. Self-hosted servers answer GET /audio/voices in
@@ -349,15 +356,15 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       );
       if (!res.ok) {
         await res.body?.cancel().catch(() => undefined);
-        return KOKORO_FALLBACK_VOICES;
+        return fallbackVoices(secret.ttsModel);
       }
       const voices = parseCompatibleVoiceList(await readVoiceJson(res));
-      return voices.length ? voices : KOKORO_FALLBACK_VOICES;
+      return voices.length ? voices : fallbackVoices(secret.ttsModel);
     } catch (error) {
       // A server that cannot list voices still speaks; a blocked address is a real error.
       if (context.signal.aborted || !(error instanceof Error) || !isNetworkError(error))
         throw error;
-      return KOKORO_FALLBACK_VOICES;
+      return fallbackVoices(secret.ttsModel);
     }
   }
 
@@ -397,8 +404,8 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     form.set("model", secret.sttModel);
     // mlx-audio streams NDJSON unless asked for the OpenAI shape.
     form.set("response_format", "json");
-    const language = request.language?.split("-")[0]?.toLowerCase();
-    if (language && /^[a-z]{2,3}$/.test(language)) form.set("language", language);
+    const language = voiceLanguageHint(request.language);
+    if (language) form.set("language", language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),

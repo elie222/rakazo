@@ -1,9 +1,9 @@
+import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import type { RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
-import { t } from "./i18n";
 import { currentSessionGeneration } from "./session";
 
 /**
@@ -45,11 +45,11 @@ function scopedRpcQuery<P extends RpcPath>(
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
   const queryFn: QueryFunction<T> = async ({ signal }) => {
     if (scopeKey().join("\n") !== scope.join("\n"))
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     const requestContext = await captureApiRequestContext(spaceId);
     const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
     if (scopeKey().join("\n") !== scope.join("\n"))
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     return answer;
   };
   return { queryKey, queryFn };
@@ -71,4 +71,10 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
 /** Forgets every cached read; the session registers this so sign-out never shows old data. */
 export function clearQueries(): void {
   queryClient.clear();
+}
+
+/** Forgets the reads sent to these Spaces, as when leaving their organization. */
+export function removeSpaceQueries(spaceIds: readonly string[]): void {
+  const scopes = new Set(spaceIds.map((id) => `space:${id}`));
+  queryClient.removeQueries({ predicate: (query) => scopes.has(String(query.queryKey[2])) });
 }

@@ -868,6 +868,26 @@ describe("web markdown streaming", () => {
       wholeRoot.unmount();
     });
   });
+
+  it("keeps a streamed table's sort when text before it changes", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const table = "| Item | Qty |\n| --- | --- |\n| a | 2 |\n| b | 1 |";
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{table}</ChatMarkdown>);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Sort by Qty"]')!.click();
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{`Results updated.\n\n${table}`}</ChatMarkdown>);
+    });
+    expect(container.querySelector("th[aria-sort]")?.getAttribute("aria-sort")).toBe("ascending");
+    await act(async () => {
+      root.unmount();
+    });
+  });
 });
 
 describe("web markdown streamed definitions", () => {

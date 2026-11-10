@@ -27,9 +27,10 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -66,6 +67,10 @@ type Props = {
   onChanged?: () => void;
   /** The connection form, when it was opened from this list. */
   panel?: ReactNode;
+  /** Sits at the end of the heading row. */
+  headerAction?: ReactNode;
+  /** Extra items in the first row's menu. */
+  primaryMenuItems?: ReactNode;
 };
 
 const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
@@ -76,6 +81,23 @@ const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
   modelId: option.id,
   ...(option.credentialId ? { credentialId: option.credentialId } : {}),
 });
+
+/** One role's saved list, read through the same cache entry its settings list keeps fresh. */
+export function useModelRole(
+  account: { userId: string; spaceId: string } | null,
+  scope: SettingsScope,
+  role: ModelRole,
+) {
+  const rpc = useSpaceRpc();
+  const userId = account?.userId ?? "";
+  const spaceId = account?.spaceId ?? "";
+  const input = { role, expectedUserId: userId, scope };
+  return useQuery({
+    queryKey: spaceQueries(userId, spaceId).models.role.queryKey({ input }),
+    queryFn: () => rpc.models.role(input, { context: { spaceId } }),
+    enabled: Boolean(account),
+  }).data;
+}
 
 /** One ordered list per model purpose: the first row runs, the rest take over in order. */
 export function ModelRoleSettings({
@@ -93,6 +115,8 @@ export function ModelRoleSettings({
   thinking,
   onChanged,
   panel,
+  headerAction,
+  primaryMenuItems,
 }: Props) {
   const rpc = useSpaceRpc();
   const queryClient = useQueryClient();
@@ -158,18 +182,20 @@ export function ModelRoleSettings({
       ? (entryFor(primary)?.thinkingLevels ?? []).filter((level) => level !== "off")
       : [];
   // Grouped by the connection that runs them.
-  const options: RoleModelOption[] = connectedBackupOptions(state.catalog, credentials).map(
-    (choice) => ({
-      ...(entryFor(choice) ?? {
-        provider: choice.provider,
-        id: choice.modelId,
-        label: choice.label,
-        billing: "",
-      }),
-      providerName: choice.credentialId ? choice.connectionName : providerLabel(choice.provider),
-      ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
+  const options: RoleModelOption[] = connectedBackupOptions(
+    state.catalog,
+    credentials,
+    role === "computer",
+  ).map((choice) => ({
+    ...(entryFor(choice) ?? {
+      provider: choice.provider,
+      id: choice.modelId,
+      label: choice.label,
+      billing: "",
     }),
-  );
+    providerName: choice.credentialId ? choice.connectionName : providerLabel(choice.provider),
+    ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
+  }));
   // A pinned row runs on its connection; others on the provider's newest.
   const connectionFor = (choice: ModelRoleChoice) =>
     choice.credentialId
@@ -251,7 +277,7 @@ export function ModelRoleSettings({
   const ordered = rows.length + (primary ? 0 : 1) > 1;
   const rowClass = `flex min-h-[52px] items-center gap-2.5 py-2 pe-2 ${ordered ? "ps-2" : "ps-3"}`;
   const number = (index: number) => (
-    <span className="grid size-5 shrink-0 place-items-center rounded-md bg-accent text-[12px] text-muted-foreground">
+    <span className="grid size-5 shrink-0 place-items-center rounded-md bg-accent text-label text-muted-foreground">
       {index + 1}
     </span>
   );
@@ -260,14 +286,19 @@ export function ModelRoleSettings({
       type="button"
       className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
-      <span className="truncate text-[15px] text-foreground">{label}</span>
-      {sub ? <span className="truncate text-[13px] text-muted-foreground">{sub}</span> : null}
+      <span className="truncate text-body-lg text-foreground">{label}</span>
+      {sub ? <span className="truncate text-body-sm text-muted-foreground">{sub}</span> : null}
     </button>
   );
 
+  const optionsLabel = (name: string) => t`${name} options`;
+
   return (
     <section className="mb-8" data-testid={`model-role-${role}`}>
-      <h3 className="mb-2.5 text-heading3 font-medium text-foreground">{title}</h3>
+      <div className="mb-2.5 flex min-h-7 items-center justify-between gap-3">
+        <SectionHeading variant="heading">{title}</SectionHeading>
+        {headerAction}
+      </div>
       <ol className="divide-y divide-border rounded-xl border border-border">
         {primary ? null : (
           <li className={`${rowClass} ${ordered ? "ps-8" : ""}`} data-testid="model-role-default">
@@ -286,6 +317,26 @@ export function ModelRoleSettings({
               reopen={reopenFor("primary")}
               onReopened={() => setReopen(null)}
             />
+            {deployment && primaryMenuItems ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 text-muted-foreground"
+                      aria-label={optionsLabel(modelLabel(deployment))}
+                      disabled={busy}
+                    />
+                  }
+                >
+                  <MoreHorizontal />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[200px]">
+                  {primaryMenuItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
           </li>
         )}
         {rows.map((choice, index) => {
@@ -343,7 +394,7 @@ export function ModelRoleSettings({
                 onReopened={() => setReopen(null)}
               />
               {isPrimary && thinkingLevels.length && choice.thinkingLevel ? (
-                <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[12.5px] text-muted-foreground">
+                <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-body-sm text-muted-foreground">
                   <Trans>Thinking: {thinkingLevelLabel(choice.thinkingLevel)}</Trans>
                 </span>
               ) : null}
@@ -354,7 +405,7 @@ export function ModelRoleSettings({
                       variant="ghost"
                       size="icon-sm"
                       className="shrink-0 text-muted-foreground"
-                      aria-label={t`${name} options`}
+                      aria-label={optionsLabel(name)}
                       disabled={busy}
                     />
                   }
@@ -406,6 +457,12 @@ export function ModelRoleSettings({
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
+                  {isPrimary && primaryMenuItems ? (
+                    <>
+                      {primaryMenuItems}
+                      <DropdownMenuSeparator />
+                    </>
+                  ) : null}
                   {connection ? (
                     <DropdownMenuItem onClick={() => onManage(connection.provider, connection.id)}>
                       <Trans>Manage {providerName(choice)}</Trans>
@@ -425,7 +482,7 @@ export function ModelRoleSettings({
               trigger={
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-[14px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <Plus className="size-4" aria-hidden />
                   <Trans>Add fallback</Trans>
@@ -450,7 +507,7 @@ export function ModelRoleSettings({
         <Spinner className="mt-3" aria-label={t`Loading model catalog…`} />
       ) : null}
       {state.error ? (
-        <div role="alert" className="mt-2 text-sm text-destructive">
+        <div role="alert" className="mt-2 text-body text-destructive">
           {state.error}
           <Button variant="ghost" disabled={state.busy} onClick={() => void controller.load()}>
             <Trans>Retry</Trans>

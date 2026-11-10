@@ -1,8 +1,6 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
-import { runCodeKind, runLoginKind, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
 import {
   completeExternalEffect,
   replaceCompletedExternalEffectResult,
@@ -31,7 +29,7 @@ import {
 } from "./bot-secrets.js";
 import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "./run-notifications.js";
 import {
   commitConsumedRunSecret,
@@ -363,6 +361,9 @@ export const secretTools: ToolHandlers = {
           ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
           ...(replaces ? { replaces } : {}),
           ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
+          ...(loginFields && (await spaceIsShared(deps.prisma, run.spaceId))
+            ? { sharedBrowser: true as const }
+            : {}),
           purpose: codeOrigin
             ? "otp"
             : normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
@@ -373,11 +374,7 @@ export const secretTools: ToolHandlers = {
     if (!paused) {
       throw new Error("Could not pause this run for protected input; try sending again.");
     }
-    if (paused.continuationRunId) {
-      await deps.jobs
-        .enqueue(runContinueJob(paused.continuationRunId))
-        .catch((error) => getLogger().error("steering continuation enqueue", error));
-    }
+    await enqueueSteeringContinuation(deps, paused.continuationRunId);
     await notifyRun(deps, run, {
       kind: "help",
       ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),

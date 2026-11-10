@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { withXcodeProject } = require("expo/config-plugins");
+const { addPbxGroupWithOwnFiles } = require("./pbx-group");
 
 const TARGET = "AgentNotifications";
 const SOURCE = path.join(__dirname, "..", "native", "notifications", "NotificationService.swift");
@@ -10,6 +11,7 @@ const INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleDisplayName</key><string>Rakazo</string>
+<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
 <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
@@ -48,7 +50,8 @@ function addNotificationExtension(project, root, config) {
     objects.PBXContainerItemProxy ??= {};
     const bundleId = `${config.ios?.bundleIdentifier}.notifications`;
     const target = project.addTarget(TARGET, "app_extension", TARGET, bundleId);
-    const group = project.addPbxGroup(
+    const group = addPbxGroupWithOwnFiles(
+      project,
       ["NotificationService.swift", "Info.plist", `${TARGET}.entitlements`],
       TARGET,
       TARGET,

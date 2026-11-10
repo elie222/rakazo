@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { i18n } from "@lingui/core";
+import { i18n, setupI18n } from "@lingui/core";
 import { formatter } from "@lingui/format-po";
 import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -16,6 +16,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -23,7 +24,9 @@ describe("lingui catalogs", () => {
       "zh-TW",
     ]) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       const entry = catalog
@@ -38,7 +41,7 @@ describe("lingui catalogs", () => {
 
   it("translates dictation and voice errors into Spanish", () => {
     const catalog = readFileSync(
-      fileURLToPath(new URL("../locales/es/messages.po", import.meta.url)),
+      fileURLToPath(new URL("../../../../packages/i18n/locales/es/messages.po", import.meta.url)),
       "utf8",
     );
     for (const message of [
@@ -91,6 +94,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -98,7 +102,9 @@ describe("lingui catalogs", () => {
       "zh-TW",
     ]) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       for (const message of messages) {
@@ -121,7 +127,9 @@ describe("lingui catalogs", () => {
   it("translates bot settings labels and retains placeholders in every locale", () => {
     for (const locale of UI_LOCALES) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       for (const message of [
@@ -152,7 +160,9 @@ describe("lingui catalogs", () => {
   it("names a fixed minute every few hours in every locale", () => {
     for (const locale of UI_LOCALES) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       const entry = catalog
@@ -186,6 +196,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -193,7 +204,9 @@ describe("lingui catalogs", () => {
       "zh-TW",
     ]) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       for (const message of messages) {
@@ -218,6 +231,7 @@ describe("lingui catalogs", () => {
       "ja",
       "ko",
       "nl",
+      "pl",
       "pt-BR",
       "ru",
       "tr",
@@ -235,7 +249,9 @@ describe("lingui catalogs", () => {
     ];
     for (const locale of locales) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       for (const msgid of messages) {
@@ -255,7 +271,7 @@ describe("lingui catalogs", () => {
     }
 
     const russian = readFileSync(
-      fileURLToPath(new URL("../locales/ru/messages.po", import.meta.url)),
+      fileURLToPath(new URL("../../../../packages/i18n/locales/ru/messages.po", import.meta.url)),
       "utf8",
     );
     expect(russian).toContain(
@@ -270,7 +286,9 @@ describe("lingui catalogs", () => {
     const ids = ["Started {count}m late", "Started {count}h late", "Started {count}d late"];
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       const messages = Object.fromEntries(
@@ -307,7 +325,9 @@ describe("lingui catalogs", () => {
     const message = "{count, plural, one {# message with {peer}} other {# messages with {peer}}}";
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
       const catalog = readFileSync(
-        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+        ),
         "utf8",
       );
       for (const id of [message, "Close"]) {
@@ -330,25 +350,66 @@ describe("lingui catalogs", () => {
   });
 });
 
-it("keeps source placeholders and JSX markers in Traditional Chinese translations", async () => {
-  const readCatalog = async (locale: string) => {
-    const filename = fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url));
-    return formatter().parse(readFileSync(filename, "utf8"), {
-      locale,
-      sourceLocale: "en",
-      filename,
-    });
-  };
-  const source = await readCatalog("en");
-  const translated = await readCatalog("zh-TW");
-  expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
-  const markers = (value: string) =>
-    [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
-  for (const [id, entry] of Object.entries(source)) {
-    const message = entry.message ?? entry.translation ?? id;
-    // Untranslated entries fall back to English, as in every other catalog.
-    const translation = translated[id]?.translation;
-    if (!translation?.trim()) continue;
-    expect(markers(translation), message).toEqual(markers(message));
+it("renders Polish plural categories and interpolated values in every counted message", async () => {
+  const filename = fileURLToPath(
+    new URL("../../../../packages/i18n/locales/pl/messages.po", import.meta.url),
+  );
+  const catalog = await formatter().parse(readFileSync(filename, "utf8"), {
+    locale: "pl",
+    sourceLocale: "en",
+    filename,
+  });
+  const counted = Object.entries(catalog).filter(([, entry]) =>
+    entry.message?.includes(", plural,"),
+  );
+  expect(counted.length).toBeGreaterThanOrEqual(19);
+  const local = setupI18n({ locale: "pl" });
+  const number = new Intl.NumberFormat("pl");
+  for (const [id, entry] of counted) {
+    const translation = entry.translation ?? "";
+    for (const category of new Intl.PluralRules("pl").resolvedOptions().pluralCategories) {
+      expect(translation, entry.message).toContain(`${category} {`);
+    }
+    local.load("pl", { [id]: translation });
+    for (const count of [0, 1, 2, 5, 12, 14, 21, 22, 25, 101, 102, 112, 1.5]) {
+      const values = Object.fromEntries(
+        [...(entry.message ?? "").matchAll(/\{(\w+)(?=\s*[,}])/g)].map((match) => [
+          match[1],
+          match[1] === "peer" || match[1] === "name" ? "Locale QA" : count,
+        ]),
+      );
+      const rendered = local._({ id, values });
+      expect(rendered, `${entry.message}: ${count}`).toContain(number.format(count));
+      expect(rendered).not.toMatch(/[{}]/);
+      if ("peer" in values || "name" in values) expect(rendered).toContain("Locale QA");
+    }
   }
 });
+
+it.each(["zh-CN", "zh-TW", "pl"])(
+  "keeps source placeholders and JSX markers in %s translations",
+  async (locale) => {
+    const readCatalog = async (locale: string) => {
+      const filename = fileURLToPath(
+        new URL(`../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
+      );
+      return formatter().parse(readFileSync(filename, "utf8"), {
+        locale,
+        sourceLocale: "en",
+        filename,
+      });
+    };
+    const source = await readCatalog("en");
+    const translated = await readCatalog(locale);
+    expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
+    const markers = (value: string) =>
+      [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
+    for (const [id, entry] of Object.entries(source)) {
+      const message = entry.message ?? entry.translation ?? id;
+      const translation = translated[id]?.translation;
+      expect(translation?.trim(), message).toBeTruthy();
+      if (!translation?.trim()) continue;
+      expect(markers(translation), message).toEqual(markers(message));
+    }
+  },
+);

@@ -27,9 +27,10 @@ describe("egress refusals", () => {
   });
 
   it("records a connector URL aimed at the cloud metadata endpoint", async () => {
-    await expect(assertSafeRemoteUrl("https://169.254.169.254/latest/meta-data")).rejects.toThrow(
-      "private host",
-    );
+    const refusal = assertSafeRemoteUrl("https://169.254.169.254/latest/meta-data");
+    // Metadata hosts stay blocked even with the private-endpoint setting, so the refusal must not offer it.
+    await expect(refusal).rejects.toThrow("private host");
+    await expect(refusal).rejects.not.toThrow("MCP_ALLOW_PRIVATE_ENDPOINT");
     expect(refusals()).toEqual([
       { host: "169.254.169.254", reason: "Connector URL targets a private host" },
     ]);

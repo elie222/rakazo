@@ -188,7 +188,13 @@ export const FR_MESSAGES: Record<string, string> = {
   "Previous Bot": "Bot précédent",
   "Command Menu…": "Menu des commandes…",
   "Toggle Sidebar": "Afficher/masquer la barre latérale",
-  "Search…": "Rechercher…",
+  "Find…": "Rechercher…",
+  "Search Bots…": "Rechercher des bots…",
   "The window closed before the app loaded.":
     "La fenêtre s’est fermée avant le chargement de l’app.",
+  "New Group Chat": "Nouvelle discussion de groupe",
+  "Connect Apps…": "Connecter des apps…",
+  "Chat Details": "Détails de la discussion",
+  Help: "Aide",
+  "Keyboard Shortcuts": "Raccourcis clavier",
 };

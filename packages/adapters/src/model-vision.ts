@@ -32,6 +32,22 @@ export function modelIdSupportsImages(
   );
 }
 
+/** Whether a compatible connection lists the model as seeing images. */
+export function compatibleModelSeesImages(
+  credential: { supportsImages?: boolean | null; defaultModel?: string | null },
+  secret: { visionModelIds?: readonly string[] },
+  modelId: string,
+): boolean {
+  return (
+    modelIdSupportsImages(secret.visionModelIds, modelId) ||
+    // Legacy secrets have no per-model list, so keep their existing
+    // capability scoped to the model saved in the space preference.
+    (secret.visionModelIds === undefined &&
+      credential.supportsImages === true &&
+      credential.defaultModel?.trim() === modelId.trim())
+  );
+}
+
 /** Update the explicit per-model image capability without disturbing other model ids. */
 export function updateModelImageCapabilities(
   modelIds: readonly string[] | undefined,

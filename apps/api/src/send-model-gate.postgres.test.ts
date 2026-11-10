@@ -181,14 +181,35 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     expect((await send({ groupId: group.id, text: "@Alpha hello" })).status).toBe(200);
     await expectRefused(await send({ groupId: group.id, text: "@Beta hello" }));
     await expectRefused(await send({ groupId: group.id, text: "@everyone hello" }));
-    // A group "stop" is no stop, so a bot without a model still refuses it.
-    await expectRefused(
-      await send({ groupId: group.id, text: "stop", mentions: [{ kind: "bot", id: beta.id }] }),
-    );
+    const stop = () =>
+      send({ groupId: group.id, text: "stop", mentions: [{ kind: "bot", id: beta.id }] });
+    // A "stop" while Alpha works needs no model: it stops that work.
+    expect((await stop()).status).toBe(200);
+    // With nothing left working it is no stop, so a bot without a model still refuses it.
+    await expectRefused(await stop());
     await expectRefused(
       await send({ groupId: group.id, text: "hello", mentions: [{ kind: "bot", id: beta.id }] }),
     );
-    expect(await userMessages(group.thread!.id)).toBe(1);
+    // A message that names nobody wakes every member, Beta included.
+    await expectRefused(await send({ groupId: group.id, text: "hello" }));
+    expect(await userMessages(group.thread!.id)).toBe(2);
+    // A reply to a member's message wakes that member alone.
+    const reply = (author: string) =>
+      createThreadMessage(system, {
+        threadId: group.thread!.id,
+        role: "bot",
+        botId: author,
+        blocks: [{ kind: "text", text: "Which colour?" }],
+      });
+    const alphaReply = await reply(botId);
+    const betaReply = await reply(beta.id);
+    expect(
+      (await send({ groupId: group.id, text: "blue", replyToMessageId: alphaReply.id })).status,
+    ).toBe(200);
+    await expectRefused(
+      await send({ groupId: group.id, text: "blue", replyToMessageId: betaReply.id }),
+    );
+    expect(await userMessages(group.thread!.id)).toBe(3);
     // A reaction wakes the bot that wrote the message.
     expect(await react({ groupId: group.id }, group.thread!.id, beta.id)).toEqual([]);
     expect(await react({ groupId: group.id }, group.thread!.id, botId)).toHaveLength(1);

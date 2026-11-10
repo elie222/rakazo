@@ -1,5 +1,6 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
-import type { MobileMessage } from "./api";
+import { hapticSuccess } from "./haptics";
+import type { MobileMessage } from "./mobile-types";
 
 export type ThreadAnswerContext = {
   botId: string | undefined;
@@ -7,13 +8,23 @@ export type ThreadAnswerContext = {
   readOnly: boolean;
   rpc: (proc: "threads/answer", body: RpcInput<"threads/answer">) => Promise<unknown>;
   isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
+  isFocused: () => boolean;
   refresh: () => Promise<unknown>;
   markRead: () => void;
 };
 
 /** Sends an ask answer or dismissal; resolves once the server accepts it. */
 export async function answerThreadMessage(
-  { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead }: ThreadAnswerContext,
+  {
+    botId,
+    groupId,
+    readOnly,
+    rpc,
+    isCurrentTarget,
+    isFocused,
+    refresh,
+    markRead,
+  }: ThreadAnswerContext,
   message: Pick<MobileMessage, "id" | "runId">,
   answer: string,
   fields?: readonly LoginFieldInput[],
@@ -32,5 +43,8 @@ export async function answerThreadMessage(
     ...(dismiss ? { dismiss: true as const } : {}),
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.
-  if (isCurrentTarget(botId, groupId)) await refresh().catch(() => undefined);
+  if (isCurrentTarget(botId, groupId)) {
+    if (isFocused()) hapticSuccess();
+    await refresh().catch(() => undefined);
+  }
 }

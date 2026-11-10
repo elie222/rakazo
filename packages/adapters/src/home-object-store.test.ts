@@ -734,6 +734,44 @@ describe("ObjectAgentHomeStore", () => {
     });
   });
 
+  it("removes folders from a remote computer's copy saved elsewhere during removal", async () => {
+    const { store, otherHost } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const worker = await otherHost();
+    const hydrate = store.hydrate.bind(store);
+    let saved = false;
+    store.hydrate = async (...args) => {
+      await hydrate(...args);
+      if (saved) return;
+      saved = true;
+      await worker.commit(
+        "team-1",
+        await staged({ "bots/gone/notes.txt": "deleted bot", "shared/plan.txt": "new work" }),
+        context,
+      );
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({ "shared/plan.txt": "new work" });
+  });
+
+  it("never replaces a Docker computer's copy saved elsewhere during removal", async () => {
+    const { store, rows, otherHost } = await setup(["team-1"]);
+    rows[0]!.kind = "docker";
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const worker = await otherHost();
+    const hydrate = store.hydrate.bind(store);
+    store.hydrate = async (...args) => {
+      await hydrate(...args);
+      await worker.commit("team-1", await staged({ "shared/plan.txt": "new work" }), context);
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "The cached home is older than its stored revision",
+    );
+  });
+
   it("leaves the folders to a retry when the stored copy cannot be saved", async () => {
     const { store, storage, otherHost } = await setup(["team-1"]);
     await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
@@ -783,6 +821,18 @@ describe("ObjectAgentHomeStore", () => {
       expect(await exported(await otherHost(), "team-1")).toEqual({ "recent.txt": "local work" });
     },
   );
+
+  it("finishes removing folders when the computer is deleted during the save", async () => {
+    const { store, rows, records } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const create = records.create.bind(records);
+    records.create = async (homeKey) => {
+      rows.splice(0, 1);
+      return create(homeKey);
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+  });
 
   it("keeps the rest of a home never stored when its first save fails", async () => {
     const { store, storage } = await setup(["team-1"]);
@@ -1050,6 +1100,25 @@ describe("the local cache of object-backed homes", () => {
       "remote-recent",
     ]);
     expect(await store.readFile("remote-idle", "a.txt", context)).toBe("remote-idle");
+  });
+
+  it("evicts a downloaded copy once retention has cleared the stored home", async () => {
+    const { root, rows, store } = await setup(["retention-cleared"]);
+    await store.commit("retention-cleared", await staged({ "a.txt": "secret" }), context);
+    await store.hydrate("retention-cleared");
+    // Retention deleted the stored home: the record names no revision, so only this
+    // host's downloaded copy is left, and nobody will read it again to clear it.
+    Object.assign(rows[0]!, {
+      homeStorageId: null,
+      homeStorageKey: null,
+      homeStorageRevision: null,
+    });
+    const now = Date.now();
+    const hoursAgo = new Date(now - 2 * 60 * 60_000);
+    await utimes(path.join(root, "home-revisions", "retention-cleared.txt"), hoursAgo, hoursAgo);
+
+    expect(await store.evictIdleCaches(now)).toBe(1);
+    expect(await entries(path.join(root, "homes"))).toEqual([]);
   });
 
   it("saves a large file streamed to disk and storage one chunk at a time", async () => {

@@ -132,6 +132,8 @@ describe("tickRoutineWatch", () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const messages: Array<{ role: string; blocks: unknown }> = [];
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
       thread: { update: vi.fn(async () => ({ nextMessageSeq: 1, nextEventSeq: 1 })) },
       message: {
         create: vi.fn(async ({ data }: { data: { role: string; blocks: unknown } }) => {
@@ -207,6 +209,20 @@ describe("tickRoutineWatch", () => {
     );
     expect(deps.jobs.enqueue).toHaveBeenCalledTimes(2);
     expect(messages).toHaveLength(0);
+  });
+
+  it("saves a check only for the owner it started with", async () => {
+    const { deps, routine, updateMany } = setup({ data: { changes: [] } });
+    // Someone else taking the routine over mid-check makes this write miss.
+    updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(tickRoutineWatch(deps, routine, target, scheduledAt)).resolves.toEqual({
+      run: false,
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: routine.id, userId: "user-1", active: true, nextRunAt: scheduledAt },
+      }),
+    );
   });
 
   it("posts 'no changes' when loud", async () => {
@@ -515,6 +531,8 @@ describe("tickRoutineWatch on a computer", () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const messages: unknown[] = [];
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
       thread: { update: vi.fn(async () => ({ nextMessageSeq: 1, nextEventSeq: 1 })) },
       message: {
         create: vi.fn(async ({ data }: { data: unknown }) => {

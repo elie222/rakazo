@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
 import {
   connectedBackupOptions,
   connectionDisplayName,
@@ -8,6 +7,7 @@ import {
   sameBackupChoices,
   withConnectionName,
 } from "./model-backups.js";
+import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -77,6 +77,29 @@ describe("connected backup model choices", () => {
     expect(connectionDisplayName({ ...credential, label: "Work" }, "Claude subscription")).toBe(
       "Claude subscription (Work)",
     );
+  });
+  it("offers computer use only seeing models on the member's own connections", () => {
+    const managed: ModelCatalogEntry = {
+      provider: "openrouter",
+      providerName: "OpenRouter",
+      id: "hosted-vision",
+      label: "Hosted vision",
+      billing: "",
+      managed: true,
+    };
+    const local = {
+      ...credentials[1]!,
+      enabledModelIds: ["custom-model", "custom-vision"],
+      visionModelIds: ["custom-vision"],
+    };
+    const offered = (computerUse: boolean) =>
+      connectedBackupOptions([...catalog, managed], [credentials[0]!, local], computerUse).map(
+        (option) => option.modelId,
+      );
+    expect(offered(false)).toEqual(expect.arrayContaining(["hosted-vision", "custom-model"]));
+    expect(offered(true)).toContain("custom-vision");
+    expect(offered(true)).not.toContain("custom-model");
+    expect(offered(true)).not.toContain("hosted-vision");
   });
   it("offers only non-placeholder catalog models for connected providers", () => {
     expect(connectedBackupOptions(catalog, credentials)).toEqual([

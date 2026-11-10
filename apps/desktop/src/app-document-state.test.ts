@@ -84,6 +84,19 @@ describe("waiting for the app document", () => {
     ).resolves.toBe("pending");
   });
 
+  it("ends at the deadline when the renderer never answers", async () => {
+    const executeJavaScript = vi.fn(() => new Promise<never>(() => {}));
+    const startedAt = Date.now();
+    await expect(
+      waitForMountedAppDocument(
+        { executeJavaScript, isCrashed: () => false, isDestroyed: () => false },
+        200,
+      ),
+    ).resolves.toBe("pending");
+    expect(executeJavaScript).toHaveBeenCalled();
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
   it("gives up at once when the window is gone", async () => {
     await expect(
       waitForMountedAppDocument({

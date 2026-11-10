@@ -1,10 +1,11 @@
+import { useLingui } from "@lingui/react/macro";
 import type { RoutineRun } from "@rakazo/contracts";
 import { formatRoutineRunAt } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator } from "react-native";
 import { activityStatusLabel, routineRunLateLabel } from "../lib/activity";
-import { dateLocaleForUi, useI18n } from "../lib/i18n";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
 import { native } from "../lib/native";
 import { routineRunDestination, useRoutineRuns } from "../lib/routine-runs";
 import { NativeActionButton } from "./native-action-button";
@@ -18,7 +19,7 @@ export function RoutineRunHistory({
   routineId: string;
   botName: string | undefined;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const history = useRoutineRuns(routineId);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -26,11 +27,11 @@ export function RoutineRunHistory({
     if (!history.failed) return <ActivityIndicator color={native.secondaryLabel} />;
     return (
       <>
-        <SettingsGroup label={t("Run history")}>
-          <SettingsRow key="failed" title={t("Could not load run history")} dimmed />
+        <SettingsGroup>
+          <SettingsRow key="failed" title={t`Could not load run history`} dimmed />
         </SettingsGroup>
         <NativeActionButton
-          label={t("Try again")}
+          label={t`Try again`}
           variant="text"
           prominence="secondary"
           onPress={history.retry}
@@ -40,9 +41,9 @@ export function RoutineRunHistory({
   }
   return (
     <>
-      <SettingsGroup label={t("Run history")}>
+      <SettingsGroup>
         {history.runs.length === 0 ? (
-          <SettingsRow key="empty" title={t("No runs yet")} dimmed />
+          <SettingsRow key="empty" title={t`No runs yet`} dimmed />
         ) : (
           history.runs.map((run) => {
             const destination = routineRunDestination(run, botName);
@@ -64,12 +65,12 @@ export function RoutineRunHistory({
           })
         )}
         {history.failed ? (
-          <SettingsRow key="failed" title={t("Could not load run history")} dimmed />
+          <SettingsRow key="failed" title={t`Could not load run history`} dimmed />
         ) : null}
       </SettingsGroup>
       {history.hasOlder ? (
         <NativeActionButton
-          label={t("Load older runs")}
+          label={t`Load older runs`}
           variant="text"
           prominence="secondary"
           busy={history.loadingOlder}
@@ -90,7 +91,8 @@ function RunRow({
   error: string | null;
   onPress: (() => void) | undefined;
 }) {
-  const { locale, t } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const failure = useRunError(error);
   const title = formatRoutineRunAt(run, dateLocaleForUi(locale));
   return (
@@ -103,7 +105,7 @@ function RunRow({
           ? activityStatusLabel(run.status)
           : run.messageId
             ? undefined
-            : t("No reply")
+            : t`No reply`
       }
       chevron={onPress ? "right" : undefined}
       onPress={onPress}

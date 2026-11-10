@@ -6,9 +6,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
-import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
+import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
@@ -17,7 +18,6 @@ import {
   isPackageRunnerCommand,
 } from "./mcp-package-installer.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
-
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
 import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 
@@ -119,6 +119,12 @@ export interface McpClientOptions {
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
 const RESOURCE_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
 const DEFAULT_MAX_URL_LENGTH = 2_048;
+/**
+ * An authorization URL is opened by the browser, not fetched by the server, and carries
+ * every scope the MCP server publishes (PostHog lists over 150, about 3,000 characters).
+ * Bound it separately from MCP endpoints, at a size browsers and common web servers accept.
+ */
+export const MAX_AUTHORIZATION_URL_LENGTH = 8_192;
 // A Request owns the abort link for its signal in affected Node versions. Keep
 // that owner alive while a fetch/body still retains the signal, without keeping
 // completed requests alive once the signal is no longer used.
@@ -351,7 +357,7 @@ export class McpSession {
   private newClient(): Client {
     return new Client(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
-      this.clientOptions.capabilities,
+      this.clientOptions.capabilities ?? { capabilities: MCP_APP_CLIENT_CAPABILITIES },
     );
   }
 
@@ -472,6 +478,17 @@ export class McpSession {
     return (await this.client.callTool({ name, arguments: args }, undefined, {
       signal: options?.signal,
     })) as CallToolResult;
+  }
+
+  async readResource(
+    uri: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ contents?: unknown }> {
+    this.assertConnected();
+    return this.client.readResource(
+      { uri },
+      { signal: options?.signal, timeout: MCP_APP_READ_TIMEOUT_MS },
+    );
   }
 
   /** `afterClose` follows actual SDK shutdown, even if this call stops waiting. */

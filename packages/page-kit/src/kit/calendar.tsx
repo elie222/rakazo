@@ -314,7 +314,7 @@ export function WeekView({
   const days = Array.from({ length: 7 }, (_, index) => addDays(first, index));
   return (
     <section
-      className="rk-cal rk-cal-timed"
+      className="rk-cal rk-cal-timed rk-cal-week"
       aria-label={words.t("weekOf", {
         date: words.date(first.getTime(), { month: "long", day: "numeric", timeZone: "UTC" }),
       })}
@@ -433,6 +433,8 @@ export const CALENDAR_CSS = `
 .rk-cal-body{position:relative;margin:9px 0;min-width:0}
 .rk-cal-hours span{position:absolute;left:0;width:52px;transform:translateY(-50%);font-size:12px;line-height:16px;text-align:right;color:var(--rk-secondary);white-space:nowrap}
 .rk-cal-columns{position:absolute;inset:0 0 0 60px;display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));border-left:1px solid var(--rk-hairline);background:repeating-linear-gradient(to bottom,var(--rk-hairline) 0 1px,transparent 1px ${HOUR_HEIGHT}px)}
+.rk-cal-week .rk-cal-columns{grid-template-columns:repeat(7,minmax(64px,1fr))}
+.rk-cal-week .rk-cal-body{min-width:508px}
 .rk-cal-columns::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--rk-hairline)}
 .rk-cal-column{position:relative;min-width:0;border-right:1px solid var(--rk-hairline)}
 .rk-cal-column[data-today]{background:color-mix(in srgb,var(--rk-c1) 4%,transparent)}

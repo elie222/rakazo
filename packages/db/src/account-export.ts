@@ -167,6 +167,7 @@ async function* spaceRecords(
       crossSpaceCommunication: bot.crossSpaceCommunication,
       dailyCheckIns: bot.dailyCheckIns,
       fleetManagement: bot.fleetManagement,
+      replyMode: bot.replyMode === "messages" ? "messages" : "chat",
       createdAt: iso(bot.createdAt),
     };
 
@@ -233,7 +234,11 @@ async function* spaceRecords(
         ...tenant,
         id: { gt: cursor },
         externalConversationId: null,
-        OR: [{ botId: { in: [...botIds] } }, { groupId: { in: [...groupIds] } }],
+        OR: [
+          { botId: { in: [...botIds] } },
+          { groupId: { in: [...groupIds] } },
+          { helperBotId: { in: [...botIds] } },
+        ],
       },
       orderBy: { id: "asc" },
       take: PAGE,
@@ -241,6 +246,7 @@ async function* spaceRecords(
         id: true,
         botId: true,
         groupId: true,
+        helperBotId: true,
         historyCompactedUpToSeq: true,
         historyCompactionSummary: true,
         createdAt: true,
@@ -293,6 +299,7 @@ async function* spaceRecords(
     hash: string;
     rootArtifactId: string | null;
     version: number;
+    standalone: boolean;
     storageKey: string;
     createdAt: Date;
   }): AccountExportRecord => {
@@ -309,6 +316,7 @@ async function* spaceRecords(
       hash: row.hash,
       rootArtifactId: row.rootArtifactId,
       version: row.version,
+      standalone: row.standalone,
       createdAt: iso(row.createdAt),
     };
   };

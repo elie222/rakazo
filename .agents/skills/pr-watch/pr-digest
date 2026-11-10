@@ -52,9 +52,16 @@ check_runs() {
     --jq '.check_runs[] | {name, status, conclusion, html_url}' | jq -s .
 }
 
+# Fork PRs always carry Vercel's "Authorization required to deploy." failure,
+# which AGENTS.md says to ignore; counting it would wake every watch at once.
+# On a same-repo PR the same status is a real deploy problem, so it still counts.
+FORK=false
 commit_statuses() {
   api --paginate "repos/$1/commits/$2/status?per_page=100" \
-    --jq '.statuses[] | {context, state}' | jq -s .
+    --jq '.statuses[] | {context, state, description}' |
+    jq -s --argjson fork "$FORK" '[.[]
+      | select($fork and .context == "Vercel" and .description == "Authorization required to deploy." | not)
+      | {context, state}]'
 }
 
 logs() {
@@ -110,7 +117,7 @@ findings() {
       | implode
       | sub("^ +"; "") | sub(" +$"; "") | .[0:$n];'
 
-  # Deploy tables, rate-limit notices, screenshot galleries, and sticky bot
+  # Deploy tables, preview links, rate-limit notices, screenshot galleries, and sticky bot
   # summaries are status chrome — not findings that need a reply. Actionable
   # bot conversation comments are not noise and must block green.
   local noise_def='
@@ -125,9 +132,11 @@ findings() {
           startswith("<h3>Greptile Summary</h3>") or startswith("<!-- greptile_summary -->")))
         or ((.user.login | startswith("qodo-")) and (.body | ltrimstr("\n") |
           startswith("<h3>PR Summary by Qodo</h3>") or startswith("<h3>Code Review by Qodo</h3>")
-            or startswith("<h3>Qodo is busy working</h3>") or startswith("<!-- qodo:")))
+            or startswith("<h3>Qodo is busy working</h3>") or startswith("<!-- qodo:")
+            or test("^\\[Code review\\]\\([^)]*\\) by qodo was updated up to the latest commit ")))
         or (.user.login == "github-actions[bot]" and (.body |
           startswith("<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots")
+            or startswith("<!-- rakazo-preview -->")
             or . == "/agentic_review"))
       );'
 
@@ -348,6 +357,9 @@ main() {
     || die "could not resolve authenticated user"
   case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
+  FORK=$(gh pr view "$pr" --repo "$repo" --json isCrossRepository --jq .isCrossRepository) \
+    || die "could not read PR $pr"
+  [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
     local started=$SECONDS head runs statuses empty=0 left baseline="" first=1 seen

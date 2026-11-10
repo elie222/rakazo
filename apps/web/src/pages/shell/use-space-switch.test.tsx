@@ -26,6 +26,7 @@ vi.mock("../../lib/bootstrap-target", () => ({
   initialBootstrapTarget: () => ({ botId: "target" }),
 }));
 vi.mock("../../lib/call-session", () => ({ getSnapshot: state.call }));
+vi.mock("../../lib/organizations", () => ({ leaveOrganization: async () => {} }));
 vi.mock("../../lib/query", () => ({
   queryClient: { getQueryData: state.cached },
   spaceSeedKey: () => [],

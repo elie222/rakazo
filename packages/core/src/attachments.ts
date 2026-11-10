@@ -7,6 +7,7 @@ import {
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -164,11 +165,68 @@ export function promptTextForAttachments(
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
+const TOOL_STEP_NOTE_MAX_CHARS = 300;
+const TOOL_STEP_MAX_LINES = 40;
+/** Tool names are at most 64 characters; only imported data could carry a longer label. */
+const TOOL_STEP_LABEL_MAX_CHARS = 80;
+
+/**
+ * An earlier reply's tool steps as the bot sees them again: label, count and note. Replay caps
+ * notes and steps; history reads pass `full`, since they page through long text themselves.
+ */
+export function toolStepsHistoryText(
+  steps: Extract<MessageBlock, { kind: "steps" }>["steps"],
+  { full = false }: { full?: boolean } = {},
+): string {
+  // Stored blocks can come from an account import, so skip malformed entries instead of throwing.
+  const valid = Array.isArray(steps) ? steps.filter((step) => typeof step?.label === "string") : [];
+  if (valid.length === 0) return "";
+  const shown = full ? valid : valid.slice(0, TOOL_STEP_MAX_LINES);
+  const lines = shown.map((step) => {
+    const name =
+      !full && step.label.length > TOOL_STEP_LABEL_MAX_CHARS
+        ? `${step.label.slice(0, TOOL_STEP_LABEL_MAX_CHARS)}…`
+        : step.label;
+    const counted = Number(step.count) > 1 ? `${name} ×${step.count}` : name;
+    const outcome = toolStepOutcomeText(step);
+    const label = outcome ? `${counted} (${outcome})` : counted;
+    const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
+    const note =
+      !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
+        ? `${whole.slice(0, TOOL_STEP_NOTE_MAX_CHARS)}…`
+        : whole;
+    return note ? `- ${label}: ${note}` : `- ${label}`;
+  });
+  const hidden = valid.length - shown.length;
+  if (hidden > 0) lines.push(`- …and ${hidden} more`);
+  // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step.
+  return `[tool calls this reply made]\n${lines.join("\n")}`;
+}
+
+const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
+
+/** "succeeded" when every call ended the same way, else "2 succeeded, 1 failed". */
+function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {
+  const outcomes = (step.outcomes ?? {}) as Partial<Record<string, unknown>>;
+  if (typeof outcomes !== "object") return "";
+  const counts = TOOL_STEP_OUTCOMES.flatMap((outcome) => {
+    const count = Number(outcomes[outcome]);
+    return Number.isInteger(count) && count > 0 ? [{ outcome, count }] : [];
+  });
+  const [only] = counts;
+  if (counts.length === 1 && only?.count === Number(step.count)) return only.outcome;
+  return counts.map(({ outcome, count }) => `${count} ${outcome}`).join(", ");
+}
+
 export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
       if (block.kind === "text") return block.text;
+      // The tools a reply used, and what the bot wrote before each, are kept out of its text;
+      // without them a later turn cannot tell what it already did.
+      if (block.kind === "steps") return toolStepsHistoryText(block.steps);
       if (block.kind === "chart") return `[chart: ${block.name}]`;
+      if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
       // The id lets a later turn, or another chat, update this page instead of making a new one.
       if (block.kind === "page") {
@@ -181,14 +239,25 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       // which lines came from another bot rather than the user.
       if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
       if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
+      if (block.kind === "channel_message") return `[from ${block.fromLabel}] ${block.text}`;
       if (block.kind === "handoff") {
         return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
       }
       // Without the answer a later turn sees the question as still open and asks it again.
       if (block.kind === "ask") {
-        if (block.status !== "answered" || !block.answer) return block.text;
+        // A question card keeps its draft in the detail, and a later turn still needs
+        // it: approval cards repeat tool arguments the call itself records, and secret
+        // cards keep their detail hidden. The draft is fenced so a line in it cannot
+        // pass for the answer; only something that reads as a closing draft tag (any case or
+        // spacing) is escaped, so the bot reads the rest of its draft verbatim (an address
+        // like "Ana <ana@example.test>" stays as written).
+        const detail =
+          block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
+            ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
+            : "";
+        if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
         const choice = block.actions?.find((action) => action.id === block.answer);
-        return `${block.text}\nAnswer: ${choice?.label ?? block.answer}`;
+        return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
       }
       // The bot needs the outcome of its own call: a missed call is its cue to follow up.
       if (block.kind === "call_request") {
@@ -299,6 +368,11 @@ export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
 }
 
+/** Where a run copies an attached file in the bot's workspace; history tools report the same path. */
+export function attachmentComputerPath(artifactId: string, mimeType: string): string {
+  return `attachments/${artifactId}${attachmentExtensionForMimeType(mimeType)}`;
+}
+
 export function attachmentsForThread<T extends { threadKey: string }>(
   attachments: readonly T[],
   threadKey: string | undefined,
@@ -315,9 +389,23 @@ export function attachmentsForBot<T extends { botId: string }>(
   return attachments.filter((attachment) => attachment.botId === botId);
 }
 
+/**
+ * The message whose attachments this run receives: a person's message, or a message or
+ * handoff another bot delivered, whose files arrive the same way.
+ */
 export function userTurnMessageForRun<
   T extends { id?: string; role: string; runId?: string | null; blocks: MessageBlock[] },
 >(trigger: string, runId: string, messages: T[], sourceMessageId?: string | null): T | undefined {
+  if (trigger === "bot_message" || trigger === "follow_up") {
+    if (!sourceMessageId) return undefined;
+    return messages.find(
+      (message) =>
+        message.id === sourceMessageId &&
+        message.blocks.some(
+          (block) => block.kind === "bot_message_received" || block.kind === "handoff",
+        ),
+    );
+  }
   if (trigger !== "user" && trigger !== "messaging" && trigger !== "reaction") return undefined;
   return messages.find(
     (message) =>

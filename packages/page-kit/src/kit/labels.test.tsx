@@ -45,7 +45,7 @@ const longRows = Array.from({ length: 250 }, (_, index) => [`Row ${index}`, inde
 describe("page words", () => {
   it("cover the app's shipped web languages", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const shipped = readdirSync(join(here, "../../../../apps/web/src/locales"), {
+    const shipped = readdirSync(join(here, "../../../../packages/i18n/locales"), {
       withFileTypes: true,
     })
       .filter((entry) => entry.isDirectory())
@@ -86,6 +86,7 @@ describe("page words", () => {
     expect(pageLocaleOf("zh")).toBe("zh-CN");
     expect(pageLocaleOf("pt-PT")).toBe("pt-BR");
     expect(pageLocaleOf("JA")).toBe("ja");
+    expect(pageLocaleOf("pl-PL")).toBe("pl");
     expect(pageLocaleOf("sw")).toBe("en");
     expect(pageLocaleOf("not a tag")).toBe("en");
     expect(pageLocaleOf(undefined)).toBe("en");
@@ -103,6 +104,24 @@ describe("page words", () => {
     expect(wordsFor("en").t("photos", { count: 2 })).toBe("2 photos");
   });
 
+  it.each([
+    [0, "0 zdjęć", "0 ocen"],
+    [1, "1 zdjęcie", "1 ocena"],
+    [2, "2 zdjęcia", "2 oceny"],
+    [5, "5 zdjęć", "5 ocen"],
+    [12, "12 zdjęć", "12 ocen"],
+    [14, "14 zdjęć", "14 ocen"],
+    [21, "21 zdjęć", "21 ocen"],
+    [22, "22 zdjęcia", "22 oceny"],
+    [101, "101 zdjęć", "101 ocen"],
+    [102, "102 zdjęcia", "102 oceny"],
+    [1.5, "1,5 zdjęcia", "1,5 oceny"],
+  ])("inflects Polish photo and rating counts of %s", (count, photos, ratings) => {
+    const words = wordsFor("pl-PL");
+    expect(words.t("photos", { count })).toBe(photos);
+    expect(words.t("ratings", { count })).toBe(ratings);
+  });
+
   it("put the page's language on built-in controls, dates and numbers", () => {
     const root = mount(
       <Page title="Rapport" lang="fr">
@@ -118,6 +137,41 @@ describe("page words", () => {
     expect(root.querySelector(".rk-cal-month th")!.textContent).toBe("lun.");
     expect(root.querySelector(".rk-chart-empty")!.textContent).toBe("Aucune donnée");
     expect(document.documentElement.lang).toBe("fr");
+  });
+
+  it("renders Polish page controls, gallery labels and regional calendar dates", () => {
+    const root = mount(
+      <Page title="Raport" lang="pl-PL">
+        <Table columns={["Nazwa", "Wartość"]} rows={longRows} />
+        <MonthView month="2026-10" />
+        <Gallery photos={[{ src: PIXEL }, { src: PIXEL }]} />
+        <EmptyChart />
+      </Page>,
+    );
+    expect(root.querySelector("input")!.placeholder).toBe("Filtruj wiersze");
+    expect(root.querySelector(".rk-table-more button")!.textContent).toBe("Pokaż więcej");
+    expect(root.querySelector(".rk-table-more span")!.textContent).toBe("Wyświetlono 200 z 250");
+    expect(root.querySelector(".rk-cal-month")!.getAttribute("aria-label")).toBe(
+      "październik 2026",
+    );
+    expect(root.querySelector(".rk-gallery")!.getAttribute("aria-label")).toBe("2 zdjęcia");
+    expect(root.querySelector(".rk-gallery-dots button")!.getAttribute("aria-label")).toBe(
+      "Pokaż zdjęcie 1",
+    );
+    expect(root.querySelector(".rk-chart-empty")!.textContent).toBe("Brak danych");
+    expect(document.documentElement.lang).toBe("pl-PL");
+    expect(wordsFor("pl-PL").number(1234.5)).toBe(new Intl.NumberFormat("pl-PL").format(1234.5));
+  });
+
+  it("uses Polish controls when the host supplies Polish and the page has no own language", () => {
+    const root = mount(
+      <PageLanguage.Provider value="pl-PL">
+        <Page title="Raport">
+          <EmptyChart />
+        </Page>
+      </PageLanguage.Provider>,
+    );
+    expect(root.querySelector(".rk-chart-empty")!.textContent).toBe("Brak danych");
   });
 
   it("keeps English and US formats for a page with no language", () => {

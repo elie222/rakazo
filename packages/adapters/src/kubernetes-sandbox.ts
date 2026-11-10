@@ -2,7 +2,14 @@ import { createHash } from "node:crypto";
 import type { Readable } from "node:stream";
 import { PassThrough } from "node:stream";
 import type * as KubernetesClient from "@kubernetes/client-node";
-import type { CoreV1Api, Exec, V1Pod, V1PodSpec, V1Status } from "@kubernetes/client-node";
+import type {
+  ConfigurationOptions,
+  CoreV1Api,
+  Exec,
+  V1Pod,
+  V1PodSpec,
+  V1Status,
+} from "@kubernetes/client-node";
 import type {
   AdapterContext,
   CommandRequest,
@@ -23,6 +30,7 @@ import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { RawExecEvent } from "./exec-computer.js";
 import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
@@ -30,6 +38,7 @@ const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // production so every pod runs the image the API was tested against.
 const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 const DEFAULT_READY_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 const CONTAINER_NAME = "computer";
 // Names the bot that owns a computer pod. A pod carrying another bot's value is
 // never reused or replaced.
@@ -449,34 +458,40 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   }
 
   private async readPod(name: string, signal: AbortSignal): Promise<V1Pod | undefined> {
-    signal.throwIfAborted();
     try {
-      const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
-      const request = Promise.all([loadKubernetes(), this.clients()]).then(
-        ([{ Observable }, clients]) =>
-          clients.core.readNamespacedPod(
-            { name, namespace: this.namespace },
-            {
-              middlewareMergeStrategy: "append",
-              middleware: [
-                {
-                  pre: (request) => {
-                    request.setSignal(requestSignal);
-                    return new Observable(Promise.resolve(request));
-                  },
-                  post: (response) => new Observable(Promise.resolve(response)),
-                },
-              ],
-            },
-          ),
+      return await this.request(signal, (core, options) =>
+        core.readNamespacedPod({ name, namespace: this.namespace }, options),
       );
-      const pod = await abortableRequest(request, requestSignal);
-      signal.throwIfAborted();
-      return pod;
     } catch (error) {
       if (isApiStatus(error, 404)) return undefined;
       throw error;
     }
+  }
+
+  private async request<T>(
+    signal: AbortSignal,
+    call: (core: KubernetesSandboxSdk["core"], options: ConfigurationOptions) => Promise<T>,
+  ): Promise<T> {
+    signal.throwIfAborted();
+    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
+    const request = Promise.all([loadKubernetes(), this.clients()]).then(
+      ([{ Observable }, clients]) =>
+        call(clients.core, {
+          middlewareMergeStrategy: "append",
+          middleware: [
+            {
+              pre: (request) => {
+                request.setSignal(requestSignal);
+                return new Observable(Promise.resolve(request));
+              },
+              post: (response) => new Observable(Promise.resolve(response)),
+            },
+          ],
+        }),
+    );
+    const result = await abortableRequest(request, requestSignal);
+    signal.throwIfAborted();
+    return result;
   }
 
   private async waitForReady(name: string, signal: AbortSignal): Promise<void> {
@@ -515,12 +530,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
 
   private async deletePod(name: string): Promise<void> {
     try {
-      await (await this.clients()).core.deleteNamespacedPod({
-        name,
-        namespace: this.namespace,
-        gracePeriodSeconds: 0,
-        propagationPolicy: "Background",
-      });
+      // Cancellation must not skip cleanup, so only the request deadline bounds it.
+      await this.request(AbortSignal.timeout(REQUEST_TIMEOUT_MS), (core, options) =>
+        core.deleteNamespacedPod(
+          {
+            name,
+            namespace: this.namespace,
+            gracePeriodSeconds: 0,
+            propagationPolicy: "Background",
+          },
+          options,
+        ),
+      );
     } catch (error) {
       if (!isApiStatus(error, 404)) throw error;
     }
@@ -684,9 +705,7 @@ function podMountsHome(pod: V1Pod, homeKey: string, claimName: string | undefine
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {
-  const error = new Error(`Kubernetes computer ${name} no longer exists`, { cause });
-  error.name = "SandboxNotFoundError";
-  return error;
+  return sandboxNotFoundError(`Kubernetes computer ${name} no longer exists`, { cause });
 }
 
 function isTerminalPod(pod: V1Pod): boolean {

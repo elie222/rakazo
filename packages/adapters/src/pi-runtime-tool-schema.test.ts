@@ -14,11 +14,31 @@ import {
 } from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
+  it("uses a connected delete_bot schema instead of local archival parameters", () => {
+    const schema = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "delete_bot",
+          description: "Remote delete",
+          inputSchema: {
+            type: "object",
+            properties: { id: { type: "string" } },
+            required: ["id"],
+          },
+        }),
+      ),
+    );
+    expect(Object.keys(schema.properties)).toEqual(["id"]);
+    expect(schema.required).toEqual(["id"]);
+  });
+
   it("keeps the history query either/or guidance on the provider wire without a root union", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
     const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
     for (const field of ["query", "queries"]) {
-      expect(wire.properties[field].description).toContain("never both; one is required");
+      expect(wire.properties[field].description).toContain(
+        "never both; one is required unless kinds is set",
+      );
     }
     expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
     expect(wire).not.toHaveProperty("oneOf");
@@ -27,6 +47,9 @@ describe("jsonSchemaParameters", () => {
     expect(() =>
       parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
     ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { kinds: ["tool_work"] })).toEqual({
+      kinds: ["tool_work"],
+    });
     expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
       queries: ["a"],
     });

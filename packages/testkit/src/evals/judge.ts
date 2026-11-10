@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
+import { parseModelJson } from "@rakazo/adapters/model-json";
+import { z } from "zod";
 
 export type JudgeInput = { rubric: string; evidence: unknown };
 export type Judgment = { pass: boolean; reason: string };
 export type EvalJudge = (input: JudgeInput, signal: AbortSignal) => Promise<Judgment>;
+
+const Verdict = z.object({ pass: z.boolean(), reason: z.string().trim().min(1) });
 
 /** Separate, tool-free inference through the same provider-neutral runtime as the subject. */
 export function createEvalJudge(
@@ -11,7 +15,7 @@ export function createEvalJudge(
   model: AgentRunModel,
   onUsage?: AgentRunRequest["onUsage"],
 ): EvalJudge {
-  return async (input, signal) => {
+  const ask = async (input: JudgeInput, signal: AbortSignal) => {
     const id = randomUUID();
     let text = "";
     try {
@@ -33,20 +37,17 @@ export function createEvalJudge(
         if (event.type === "text") text += event.text;
         else if (event.type === "tool") throw new Error("Judge attempted a tool call");
       }
-      const value: unknown = JSON.parse(text);
-      if (
-        !value ||
-        typeof value !== "object" ||
-        !("pass" in value) ||
-        typeof value.pass !== "boolean" ||
-        !("reason" in value) ||
-        typeof value.reason !== "string" ||
-        !value.reason.trim()
-      )
-        throw new Error("Invalid judge verdict");
-      return { pass: value.pass, reason: value.reason };
+      return text;
     } finally {
       await runtime.abort(id);
     }
+  };
+  return async (input, signal) => {
+    // An unreadable verdict gets one more try before the trial is left unjudged.
+    const verdict =
+      parseModelJson(await ask(input, signal), Verdict) ??
+      parseModelJson(await ask(input, signal), Verdict);
+    if (!verdict) throw new Error("Invalid judge verdict");
+    return verdict;
   };
 }

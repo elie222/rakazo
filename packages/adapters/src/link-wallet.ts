@@ -16,7 +16,7 @@ import type {
   PurchaseStatus,
 } from "@rakazo/adapter-kit";
 import { PaymentWalletDisconnected, PaymentWalletRequestRejected } from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+import { abortableDelay, readJsonObjectWithin } from "@rakazo/core";
 import Link, { getDuplicateSpendRequest, LinkApiError } from "@stripe/link-sdk";
 import {
   readStripeChargeChallenge,
@@ -28,6 +28,7 @@ import {
 export const LINK_PUBLIC_CLIENT_ID = "lwlpk_U7Qy7ThG69STZk";
 const SCOPE = "userinfo:read payment_methods.agentic";
 const REFRESH_MARGIN_MS = 60_000;
+const MAX_AUTH_RESPONSE_BYTES = 64 * 1024;
 
 export interface LinkWalletOptions {
   clientId?: string;
@@ -375,16 +376,12 @@ export class LinkWalletProvider implements PaymentWalletProvider {
       body: new URLSearchParams(form).toString(),
       signal: context.signal,
     });
-    const raw = await response.text();
-    let body: Record<string, unknown> = {};
-    try {
-      const parsed: unknown = raw ? JSON.parse(raw) : {};
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        body = parsed as Record<string, unknown>;
-      }
-    } catch {
-      // Non-JSON bodies are treated as empty; they are never echoed.
-    }
+    // Non-JSON bodies are treated as empty; they are never echoed.
+    const body = await readJsonObjectWithin<TokenResponse & Record<string, unknown>>(response, {
+      maxBytes: MAX_AUTH_RESPONSE_BYTES,
+      tooLargeMessage: "Link response is too large.",
+      signal: context.signal,
+    });
     return { status: response.status, body };
   }
 }

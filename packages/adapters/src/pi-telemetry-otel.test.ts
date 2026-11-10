@@ -1,8 +1,14 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { NOOP_TELEMETRY_CONTEXT } from "@earendil-works/pi-telemetry";
+import {
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { afterEach, expect, it, vi } from "vitest";
-import { createPiTelemetryExporter } from "./pi-telemetry-otel.js";
+import { createPiTelemetryExporter, otelPiContext } from "./pi-telemetry-otel.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -56,4 +62,34 @@ it("exports OTLP/HTTP with standard endpoint, headers and service name on shutdo
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+it("links Pi spans to the OTel spans this bridge started, before and after start", async () => {
+  const exporter = new InMemorySpanExporter();
+  const provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] });
+  const context = otelPiContext(provider.getTracer("test"), false);
+  const first = await context.startSpan({ name: "first" }, (span) => span);
+  await context.startSpan(
+    {
+      name: "second",
+      links: [
+        { context: first, attributes: { "pi.ai.model": "fixture", "pi.ai.prompt": "private" } },
+        { context: NOOP_TELEMETRY_CONTEXT },
+      ],
+    },
+    (span) => {
+      span.addLink({ context: first });
+      span.addLink({ context: NOOP_TELEMETRY_CONTEXT });
+    },
+  );
+  const [firstSpan, secondSpan] = exporter.getFinishedSpans();
+  expect(secondSpan?.links).toEqual([
+    {
+      context: firstSpan?.spanContext(),
+      attributes: { "pi.ai.model": "fixture" },
+      droppedAttributesCount: 0,
+    },
+    { context: firstSpan?.spanContext(), attributes: {}, droppedAttributesCount: 0 },
+  ]);
+  await provider.shutdown();
 });

@@ -23,6 +23,7 @@ export const VOICE_CATALOG = [
     name: "ElevenLabs",
     description: "Highest quality and cloning. Flash v2.5 for conversational calls.",
     transcribe: true,
+    speechModel: true,
   },
   {
     id: "openai",
@@ -41,6 +42,8 @@ export const VOICE_CATALOG = [
     name: "Fish Audio",
     description: "Voice models, cloning, and expressive speech with optional transcription.",
     transcribe: true,
+    speechModel: true,
+    languages: true,
   },
   {
     id: OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
@@ -132,5 +135,5 @@ export class NoVoiceConfigured extends Error {
   }
 }
 
-export { MAX_SPEAK_CHARS } from "./voice-http.js";
+export { isSpeechModelId, MAX_SPEAK_CHARS } from "./voice-http.js";
 export const MAX_TRANSCRIBE_BYTES = 8 * 1024 * 1024;

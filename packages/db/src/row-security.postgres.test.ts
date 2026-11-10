@@ -22,7 +22,7 @@ const runtimeUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && runtimeUrl && migrationUrl && runtimeUrl !== migrationUrl
-    ? describe.sequential
+    ? describe
     : describe.skip;
 
 type Tenant = {
@@ -103,6 +103,20 @@ function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>
     ],
     ["userVoiceCredential", { userId: t.userId, provider: "p", secretId: t.personalSecretId }],
     ["trustedLinkSite", { userId: t.userId, site: `${tag}.example.test` }],
+    ["spendingLimit", { userId: t.userId, amount: 100, currency: "usd", period: "month" }],
+    [
+      "payment",
+      {
+        operationKey: `rls-payment-${tag}-${t.userId}`,
+        userId: t.userId,
+        spaceId: t.spaceId,
+        botId: t.botId,
+        threadId: "thread",
+        site: "shop.example.test",
+        amount: 100,
+        currency: "usd",
+      },
+    ],
   ];
 }
 

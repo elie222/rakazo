@@ -36,11 +36,11 @@
     "test": "vitest run --root ../.. packages/contracts/src"
   },
   "dependencies": {
-    "@orpc/contract": "1.15.7",
+    "@orpc/contract": "1.16.2",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

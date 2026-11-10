@@ -18,7 +18,7 @@ import type {
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { cancelComputerRunWork } from "./computer-idle.js";
+import { cancelComputerRunWork, providerKeepsHome } from "./computer-idle.js";
 import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
 import {
@@ -107,6 +107,7 @@ async function createBaseRunSandbox(
               controlFence: { increment: 1 },
               controlHolder: "none",
               controlLeaseId: null,
+              controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
               controlRunId: null,
@@ -295,6 +296,10 @@ export class HostAwareSandbox implements SandboxProvider {
 
   billsWhileRunning(computer: Pick<ComputerRef, "kind">): boolean {
     return this.route(computer).billsWhileRunning?.(computer) ?? false;
+  }
+
+  keepsHome(computer: ComputerRef) {
+    return providerKeepsHome(this.route(computer), computer);
   }
 
   keepAlive(computer: ComputerRef) {

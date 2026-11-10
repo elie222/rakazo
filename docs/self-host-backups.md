@@ -3,6 +3,8 @@
 Back up the database and application data, keep encrypted copies off the server, and recover to
 a snapshot or a moment in time.
 
+English | [简体中文](./zh-CN/self-host-backups.md)
+
 ## Source checkout backups
 
 ```bash
@@ -301,7 +303,11 @@ ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait"
 The restore uses the newest base backup that finished before the target, replays WAL up to it, and
 promotes the result, which starts a new timeline; the sidecar takes a fresh base backup for it. Pause
 CI deploys during recovery. Once the restored database checks out, remove the old cluster:
-`$COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf "$PGDATA".before-restore-*'`.
+
+```bash
+ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf \"\$PGDATA\".before-restore-*'"
+```
 
 To turn it off, remove `pitr` from `COMPOSE_PROFILES`, then run `sudo infra/compose/pitr.sh disable`.
 It removes the sidecar, the slot (so Postgres stops keeping WAL for it), the login and the

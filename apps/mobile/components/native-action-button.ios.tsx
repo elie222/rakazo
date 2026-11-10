@@ -17,6 +17,7 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { StyleSheet, View } from "react-native";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { actionPressHandler } from "../lib/native-control-actions";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionFills, actionProminence, iosAtLeast } from "../lib/native-controls";
 
@@ -40,6 +41,7 @@ export function NativeActionButton({
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const inactive = disabled || busy;
+  const press = actionPressHandler(inactive, onPress);
   const stretches = actionFills(prominence, fill);
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
@@ -55,11 +57,9 @@ export function NativeActionButton({
         padding({ horizontal: 0, vertical: 8 }),
         ...(stretches
           ? [
-              frame(
-                typeof measuredWidth === "number"
-                  ? { width: measuredWidth }
-                  : { maxWidth: Infinity },
-              ),
+              typeof measuredWidth === "number"
+                ? frame({ width: measuredWidth })
+                : frame({ maxWidth: Infinity }),
             ]
           : []),
         // The destructive text action (Disconnect) keeps a 44pt target.
@@ -96,7 +96,7 @@ export function NativeActionButton({
       <Button
         label={busy || ownLabel ? undefined : (label ?? accessibilityLabel)}
         systemImage={icon?.ios as never}
-        onPress={inactive ? undefined : onPress}
+        onPress={press}
         role={role}
         modifiers={[
           ...(accessibilityActions?.length ? [accessibilityHidden(true)] : []),
@@ -152,7 +152,7 @@ export function NativeActionButton({
       accessibilityState={{ disabled: inactive, ...(selected === undefined ? {} : { selected }) }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
-      onAccessibilityTap={inactive ? undefined : onPress}
+      onAccessibilityTap={press}
     >
       {button}
     </View>

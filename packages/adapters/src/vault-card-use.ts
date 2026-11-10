@@ -63,5 +63,6 @@ export function cardUseSummary(use: VaultCardUse, purchase?: PurchaseApproval): 
     onceOnly: true,
     title: `Pay with ${use.title} on ${host}?`,
     lines: paying?.lines ?? [],
+    ...(paying?.receipt ? { receipt: paying.receipt } : {}),
   };
 }

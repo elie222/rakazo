@@ -10,12 +10,16 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
 import { CircleUserRound } from "lucide-react";
 import { useState } from "react";
 import { authClient } from "../lib/auth";
+import { switchOrganization, useOrganizations } from "../lib/organizations";
+import { useQueryUserId } from "../lib/query";
 import { DeleteAccountForm, hasDeleteRedirectError } from "./AccountAccess";
 
 /**
@@ -33,6 +37,8 @@ export function AccountMenu({
 }) {
   const { t } = useLingui();
   const email = authClient.useSession().data?.user.email;
+  const userId = useQueryUserId();
+  const { organizations, activeOrganizationId } = useOrganizations();
   // An SSO sign-in to confirm deletion returns here; reopen so its error is seen.
   const [deleting, setDeleting] = useState(hasDeleteRedirectError);
   return (
@@ -58,6 +64,25 @@ export function AccountMenu({
               <DropdownMenuGroup>
                 <DropdownMenuLabel>{email}</DropdownMenuLabel>
               </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          {organizations.length > 1 ? (
+            <>
+              <DropdownMenuRadioGroup
+                value={activeOrganizationId}
+                onValueChange={(id) => {
+                  const organization = organizations.find((candidate) => candidate.id === id);
+                  if (organization && id !== activeOrganizationId)
+                    void switchOrganization(userId, organization);
+                }}
+              >
+                {organizations.map((organization) => (
+                  <DropdownMenuRadioItem key={organization.id} value={organization.id}>
+                    <span className="min-w-0 truncate">{organization.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
             </>
           ) : null}

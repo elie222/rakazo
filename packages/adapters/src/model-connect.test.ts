@@ -1,17 +1,17 @@
+import { MODEL_KEY_FORMAT_ERROR, ModelConnectInputSchema } from "@rakazo/contracts";
+import { canUseCompatibleModelAsDefault } from "@rakazo/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  MODEL_KEY_FORMAT_ERROR,
-  ModelConnectInputSchema,
-} from "@rakazo/contracts";
-import { canUseCompatibleModelAsDefault } from "@rakazo/core";
-import { afterEach, describe, expect, it, vi } from "vitest";
+} from "./cloudflare-ai-gateway.js";
 import {
   buildModelConnectPlaintext,
   modelCredentialDto,
   storedOpenAiCompatibleProbeKey,
 } from "./model-connect.js";
-import { parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
+import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
 const connectAsOwner = (
@@ -208,6 +208,18 @@ describe("built-in provider output limits", () => {
     ).toEqual({ kind: "oauth", reconnectRequired: true, maxTokens: 8192 });
   });
 
+  it("names a compatible connection at a hosted preset and nowhere else", () => {
+    const dto = (baseUrl: string) =>
+      modelCredentialDto(
+        { id: "cred-compat", provider: "openai-compatible", label: "Compatible" },
+        serializeModelSecret({ kind: "openai_compatible", baseUrl }),
+      );
+    expect(dto(COMPATIBLE_ENDPOINT_PRESETS[0]!.baseUrl).endpointName).toBe(
+      COMPATIBLE_ENDPOINT_PRESETS[0]!.name,
+    );
+    expect(dto("http://127.0.0.1:8000/v1").endpointName).toBeUndefined();
+  });
+
   it("rejects a limit update when no credential exists", () => {
     expect(() => connectAsOwner({ provider: "anthropic", maxTokens: 8192 })).toThrow(/API key/);
   });
@@ -401,6 +413,7 @@ describe("modelCredentialDto", () => {
       modelId: "qwen3-4b",
       reasoning: false,
       thinkingLevels: ["off"],
+      visionModelIds: [],
     });
   });
 

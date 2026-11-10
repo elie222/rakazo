@@ -59,16 +59,20 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
   };
 }
 
-async function render(state: ComputerStatus["state"], onStart = vi.fn()) {
+async function render(
+  state: ComputerStatus["state"],
+  onStart = vi.fn(),
+  options: { hasControl?: boolean; shared?: boolean } = {},
+) {
   await act(async () => {
     root.render(
       <ComputerOverlay
         bot={bot}
-        computer={computer(state)}
+        computer={{ ...computer(state), ...(options.shared ? { shared: true } : {}) }}
         computerViewport={null}
         recordingSkill={null}
         teachBusy={false}
-        hasControl={false}
+        hasControl={options.hasControl ?? false}
         composerRunning={false}
         sending={false}
         booting={false}
@@ -121,4 +125,16 @@ it("offers Start for an asleep computer", async () => {
   await render("suspended");
   expect(container.textContent).toContain("Computer is asleep");
   expect(startButton()).toBeDefined();
+});
+
+it("says sign-ins are shared while someone in a shared space has control", async () => {
+  const note = () => container.querySelector('[data-testid="computer-shared-browser"]');
+  await render("running", vi.fn(), { hasControl: true, shared: true });
+  expect(note()?.textContent).toBe(
+    "Sites you sign in to stay signed in for everyone in this space",
+  );
+  await render("running", vi.fn(), { hasControl: true });
+  expect(note()).toBeNull();
+  await render("running", vi.fn(), { shared: true });
+  expect(note()).toBeNull();
 });

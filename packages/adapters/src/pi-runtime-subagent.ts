@@ -5,6 +5,7 @@ import { withAutomatedLabels } from "./automated-messages.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
+import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import {
   assistantText,
   providerFailureText,
@@ -118,7 +119,12 @@ export async function executeSubagent(
   }
   const subagentModel = modelForCompletion(selectedModel.model, requestModel.maxTokens);
 
-  const childDefs = host.request.tools.filter((tool) => !DELEGATION_TOOL_NAMES.has(tool.name));
+  // With a computer-use model, the screen belongs to top-level computer mode only.
+  const childDefs = host.request.tools.filter(
+    (tool) =>
+      !DELEGATION_TOOL_NAMES.has(tool.name) &&
+      !(host.computerModeAllowed && COMPUTER_MODE_TOOLS.has(tool.name)),
+  );
   const nestedHost: ToolHost = {
     ...host,
     activeModel: {
@@ -231,7 +237,7 @@ export async function executeSubagent(
     finishTurn: async (turn, turnSignal) => {
       await deliverFinishedShells(
         (text) => {
-          nested.followUp({
+          nested.steer({
             role: "user",
             content: text,
             timestamp: Date.now(),

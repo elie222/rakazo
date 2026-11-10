@@ -10,11 +10,11 @@ const mobileRoot = resolve(import.meta.dirname, "..");
 const config = JSON.parse(readFileSync(resolve(mobileRoot, "app.json"), "utf8")) as AppConfig;
 
 describe("iOS permission prompts", () => {
-  it("has a Spanish version of every prompt the app shows", () => {
-    expect(config.expo.locales?.es).toBe("./locales/es.json");
+  it.each(["es", "pl"])("has a %s version of every prompt the app shows", (locale) => {
+    expect(config.expo.locales?.[locale]).toBe(`./locales/${locale}.json`);
     // Under `ios`: Expo writes top-level keys to Android resources too.
-    const spanish = (
-      JSON.parse(readFileSync(resolve(mobileRoot, "locales/es.json"), "utf8")) as {
+    const messages = (
+      JSON.parse(readFileSync(resolve(mobileRoot, `locales/${locale}.json`), "utf8")) as {
         ios: Record<string, string>;
       }
     ).ios;
@@ -27,6 +27,6 @@ describe("iOS permission prompts", () => {
       "NSSpeechRecognitionUsageDescription",
       "NSFaceIDUsageDescription",
     ];
-    for (const key of prompts) expect(spanish[key]?.trim(), key).toBeTruthy();
+    for (const key of prompts) expect(messages[key]?.trim(), key).toBeTruthy();
   });
 });

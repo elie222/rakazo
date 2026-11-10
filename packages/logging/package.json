@@ -27,11 +27,11 @@
   },
   "dependencies": {
     "@axiomhq/js": "2.0.0",
-    "@sentry/node": "11.8.0",
-    "hono": "4.13.14"
+    "@sentry/node": "11.11.0",
+    "hono": "4.13.17"
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

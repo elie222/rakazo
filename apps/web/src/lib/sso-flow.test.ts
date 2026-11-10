@@ -169,6 +169,34 @@ it("only broadcasts well-formed same-origin callback landings", () => {
   expect(channels).toHaveLength(0);
 });
 
+it("completes desktop SSO without crypto.randomUUID, as on a plain-HTTP server", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("crypto", {
+    getRandomValues: (bytes: Uint8Array) => {
+      bytes.fill(5);
+      return bytes;
+    },
+  });
+  const desktop = desktopWindow();
+  let landing = "";
+  const flow = runSsoFlow(
+    async (_disableRedirect: boolean, callbackURL: (url: string) => string) => {
+      landing = callbackURL("/app");
+      return result;
+    },
+    ["/app"],
+  );
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(landing).toMatch(/[?&]nonce=/);
+  expect(new URL(landing).searchParams.get("nonce")).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  expect(desktop.popup.location.href).toBe(result.data.url);
+  desktop.land(landing);
+  await expect(flow).resolves.toBe(result);
+  expect(desktop.location.assign).toHaveBeenCalledWith("https://rakazo.example.test/app");
+});
+
 it("opens synchronously before beginning authorization", async () => {
   const { open, popup } = desktopWindow();
   await expect(

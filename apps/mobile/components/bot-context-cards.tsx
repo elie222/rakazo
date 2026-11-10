@@ -1,16 +1,18 @@
+import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument, ScratchpadItem } from "@rakazo/contracts";
 import { isEmptyBotMemory } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 
 export function BotContextCards({ botId }: { botId: string }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
+  const router = useRouter();
   const tokens = useMobileTokens();
   const [work, setWork] = useState<ScratchpadItem[]>([]);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
@@ -18,26 +20,30 @@ export function BotContextCards({ botId }: { botId: string }) {
   const [allDocs, setAllDocs] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let current = true;
-    void rpc("scratchpad/list", { botId })
-      .then((items) => {
-        if (current) setWork(items);
-      })
-      .catch((err) => {
-        if (current) setError(errorText(err));
-      });
-    void rpc("memory/list", { botId, scope: "bot" })
-      .then((documents) => {
-        if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
-      })
-      .catch((err) => {
-        if (current) setError(errorText(err));
-      });
-    return () => {
-      current = false;
-    };
-  }, [botId]);
+  // Reload on return, so an edited or deleted note shows its saved state.
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      setError(null);
+      void rpc("scratchpad/list", { botId })
+        .then((items) => {
+          if (current) setWork(items);
+        })
+        .catch((err) => {
+          if (current) setError(errorText(err));
+        });
+      void rpc("memory/list", { botId, scope: "bot" })
+        .then((documents) => {
+          if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
+        })
+        .catch((err) => {
+          if (current) setError(errorText(err));
+        });
+      return () => {
+        current = false;
+      };
+    }, [botId]),
+  );
   const heading = { color: tokens.mutedForeground, fontSize: 12, fontWeight: "500" as const };
   const card = { backgroundColor: native.fill, borderRadius: 12, padding: 16, gap: 12 };
   return (
@@ -54,12 +60,12 @@ export function BotContextCards({ botId }: { botId: string }) {
             }}
           >
             <Text accessibilityRole="header" style={heading}>
-              {t("Open work")}
+              {t`Open work`}
             </Text>
             <ProfileEditDialog
               value=""
-              label={t("Add open work")}
-              editLabel={t("Add open work")}
+              label={t`Add open work`}
+              editLabel={t`Add open work`}
               maxLength={200}
               icon="plus"
               onCommit={async (title) => {
@@ -83,7 +89,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 style={{ minHeight: 44, flexDirection: "row", gap: 12, alignItems: "center" }}
               >
                 <Pressable
-                  accessibilityLabel={`${t("Complete")} ${item.title}`}
+                  accessibilityLabel={`${t`Complete`} ${item.title}`}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: false }}
                   hitSlop={11}
@@ -125,7 +131,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 onPress={() => setAllWork(true)}
                 style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
               >
-                <Text style={{ color: tokens.mutedForeground }}>{t("Show more")}</Text>
+                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -134,7 +140,7 @@ export function BotContextCards({ botId }: { botId: string }) {
       {docs.length ? (
         <View style={{ marginTop: 24 }}>
           <Text accessibilityRole="header" style={[heading, { marginBottom: 8 }]}>
-            {t("Memory")}
+            {t`Memory`}
           </Text>
           <View style={card}>
             {(allDocs ? docs : docs.slice(0, 5)).map((doc) => (
@@ -142,7 +148,9 @@ export function BotContextCards({ botId }: { botId: string }) {
                 key={doc.id}
                 accessibilityRole="button"
                 accessibilityLabel={doc.path}
-                onPress={() => Alert.alert(doc.path, doc.content)}
+                onPress={() =>
+                  router.push({ pathname: "/memory-note", params: { id: doc.id, botId } })
+                }
                 style={{
                   minHeight: 44,
                   flexDirection: "row",
@@ -168,7 +176,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 onPress={() => setAllDocs(true)}
                 style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
               >
-                <Text style={{ color: tokens.mutedForeground }}>{t("Show more")}</Text>
+                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
               </Pressable>
             ) : null}
           </View>

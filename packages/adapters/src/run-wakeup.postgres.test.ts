@@ -22,8 +22,7 @@ import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("direct run dispatch (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -83,7 +82,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
   const wait = async (assertion: () => Promise<void> | void) =>
     vi.waitFor(assertion, { timeout: 5_000, interval: 20 });
 
-  it("reports runs left unstarted, not retry backoff or waits on the bot's own earlier run", async () => {
+  it("reports runs left unstarted, not retry backoff, fresh resumes, or waits on the bot's own earlier run", async () => {
     const now = Date.now();
     const computer = await system.computer.create({
       data: {
@@ -100,6 +99,11 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const delayed = await createRun({ wakeAt: new Date(now - 45_000) });
     await system.run.updateMany({
       where: { id: { in: [retry.id, delayed.id] } },
+      data: { createdAt: new Date(now - 3_600_000), updatedAt: new Date(now - 3_600_000) },
+    });
+    const resumed = await createRun();
+    await system.run.update({
+      where: { id: resumed.id },
       data: { createdAt: new Date(now - 3_600_000) },
     });
     const lease = await system.computerExecutionLease.create({
@@ -117,11 +121,34 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const waitingOnBot = host();
     const handoff = host();
     const unblocked = host();
+    // A queue check that settles only after stop() drops its result without logging,
+    // so a fixed sleep cannot prove the quiet phases below stay quiet. The queue
+    // check is the host's only raw query; wait for it to settle while its host
+    // still runs, then stop and assert.
+    const queryRaw = db.prisma.$queryRaw.bind(db.prisma);
+    let queueChecksSettled = 0;
+    const querySpy = vi.spyOn(db.prisma, "$queryRaw").mockImplementation((async (
+      query: unknown,
+      ...values: unknown[]
+    ) => {
+      const result = queryRaw(query as never, ...(values as never[]));
+      const settle = () => {
+        queueChecksSettled += 1;
+      };
+      // A failed check counts too, and this side branch must not leave an
+      // unhandled rejection: the host catches the error on its own branch.
+      void Promise.resolve(result).then(settle, settle);
+      return result;
+    }) as never);
+    const runOneQueueCheck = async (host: RunWorkerHost) => {
+      const settled = queueChecksSettled;
+      await host.start({} as BackgroundJobHandlers);
+      await wait(() => expect(queueChecksSettled).toBeGreaterThan(settled));
+      await host.stop();
+    };
     try {
       // Waiting for the bot's own earlier run is expected, not a failure to start.
-      await waitingOnBot.start({} as BackgroundJobHandlers);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      await waitingOnBot.stop();
+      await runOneQueueCheck(waitingOnBot);
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
       // A release moments ago is the handoff to the bot's next run.
@@ -129,9 +156,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
         where: { id: lease.id },
         data: { expiresAt: new Date(0) },
       });
-      await handoff.start({} as BackgroundJobHandlers);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      await handoff.stop();
+      await runOneQueueCheck(handoff);
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
       await system.computerExecutionLease.update({
@@ -149,12 +174,13 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       expect(warning["queue.oldest_wait_ms"]).toBeGreaterThanOrEqual(45_000);
       expect(warning["queue.oldest_wait_ms"]).toBeLessThan(60_000);
     } finally {
+      querySpy.mockRestore();
       await waitingOnBot.stop();
       await handoff.stop();
       await unblocked.stop();
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
       await system.run.updateMany({
-        where: { id: { in: [owner.id, retry.id, delayed.id] } },
+        where: { id: { in: [owner.id, retry.id, delayed.id, resumed.id] } },
         data: { status: "cancelled" },
       });
       await system.computerExecutionLease.delete({ where: { id: lease.id } });

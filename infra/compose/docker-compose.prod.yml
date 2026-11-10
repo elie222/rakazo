@@ -12,8 +12,7 @@ x-logging: &logging
 # only sees what it uses instead of the whole .env. A key with no value is passed through
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
-x-app-environment: &app-environment
-  # Runtime
+x-app-environment: &app-environment # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
@@ -50,6 +49,13 @@ x-app-environment: &app-environment
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
+  # The worker names each bot's address to it and sends its email; the API receives the mail.
+  INBOUND_EMAIL_DOMAIN:
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -106,6 +112,8 @@ x-app-environment: &app-environment
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
+  RAKAZO_LOCAL_MODELS_API_KEY:
+  RAKAZO_LOOPBACK_HOST:
   RAKAZO_LOCAL_VISION_MODELS:
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
@@ -125,6 +133,9 @@ x-app-environment: &app-environment
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  PAID_SERVICES_PROVIDER:
+  PAID_SERVICES_API_KEY:
+  PAID_SERVICES_BASE_URL:
   # Provider keys Pi reads itself when a model has no stored credential
   AI_GATEWAY_API_KEY:
   ANTHROPIC_AUTH_TOKEN:
@@ -249,6 +260,8 @@ x-app-environment: &app-environment
   MCP_STDIO_STARTUP_TIMEOUT_MS:
   MCP_STDIO_IDLE_MS:
   MCP_DISCOVERY_TIMEOUT_MS:
+  MCP_MAX_TOOLS:
+  MCP_MAX_PAGES:
   MCP_PACKAGES_DIR:
   MCP_ALLOW_PRIVATE_ENDPOINT:
   # Messaging (outbound delivery runs in the worker)
@@ -297,13 +310,28 @@ services:
         fi
         exec docker-entrypoint.sh "$$@"
       - postgres
-    command: ["postgres"]
+    # Sized for an 8 GB host that also runs the api, worker and web. shared_buffers lives inside
+    # mem_limit, so lower both together on a smaller host (docs/self-host-configuration.md#postgres-memory).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-2GB}
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
     restart: unless-stopped
     logging: *logging
     security_opt:
       - no-new-privileges:true
     pids_limit: 200
-    mem_limit: 2g
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-2560m}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-rakazo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -328,9 +356,9 @@ services:
   # encrypted copies over its own `backup` network. infra/compose/pitr.sh enable turns it on.
   pitr:
     profiles: [pitr]
-    # Tagged with a hash of Dockerfile.pitr and pitr-agent.sh, so a deploy builds it once per change
-    # instead of on every run (compose-service.test.ts checks the hash).
-    image: rakazo-pitr:aa7cf1bde2aa8051
+    # Tagged with a hash of Dockerfile.pitr, pitr-agent.sh, and apt-security.sh, so a deploy
+    # builds it once per change instead of on every run (compose-service.test.ts checks the hash).
+    image: rakazo-pitr:01b2ca5aac855fdd
     build:
       context: .
       dockerfile: Dockerfile.pitr
@@ -447,10 +475,12 @@ services:
       BETTER_AUTH_SECRET:
       BETTER_AUTH_URL:
       WEB_ORIGIN:
+      RAKAZO_EXTRA_AUTH_ORIGINS:
       AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
+      COMPUTER_SETTINGS_ENABLED:
       # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-caddy}
       CLIENT_IP_HEADER:
@@ -460,6 +490,7 @@ services:
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      SCIM_BEARER_TOKEN: ${SCIM_BEARER_TOKEN:-}
       SIGNUPS_ENABLED:
       SIGNUP_ALLOWLIST:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
@@ -467,11 +498,8 @@ services:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
+      INBOUND_EMAIL_SECRET:
+      INBOUND_EMAIL_RELAY_ARC_DOMAIN:
       WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
@@ -586,9 +614,11 @@ services:
       RAYON_NUM_THREADS: "4"
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
+      RAKAZO_ALLOWED_HOSTS: ${RAKAZO_ALLOWED_HOSTS:-}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
+      RAKAZO_THEME: ${RAKAZO_THEME:-}
       CRISP_WEBSITE_ID:
     expose:
       - "5173"

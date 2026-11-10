@@ -1,9 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import { appendNewerThreadPage, forwardProbeAfterPage, threadWindowMessages } from "@rakazo/core";
 import { useState } from "react";
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
-import type { MobileMessage, MobileSnapshot } from "./api";
-import { prependMobileMessagePage, rpc } from "./api";
-import { useI18n } from "./i18n";
+import { rpc } from "./api";
+import type { MobileMessage, MobileSnapshot } from "./mobile-types";
+import { prependMobileMessagePage } from "./mobile-types";
 import type { ThreadHistory } from "./thread-history";
 import type { ThreadListScroll } from "./thread-list-scroll";
 import { errorText } from "./user-error";
@@ -39,7 +40,7 @@ export function useThreadPaging({
   setError: (error: string | null) => void;
   showLatest: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const {
     snap,
     commitSnap,
@@ -117,7 +118,7 @@ export function useThreadPaging({
     } catch (err) {
       if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned) return;
       newerLoadFailed.current = true;
-      setError(errorText(err, t("Could not open message")));
+      setError(errorText(err, t`Could not open message`));
     } finally {
       loadingNewerContent.current = false;
       setLoadingNewer(false);
@@ -146,7 +147,7 @@ export function useThreadPaging({
     } catch (err) {
       loadingOlderContent.current = false;
       if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned) return;
-      setError(errorText(err, t("Could not load earlier messages")));
+      setError(errorText(err, t`Could not load earlier messages`));
     } finally {
       setLoadingOlder(false);
     }

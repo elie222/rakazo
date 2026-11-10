@@ -4,6 +4,7 @@ import {
   inferHandoffTargetBotId,
   inferHandoffTargetName,
   memberName,
+  mentionedGroupBotIds,
   resolveGroupTargetBotIds,
 } from "./group-mentions.js";
 
@@ -182,13 +183,13 @@ describe("resolveGroupTargetBotIds", () => {
     ).toEqual(["a", "b", "c", "everyone"]);
   });
 
-  it("ignores embedded and incomplete tokens before falling back", () => {
+  it("ignores embedded and incomplete tokens before reaching everyone", () => {
     expect(
       resolveGroupTargetBotIds({
         text: "contact@everyone name@Writer @Writer-more @Writer2",
         members,
       }),
-    ).toEqual(["a"]);
+    ).toEqual(["a", "b", "c"]);
     expect(resolveGroupTargetBotIds({ text: "@everyone", members: [] })).toEqual([]);
   });
 
@@ -217,13 +218,45 @@ describe("resolveGroupTargetBotIds", () => {
     ).toEqual(["b"]);
   });
 
-  it("picks the first member when unmentioned", () => {
+  it("reaches every member when unmentioned", () => {
     expect(
       resolveGroupTargetBotIds({
         text: "hello team",
         members,
       }),
-    ).toEqual(["a"]);
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("reaches every member when only a non-member is mentioned", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello @Outsider",
+        members,
+        explicitMentions: ["outsider"],
+      }),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("reaches only the mentioned members, not the rest", () => {
+    expect(resolveGroupTargetBotIds({ text: "@BotB what do you think?", members })).toEqual(["b"]);
+    expect(
+      resolveGroupTargetBotIds({
+        text: "what do you think?",
+        members,
+        explicitMentions: ["c"],
+      }),
+    ).toEqual(["c"]);
+  });
+});
+
+describe("mentionedGroupBotIds", () => {
+  it("is empty when the message names nobody", () => {
+    expect(mentionedGroupBotIds({ text: "hello team", members })).toEqual([]);
+  });
+
+  it("names the members a message addresses", () => {
+    expect(mentionedGroupBotIds({ text: "@BotA and @Writer", members })).toEqual(["a", "c"]);
+    expect(mentionedGroupBotIds({ text: "@everyone", members })).toEqual(["a", "b", "c"]);
   });
 });
 

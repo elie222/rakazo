@@ -29,6 +29,29 @@ describe("windowCounter", () => {
     expect(count("late:2")).toBe(2);
   });
 
+  it("counts callers past a full table by a coarser network, not all together", () => {
+    const count = windowCounter(60_000, () => 0);
+    // One /48's /64s fill the table.
+    for (let i = 0; i < 10_000; i++) count(throttleKey(`2001:db8:a:${i.toString(16)}::1`));
+    expect(count(throttleKey("2001:db8:a:ffff::1"))).toBe(1);
+    expect(count(throttleKey("2001:db8:a:fffe::1"))).toBe(2);
+    expect(count(throttleKey("2001:db8:b:1::1"))).toBe(1);
+    expect(count(throttleKey("203.0.113.5"))).toBe(1);
+    expect(count(throttleKey("203.0.113.9"))).toBe(2);
+  });
+
+  it("shares one window only past a full coarse table too", () => {
+    const count = windowCounter(60_000, () => 0);
+    // Distinct /64s, each its own /48: the first 10,000 fill the fine table,
+    // the rest fill the coarse one.
+    for (let i = 0; i < 20_000; i++) {
+      const group = i.toString(16);
+      count(throttleKey(`2001:db8:${group}:${group}::1`));
+    }
+    expect(count(throttleKey("2001:db8:ffff:1::1"))).toBe(1);
+    expect(count(throttleKey("203.0.113.5"))).toBe(2);
+  });
+
   it("frees expired windows for new callers", () => {
     let at = 0;
     const count = windowCounter(1_000, () => at);

@@ -1,5 +1,6 @@
 import type {
   BillingCancellationReason,
+  ByokTier,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
@@ -268,8 +269,12 @@ export interface ConnectorTool {
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
+  /** What the person sees for a call, when the name the model uses would read badly. */
+  label?: string;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+  /** The `ui://` resource an MCP server shows this tool's result with (MCP Apps). */
+  appResourceUri?: string;
 }
 
 /**
@@ -292,6 +297,8 @@ export interface ConnectorRoute {
   connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
+  /** The `ui://` resource that shows this tool's result; see ConnectorApp. */
+  appResourceUri?: string;
 }
 
 export interface ConnectorCall {
@@ -300,11 +307,26 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
+  /** Read the tool's app after a successful call. Only a caller that shows it asks. */
+  withApp?: boolean;
+}
+
+/**
+ * An MCP server's app for one successful call (MCP Apps): HTML the client shows sandboxed with
+ * the call's input and result. Declared domains are already narrowed to the ones allowed.
+ */
+export interface ConnectorApp {
+  server: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[] };
+  prefersBorder?: boolean;
 }
 
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
+  /** Follows the call's `result` when its tool has an app. */
+  | { type: "app"; app: ConnectorApp }
   | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {
@@ -505,6 +527,17 @@ export interface AgentRunModel {
   oauth?: {
     credential: AgentModelOAuthCredential;
     persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    /**
+     * Refreshes the stored credential under the lock every refresh of it shares,
+     * calling `refresh` on the stored copy only if no other refresh already rotated it.
+     */
+    refresh?: (
+      held: AgentModelOAuthCredential,
+      refresh: (
+        stored: AgentModelOAuthCredential,
+        signal: AbortSignal,
+      ) => Promise<AgentModelOAuthCredential | undefined>,
+    ) => Promise<AgentModelOAuthCredential>;
     /** Drop the stored credential after a terminal provider rejection. */
     retire?: (
       reason: ModelCredentialRetireReason,
@@ -534,7 +567,10 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
-  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  /**
+   * Group threads and shared spaces: the label the model sees on the prompt, the same as on
+   * history ("User", or the person's name in a space several people share).
+   */
   promptSpeaker?: string;
   instructions: string;
   history: Array<{
@@ -543,9 +579,10 @@ export interface AgentRunRequest {
     role: "user" | "assistant" | "system";
     content: string;
     /**
-     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
-     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
-     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     * Who wrote this message when it is neither this bot nor the human of a personal direct chat:
+     * another bot's current name, or the person: "User", or their name in a space several people
+     * share. The runtime shows such a message to the model as a user turn that starts with
+     * "[speaker]: ".
      */
     speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
@@ -558,6 +595,8 @@ export interface AgentRunRequest {
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
+  /** Optional explicitly authenticated vision target for same-run computer mode. */
+  computerModel?: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
   fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id" | "connectionId">>;
   /** Resolve one configured backup lazily so healthy primary turns do no extra auth work. */
@@ -567,7 +606,8 @@ export interface AgentRunRequest {
     connectionId?: string,
   ) => Promise<AgentRunModel>;
   /** Persist the selected backup against the active run lease before requesting it. */
-  onModelChange?: (provider: string, modelId: string) => Promise<void>;
+  /** `computerMode` is set when the switch enters computer mode rather than changing the run's model. */
+  onModelChange?: (provider: string, modelId: string, computerMode?: boolean) => Promise<void>;
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
@@ -596,6 +636,12 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
+  /**
+   * Known run secret values, live for the run. The runtime redacts them from a tool
+   * argument that is kept outside the tool call itself (the ask card's detail) before
+   * any copy of it is stored, recorded or replayed.
+   */
+  secrets?: readonly string[];
 }
 
 export interface ScriptedTurn {
@@ -626,6 +672,15 @@ export interface AgentUsage {
   pricingVersion?: string | null;
   pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
+  /** Our own count for a call that reached the provider but ended without a reported cost,
+   * deliberately low. `ifStopped` is a full count for an aborted call, priced at full rates when
+   * the user stopped its run, so stopping a call is never a discount.
+   */
+  countedTokens?: {
+    inputTokens: number;
+    outputTokens: number;
+    ifStopped?: { inputTokens: number; outputTokens: number };
+  } | null;
 }
 
 export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" | "compaction";
@@ -728,6 +783,8 @@ export interface VoiceCapabilities {
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;
+  /** The provider can filter its listed voices by language. */
+  languages?: boolean;
 }
 
 export interface VoiceVerifyResult {
@@ -739,7 +796,10 @@ export interface VoiceSynthesizeRequest {
   text: string;
   voiceId: string;
   apiKey: string;
-  /** Connection speech model. Fish uses this, then `FISH_TTS_MODEL`, then s2.1-pro. */
+  /**
+   * Connection speech model, for providers whose catalog entry sets `speechModel`. Without
+   * one, each adapter uses its own default.
+   */
   model?: string;
   signal?: AbortSignal;
 }
@@ -768,12 +828,16 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
-  "history.compact": { threadId: string };
+  "history.compact": { threadId: string; userId?: string };
   "messaging.deliver": { runId?: string };
+  /** A running chat-app run's interim messages; the run is not marked mirrored. */
+  "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
   "purchase.poll": { purchaseId: string };
+  /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
+  "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
@@ -835,8 +899,12 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
-  /** Verified sender metadata. Avatar is a bounded JPEG thumbnail, base64 encoded. */
-  sender?: { botId: string; name: string; avatar?: string };
+  /**
+   * Verified sender metadata. `avatar` is a bounded thumbnail at most 96px, base64 encoded;
+   * `avatarLarge` is the same drawing at up to 120px for devices that draw the sender larger
+   * than Android's 96px limit, when one fits the payload budget.
+   */
+  sender?: { botId: string; name: string; avatar?: string; avatarLarge?: string };
   kind: "completion" | "failure" | "help" | "takeover";
   title: string;
   body: string;
@@ -852,7 +920,12 @@ export interface NotificationMessage {
 
 /** A product-authored transactional email, independent of its delivery vendor. */
 export interface TransactionalEmail {
-  to: string;
+  to: string | string[];
+  /** Sends as this address, such as a bot's own, instead of the provider's configured one. */
+  from?: string;
+  cc?: string[];
+  /** Where replies go, instead of the provider's configured reply-to address. */
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -920,6 +993,12 @@ export interface MessagingInboundMessage {
   channelName: string | null;
   /** Group roster addresses when the platform reports them; often empty. */
   participants: string[];
+  /**
+   * When the platform says this roster was current, when it reports a time for
+   * the event; a roster older than the newest one already processed for the
+   * channel changes no membership.
+   */
+  rosterAt?: Date;
   /**
    * Member departures this event reports one at a time (Telegram service
    * messages on a platform that sends no roster): addresses that left or were
@@ -1140,6 +1219,8 @@ export type BrowserActStep =
       site?: string;
       label?: string;
       amount?: string;
+      /** The page's total the card showed beside the button, or empty when it showed none. */
+      total?: string;
     }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
@@ -1208,6 +1289,16 @@ export interface BrowserPurchase {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none or is older. */
+  items?: BrowserPurchaseItem[];
+}
+
+/** An order line as the checkout page shows it, such as an item with its quantity, or delivery. */
+export interface BrowserPurchaseItem {
+  name: string;
+  amount: string;
 }
 
 export interface BrowserPurchaseCheckRequest {
@@ -1377,6 +1468,8 @@ export interface BillingCreditCheckoutRequest {
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
   /** How often `amountCents` bills; monthly when omitted. */
   interval?: "month" | "year";
+  /** Standard when omitted. */
+  tier?: ByokTier;
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1401,10 +1494,19 @@ export interface BillingSubscriptionSnapshot {
   byokPriceCents?: number;
   /** The own-key plan's billing period. */
   byokInterval?: "month" | "year";
+  /** The own-key plan's tier, which the provider reports with the plan. */
+  byokTier?: ByokTier;
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
   cancellationReason?: BillingCancellationReason;
   cancellationComment?: string;
+}
+
+/** One own-key plan: its tier, how often it bills, and what it bills each period. */
+export interface BillingByokPlan {
+  tier: ByokTier;
+  interval: "month" | "year";
+  amountCents: number;
 }
 
 export interface BillingCheckoutRequest {

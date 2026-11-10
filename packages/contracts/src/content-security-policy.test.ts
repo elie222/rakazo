@@ -8,6 +8,7 @@ import {
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   HTML_VIEWER_PATH,
+  MCP_APP_VIEWER_PATH,
   parseContentSecuritySources,
   parseCrispWebsiteId,
 } from "./content-security-policy.js";
@@ -67,6 +68,7 @@ describe("app content security policy", () => {
 
   it("lets only the app frame the HTML viewer shell, whose own meta CSP governs it", () => {
     expect(contentSecurityPolicyFor(HTML_VIEWER_PATH)).toBe("frame-ancestors 'self'");
+    expect(contentSecurityPolicyFor(MCP_APP_VIEWER_PATH)).toBe("frame-ancestors 'self'");
   });
 
   it("applies an injected screen policy only to embedded screen paths", () => {

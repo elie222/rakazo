@@ -8,6 +8,7 @@ import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
 import { reconcileStuckWork, STUCK_NOTICE_CLAIM_TTL_MS } from "./stuck-work.js";
 
 const now = new Date("2026-09-28T16:00:00.000Z");
+const budget = { timeout: 20_000 };
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -73,10 +74,13 @@ describe("reconcileStuckWork", () => {
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
     const { provider, send } = notifications();
+    const publishChatAlert = vi.fn(async () => undefined);
+    const events = { publishChatAlert } as unknown as ThreadEvents;
 
     await reconcileStuckWork({
       prisma,
       jobs,
+      events,
       notifications: provider,
       now,
       batchSize: 100,
@@ -84,11 +88,21 @@ describe("reconcileStuckWork", () => {
     await reconcileStuckWork({
       prisma,
       jobs,
+      events,
       notifications: provider,
       now,
       batchSize: 100,
     });
 
+    expect(publishChatAlert).toHaveBeenCalledTimes(1);
+    expect(publishChatAlert).toHaveBeenCalledWith("user-1", {
+      kind: "help",
+      title: "Ada still needs an answer",
+      body: "This has been waiting on you.",
+      spaceId: "space-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+    });
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(
       {
@@ -111,6 +125,8 @@ describe("reconcileStuckWork", () => {
         },
       }),
     ]);
+    // The claim and the delivered stamp lock the thread row behind snapshot reads.
+    expect(prisma.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget, budget]);
   });
 
   it("does not send again when this episode was already reminded", async () => {
@@ -313,15 +329,33 @@ describe("reconcileStuckWork", () => {
     const { jobs } = publisher();
     const { provider, send } = notifications();
     send.mockRejectedValueOnce(new Error("push down"));
+    const publishChatAlert = vi.fn(async () => undefined);
+    const events = { publishChatAlert } as unknown as ThreadEvents;
 
-    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+    await reconcileStuckWork({
+      prisma,
+      jobs,
+      events,
+      notifications: provider,
+      now,
+      batchSize: 100,
+    });
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(stamps).toHaveLength(0);
+    expect(publishChatAlert).not.toHaveBeenCalled();
 
-    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+    await reconcileStuckWork({
+      prisma,
+      jobs,
+      events,
+      notifications: provider,
+      now,
+      batchSize: 100,
+    });
 
     expect(send).toHaveBeenCalledTimes(2);
+    expect(publishChatAlert).toHaveBeenCalledTimes(1);
     expect(stamps).toEqual([
       expect.objectContaining({
         runId: run.id,
@@ -398,6 +432,31 @@ describe("reconcileStuckWork", () => {
       }),
       expect.anything(),
     );
+    expect(client.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget]);
+  });
+
+  it("alerts open apps when work is cancelled, even without a push provider", async () => {
+    const run = { ...candidate("queued", 25), thread: { groupId: "group-1" } };
+    const publishChatAlert = vi.fn(async () => undefined);
+    const { jobs } = publisher();
+
+    await reconcileStuckWork({
+      prisma: expireClient(run) as unknown as PrismaClient,
+      jobs,
+      events: { notify: vi.fn(async () => undefined), publishChatAlert } as unknown as ThreadEvents,
+      now,
+      batchSize: 100,
+    });
+
+    expect(publishChatAlert).toHaveBeenCalledWith("user-1", {
+      kind: "failure",
+      title: "Ada stopped",
+      body: stuckWorkStatusMessage("queued"),
+      spaceId: "space-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      groupId: "group-1",
+    });
   });
 
   it("cancels a takeover nobody acted on after half an hour, without a reminder first", async () => {
@@ -630,6 +689,7 @@ function noticePrisma(run: ReturnType<typeof candidate>, stamps: NoticeStamp[]) 
       }),
     },
     thread: { update: vi.fn(async () => ({ nextEventSeq: stamps.length + 1 })) },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
@@ -685,9 +745,12 @@ function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?:
         },
       ]),
     },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
   };
   return Object.assign(client, {
-    $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+    $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>, _options?: unknown) =>
+      fn(client),
+    ),
   });
 }

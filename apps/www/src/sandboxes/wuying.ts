@@ -1,6 +1,24 @@
 import { GITHUB_URL } from "../site";
-import { PROVIDERS_DOC, RUNTIME_DOC } from "./shared";
+import {
+  MONTH_HOURS,
+  PRICES_NOTE,
+  PRICING,
+  PROVIDERS_DOC,
+  RUNTIME_DOC,
+  WORKDAY_HOURS,
+  WUYING,
+  aboutUsd,
+  usd,
+  wuyingPayAsYouGo,
+  wuyingPlan120,
+  wuyingUnlimited,
+} from "./shared";
 import type { Sandbox } from "./types";
+
+const SIZE = `${WUYING.size.vcpus} vCPU / ${WUYING.size.gb} GiB`;
+const About = (amount: number) => `A${aboutUsd(amount).slice(1)}`;
+const planBeatsHourly = Math.round(WUYING.plan120 / WUYING.hour);
+const unlimitedBeatsPlan = Math.round(120 + (WUYING.unlimited - WUYING.plan120) / WUYING.hour);
 
 const WUYING_DOC = `${GITHUB_URL}/blob/main/docs/wuying-computers.md`;
 
@@ -10,9 +28,9 @@ export const wuying: Sandbox = {
   runsOn: "Your Alibaba Cloud Windows desktop",
   keeps: "The desktop's own disk",
   bestFor: "Windows apps, Alibaba Cloud and mainland China",
-  title: "Wuying cloud computer for AI agents: let Rakazo bots use a Windows desktop on Alibaba Cloud",
+  title: "Wuying cloud computer for AI agents: pricing and letting Rakazo bots use a Windows desktop on Alibaba Cloud",
   description:
-    "Let AI agents work on a Wuying (Elastic Desktop Service) Windows cloud computer you already have on Alibaba Cloud. Rakazo bots run PowerShell, use Windows apps and let you watch and take over.",
+    "Let AI agents work on a Wuying (Elastic Desktop Service) Windows cloud computer on Alibaba Cloud. Wuying pricing by the hour or month, a worked monthly cost, and how Rakazo bots run PowerShell and Windows apps you can watch and take over.",
   h1: "Let your AI agents use a Wuying cloud computer",
   intro: [
     "Wuying (无影) is Alibaba Cloud's cloud computer service, sold outside China as Elastic Desktop Service. It gives you a Windows desktop that runs in Alibaba Cloud and that you open from a browser or the Wuying client.",
@@ -24,11 +42,13 @@ export const wuying: Sandbox = {
     where: "Computer on Wuying",
     ask: "reconcile october's card export against the receipts folder",
     reply: "on it. opening the export in excel on the windows desktop. anything that doesn't line up, i ask.",
-    task: "Matching charges in Excel.",
-    screen: {
-      host: "october-card.xlsx",
-      title: "Month-end close: October",
-      lines: ["38 charges matched", "Harbor hotel: two nights", "2 receipts missing"],
+    computer: {
+      task: "Matching charges in Excel.",
+      screen: {
+        host: "october-card.xlsx",
+        title: "Month-end close: October",
+        lines: ["38 charges matched", "Harbor hotel: two nights", "2 receipts missing"],
+      },
     },
   },
   sections: [
@@ -39,6 +59,64 @@ export const wuying: Sandbox = {
         "This is not AgentBay, Alibaba Cloud's separate sandbox service for agents. Rakazo uses one ordinary Wuying desktop that you have already created, and talks to it through the desktop's MCP gateway.",
       ],
       image: true,
+    },
+    {
+      heading: "Wuying pricing",
+      paragraphs: [
+        "Alibaba Cloud bills a Wuying computer for compute and, separately, for its disks. Compute is either pay-as-you-go by the hour, a monthly plan with 120 hours, or an unlimited monthly plan. Hours beyond a 120-hour plan are charged at the hourly rate, and stop being charged once the month's total reaches the unlimited price. Disks bill every hour they exist, even while the computer is off.",
+        "Alibaba Cloud publishes example prices in its billing docs and the exact ones on its purchase page, which depend on size, region, Windows image and promotions. It publishes no example for 2 vCPU / 4 GB; the examples below are for 4 vCPU / 8 GiB, the closest size it publishes and a comfortable one for Windows with Office apps.",
+      ],
+      table: {
+        caption: `Wuying example prices for a ${SIZE} computer, November 2026`,
+        columns: ["Billing", "International (USD)", "Mainland China (CNY)"],
+        rows: [
+          { topic: "Pay-as-you-go", cells: [`$${WUYING.hour} an hour`, `¥${WUYING.cny.hour} an hour`] },
+          { topic: "120 hours a month", cells: [`${usd(WUYING.plan120)} a month`, `¥${WUYING.cny.plan120} a month`] },
+          { topic: "Unlimited", cells: [`${usd(WUYING.unlimited)} a month`, `¥${WUYING.cny.unlimited} a month`] },
+          {
+            topic: "Disk",
+            cells: [
+              `$${WUYING.diskGbHour} per GiB-hour, or $${WUYING.diskGbMonth} per GiB-month`,
+              `¥${WUYING.cny.diskGbHour} per GiB-hour, or ¥${WUYING.cny.diskGbMonth} per GiB-month`,
+            ],
+          },
+          { topic: "Bandwidth", cells: ["Basic 5 Mbps shared bandwidth free; faster options extra", "Traffic ¥0.80 per GB"] },
+        ],
+        note: `${PRICES_NOTE} Alibaba Cloud marks these as examples; your order shows the final price. Sources: [Elastic Desktop Service billing](https://www.alibabacloud.com/help/en/wuying-workspace/product-overview/billing-overview) and [无影 billing](https://help.aliyun.com/zh/wuying-workspace/product-overview/billing-overview).`,
+      },
+    },
+    {
+      heading: "What a Wuying computer costs with Rakazo",
+      paragraphs: [
+        `Rakazo starts the desktop when a bot needs it and powers it off when the last computer on it stops, so on pay-as-you-go you pay for roughly the hours bots work. Monthly costs follow [the method on the comparison page](/sandboxes/#pricing), at ${SIZE} with an ${WUYING.diskGb} GiB system disk because Alibaba Cloud publishes no 2 vCPU / 4 GB example.`,
+      ],
+      table: {
+        caption: `One ${SIZE} Wuying computer a month, international prices`,
+        columns: ["Usage", "Pay-as-you-go", "120-hour plan", "Unlimited plan"],
+        rows: [
+          {
+            topic: `4 hours a workday, ${WORKDAY_HOURS} hours`,
+            cells: [
+              `${About(wuyingPayAsYouGo(WORKDAY_HOURS))} (${usd(WUYING.hour * WORKDAY_HOURS)} compute, the rest disk)`,
+              About(wuyingPlan120(WORKDAY_HOURS)),
+              About(wuyingUnlimited),
+            ],
+          },
+          {
+            topic: `Around the clock, ${MONTH_HOURS} hours`,
+            cells: [
+              About(wuyingPayAsYouGo(MONTH_HOURS)),
+              `${About(wuyingPlan120(MONTH_HOURS))}, capped at the unlimited price`,
+              About(wuyingUnlimited),
+            ],
+          },
+        ],
+        note: "Computed from Alibaba Cloud's example prices, checked November 2026. Disk at the pay-as-you-go rate for pay-as-you-go, and at the monthly rate for plans. Your model provider bills separately.",
+      },
+      bullets: [
+        `Pay-as-you-go is cheapest below about ${planBeatsHourly} hours a month. Above that, the 120-hour plan wins, and past about ${unlimitedBeatsPlan} hours the unlimited plan does.`,
+        "Everyone sharing the desktop shares this bill. Rakazo doesn't add a charge for using it.",
+      ],
     },
     {
       heading: "What a bot can do on a Wuying desktop",
@@ -109,7 +187,7 @@ export const wuying: Sandbox = {
     {
       question: "Is this Alibaba Cloud AgentBay?",
       answer:
-        "No. Rakazo uses a Wuying cloud computer you already have, not the AgentBay sandbox service.",
+        "No. Rakazo uses a Wuying cloud computer you already have, not the AgentBay sandbox service. AgentBay bills per second for each session, at $0.027 per core-hour and $0.0113 per GB-hour as of November 2026, and Rakazo doesn't support it.",
     },
     {
       question: "Do I need to be an admin to use Wuying with Rakazo?",
@@ -128,6 +206,12 @@ export const wuying: Sandbox = {
       href: "https://www.alibabacloud.com/en/product/cloud-desktop",
     },
     { label: "无影云电脑", href: "https://www.aliyun.com/product/ecs/gws" },
+    PRICING.wuying,
+    { label: "无影, billing overview", href: "https://help.aliyun.com/zh/wuying-workspace/product-overview/billing-overview" },
+    {
+      label: "Alibaba Cloud, AgentBay billing",
+      href: "https://www.alibabacloud.com/help/en/agentbay/product-overview/agentbay-billing-instructions",
+    },
     { label: "Rakazo, Wuying setup", href: WUYING_DOC },
     PROVIDERS_DOC,
     RUNTIME_DOC,

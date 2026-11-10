@@ -28,7 +28,7 @@ export function SlackInstallCallbackPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
-        <div className="text-lg text-foreground">
+        <div className="text-heading3 text-foreground">
           <Trans>Could not connect</Trans>
         </div>
         <Button type="button" className="mt-5" onClick={() => navigate("/app?settings=messaging")}>

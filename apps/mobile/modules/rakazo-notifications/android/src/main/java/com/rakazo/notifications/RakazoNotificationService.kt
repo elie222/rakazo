@@ -33,6 +33,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -44,6 +45,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 private class ApiException(val status: Int) : IOException()
+private const val MAX_RPC_RESPONSE_BYTES = 16 * 1024 * 1024
 
 class RakazoNotificationService : Service() {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -171,20 +173,23 @@ class RakazoNotificationService : Service() {
                 }
               }) {
                 if (reply != null) {
-                  post(
-                    run,
-                    NotificationCopy(
-                      title = when {
-                        run.trigger == "routine" ->
-                          copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
-                        run.groupName != null ->
-                          copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
-                        else -> copyContext.getString(R.string.rakazo_replied, run.botName)
-                      },
-                      body = reply.ifBlank { run.prompt },
-                      channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
-                    ),
-                  )
+                  val bodyText = reply.ifBlank { run.prompt }
+                  if (bodyText.isNotBlank()) {
+                    post(
+                      run,
+                      NotificationCopy(
+                        title = when {
+                          run.trigger == "routine" ->
+                            copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
+                          run.groupName != null ->
+                            copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
+                          else -> copyContext.getString(R.string.rakazo_replied, run.botName)
+                        },
+                        body = bodyText,
+                        channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
+                      ),
+                    )
+                  }
                 }
               }
               persistCompleted(true)
@@ -984,7 +989,7 @@ internal fun markdownToPreview(markdown: String): String {
   return restore(text).replace(Regex("\\s+"), " ").trim()
 }
 
-private fun rpc(
+internal fun rpc(
   endpoint: String,
   token: String,
   spaceId: String,
@@ -1014,7 +1019,17 @@ private fun rpc(
     }
     val status = connection.responseCode
     if (status !in 200..299) throw ApiException(status)
-    val body = connection.inputStream.bufferedReader().use { it.readText() }
+    val body = connection.inputStream.use { stream ->
+      val bytes = ByteArrayOutputStream()
+      val buffer = ByteArray(8_192)
+      while (true) {
+        val count = stream.read(buffer, 0, minOf(buffer.size, MAX_RPC_RESPONSE_BYTES - bytes.size() + 1))
+        if (count == -1) break
+        if (bytes.size() + count > MAX_RPC_RESPONSE_BYTES) throw IOException("Server response too large")
+        bytes.write(buffer, 0, count)
+      }
+      bytes.toString(Charsets.UTF_8.name())
+    }
     val root = try {
       JSONObject(body)
     } catch (_: JSONException) {

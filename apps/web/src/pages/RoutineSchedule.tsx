@@ -1,4 +1,3 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CronFreq, CronPreset, CronUnit } from "@rakazo/core";
 import {
@@ -6,13 +5,12 @@ import {
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,
-  describeCronPreset,
   localizedClock,
   russianIntervalUnit,
 } from "@rakazo/core";
-import { Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
-import { Clock } from "lucide-react";
-import { cronLabels, cronUnitLabel } from "../lib/cron";
+import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Clock, X } from "lucide-react";
+import { cronFreqLabel, cronUnitLabel } from "../lib/cron";
 
 const UNITS: CronUnit[] = ["minutes", "hours", "days"];
 const TIMES = [
@@ -28,27 +26,6 @@ const TIMES = [
 
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
 
-function cronFreqLabel(freq: CronFreq): string {
-  switch (freq) {
-    case "Every hour":
-      return t`Every hour`;
-    case "Every day":
-      return t`Every day`;
-    case "Weekdays":
-      return t`Weekdays`;
-    case "Every week":
-      return t`Every week`;
-    case "Every month":
-      return t`Every month`;
-    case "Interval":
-      return t`Interval`;
-    case "Advanced":
-      return t`Advanced`;
-    default:
-      return freq;
-  }
-}
-
 function russianIntervalControlLead(): string {
   // The amount select stays visible for 1, so use a construction that keeps
   // the number in the sentence grammatical: “Раз в 1 час”, “Раз в 2 часа”.
@@ -58,12 +35,13 @@ function russianIntervalControlLead(): string {
 export function RoutineSchedule({
   value,
   onChange,
+  onRemove,
 }: {
   value: CronPreset;
   onChange: (next: CronPreset) => void;
+  onRemove: () => void;
 }) {
   const { i18n, t } = useLingui();
-  const { lead, detail } = describeCronPreset(value, cronLabels(i18n.locale));
   const times = TIMES.includes(value.time) ? TIMES : [...TIMES, value.time];
   const numbers = cronIntervalAmounts(value.unit, value.n);
 
@@ -120,15 +98,23 @@ export function RoutineSchedule({
   );
 
   return (
-    <div className="mt-2 rounded-xl border border-border p-3">
+    <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
-        <Clock size={17} strokeWidth={1.6} className="shrink-0 text-muted-foreground" aria-hidden />
-        <span className="text-[14.5px] text-foreground">{lead}</span>
-        {detail ? (
-          <span className="flex-1 text-[14.5px] text-muted-foreground">{detail}</span>
-        ) : null}
+        <Clock size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-body-lg text-foreground">
+          <Trans>On a schedule</Trans>
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Remove schedule`}
+          onClick={onRemove}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-body text-muted-foreground">
         <NativeSelect
           size="sm"
           value={value.freq}
@@ -166,7 +152,7 @@ export function RoutineSchedule({
             placeholder="*/3 * * * *"
             aria-label={t`Cron expression`}
             onChange={(event) => patch({ cron: event.target.value })}
-            className="h-7 min-w-[120px] flex-1 font-mono text-[13px] md:text-[13px]"
+            className="h-7 min-w-[120px] flex-1 font-mono text-body-sm md:text-body-sm"
           />
         ) : null}
       </div>

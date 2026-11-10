@@ -1,16 +1,30 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import * as SecureStore from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "./api";
+import type * as Api from "./api";
+import type * as ApiAuth from "./api-auth";
+import {
+  deleteAccount,
+  fetchAccountSecurity,
+  requestAccountDeletionCode,
+  signOut,
+} from "./api-auth";
+import type * as ApiServer from "./api-server";
 import { replaceWithSignIn } from "./auth-routing";
+import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
+import type * as Session from "./session";
 import { registerSettingsSheet } from "./settings-sheet";
+import type * as ThreadFeedback from "./thread-feedback";
+import { hasUnsentSends } from "./thread-feedback";
 
 type Pressed = {
   children?: ReactNode;
@@ -41,9 +55,22 @@ const { element, account } = vi.hoisted(() => ({
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn(async () => true) }));
+// The unsent-message warning reads this without a screen subscription; tests flip it per case.
+vi.mock("./thread-feedback", async (importOriginal) => ({
+  ...(await importOriginal<typeof ThreadFeedback>()),
+  hasUnsentSends: vi.fn(() => false),
+}));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
+// The real sign-out flow runs in one test; its store and caches need these.
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
@@ -114,7 +141,10 @@ vi.mock("expo-router", () => {
     useRouter: () => router,
   };
 });
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: element("div"),
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
 vi.mock("../components/app-mark", () => ({ AppMark: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
@@ -163,17 +193,38 @@ vi.mock("../components/settings-group", () => ({
       },
       title,
     ),
-  SettingsSwitch: ({ title }: { title: string }) =>
-    createElement("button", { type: "button" }, title),
+  SettingsSwitch: ({
+    label,
+    value,
+    disabled,
+    onChange,
+  }: {
+    label: string;
+    value: boolean;
+    disabled?: boolean;
+    onChange: (value: boolean) => void;
+  }) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        role: "switch",
+        "aria-label": label,
+        "aria-checked": value,
+        disabled,
+        onClick: () => onChange(!value),
+      },
+      label,
+    ),
   useStackedSettings: () => false,
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiServer>()),
+}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof Api>()),
   currentApiBase: () => "http://127.0.0.1:3100",
-  deleteAccount: vi.fn(),
-  fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
-  loadSessionToken: vi.fn(async () => "token"),
-  passwordResetCapabilities: vi.fn(async () => ({})),
-  requestAccountDeletionCode: vi.fn(),
   rpc: vi.fn(async (method: string) =>
     method === "me"
       ? account.me
@@ -186,12 +237,27 @@ vi.mock("./api", () => ({
             : {},
   ),
   selectedSpaceId: () => "space-1",
+}));
+vi.mock("./api-auth", () => ({
+  deleteAccount: vi.fn(),
+  fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
+  passwordResetCapabilities: vi.fn(async () => ({})),
+  requestAccountDeletionCode: vi.fn(),
   signOut: vi.fn(),
   updateAccountName: vi.fn(),
+}));
+vi.mock("./session", async (importOriginal) => ({
+  ...(await importOriginal<typeof Session>()),
+  loadSessionToken: vi.fn(async () => "token"),
 }));
 vi.mock("./app-version", () => ({
   formatUpdateLabel: () => "",
   getAppVersionInfo: () => ({ version: "1.0.0", build: "1" }),
+}));
+const storeUpdate = vi.hoisted(() => ({ available: false, open: vi.fn() }));
+vi.mock("./store-update", () => ({
+  openStoreListing: storeUpdate.open,
+  useStoreUpdateAvailable: () => storeUpdate.available,
 }));
 vi.mock("./appearance", () => ({
   getCachedAppearancePreference: () => "system",
@@ -203,12 +269,27 @@ vi.mock("./archived-chats", () => ({
   loadArchivedChats: vi.fn(async () => ({ bots: [], groups: [] })),
 }));
 vi.mock("./auth-routing", () => ({ replaceWithSignIn: vi.fn() }));
+vi.mock("./call-session", () => ({ endCallBeforeSessionEnd: vi.fn(async () => undefined) }));
 vi.mock("./delete-account-prompt", () => ({ promptAccountDeletion: vi.fn() }));
-vi.mock("./i18n", () => {
-  // Stable across renders, as the real hook's is.
-  const i18n = { t: (text: string) => text, locale: "en" };
-  return { dateLocaleForUi: () => "en", useI18n: () => i18n };
-});
+const haptics = vi.hoisted(() => ({
+  enabled: true,
+  listeners: new Set<() => void>(),
+  load: vi.fn(async () => undefined),
+  save: vi.fn(async (_value: boolean) => undefined),
+}));
+vi.mock("./haptics", () => ({
+  getHapticsEnabled: () => haptics.enabled,
+  loadHapticsPreference: haptics.load,
+  setHapticsEnabled: (value: boolean) => {
+    haptics.enabled = value;
+    for (const listener of haptics.listeners) listener();
+    return haptics.save(value);
+  },
+  subscribeHaptics: (listener: () => void) => {
+    haptics.listeners.add(listener);
+    return () => haptics.listeners.delete(listener);
+  },
+}));
 vi.mock("./live-notifications", () => ({
   canPostPromotedNotifications: vi.fn(async () => false),
   DEFAULT_LIVE_NOTIFICATION_SETTINGS: {},
@@ -216,7 +297,9 @@ vi.mock("./live-notifications", () => ({
   hasLiveUpdateSettings: () => false,
   openLiveNotificationSettings: vi.fn(),
   openPromotedNotificationSettings: vi.fn(),
+  resumeLiveNotifications: vi.fn(async () => undefined),
   setLiveNotificationSettings: vi.fn(),
+  stopLiveNotifications: vi.fn(async () => undefined),
 }));
 const { styles } = vi.hoisted(() => ({ styles: new Proxy({}, { get: () => ({}) }) }));
 vi.mock("./native", () => ({
@@ -230,6 +313,10 @@ vi.mock("./passkey", () => ({
   listPasskeys: vi.fn(async () => []),
   passkeysAvailable: vi.fn(async () => false),
   renamePasskey: vi.fn(),
+}));
+vi.mock("./organizations", () => ({
+  activeOrganization: () => undefined,
+  useOrganizations: () => ({ data: undefined }),
 }));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
@@ -255,7 +342,6 @@ vi.mock("./trusted-link-sites", () => ({
   removeTrustedLinkSite: trusted.remove,
   useTrustedLinkSites: () => trusted.sites,
 }));
-vi.mock("./ui-locale", () => ({ UI_LOCALE_LABELS: { en: "English" } }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
 function security(overrides: Partial<AccountSecurity> = {}): AccountSecurity {
@@ -277,6 +363,11 @@ beforeEach(() => {
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.rules = [];
   account.messaging = { enabled: true };
+  haptics.enabled = true;
+  storeUpdate.available = false;
+  haptics.listeners.clear();
+  haptics.save.mockReset().mockResolvedValue(undefined);
+  haptics.load.mockReset().mockResolvedValue(undefined);
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
 });
 
@@ -285,6 +376,7 @@ afterEach(() => {
   container?.remove();
   root = undefined;
   container = undefined;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -331,6 +423,187 @@ async function renderAccount() {
     alert: () => screen.querySelector('[role="alert"]')?.textContent ?? null,
   };
 }
+
+it("navigates to sign-in while a silent server still owes the sign-out delivery", async () => {
+  const actual = await vi.importActual<typeof ApiAuth>("./api-auth");
+  const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+  vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => store.get(key) ?? null);
+  vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+    store.set(key, value);
+  });
+  vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+    store.delete(key);
+  });
+  vi.mocked(signOut).mockImplementation(actual.signOut);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((_input: string) => new Promise<Response>(() => undefined)),
+  );
+
+  const view = await renderAccount();
+  try {
+    vi.useFakeTimers();
+    await view.press("Sign out");
+
+    // The screen leaves before the request timeout fires; the device is signed out.
+    expect(replaceWithSignIn).toHaveBeenCalled();
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
+
+    // The delivery still runs: it times out and the record waits for retry.
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/api/auth/sign-out",
+      expect.anything(),
+    );
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("offers a store update beside the version only when one is available", async () => {
+  const view = await renderAccount();
+  expect(view.button("Update")).toBeUndefined();
+  act(() => root?.unmount());
+
+  storeUpdate.available = true;
+  const updatable = await renderAccount();
+  await updatable.press("Update");
+  expect(storeUpdate.open).toHaveBeenCalled();
+});
+
+it("shows a device haptics switch that follows and saves the local preference", async () => {
+  haptics.enabled = false;
+  const view = await renderAccount();
+  const toggle = view.screen.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Haptics"]',
+  );
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  await view.press("Haptics");
+  expect(haptics.save).toHaveBeenLastCalledWith(true);
+  expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  await view.press("Haptics");
+  expect(haptics.save).toHaveBeenLastCalledWith(false);
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+});
+
+it("requests the cached haptics loader on each settings visit without repeating it on rerenders", async () => {
+  const first = await renderAccount();
+  expect(haptics.load).toHaveBeenCalledOnce();
+  await first.press("Haptics");
+  expect(haptics.load).toHaveBeenCalledOnce();
+  await act(async () => root?.unmount());
+  root = undefined;
+  first.screen.remove();
+  await renderAccount();
+  expect(haptics.load).toHaveBeenCalledTimes(2);
+});
+
+it("reflects a saved off choice recovered by the settings focus loader", async () => {
+  haptics.load.mockImplementationOnce(async () => {
+    haptics.enabled = false;
+    for (const listener of haptics.listeners) listener();
+  });
+  const view = await renderAccount();
+  expect(
+    view.screen
+      .querySelector('[role="switch"][aria-label="Haptics"]')
+      ?.getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(haptics.load).toHaveBeenCalledOnce();
+  expect(haptics.save).not.toHaveBeenCalled();
+});
+
+it("keeps a failed off choice in memory and offers a native retry of that same choice", async () => {
+  haptics.save.mockRejectedValueOnce(new Error("private device storage failure"));
+  const view = await renderAccount();
+  await view.press("Haptics");
+  const toggle = view.screen.querySelector('[role="switch"][aria-label="Haptics"]');
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  expect(Alert.alert).toHaveBeenCalledWith("Haptics", "Could not save", expect.any(Array));
+  const buttons = vi.mocked(Alert.alert).mock.lastCall?.[2];
+  expect(buttons?.find((button) => button.style === "cancel")?.text).toBe("Cancel");
+  const retry = buttons?.find((button) => button.text === "Retry");
+  expect(retry).toBeDefined();
+  await act(async () => retry?.onPress?.());
+  expect(haptics.save.mock.calls).toEqual([[false], [false]]);
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  expect(Alert.alert).toHaveBeenCalledOnce();
+});
+
+it("ignores a failed older toggle even when the latest choice has the same value", async () => {
+  let fail!: (error: Error) => void;
+  haptics.save.mockReturnValueOnce(
+    new Promise<never>((_resolve, reject) => {
+      fail = reject;
+    }),
+  );
+  const view = await renderAccount();
+  await view.press("Haptics");
+  await view.press("Haptics");
+  await view.press("Haptics");
+  await act(async () => fail(new Error("old failure")));
+  expect(haptics.save.mock.calls).toEqual([[false], [true], [false]]);
+  expect(haptics.enabled).toBe(false);
+  expect(Alert.alert).not.toHaveBeenCalled();
+});
+
+it("does not let an old retry overwrite a newer preference", async () => {
+  haptics.save.mockRejectedValueOnce(new Error("save failed"));
+  const view = await renderAccount();
+  await view.press("Haptics");
+  const retry = vi
+    .mocked(Alert.alert)
+    .mock.lastCall?.[2]?.find((button) => button.text === "Retry");
+  await view.press("Haptics");
+  expect(haptics.enabled).toBe(true);
+  await act(async () => retry?.onPress?.());
+  expect(haptics.save.mock.calls).toEqual([[false], [true]]);
+  expect(haptics.enabled).toBe(true);
+});
+
+it("reports a current failed save and can retry after the account screen closes", async () => {
+  let fail!: (error: Error) => void;
+  haptics.save.mockReturnValueOnce(
+    new Promise<never>((_resolve, reject) => {
+      fail = reject;
+    }),
+  );
+  const view = await renderAccount();
+  await view.press("Haptics");
+  await act(async () => root?.unmount());
+  root = undefined;
+  await act(async () => fail(new Error("late failure")));
+  expect(haptics.enabled).toBe(false);
+  expect(Alert.alert).toHaveBeenCalledWith("Haptics", "Could not save", expect.any(Array));
+  const retry = vi
+    .mocked(Alert.alert)
+    .mock.lastCall?.[2]?.find((button) => button.text === "Retry");
+  await act(async () => retry?.onPress?.());
+  expect(haptics.save.mock.calls).toEqual([[false], [false]]);
+});
+
+it("keeps a late failure from an earlier settings visit silent after a newer same-value choice", async () => {
+  let fail!: (error: Error) => void;
+  haptics.save.mockReturnValueOnce(
+    new Promise<never>((_resolve, reject) => {
+      fail = reject;
+    }),
+  );
+  const first = await renderAccount();
+  await first.press("Haptics");
+  await act(async () => root?.unmount());
+  root = undefined;
+  first.screen.remove();
+  const second = await renderAccount();
+  await second.press("Haptics");
+  await second.press("Haptics");
+  expect(haptics.enabled).toBe(false);
+  await act(async () => fail(new Error("old visit failure")));
+  expect(haptics.save.mock.calls).toEqual([[false], [true], [false]]);
+  expect(Alert.alert).not.toHaveBeenCalled();
+});
 
 it("asks for the current password, shows a failed delete, and signs out after a successful one", async () => {
   const view = await renderAccount();
@@ -458,6 +731,7 @@ it.each([false, true])(
         "Vault",
         "Integrations",
         "Skills",
+        "Memory",
         "Messaging",
         "AI data sharing",
       ];
@@ -474,6 +748,7 @@ it.each([false, true])(
       for (const [title, href] of [
         ["Models", "/models"],
         ["Vault", "/vault"],
+        ["Memory", "/memory"],
         ["Messaging", "/messaging"],
       ]) {
         events.length = 0;
@@ -544,4 +819,57 @@ it("hides Messaging when no chat app is connected to the server", async () => {
   const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
   expect(titles).toContain("Skills");
   expect(titles).not.toContain("Messaging");
+});
+
+it("starts one sign-out when Sign out is tapped again while the warning is open", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  try {
+    const view = await renderAccount();
+    await view.press("Sign out");
+    await view.press("Sign out");
+    expect(Alert.alert).toHaveBeenCalledOnce();
+    const buttons = vi.mocked(Alert.alert).mock.calls[0]![2]!;
+    await act(async () => buttons[1]!.onPress?.());
+    expect(signOut).toHaveBeenCalledOnce();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
+});
+
+it("warns before sign-out deletes unsent messages and keeps them on cancel", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  try {
+    const view = await renderAccount();
+    await view.press("Sign out");
+    expect(Alert.alert).toHaveBeenCalledOnce();
+    const buttons = vi.mocked(Alert.alert).mock.calls[0]![2]!;
+    expect(buttons[0]!.text).toBe("Cancel");
+    expect(buttons[1]!.text).toBe("Sign out anyway");
+    // Nothing is cleared while the alert is open or after Cancel.
+    expect(signOut).not.toHaveBeenCalled();
+    await act(async () => buttons[0]!.onPress?.());
+    expect(signOut).not.toHaveBeenCalled();
+    expect(replaceWithSignIn).not.toHaveBeenCalled();
+
+    await view.press("Sign out");
+    const confirm = vi.mocked(Alert.alert).mock.calls[1]![2]!;
+    await act(async () => confirm[1]!.onPress?.());
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(replaceWithSignIn).toHaveBeenCalled();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
+});
+
+it("hangs up the active call before signing out", async () => {
+  const view = await renderAccount();
+  const order: string[] = [];
+  vi.mocked(endCallBeforeSessionEnd).mockImplementationOnce(async () => {
+    order.push("hang-up");
+  });
+  vi.mocked(signOut).mockImplementationOnce(async () => {
+    order.push("sign-out");
+  });
+  await view.press("Sign out");
+  expect(order).toEqual(["hang-up", "sign-out"]);
 });

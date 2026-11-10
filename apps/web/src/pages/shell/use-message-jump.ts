@@ -70,6 +70,33 @@ export function useMessageJump({
   } | null>(null);
   const clearScrollRequest = useCallback(() => setScrollRequest(null), []);
   const initiallyScrolledThread = useRef<string | null>(null);
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+  // Leaving the chats (another page) unmounts this hook while its refs still name the last chat.
+  // A layout effect, because a page still loading only hides the shell under Suspense, which
+  // cleans up layout effects but not passive ones.
+  const mounted = useRef(true);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  /**
+   * Strips a finished jump from the address so a refresh does not repeat it. The setter from the
+   * render that started the jump navigates to that render's chat, so it runs only while that chat
+   * is still open, on this page, and still asks for this message.
+   */
+  function clearJumpParam(target: JumpTarget) {
+    if (!mounted.current) return;
+    if (target.groupId && activeGroupId.current !== target.groupId) return;
+    if (target.botId && activeBotId.current !== target.botId) return;
+    const next = new URLSearchParams(searchParamsRef.current);
+    if (next.get("m") !== target.messageId) return;
+    next.delete("m");
+    setSearchParams(next, { replace: true });
+  }
 
   async function jumpToMessage(target: JumpTarget) {
     const threadTarget = searchHitThreadTarget(target);
@@ -156,12 +183,9 @@ export function useMessageJump({
     const messageId = searchParams.get("m");
     const routineId = searchParams.get("routine");
     if (inGroup && groupId && messageId) {
-      void jumpToMessage({ groupId, messageId }).finally(() => {
-        // Keep expandedHistoryThread; only strip the jump URL so refresh does not remount.
-        const next = new URLSearchParams(searchParams);
-        next.delete("m");
-        setSearchParams(next, { replace: true });
-      });
+      const target = { groupId, messageId };
+      // Keep expandedHistoryThread; only strip the jump URL so refresh does not remount.
+      void jumpToMessage(target).finally(() => clearJumpParam(target));
       return;
     }
     if (!active) return;
@@ -178,11 +202,8 @@ export function useMessageJump({
       setSearchParams(next, { replace: true });
     }
     if (messageId) {
-      void jumpToMessage({ botId: active.id, messageId }).finally(() => {
-        const next = new URLSearchParams(searchParams);
-        next.delete("m");
-        setSearchParams(next, { replace: true });
-      });
+      const target = { botId: active.id, messageId };
+      void jumpToMessage(target).finally(() => clearJumpParam(target));
     }
   }, [active?.id, groupId, inGroup, routines, routinesBotId, searchParams, setSearchParams]);
 

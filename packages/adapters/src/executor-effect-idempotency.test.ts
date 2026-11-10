@@ -1,5 +1,6 @@
 import type {
   AgentRunRequest,
+  BackgroundJob,
   MemoryCommitRequest,
   MemoryReadRequest,
   MemorySnapshot,
@@ -151,7 +152,10 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    space: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -245,6 +249,7 @@ function fixture(runId = "run-1") {
     return true;
   });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   let calls: ToolCall[] = [];
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     for (const call of calls) {
@@ -285,12 +290,13 @@ function fixture(runId = "run-1") {
       pauseRunForInput,
       finalizeRun,
     },
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    jobs: { enqueue },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   return {
     effects,
+    enqueue,
     media,
     artifactRows,
     artifactPut,
@@ -391,6 +397,27 @@ describe("mutating tool effect idempotency keys", () => {
       f.effects.find((effect) => effect.kind === "media_generation_job")?.request,
     ).toMatchObject({ executionId: "wrapper" });
     expect(f.results[0]).toMatchObject({ status: "queued" });
+  });
+  it("leaves a queued video to background delivery when the run ends before it finishes", async () => {
+    const f = fixture("run-video-handoff");
+    const args = { prompt: "a landscape" };
+    f.effects.push({
+      id: "approved-video",
+      spaceId: "space-1",
+      runId: "run-video-handoff",
+      kind: "generate_video",
+      idempotencyKey: toolEffectIdempotencyKey("run-video-handoff", "generate_video", args),
+      status: "approved",
+      request: args,
+    });
+    f.setCalls([{ name: "generate_video", args, executionId: "call-1" }]);
+    await f.run();
+    const job = f.effects.find((effect) => effect.kind === "media_generation_job");
+    expect(f.results[0]).toEqual({ jobId: job?.id, status: "queued", progress: 0 });
+    // The run is over, so only durable work can still bring the finished video to the chat.
+    expect(f.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "media.poll", payload: { jobId: job?.id } }),
+    );
   });
   it("keeps interrupted media with no saved result uncertain instead of submitting again", async () => {
     const f = fixture("run-unknown-media");

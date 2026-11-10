@@ -1,7 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createScanner, ScriptTarget } from "typescript";
+import { generateMessageId } from "@lingui/message-utils/generateMessageId";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-localization", () => ({
@@ -14,30 +11,18 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(),
 }));
 
-vi.mock("./material-icons", () => ({ materialIcons: {} }));
-
 vi.mock("./ui-direction", () => ({
   applyMobileUiDirection: vi.fn(),
 }));
 
-function collectSourceFiles(dir: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...collectSourceFiles(path));
-    else if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".test.ts")) files.push(path);
-  }
-  return files;
-}
-
-function translationIds(source: string): string[] {
-  const scanner = createScanner(ScriptTarget.Latest, true);
-  return [...source.matchAll(/\bt\(\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g)].map((match) => {
-    scanner.setText(match[1]);
-    scanner.scan();
-    return scanner.getTokenValue();
-  });
+/**
+ * Looks a message up the way the compiled macro does, in the Lingui instance the freshly imported
+ * `./i18n` loaded its catalogs into.
+ */
+async function translator() {
+  const { i18n } = await import("@lingui/core");
+  return (message: string, values?: Record<string, unknown>) =>
+    i18n._({ id: generateMessageId(message), message, values });
 }
 
 describe("mobile i18n", () => {
@@ -50,204 +35,63 @@ describe("mobile i18n", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("falls back to the English source message when a translation is missing", async () => {
-    const { resetI18nForTests, t } = await import("./i18n");
+    const { resetI18nForTests } = await import("./i18n");
+    const t = await translator();
     resetI18nForTests("zh-CN");
     expect(t("Not a real string")).toBe("Not a real string");
-  });
-
-  it("translates seeded Chinese chrome and keeps interpolations", async () => {
-    const { resetI18nForTests, t } = await import("./i18n");
-    resetI18nForTests("zh-CN");
-    expect(t("Account")).toBe("账户");
-    expect(t("Sign in to Rakazo")).toBe("登录 Rakazo");
-    expect(t("New bot")).toBe("新建 Bot");
-    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 次运行，12 个 token",
-    );
-    expect(t("Delete {name}?", { name: "Scout" })).toBe("要删除 Scout 吗？");
-
-    resetI18nForTests("ru");
-    expect(t("Account")).toBe("Аккаунт");
-    expect(t("Sign in to Rakazo")).toBe("Войти в Rakazo");
-    expect(t("New bot")).toBe("Новый бот");
-    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "Запусков: 3, токенов: 12",
-    );
-    expect(t("Delete {name}?", { name: "Scout" })).toBe("Удалить Scout?");
-
-    resetI18nForTests("nl");
-    expect(t("Account")).toBe("Account");
-    expect(t("Sign in to Rakazo")).toBe("Aanmelden bij Rakazo");
-    expect(t("New bot")).toBe("Nieuwe bot");
-    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 uitvoeringen, 12 tokens",
-    );
-    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout verwijderen?");
-
-    resetI18nForTests("ja");
-    expect(t("Account")).toBe("アカウント");
-    expect(t("Sign in to Rakazo")).toBe("Rakazoにログイン");
-    expect(t("New bot")).toBe("新しいボット");
-    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3回の実行、12トークン",
-    );
-    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scoutを削除しますか？");
-
-    resetI18nForTests("de");
-    expect(t("Account")).toBe("Konto");
-    expect(t("Sign in to Rakazo")).toBe("Bei Rakazo anmelden");
-    expect(t("New bot")).toBe("Neuer Bot");
-    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 Ausführungen, 12 Token",
-    );
-    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout löschen?");
-
-    resetI18nForTests("es");
-    expect(t("Account")).toBe("Cuenta");
-    expect(t("Sign in to Rakazo")).toBe("Inicia sesión en Rakazo");
-    expect(t("New bot")).toBe("Nuevo bot");
-    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 ejecuciones, 12 tokens",
-    );
-    expect(t("Delete {name}?", { name: "Scout" })).toBe("¿Eliminar Scout?");
-  });
-
-  it("preserves interpolations in every non-English catalog", async () => {
-    const { ZH_MESSAGES } = await import("./locales/zh");
-    const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
-    const { RU_MESSAGES } = await import("./locales/ru");
-    const { DE_MESSAGES } = await import("./locales/de");
-    const { NL_MESSAGES } = await import("./locales/nl");
-    const { JA_MESSAGES } = await import("./locales/ja");
-    const { ES_MESSAGES } = await import("./locales/es");
-    for (const messages of [
-      ZH_MESSAGES,
-      ZH_TW_MESSAGES,
-      RU_MESSAGES,
-      DE_MESSAGES,
-      NL_MESSAGES,
-      JA_MESSAGES,
-      ES_MESSAGES,
-    ]) {
-      const empty = Object.entries(messages).filter(([, value]) => !value.trim());
-      const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
-        const tokens = (message: string) =>
-          [...message.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => match[1]).sort();
-        return JSON.stringify(tokens(id)) !== JSON.stringify(tokens(value));
-      });
-      expect(empty).toEqual([]);
-      expect(interpolationMismatches).toEqual([]);
-    }
-  });
-
-  it("translates every mobile chrome t() id in every non-English catalog", async () => {
-    const { ZH_MESSAGES } = await import("./locales/zh");
-    const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
-    const { RU_MESSAGES } = await import("./locales/ru");
-    const { DE_MESSAGES } = await import("./locales/de");
-    const { NL_MESSAGES } = await import("./locales/nl");
-    const { JA_MESSAGES } = await import("./locales/ja");
-    const { ES_MESSAGES } = await import("./locales/es");
-    const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS, RUN_ERROR_LIMIT_MESSAGES } = await import(
-      "@rakazo/core"
-    );
-    const { AI_DATA_DISCLOSURES, OPENAI_COMPATIBLE_BASE_URL_HINT } = await import(
-      "@rakazo/contracts"
-    );
-    const { createMenuItems } = await import("./create-chooser");
-    const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-    const ids = new Set<string>([
-      ...Object.values(AI_DATA_DISCLOSURES),
-      ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
-      "{summary} Your backup models also failed.",
-      "{summary} No backup model was usable for this request.",
-      "{summary} Backup models failed or were unavailable for this request.",
-      "Your OpenRouter",
-      "Your OpenAI",
-      "Your Anthropic",
-      "Your model provider",
-      "The model provider returned an error.",
-      "Connect a model in Settings before running bots.",
-      "Connect your own API key in Models or choose Rakazo credits in Billing.",
-      "{provider} is rate limiting requests. Try again shortly.",
-      "{summary} Resets {date}.",
-      "{provider} rejected the API key. Check your connection settings.",
-      "{provider} can't run this model.",
-      "{provider} denied access to this model.",
-      "The model returned an unusable response. Try again.",
-      "The model hit its output limit before finishing its reply.",
-      "This model's context window is too small. Choose another model.",
-      "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.",
-      "This connection's request limit is too small. Choose another model.",
-      "{provider} took too long to respond. Try again.",
-      "{provider} is overloaded right now. Try again in a moment.",
-      "{provider} couldn't be reached. Check that it's running.",
-      "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
-
-      EMPTY_PLUGIN_CATALOG_MESSAGE,
-      OPENAI_COMPATIBLE_BASE_URL_HINT,
-      ...SLASH_ACTIONS.map((action) => action.label),
-      ...createMenuItems.map((item) => item.label),
-      "Sign-in did not return a session",
-      "Sign-up did not return a session",
-      "{count} model",
-      "{count} models",
-      // Labels the t() literal scan cannot see: built from maps or ternaries.
-      "System",
-      "Light",
-      "Dark",
-      "Allow once",
-      "Always allow",
-      "Deny",
-    ]);
-    for (const file of collectSourceFiles(mobileRoot)) {
-      const source = readFileSync(file, "utf8");
-      for (const id of translationIds(source)) ids.add(id);
-    }
-    for (const messages of [
-      ZH_MESSAGES,
-      ZH_TW_MESSAGES,
-      RU_MESSAGES,
-      DE_MESSAGES,
-      NL_MESSAGES,
-      JA_MESSAGES,
-      ES_MESSAGES,
-    ]) {
-      const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
-      expect(missing).toEqual([]);
-    }
-  });
-
-  it("decodes JavaScript string escapes in scanned translation ids", () => {
-    expect(
-      translationIds(
-        String.raw`t('He said \"hi\"'); t('C:\\temp'); t('It\'s ready'); t("Say \"hi\""); t('\x41\u0042\n')`,
-      ),
-    ).toEqual(['He said "hi"', "C:\\temp", "It's ready", 'Say "hi"', "AB\n"]);
+    expect(t("Not a real {thing}", { thing: "string" })).toBe("Not a real string");
   });
 
   it.each([
-    ["de", "Dein Modellanbieter hat zu lange zum Antworten gebraucht. Versuche es erneut."],
-    ["nl", "Jouw modelaanbieder deed er te lang over om te antwoorden. Probeer het opnieuw."],
-    ["ja", "お使いのモデルプロバイダーの応答に時間がかかりすぎました。もう一度お試しください。"],
-    ["es", "Tu proveedor de modelos tardó demasiado en responder. Vuelve a intentarlo."],
-    ["ru", "Ваш поставщик моделей не ответил вовремя. Повторите попытку."],
-    ["zh-CN", "你的模型提供商响应超时。请重试。"],
-  ] as const)("renders provider errors in %s", async (locale, expected) => {
-    const { normalizeRunError } = await import("@rakazo/core");
-    const { resetI18nForTests, t, dateLocaleForUi } = await import("./i18n");
-    resetI18nForTests(locale);
-    expect(normalizeRunError("Request timed out", t, dateLocaleForUi()).summary).toBe(expected);
-  });
+    ["zh-CN", "账户", "要删除 Scout 吗？"],
+    ["zh-TW", "帳號", "要刪除 Scout 嗎？"],
+    ["ru", "Аккаунт", "Удалить Scout?"],
+    ["de", "Konto", "Scout löschen?"],
+    ["pl", "Konto", "Usunąć Scout?"],
+  ] as const)(
+    "translates from the shared %s catalog and keeps interpolations",
+    async (locale, account, del) => {
+      const { dateLocaleForUi, resetI18nForTests } = await import("./i18n");
+      const t = await translator();
+      resetI18nForTests(locale);
+      expect(t("Account")).toBe(account);
+      expect(t("Delete {name}?", { name: "Scout" })).toBe(del);
+      expect(dateLocaleForUi()).toBe(locale);
+    },
+  );
+
+  it.each([
+    [1, "1 сообщение с Scout"],
+    [2, "2 сообщения с Scout"],
+    [5, "5 сообщений с Scout"],
+    [21, "21 сообщение с Scout"],
+  ] as const)(
+    "picks the Russian plural for %s messages without Intl.PluralRules",
+    async (count, label) => {
+      // Hermes: every Intl API but PluralRules.
+      vi.stubGlobal("Intl", Object.assign(Object.create(Intl), { PluralRules: undefined }));
+      const { resetI18nForTests } = await import("./i18n");
+      const t = await translator();
+      resetI18nForTests("ru");
+      expect(
+        t("{count, plural, one {# message with {peer}} other {# messages with {peer}}}", {
+          count,
+          peer: "Scout",
+        }),
+      ).toBe(label);
+    },
+  );
 
   it("prefers the stored locale, then activates and persists a new choice", async () => {
     const { getItemAsync, setItemAsync } = await import("expo-secure-store");
     vi.mocked(getItemAsync).mockResolvedValue("zh-CN");
     const { applyMobileUiDirection } = await import("./ui-direction");
-    const { bootstrapI18n, getActiveUiLocale, setUiLocale, t } = await import("./i18n");
+    const { bootstrapI18n, getActiveUiLocale, setUiLocale } = await import("./i18n");
+    const t = await translator();
 
     await expect(bootstrapI18n()).resolves.toBe("zh-CN");
     expect(getActiveUiLocale()).toBe("zh-CN");
@@ -261,10 +105,25 @@ describe("mobile i18n", () => {
     expect(applyMobileUiDirection).toHaveBeenCalledWith("en");
   });
 
+  it("restores Polish from a regional stored locale and persists a new choice", async () => {
+    const { getItemAsync, setItemAsync } = await import("expo-secure-store");
+    const { applyMobileUiDirection } = await import("./ui-direction");
+    const { bootstrapI18n, getActiveUiLocale, setUiLocale } = await import("./i18n");
+    vi.mocked(getItemAsync).mockResolvedValue("pl-PL");
+    await expect(bootstrapI18n()).resolves.toBe("pl");
+    expect(getActiveUiLocale()).toBe("pl");
+    expect(applyMobileUiDirection).toHaveBeenLastCalledWith("pl");
+    await setUiLocale("en");
+    await setUiLocale("pl");
+    expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "pl");
+    expect(getActiveUiLocale()).toBe("pl");
+  });
+
   it("normalizes a regional Russian stored locale before activation", async () => {
     const { getItemAsync } = await import("expo-secure-store");
     vi.mocked(getItemAsync).mockResolvedValue("ru-RU");
-    const { bootstrapI18n, dateLocaleForUi, getActiveUiLocale, t } = await import("./i18n");
+    const { bootstrapI18n, dateLocaleForUi, getActiveUiLocale } = await import("./i18n");
+    const t = await translator();
 
     await expect(bootstrapI18n()).resolves.toBe("ru");
     expect(getActiveUiLocale()).toBe("ru");
@@ -275,7 +134,8 @@ describe("mobile i18n", () => {
   it("normalizes a regional German stored locale before activation", async () => {
     const { getItemAsync } = await import("expo-secure-store");
     vi.mocked(getItemAsync).mockResolvedValue("de-CH");
-    const { bootstrapI18n, dateLocaleForUi, getActiveUiLocale, t } = await import("./i18n");
+    const { bootstrapI18n, dateLocaleForUi, getActiveUiLocale } = await import("./i18n");
+    const t = await translator();
 
     await expect(bootstrapI18n()).resolves.toBe("de");
     expect(getActiveUiLocale()).toBe("de");
@@ -314,13 +174,67 @@ describe("mobile i18n", () => {
   });
 });
 
+describe("plural rules without Intl.PluralRules", () => {
+  it.each([
+    [0, "many"],
+    [1, "one"],
+    [2, "few"],
+    [4, "few"],
+    [5, "many"],
+    [12, "many"],
+    [14, "many"],
+    [21, "many"],
+    [22, "few"],
+    [25, "many"],
+    [101, "many"],
+    [112, "many"],
+    [122, "few"],
+  ] as const)("picks the Polish form for %s: %s", async (count, form) => {
+    const { pluralCategory } = await import("./plural-rules");
+    expect(pluralCategory("pl", count)).toBe(form);
+  });
+
+  it.each([
+    [1, "one"],
+    [2, "few"],
+    [5, "many"],
+    [11, "many"],
+    [21, "one"],
+    [22, "few"],
+    [111, "many"],
+  ] as const)("picks the Russian form for %s: %s", async (count, form) => {
+    const { pluralCategory } = await import("./plural-rules");
+    expect(pluralCategory("ru", count)).toBe(form);
+  });
+
+  it("reads Chinese and Japanese as one form and English-like languages as one or other", async () => {
+    const { pluralCategory } = await import("./plural-rules");
+    expect(pluralCategory("zh-CN", 1)).toBe("other");
+    expect(pluralCategory("ja", 3)).toBe("other");
+    expect(pluralCategory("de", 1)).toBe("one");
+    expect(pluralCategory("es", 2)).toBe("other");
+  });
+
+  it("fills in Intl.PluralRules only where it is missing, and reads fractions as other", async () => {
+    const native = Intl.PluralRules;
+    const { installPluralRules } = await import("./plural-rules");
+    installPluralRules();
+    expect(Intl.PluralRules).toBe(native);
+    // Hermes: every Intl API but PluralRules.
+    vi.stubGlobal("Intl", Object.assign(Object.create(Intl), { PluralRules: undefined }));
+    installPluralRules();
+    expect(new Intl.PluralRules("pl").select(22)).toBe("few");
+    expect(new Intl.PluralRules(["ru"]).select(1.5)).toBe("other");
+    expect(new Intl.PluralRules("ru", { type: "ordinal" }).select(1)).toBe("other");
+    vi.unstubAllGlobals();
+  });
+});
+
 it("restores Traditional Chinese after saving the language choice", async () => {
   const { getItemAsync, setItemAsync } = await import("expo-secure-store");
   const { applyMobileUiDirection } = await import("./ui-direction");
-  const { bootstrapI18n, dateLocaleForUi, resetI18nForTests, setUiLocale, t } = await import(
-    "./i18n"
-  );
-  const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
+  const { bootstrapI18n, dateLocaleForUi, resetI18nForTests, setUiLocale } = await import("./i18n");
+  const t = await translator();
   await setUiLocale("zh-TW");
   expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "zh-TW");
   resetI18nForTests();
@@ -328,8 +242,6 @@ it("restores Traditional Chinese after saving the language choice", async () => 
   await expect(bootstrapI18n()).resolves.toBe("zh-TW");
   expect(dateLocaleForUi()).toBe("zh-TW");
   expect(applyMobileUiDirection).toHaveBeenLastCalledWith("zh-TW");
-  expect(t("Language")).toBe(ZH_TW_MESSAGES.Language);
-  expect(t("Delete {name}?", { name: "Scout" })).toBe(
-    ZH_TW_MESSAGES["Delete {name}?"]?.replace("{name}", "Scout"),
-  );
+  expect(t("Language")).toBe("語言");
+  expect(t("Delete {name}?", { name: "Scout" })).toBe("要刪除 Scout 嗎？");
 });

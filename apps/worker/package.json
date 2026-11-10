@@ -8,7 +8,7 @@
     "build": "node ../../scripts/build-server.mjs src/index.ts src/health-check.ts",
     "start": "node --enable-source-maps dist/index.js",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --root ../.. apps/worker/src"
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
@@ -20,6 +20,6 @@
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

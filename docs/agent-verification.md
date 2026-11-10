@@ -6,16 +6,16 @@ Rakazo separates deterministic execution regressions from real-model task qualit
 A scripted response can prove that a tool call executes correctly; only a real
 model can demonstrate that it chooses a useful action for a natural request.
 
-| Layer | Real components | Stand-ins | Command |
-| --- | --- | --- | --- |
-| Existing fast tests | Product functions and contracts | Scripted agent, services, sandbox | `pnpm test` |
-| Pi protocol regressions | Pi agent loop, HTTP/SSE parsing, tool dispatch | Loopback model endpoint, tool effects | `pnpm test:pi` |
-| Pi product journey | API, saved model connection, Postgres, executor, Pi | Model endpoint, sandbox, connectors | `pnpm test:integration` |
-| Computer replay | Pi, browser tool handlers, page state | Model endpoint, browser and sandbox | `pnpm test` |
-| Docker computer replay | Pi, supervisor, Chromium, page helper, downloads and files | Model endpoint, local fixture website | `pnpm test:computer-replay` |
-| Agent quality | Product API, Postgres, executor, Pi, real model | Sandbox and connected services | `pnpm test:evals --live ...` |
-| Vision acceptance | Product API, Pi, real vision model, Boat or E2B desktop | Fixture website | `pnpm test:computer` |
-| Live flows | Product API, Postgres, Pi, real model, Boat or E2B computer, demo website | The person (a simulated user model) | `pnpm test:flows` |
+| Layer                   | Real components                                                           | Stand-ins                             | Command                      |
+| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------- | ---------------------------- |
+| Existing fast tests     | Product functions and contracts                                           | Scripted agent, services, sandbox     | `pnpm test`                  |
+| Pi protocol regressions | Pi agent loop, HTTP/SSE parsing, tool dispatch                            | Loopback model endpoint, tool effects | `pnpm test:pi`               |
+| Pi product journey      | API, saved model connection, Postgres, executor, Pi                       | Model endpoint, sandbox, connectors   | `pnpm test:integration`      |
+| Computer replay         | Pi, browser tool handlers, page state                                     | Model endpoint, browser and sandbox   | `pnpm test`                  |
+| Docker computer replay  | Pi, supervisor, Chromium, page helper, downloads and files                | Model endpoint, local fixture website | `pnpm test:computer-replay`  |
+| Agent quality           | Product API, Postgres, executor, Pi, real model                           | Sandbox and connected services        | `pnpm test:evals --live ...` |
+| Vision acceptance       | Product API, Pi, real vision model, Boat or E2B desktop                   | Fixture website                       | `pnpm test:computer`         |
+| Live flows              | Product API, Postgres, Pi, real model, Boat or E2B computer, demo website | The person (a simulated user model)   | `pnpm test:flows`            |
 
 Default and PR tests never require paid inference. Nightly runs only the web
 tests with emulated providers. Docker topology and browser replay have a manual
@@ -345,6 +345,52 @@ members' ideas and tasks as their own and could not say which member suggested
 what. The small Anthropic model still sometimes says "you" for a task it took
 on itself.
 
+### Group routing evals
+
+```sh
+pnpm test:evals --suite group-routing --list
+pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/group-routing.json
+```
+
+Each case sends a group message that names nobody, so every member gets it and
+decides alone whether to answer. Every member runs the eval model. One group has
+five bots with distinct roles; another has two peer bots, each holding facts
+only it knows. The cases check that a question reaches the member whose role
+owns it, that a request for one piece of work gets one author, that a question
+nobody owns gets one or two answers, that a roll call gets every member, that a
+greeting or sign-off does not get a reply from everyone, and that a question
+about both peers gets both. Graders count which members posted after the
+message and require the owners to be among them; a handoff or ask card counts
+as a post.
+
+The November 2026 baseline over three trials per case passed every case on the
+default DeepSeek model and on a small Anthropic model, and all but two trials on
+a small OpenAI model, where a greeting and a sign-off each drew one extra
+reply. Sending every unnamed message to the first member instead missed every
+roll call, cost a handoff for any question owned by another member, and on the
+Anthropic model often answered a question about both peers with one of them.
+
+### Bot file pass-off evals
+
+```sh
+pnpm test:evals --suite bot-files --list
+pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/bot-files.json
+```
+
+The cases check that a bot passes a project to another bot with `files` instead
+of pasting the code. A coding bot sends a small site to a deploying bot on the
+same computer, to one with its own computer (only a zip can travel there), and
+through a group handoff. A question for that bot must go without files, and a
+deploying bot handed a shared path must open the files there. The harness writes
+the site onto the computer before the turn, and the receiving case's message
+comes through `message_bot`'s delivery path. Graders read the tool calls: the
+right tool with the expected files, and no message carrying an exact line of the
+site's code.
+
+The November 2026 baseline on a small Anthropic model passed all 15 trials. A
+bot sending to its own-computer teammate usually tried the folder with the zip
+first and, told a folder cannot be copied, sent the zip alone.
+
 ### Routine silence evals
 
 ```sh
@@ -412,7 +458,19 @@ from `routine.created` events, because `schedule_cancel` deletes the routine.
 The `initiative-meaning-v1` rubric grades the follow-up's chat and push by meaning:
 they must ask about the outstanding item without claiming it arrived or
 inventing details. Calibration anchors cover a paraphrase, another
-language, a false receipt, and a bare alert. No live baseline is claimed yet.
+language, a false receipt, and a bare alert.
+
+The runner wakes the follow-up right away rather than at the promised time, and
+tells the bot the present moment is the routine's due time, so the bot does not
+see the follow-up as early and schedule another check.
+
+The November 2026 baseline, on the default small deployment model with a larger
+one judging, never set a follow-up the user declined or one for an item already
+closed. Before the woken bot was told the due time, the open-loop and
+closed-early cases passed half the time over two runs of three trials; on the
+misses the bot set no follow-up, answered the promise with a clarifying question,
+or scheduled a second check. With the due time, a run of three trials per case
+passed every case.
 
 ### Bot memory evals
 
@@ -443,6 +501,155 @@ fact and a wiped memory.
 The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
+
+### Earlier file recall evals
+
+```sh
+pnpm test:evals --suite recall --list
+pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/recall.json
+```
+
+Each case seeds 1,000 synthetic messages, with a lease the user uploaded at
+message 30, far outside the messages a run loads. The bot is asked for the
+lease's notice period once with the upload captioned and once with a bare file,
+and a third case asks about a contract that was never shared. Deterministic
+checks require a history lookup in the graded step and, for the lease, a read of
+the file at its `attachments/` path. The `recall-meaning-v5` judge then checks
+that the answer gives the lease's period and names the file it came from, or
+that a never-shared contract is admitted rather than invented. Calibration
+labels cover a sourced answer, a request to resend, a generic guess, a wrong
+period, an honest miss and an invented fee.
+
+The November 2026 baseline used one small model for both the bot and the judge,
+with three trials per case. Before history results listed attachments, the bot
+searched in every trial but read the lease in none, because it had no path to
+open. With the change it read the lease and gave the right period in all six
+trials, and named the source in five. Every trial admitted the never-shared
+contract on both versions; two further trials stalled waiting on the provider
+and are not counted. The offline protocol fixture checks the seeding and
+the grading path for both a read and an unread lease.
+
+The `recall-tool-steps-*` cases check that a bot remembers work it did with
+tools. Early in a chat the user, who will get screenshots of docs from the bot,
+asks it to make pages in its browser dark, and the bot installs an extension from
+the command line, opens a page and takes a screenshot. The extension's name
+appears only in a note the bot wrote before a tool step. The reply reports the
+result ("Done. Pages in my browser show dark now, so screenshots will too."); the
+`-bare` variant keeps the reply issue #3683 found, "Done." alone. The chat is
+dated earlier the same day. Unrelated, varied small talk follows. The bot is then
+asked whether it installed an extension, which one, and how. The stored steps
+record that each call succeeded. The `-intent` variant stores the same steps
+without outcomes, as older messages have them. The `-paraphrased` variant's notes
+share no distinctive word with the question. In the `-absent` controls the
+earlier tool reply only checked disk space. The `-compacted` cases use 100
+messages and run the product's own compaction job before the question, so the
+tool reply survives only through the summary, which the report saves.
+Compaction runs only with the `current` context strategy.
+
+The `recall-ordinary-*` cases reuse the 24-message chat for everyday turns: a
+sign-off, a question answered two messages earlier, a general knowledge
+question, eye-strain tips close to the install's topic, and "did I ever tell
+you my sister's name?" (never). A deterministic check fails a history lookup on
+the first three.
+
+The `recall-meaning-v5` judge fails a reply laid out as a step log, any tool-work
+reply that says the bot never used tools or its computer, a reply to an everyday
+turn that casts unprompted doubt on, corrects or retracts the bot's earlier work
+(including saying it did not confirm or check it), and an install answer that
+doubts the install happened. After a fresh check, a hedge about the extension's
+current state ("its files are there, but I can't tell whether it's enabled") is
+not doubt. Each trial also records, without deciding it, whether the bot used a
+tool other than history lookups (re-verification), whether it looked back, and
+four judged behaviours: unprompted doubt; false confession (claiming it never
+used tools, never did or checked the work its record shows, had not changed
+anything, or made a mistake it did not make, including calling its "Done"
+premature); placing the work in a different chat; and overclaiming. The overclaim
+judge sees the earlier exchange as the bot can read it back (times, steps and
+text) and every check the bot made in the graded reply with what it returned, so
+a version read just now is not an overclaim, and a denial is never one. An
+ungraded behaviour is recorded as unknown.
+
+These cases give the eval computer a script (`computer` on the case). Each
+command in a plain list (`;`, `&&`, `||`) gets the answer of the first scripted
+check it matches, with that check's exit code and stderr, and `echo` prints its
+words; one unscripted command makes the whole list unavailable, which is recorded
+as a harness issue. Loops and inline scripts get the answers to the checks they
+mention, in order. The install computer has a Chromium profile with the
+extension under a 32-letter id and a `10.7.1_0` version folder, enabled in
+`Preferences`; the control has none. Both run Chromium (`ps`, `--version`), keep
+no shell history, report 18 GB free, and show a browser window whose page is dark,
+or light in the controls.
+
+A November 2026 run compared the change that first replayed steps with the
+change that added listing by kind and the empty-search note, with the same eval
+code. Haiku 5.5 judged every run and agreed with all calibration labels. A
+held-out case, where the bot earlier set its computer's time zone, uses wording
+the product text was never tuned on. Under `retrieval`, replaying steps alone
+recalled the paraphrased install, the disk-check control and the held-out change
+in no trial; with listing by kind a small bot recalled them in 13 of 20, 18 of 20
+and 20 of 20, and a larger bot in all 10 of each. The small bot still answered
+without looking back in 16 of 100 tool-step trials (7 before), and then said it
+had never used its computer. Wording in the tool's summary or its `scope` about
+browsing or about what `this_chat` covers raised that to about 40 of 100, so
+neither is there. A reply header saying replayed results stand, and an
+instruction to say what tool work found, were tried and left out: the header
+did not help under `current` and the instruction could not be measured here.
+Under `current` the bot never searches, and both versions doubted their earlier
+work on everyday turns about equally (small bot 66 and 76 of 100, larger bot 34
+and 40). Recalling earlier tool work under `retrieval` takes one or two extra
+model calls, about doubling that answer's cost; everyday prompts grew by under
+one percent.
+
+### Connected app evals
+
+```sh
+pnpm test:evals --suite apps --list
+pnpm test:evals --live --suite apps --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --spend-cap-usd 1 --output test-report/evals/apps.json
+```
+
+`packages/testkit/src/apps` holds three stateful service emulators: mail
+(threads with real headers, labels, search operators, drafts and sends), files
+(folders, documents, spreadsheets and PDFs with content, sharing, permission
+errors) and notes (pages of blocks and databases with typed properties). They
+are offline and deterministic for a given clock, and log every call and write.
+A fixture can rate-limit a tool for a number of calls, with a retry time.
+Search refuses operators a service does not support instead of ignoring them.
+
+A case lists the emulators it needs in `apps`. The runner serves each one as a
+streamable HTTP MCP server on loopback with a bearer token and adds it through
+`mcp/servers/create`, the way a person adds a remote MCP server. The bot then
+reaches it through the product's own MCP client, tool naming, read/write
+classification and Auto Review, and sees `mcp__mail__search_threads` and
+similar names. Emulators are generic service kinds named for what they do;
+some tool shapes and messages resemble common services so the bot meets
+familiar behaviour, but none is a copy of one vendor's API.
+
+The seed is one invented furniture studio across all three services, with
+dates relative to the trial's clock so recent mail stays recent on any weekday.
+Cases: draft a
+reply to a client that links the latest proposal file and its total without
+sending or sharing; update the matching rows of a 25-row supplier deliveries
+database from the last few days' mail; and, after a mail rate limit, follow a link to
+a spreadsheet the account cannot open and say so. Deterministic checks read
+the emulators' recorded calls, writes and final state. Reports keep fixture
+links and addresses on reserved example domains readable and redact the
+emulators' endpoints and tokens. The
+`connected-apps-meaning-v2` rubric judges the draft and the restricted-file
+reply by meaning; calibration covers a paraphrased total, a stale total, an
+invented discount, a claimed send, an honest refusal, a labelled prior-year
+figure, an invented figure and a wrong cause.
+
+The first November 2026 run, one trial per case on a small Anthropic model judging
+itself, passed the tracker and restricted-file cases. The draft case was right on
+every recorded effect but the judge failed it because it could not
+see the proposal its draft quoted. With the proposal text in the judge's
+evidence (v2) and that reviewed draft added as a label, a second run passed all
+three. The rate-limited search was retried and the restricted file was reported
+as unshared, not answered from the prior year's budget. After the review fixes (a day-independent
+tracker prompt, stricter recipient, retry and row checks, and studio-v2
+fixtures), one run passed two of three: the draft and restricted-file cases
+passed, and the tracker case failed on a real miss, setting a delayed order's
+new date but leaving its status "In transit".
 
 ### Long conversation and cost evals
 
@@ -503,7 +710,6 @@ streamed; tool and activity events are excluded. Trial latency includes fixture
 setup and cleanup. Background due work is awaited before final accounting;
 cleanup must stop remaining scheduled and active work before further trials.
 
-
 Compare strategies in one process so all trials and concurrent calls share one
 spend cap. The order rotates deterministically within each case and trial; the
 provider's cache state is uncontrolled. `current` preserves the original history
@@ -554,7 +760,6 @@ test. `--cache-capabilities /tmp/cache-capabilities.json` supplies generic docum
 metadata independently of credentials. Predictions remain advisory because
 routing and eviction can prevent reuse. Separate invocations must receive only
 the remaining approved budget after earlier reservations and charges.
-
 
 Retention metadata describes the selector's prediction. In particular,
 `retentionMode: none` disables inferred warmth and does not promise that the

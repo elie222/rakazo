@@ -7,14 +7,16 @@ import type {
   PluginPart,
   PluginPreview,
 } from "@rakazo/contracts";
-import { PluginPreviewSchema } from "@rakazo/contracts";
+import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import { installedPluginParts } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import type { ErrorDetails } from "../../lib/user-error";
+import { errorDetails } from "../../lib/user-error";
+import { ErrorNotice } from "../ErrorNotice";
 import { AvailabilityControl, reachesOtherSpaces, useOwnSpaces } from "./space-availability";
 
 export type PluginSelection = {
@@ -65,7 +67,7 @@ export function PluginLogo({
   const useLogo = Boolean(logo) && !logoFailed;
   const favicon = useLinkFavicon(useLogo ? "" : (site ?? ""));
   const src = useLogo ? logo : favicon.icon;
-  const box = large ? "h-14 w-14 rounded-2xl text-xl" : "h-10 w-10 rounded-xl text-sm";
+  const box = large ? "h-14 w-14 rounded-2xl text-heading2" : "h-10 w-10 rounded-xl text-body";
   return src ? (
     <img
       src={src}
@@ -84,10 +86,12 @@ export function PluginLogo({
   );
 }
 
-/** Signed in, or answering without a sign-in. */
-export function mcpServerReady(server: McpServer) {
-  return server.oauthStatus === "connected" || server.health.status === "ok";
-}
+/** A list row: icon, text and trailing actions on one line. */
+export const ROW_SHELL = "flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2";
+
+/** The row's main button, which fills the row up to its trailing actions. */
+export const ROW_BUTTON =
+  "flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none";
 
 /** The whole row highlights, including for keyboard focus on its main button. */
 export const ROW_HOVER = "hover:bg-accent/60 has-[button:focus-visible]:bg-accent/60";
@@ -108,20 +112,13 @@ export function PluginRow({
   onOpen: () => void;
 }) {
   return (
-    <div
-      data-testid="plugin-row"
-      className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}
-    >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-none"
-      >
+    <div data-testid="plugin-row" className={`${ROW_SHELL} ${ROW_HOVER}`}>
+      <button type="button" onClick={onOpen} className={ROW_BUTTON}>
         <PluginLogo name={name} logo={logo} site={site} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-medium text-foreground">{name}</span>
+          <span className="block truncate text-body-lg font-medium text-foreground">{name}</span>
           {description ? (
-            <span className="block truncate text-[13px] text-muted-foreground">{description}</span>
+            <span className="block truncate text-body-sm text-muted-foreground">{description}</span>
           ) : null}
         </span>
       </button>
@@ -175,7 +172,7 @@ export function PluginDetail({
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [recipe, setRecipe] = useState<{ name: string; content: string | null } | null>(null);
   const [allSkills, setAllSkills] = useState(false);
@@ -217,7 +214,7 @@ export function PluginDetail({
         if (!cancelled) setPreview(result);
       })
       .catch((err) => {
-        if (!cancelled) setError(errorText(err, t`Could not preview plugin`));
+        if (!cancelled) setError(errorDetails(err, t`Could not preview plugin`));
       })
       .finally(() => {
         if (!cancelled) setPreviewLoading(false);
@@ -233,7 +230,7 @@ export function PluginDetail({
     try {
       await action();
     } catch (err) {
-      if (live.current) setError(errorText(err, failure));
+      if (live.current) setError(errorDetails(err, failure));
     } finally {
       if (live.current) setPending(null);
     }
@@ -272,7 +269,7 @@ export function PluginDetail({
         if (!live.current) return;
         if (result === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
-        if (result === "cancelled") setError(t`Sign-in cancelled. Try again.`);
+        if (result === "cancelled") setError(errorDetails(t`Sign-in cancelled. Try again.`));
         await onChanged();
       },
       t`Could not sign in`,
@@ -306,7 +303,7 @@ export function PluginDetail({
     } catch (err) {
       if (live.current) {
         setRecipe(null);
-        setError(errorText(err, t`Could not load skill`));
+        setError(errorDetails(err, t`Could not load skill`));
       }
     }
   }
@@ -420,7 +417,7 @@ export function PluginDetail({
           large
         />
         <div className="min-w-0 flex-1 pt-1">
-          <h2 className="truncate text-[20px] font-semibold text-foreground">
+          <h2 className="truncate text-heading2 font-semibold text-foreground">
             {managed?.name ?? selection.name}
           </h2>
           <a
@@ -428,7 +425,7 @@ export function PluginDetail({
             target="_blank"
             rel="noreferrer"
             title={detail ? `${selection.installedSource}@${detail.resolvedSha}` : undefined}
-            className="inline-flex items-center gap-1 text-[13.5px] text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 text-body text-muted-foreground hover:text-foreground"
           >
             <Trans>View source</Trans>
             <ArrowUpRight size={14} />
@@ -438,7 +435,7 @@ export function PluginDetail({
       </div>
 
       {detail?.description || selection.description ? (
-        <p className="text-[15px] leading-6 text-muted-foreground">
+        <p className="text-body-lg leading-6 text-muted-foreground">
           {detail?.description || selection.description}
         </p>
       ) : null}
@@ -453,14 +450,13 @@ export function PluginDetail({
       ) : null}
 
       {error ? (
-        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
-          {error}
+        <ErrorNotice error={error}>
           {!installed && !preview && !previewLoading ? (
             <Button variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>
               <Trans>Retry</Trans>
             </Button>
           ) : null}
-        </div>
+        </ErrorNotice>
       ) : null}
 
       {previewLoading ? (
@@ -471,7 +467,7 @@ export function PluginDetail({
 
       {!skillsOnly && (managed || connectorCount) ? (
         <section>
-          <h3 className="mb-2 flex gap-2 px-1 text-[14px] font-medium text-foreground">
+          <h3 className="mb-2 flex gap-2 px-1 text-body font-medium text-foreground">
             <Trans>Apps</Trans>
             <span className="text-muted-foreground">{managed ? 1 : connectorCount}</span>
           </h3>
@@ -480,8 +476,8 @@ export function PluginDetail({
               <li className="flex items-center gap-3 px-4 py-3">
                 <Plug size={16} className="shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14.5px] font-medium">{managed.name}</span>
-                  <span className="block truncate text-[12.5px] text-muted-foreground">
+                  <span className="block truncate text-body-lg font-medium">{managed.name}</span>
+                  <span className="block truncate text-body-sm text-muted-foreground">
                     <Trans>Connector</Trans>
                   </span>
                 </span>
@@ -498,18 +494,18 @@ export function PluginDetail({
                 >
                   <Plug size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-medium">
+                    <span className="block truncate text-body-lg font-medium">
                       {server.name.startsWith(prefix)
                         ? server.name.slice(prefix.length)
                         : server.name}
                     </span>
-                    <span className="block truncate text-[12.5px] text-muted-foreground">
+                    <span className="block truncate text-body-sm text-muted-foreground">
                       {server.endpoint}
                     </span>
                   </span>
-                  {mcpServerReady(server) ? (
+                  {mcpServerConnection(server) === "connected" ? (
                     <Check role="img" aria-label={t`Connected`} className="size-4 text-success" />
-                  ) : noAuth.has(server.id) ? null : (
+                  ) : noAuth.has(server.id) || !mcpServerNeedsSignIn(server) ? null : (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -527,7 +523,7 @@ export function PluginDetail({
                   )}
                   {activeBotId ? (
                     assigned.has(server.id) ? (
-                      <span className="text-[13px] text-muted-foreground">
+                      <span className="text-body-sm text-muted-foreground">
                         <Trans>In this bot</Trans>
                       </span>
                     ) : (
@@ -548,8 +544,8 @@ export function PluginDetail({
                 <li key={server.name} className="flex items-center gap-3 px-4 py-3">
                   <Plug size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-medium">{server.name}</span>
-                    <span className="block truncate text-[12.5px] text-muted-foreground">
+                    <span className="block truncate text-body-lg font-medium">{server.name}</span>
+                    <span className="block truncate text-body-sm text-muted-foreground">
                       {server.endpoint}
                     </span>
                   </span>
@@ -563,7 +559,7 @@ export function PluginDetail({
       {skills.length ? (
         <section data-testid="plugin-skills">
           <div className="mb-2 flex items-center justify-between gap-3 px-1">
-            <h3 className="flex gap-2 text-[14px] font-medium text-foreground">
+            <h3 className="flex gap-2 text-body font-medium text-foreground">
               <Trans>Skills</Trans>
               <span className="text-muted-foreground">{skills.length}</span>
             </h3>
@@ -600,14 +596,14 @@ export function PluginDetail({
                 <>
                   <FileText size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-medium">{skill.name}</span>
-                    <span className="block truncate text-[12.5px] text-muted-foreground">
+                    <span className="block truncate text-body-lg font-medium">{skill.name}</span>
+                    <span className="block truncate text-body-sm text-muted-foreground">
                       {skill.description}
                     </span>
                   </span>
                   {skill.files?.length ? (
                     <span
-                      className="shrink-0 text-[12.5px] text-muted-foreground"
+                      className="shrink-0 text-body-sm text-muted-foreground"
                       title={skill.files.join("\n")}
                     >
                       <Plural value={skill.files.length} one="# file" other="# files" />
@@ -632,7 +628,7 @@ export function PluginDetail({
                   {recipe?.name === skill.name ? (
                     <pre
                       data-testid="plugin-skill-recipe"
-                      className="max-h-80 overflow-auto whitespace-pre-wrap border-t border-border/60 px-4 py-3 font-mono text-[12.5px] text-foreground"
+                      className="max-h-80 overflow-auto whitespace-pre-wrap border-t border-border/60 px-4 py-3 font-mono text-body-sm text-foreground"
                       dir="auto"
                     >
                       {recipe.content ?? <Spinner className="size-4 text-muted-foreground" />}
@@ -653,7 +649,7 @@ export function PluginDetail({
       ) : null}
 
       {notAdded.length ? (
-        <p className="px-1 text-[13px] text-muted-foreground">
+        <p className="px-1 text-body-sm text-muted-foreground">
           <Trans>Not added: {notAdded.join(", ")}</Trans>
         </p>
       ) : null}

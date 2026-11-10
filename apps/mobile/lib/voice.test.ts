@@ -29,7 +29,7 @@ vi.mock("expo-file-system", () => ({
   File: class {
     uri = "file:///cache/rakazo-voice.mp3";
     create() {}
-    write() {}
+    writeSync() {}
     delete() {}
   },
   Paths: { cache: "cache" },
@@ -51,12 +51,24 @@ vi.mock("expo-speech", () => ({
   getAvailableVoicesAsync: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+// voice.ts subscribes to ./session; its real dependencies import native notification modules.
+vi.mock("./live-notifications", () => ({
+  resumeLiveNotifications: vi.fn(async () => undefined),
+  stopLiveNotifications: vi.fn(async () => undefined),
+}));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
+vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   aiConsentCoalesceKey: vi.fn(() => "test-consent-context"),
   authHeaders: vi.fn(),
   captureApiRequestContext: vi.fn(),
   currentApiBase: vi.fn(() => "https://api.example"),
   rpc: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  subscribeConfirmedSpaceSwitch: vi.fn(() => () => {}),
 }));
 
 async function waitFor(predicate: () => boolean, attempts = 50): Promise<void> {

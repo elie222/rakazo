@@ -3,13 +3,15 @@ import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
+  launchArgSecrets,
   McpOAuthBroker,
   McpOAuthClientRequiredError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
 } from "./mcp-oauth.js";
-import { McpSession } from "./mcp-transport.js";
+import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
+import { MAX_AUTHORIZATION_URL_LENGTH, McpSession } from "./mcp-transport.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -226,7 +228,7 @@ describe("MCP OAuth", () => {
    * held until the transaction that took it ends.
    */
   function sharedCredentials(
-    material: OAuthMaterial,
+    material: OAuthMaterial | null,
     endpoint: string | null = "https://mcp.example.test/mcp",
   ) {
     const values = new Map<string, string>();
@@ -247,18 +249,62 @@ describe("MCP OAuth", () => {
       }),
     };
     const rows: Array<{ id: string; ciphertext: string }> = [];
+    const sessions: Array<{
+      id: string;
+      serverId: string;
+      spaceId: string;
+      userId: string;
+      endpoint: string;
+      redirectUri: string;
+      oauthCiphertext: string;
+      createdAt: Date;
+    }> = [];
     const server = {
       id: "server-1",
       endpoint,
       secretId: null as string | null,
+      revision: 1,
     };
     let lock = Promise.resolve();
+    let credentialLocked = false;
     const lockSettings: string[] = [];
+    const transactionOptions: unknown[] = [];
     const tables = {
+      mcpOAuthSession: {
+        count: async () => sessions.length,
+        findFirst: async ({ where }: { where: { id: string } }) =>
+          sessions.find((session) => session.id === where.id) ?? null,
+        create: async ({ data }: { data: Omit<(typeof sessions)[number], "createdAt"> }) => {
+          sessions.push({ ...data, createdAt: new Date() });
+          return data;
+        },
+        deleteMany: async ({
+          where,
+        }: {
+          where: { id?: string; serverId?: string; createdAt?: { lt: Date } };
+        }) => {
+          const doomed = sessions.filter((session) =>
+            where.id
+              ? session.id === where.id
+              : where.serverId
+                ? session.serverId === where.serverId
+                : where.createdAt
+                  ? session.createdAt < where.createdAt.lt
+                  : true,
+          );
+          for (const session of doomed) sessions.splice(sessions.indexOf(session), 1);
+          return { count: doomed.length };
+        },
+      },
       mcpServer: {
         findFirst: async () => ({ ...server }),
-        update: async ({ data }: { data: { secretId: string | null } }) => {
-          server.secretId = data.secretId;
+        update: async ({
+          data,
+        }: {
+          data: { secretId?: string | null; revision?: { increment: number } };
+        }) => {
+          if (data.secretId !== undefined) server.secretId = data.secretId;
+          if (data.revision) server.revision += data.revision.increment;
           return { ...server };
         },
       },
@@ -284,7 +330,8 @@ describe("MCP OAuth", () => {
     };
     const prisma = {
       ...tables,
-      $transaction: async <T>(callback: (tx: unknown) => Promise<T>) => {
+      $transaction: async <T>(callback: (tx: unknown) => Promise<T>, options?: unknown) => {
+        transactionOptions.push(options);
         let release: (() => void) | undefined;
         const tx = {
           ...tables,
@@ -297,21 +344,26 @@ describe("MCP OAuth", () => {
               release = resolve;
             });
             await held;
+            credentialLocked = true;
             return 1;
           },
         };
         try {
           return await callback(tx);
         } finally {
+          if (release) credentialLocked = false;
           release?.();
         }
       },
     };
-    const ready = (async () => {
-      const record = await secrets.put(JSON.stringify(material));
-      rows.push(record);
-      server.secretId = record.id;
-    })();
+    const ready =
+      material === null
+        ? Promise.resolve()
+        : (async () => {
+            const record = await secrets.put(JSON.stringify(material));
+            rows.push(record);
+            server.secretId = record.id;
+          })();
     const stored = async (): Promise<OAuthMaterial> => {
       const row = rows.find((candidate) => candidate.id === server.secretId);
       return row ? JSON.parse(await secrets.load(row.ciphertext)) : {};
@@ -336,7 +388,38 @@ describe("MCP OAuth", () => {
       rows.push(record);
       server.secretId = record.id;
     };
-    return { startProcess, stored, replaceStored, server, context, lockSettings, tables };
+    /** A sign-in `begin` would leave behind for the given flow state. */
+    const beginSession = async (flow: OAuthMaterial) => {
+      const snapshot = await secrets.put(JSON.stringify(flow));
+      const session = {
+        id: `session-${sessions.length + 1}`,
+        serverId: server.id,
+        spaceId: context.spaceId,
+        userId: context.userId,
+        endpoint: endpoint ?? "https://auth.example.test",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        oauthCiphertext: snapshot.ciphertext,
+        createdAt: new Date(),
+      };
+      sessions.push(session);
+      return session;
+    };
+    return {
+      startProcess,
+      stored,
+      replaceStored,
+      beginSession,
+      secrets,
+      prisma,
+      server,
+      context,
+      lockSettings,
+      transactionOptions,
+      get credentialLocked() {
+        return credentialLocked;
+      },
+      tables,
+    };
   }
 
   /** A public-client authorization server: each refresh token works once. */
@@ -371,6 +454,37 @@ describe("MCP OAuth", () => {
   }
 
   const EXPIRED = () => Date.now() - 3 * 60 * 60 * 1000;
+
+  /** A public authorization server that registers clients and issues tokens for any code. */
+  function issuingAuthServer() {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = logicalHref(input, init);
+      if (url === "https://auth.example.test/.well-known/oauth-authorization-server") {
+        return Response.json({
+          issuer: "https://auth.example.test",
+          authorization_endpoint: "https://auth.example.test/authorize",
+          token_endpoint: "https://auth.example.test/token",
+          registration_endpoint: "https://auth.example.test/register",
+          response_types_supported: ["code"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+          code_challenge_methods_supported: ["S256"],
+        });
+      }
+      if (url === "https://auth.example.test/register") {
+        return Response.json({ client_id: "dynamic-1" });
+      }
+      if (url === "https://auth.example.test/token") {
+        return Response.json({
+          access_token: "issued-access",
+          refresh_token: "issued-refresh",
+          token_type: "Bearer",
+          expires_in: 7200,
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    return { fetch };
+  }
 
   it("renews an expired token once and stores the rotated grant", async () => {
     const server = rotatingAuthServer();
@@ -688,6 +802,436 @@ describe("MCP OAuth", () => {
     expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
   });
 
+  it("keeps a disconnect when the authorization's tokens land after it", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const { provider, broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+
+    // The caller resets health for exactly the revision the disconnect committed.
+    expect(await broker.disconnect({ serverId: "server-1", ...shared.context })).toBe(2);
+    await provider.saveTokens({ access_token: "issued-access", token_type: "Bearer" });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+    // A second late write from the same flow stays discarded too.
+    await provider.saveTokens({ access_token: "issued-again", token_type: "Bearer" });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("rejects a sign-in session the disconnect ended", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const { broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    const session = await shared.beginSession({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+  });
+
+  it("keeps a reconnection's client when the earlier flow's tokens land late", async () => {
+    const redirectUri = "http://127.0.0.1:5173/mcp/oauth/callback";
+    const discoveryState = {
+      authorizationServerUrl: "https://auth.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: "https://auth.example.test/token",
+        response_types_supported: ["code"],
+      },
+    };
+    const shared = sharedCredentials({
+      oauth: {
+        codeVerifier: "verifier-a",
+        redirectUri,
+        clientInformation: { client_id: "client-a" },
+        discoveryState,
+      },
+    });
+    const offline = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const { provider: stale, broker } = await shared.startProcess(offline);
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // A fresh authorization connects with its own dynamically registered client.
+    const reconnected: OAuthMaterial = {
+      oauthGeneration: 1,
+      oauth: {
+        redirectUri,
+        tokens: {
+          access_token: "access-b",
+          refresh_token: "refresh-b",
+          token_type: "Bearer",
+          expires_in: 7200,
+        },
+        obtainedAt: Date.now() - 3 * 60 * 60 * 1000,
+        clientInformation: { client_id: "client-b" },
+        discoveryState,
+      },
+    };
+    await shared.replaceStored(reconnected);
+
+    await stale.saveTokens({
+      access_token: "issued-a",
+      refresh_token: "issued-a-refresh",
+      token_type: "Bearer",
+    });
+
+    expect(await shared.stored()).toEqual(reconnected);
+
+    // The next refresh must send the stored client with the stored refresh token.
+    const server = rotatingAuthServer("refresh-b");
+    const { provider } = await shared.startProcess(server.fetch);
+    await expect(provider.tokens()).resolves.toMatchObject({ access_token: "access-1" });
+    expect(server.requests[0]?.get("client_id")).toBe("client-b");
+    expect(server.requests[0]?.get("refresh_token")).toBe("refresh-b");
+  });
+
+  it("ends a reconnection that began before a late second disconnect", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const offline = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const { broker } = await shared.startProcess(offline);
+    // What the second disconnect races past: an earlier disconnect already committed
+    // (generation 1) and a fresh authorization connected at that generation.
+    const reconnected: OAuthMaterial = {
+      oauthGeneration: 1,
+      oauth: {
+        codeVerifier: "verifier-b",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      },
+    };
+    let flowB: Awaited<ReturnType<typeof shared.startProcess>> | undefined;
+    let parked = true;
+    const put = shared.secrets.put;
+    shared.secrets.put = vi.fn(async (plaintext: string) => {
+      if (parked) {
+        // Between the disconnect's read and its commit, the reconnect lands.
+        parked = false;
+        await shared.replaceStored(reconnected);
+        flowB = await shared.startProcess(offline);
+      }
+      return put(plaintext);
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    await flowB!.provider.saveTokens({ access_token: "issued-b", token_type: "Bearer" });
+
+    expect(await shared.stored()).toEqual({ oauthGeneration: 2 });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("ends a first authorization in flight when the server had no stored credential", async () => {
+    const shared = sharedCredentials(null, null);
+    const broker = new McpOAuthBroker(shared.prisma as never, shared.secrets as never, {
+      fetch: issuingAuthServer().fetch,
+      resolveHostname: TEST_NETWORK.resolveHostname,
+    });
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // The sign-in began before the disconnect and registered its client; its session
+    // row lands only now.
+    const session = await shared.beginSession({
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        clientInformation: { client_id: "dynamic-1" },
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    });
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+    expect(await shared.stored()).toEqual({ oauthGeneration: 1 });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("rejects completing a sign-in that outlives its disconnect", async () => {
+    const discoveryState = {
+      authorizationServerUrl: "https://auth.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: "https://auth.example.test/token",
+        response_types_supported: ["code"],
+      },
+    };
+    const flow: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState,
+      },
+    };
+    const shared = sharedCredentials(flow, null);
+    const { broker } = await shared.startProcess(issuingAuthServer().fetch);
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    // The sign-in began before the disconnect; its session row lands only now.
+    const session = await shared.beginSession(flow);
+    // A new authorization connects while the old sign-in is still in flight.
+    const reconnected: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauthGeneration: 1,
+      oauth: {
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        tokens: {
+          access_token: "access-b",
+          refresh_token: "refresh-b",
+          token_type: "Bearer",
+          expires_in: 7200,
+        },
+        obtainedAt: Date.now(),
+        clientInformation: { client_id: "client-1" },
+        discoveryState,
+      },
+    };
+    await shared.replaceStored(reconnected);
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+    // The check may wait on a remote secret read, so it does not run on the default timeout.
+    expect(shared.transactionOptions.at(-1)).toMatchObject({ timeout: 60_000 });
+    expect(shared.lockSettings.at(-2)).toContain("lock_timeout");
+    // The newer connection is left intact.
+    expect(await shared.stored()).toEqual(reconnected);
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
+  });
+
+  it.each([
+    ["after its tokens were saved, refusing the sign-in", "saved", undefined, 2],
+    ["after it committed", "committed", 2, 3],
+  ] as const)("keeps the check of an edit made %s", async (_, when, completedAt, editedAt) => {
+    const flow: OAuthMaterial = {
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    };
+    const shared = sharedCredentials(flow, null);
+    const { broker } = await shared.startProcess(issuingAuthServer().fetch);
+    const session = await shared.beginSession(flow);
+    const health = { status: "unknown" };
+    // The settings API changes the endpoint and that edit's check fails.
+    const edit = () => {
+      shared.server.endpoint = "https://different.example.test/mcp";
+      shared.server.revision += 1;
+      health.status = "error";
+    };
+    const update = shared.tables.mcpServer.update;
+    vi.spyOn(shared.tables.mcpServer, "update").mockImplementation(async (args) => {
+      const result = await update(args);
+      if (when === "saved" && health.status === "unknown" && (await shared.stored()).oauth?.tokens)
+        edit();
+      return result;
+    });
+    const transaction = shared.prisma.$transaction;
+    shared.prisma.$transaction = async (callback, options) => {
+      const settings = shared.lockSettings.length;
+      const result = await transaction(callback, options);
+      // Completion's own locked step is the one that sets a lock timeout.
+      const completing = shared.lockSettings
+        .slice(settings)
+        .some((sql) => sql.includes("lock_timeout"));
+      if (when === "committed" && completing) edit();
+      return result;
+    };
+    const prisma = {
+      mcpServer: {
+        updateMany: async (args: {
+          where: { revision?: number };
+          data: { healthStatus: string };
+        }) => {
+          if (args.where.revision !== shared.server.revision) return { count: 0 };
+          health.status = args.data.healthStatus;
+          return { count: 1 };
+        },
+      },
+    };
+
+    // What the complete route does with the result.
+    const completed = await broker
+      .complete({ sessionId: session.id, state: session.id, code: "code", ...shared.context })
+      .catch(() => undefined);
+    if (completed)
+      await recordMcpServerHealth(
+        prisma as never,
+        completed.serverId,
+        { status: "unknown" },
+        completed.revision,
+      );
+
+    expect(health.status).toBe("error");
+    expect(shared.server.revision).toBe(editedAt);
+    expect(completed?.revision).toBe(completedAt);
+  });
+
+  it.each([0, 1])(
+    "reads the completion generation consistently with a concurrent credential save (session generation %s)",
+    async (generation) => {
+      const flow: OAuthMaterial = {
+        oauthClient: { client_id: "client-1" },
+        oauth: {
+          codeVerifier: "verifier",
+          redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              response_types_supported: ["code"],
+            },
+          },
+        },
+      };
+      const shared = sharedCredentials(flow, null);
+      const auth = issuingAuthServer();
+      const { broker } = await shared.startProcess(auth.fetch);
+      await broker.disconnect({ serverId: "server-1", ...shared.context });
+      // The old flow's session can land after disconnect; a fresh flow starts at generation 1.
+      const session = await shared.beginSession({ ...flow, oauthGeneration: generation });
+      await shared.replaceStored({
+        ...expiringMaterial(Date.now()),
+        oauthClient: flow.oauthClient,
+        oauthGeneration: 1,
+      });
+      const { provider: writer } = await shared.startProcess(auth.fetch);
+      let savedExchange = false;
+      const saveTokens = StoredMcpOAuthProvider.prototype.saveTokens;
+      vi.spyOn(StoredMcpOAuthProvider.prototype, "saveTokens").mockImplementation(async function (
+        this: StoredMcpOAuthProvider,
+        tokens,
+      ) {
+        await saveTokens.call(this, tokens);
+        if (tokens.access_token === "issued-access") savedExchange = true;
+      });
+      let attempted = false;
+      let saving: Promise<void> | undefined;
+      let replacedSecretId: string | null = null;
+      const findServer = shared.tables.mcpServer.findFirst;
+      vi.spyOn(shared.tables.mcpServer, "findFirst").mockImplementation(async () => {
+        const snapshot = await findServer();
+        if (savedExchange && !attempted) {
+          attempted = true;
+          replacedSecretId = snapshot.secretId;
+          saving = writer.saveTokens({ access_token: "concurrent-access", token_type: "Bearer" });
+          // Without the lock, replace and delete the referenced row before the secret read.
+          // With the lock, the competing save must wait until the consistent read finishes.
+          if (!shared.credentialLocked) await saving;
+        }
+        return snapshot;
+      });
+
+      try {
+        const completing = broker.complete({
+          sessionId: session.id,
+          code: "authorization-code",
+          state: session.id,
+          ...shared.context,
+        });
+        if (generation === 0) {
+          await expect(completing).rejects.toThrow("MCP OAuth session is invalid or expired");
+        } else {
+          await expect(completing).resolves.toEqual({
+            serverId: shared.server.id,
+            revision: expect.any(Number),
+          });
+        }
+      } finally {
+        await saving;
+      }
+      expect(attempted).toBe(true);
+      expect(await shared.tables.secret.findFirst({ where: { id: replacedSecretId! } })).toBeNull();
+      expect(await shared.stored()).toMatchObject({
+        oauthGeneration: 1,
+        oauth: { tokens: { access_token: "concurrent-access" } },
+      });
+      expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
+    },
+  );
+
+  it("does not bind the stored client through a cancelled flow's write", async () => {
+    const shared = sharedCredentials({
+      oauthClient: { client_id: "client-1" },
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        discoveryState: { authorizationServerUrl: "https://auth.example.test" },
+      },
+    });
+    const { provider, broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    // The flow binds its copy of the client to the authorization server it found.
+    provider.clientInformation();
+
+    await broker.disconnect({ serverId: "server-1", ...shared.context });
+    await provider.saveTokens({ access_token: "issued-access", token_type: "Bearer" });
+
+    expect(await shared.stored()).toEqual({
+      oauthClient: { client_id: "client-1" },
+      oauthGeneration: 1,
+    });
+  });
+
   it.each(["disconnect", "client changed", "server mismatch", "server gone", "endpoint changed"])(
     "refuses a rotated grant after a failed commit when %s",
     async (change) => {
@@ -911,6 +1455,52 @@ describe("MCP OAuth", () => {
     ).toBeUndefined();
   });
 
+  it("allows a long authorization URL from a server that publishes many scopes", async () => {
+    // PostHog's MCP publishes 157 scopes; the SDK asks for all of them, so the authorization
+    // URL runs past the 2,048 characters an MCP endpoint may use.
+    const scope = Array.from({ length: 160 }, (_, index) => `resource_${index}:read`).join(" ");
+    const url = new URL("https://auth.example.test/authorize");
+    url.searchParams.set("client_id", "client");
+    url.searchParams.set("scope", scope);
+    expect(url.href.length).toBeGreaterThan(2_048);
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+
+    await provider.redirectToAuthorization(url);
+
+    expect(provider.authorizationUrl?.searchParams.get("scope")).toBe(scope);
+    expect(onAuthorization).toHaveBeenCalledOnce();
+  });
+
+  it("still refuses an authorization URL past its own limit, including added parameters", async () => {
+    const huge = new URL("https://auth.example.test/authorize");
+    huge.searchParams.set("scope", "x".repeat(MAX_AUTHORIZATION_URL_LENGTH));
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+    await expect(provider.redirectToAuthorization(huge)).rejects.toThrow(/exceeds/);
+
+    // A URL just under the limit cannot be pushed past it by configured extra parameters.
+    const near = new URL("https://auth.example.test/authorize");
+    near.searchParams.set("scope", "x".repeat(MAX_AUTHORIZATION_URL_LENGTH - 200));
+    const padded = new StoredMcpOAuthProvider(
+      "server-1",
+      {
+        oauthClient: {
+          client_id: "client",
+          authorization_params: `prompt=consent&login_hint=${"y".repeat(400)}`,
+        },
+      },
+      async () => undefined,
+      { onAuthorization },
+    );
+    await expect(padded.redirectToAuthorization(near)).rejects.toThrow(/exceeds/);
+    expect(onAuthorization).not.toHaveBeenCalled();
+  });
+
   it("allows localhost HTTP browser authorization URLs", async () => {
     const onAuthorization = vi.fn();
     const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
@@ -999,6 +1589,98 @@ describe("MCP OAuth", () => {
 
     expect(await provider.tokens()).toBeUndefined();
     expect(persisted.at(-1)?.oauth?.tokens).toBeUndefined();
+  });
+
+  describe("client registration metadata", () => {
+    function providerWith(methods?: string[]): StoredMcpOAuthProvider {
+      const material: OAuthMaterial = {
+        oauth: {
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              registration_endpoint: "https://auth.example.test/register",
+              response_types_supported: ["code"],
+              ...(methods ? { token_endpoint_auth_methods_supported: methods } : {}),
+            },
+          },
+        },
+      };
+      return new StoredMcpOAuthProvider("server-1", material, async () => undefined, {
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+    }
+
+    it.each([
+      // A public client is preferred wherever the server offers it.
+      [["none", "client_secret_post", "client_secret_basic"], "none"],
+      [["client_secret_basic", "none"], "none"],
+      // Otherwise take a method this client can actually perform.
+      [["client_secret_basic", "client_secret_post"], "client_secret_post"],
+      [["client_secret_basic"], "client_secret_basic"],
+    ])("registers with %j as %s", (advertised, expected) => {
+      expect(providerWith(advertised).clientMetadata).toMatchObject({
+        token_endpoint_auth_method: expected,
+      });
+    });
+
+    it("omits the method when the server advertises none, leaving it to its own default", () => {
+      // RFC 8414 S2: omitted means client_secret_basic, which is the server's to apply.
+      expect(providerWith(undefined).clientMetadata).not.toHaveProperty(
+        "token_endpoint_auth_method",
+      );
+    });
+
+    it("asks for a pre-registered client when no advertised method can be performed", () => {
+      // Omitting here would register for client_secret_basic, which this server never
+      // offered, leaving a client that cannot authenticate. private_key_jwt and mTLS
+      // both need key material this client does not hold.
+      const provider = providerWith(["private_key_jwt", "tls_client_auth"]);
+      let thrown: unknown;
+      try {
+        void provider.clientMetadata;
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("private_key_jwt, tls_client_auth");
+      // Routes to the same "enter an OAuth client" state as a server without registration.
+      expect(needsMcpOAuthClient(thrown)).toBe(true);
+    });
+
+    it("reads a pre-registered client's document for its scope without judging the method", () => {
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        {
+          oauthClient: { client_id: "configured", scope: "read" },
+          oauth: {
+            discoveryState: {
+              authorizationServerUrl: "https://auth.example.test",
+              authorizationServerMetadata: {
+                issuer: "https://auth.example.test",
+                authorization_endpoint: "https://auth.example.test/authorize",
+                token_endpoint: "https://auth.example.test/token",
+                response_types_supported: ["code"],
+                token_endpoint_auth_methods_supported: ["private_key_jwt"],
+              },
+            },
+          },
+        },
+        async () => undefined,
+        { redirectUri: "https://app.example.test/mcp/oauth/callback" },
+      );
+      expect(provider.clientMetadata).toMatchObject({ scope: "read" });
+      expect(provider.clientMetadata).not.toHaveProperty("token_endpoint_auth_method");
+    });
+
+    it("omits the method before discovery has run", () => {
+      const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+      expect(provider.clientMetadata).not.toHaveProperty("token_endpoint_auth_method");
+    });
   });
 
   it.each(["https://mcp.example.test", "http://127.0.0.1:8080"])(
@@ -1143,12 +1825,158 @@ describe("MCP OAuth", () => {
           .map((value) => JSON.parse(value))
           .some((value) => value.oauth?.tokens?.access_token === "access-token"),
       ).toBe(true);
-      expect(prisma.mcpServer.update).toHaveBeenCalledWith({
+      expect(tx.mcpServer.update).toHaveBeenCalledWith({
         where: { id: "server-1" },
         data: { revision: { increment: 1 } },
       });
     },
   );
+
+  it("registers and authenticates as a confidential client when the server offers no public method", async () => {
+    // The shape of an authorization server that publishes no
+    // `token_endpoint_auth_methods_supported` and refuses a `none` registration:
+    // the method must be left unsaid and the issued secret used for the token call.
+    const requests: string[] = [];
+    let registration: Record<string, unknown> | undefined;
+    let tokenAuthorization: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(logicalHref(input, init));
+        requests.push(`${request.method} ${url.toString()}`);
+
+        if (url.href === "https://mcp.example.test/mcp" && request.method === "POST") {
+          return new Response(null, {
+            status: 401,
+            headers: {
+              "WWW-Authenticate":
+                'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+            },
+          });
+        }
+        if (url.href === "https://mcp.example.test/.well-known/oauth-protected-resource/mcp") {
+          return Response.json({
+            resource: "https://mcp.example.test/mcp",
+            authorization_servers: ["https://auth.example.test"],
+          });
+        }
+        if (url.href === "https://auth.example.test/.well-known/oauth-authorization-server") {
+          return Response.json({
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            registration_endpoint: "https://auth.example.test/register",
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code", "refresh_token"],
+          });
+        }
+        if (url.href === "https://auth.example.test/register" && request.method === "POST") {
+          registration = (await request.json()) as Record<string, unknown>;
+          if ("token_endpoint_auth_method" in registration) {
+            return Response.json(
+              { error: "invalid_client_metadata", error_description: "unsupported method" },
+              { status: 400 },
+            );
+          }
+          return Response.json(
+            {
+              client_id: "confidential-client-id",
+              client_secret: "issued-client-secret",
+              redirect_uris: ["http://127.0.0.1:5173/mcp/oauth/callback"],
+            },
+            { status: 201 },
+          );
+        }
+        if (url.href === "https://auth.example.test/token" && request.method === "POST") {
+          tokenAuthorization = request.headers.get("authorization");
+          return Response.json({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            token_type: "bearer",
+            expires_in: 3600,
+          });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${url}`);
+      }),
+    );
+
+    const storedPayloads: string[] = [];
+    let secretCounter = 0;
+    const put = vi.fn(async (plaintext: string) => {
+      storedPayloads.push(plaintext);
+      secretCounter += 1;
+      return { id: `secret-${secretCounter}`, ciphertext: `encrypted-${secretCounter}` };
+    });
+    const server = { id: "server-1", endpoint: "https://mcp.example.test/mcp", secretId: null };
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue(server),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn(),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue(server),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn(),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      mcpOAuthSession: oauthSessionStore(),
+      deploymentSettings: deploymentOwner("user-1"),
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK, true);
+
+    const started = await broker.begin({
+      serverId: "server-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+    });
+    expect(started.status).toBe("authorization_required");
+    if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
+
+    expect(registration).toMatchObject({ client_name: "Rakazo" });
+    expect(registration).not.toHaveProperty("token_endpoint_auth_method");
+    expect(new URL(started.authorizationUrl).searchParams.get("client_id")).toBe(
+      "confidential-client-id",
+    );
+
+    await broker.complete({
+      sessionId: started.sessionId,
+      code: "authorization-code",
+      state: started.sessionId,
+      spaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    expect(requests).toContain("POST https://auth.example.test/token");
+    // RFC 8414 S2's default, applied by the SDK from the same metadata.
+    expect(tokenAuthorization).toBe(
+      `Basic ${Buffer.from("confidential-client-id:issued-client-secret").toString("base64")}`,
+    );
+    const persisted = storedPayloads.map((value) => JSON.parse(value));
+    expect(persisted.some((value) => value.oauth?.tokens?.access_token === "access-token")).toBe(
+      true,
+    );
+    // The issued secret has to survive, or the next refresh cannot authenticate.
+    expect(
+      persisted.some(
+        (value) => value.oauth?.clientInformation?.client_secret === "issued-client-secret",
+      ),
+    ).toBe(true);
+  });
 
   it("applies the transport URL policy to OAuth traffic: no plain-HTTP endpoints, no redirects", async () => {
     const fetchCalls: string[] = [];
@@ -1751,7 +2579,7 @@ describe("MCP OAuth", () => {
 
       await broker.disconnect({ serverId: "server-1", ...shared.context });
 
-      expect(await shared.stored()).toEqual({ oauthClient });
+      expect(await shared.stored()).toEqual({ oauthClient, oauthGeneration: 1 });
       expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
     });
 
@@ -1762,7 +2590,7 @@ describe("MCP OAuth", () => {
 
       await broker.disconnect({ serverId: "server-1", ...shared.context });
 
-      expect(await shared.stored()).toEqual({ files });
+      expect(await shared.stored()).toEqual({ files, oauthGeneration: 1 });
     });
 
     it("refuses tokens from an authorization started before the client was changed", async () => {
@@ -2429,6 +3257,96 @@ describe("MCP OAuth", () => {
     expect(secrets).toEqual([key]);
   });
 
+  it("finds credentials in launch arguments and leaves ordinary arguments readable", () => {
+    const T = "FAKE-TOKEN-0000000000000000";
+    const credentials: string[][] = [
+      ["--api-key", T],
+      [`--api-key=${T}`],
+      ["--apiKey", T],
+      [`--accessToken=${T}`],
+      ["--key", T],
+      ["--access-key", T],
+      ["--private-key", T],
+      ["--secret-access-key", T],
+      ["--pat", T],
+      ["--auth", T],
+      ["--client-auth", T],
+      ["--basicAuth", T],
+      ["--token", T],
+      ["--password", T],
+      ["--secret", T],
+      [`-api-key=${T}`],
+      ["--APIKey", T],
+      ["--api.key", T],
+      ["-token", T],
+      ["-k", T],
+      [`apiKey=${T}`],
+      [`API_KEY=${T}`],
+      [`--env=API_KEY=${T}`],
+      ["-e", `API_KEY=${T}`],
+      ["--header", `Authorization: Bearer ${T}`],
+      ["-H", `X-API-Key: ${T}`],
+      ["--header", "Authorization:Bearer", T],
+      ["--header", `Authorization: Basic ${T}`],
+      ["--header", `Proxy-Authorization: Bearer ${T}`],
+      ["--header", `Ocp-Apim-Subscription-Key: ${T}`],
+      [`postgres://user:${T}@db.example.test/app`],
+      [`DATABASE_URL=postgres://user:${T}@db.example.test/app`],
+      [`https://${T}@git.example.test/`],
+      [`https://${T}:x-oauth-basic@git.example.test/`],
+      [`https://api.example.test/?apiKey=${T}`],
+      ["--url", `https://api.example.test/mcp?token=${T}`],
+      [`https://api.example.test/mcp?authorization=Bearer%20${T}`],
+    ];
+    for (const args of credentials) expect(launchArgSecrets(args), args.join(" ")).toContain(T);
+    // Tokens that start with "-", are lowercase, or are short still count in these positions.
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", `-${T}`])).toContain(`-${T}`);
+    expect(launchArgSecrets(["-k", "sk-live-abcdefgh12345678"])).toContain(
+      "sk-live-abcdefgh12345678",
+    );
+    expect(launchArgSecrets(["https://shorttok@git.example.test/"])).toContain("shorttok");
+    expect(launchArgSecrets(["PAT=abc"])).toContain("abc");
+    for (const name of ["--access-key", "--private-key", "--secret-key"])
+      expect(launchArgSecrets([name, "123456789012"]), name).toContain("123456789012");
+    expect(launchArgSecrets(["--header", "X-Private-Key: abc"])).toContain("abc");
+    expect(launchArgSecrets(["--header", "Accept:Bearer", "/srv/data"])).toEqual([]);
+
+    const readable = [
+      "--port",
+      "3000",
+      "/srv/data",
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "--verbose",
+      "-y",
+      "mcp-server-sqlite2-extended",
+      "--sort-key",
+      "name",
+      "ssh://git@git.example.test/repo",
+      "ssh://deployuser@git.example.test/repo",
+      "--header",
+      "Accept: application/json",
+      "https://api.example.test/?key=0",
+      "--key",
+      "0",
+      "--no-auth",
+      "true",
+      "--no-auth",
+      "/srv/data",
+      "--disable-auth",
+      "/srv/other",
+      "--oauth",
+      "--auth-mode",
+      "basic",
+    ];
+    expect(launchArgSecrets(readable)).toEqual([]);
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", "--verbose"])).toEqual([]);
+
+    // The server may echo a query value spelled as it was passed, not as it decodes.
+    for (const spelled of ["abc%2fDEF123456", "Abc+DEF123456"])
+      expect(launchArgSecrets([`https://api.example.test/?api_key=${spelled}`])).toContain(spelled);
+  });
+
   it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {
     const requested: string[] = [];
     vi.stubGlobal(
@@ -2541,6 +3459,13 @@ describe("MCP OAuth", () => {
       mcpOAuthSession: sessions,
       $transaction: vi.fn().mockResolvedValue([]),
     };
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        ...prisma,
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        $queryRaw: vi.fn().mockResolvedValue([]),
+      }),
+    );
     const secrets = {
       load: vi.fn((ciphertext: string) =>
         JSON.stringify(
@@ -2605,6 +3530,7 @@ describe("MCP OAuth", () => {
           ciphertext: "encrypted-current",
         }),
       },
+      mcpOAuthSession: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const secrets = {

@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
   ensureAiDataConsent,
@@ -15,10 +16,11 @@ import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
 import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
+import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
-import { t } from "./i18n";
 import { fetchServer } from "./server-headers";
+import { subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
@@ -109,6 +111,22 @@ export function stopSpeaking(owner?: SpeechOwner): void {
   stopVoicePlayback();
 }
 
+// A sign-out, account switch or server switch ends playback: the rest of the
+// queue belongs to the session that started it, and the next session must
+// neither hear it nor see its speaker in the dock.
+subscribeSessionGeneration(() => {
+  stopVoicePlayback();
+  announcedSpeaker = undefined;
+});
+
+// A confirmed switch to another Space or organization ends playback the same
+// way: the rest of the queue belongs to the conversation being left, and the
+// next Space must neither hear it nor see its speaker in the dock.
+subscribeConfirmedSpaceSwitch(() => {
+  stopVoicePlayback();
+  announcedSpeaker = undefined;
+});
+
 let playsInBackground = false;
 
 /**
@@ -158,8 +176,32 @@ function releasePlayback(epoch: number, stillOwner: boolean, keepForQueue: boole
  */
 export async function speakQueue(items: SpeechQueueItem[]): Promise<boolean> {
   const epoch = beginSpeech();
-  speechQueue = items;
-  return advanceSpeechQueue(epoch);
+  // One context for the whole queue, taken before anything plays: a queued
+  // reply must never capture the server or account of a later session.
+  let requestContext: ApiRequestContext | undefined;
+  try {
+    requestContext = await captureApiRequestContext();
+  } catch (error) {
+    // The session or server changed while capturing; that change already
+    // stopped this queue, so this is not a "no voice is set up" outcome.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  }
+  if (!isCurrentSpeech(epoch)) return true;
+  speechQueue = items.map((item) => ({
+    ...item,
+    requestContext: item.requestContext ?? requestContext,
+  }));
+  try {
+    return await advanceSpeechQueue(epoch);
+  } catch (error) {
+    // The session change (or a newer Play or Stop) that ended this queue can
+    // leave its request failing late, e.g. with the old session's revoked
+    // token; the next session's screen must not hear about that. Playback
+    // that still owns the epoch keeps reporting its errors.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  }
 }
 
 async function advanceSpeechQueue(epoch: number): Promise<boolean> {
@@ -376,10 +418,10 @@ async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
   try {
     Speech = await import("expo-speech");
   } catch (error) {
-    throw error instanceof Error ? error : new Error(t("Could not play that clip."));
+    throw error instanceof Error ? error : new Error(t`Could not play that clip.`);
   }
   if (typeof Speech.speak !== "function" || typeof Speech.stop !== "function") {
-    throw new Error(t("Could not play that clip."));
+    throw new Error(t`Could not play that clip.`);
   }
   return Speech as typeof ExpoSpeech;
 }
@@ -402,22 +444,30 @@ export async function speakUtterance(
   opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
 ): Promise<Uint8Array> {
   const requestContext = opts.requestContext ?? (await captureApiRequestContext());
+  await ensureVoiceConsent(requestContext, opts.scope);
+  return renderUtterance(text, opts, requestContext);
+}
+
+/** Asks before audio or text goes to the voice provider; throws AiConsentBlocked on a refusal. */
+export async function ensureVoiceConsent(
+  requestContext: ApiRequestContext,
+  scope?: SettingsScope,
+): Promise<void> {
   await ensureAiDataConsent({
     uses: ["voice"],
     status: () =>
       rpc(
         "aiConsent/status",
-        { uses: ["voice"], ...(opts.scope ? { settingsScope: opts.scope } : {}) },
+        { uses: ["voice"], ...(scope ? { settingsScope: scope } : {}) },
         { requestContext },
       ),
     prompt: promptAiConsent,
     allow: (input) =>
-      rpc("aiConsent/allow", opts.scope ? { ...input, settingsScope: opts.scope } : input, {
+      rpc("aiConsent/allow", scope ? { ...input, settingsScope: scope } : input, {
         requestContext,
       }),
     coalesceKey: aiConsentCoalesceKey(requestContext),
   });
-  return renderUtterance(text, opts, requestContext);
 }
 
 async function renderUtterance(
@@ -450,14 +500,12 @@ async function renderUtterance(
       deadline.signal,
       "Voice request aborted.",
     ).catch((error: unknown) => {
-      throw deadline.signal.aborted
-        ? error
-        : new Error(errorText(error, t("Could not speak that.")));
+      throw deadline.signal.aborted ? error : new Error(errorText(error, t`Could not speak that.`));
     });
     if (!res.ok) {
       const body = await readVoiceError(res, deadline.signal);
       throw new Error(
-        voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not speak that.")),
+        voiceAccountErrorText(body) ?? errorText(body.error ?? "", t`Could not speak that.`),
       );
     }
     return await readVoiceAudio(res, deadline.signal);
@@ -556,7 +604,7 @@ async function playWithHtmlAudio(
         else resolve();
       };
       audio.onended = () => finish();
-      audio.onerror = () => finish(new Error(t("Could not play that clip.")));
+      audio.onerror = () => finish(new Error(t`Could not play that clip.`));
       session?.setPlayer({
         pause: () => audio.pause(),
         resume: () => void audio.play().catch(() => undefined),
@@ -574,10 +622,10 @@ async function playWithHtmlAudio(
         void audio
           .play()
           .catch((error: unknown) =>
-            finish(error instanceof Error ? error : new Error(t("Could not play that clip."))),
+            finish(error instanceof Error ? error : new Error(t`Could not play that clip.`)),
           );
       } catch (error) {
-        finish(error instanceof Error ? error : new Error(t("Could not play that clip.")));
+        finish(error instanceof Error ? error : new Error(t`Could not play that clip.`));
       }
     });
   } finally {
@@ -597,7 +645,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
     `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,
   );
   file.create({ overwrite: true });
-  file.write(bytesToBase64(bytes), { encoding: "base64" });
+  file.writeSync(bytesToBase64(bytes), { encoding: "base64" });
   const player = createAudioPlayer({ uri: file.uri });
   try {
     await new Promise<void>((resolve, reject) => {
@@ -613,7 +661,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
         else resolve();
       };
       const armStartupWatchdog = () => {
-        timer = setTimeout(() => finish(new Error(t("Could not play that clip."))), 15_000);
+        timer = setTimeout(() => finish(new Error(t`Could not play that clip.`)), 15_000);
       };
       const sub = player.addListener("playbackStatusUpdate", (status) => {
         if (status.error) {
@@ -621,7 +669,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
           return;
         }
         if (status.playbackState === "failed") {
-          finish(new Error(t("Could not play that clip.")));
+          finish(new Error(t`Could not play that clip.`));
           return;
         }
         if (status.didJustFinish) {
@@ -631,7 +679,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
         if (status.playing && status.duration > 0 && !session?.isPaused) {
           clearTimeout(timer);
           timer = setTimeout(
-            () => finish(new Error(t("Could not play that clip."))),
+            () => finish(new Error(t`Could not play that clip.`)),
             Math.min(120_000, Math.ceil(status.duration * 1000) + 8_000),
           );
         }
@@ -662,7 +710,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
       try {
         player.play();
       } catch (error) {
-        finish(error instanceof Error ? error : new Error(t("Could not play that clip.")));
+        finish(error instanceof Error ? error : new Error(t`Could not play that clip.`));
       }
     });
   } finally {

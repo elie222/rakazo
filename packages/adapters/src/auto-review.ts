@@ -12,11 +12,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { AutoReviewJudgeDecision } from "@rakazo/core";
 import { escapePromptData, redactSecrets } from "@rakazo/core";
+import { z } from "zod";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
+import { parseModelJson } from "./model-json.js";
+import { secretValuesToRedact } from "./model-secret.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import { localModelIds } from "./pi-local-provider-id.js";
-import { secretValuesToRedact } from "./pi-oauth.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TASK_CHARS = 400;
@@ -228,26 +230,67 @@ export function sanitizeAutoReviewReason(reason: string | undefined): string | u
   return truncateReviewText(cleaned, MAX_REASON_CHARS);
 }
 
+const AutoReviewVerdict = z.object({
+  decision: z.enum(["pass", "ask"]),
+  reason: z.string().optional().catch(undefined),
+});
+
+/**
+ * A verdict counts only when the whole reply is one JSON object, optionally in one code fence,
+ * with no repeated keys. Anything else that still reads as a verdict becomes "ask", so prose, a
+ * second object, or repaired syntax can never pass an action; an unreadable reply is "error".
+ */
 export function parseAutoReviewJudgeText(text: string): {
   decision: AutoReviewJudgeDecision;
   reason?: string;
 } {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/\{[\s\S]*\}/);
-  const candidate = fenced?.[0] ?? trimmed;
-  try {
-    const parsed = JSON.parse(candidate) as { decision?: unknown; reason?: unknown };
-    if (parsed.decision === "pass" || parsed.decision === "ask") {
-      return {
-        decision: parsed.decision,
-        reason:
-          typeof parsed.reason === "string" ? sanitizeAutoReviewReason(parsed.reason) : undefined,
-      };
-    }
-  } catch {
-    // fall through
+  const verdict = readStrictVerdict(text);
+  if (verdict) {
+    return {
+      decision: verdict.decision,
+      reason: verdict.reason === undefined ? undefined : sanitizeAutoReviewReason(verdict.reason),
+    };
   }
-  return { decision: "error" };
+  const loose = parseModelJson(text, AutoReviewVerdict);
+  if (!loose) return { decision: "error" };
+  if (loose.decision !== "ask" || loose.reason === undefined) return { decision: "ask" };
+  return { decision: "ask", reason: sanitizeAutoReviewReason(loose.reason) };
+}
+
+function readStrictVerdict(text: string): z.infer<typeof AutoReviewVerdict> | undefined {
+  const trimmed = text.trim();
+  const body = /^```(?:json)?[ \t]*\r?\n([\s\S]*)```$/i.exec(trimmed)?.[1]?.trim() ?? trimmed;
+  if (!body.startsWith("{")) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (hasRepeatedTopLevelKey(body)) return undefined;
+    const result = AutoReviewVerdict.safeParse(parsed);
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** JSON.parse keeps the last of repeated keys; call only on text it has already accepted. */
+function hasRepeatedTopLevelKey(json: string): boolean {
+  const keys = new Set<string>();
+  const colon = /\s*:/y;
+  let depth = 0;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (ch === '"') {
+      const start = i;
+      for (i++; json[i] !== '"'; i++) if (json[i] === "\\") i++;
+      colon.lastIndex = i + 1;
+      if (depth === 1 && colon.test(json)) {
+        const key: string = JSON.parse(json.slice(start, i + 1));
+        if (keys.has(key)) return true;
+        keys.add(key);
+      }
+    } else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+  }
+  return false;
 }
 
 /**
@@ -294,105 +337,109 @@ export async function runAutoReviewJudge(
   const timeoutMs = input.timeoutMs ?? autoReviewTimeoutMs();
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
-  let text = "";
-  let failed = false;
-  try {
-    for await (const event of input.runtime.run(
-      {
-        botId: input.botId,
-        threadId: input.threadId,
-        runId: `${input.runId}:auto-review`,
-        usageOperationKind: "setup",
-        onUsage: async (event) => {
-          await input.onUsage?.(event);
+  for (let attempt = 0; ; attempt++) {
+    let text = "";
+    let failed = false;
+    try {
+      for await (const event of input.runtime.run(
+        {
+          botId: input.botId,
+          threadId: input.threadId,
+          runId: `${input.runId}:auto-review`,
+          usageOperationKind: "setup",
+          onUsage: async (event) => {
+            await input.onUsage?.(event);
+          },
+          prompt: input.prompt,
+          instructions: [
+            formatCurrentTimeInstruction(),
+            "You are a fast safety checker. Output strict JSON only. No tools. No markdown.",
+          ].join(" "),
+          history: [],
+          tools: [],
+          model: {
+            provider: input.checker.provider,
+            id: input.checker.model,
+            apiKey: input.oauth ? undefined : input.apiKey,
+            accountId: input.accountId,
+            gatewayId: input.gatewayId,
+            baseUrl: input.baseUrl,
+            headers: input.headers,
+            allowPrivateEndpoint: input.allowPrivateEndpoint,
+            cacheCapabilities: input.cacheCapabilities,
+            contextWindow: input.contextWindow,
+            maxTokens: input.maxTokens,
+            reasoning: input.reasoning,
+            thinkingLevel: input.checker.thinkingLevel ?? null,
+            oauth: input.oauth,
+            callObserver: input.callObserver,
+          },
         },
-        prompt: input.prompt,
-        instructions: [
-          formatCurrentTimeInstruction(),
-          "You are a fast safety checker. Output strict JSON only. No tools. No markdown.",
-        ].join(" "),
-        history: [],
-        tools: [],
-        model: {
-          provider: input.checker.provider,
-          id: input.checker.model,
-          apiKey: input.oauth ? undefined : input.apiKey,
-          accountId: input.accountId,
-          gatewayId: input.gatewayId,
-          baseUrl: input.baseUrl,
-          headers: input.headers,
-          allowPrivateEndpoint: input.allowPrivateEndpoint,
-          cacheCapabilities: input.cacheCapabilities,
-          contextWindow: input.contextWindow,
-          maxTokens: input.maxTokens,
-          reasoning: input.reasoning,
-          thinkingLevel: input.checker.thinkingLevel ?? null,
-          oauth: input.oauth,
-          callObserver: input.callObserver,
+        {
+          operationId: `auto-review:${input.runId}`,
+          traceId: `auto-review:${input.runId}`,
+          spaceId: input.spaceId,
+          userId: input.userId,
+          signal,
         },
-      },
-      {
-        operationId: `auto-review:${input.runId}`,
-        traceId: `auto-review:${input.runId}`,
-        spaceId: input.spaceId,
-        userId: input.userId,
-        signal,
-      },
-    )) {
-      if (event.type === "usage" && !event.accounted) await input.onUsage?.(event);
-      if (
-        event.type === "text" &&
-        /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())
-      ) {
-        failed = true;
+      )) {
+        if (event.type === "usage" && !event.accounted) await input.onUsage?.(event);
+        if (
+          event.type === "text" &&
+          /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())
+        ) {
+          failed = true;
+        }
+        if (event.type === "done" && event.text) {
+          const body = event.text.trim();
+          if (/^(?:I hit a problem:|Unknown model )/i.test(body)) failed = true;
+          else text = body;
+        }
       }
-      if (event.type === "done" && event.text) {
-        const body = event.text.trim();
-        if (/^(?:I hit a problem:|Unknown model )/i.test(body)) failed = true;
-        else text = body;
-      }
+    } catch (error) {
+      const timedOut =
+        timeoutSignal.aborted ||
+        (input.signal?.aborted === true &&
+          (input.signal.reason instanceof DOMException || input.signal.reason instanceof Error) &&
+          input.signal.reason.name === "TimeoutError");
+      const secrets = secretValuesToRedact({
+        kind: "openai_compatible",
+        baseUrl: input.baseUrl ?? "",
+        apiKey: input.apiKey,
+        headers: input.headers,
+      });
+      const detail = timedOut
+        ? timeoutSignal.aborted
+          ? `timed out after ${timeoutMs}ms`
+          : "timed out (parent deadline)"
+        : `failed: ${truncateReviewText(
+            redactSecrets(
+              error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+              secrets,
+            ),
+            200,
+          )}`;
+      // biome-ignore lint/suspicious/noConsole: Emit one sanitized checker diagnostic.
+      console.warn(`[auto-review] checker ${redactSecrets(modelLabel, secrets)} ${detail}`);
+      return {
+        decision: "error",
+        model: modelLabel,
+        reason: timedOut ? "Checker timed out." : "Checker failed.",
+      };
     }
-  } catch (error) {
-    const timedOut =
-      timeoutSignal.aborted ||
-      (input.signal?.aborted === true &&
-        (input.signal.reason instanceof DOMException || input.signal.reason instanceof Error) &&
-        input.signal.reason.name === "TimeoutError");
-    const secrets = secretValuesToRedact({
-      kind: "openai_compatible",
-      baseUrl: input.baseUrl ?? "",
-      apiKey: input.apiKey,
-      headers: input.headers,
-    });
-    const detail = timedOut
-      ? timeoutSignal.aborted
-        ? `timed out after ${timeoutMs}ms`
-        : "timed out (parent deadline)"
-      : `failed: ${truncateReviewText(
-          redactSecrets(
-            error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-            secrets,
-          ),
-          200,
-        )}`;
-    // biome-ignore lint/suspicious/noConsole: Emit one sanitized checker diagnostic.
-    console.warn(`[auto-review] checker ${redactSecrets(modelLabel, secrets)} ${detail}`);
+
+    if (failed || !text) {
+      return { decision: "error", model: modelLabel, reason: "Checker returned no decision." };
+    }
+    const parsed = parseAutoReviewJudgeText(text);
+    // An unreadable verdict gets one more try before the owner is asked.
+    if (parsed.decision === "error" && attempt === 0) continue;
     return {
-      decision: "error",
+      decision: parsed.decision,
+      reason: parsed.reason,
       model: modelLabel,
-      reason: timedOut ? "Checker timed out." : "Checker failed.",
     };
   }
-
-  if (failed || !text) {
-    return { decision: "error", model: modelLabel, reason: "Checker returned no decision." };
-  }
-  const parsed = parseAutoReviewJudgeText(text);
-  return {
-    decision: parsed.decision,
-    reason: parsed.reason,
-    model: modelLabel,
-  };
 }
 
 export type LlmAutoReviewOptions = {

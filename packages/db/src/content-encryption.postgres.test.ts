@@ -20,8 +20,7 @@ import { createThreadMessage, createThreadMessageInTransaction } from "./message
 import { runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const masterA = { id: "test-a", key: randomBytes(32) };
 const masterB = { id: "test-b", key: randomBytes(32) };
@@ -103,6 +102,17 @@ describePostgres("content encryption (PostgreSQL)", () => {
   );
 
   afterAll(async () => {
+    // Rotation and re-wrapping reach every space in the shared database. Hand all keys back to
+    // the derived master key, or other suites and the next run cannot unwrap them once this
+    // run's random master keys are gone.
+    await runAsSystem("test cleanup", async () => {
+      const restore = createDb(databaseUrl!, {
+        keyProvider: new LocalKeyProvider([...masterKeysFromEnv(), masterB, masterA]),
+        encryptContent: true,
+      });
+      clients.push(restore);
+      await rewrapSpaceKeys(restore.prisma, contentEncryptionOf(restore.prisma)!.ring);
+    });
     await prisma?.organization.deleteMany({ where: { id: organizationId } });
     await prisma?.user.deleteMany({ where: { id: userId } });
     for (const db of clients) {
@@ -194,6 +204,27 @@ describePostgres("content encryption (PostgreSQL)", () => {
         contentEncryptionOf(fresh.prisma)!.openRows("Message", rows),
       ).rejects.toBeInstanceOf(ContentDecryptionError);
       await raw.query(`DELETE FROM messages WHERE id = $1`, [message.id]);
+    }));
+
+  it("finds an encrypted message by its attachment's name without storing the name in plaintext", () =>
+    runAsSystem("test fixture", async () => {
+      const message = await createThreadMessage(prisma, {
+        threadId,
+        role: "user",
+        blocks: [
+          {
+            kind: "file",
+            artifactId: `enc-art-${suffix}`,
+            name: "harbor-survey.pdf",
+            mimeType: "application/pdf",
+            size: 10,
+          },
+        ],
+      });
+      expect(await rawBlocks(message.id)).not.toContain("harbor");
+      const found = await searchHistory(prisma, scope, { query: "harbor survey" });
+      expect(found.messages.map((m) => m.messageId)).toEqual([message.id]);
+      await prisma.message.delete({ where: { id: message.id }, select: { id: true } });
     }));
 
   it("reads and searches plaintext rows next to encrypted ones, then migrates them", () =>
@@ -353,6 +384,64 @@ describePostgres("content encryption (PostgreSQL)", () => {
           },
         }),
       ).rejects.toThrow(/nested write/);
+    }));
+
+  it("encrypts bot inbox mail, migrates plaintext mail and writes it back for a rollback", () =>
+    runAsSystem("test fixture", async () => {
+      const mail = await prisma.botEmailMessage.create({
+        data: {
+          spaceId,
+          botId,
+          key: `enc-mail-${suffix}`,
+          fromAddress: "grace@harbor.test",
+          // A sender's name that looks like ciphertext.
+          fromName: "rkz1:missing:Grace",
+          verified: true,
+          subject: "Ocelot sighting",
+          text: "Seen near the ocelot pens",
+        },
+      });
+      expect(mail).toMatchObject({ fromAddress: "grace@harbor.test", subject: "Ocelot sighting" });
+      const legacy = `enc-mail-plain-${suffix}`;
+      await raw.query(
+        `INSERT INTO bot_email_messages (id, "spaceId", "botId", key, "references", "fromAddress", "fromName", verified, "to", cc, subject, text)
+         VALUES ($1, $2, $3, $1, '{}', 'old@harbor.test', 'Old', true, '{}', '{}', 'Legacy ocelot', 'Plain ocelot text')`,
+        [legacy, spaceId, botId],
+      );
+      const stored = async () =>
+        (
+          await raw.query(
+            `SELECT "fromAddress", "fromName", subject, text, "searchTokens" AS tokens FROM bot_email_messages WHERE "botId" = $1`,
+            [botId],
+          )
+        ).rows as Array<Record<string, unknown> & { tokens: number[] | null }>;
+      expect((await stored()).find((row) => row.subject === "Legacy ocelot")?.tokens).toBeNull();
+
+      await migrateContent(prisma, { mode: "encrypt" });
+      const sealed = await stored();
+      expect(JSON.stringify(sealed)).not.toMatch(/ocelot|harbor|Grace/i);
+      expect(sealed.every((row) => row.tokens?.length)).toBe(true);
+      const read = await prisma.botEmailMessage.findMany({
+        where: { botId },
+        orderBy: { key: "asc" },
+        select: { fromAddress: true, subject: true, text: true },
+      });
+      expect(read).toEqual([
+        {
+          fromAddress: "grace@harbor.test",
+          subject: "Ocelot sighting",
+          text: "Seen near the ocelot pens",
+        },
+        { fromAddress: "old@harbor.test", subject: "Legacy ocelot", text: "Plain ocelot text" },
+      ]);
+
+      await migrateContent(prisma, { mode: "decrypt" });
+      const plain = await stored();
+      expect(plain.map((row) => row.subject).sort()).toEqual(["Legacy ocelot", "Ocelot sighting"]);
+      expect(plain.every((row) => row.tokens === null)).toBe(true);
+      expect(plain.map((row) => row.fromName)).toContain("\u200brkz1:missing:Grace");
+      await expect(prisma.botEmailMessage.findMany({ where: { botId } })).resolves.toHaveLength(2);
+      await migrateContent(prisma, { mode: "encrypt" });
     }));
 
   it("re-wraps space keys under a new master key and re-encrypts content", () =>

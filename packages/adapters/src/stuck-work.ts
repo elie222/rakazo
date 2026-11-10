@@ -12,10 +12,16 @@ import {
   stuckWorkStoppedNotification,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, expireStuckRun, withTransactionRetry } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  expireStuckRun,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
 import { notificationIdentity } from "./notification-identity.js";
+import { publishChatAlert } from "./run-notifications.js";
 
 type StuckCursor = { at: Date; id: string };
 
@@ -197,6 +203,7 @@ function deliveredNotice(run: StuckCandidate): Prisma.InputJsonValue {
 async function remindStuckRun(
   deps: {
     prisma: PrismaClient;
+    events?: ThreadEvents;
     notifications?: NotificationProvider;
     now: Date;
   },
@@ -207,20 +214,29 @@ async function remindStuckRun(
   if (!deps.notifications || !noticesEnabled(run)) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) => claimStuckReminder(tx, run, deps.now)),
+    deps.prisma.$transaction(
+      (tx) => claimStuckReminder(tx, run, deps.now),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
+    ),
   );
   if (!claimId) return;
   const reminder = stuckWorkReminder(run.status, run.bot.name);
-  const delivery = await sendStuckNotice(deps.notifications, run, {
+  const message = {
     kind: reminder.kind,
     title: reminder.title,
     body: reminder.body,
     botId: run.botId,
     threadId: run.threadId,
-  });
+  };
+  const delivery = await sendStuckNotice(deps.notifications, run, message);
   if (delivery === "delivered") {
+    // After the push, so a failed push that is retried does not alert open apps twice.
+    publishChatAlert(deps.events, run, message, run.thread.groupId);
     await withTransactionRetry(() =>
-      deps.prisma.$transaction((tx) => markStuckNoticeDelivered(tx, claimId, run)),
+      deps.prisma.$transaction(
+        (tx) => markStuckNoticeDelivered(tx, claimId, run),
+        THREAD_LOCK_TRANSACTION_OPTIONS,
+      ),
     );
     return;
   }
@@ -318,14 +334,16 @@ async function expireOne(
   run: StuckCandidate,
 ) {
   const expired = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) =>
-      expireStuckRun(tx, {
-        runId: run.id,
-        threadId: run.threadId,
-        status: run.status,
-        updatedAt: run.updatedAt,
-        now: deps.now,
-      }),
+    deps.prisma.$transaction(
+      (tx) =>
+        expireStuckRun(tx, {
+          runId: run.id,
+          threadId: run.threadId,
+          status: run.status,
+          updatedAt: run.updatedAt,
+          now: deps.now,
+        }),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     ),
   );
   if (!expired) return;
@@ -337,15 +355,17 @@ async function expireOne(
       getLogger().error("stuck work continuation", error);
     });
   }
-  if (!deps.notifications || !noticesEnabled(run)) return;
+  if (!noticesEnabled(run)) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
-  await sendStuckNotice(deps.notifications, run, {
+  const message = {
     kind: stopped.kind,
     title: stopped.title,
     body: stopped.body,
     botId: run.botId,
     threadId: run.threadId,
-  });
+  };
+  publishChatAlert(deps.events, run, message, run.thread.groupId);
+  if (deps.notifications) await sendStuckNotice(deps.notifications, run, message);
 }
 
 type StuckNoticeDelivery = "delivered" | "undeliverable" | "failed";

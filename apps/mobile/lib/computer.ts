@@ -1,8 +1,8 @@
+import { ph, t } from "@lingui/core/macro";
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
 import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
-import { t } from "./i18n";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
 /**
@@ -79,6 +79,17 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
  * Identity of a live screen stream, ignoring rotating capability tokens.
  * View vs control stays in the key so takeover/release still reconnects.
  */
+export function screenStreamBase(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/^(\/novnc\/session\/(?:view|control)\/)[^/]+/);
+    if (match) return `${parsed.origin}${match[1]}`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function screenStreamKey(url: string): string {
   try {
     const parsed = new URL(url);
@@ -166,24 +177,28 @@ export function previewPlaceholder(
   name: string,
   mode?: ComputerMode,
 ): string {
-  if (state === "booting" || booting) return t("Booting live desktop…");
+  if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return computerLabel(mode, name);
-  if (state === "suspended") return t("Computer is asleep. Take control to wake it.");
-  if (state === "error") return t("Computer failed to boot");
-  return t("Computer is stopped");
+  if (state === "suspended") return t`Computer is asleep. Take control to wake it.`;
+  if (state === "error") return t`Computer failed to boot`;
+  return t`Computer is stopped`;
 }
 
 export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
-  if (computer?.busyBotName) return t("{name} is using it", { name: computer.busyBotName });
-  if (computer?.controlHolder === "user" && computer.controlBotId === botId) {
-    return t("You have control");
+  if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is using it`;
+  if (
+    computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
+    !computer.controlledByOther
+  ) {
+    return t`You have control`;
   }
-  if (computer?.state === "suspended") return t("Asleep");
+  if (computer?.state === "suspended") return t`Asleep`;
   return computerLabel(computer?.mode, name);
 }
 
 export function computerLabel(mode: ComputerMode | undefined, name: string) {
-  return mode === "dedicated" ? t("{name}’s computer", { name }) : t("Team Computer");
+  return mode === "dedicated" ? t`${name}’s computer` : t`Team Computer`;
 }
 
 /**
@@ -258,11 +273,9 @@ export function fromScreenPage(
     // sandboxed screen. Accept its advisory state only while the native navigation
     // event identifies the exact authorized screen page; other pages stay rejected.
     if (pageUrl === "null") {
-      return (
-        isProxiedScreenPage(screenUrl) &&
-        Boolean(loadedPageUrl) &&
-        new URL(loadedPageUrl!).href === new URL(screenUrl).href
-      );
+      const loadedBase = loadedPageUrl ? screenStreamBase(loadedPageUrl) : null;
+      const screenBase = screenStreamBase(screenUrl);
+      return isProxiedScreenPage(screenUrl) && Boolean(loadedBase) && loadedBase === screenBase;
     }
     return Boolean(pageUrl) && new URL(pageUrl!).origin === new URL(screenUrl).origin;
   } catch {

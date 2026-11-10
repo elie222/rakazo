@@ -1,9 +1,14 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey, SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  computerControlExpireJobKey,
+  isSandboxProviderOutage,
+  SandboxAllowanceUsedError,
+} from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   enqueueTakeoverContinuation,
@@ -13,6 +18,7 @@ import {
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
+  ComputerSpaceDeletingError,
   computerSupportsUpdate,
   replaceComputer,
 } from "./computer-lifecycle.js";
@@ -23,6 +29,9 @@ type QueueDeps = Pick<Deps, "prisma" | "jobs"> &
     events?: Pick<ThreadEvents, "append">;
   };
 const STALE_MS = 10 * 60_000;
+// Far longer than any provider call should run. Past it, reconciliation assumes an
+// interrupted worker's provider calls have ended.
+const ABANDONED_MS = 60 * 60_000;
 // reserving: claimed, provider release not started. revoking: call not returned.
 // revoked: provider release returned, lease write still missing.
 const UNCONFIRMED_HANDBACK_STATUSES = ["reserving", "revoking"] as const;
@@ -133,7 +142,11 @@ export async function queueComputerUpdate(
           none: {
             OR: [
               { computerSwitching: true },
-              { runs: { some: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+              {
+                runs: {
+                  some: { status: { in: [...ACTIVE_RUN_STATUSES] }, ...COMPUTER_USING_RUNS },
+                },
+              },
             ],
           },
         },
@@ -240,6 +253,7 @@ export async function queueComputerUpdate(
       },
       data: {
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -387,6 +401,7 @@ async function releaseConfirmedHandback(
           maintenanceId: null,
           controlHolder: "none",
           controlLeaseId: null,
+          controlUserId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
           controlRunId: null,
@@ -478,6 +493,7 @@ async function clearRevokedTakeover(
       maintenanceId: null,
       controlHolder: "none",
       controlLeaseId: null,
+      controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
       controlRunId: null,
@@ -517,10 +533,21 @@ async function recordTakeoverHandback(
 }
 
 export async function performComputerUpdate(deps: Deps, updateId: string) {
-  const claimed = await deps.prisma.computerUpdate.updateMany({
-    where: { id: updateId, status: "queued" },
-    data: { status: "running" },
+  const target = await deps.prisma.computerUpdate.findUnique({
+    where: { id: updateId },
+    select: { computer: { select: { spaceId: true } } },
   });
+  if (!target) return;
+  // A Space being deleted gets no maintenance; its computers go with it. Its lock comes before
+  // the update row, so a claim committing meanwhile is seen.
+  const claimed = await deps.prisma.$transaction(async (tx) =>
+    !(await spaceTakesWork(tx, target.computer.spaceId))
+      ? { count: 0 }
+      : tx.computerUpdate.updateMany({
+          where: { id: updateId, status: "queued" },
+          data: { status: "running" },
+        }),
+  );
   if (claimed.count !== 1) return; // Never replay a destructive operation on job redelivery.
   const update = await deps.prisma.computerUpdate.findUniqueOrThrow({
     where: { id: updateId },
@@ -565,20 +592,29 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
   } catch (error) {
-    if (error instanceof SandboxAllowanceUsedError) {
-      getLogger().warn("computer update failed", {
-        updateId,
-        computerId: update.computerId,
-        reason: error.message,
+    if (error instanceof ComputerSpaceDeletingError) {
+      // Refused before any teardown: the update waits for the deletion to end, and if it is called
+      // off, reconciliation runs it as if it had never started.
+      await deps.prisma.computerUpdate.updateMany({
+        where: { id: updateId, status: "running" },
+        data: { status: "queued" },
       });
     } else {
-      getLogger().error("computer update failed", error, {
-        updateId,
-        computerId: update.computerId,
-      });
+      if (error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)) {
+        getLogger().warn("computer update failed", {
+          updateId,
+          computerId: update.computerId,
+          reason: error.message,
+        });
+      } else {
+        getLogger().error("computer update failed", error, {
+          updateId,
+          computerId: update.computerId,
+        });
+      }
+      // Provider errors may contain credentials or private URLs. Expose only the failed stage.
+      await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
     }
-    // Provider errors may contain credentials or private URLs. Expose only the failed stage.
-    await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
   } finally {
     clearInterval(heartbeat);
   }
@@ -606,19 +642,22 @@ async function finishUpdate(
 }
 
 export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs">) {
-  const updates = await deps.prisma.computerUpdate.findMany({
-    where: {
+  const select = (where: Prisma.ComputerUpdateWhereInput) =>
+    deps.prisma.computerUpdate.findMany({ where, take: 100, orderBy: { updatedAt: "asc" } });
+  // Republishing leaves a queued row untouched, so a backlog of them would fill every pass.
+  // Stalled rows go first so a failing republish cannot keep a computer reserved.
+  const updates = [
+    ...(await select({
       OR: [
-        { status: "queued" },
         { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "reserving", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "revoking", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "revoked", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
+        { status: "interrupted", updatedAt: { lt: new Date(Date.now() - ABANDONED_MS) } },
       ],
-    },
-    take: 100,
-    orderBy: { updatedAt: "asc" },
-  });
+    })),
+    ...(await select({ status: "queued" })),
+  ];
   for (const update of updates) {
     if (update.status === "queued") {
       await deps.jobs.enqueue({
@@ -662,14 +701,39 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { maintenanceId: null },
         });
       });
+    } else if (update.status === "interrupted") {
+      const released = await deps.prisma.$transaction(async (tx) => {
+        const abandoned = await tx.computerUpdate.updateMany({
+          where: { id: update.id, status: "interrupted", updatedAt: update.updatedAt },
+          data: { status: "failed" },
+        });
+        if (abandoned.count !== 1) return false;
+        // Only this update can hold a booting or suspending claim under its reservation, and
+        // Recover refuses both. Unlike its worker, this cannot tell what the claim started
+        // from, so a machine still attached may be running or half destroyed: quarantine it,
+        // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
+        // claim ends as an error, as provisionComputer's failure write leaves a boot.
+        const reserved = { id: update.computerId, maintenanceId: update.id };
+        await tx.computer.updateMany({
+          where: { ...reserved, state: "suspending", providerRef: { not: null } },
+          data: { state: "quarantined" },
+        });
+        await tx.computer.updateMany({
+          where: { ...reserved, state: { in: ["booting", "suspending"] } },
+          data: { state: "error" },
+        });
+        await tx.computer.updateMany({ where: reserved, data: { maintenanceId: null } });
+        return true;
+      });
+      if (released) scheduleComputerSleep(deps.jobs, update.computerId);
     } else {
       await deps.prisma.$transaction(async (tx) => {
         const stale = await tx.computerUpdate.updateMany({
           where: { id: update.id, status: "running", updatedAt: update.updatedAt },
           data: { status: "interrupted" },
         });
-        // A stale heartbeat is not proof that provider calls have stopped. Only
-        // the worker's settled path can release this reservation.
+        // A stale heartbeat is not proof that provider calls have stopped. The worker's
+        // settled path releases this reservation, or reconciliation does after ABANDONED_MS.
         if (stale.count !== 1) return;
       });
     }

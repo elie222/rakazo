@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import {
   buildComposerMentionOptions,
@@ -10,7 +12,9 @@ import {
   memberName,
   newClientId,
   newestPageCards,
+  otherAuthor,
   displayName as safeDisplayName,
+  workingRoutineName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -26,7 +30,7 @@ import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
 import { cronLabels } from "../../lib/cron";
-import { useI18n } from "../../lib/i18n";
+import { useUiLocale } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
 import { useInboxBot } from "../../lib/search-inbox";
@@ -84,7 +88,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   useChatOnScreen();
   const tokens = mobileTokens();
   const styles = useThemedStyles(createThreadHeaderStyles);
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const focused = useIsFocused();
   const foreground = useAppForeground();
   const router = useRouter();
@@ -188,11 +193,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     JSON.stringify([userId, sessionEpoch, botId, groupId, requestedThreadId]),
     mentionBots,
   );
-  const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig });
   const draftScope = useMemo(
     () => composerDraftScope(userId, botId, groupId),
     [userId, botId, groupId],
   );
+  const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig, draftScope });
   const echoed = useMemo(
     () =>
       snap && (snap.groupId ?? snap.botId) === threadKey
@@ -243,8 +248,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const titleBot = currentBot ?? inboxBot;
   // Without a name yet (a notification can leave it out), the title shows a placeholder.
   const titleName = currentBot?.name ?? name ?? inboxBot?.name;
-  const displayName = safeDisplayName(titleName, inGroup ? t("Group") : t("Bot"));
-  const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
+  const displayName = safeDisplayName(titleName, inGroup ? t`Group` : t`Bot`);
+  const composerPrompt = displayName ? t`Message ${ph({ name: displayName })}` : t`Message…`;
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus =
@@ -259,6 +264,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
   const activityLine = liveActivityLine(snap?.messages ?? []);
+  const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>
       !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
@@ -279,7 +285,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
-  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReplyRef = useAutoSpeakReply({
     botId,
@@ -340,7 +345,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     messageId,
     readOnly,
     foreground,
+    focused,
     sessionEpoch,
+    userId,
     activeBotId,
     activeGroupId,
     readVisibleTarget,
@@ -520,7 +527,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing: composingBots.split(",").includes(bot.id),
       }))}
       atBottom={!scroll.state.detached}
-      label={activityLine ?? t("Working…")}
+      label={
+        activityLine ?? (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Working…`)
+      }
     />
   );
 
@@ -602,8 +611,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             replyTarget={replyTarget}
             replyAuthor={
               replyTarget?.role === "user"
-                ? (channelMessageSender(replyTarget.blocks) ?? t("You"))
-                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t("Bot"))
+                ? (otherAuthor(replyTarget.author, userId)?.name ??
+                  channelMessageSender(replyTarget.blocks) ??
+                  t`You`)
+                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t`Bot`)
             }
             replyQuote={replyQuote}
             threadTarget={artifactTarget}
@@ -634,13 +645,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               )}
               botId={botId}
               onCall={onCall}
-              working={working}
-              sending={composer.sending || attachments.shareImporting}
+              sending={attachments.shareImporting}
               styles={styles}
               attachActions={attachments.attachActions}
               attachFrom={attachments.attachFrom}
               send={composer.send}
-              stop={composer.stop}
               startVoiceCall={startVoiceCall}
               onSlashAction={composer.runSlashAction}
               onEmptied={composer.composerEmptied}
@@ -652,6 +661,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         ) : null}
         <RunErrorSheet
           details={detailsOpen ? runError : null}
+          summary={normalizedRunError?.summary}
           onClose={() => setDetailsOpen(false)}
           action={runErrorAction}
         />

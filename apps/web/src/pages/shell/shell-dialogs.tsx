@@ -103,6 +103,7 @@ export function ShellDialogs({
   createBot,
   botAvatarSet,
   clearOpenThread,
+  discardChatAttachments,
   deleteRoutineDialogProps,
   paletteActions,
 }: {
@@ -123,6 +124,8 @@ export function ShellDialogs({
   /** The account's set, which a new bot takes. */
   botAvatarSet: BotAvatarSet;
   clearOpenThread: () => void;
+  /** Drops a deleted chat's pending attachments with their previews. */
+  discardChatAttachments: (threadKey: string) => void;
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
   paletteActions: CommandPaletteAction[];
 }) {
@@ -223,6 +226,7 @@ export function ShellDialogs({
           onCancel={() => setDeleteTarget(null)}
           onConfirm={async (deleteMemories) => {
             await rpc.bots.remove({ botId: deleteTarget.id, deleteMemories });
+            discardChatAttachments(deleteTarget.id);
             setDeleteTarget(null);
             setPanel(null);
             await refreshBots(true);
@@ -237,6 +241,7 @@ export function ShellDialogs({
           onCancel={() => setDeleteGroupTarget(null)}
           onConfirm={async () => {
             await rpc.groups.remove({ groupId: deleteGroupTarget.id });
+            discardChatAttachments(deleteGroupTarget.id);
             setDeleteGroupTarget(null);
             setPanel(null);
             await refreshBots(true);

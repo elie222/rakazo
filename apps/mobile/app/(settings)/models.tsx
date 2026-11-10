@@ -1,8 +1,9 @@
+import { useLingui } from "@lingui/react/macro";
 import {
   canonicalPiProviderId,
-  isOllamaCloudBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
+  compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -17,11 +18,10 @@ import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
 import { SpaceBotsModel } from "../../components/space-bots-model";
-import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/api";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import type { ModelConnectionRequest } from "../../lib/model-connection-request";
 import { closeModelConnection, openModelConnection } from "../../lib/model-connection-request";
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
@@ -48,7 +48,7 @@ export default function Models() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createModelsStyles);
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const me =
     useQuery({ ...rpcQuery("me", undefined, spaceId), enabled: false }, queryClient).data ?? null;
   const catalog =
@@ -100,8 +100,7 @@ export default function Models() {
         setLoadError(null);
       } catch (err) {
         // A newer read replaced this one and reports for both.
-        if (!isCancelledError(err))
-          setLoadError(errorText(err, t("Could not load model settings")));
+        if (!isCancelledError(err)) setLoadError(errorText(err, t`Could not load model settings`));
       }
     },
     [spaceId, t],
@@ -159,7 +158,7 @@ export default function Models() {
       }),
     );
 
-  /** Every provider, popular first, plus the Ollama Cloud preset of the compatible one. */
+  /** Every provider, popular first, plus the hosted presets of the compatible one. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
@@ -170,28 +169,28 @@ export default function Models() {
       });
     }
     const all = [...grouped.values()];
-    if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      all.push({
-        id: OPENAI_COMPATIBLE_PROVIDER_ID,
-        name: t("Ollama Cloud"),
-        baseUrl: OLLAMA_CLOUD_BASE_URL,
-      });
+    for (const preset of compatibleEndpointPresets(catalog))
+      all.push({ id: OPENAI_COMPATIBLE_PROVIDER_ID, name: preset.name, baseUrl: preset.baseUrl });
     return popularModelProvidersFirst(
       all,
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog, t]);
+  }, [catalog]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
-    const ollama = credentials.some(
-      (entry) =>
-        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID && isOllamaCloudBaseUrl(entry.baseUrl),
-    );
+    const savedPreset = (baseUrl: string) =>
+      credentials.some(
+        (entry) =>
+          entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
+          savedCompatibleEndpointMatches(entry.baseUrl ?? "", baseUrl),
+      );
     return allProviders.filter((provider) =>
-      provider.baseUrl ? !ollama : !connected.has(canonicalPiProviderId(provider.id)),
+      provider.baseUrl
+        ? !savedPreset(provider.baseUrl)
+        : !connected.has(canonicalPiProviderId(provider.id)),
     );
   }, [allProviders, credentials]);
 
@@ -200,7 +199,7 @@ export default function Models() {
   /** Adds a connection, even for a provider that has one, without touching any list. */
   function addProvider() {
     pushModelPicker({
-      title: t("Add provider"),
+      title: t`Add provider`,
       selectedKey: "",
       choices: allProviders.map((provider) => ({
         key: providerKey(provider),
@@ -281,8 +280,8 @@ export default function Models() {
             <ModelRoleSettings
               {...shared}
               modelRole="main"
-              title={t("Main model")}
-              defaultLabel={t("Choose a model")}
+              title={t`Main model`}
+              defaultLabel={t`Choose a model`}
               onChanged={() => void load()}
             />
             {me.needsModel ? null : (
@@ -291,8 +290,14 @@ export default function Models() {
             <ModelRoleSettings
               {...shared}
               modelRole="approval"
-              title={t("Approval model")}
-              defaultLabel={t("Choose a model")}
+              title={t`Approval model`}
+              defaultLabel={t`Choose a model`}
+            />
+            <ModelRoleSettings
+              {...shared}
+              modelRole="computer"
+              title={t`Computer-use model`}
+              defaultLabel={t`Same as main model`}
             />
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (
@@ -304,7 +309,7 @@ export default function Models() {
                 onRename={(credential, label) =>
                   void changeConnection(
                     () => rpc("models/rename", { credentialId: credential.id, label }),
-                    t("Could not update name"),
+                    t`Could not update name`,
                   )
                 }
                 onDisconnect={(credential) =>
@@ -314,7 +319,7 @@ export default function Models() {
                         provider: credential.provider,
                         credentialId: credential.id,
                       }),
-                    t("Could not disconnect this provider"),
+                    t`Could not disconnect this provider`,
                   )
                 }
               />

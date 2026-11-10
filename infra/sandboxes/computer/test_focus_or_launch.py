@@ -8,6 +8,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shlex
+import socket
 import stat
 import subprocess
 import sys
@@ -39,8 +42,17 @@ LISTING = """\
 
 class WmClassTest(unittest.TestCase):
     def test_known_launchers_have_fixed_classes(self):
-        self.assertEqual(helper.wm_class("rakazo-browser"), "chromium")
+        self.assertEqual(helper.wm_class("rakazo-browser"), helper.browser_wm_class())
         self.assertEqual(helper.wm_class("xterm"), "xterm")
+
+    def test_browser_class_follows_the_installed_browser(self):
+        def only(*names):
+            return lambda name: f"/usr/bin/{name}" if name in names else None
+
+        self.assertEqual(helper.browser_wm_class(only("chromium")), "chromium")
+        self.assertEqual(helper.browser_wm_class(only("google-chrome", "google-chrome-stable")), "google-chrome")
+        self.assertEqual(helper.browser_wm_class(only("brave-browser")), "brave-browser")
+        self.assertEqual(helper.browser_wm_class(only()), "chromium")
 
     def test_other_launchers_match_their_binary_basename(self):
         self.assertEqual(helper.wm_class("/usr/bin/xterm"), "xterm")
@@ -105,9 +117,10 @@ class MainTest(unittest.TestCase):
 
             return Child()
 
+        # The fixtures list Chromium windows; the host's own browsers must not matter.
         with patch.object(helper.subprocess, "run", side_effect=fake_run), patch.object(
             helper.subprocess, "Popen", side_effect=fake_popen
-        ):
+        ), patch.dict(helper.WM_CLASS, {"rakazo-browser": "chromium"}):
             try:
                 helper.main(argv)
             except SystemExit as error:
@@ -624,7 +637,7 @@ class ControlArgvTest(unittest.TestCase):
             script.write_text(f"#!/bin/sh\nsleep 0.5\ntouch {marker}\n")
             script.chmod(script.stat().st_mode | stat.S_IEXEC)
             argv = ["env", "DISPLAY=:1", "rakazo-focus-or-launch", "xterm"]
-            with patch.dict(os.environ, {"PATH": f"{tmp}{os.pathsep}{os.environ.get('PATH', '')}"}):
+            with patch.object(control, "CHILD_PATH", f"{tmp}{os.pathsep}{control.CHILD_PATH}"):
                 started = time.monotonic()
                 control.run_control_argv(argv, ":1")
                 elapsed = time.monotonic() - started
@@ -925,8 +938,12 @@ class ScriptTest(unittest.TestCase):
                 )
                 browser = bin_dir / "rakazo-browser"
                 browser.write_text('#!/bin/sh\nprintf "browser %s\\n" "$*" >> "$RAKAZO_TEST_ARGS"\n')
+                # The listed windows are Chromium's, whatever browser the host has.
+                chromium = bin_dir / "chromium"
+                chromium.write_text("#!/bin/sh\n")
                 wmctrl.chmod(0o755)
                 browser.chmod(0o755)
+                chromium.chmod(0o755)
                 env = {
                     **os.environ,
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -1019,6 +1036,159 @@ id() {
 
 import ctypes
 import textwrap
+
+
+class IsolatedHelperTest(unittest.TestCase):
+    """The image's Python helpers run as the computer's user, whose home the bot can write.
+
+    Code planted there (a .pth in the user site-packages, a python3 early in PATH, PYTHON*
+    variables) must not run inside them: the page browser holds saved logins and cards.
+    """
+
+    HELPERS = {
+        "control.py": [],
+        "rakazo-focus-or-launch": [],
+        "rakazo-page-browser": [],
+    }
+
+    def interpreter(self, line):
+        """The interpreter and its flags from a shebang or command line, as exec would run it."""
+        parts = line.split()
+        if Path(parts[0]).name == "env":
+            parts = parts[1:]
+            if parts[0] == "-S":
+                parts = parts[1:]
+        return parts[0], parts[1:]
+
+    def shebang(self, name):
+        first = Path(__file__).with_name(name).read_text().splitlines()[0]
+        self.assertTrue(first.startswith("#!"), name)
+        return self.interpreter(first.removeprefix("#!"))
+
+    def browser_heredoc(self):
+        text = Path(__file__).with_name("rakazo-browser").read_text()
+        match = re.search(r"^\s*timeout \S+ (\S*python3\S*(?: -\w+)*) - \"\$@\" <<'PY'$", text, re.M)
+        self.assertIsNotNone(match)
+        return self.interpreter(match.group(1))
+
+    def plant(self, root):
+        """A home and environment that run code in any Python that reads them; returns env, marker."""
+        home = root / "home"
+        marker = root / "planted-code-ran"
+        payload = f"import os; open({str(marker)!r}, 'a').write('ran\\n'); os._exit(97)\n"
+        local_bin = home / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        fake = local_bin / "python3"
+        fake.write_text(f"#!/bin/sh\necho ran >> {shlex.quote(str(marker))}\nexit 97\n")
+        fake.chmod(0o755)
+        on_path = root / "pythonpath"
+        on_path.mkdir()
+        (on_path / "sitecustomize.py").write_text(payload)
+        env = {"HOME": str(home), "PATH": f"{local_bin}{os.pathsep}/usr/bin{os.pathsep}/bin",
+               "PYTHONPATH": str(on_path), "PYTHONSTARTUP": str(on_path / "sitecustomize.py")}
+        user_site = subprocess.run(
+            [sys.executable, "-c", "import site; print(site.getusersitepackages())"],
+            env={**env, "PYTHONPATH": ""}, capture_output=True, text=True, check=True, timeout=10,
+        ).stdout.strip()
+        Path(user_site).mkdir(parents=True)
+        (Path(user_site) / "zz-planted.pth").write_text(payload)
+        (home / "json.py").write_text(payload)
+        return env, home, marker
+
+    def test_helpers_start_the_system_python_isolated(self):
+        for name in self.HELPERS:
+            with self.subTest(name=name):
+                self.assertEqual(self.shebang(name), ("/usr/bin/python3", ["-I"]))
+        self.assertEqual(self.browser_heredoc(), ("/usr/bin/python3", ["-I"]))
+
+    def test_code_planted_in_the_home_does_not_run_in_a_helper(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env, home, marker = self.plant(Path(temp))
+            # The control server would listen on 7070; holding the port makes it exit at once.
+            held = socket.socket()
+            try:
+                held.bind(("0.0.0.0", 7070))
+            except OSError:
+                pass  # Already taken, so the server exits all the same.
+            try:
+                for name, args in self.HELPERS.items():
+                    _, flags = self.shebang(name)
+                    # Run this test's Python the way the kernel runs the shebang: the flags are what
+                    # decide which of the planted files load.
+                    script = str(Path(__file__).with_name(name))
+                    with self.subTest(name=name):
+                        try:
+                            subprocess.run([sys.executable, *flags, script, *args], env=env, cwd=home,
+                                           capture_output=True, timeout=10, check=False)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        self.assertFalse(marker.exists(), f"planted code ran in {name}")
+                _, flags = self.browser_heredoc()
+                subprocess.run([sys.executable, *flags, "-", "1", "profile", "about:blank"], input=b"",
+                               env=env, cwd=home, capture_output=True, timeout=10, check=False)
+                self.assertFalse(marker.exists(), "planted code ran in rakazo-browser")
+            finally:
+                held.close()
+
+    def test_the_screen_gateway_starts_without_the_user_site_packages(self):
+        start = Path(__file__).with_name("start.sh").read_text()
+        launch = [line for line in start.splitlines() if "websockify --" in line]
+        self.assertEqual(len(launch), 1)
+        # By its full path (not ~/.local/bin first in PATH), and with the command line the desktop
+        # runtime's process patterns expect.
+        self.assertTrue(launch[0].startswith("PYTHONNOUSERSITE=1 /usr/bin/websockify "), launch[0])
+        with tempfile.TemporaryDirectory() as temp:
+            env, home, marker = self.plant(Path(temp))
+            gateway = Path(temp) / "bin" / "websockify"
+            gateway.parent.mkdir()
+            gateway.write_text("pass\n")
+            # Only the user site-packages: start.sh's own environment comes from the container.
+            clean = {"HOME": env["HOME"], "PATH": env["PATH"], "PYTHONNOUSERSITE": "1"}
+            subprocess.run([sys.executable, str(gateway)], env=clean, cwd=home, capture_output=True,
+                           timeout=10, check=False)
+            self.assertFalse(marker.exists())
+            subprocess.run([sys.executable, str(gateway)], env={**clean, "PYTHONNOUSERSITE": ""},
+                           cwd=home, capture_output=True, timeout=10, check=False)
+            self.assertTrue(marker.exists(), "the plant must run without the setting")
+
+    def test_control_children_get_image_programs_and_no_control_token(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env, _home, marker = self.plant(Path(temp))
+            local_bin = env["PATH"].split(os.pathsep)[0]
+            for name in ("xdotool", "env"):
+                fake = Path(local_bin) / name
+                fake.write_text(f"#!/bin/sh\necho ran >> {shlex.quote(str(marker))}\nexit 0\n")
+                fake.chmod(0o755)
+            argv = ["env", "DISPLAY=:1", "xdotool", "key", "a"]
+            with patch.dict(os.environ, {"PATH": f"{local_bin}{os.pathsep}{control.CHILD_PATH}",
+                                         "RAKAZO_COMPUTER_CONTROL_TOKEN": "secret-token"}):
+                with patch.object(control.subprocess, "run",
+                                  return_value=subprocess.CompletedProcess(argv, 0)) as run:
+                    control.run_control_argv(argv, ":1")
+                child = run.call_args.kwargs["env"]
+                self.assertEqual(child["PATH"], control.CHILD_PATH)
+                self.assertEqual(child["DISPLAY"], ":1")
+                self.assertNotIn("RAKAZO_COMPUTER_CONTROL_TOKEN", child)
+                try:
+                    control.run_control_argv(argv, ":1")
+                except RuntimeError:
+                    pass  # No xdotool where the test runs; the planted one must not stand in.
+            self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(os.access("/usr/bin/python3", os.X_OK), "requires /usr/bin/python3")
+    def test_a_python3_early_in_path_is_not_the_interpreter(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env, home, marker = self.plant(Path(temp))
+            for name in self.HELPERS:
+                with self.subTest(name=name):
+                    # The helper's own shebang, exec'd for real, over a body that does nothing.
+                    script = Path(temp) / name
+                    first = Path(__file__).with_name(name).read_text().splitlines()[0]
+                    script.write_text(f"{first}\n")
+                    script.chmod(0o755)
+                    subprocess.run([str(script)], env=env, cwd=home, capture_output=True, timeout=10,
+                                   check=False)
+                    self.assertFalse(marker.exists(), f"a planted python3 ran {name}")
 
 
 class XcaptureKeyTest(unittest.TestCase):

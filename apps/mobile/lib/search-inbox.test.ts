@@ -1,6 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { InboxSpace } from "./inbox-spaces";
-import { getSearchInbox, setSearchInbox, subscribeSearchInbox } from "./search-inbox";
+import {
+  getSearchInbox,
+  isSearchInboxSession,
+  searchInboxSession,
+  setSearchInbox,
+  subscribeSearchInbox,
+} from "./search-inbox";
 
 const state = vi.hoisted(() => ({
   generation: 1,
@@ -8,6 +14,9 @@ const state = vi.hoisted(() => ({
   sessionListener: () => {},
   unsubscribe: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => state.apiBase }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
@@ -21,6 +30,18 @@ beforeEach(() => {
   state.apiBase = "https://example.test";
   vi.clearAllMocks();
 });
+
+it.each([
+  { generation: 2, apiBase: "https://example.test" },
+  { generation: 1, apiBase: "https://other.example.test" },
+])("rejects an inbox request after its session or server changes: %j", (next) => {
+  const request = searchInboxSession();
+  expect(isSearchInboxSession(request)).toBe(true);
+  Object.assign(state, next);
+  expect(isSearchInboxSession(request)).toBe(false);
+  expect(isSearchInboxSession(searchInboxSession())).toBe(true);
+});
+
 it("publishes the exact home roster and unsubscribes", () => {
   const listener = vi.fn();
   const unsubscribe = subscribeSearchInbox(listener);

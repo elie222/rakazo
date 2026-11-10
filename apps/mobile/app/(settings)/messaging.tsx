@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type {
   Bot,
   ExternalConversation,
@@ -17,12 +19,11 @@ import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { errorText } from "../../lib/user-error";
 
 export default function MessagingSettings() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
   const [bots, setBots] = useState<Bot[]>([]);
@@ -38,6 +39,7 @@ export default function MessagingSettings() {
   const [link, setLink] = useState<{
     code: string;
     expiresAt: string;
+    shared?: boolean;
     botId: string;
     provider: string;
     knownIdentityBots: Record<string, string>;
@@ -189,7 +191,7 @@ export default function MessagingSettings() {
   );
   const memberLinkButton = (
     <NativeActionButton
-      label={t("Link DMs")}
+      label={t`Link DMs`}
       prominence="quiet"
       size="compact"
       fill={false}
@@ -200,8 +202,8 @@ export default function MessagingSettings() {
   );
   const respond = (onRespond: (accept: boolean) => Promise<unknown>) => (
     <View style={styles.actions}>
-      {textAction(t("Approve"), () => onRespond(true), "primary")}
-      {textAction(t("Decline"), () => onRespond(false))}
+      {textAction(t`Approve`, () => onRespond(true), "primary")}
+      {textAction(t`Decline`, () => onRespond(false))}
     </View>
   );
 
@@ -222,11 +224,11 @@ export default function MessagingSettings() {
       ) : shownError ? (
         <Text style={styles.error}>{shownError}</Text>
       ) : null}
-      <SettingsGroup label={t("Requests")}>
+      <SettingsGroup label={t`Requests`}>
         {invitedChannels.map((channel) => (
           <SettingsRow
             key={channel.id}
-            title={channel.name ?? t("Group")}
+            title={channel.name ?? t`Group`}
             detail={channelDetail(channel)}
             trailing={respond((accept) =>
               rpc("messaging/channels/respond", { membershipId: channel.id, accept }),
@@ -248,12 +250,12 @@ export default function MessagingSettings() {
           {slackInstallations.length === 0 ? (
             <SettingsRow
               title={messagingProviderName("slack")}
-              detail={t("Chat with your bot from Slack.")}
+              detail={t`Chat with your bot from Slack.`}
               trailing={
                 <View style={styles.actions}>
                   {memberLink ? memberLinkButton : null}
                   <NativeActionButton
-                    label={t("Connect")}
+                    label={t`Connect`}
                     prominence="quiet"
                     size="compact"
                     fill={false}
@@ -279,7 +281,7 @@ export default function MessagingSettings() {
                   <View style={styles.actions}>
                     {status?.providers.includes(installation.provider) ? (
                       <NativeActionButton
-                        label={t("Link DMs")}
+                        label={t`Link DMs`}
                         prominence="quiet"
                         size="compact"
                         fill={false}
@@ -289,7 +291,7 @@ export default function MessagingSettings() {
                       />
                     ) : null}
                     {textAction(
-                      t("Disconnect"),
+                      t`Disconnect`,
                       () => rpc("messaging/installations/remove", { id: installation.id }),
                       "destructive",
                     )}
@@ -306,7 +308,7 @@ export default function MessagingSettings() {
               accessibilityRole="button"
               disabled={busy}
               onPress={installSlack}
-              title={t("Add workspace")}
+              title={t`Add workspace`}
             />
           ) : null}
         </SettingsGroup>
@@ -318,7 +320,7 @@ export default function MessagingSettings() {
             title={messagingProviderName(identity.provider)}
             detail={`${identity.address}, ${identity.botName}`}
             trailing={textAction(
-              t("Unlink"),
+              t`Unlink`,
               () => rpc("messaging/identities/unlink", { identityId: identity.id }),
               "destructive",
             )}
@@ -328,7 +330,7 @@ export default function MessagingSettings() {
       <SettingsGroup>
         {bots.length > 1 && (connectChoices.length || memberLink) ? (
           <MenuPicker
-            label={t("Bot")}
+            label={t`Bot`}
             choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
             value={botId}
             onChange={(id) => {
@@ -339,7 +341,7 @@ export default function MessagingSettings() {
         ) : null}
         {botId && connectChoices.length ? (
           <MenuPickerMenu
-            label={t("Connect a chat app")}
+            label={t`Connect a chat app`}
             choices={connectChoices}
             value=""
             disabled={busy}
@@ -347,10 +349,10 @@ export default function MessagingSettings() {
           >
             <View>
               <SettingsRow
-                accessibilityLabel={t("Connect a chat app")}
+                accessibilityLabel={t`Connect a chat app`}
                 accessibilityRole="button"
                 accessible
-                title={t("Connect a chat app")}
+                title={t`Connect a chat app`}
                 trailing={
                   <NativeSymbol
                     android="chevron-expand"
@@ -367,24 +369,20 @@ export default function MessagingSettings() {
       {link && Date.parse(link.expiresAt) > Date.now() ? (
         <Text selectable style={styles.code}>
           {linkAddress
-            ? t("Send {code} to {address} from {app} within 10 minutes.", {
-                code: link.code,
-                address: linkAddress,
-                app: messagingProviderName(link.provider),
-              })
-            : t("Send {code} from {app} within 10 minutes.", {
-                code: link.code,
-                app: messagingProviderName(link.provider),
-              })}
+            ? t`Send ${ph({ code: link.code })} to ${ph({ address: linkAddress })} from ${ph({ app: messagingProviderName(link.provider) })} within 10 minutes.`
+            : t`Send ${ph({ code: link.code })} from ${ph({ app: messagingProviderName(link.provider) })} within 10 minutes.`}
+          {link.shared
+            ? `\n${t`Everyone in this bot's space can read the chats it gets from ${ph({ app: messagingProviderName(link.provider) })}.`}`
+            : ""}
         </Text>
       ) : null}
-      <SettingsGroup label={t("Conversations")}>
+      <SettingsGroup label={t`Conversations`}>
         {joinedChannels.map((channel) => (
           <SettingsRow
             key={channel.id}
-            title={channel.name ?? t("Group")}
+            title={channel.name ?? t`Group`}
             detail={channelDetail(channel)}
-            trailing={textAction(t("Leave"), () =>
+            trailing={textAction(t`Leave`, () =>
               rpc("messaging/channels/leave", { membershipId: channel.id }),
             )}
           />
@@ -393,10 +391,10 @@ export default function MessagingSettings() {
           <SettingsRow
             key={connection.id}
             title={`${connection.peerOwnerLabel}'s ${connection.peerBotName}`}
-            value={connection.status === "pending" ? t("Pending") : undefined}
+            value={connection.status === "pending" ? t`Pending` : undefined}
             trailing={
               connection.status === "approved"
-                ? textAction(t("Revoke"), () =>
+                ? textAction(t`Revoke`, () =>
                     rpc("messaging/connections/revoke", { connectionId: connection.id }),
                   )
                 : undefined
@@ -406,7 +404,7 @@ export default function MessagingSettings() {
         {rooms.map((room) => (
           <SettingsRow
             key={room.id}
-            title={room.displayName || t("External conversation")}
+            title={room.displayName || t`External conversation`}
             detail={messagingProviderName(room.provider)}
             chevron="right"
             accessibilityRole="button"

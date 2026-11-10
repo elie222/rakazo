@@ -48,6 +48,16 @@ Gives you a URL and key. Any service that can send a POST request can start the 
 Gives you a URL to add as a GitHub webhook, so pushes, issues and pull requests can start the
 routine.
 
+### Email
+
+Runs when mail arrives at the bot's own address, such as `scout@bots.example.com`. The first
+time, pick the part before the @; it stays the bot's for good. Forward or CC mail to it and the
+routine runs with that email. Choose who can start it: **Only me**, or **Anyone at** your own
+email domain. Mail from anyone else, and mail sent BCC, starts nothing, but the bot keeps every
+email in its inbox either way. If mail from your own address can't be verified, the chat says so;
+your email provider then needs DKIM signing turned on for your domain. Appears only when your
+server [receives email](./self-host-inbound-email.md).
+
 ### Slack message
 
 Runs when the bot receives a message in Slack. Needs [Slack connected](./messaging-apps.md).
@@ -65,5 +75,8 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 
 ## On mobile
 
-The mobile app lists a bot's routines from its profile. You can pause, delete and review them there.
-To create or change one, ask the bot in chat or use the web or desktop app.
+The mobile app lists a bot's routines from its profile. Tap **+** to create one. Tapping a routine
+shows its instruction, schedule, next run and run history, with a switch to pause it and a button to
+test it; **Edit routine** changes its name, instruction and schedules, or deletes it. Webhook, Git event, Slack
+message and change triggers, and a routine's own model, are set up in chat or the web or desktop
+app; mobile shows them and keeps them as they are.

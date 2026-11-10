@@ -11,7 +11,7 @@ tags:
 # A cold API 34 emulator can show a launcher ANR over the healthy app.
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
-    timeout: 30000
+    timeout: 60000
 - runFlow:
     when:
       visible: "Pixel Launcher isn't responding"
@@ -50,8 +50,9 @@ tags:
 - takeScreenshot: "04-inbox"
 
 - tapOn: "Activity"
+# The fixture's bot replies arrive unread, so Activity always has its Unread section.
 - extendedWaitUntil:
-    visible: "Recent"
+    visible: "Unread"
     timeout: 10000
 - takeScreenshot: "05-activity"
 
@@ -78,6 +79,10 @@ tags:
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"
 - takeScreenshot: "08-new-group"
+
+- openLink: "rakazo:///new-bot"
+- assertVisible: "Name your Bot"
+- takeScreenshot: "08b-new-bot"
 
 - openLink: "rakazo:///new-space"
 - assertVisible: "Customer support"
@@ -178,6 +183,11 @@ tags:
 - tapOn: "Reply"
 - assertVisible: "Cancel reply"
 - tapOn: "Cancel reply"
+# Bot actions live in the bot's profile header.
+- openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Bot actions"
+    timeout: 10000
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"
 - takeScreenshot: "16-bot-actions"
@@ -248,6 +258,10 @@ tags:
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"
 - takeScreenshot: "24-new-group-dark"
+
+- openLink: "rakazo:///new-bot"
+- assertVisible: "Name your Bot"
+- takeScreenshot: "24b-new-bot-dark"
 
 - openLink: "rakazo:///new-space"
 - assertVisible: "Customer support"

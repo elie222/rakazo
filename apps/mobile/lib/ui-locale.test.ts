@@ -24,6 +24,9 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("es-MX")).toBe("es");
     expect(normalizeUiLocale("es-419")).toBe("es");
     expect(normalizeUiLocale("es_CL")).toBe("es");
+    expect(normalizeUiLocale("pl")).toBe("pl");
+    expect(normalizeUiLocale("pl-PL")).toBe("pl");
+    expect(normalizeUiLocale(" PL_pl ")).toBe("pl");
   });
 
   it.each([
@@ -116,5 +119,15 @@ describe("Traditional Chinese preferences", () => {
     expect(resolveUiLocale({ stored: null, envDefault: "zh-TW", deviceLanguage: "en" })).toBe(
       "zh-TW",
     );
+  });
+});
+
+describe("Polish preferences", () => {
+  it("detects Polish on the device and honors saved and environment choices", () => {
+    expect(resolveUiLocale({ deviceLanguage: "pl-PL" })).toBe("pl");
+    expect(resolveUiLocale({ envDefault: "pl", deviceLanguage: "en-US" })).toBe("pl");
+    expect(resolveUiLocale({ stored: "pl", envDefault: "en", deviceLanguage: "en-US" })).toBe("pl");
+    expect(resolveUiLocale({ stored: "en", deviceLanguage: "pl-PL" })).toBe("en");
+    expect(htmlLangForLocale("pl")).toBe("pl");
   });
 });

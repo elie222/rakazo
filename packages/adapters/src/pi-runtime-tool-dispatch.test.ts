@@ -11,6 +11,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "silent-continuation"
     | "subagent-limit"
     | "two-subagents"
+    | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
     | "ask-pause"
@@ -64,7 +65,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly listeners: Array<(event: Record<string, unknown>) => void> = [];
     private readonly prepareNextTurnWithContext?: (input: {
       context: { messages: unknown[] };
-    }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+    }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
     private readonly finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     private aborted = false;
 
@@ -72,7 +73,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       initialState: { tools: typeof fakeAgentState.tools; messages: unknown[] };
       prepareNextTurnWithContext?: (input: {
         context: { messages: unknown[] };
-      }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+      }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
       finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     }) {
       this.tools = options.initialState.tools;
@@ -86,12 +87,18 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       this.listeners.push(listener);
     }
 
+    // Messages the hook returns are appended before the next request, like steered ones.
+    private async prepareNextTurn() {
+      const update = await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+      fakeAgentState.steeredMessages.push(...(update?.messages ?? []));
+    }
+
     async prompt(prompt: string, images?: unknown[]) {
       fakeAgentState.promptInputs.push(prompt);
       fakeAgentState.promptImages.push(images ?? []);
       if (fakeAgentState.mode === "answer-then-stop") {
         // The model answers the steered message in text and stops.
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+        await this.prepareNextTurn();
         await this.finishTurn?.({
           message: {
             role: "assistant",
@@ -105,12 +112,8 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         return;
       }
       if (fakeAgentState.mode === "empty" || fakeAgentState.mode === "two-boundaries") {
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
-        if (fakeAgentState.mode === "two-boundaries") {
-          await this.prepareNextTurnWithContext?.({
-            context: { messages: [] },
-          });
-        }
+        await this.prepareNextTurn();
+        if (fakeAgentState.mode === "two-boundaries") await this.prepareNextTurn();
         fakeAgentState.preparedMessages = [...fakeAgentState.steeredMessages];
         return;
       }
@@ -381,6 +384,13 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       }
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+      if (delegation && fakeAgentState.mode === "background-subagent") {
+        const args = { name: "scout", task: "compare the venues", background: true };
+        this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+        // Pi prepares the model's arguments before it runs the tool.
+        await delegation.execute("delegate-bg", delegation.prepareArguments?.(args) ?? args);
+        return;
+      }
       if (delegation && fakeAgentState.mode === "two-subagents") {
         await Promise.all(
           ["a", "b"].map((name) => {
@@ -978,6 +988,44 @@ describe("Pi connector tool dispatch", () => {
       { collection: "notes", title: "Result", body: "Done" },
       JSON.stringify(["pi-tool", "main", "call-1"]),
       { connectorId: "destination", toolName: "destination.write" },
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("preserves a connected delete_bot schema and arguments through the runtime", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const tool: ConnectorTool = {
+      name: "delete_bot",
+      description: "Delete a remote object",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      route: { connectorId: "remote", toolName: "delete_bot" },
+    };
+    fakeAgentState.invoke = { name: "delete_bot", args: { id: "remote-object" } };
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "delete the remote object",
+        instructions: "",
+        history: [],
+        tools: [tool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime so its tool call finishes.
+    }
+    expect(executeTool).toHaveBeenCalledWith(
+      "delete_bot",
+      { id: "remote-object" },
+      expect.any(String),
+      tool.route,
       { onShellStillRunning: expect.any(Function) },
     );
   });
@@ -2198,6 +2246,48 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("hands a background helper to the executor instead of running it inside the turn", async () => {
+    fakeAgentState.mode = "background-subagent";
+    const executeTool = vi.fn(async () => ({ ok: true, name: "scout" }));
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "background-helper",
+        prompt: "look into the venues in the background",
+        instructions: "",
+        history: [],
+        tools: [
+          {
+            name: "run_subagent",
+            description: "Delegate work",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "bg",
+        traceId: "bg",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    ))
+      events.push(event);
+    const calls = executeTool.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, 2)).toEqual([
+      "run_subagent",
+      expect.objectContaining({ name: "scout", task: "compare the venues", background: true }),
+    ]);
+    // No helper ran inside this turn.
+    expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
+  });
+
   it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {
     process.env.MAX_TOOL_CALLS_PER_TURN = "50";
     fakeAgentState.mode = "two-subagents";
@@ -2690,6 +2780,51 @@ describe("Pi connector tool dispatch", () => {
         path: "shared/state.json",
         content: '{\n  "last_run": 1787648953\n}',
       },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("keeps read_file's positive-integer offset and limit and drops invalid ones", async () => {
+    const readFileTool = builtinAgentTools.find((tool) => tool.name === "read_file");
+    if (!readFileTool) throw new Error("missing read_file");
+    const executeTool = vi.fn(async () => ({ path: "docs/reference.txt", content: "line" }));
+    const runtime = new PiAgentRuntime();
+    const dispatch = async (args: Record<string, unknown>) => {
+      fakeAgentState.invoke = { name: "read_file", args };
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "read-file-range",
+          prompt: "read the reference file",
+          instructions: "Use read_file.",
+          history: [],
+          tools: [readFileTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exhaust the runtime event stream so tool dispatch completes.
+      }
+    };
+
+    await dispatch({ path: "docs/reference.txt", offset: 40, limit: 60 });
+    expect(executeTool).toHaveBeenCalledWith(
+      "read_file",
+      { path: "docs/reference.txt", offset: 40, limit: 60 },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+
+    executeTool.mockClear();
+    await dispatch({ path: "docs/reference.txt", offset: 0, limit: "60" });
+    expect(executeTool).toHaveBeenCalledWith(
+      "read_file",
+      { path: "docs/reference.txt" },
       JSON.stringify(["pi-tool", "main", "call-1"]),
       undefined,
       { onShellStillRunning: expect.any(Function) },

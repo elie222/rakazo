@@ -1,7 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
 import { useState } from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -11,11 +11,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api-auth";
 import { mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { promptAccountDeletion } from "../lib/delete-account-prompt";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { forgetSignedIn } from "../lib/returning-user";
 import { continueWithSso } from "../lib/sso";
@@ -32,8 +32,9 @@ export function useAccountDeletion({
 }: {
   onSecurity?: (security: AccountSecurity) => void;
 } = {}) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [security, setSecurityState] = useState<AccountSecurity | null>(null);
   const [codeSent, setCodeSent] = useState(false);
@@ -56,7 +57,7 @@ export function useAccountDeletion({
     try {
       await action();
     } catch (err) {
-      setError(errorText(err, t("Could not continue")));
+      setError(errorText(err, t`Could not continue`));
     } finally {
       setPending(false);
     }
@@ -84,17 +85,15 @@ export function useAccountDeletion({
         return;
       }
     } catch (err) {
-      setError(errorText(err, t("Could not continue")));
+      setError(errorText(err, t`Could not continue`));
       return;
     }
 
     const prompted = promptAccountDeletion({
-      title: t("Delete your account?"),
-      message: t(
-        "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
-      ),
-      cancelLabel: t("Cancel"),
-      deleteLabel: t("Delete"),
+      title: t`Delete your account?`,
+      message: t`This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.`,
+      cancelLabel: t`Cancel`,
+      deleteLabel: t`Delete`,
       onSubmit: (value) => void submit(value, true),
     });
     if (!prompted) {
@@ -111,50 +110,70 @@ export function useAccountDeletion({
       if (hasPassword) await deleteAccount(value);
       else {
         const current = await fetchAccountSecurity();
+        // A password gained while the dialog was open turns the code field into a
+        // password field; the code must not survive as its value.
+        if (current.hasPassword !== security?.hasPassword) setPassword("");
         setSecurity(current);
         setSsoReauthenticated(current.freshOidcAuth);
         const token = codeSent ? value.trim() : undefined;
-        if (current.hasPassword || (!current.freshOidcAuth && !token)) return;
+        // Nothing can be sent without a password, a fresh sign-in proof, or a code:
+        // an expired proof says so; the switched field asks for the new password.
+        if (current.hasPassword) return;
+        if (!current.freshOidcAuth && !token) {
+          setError(t`Sign in again`);
+          return;
+        }
         await deleteAccount(undefined, token);
       }
       setOpen(false);
       await forgetSignedIn();
       replaceWithSignIn("/sign-in");
     } catch (err) {
-      setError(errorText(err, t("Could not delete account")));
+      setError(errorText(err, t`Could not delete account`));
     } finally {
       setPending(false);
     }
   }
 
   const dialog = open ? (
-    <Modal transparent animationType="fade" onRequestClose={close}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.dialogOverlay}
-      >
-        <Pressable
-          accessibilityLabel={t("Cancel")}
-          style={StyleSheet.absoluteFill}
-          onPress={close}
-        />
+    <Modal
+      transparent={Platform.OS !== "ios"}
+      animationType={Platform.OS === "ios" ? "slide" : "fade"}
+      presentationStyle={Platform.OS === "ios" ? "pageSheet" : "overFullScreen"}
+      // A swipe goes through close(), so it is off while a deletion is in flight.
+      allowSwipeDismissal={!pending}
+      onRequestClose={close}
+    >
+      <View style={Platform.OS === "ios" ? styles.sheet : styles.dialogOverlay}>
+        {Platform.OS !== "ios" ? (
+          <Pressable
+            accessibilityLabel={t`Cancel`}
+            style={StyleSheet.absoluteFill}
+            onPress={close}
+          />
+        ) : null}
         <ScrollView
+          // The sheet sits below the window top, so the scroll view measures the keyboard itself.
+          automaticallyAdjustKeyboardInsets
           bounces={false}
-          contentContainerStyle={styles.dialog}
+          // Page sheets keep their actions clear of the home indicator.
+          contentContainerStyle={
+            Platform.OS === "ios"
+              ? [styles.dialog, { paddingBottom: DIALOG_PADDING + insets.bottom }]
+              : styles.dialog
+          }
           keyboardShouldPersistTaps="handled"
-          style={styles.dialogScroll}
+          style={Platform.OS === "ios" ? styles.sheetScroll : styles.dialogScroll}
         >
-          <Text style={styles.dialogTitle}>{t("Delete your account?")}</Text>
+          <Text style={styles.dialogTitle}>{t`Delete your account?`}</Text>
           <Text style={styles.dialogBody}>
-            {t(
-              "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
-            )}
+            {t`This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.`}
           </Text>
           {!security?.hasPassword ? (
             <>
               {security?.sso ? (
                 <NativeActionButton
-                  label={t("Sign in again")}
+                  label={t`Sign in again`}
                   disabled={pending}
                   onPress={() =>
                     void run(async () => {
@@ -165,7 +184,7 @@ export function useAccountDeletion({
               ) : null}
               {security?.emailDeletion ? (
                 <NativeActionButton
-                  label={t("Send deletion code")}
+                  label={t`Send deletion code`}
                   disabled={pending}
                   onPress={() =>
                     void run(async () => {
@@ -179,9 +198,7 @@ export function useAccountDeletion({
           ) : null}
           {security?.hasPassword || codeSent ? (
             <TextInput
-              accessibilityLabel={
-                security?.hasPassword ? t("Current password") : t("Deletion code")
-              }
+              accessibilityLabel={security?.hasPassword ? t`Current password` : t`Deletion code`}
               autoCapitalize="none"
               autoCorrect={false}
               autoFocus
@@ -190,7 +207,7 @@ export function useAccountDeletion({
                 setPassword(next);
                 setError(null);
               }}
-              placeholder={security?.hasPassword ? t("Current password") : t("Deletion code")}
+              placeholder={security?.hasPassword ? t`Current password` : t`Deletion code`}
               placeholderTextColor={native.tertiaryLabel}
               secureTextEntry={security?.hasPassword}
               style={styles.dialogInput}
@@ -204,34 +221,46 @@ export function useAccountDeletion({
             </Text>
           ) : null}
           <View style={styles.dialogActions}>
-            <Pressable accessibilityRole="button" onPress={close} style={styles.dialogAction}>
-              <Text style={styles.dialogCancel}>{t("Cancel")}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
+            <NativeActionButton
+              label={t`Cancel`}
+              disabled={pending}
+              onPress={close}
+              prominence="plain"
+            />
+            <NativeActionButton
+              label={t`Delete`}
               disabled={disabled}
               onPress={() => void submit(password)}
-              style={styles.dialogAction}
-            >
-              <Text style={[styles.dialogDelete, disabled && styles.disabled]}>{t("Delete")}</Text>
-            </Pressable>
+              prominence="destructive"
+              fill={false}
+            />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   ) : null;
 
   return { request, run, pending, error: open ? null : error, dialog };
 }
 
+const DIALOG_PADDING = 18;
+
 function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
+    sheet: {
+      flex: 1,
+      paddingTop: 12,
+      backgroundColor: native.page,
+    },
+    sheetScroll: {
+      flex: 1,
+    },
     dialogOverlay: {
       flex: 1,
       justifyContent: "center",
       padding: 24,
-      backgroundColor: "rgba(0, 0, 0, 0.62)",
+      backgroundColor: tokens.overlay,
     },
     dialogScroll: {
       flexGrow: 0,
@@ -241,7 +270,7 @@ function createStyles() {
       backgroundColor: native.page,
     },
     dialog: {
-      padding: 18,
+      padding: DIALOG_PADDING,
       gap: 12,
     },
     dialogTitle: {
@@ -271,24 +300,6 @@ function createStyles() {
       justifyContent: "flex-end",
       alignItems: "center",
       gap: 12,
-    },
-    dialogAction: {
-      minHeight: 48,
-      justifyContent: "center",
-      paddingHorizontal: 8,
-    },
-    dialogCancel: {
-      color: native.label,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    dialogDelete: {
-      color: tokens.destructive,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    disabled: {
-      opacity: 0.45,
     },
   });
 }

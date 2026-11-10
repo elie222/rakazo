@@ -154,6 +154,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
+  const replyMode = settings.getByRole("combobox", { name: "Replies", exact: true });
+  await replyMode.scrollIntoViewIfNeeded();
+  await expect(replyMode).toHaveValue("chat");
+  await replyMode.selectOption("messages");
+  await expect(replyMode).toHaveValue("messages");
+  await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
@@ -189,6 +195,27 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Atlas");
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
+
+  // Long instructions scroll inside their box instead of stretching the narrow panel.
+  const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
+  await instructionsInput.fill(
+    Array.from(
+      { length: 80 },
+      (_, index) => `${index + 1}. Cite a primary source for every claim.`,
+    ).join("\n"),
+  );
+  const instructionsSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await instructionsInput.blur();
+  await instructionsSaved;
+  await expect(instructionsInput).toBeEnabled();
+  const scrollsInside = await instructionsInput.evaluate(
+    (field) => field.scrollHeight > field.clientHeight,
+  );
+  expect(scrollsInside).toBe(true);
+  await instructionsInput.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "29a-long-bot-instructions");
 
   // Wrap in the narrow dialog without pushing Delete below the Playwright viewport.
   const longUnbrokenName = "A".repeat(48);

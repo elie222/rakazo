@@ -142,3 +142,41 @@ it("authorizes a card in a normal chat and marks its thread connected", async ()
     host.remove();
   }
 });
+
+it("links OAuth failures in chat to the shared recovery guide without approving the server", async () => {
+  calls.oauthBegin.mockRejectedValueOnce(
+    Object.assign(new Error("Sign-in configuration mismatch"), {
+      code: "MCP_OAUTH_REDIRECT_MISMATCH",
+    }),
+  );
+  const approvalsBefore = calls.approve.mock.calls.length;
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <McpApprovalCard
+          botId="bot"
+          threadId="thread"
+          block={{
+            kind: "mcp_approval",
+            name: "Example",
+            serverId: "server",
+            transport: "streamable_http",
+            endpoint: "https://example.test/mcp",
+            needsOAuth: true,
+            status: "pending",
+          }}
+        />,
+      ),
+    );
+    await act(async () => host.querySelector("button")?.click());
+    expect(host.querySelector('[role="alert"] a')?.getAttribute("href")).toBe(
+      "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+    );
+    expect(calls.approve.mock.calls).toHaveLength(approvalsBefore);
+    expect(host.querySelector("button")?.disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

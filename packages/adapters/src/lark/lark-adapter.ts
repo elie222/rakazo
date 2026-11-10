@@ -1,6 +1,14 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { Readable } from "node:stream";
 import type * as LarkSdk from "@larksuiteoapi/node-sdk";
-import type { Adapter, AdapterPostableMessage, ChatInstance, WebhookOptions } from "chat";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import type {
+  Adapter,
+  AdapterPostableMessage,
+  Attachment,
+  ChatInstance,
+  WebhookOptions,
+} from "chat";
 import { Message, parseMarkdown } from "chat";
 import type { LarkAdapterConfig } from "./lazy-adapter.js";
 import { LarkAdapterBase } from "./lazy-adapter.js";
@@ -145,11 +153,52 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
           message.author.fullName = name;
           message.author.userName = name;
         }
+        message.attachments = await this.inboundImages(raw.message);
         return message;
       },
       options,
     );
     return Response.json({});
+  }
+
+  /** The format is only known from the bytes, so images are downloaded before delivery. */
+  private inboundImages(msg: LarkMessageEvent["message"]): Promise<Attachment[]> {
+    const keys = inboundImageKeys(msg.content, msg.message_type).slice(0, ATTACHMENT_MAX_COUNT);
+    return Promise.all(
+      keys.map((key, index) => this.downloadImage(msg.message_id, key, index + 1)),
+    );
+  }
+
+  private async downloadImage(
+    messageId: string,
+    imageKey: string,
+    position: number,
+  ): Promise<Attachment> {
+    try {
+      const resource = await this.client.im.messageResource.get({
+        path: { message_id: messageId, file_key: imageKey },
+        params: { type: "image" },
+      });
+      const bytes = await readCapped(resource.getReadableStream(), ATTACHMENT_MAX_BYTES);
+      const format = imageFormat(bytes);
+      if (!format) throw new Error("Lark image has an unsupported format");
+      return {
+        type: "image",
+        name: `image-${position}${format.extension}`,
+        mimeType: format.mimeType,
+        size: bytes.byteLength,
+        fetchData: async () => bytes,
+      };
+    } catch (error) {
+      // Without a MIME type the inbound handler reports this attachment as unavailable.
+      return {
+        type: "image",
+        name: `image-${position}`,
+        fetchData: async () => {
+          throw error;
+        },
+      };
+    }
   }
 
   parseMessage(raw: unknown) {
@@ -330,6 +379,80 @@ function inboundText(
   } catch {
     return plain(content);
   }
+}
+
+interface RichPost {
+  title?: string;
+  content?: {
+    tag: string;
+    text?: string;
+    href?: string;
+    user_name?: string;
+    image_key?: string;
+  }[][];
+}
+
+/** A post's body, whether or not it is wrapped in a locale key. */
+function richPost(parsed: { post?: unknown; content?: unknown }): RichPost | null {
+  const posts = (parsed.post ?? parsed) as Record<string, unknown>;
+  const post = Array.isArray(posts.content)
+    ? posts
+    : (posts.zh_cn ?? posts.en_us ?? Object.values(posts)[0]);
+  return post && typeof post === "object" ? (post as RichPost) : null;
+}
+
+// Keys end up in an API path, so accept only the characters Lark itself issues.
+const IMAGE_KEY = /^[\w-]+$/;
+
+function inboundImageKeys(content: string, type: string): string[] {
+  let keys: unknown[];
+  try {
+    const parsed = JSON.parse(content);
+    if (type === "image") keys = [parsed.image_key];
+    else if (type === "post")
+      keys = (richPost(parsed)?.content ?? [])
+        .flat()
+        .filter((item) => item.tag === "img")
+        .map((item) => item.image_key);
+    else return [];
+  } catch {
+    return [];
+  }
+  const valid = keys.filter((key): key is string => typeof key === "string" && IMAGE_KEY.test(key));
+  return [...new Set(valid)];
+}
+
+async function readCapped(stream: Readable, limit: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    total += chunk.length;
+    if (total > limit) {
+      stream.destroy();
+      throw new Error("Lark image exceeds the attachment size limit");
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** The attachment pipeline accepts these four image types. */
+function imageFormat(bytes: Buffer): { mimeType: string; extension: string } | null {
+  if (bytes.subarray(0, 8).equals(PNG_SIGNATURE))
+    return { mimeType: "image/png", extension: ".png" };
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    return { mimeType: "image/jpeg", extension: ".jpg" };
+  const head = bytes.subarray(0, 4).toString("latin1");
+  if (
+    bytes.subarray(0, 6).toString("latin1") === "GIF87a" ||
+    bytes.subarray(0, 6).toString("latin1") === "GIF89a"
+  )
+    return { mimeType: "image/gif", extension: ".gif" };
+  if (head === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP")
+    return { mimeType: "image/webp", extension: ".webp" };
+  return null;
 }
 export async function createLarkAdapter(config: LarkAdapterConfig) {
   const sdk = await import("@larksuiteoapi/node-sdk");

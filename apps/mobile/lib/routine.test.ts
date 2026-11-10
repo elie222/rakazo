@@ -1,6 +1,6 @@
 import type { Routine } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { routineRowDetail, routineStatusLine } from "./routine.js";
+import { routineRowDetail, routineTriggerRows } from "./routine.js";
 
 function routine(partial: Partial<Routine>): Routine {
   return {
@@ -15,6 +15,7 @@ function routine(partial: Partial<Routine>): Routine {
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,
+    emailSenders: null,
     modelProvider: null,
     modelId: null,
     thinkingLevel: null,
@@ -27,53 +28,36 @@ function routine(partial: Partial<Routine>): Routine {
   };
 }
 
-describe("routineStatusLine", () => {
+describe("routineTriggerRows", () => {
+  it("shows readable schedules, then the other triggers", () => {
+    expect(
+      routineTriggerRows(
+        routine({
+          crons: ["0 6 * * 0", "30 8 * * 1-5"],
+          webhookEnabled: true,
+          watch: { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false },
+        }),
+        "UTC",
+      ),
+    ).toEqual([
+      "Every Sunday at 6:00 AM",
+      "Weekdays at 8:30 AM",
+      "Webhook",
+      "When something changes",
+    ]);
+  });
+
+  it("names the routine's zone on schedules when it isn't the device's", () => {
+    expect(
+      routineTriggerRows(routine({ crons: ["0 9 * * 1"], timezone: "Europe/Berlin" }), "UTC"),
+    ).toEqual(["Every Monday at 9:00 AM (Europe/Berlin)"]);
+  });
+
   it("uses the server's delay status, without diagnosing worker health", () => {
-    expect(routineStatusLine(routine({ scheduleDelayed: true }))).toBe("Schedule delayed, UTC");
-    expect(routineStatusLine(routine({ active: false, scheduleDelayed: true }))).toBe(
-      "Paused, UTC",
-    );
     expect(routineRowDetail(routine({ scheduleDelayed: true }), "UTC")).toBe("Schedule delayed");
     expect(routineRowDetail(routine({ active: false, scheduleDelayed: true }), "UTC")).toBe(
       "Paused",
     );
-  });
-  it("names a change trigger", () => {
-    expect(
-      routineStatusLine(
-        routine({ watch: { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false } }),
-      ),
-    ).toBe("Active, When something changes (UTC)");
-  });
-
-  it("shows readable schedules instead of cron expressions", () => {
-    expect(routineStatusLine(routine({ crons: ["0 6 * * *"] }))).toBe(
-      "Active, Every day at 6:00 AM (UTC)",
-    );
-    expect(routineStatusLine(routine({ crons: ["0 6 * * 0"] }))).toBe(
-      "Active, Every Sunday at 6:00 AM (UTC)",
-    );
-    expect(routineStatusLine(routine({ crons: ["30 8 * * 1-5"] }))).toBe(
-      "Active, Weekdays at 8:30 AM (UTC)",
-    );
-    expect(routineStatusLine(routine({ crons: ["0 * * * *"] }))).toBe("Active, Every hour (UTC)");
-  });
-
-  it("keeps the routine's time zone and other triggers", () => {
-    expect(
-      routineStatusLine(
-        routine({
-          active: false,
-          crons: ["0 9 * * 1"],
-          timezone: "Europe/Berlin",
-          webhookEnabled: true,
-        }),
-      ),
-    ).toBe("Paused, Every Monday at 9:00 AM, Webhook (Europe/Berlin)");
-  });
-
-  it("omits the trigger segment when there are no triggers", () => {
-    expect(routineStatusLine(routine({}))).toBe("Active, UTC");
   });
 });
 

@@ -6,16 +6,34 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CallCard } from "../components/CallCard";
+import { rpc } from "./api";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
+import { hapticImpact } from "./haptics";
 
-const { activeTags, platform, startBackground, stopBackground, useKeepAwake } = vi.hoisted(() => ({
-  activeTags: new Set<string>(),
-  platform: { OS: "android", Version: 35 },
-  startBackground: vi.fn(async () => false),
-  stopBackground: vi.fn(async () => undefined),
-  useKeepAwake: vi.fn(),
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
 }));
+
+const { activeTags, platform, sessionChange, startBackground, stopBackground, useKeepAwake } =
+  vi.hoisted(() => ({
+    activeTags: new Set<string>(),
+    platform: { OS: "android", Version: 35 },
+    sessionChange: {
+      generation: 0,
+      listeners: new Set<() => void>(),
+      /** Emulates a sign-in or sign-out: a new generation notifies every observer. */
+      fire() {
+        this.generation += 1;
+        for (const listener of this.listeners) listener();
+      },
+    },
+    startBackground: vi.fn(async () => false),
+    stopBackground: vi.fn(async () => undefined),
+    useKeepAwake: vi.fn(),
+  }));
 
 vi.mock("./call-background", () => ({
   startCallBackground: startBackground,
@@ -25,6 +43,11 @@ vi.mock("expo-audio", () => ({
   AudioModule: { getRecordingPermissionsAsync: async () => ({ granted: true }) },
 }));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async () => null),
+  setItemAsync: vi.fn(async () => undefined),
+  deleteItemAsync: vi.fn(async () => undefined),
+}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => true }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -61,22 +84,37 @@ vi.mock("react-native", () => {
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
 });
-vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
+vi.mock("../components/glass-icon-button", () => ({
+  GlassIconButton: ({
+    accessibilityLabel,
+    onPress,
+  }: {
+    accessibilityLabel: string;
+    onPress: () => void;
+  }) =>
+    createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
+}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("./session", () => ({
-  currentSessionGeneration: () => 0,
-  subscribeSessionGeneration: () => () => undefined,
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({ t: (text: string) => text }),
-  t: (text: string) => text,
-  getActiveUiLocale: () => "en",
+  currentSessionGeneration: () => sessionChange.generation,
+  subscribeSessionGeneration: (listener: () => void) => {
+    sessionChange.listeners.add(listener);
+    return () => sessionChange.listeners.delete(listener);
+  },
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
@@ -102,6 +140,8 @@ const deps: CallDeps = {
   record: vi.fn(),
   transcribe: vi.fn(),
   send: vi.fn(),
+  answer: vi.fn(),
+  followUp: vi.fn(),
   endCall: async () => undefined,
   speak: async () => undefined,
   watch: () => vi.fn(),
@@ -126,6 +166,7 @@ describe("CallCard background lifetime", () => {
     });
     activeTags.clear();
     platform.OS = "android";
+    sessionChange.generation = 0;
     startBackground.mockReset();
     startBackground.mockResolvedValue(false);
     stopBackground.mockReset();
@@ -142,6 +183,21 @@ describe("CallCard background lifetime", () => {
     container.remove();
     activeTags.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("uses explicit hang-up feedback only when the Hang up button is pressed", async () => {
+    act(() => root.render(<CallCard />));
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    });
+    vi.mocked(hapticImpact).mockClear();
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Hang up"]');
+    expect(button).not.toBeNull();
+    await act(async () => button?.click());
+    expect(hapticImpact).toHaveBeenCalledOnce();
+    expect(container.querySelector('[aria-label="Hang up"]')).toBeNull();
+    await act(async () => endCall());
+    expect(hapticImpact).toHaveBeenCalledOnce();
   });
 
   it("keeps the screen awake while the native service has not started", async () => {
@@ -184,5 +240,33 @@ describe("CallCard background lifetime", () => {
 
     expect(startBackground).not.toHaveBeenCalled();
     expect(activeTags.has("rakazo-call")).toBe(true);
+  });
+
+  it("shows the signed-in account's initial after a session change", async () => {
+    const me = vi.mocked(rpc);
+    me.mockResolvedValueOnce({ name: "Alicja" } as never);
+    me.mockClear();
+    // The card stays mounted in the app layout; earlier tests left another session's initial.
+    act(() => root.render(<CallCard />));
+    act(() => sessionChange.fire());
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("A"));
+    expect(me).toHaveBeenCalledWith("me");
+    expect(me).toHaveBeenCalledTimes(1);
+
+    await act(async () => endCall());
+    // A different account signs in without an app restart; the card stays mounted.
+    me.mockResolvedValueOnce({ name: "Bartek" } as never);
+    act(() => sessionChange.fire());
+
+    await act(async () => {
+      startCall({ botId: "bot-2", botName: "Nova" }, deps);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("B"));
+    expect(me).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("A");
   });
 });

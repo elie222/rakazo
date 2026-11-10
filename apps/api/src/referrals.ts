@@ -1,14 +1,14 @@
 import { randomInt } from "node:crypto";
 import type { BillingProvider } from "@rakazo/adapter-kit";
 import type { BillingStatus } from "@rakazo/contracts";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   extendByokFreePeriod,
   FREE_MONTH_DAYS,
   hasBillingAccess,
-  Prisma,
+  isUniqueViolation,
   reconcileCreditPurchase,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -28,7 +28,7 @@ export function createReferrals(deps: {
   webOrigin: string;
 }) {
   const { prisma, provider } = deps;
-  const rewardCents = BYOK_MONTHLY_PRICE_CENTS;
+  const rewardCents = BYOK_TIERS.standard.monthlyPriceCents;
   const enabled = rewardCents !== null && Boolean(provider.grantBalanceCredit);
 
   async function codeFor(organizationId: string): Promise<string> {
@@ -177,10 +177,6 @@ export function createReferrals(deps: {
       }
     },
   };
-}
-
-function isUniqueViolation(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 function newCode() {

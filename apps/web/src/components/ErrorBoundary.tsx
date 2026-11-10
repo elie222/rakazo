@@ -33,7 +33,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, { failed: boole
 /** Inline fallback for a lazily loaded section inside an otherwise working panel. */
 export function SectionLoadFailed() {
   return (
-    <div className="px-2.5 pb-2 text-[13px] text-destructive">
+    <div className="px-2.5 pb-2 text-body-sm text-destructive">
       <Trans>Could not load</Trans>
     </div>
   );
@@ -49,6 +49,7 @@ export function lazyOverlay<Props extends { onClose: () => void }>(
   load: () => Promise<ComponentType<Props>>,
 ) {
   const Overlay = lazyComponent(load);
+  // biome-ignore lint/correctness/noComponentHookFactories: called once per overlay at module scope, like lazy().
   return function LazyOverlay(props: Props) {
     return (
       <ErrorBoundary

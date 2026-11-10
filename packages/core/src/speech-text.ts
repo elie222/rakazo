@@ -219,7 +219,7 @@ export function narrateTool(toolName: string): string | null {
     [/^set_child_instructions$/, "rewriting a bot's instructions"],
     [/^set_child_bot_model$/, "setting a bot's model"],
     [/^create_child_routine$/, "scheduling a routine"],
-    [/^(archive_bot|delete_bot)$/, "archiving a bot"],
+    [/^archive_bot$/, "archiving a bot"],
     [/^remember$/, "writing a memory"],
     [/^save_shared_memory$/, "saving shared memory"],
     [/^attach_file$/, "attaching a file"],

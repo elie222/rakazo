@@ -9,7 +9,7 @@ const runtimeUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && runtimeUrl && migrationUrl && runtimeUrl !== migrationUrl
-    ? describe.sequential
+    ? describe
     : describe.skip;
 
 /** A raw SQL monitor, as the owner pool's connections provide. */
@@ -65,12 +65,27 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     }
     for (const space of spaces) {
       await o.space.create({ data: { id: space.spaceId, organizationId, name: space.name } });
-      await o.bot.create({
-        data: { id: space.botId, spaceId: space.spaceId, userId, name: space.name, color: "#000" },
-      });
-      await o.thread.create({
-        data: { id: space.threadId, spaceId: space.spaceId, userId, botId: space.botId },
-      });
+      // Several bots per space: the move must cross bots as cheaply as one routine.
+      for (const index of [0, 1, 2]) {
+        const botId = index === 0 ? space.botId : `${space.botId}-${index}`;
+        await o.bot.create({
+          data: {
+            id: botId,
+            spaceId: space.spaceId,
+            userId,
+            name: `${space.name}${index}`,
+            color: "#000",
+          },
+        });
+        await o.thread.create({
+          data: {
+            id: index === 0 ? space.threadId : `${space.threadId}-${index}`,
+            spaceId: space.spaceId,
+            userId,
+            botId,
+          },
+        });
+      }
     }
   }
 
@@ -86,11 +101,16 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
   });
 
   /** One active weekly routine at Monday 09:00 Africa/Cairo in the given space. */
-  async function weeklyRoutine(space: (typeof spaces)[number], rowUserId: string, name: string) {
+  async function weeklyRoutine(
+    space: (typeof spaces)[number],
+    rowUserId: string,
+    name: string,
+    botIndex = 0,
+  ) {
     return system.routine.create({
       data: {
         spaceId: space.spaceId,
-        botId: space.botId,
+        botId: `${space.botId}${botIndex === 0 ? "" : `-${botIndex}`}`,
         userId: rowUserId,
         name,
         prompt: "fixture",
@@ -208,6 +228,52 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
     await expect(
       system.user.findUniqueOrThrow({ where: { id: userId }, select: { timezone: true } }),
     ).resolves.toEqual({ timezone: "Europe/London" });
+  });
+
+  /** One active watch on its own interval in the given space; only its label moves. */
+  async function watchRoutine(space: (typeof spaces)[number], botIndex: number, name: string) {
+    return system.routine.create({
+      data: {
+        spaceId: space.spaceId,
+        botId: `${space.botId}${botIndex === 0 ? "" : `-${botIndex}`}`,
+        userId,
+        name,
+        prompt: "fixture",
+        crons: [],
+        timezone: "Africa/Cairo",
+        notify: true,
+        active: true,
+        watch: { kind: "files", paths: ["inbox"], everyMinutes: 15 },
+        nextRunAt: new Date("2026-11-06T12:00:00.000Z"),
+      },
+    });
+  }
+
+  it("moves routines spread across many bots, retimed rows and label-only rows", async () => {
+    await resetAccount();
+    const retimed: string[] = [];
+    const relabeled: string[] = [];
+    for (const space of spaces) {
+      for (const index of [0, 1, 2]) {
+        retimed.push(
+          (await weeklyRoutine(space, userId, `Weekly ${space.name}${index}`, index)).id,
+        );
+        relabeled.push((await watchRoutine(space, index, `Watch ${space.name}${index}`)).id);
+      }
+    }
+
+    await save(userId, "Europe/London", spaces[0]!);
+
+    const rows = await system.routine.findMany({ where: { userId } });
+    expect(rows).toHaveLength(12);
+    for (const row of rows) {
+      expect(row.timezone).toBe("Europe/London");
+      if (retimed.includes(row.id)) {
+        expect(row.nextRunAt?.toISOString()).toBe("2026-11-09T09:00:00.000Z");
+      } else {
+        expect(row.nextRunAt?.toISOString()).toBe("2026-11-06T12:00:00.000Z");
+      }
+    }
   });
 
   it("keeps every routine on the account's zone when two saves overlap", async () => {

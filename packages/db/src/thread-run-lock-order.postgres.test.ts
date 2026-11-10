@@ -2,13 +2,14 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb, Prisma } from "./client.js";
-import { clearThread, finalizeComputerControlRelease } from "./events.js";
+import { clearThread } from "./events.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
+import { finalizeComputerControlRelease } from "./thread-takeover.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 // Both paths must be observed blocked on the held row within this budget.
 const WAIT_BUDGET_MS = 5_000;

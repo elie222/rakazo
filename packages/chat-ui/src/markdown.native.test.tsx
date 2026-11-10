@@ -235,6 +235,7 @@ import {
   RemoteImagesContext,
   RemoteMarkdownImage,
 } from "./markdown.native";
+import { textBlocks } from "./native/linkified-text";
 
 const THREE_COLUMN_TABLE = `| Name | Status | Detail |
 | --- | --- | --- |
@@ -907,6 +908,110 @@ describe("native markdown code copy", () => {
     const html = renderToStaticMarkup(<ChatMarkdown>{"```\nnpm test\n```"}</ChatMarkdown>);
     expect(html).not.toContain("<copy-probe");
     expect(html).toContain("npm test");
+  });
+});
+
+describe("native markdown re-renders", () => {
+  it("keeps a streaming reply's earlier blocks mounted as it grows", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const first = "First paragraph.\n\n```ts\nconst a = 1;\n```";
+    const paragraph = () =>
+      [...container.querySelectorAll("rn-text")].find(
+        (text) => text.textContent === "First paragraph.",
+      );
+    const codeLine = () =>
+      [...container.querySelectorAll("rn-text")].find(
+        (text) => text.textContent === "const a = 1;",
+      );
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{first}</ChatMarkdown>);
+    });
+    const before = [paragraph(), codeLine()];
+    expect(before.every(Boolean)).toBe(true);
+    for (const text of [`${first}\n\nMore`, `${first}\n\nMore text`]) {
+      await act(async () => {
+        root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+      });
+      expect([paragraph(), codeLine()].every((node, index) => node === before[index])).toBe(true);
+    }
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("draws each code line as one text with its tokens inside", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown colorScheme="light">{"```ts\nconst a = 1;\nreturn a;\n```"}</ChatMarkdown>,
+    );
+    const rows = new DOMParser()
+      .parseFromString(html, "text/html")
+      .querySelectorAll("rn-scroll-view rn-view[data-flex-direction='row']");
+    expect([...rows].map((row) => row.textContent)).toEqual(["const a = 1;", "return a;"]);
+    for (const row of rows) {
+      expect(row.children).toHaveLength(1);
+      expect(row.children[0]?.tagName.toLowerCase()).toBe("rn-text");
+      expect(row.children[0]?.querySelectorAll("rn-text").length).toBeGreaterThan(1);
+    }
+  });
+});
+
+describe("long user messages", () => {
+  const line = (index: number) => `Line ${index} ${"x".repeat(60)}`;
+
+  it("keeps a short message whole", () => {
+    expect(textBlocks("one\n\ntwo")).toEqual(["one\n\ntwo"]);
+  });
+
+  it.each([
+    ["plain lines", Array.from({ length: 200 }, (_, i) => line(i)).join("\n")],
+    [
+      "blank lines between paragraphs",
+      Array.from({ length: 120 }, (_, i) => line(i)).join("\n\n\n"),
+    ],
+    [
+      "leading and trailing blank lines",
+      `\n\n${Array.from({ length: 80 }, (_, i) => line(i)).join("\n")}\n\n`,
+    ],
+  ])("cuts %s at line breaks into pieces that join back exactly", (_case, text) => {
+    const blocks = textBlocks(text);
+    expect(blocks.length).toBeGreaterThan(1);
+    expect(blocks.join("\n")).toBe(text);
+    for (const block of blocks.slice(0, -1)) {
+      expect(block.endsWith("\n")).toBe(false);
+      expect(block.length).toBeLessThan(1100);
+    }
+  });
+
+  it("keeps a single long line whole", () => {
+    const text = "y".repeat(5000);
+    expect(textBlocks(text)).toEqual([text]);
+  });
+
+  it("draws a long message as stacked paragraphs with the same text and style", () => {
+    const text = Array.from({ length: 60 }, (_, i) => `${line(i)} https://example.com/${i}`).join(
+      "\n",
+    );
+    const html = renderToStaticMarkup(
+      <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link} palette={darkTokens}>
+        {text}
+      </LinkifiedText>,
+    );
+    const root = new DOMParser().parseFromString(html, "text/html").body.firstElementChild;
+    expect(root?.tagName.toLowerCase()).toBe("rn-view");
+    const paragraphs = [...(root?.children ?? [])];
+    expect(paragraphs.length).toBe(textBlocks(text).length);
+    for (const paragraph of paragraphs) {
+      expect(paragraph.tagName.toLowerCase()).toBe("rn-text");
+      expect(paragraph.getAttribute("data-color")).toBe(darkTokens.foreground);
+    }
+    expect(
+      paragraphs[0]?.querySelectorAll("[data-accessibility-role='link']").length,
+    ).toBeGreaterThan(0);
   });
 });
 

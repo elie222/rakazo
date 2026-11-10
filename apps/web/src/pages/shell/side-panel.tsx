@@ -51,6 +51,7 @@ export function ShellSidePanel({
   memoryProviderConfigured,
   setAgentSkills,
   onClearBot,
+  discardChatAttachments,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
@@ -78,6 +79,8 @@ export function ShellSidePanel({
   memoryProviderConfigured: boolean;
   setAgentSkills: (skills: AgentSkillCatalogEntry[]) => void;
   onClearBot: (bot: Bot) => void;
+  /** Drops a deleted chat's pending attachments with their previews. */
+  discardChatAttachments: (threadKey: string) => void;
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
@@ -106,7 +109,7 @@ export function ShellSidePanel({
           panel !== "import-agent" ? (
             <div className="mb-4 flex items-center justify-between">
               {!active && panel !== "settings" ? (
-                <span className="text-[13.5px] text-muted-foreground">
+                <span className="text-body text-muted-foreground">
                   <Trans>Group</Trans>
                 </span>
               ) : null}
@@ -162,6 +165,7 @@ export function ShellSidePanel({
               }}
               onRemove={async () => {
                 await rpc.groups.remove({ groupId: activeGroup.id });
+                discardChatAttachments(activeGroup.id);
                 const remainingGroups = groups.filter((group) => group.id !== activeGroup.id);
                 setGroups(remainingGroups);
                 setPanel(null);

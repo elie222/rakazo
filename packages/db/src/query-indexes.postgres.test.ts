@@ -35,10 +35,25 @@ const hotQueries = [
       ORDER BY "updatedAt", id LIMIT 100`,
   },
   {
+    name: "background-helper outcomes still to return",
+    index: "runs_helper_outcome_pending_idx",
+    sql: `SELECT id FROM runs WHERE trigger = 'helper' AND "botOutcomeReturnedAt" IS NULL
+      AND status IN ('completed', 'failed', 'cancelled') AND id <> $1
+      ORDER BY "updatedAt", id LIMIT 100`,
+  },
+  {
     name: "a bot thread's latest run",
     index: "runs_threadId_createdAt_id_idx",
     sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets')
       ORDER BY "createdAt" DESC, id DESC LIMIT 1`,
+  },
+  {
+    name: "a user's latest finished run in a Space",
+    index: "runs_recent_activity_idx",
+    sql: `SELECT "completedAt" FROM runs WHERE "spaceId" = $1 AND "userId" = $1
+      AND status IN ('completed', 'failed', 'cancelled')
+      AND trigger NOT IN ('tickets', 'helper', 'helper_result')
+      AND "completedAt" IS NOT NULL ORDER BY "completedAt" DESC LIMIT 1`,
   },
   {
     name: "a thread's messages after a cursor",
