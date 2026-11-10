@@ -96,6 +96,22 @@ export type OnDeviceSpeechNative = {
     id: string,
     opts?: { onProgress?: (progress: { percent: number; phase: string }) => void },
   ) => Promise<{ localPath: string }>;
+  /**
+   * Extracts a model whose archive is already at the download manager's
+   * fixed archive path. `verifyChecksum` defaults to on; import passes
+   * false for TTS, whose checksum.txt is stale upstream (see
+   * extractPlacedModel). The default download path never passes it.
+   */
+  extractModel: (
+    category: string,
+    id: string,
+    opts?: {
+      onProgress?: (progress: { percent: number; phase: string }) => void;
+      verifyChecksum?: boolean;
+    },
+  ) => Promise<{ localPath: string }>;
+  /** The document directory the download manager stores models under. */
+  getStorageBasePath: () => Promise<string>;
   isModelDownloaded: (category: string, id: string) => Promise<boolean>;
   getModelPath: (category: string, id: string) => Promise<string | null>;
   deleteModel: (category: string, id: string) => Promise<void>;
@@ -140,6 +156,8 @@ async function loadNative(): Promise<OnDeviceSpeechNative> {
       createPcmLiveStream: audio.createPcmLiveStream,
       createTts: tts.createTTS,
       ensureModel: download.ensureModel,
+      extractModel: download.extractModel,
+      getStorageBasePath: download.getStorageBasePath,
       isModelDownloaded: download.isModelDownloaded,
       getModelPath: download.getModelPath,
       deleteModel: download.deleteModel,
@@ -282,6 +300,185 @@ export async function deleteOnDeviceSpeechModels(): Promise<void> {
     native.deleteModel("stt", STT_MODEL_ID).catch(() => undefined),
     native.deleteModel("tts", TTS_MODEL_ID).catch(() => undefined),
   ]);
+}
+
+// Bring-your-own archive: a model can come from a local file the user
+// picked, or from a base address the user entered, instead of the
+// engine's GitHub releases. Both place the archive at the download
+// manager's fixed archive path and extract it from there, so the
+// manager's size check and extraction still apply.
+
+export type OnDeviceSpeechModelCategory = "stt" | "tts";
+
+function onDeviceSpeechModelId(category: OnDeviceSpeechModelCategory): string {
+  return category === "stt" ? STT_MODEL_ID : TTS_MODEL_ID;
+}
+
+/** The archive filename for a model, as the download manager names it. */
+function onDeviceSpeechArchiveName(category: OnDeviceSpeechModelCategory): string {
+  return `${onDeviceSpeechModelId(category)}.tar.bz2`;
+}
+
+/** Where the download manager expects a model's archive. */
+async function onDeviceSpeechArchivePath(category: OnDeviceSpeechModelCategory): Promise<string> {
+  const native = await loadNative();
+  const base = (await native.getStorageBasePath()).replace(/\/+$/, "");
+  return `${base}/sherpa-onnx/models/${category}/${onDeviceSpeechArchiveName(category)}`;
+}
+
+function toFileUri(path: string): string {
+  return path.startsWith("file://") ? path : `file://${path}`;
+}
+
+async function ensureArchiveDirectory(archivePath: string): Promise<void> {
+  const { Directory } = await loadFileSystem();
+  const dir = new Directory(toFileUri(archivePath.slice(0, archivePath.lastIndexOf("/"))));
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+}
+
+/**
+ * Extracts a model whose archive is already at the download manager's
+ * fixed archive path. The registry lookup needs refreshModels first.
+ * STT verifies its checksum; TTS skips verification because the
+ * tts-models checksum.txt is stale upstream (verified 2026-11-10: the
+ * hosted archive's real SHA-256 differs from the listed one), so
+ * verification would reject the official archive on every attempt.
+ * Extraction itself still validates the archive.
+ */
+async function extractPlacedModel(category: OnDeviceSpeechModelCategory): Promise<void> {
+  const native = await loadNative();
+  await native.refreshModels(category);
+  await native.extractModel(category, onDeviceSpeechModelId(category), {
+    verifyChecksum: category !== "tts",
+  });
+}
+
+/**
+ * Imports one model from a local archive the user picked. The archive is
+ * copied to the download manager's fixed archive path, then extracted.
+ * A file with the wrong name is refused with the expected name; a
+ * truncated archive fails in extraction with its sizes, never silently.
+ */
+export async function importOnDeviceSpeechModel(
+  category: OnDeviceSpeechModelCategory,
+  sourceUri: string,
+  sourceName?: string,
+): Promise<void> {
+  const expected = onDeviceSpeechArchiveName(category);
+  if (sourceName && sourceName !== expected) {
+    throw new Error(t("Please choose the {name} file.", { name: expected }));
+  }
+  const { File } = await loadFileSystem();
+  const archivePath = await onDeviceSpeechArchivePath(category);
+  await ensureArchiveDirectory(archivePath);
+  await new File(sourceUri).copy(new File(toFileUri(archivePath)));
+  await extractPlacedModel(category);
+}
+
+/**
+ * Downloads one model archive from a base address the user entered, then
+ * extracts it. The address is a directory: the archive is fetched from
+ * {address}/{id}.tar.bz2. A failed download reports a clear error and
+ * leaves any previous archive untouched.
+ */
+export async function downloadOnDeviceSpeechModelFromAddress(
+  category: OnDeviceSpeechModelCategory,
+  baseUrl: string,
+): Promise<void> {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  if (!base) throw new Error(t("Enter a model download address."));
+  const url = `${base}/${onDeviceSpeechArchiveName(category)}`;
+  const { File } = await loadFileSystem();
+  const archivePath = await onDeviceSpeechArchivePath(category);
+  await ensureArchiveDirectory(archivePath);
+  const target = new File(toFileUri(archivePath));
+  const temp = new File(toFileUri(`${archivePath}.tmp`));
+  if (temp.exists) temp.delete();
+  const task = File.createDownloadTask(url, temp);
+  let downloaded: { uri: string } | null;
+  try {
+    downloaded = await task.downloadAsync();
+  } finally {
+    task.release();
+  }
+  if (!downloaded || !new File(downloaded.uri).exists) {
+    throw new Error(t("Could not download the voice models."));
+  }
+  await new File(downloaded.uri).copy(target);
+  try {
+    new File(downloaded.uri).delete();
+  } catch {
+    // A leftover temp file is harmless; the archive is already in place.
+  }
+  await extractPlacedModel(category);
+}
+
+async function reportModelsStatus(
+  progress: number | null,
+  onProgress?: (status: OnDeviceSpeechModelsStatus) => void,
+): Promise<void> {
+  if (!onProgress) return;
+  const status = await onDeviceSpeechModelsStatus().catch(() => ({
+    stt: "missing" as const,
+    tts: "missing" as const,
+    progress,
+  }));
+  onProgress({ ...status, progress });
+}
+
+/**
+ * Downloads the missing models from a base address the user entered,
+ * STT first, then TTS. Progress is coarse (one step per model), reported
+ * through the same status callback the GitHub download uses.
+ */
+export async function downloadOnDeviceSpeechModelsFromAddress(
+  baseUrl: string,
+  onProgress?: (status: OnDeviceSpeechModelsStatus) => void,
+): Promise<void> {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  if (!base) throw new Error(t("Enter a model download address."));
+  const status = await onDeviceSpeechModelsStatus();
+  const missing: OnDeviceSpeechModelCategory[] = [];
+  if (status.stt !== "ready") missing.push("stt");
+  if (status.tts !== "ready") missing.push("tts");
+  if (missing.length === 0) return;
+  await reportModelsStatus(0, onProgress);
+  for (const [index, category] of missing.entries()) {
+    await downloadOnDeviceSpeechModelFromAddress(category, base);
+    await reportModelsStatus((index + 1) / missing.length, onProgress);
+  }
+}
+
+// A model download address, per account, next to the on-device switch.
+// Empty means the engine's GitHub releases.
+
+const MODEL_BASE_URL_KEY_PREFIX = "rakazo.on-device-speech.models-base-url.";
+
+function modelBaseUrlKey(userId: string): string {
+  return `${MODEL_BASE_URL_KEY_PREFIX}${userId}`;
+}
+
+export async function loadOnDeviceSpeechModelBaseUrl(): Promise<string> {
+  const userId = await currentUserId();
+  if (!userId) return "";
+  try {
+    const SecureStore = await import("expo-secure-store");
+    return (await SecureStore.getItemAsync(modelBaseUrlKey(userId))) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export async function saveOnDeviceSpeechModelBaseUrl(url: string): Promise<void> {
+  const userId = await currentUserId();
+  if (!userId) return;
+  const SecureStore = await import("expo-secure-store");
+  const trimmed = url.trim();
+  if (!trimmed) {
+    await SecureStore.deleteItemAsync(modelBaseUrlKey(userId));
+    return;
+  }
+  await SecureStore.setItemAsync(modelBaseUrlKey(userId), trimmed);
 }
 
 /**

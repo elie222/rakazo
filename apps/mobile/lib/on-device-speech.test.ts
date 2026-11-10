@@ -3,15 +3,20 @@ import { ENDPOINT_SILENCE_MS } from "./dictation";
 import type { OnDeviceSpeechNative } from "./on-device-speech";
 import {
   deleteOnDeviceSpeechModels,
+  downloadOnDeviceSpeechModelFromAddress,
   downloadOnDeviceSpeechModels,
+  downloadOnDeviceSpeechModelsFromAddress,
   finishOnDeviceSpeech,
   floatSamplesToWavBase64,
+  importOnDeviceSpeechModel,
   listenOnDeviceSpeech,
   loadOnDeviceSpeechEnabled,
+  loadOnDeviceSpeechModelBaseUrl,
   onDeviceSpeechAvailable,
   onDeviceSpeechModelSizes,
   onDeviceSpeechModelsStatus,
   saveOnDeviceSpeechEnabled,
+  saveOnDeviceSpeechModelBaseUrl,
   setOnDeviceSpeechNative,
   speakOnDeviceSpeech,
   stopOnDeviceSpeech,
@@ -28,7 +33,15 @@ vi.mock("expo-secure-store", () => ({
     store.delete(key);
   }),
 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
+vi.mock("./i18n", () => ({
+  t: (text: string, vars?: Record<string, string | number>) =>
+    vars
+      ? Object.entries(vars).reduce(
+          (out, [key, value]) => out.replaceAll(`{${key}}`, String(value)),
+          text,
+        )
+      : text,
+}));
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 const sessionUser = { id: "user-1" };
@@ -69,15 +82,79 @@ vi.mock("expo-audio", () => ({
   }),
   setAudioModeAsync: vi.fn(async () => undefined),
 }));
-vi.mock("expo-file-system", () => ({
-  File: class {
-    uri = "file:///cache/rakazo-on-device-speech.wav";
-    create() {}
-    write() {}
-    delete() {}
-  },
-  Paths: { cache: "cache" },
+const fsState = vi.hoisted(() => ({
+  files: new Set<string>(),
+  copies: [] as Array<{ from: string; to: string }>,
+  downloads: [] as Array<{ url: string; to: string }>,
+  createdDirs: [] as string[],
+  deleted: [] as string[],
 }));
+vi.mock("expo-file-system", () => {
+  const joinUri = (...parts: unknown[]): string => {
+    const strings = parts.flatMap((part) => {
+      if (typeof part === "string") return [part];
+      if (part && typeof part === "object" && "uri" in part) return [String(part.uri)];
+      return [];
+    });
+    let out = "";
+    for (const segment of strings) {
+      if (!segment) continue;
+      out = out ? `${out.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}` : segment;
+    }
+    return out;
+  };
+  class FakeFile {
+    uri: string;
+    constructor(...parts: unknown[]) {
+      this.uri = joinUri(...parts);
+    }
+    get exists() {
+      return fsState.files.has(this.uri);
+    }
+    create() {
+      fsState.files.add(this.uri);
+    }
+    write() {
+      fsState.files.add(this.uri);
+    }
+    async copy(target: FakeFile) {
+      fsState.copies.push({ from: this.uri, to: target.uri });
+      fsState.files.add(target.uri);
+    }
+    delete() {
+      fsState.files.delete(this.uri);
+      fsState.deleted.push(this.uri);
+    }
+    static createDownloadTask(url: string, destination: FakeFile) {
+      fsState.downloads.push({ url, to: destination.uri });
+      return {
+        downloadAsync: async () => {
+          fsState.files.add(destination.uri);
+          return { uri: destination.uri };
+        },
+        release: () => undefined,
+      };
+    }
+  }
+  class FakeDirectory {
+    uri: string;
+    constructor(...parts: unknown[]) {
+      this.uri = joinUri(...parts);
+    }
+    get exists() {
+      return fsState.files.has(this.uri);
+    }
+    create() {
+      fsState.files.add(this.uri);
+      fsState.createdDirs.push(this.uri);
+    }
+  }
+  return {
+    File: FakeFile,
+    Directory: FakeDirectory,
+    Paths: { cache: "cache", document: "file:///doc" },
+  };
+});
 
 type PcmListener = (samples: Float32Array, sampleRate: number) => void;
 
@@ -149,6 +226,8 @@ function fakeNative(
     getModelPath: vi.fn(async (category: string) => (category === "stt" ? sttPath : ttsPath)),
     deleteModel: vi.fn(async () => undefined),
     refreshModels: vi.fn(async () => []),
+    extractModel: vi.fn(async () => ({ localPath: "/models/extracted" })),
+    getStorageBasePath: vi.fn(async () => "/doc"),
   };
   return {
     native,
@@ -172,6 +251,11 @@ let fake: ReturnType<typeof fakeNative>;
 beforeEach(() => {
   vi.useFakeTimers();
   store.clear();
+  fsState.files.clear();
+  fsState.copies.length = 0;
+  fsState.downloads.length = 0;
+  fsState.createdDirs.length = 0;
+  fsState.deleted.length = 0;
   players.length = 0;
   sessionUser.id = "user-1";
   fake = fakeNative();
@@ -370,6 +454,101 @@ describe("on-device speech models", () => {
     await deleteOnDeviceSpeechModels();
     expect(fake.native.deleteModel).toHaveBeenCalledWith("stt", expect.any(String));
     expect(fake.native.deleteModel).toHaveBeenCalledWith("tts", expect.any(String));
+  });
+});
+
+describe("on-device speech model import", () => {
+  const STT_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2";
+  const TTS_ARCHIVE = "kokoro-int8-multi-lang-v1_1.tar.bz2";
+
+  it("imports a picked STT archive to the fixed path and extracts it verified", async () => {
+    await importOnDeviceSpeechModel("stt", `file:///picked/${STT_ARCHIVE}`, STT_ARCHIVE);
+    expect(fsState.copies).toContainEqual({
+      from: `file:///picked/${STT_ARCHIVE}`,
+      to: `file:///doc/sherpa-onnx/models/stt/${STT_ARCHIVE}`,
+    });
+    expect(fake.native.refreshModels).toHaveBeenCalledWith("stt");
+    expect(fake.native.extractModel).toHaveBeenCalledWith(
+      "stt",
+      expect.any(String),
+      expect.objectContaining({ verifyChecksum: true }),
+    );
+  });
+
+  it("imports a picked TTS archive without checksum verification", async () => {
+    await importOnDeviceSpeechModel("tts", `file:///picked/${TTS_ARCHIVE}`, TTS_ARCHIVE);
+    expect(fsState.copies).toContainEqual({
+      from: `file:///picked/${TTS_ARCHIVE}`,
+      to: `file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}`,
+    });
+    // The tts-models checksum.txt is stale upstream, so verification
+    // would reject the official archive on every attempt.
+    expect(fake.native.extractModel).toHaveBeenCalledWith(
+      "tts",
+      expect.any(String),
+      expect.objectContaining({ verifyChecksum: false }),
+    );
+  });
+
+  it("refuses a picked file with the wrong name", async () => {
+    await expect(
+      importOnDeviceSpeechModel("stt", `file:///picked/${TTS_ARCHIVE}`, TTS_ARCHIVE),
+    ).rejects.toThrow(STT_ARCHIVE);
+    expect(fsState.copies).toEqual([]);
+    expect(fake.native.extractModel).not.toHaveBeenCalled();
+  });
+
+  it("downloads a model from a custom address and extracts it", async () => {
+    await downloadOnDeviceSpeechModelFromAddress("tts", "https://example.com/models/");
+    expect(fsState.downloads).toContainEqual({
+      url: `https://example.com/models/${TTS_ARCHIVE}`,
+      to: `file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}.tmp`,
+    });
+    expect(fsState.copies).toContainEqual({
+      from: `file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}.tmp`,
+      to: `file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}`,
+    });
+    expect(fake.native.extractModel).toHaveBeenCalledWith(
+      "tts",
+      expect.any(String),
+      expect.objectContaining({ verifyChecksum: false }),
+    );
+  });
+
+  it("refuses an empty custom address", async () => {
+    await expect(downloadOnDeviceSpeechModelFromAddress("stt", "  ")).rejects.toThrow();
+    expect(fsState.downloads).toEqual([]);
+    expect(fake.native.extractModel).not.toHaveBeenCalled();
+  });
+
+  it("downloads only the missing models from a custom address", async () => {
+    fake = fakeNative({ sttDownloaded: true, ttsDownloaded: false });
+    setOnDeviceSpeechNative(fake.native);
+    const seen: number[] = [];
+    await downloadOnDeviceSpeechModelsFromAddress("https://example.com/models", (status) => {
+      if (status.progress !== null) seen.push(status.progress);
+    });
+    expect(fake.native.extractModel).toHaveBeenCalledTimes(1);
+    expect(fake.native.extractModel).toHaveBeenCalledWith(
+      "tts",
+      expect.any(String),
+      expect.anything(),
+    );
+    expect(fsState.downloads).toHaveLength(1);
+    expect(fsState.downloads[0]?.url).toBe(`https://example.com/models/${TTS_ARCHIVE}`);
+    expect(seen[seen.length - 1]).toBe(1);
+  });
+
+  it("keeps one model download address per account and clears it when empty", async () => {
+    expect(await loadOnDeviceSpeechModelBaseUrl()).toBe("");
+    await saveOnDeviceSpeechModelBaseUrl("https://example.com/models");
+    expect(await loadOnDeviceSpeechModelBaseUrl()).toBe("https://example.com/models");
+    sessionUser.id = "user-2";
+    expect(await loadOnDeviceSpeechModelBaseUrl()).toBe("");
+    sessionUser.id = "user-1";
+    expect(await loadOnDeviceSpeechModelBaseUrl()).toBe("https://example.com/models");
+    await saveOnDeviceSpeechModelBaseUrl("   ");
+    expect(await loadOnDeviceSpeechModelBaseUrl()).toBe("");
   });
 });
 

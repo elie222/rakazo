@@ -35,14 +35,21 @@ import {
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
-import type { OnDeviceSpeechModelsStatus } from "../../lib/on-device-speech";
+import type {
+  OnDeviceSpeechModelCategory,
+  OnDeviceSpeechModelsStatus,
+} from "../../lib/on-device-speech";
 import {
   deleteOnDeviceSpeechModels,
   downloadOnDeviceSpeechModels,
+  downloadOnDeviceSpeechModelsFromAddress,
+  importOnDeviceSpeechModel,
   loadOnDeviceSpeechEnabled,
+  loadOnDeviceSpeechModelBaseUrl,
   onDeviceSpeechModelSizes,
   onDeviceSpeechModelsStatus,
   saveOnDeviceSpeechEnabled,
+  saveOnDeviceSpeechModelBaseUrl,
 } from "../../lib/on-device-speech";
 import { queryClient, rpcQuery } from "../../lib/query";
 import type { SettingsTarget } from "../../lib/settings-target";
@@ -129,6 +136,8 @@ export default function VoiceSettings() {
   const [onDeviceSpeechReady, setOnDeviceSpeechReady] = useState(!deviceSettings);
   const [modelStatus, setModelStatus] = useState<OnDeviceSpeechModelsStatus | null>(null);
   const [downloadingModels, setDownloadingModels] = useState(false);
+  const [importingModels, setImportingModels] = useState(false);
+  const [modelBaseUrl, setModelBaseUrl] = useState("");
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
   const [callGreeting, setCallGreeting] = useState<boolean | null>(null);
@@ -224,11 +233,16 @@ export default function VoiceSettings() {
         });
       // On-device speech is per account and device-local; its models are
       // downloaded on demand, so the switch and the model state load together.
-      void Promise.all([loadOnDeviceSpeechEnabled(), onDeviceSpeechModelsStatus()])
-        .then(([enabled, status]) => {
+      void Promise.all([
+        loadOnDeviceSpeechEnabled(),
+        onDeviceSpeechModelsStatus(),
+        loadOnDeviceSpeechModelBaseUrl(),
+      ])
+        .then(([enabled, status, baseUrl]) => {
           if (deviceVoiceRevision.current !== revision) return;
           setOnDeviceSpeech(enabled);
           setModelStatus(status);
+          setModelBaseUrl(baseUrl);
           setOnDeviceSpeechReady(true);
         })
         .catch(() => {
@@ -338,11 +352,16 @@ export default function VoiceSettings() {
   }
 
   async function downloadModels() {
-    if (downloadingModels || pending !== null) return;
+    if (downloadingModels || importingModels || pending !== null) return;
     setDownloadingModels(true);
     setError(null);
     try {
-      await downloadOnDeviceSpeechModels((status) => setModelStatus(status));
+      const baseUrl = modelBaseUrl.trim();
+      if (baseUrl) {
+        await downloadOnDeviceSpeechModelsFromAddress(baseUrl, (status) => setModelStatus(status));
+      } else {
+        await downloadOnDeviceSpeechModels((status) => setModelStatus(status));
+      }
       setModelStatus(await onDeviceSpeechModelsStatus());
     } catch (err) {
       setError(errorText(err, t("Could not download the voice models.")));
@@ -352,8 +371,45 @@ export default function VoiceSettings() {
     }
   }
 
+  async function saveModelBaseUrl() {
+    try {
+      await saveOnDeviceSpeechModelBaseUrl(modelBaseUrl);
+    } catch {
+      // A failed save keeps the typed address for this visit; the
+      // download uses the field, so nothing is lost.
+    }
+  }
+
+  async function importModels() {
+    if (importingModels || downloadingModels || pending !== null || !modelStatus) return;
+    setImportingModels(true);
+    setError(null);
+    try {
+      // Deferred: most users never import, so the picker loads only here.
+      const DocumentPicker = await import("expo-document-picker");
+      const missing: OnDeviceSpeechModelCategory[] = [];
+      if (modelStatus.stt !== "ready") missing.push("stt");
+      if (modelStatus.tts !== "ready") missing.push("tts");
+      for (const category of missing) {
+        const picked = await DocumentPicker.getDocumentAsync({
+          type: ["application/x-bzip2", "application/x-tar", "application/octet-stream"],
+          copyToCacheDirectory: false,
+        });
+        if (picked.canceled || !picked.assets[0]) return;
+        const asset = picked.assets[0];
+        await importOnDeviceSpeechModel(category, asset.uri, asset.name);
+        setModelStatus(await onDeviceSpeechModelsStatus());
+      }
+    } catch (err) {
+      setError(errorText(err, t("Could not import the voice models.")));
+      setModelStatus(await onDeviceSpeechModelsStatus().catch(() => null));
+    } finally {
+      setImportingModels(false);
+    }
+  }
+
   async function deleteModels() {
-    if (downloadingModels || pending !== null) return;
+    if (downloadingModels || importingModels || pending !== null) return;
     setPending("device-voice");
     setError(null);
     try {
@@ -594,12 +650,12 @@ export default function VoiceSettings() {
               modelStatus.stt === "ready" && modelStatus.tts === "ready" ? (
                 <Pressable
                   accessibilityRole="button"
-                  disabled={pending !== null || downloadingModels}
+                  disabled={pending !== null || downloadingModels || importingModels}
                   onPress={() => void deleteModels()}
                   style={({ pressed }) => [
                     styles.groupRow,
                     styles.groupDivider,
-                    (pending !== null || downloadingModels) && styles.disabled,
+                    (pending !== null || downloadingModels || importingModels) && styles.disabled,
                     pressed && styles.pressed,
                   ]}
                 >
@@ -610,29 +666,67 @@ export default function VoiceSettings() {
                   </View>
                 </Pressable>
               ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={pending !== null || downloadingModels}
-                  onPress={() => void downloadModels()}
-                  style={({ pressed }) => [
-                    styles.groupRow,
-                    styles.groupDivider,
-                    (pending !== null || downloadingModels) && styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <View style={styles.rowCopy}>
-                    <Text style={styles.cardTitle}>
-                      {downloadingModels && modelStatus.progress !== null
-                        ? t("Downloading voice models… {percent}%", {
-                            percent: String(Math.round(modelStatus.progress * 100)),
-                          })
-                        : t("Download voice models ({size} MB)", {
-                            size: String(onDeviceSpeechModelSizes().totalMb),
-                          })}
-                    </Text>
+                <>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={pending !== null || downloadingModels || importingModels}
+                    onPress={() => void downloadModels()}
+                    style={({ pressed }) => [
+                      styles.groupRow,
+                      styles.groupDivider,
+                      (pending !== null || downloadingModels || importingModels) && styles.disabled,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={styles.rowCopy}>
+                      <Text style={styles.cardTitle}>
+                        {downloadingModels && modelStatus.progress !== null
+                          ? t("Downloading voice models… {percent}%", {
+                              percent: String(Math.round(modelStatus.progress * 100)),
+                            })
+                          : t("Download voice models ({size} MB)", {
+                              size: String(onDeviceSpeechModelSizes().totalMb),
+                            })}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={pending !== null || downloadingModels || importingModels}
+                    onPress={() => void importModels()}
+                    style={({ pressed }) => [
+                      styles.groupRow,
+                      styles.groupDivider,
+                      (pending !== null || downloadingModels || importingModels) && styles.disabled,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={styles.rowCopy}>
+                      <Text style={styles.cardTitle}>
+                        {importingModels
+                          ? t("Importing voice models…")
+                          : t("Import from local files")}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  <View style={[styles.groupRow, styles.groupDivider]}>
+                    <TextInput
+                      accessibilityLabel={t("Model download address")}
+                      autoCapitalize="none"
+                      autoComplete="off"
+                      autoCorrect={false}
+                      inputMode="url"
+                      keyboardType="url"
+                      value={modelBaseUrl}
+                      onChangeText={setModelBaseUrl}
+                      onEndEditing={() => void saveModelBaseUrl()}
+                      placeholder={t("Model download address")}
+                      placeholderTextColor={native.tertiaryLabel}
+                      style={[styles.cardTitle, styles.addressInput]}
+                      textContentType="URL"
+                    />
                   </View>
-                </Pressable>
+                </>
               )
             ) : null}
           </View>
@@ -872,6 +966,7 @@ function createVoiceStyles() {
       borderTopColor: native.separator,
     },
     rowCopy: { flex: 1 },
+    addressInput: { flex: 1 },
     cardTitle: { color: native.label, fontSize: 16 },
     fieldLabel: { color: native.label, marginTop: 16 },
     input: {

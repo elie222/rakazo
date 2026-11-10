@@ -1710,6 +1710,12 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Could not download the voice models.": "語音模型下載失敗。",
   "Could not delete the voice models.": "語音模型刪除失敗。",
   "Voice models are not downloaded yet.": "語音模型尚未下載。",
+  "Import from local files": "從本地檔案匯入",
+  "Importing voice models…": "正在匯入語音模型…",
+  "Could not import the voice models.": "匯入語音模型失敗。",
+  "Model download address": "模型下載位址",
+  "Enter a model download address.": "請填寫模型下載位址。",
+  "Please choose the {name} file.": "請選擇 {name} 檔案。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

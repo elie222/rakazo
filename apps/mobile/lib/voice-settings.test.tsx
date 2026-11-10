@@ -47,6 +47,10 @@ vi.mock("./on-device-speech", () => ({
   })),
   onDeviceSpeechModelSizes: () => ({ sttMb: 71, ttsMb: 141, totalMb: 212 }),
   downloadOnDeviceSpeechModels: vi.fn(async () => undefined),
+  downloadOnDeviceSpeechModelsFromAddress: vi.fn(async () => undefined),
+  importOnDeviceSpeechModel: vi.fn(async () => undefined),
+  loadOnDeviceSpeechModelBaseUrl: vi.fn(async () => ""),
+  saveOnDeviceSpeechModelBaseUrl: vi.fn(async () => undefined),
   deleteOnDeviceSpeechModels: vi.fn(async () => undefined),
 }));
 vi.mock("./call-sounds", () => ({

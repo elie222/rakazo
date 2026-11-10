@@ -1715,6 +1715,12 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not download the voice models.": "语音模型下载失败。",
   "Could not delete the voice models.": "语音模型删除失败。",
   "Voice models are not downloaded yet.": "语音模型尚未下载。",
+  "Import from local files": "从本地文件导入",
+  "Importing voice models…": "正在导入语音模型…",
+  "Could not import the voice models.": "导入语音模型失败。",
+  "Model download address": "模型下载地址",
+  "Enter a model download address.": "请填写模型下载地址。",
+  "Please choose the {name} file.": "请选择 {name} 文件。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
