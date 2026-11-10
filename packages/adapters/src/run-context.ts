@@ -176,6 +176,8 @@ export interface RunState {
   toolCallStreak: LoopGuardStreak;
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
+  /** The last call refused before its tool ran, for the log line of a loop it then causes. */
+  lastToolRefusal?: { tool: string; reason: string };
   /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
   overLimitActionCalls: number;
   /**

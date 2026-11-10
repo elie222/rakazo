@@ -92,6 +92,7 @@ import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import {
   appendToolCompletionAudit,
+  logLoopGuardStop,
   toolCompletionFromResult,
   toolCompletionOutcome,
 } from "./tool-completion-audit.js";
@@ -101,6 +102,7 @@ import {
   loopGuardStopText,
   MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
   overLimitStopText,
+  toolCallStreakLength,
   toolResultFingerprint,
 } from "./tool-loop.js";
 import {
@@ -624,6 +626,25 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
     overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
       ? overLimitStopText(humanName, overLimit)
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
+  const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
+  const refusal = ctx.state.lastToolRefusal;
+  logLoopGuardStop(
+    {
+      spaceId: run.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+      runId,
+      trigger: run.trigger,
+    },
+    {
+      tool: toolName,
+      reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
+      count: stoppedForOverLimit ? overLimit : toolCallStreakLength(ctx.state.toolCallStreak),
+      failures: ctx.state.toolCallStreak.failures ?? 0,
+      ...(refusal?.tool === toolName ? { refusal: refusal.reason } : {}),
+    },
+    ctx.secrets,
+  );
   await ctx.settleRunningHelpers();
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,

@@ -136,3 +136,67 @@ export async function appendToolCompletionAudit(
     });
   }
 }
+
+type RunLogTarget = {
+  spaceId: string;
+  threadId: string;
+  botId: string;
+  runId: string;
+  trigger: string;
+};
+
+const runLogFields = (target: RunLogTarget) => ({
+  "run.id": target.runId,
+  "space.id": target.spaceId,
+  "thread.id": target.threadId,
+  "bot.id": target.botId,
+  "run.trigger": target.trigger,
+});
+
+const REFUSAL_LOG_LIMIT = 300;
+
+/**
+ * Logs a call refused before its tool ran, and returns the logged reason. The reason is a sentence
+ * written in this codebase about the run, not anything the tool or a person produced, which is
+ * what makes it safe to log where a tool's own error is not. A refusal quotes the names and ids it
+ * was given, so everything from its first quote to its last is left out.
+ */
+export function logToolRefusal(
+  target: RunLogTarget,
+  tool: string,
+  refusal: unknown,
+  secrets: string[] = [],
+): string | undefined {
+  const error = (refusal as { error?: unknown } | null)?.error;
+  if (typeof error !== "string") return undefined;
+  const reason = redactSecrets(error, secrets).replace(/".*"/s, '"…"').slice(0, REFUSAL_LOG_LIMIT);
+  getLogger().info("agent.tool.refused", {
+    ...runLogFields(target),
+    tool: redactSecrets(tool, secrets),
+    "tool.refusal": reason,
+  });
+  return reason;
+}
+
+/** Logs a run stopped for repeating a call, with the refusal it kept getting when there was one. */
+export function logLoopGuardStop(
+  target: RunLogTarget,
+  stop: {
+    tool: string;
+    reason: "repeated_calls" | "over_limit_actions";
+    count: number;
+    /** How many of the repeated calls in a row came back failed. */
+    failures: number;
+    refusal?: string;
+  },
+  secrets: string[] = [],
+): void {
+  getLogger().info("run.loop_guard_stopped", {
+    ...runLogFields(target),
+    tool: redactSecrets(stop.tool, secrets),
+    "loop.reason": stop.reason,
+    "loop.count": stop.count,
+    "loop.failures": stop.failures,
+    ...(stop.refusal ? { "tool.refusal": stop.refusal } : {}),
+  });
+}
