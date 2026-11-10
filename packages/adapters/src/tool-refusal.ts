@@ -14,3 +14,6 @@ export function refusal(code: string, error: string): { error: string } {
 export function refusalCode(result: unknown): string | undefined {
   return result && typeof result === "object" ? codes.get(result) : undefined;
 }
+
+/** A logged refusal: its code, and the connector tool a catalog call resolved to, if any. */
+export type ToolRefusal = { code: string; target?: string };

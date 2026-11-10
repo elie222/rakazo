@@ -100,9 +100,10 @@ async function dispatchTool(
   observer: AgentToolExecutionObserver | undefined,
 ) {
   ctx.context.signal.throwIfAborted();
-  // A call turned away before its tool runs is logged by its refusal code.
-  const refuse = <T>(refused: T): T => {
-    const code = logToolRefusal(
+  // A call turned away before its tool runs is logged by its refusal code. `target` is the
+  // connector tool a catalog call resolved to.
+  const refuse = <T>(refused: T, target?: string): T => {
+    const logged = logToolRefusal(
       {
         spaceId: ctx.run.spaceId,
         threadId: ctx.thread.id,
@@ -113,12 +114,11 @@ async function dispatchTool(
       name,
       refused,
       ctx.secrets,
+      target === name ? undefined : target,
     );
-    if (code) ctx.state.lastToolRefusal = { tool: name, code };
+    if (logged) (ctx.state.toolRefusals ??= new Map()).set(executionId, logged);
     return refused;
   };
-  // A loop stop reports the refusal only when the call before it was the one refused.
-  ctx.state.lastToolRefusal = undefined;
   if (!strategicInitiativeToolAllowed(name, ctx.run)) {
     return refuse(
       refusal(
@@ -167,13 +167,14 @@ async function dispatchTool(
   if (request.catalogRemapped && toolHandler(request.name) !== connectorTool) {
     return refuse(
       refusal("connector_name_conflict", "Connector tool name conflicts with a built-in tool"),
+      request.name,
     );
   }
   const refused = await prepareToolRequest(ctx, request);
-  if (refused) return refuse(refused);
+  if (refused) return refuse(refused, request.name);
   noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) return refuse(gate.result);
+  if ("result" in gate) return refuse(gate.result, request.name);
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {

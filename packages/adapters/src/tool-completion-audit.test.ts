@@ -26,7 +26,9 @@ describe("tool refusal log", () => {
     const sink = capture();
     const refused = refusal("run_not_owner_started", 'No bot named "Chief". Ask the owner.');
     expect(refused).toEqual({ error: 'No bot named "Chief". Ask the owner.' });
-    expect(logToolRefusal(target, "update_bot", refused)).toBe("run_not_owner_started");
+    expect(logToolRefusal(target, "update_bot", refused)).toEqual({
+      code: "run_not_owner_started",
+    });
     expect(sink.events).toEqual([
       expect.objectContaining({
         message: "agent.tool.refused",
@@ -57,7 +59,7 @@ describe("loop guard stop log", () => {
       reason: "repeated_calls",
       count: 6,
       failures: 5,
-      refusal: "run_not_owner_started",
+      refusal: { code: "run_not_owner_started", target: "crm_update" },
     });
     logLoopGuardStop(target, {
       tool: "computer_act",
@@ -73,6 +75,7 @@ describe("loop guard stop log", () => {
         "loop.reason": "repeated_calls",
         "loop.count": 6,
         "loop.failures": 5,
+        "tool.target": "crm_update",
         "tool.refusal": "run_not_owner_started",
       }),
       expect.not.objectContaining({ "tool.refusal": expect.anything() }),

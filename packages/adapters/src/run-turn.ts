@@ -105,6 +105,7 @@ import {
   overLimitStopText,
   toolResultFingerprint,
 } from "./tool-loop.js";
+import type { ToolRefusal } from "./tool-refusal.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -555,9 +556,16 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     previousResult,
     event.response,
   );
+  // The refusal the previous call of the streak got, read before this call can add its own.
+  const previousRefusal = streak.executionId
+    ? ctx.state.toolRefusals?.get(streak.executionId)
+    : undefined;
   // A call from the same response as the streak's last one leaves it as it was.
   if (loopGuard.streak !== streak) {
-    if (streak.executionId) toolResults.delete(streak.executionId);
+    if (streak.executionId) {
+      toolResults.delete(streak.executionId);
+      ctx.state.toolRefusals?.delete(streak.executionId);
+    }
     ctx.state.toolCallStreak = { ...loopGuard.streak, executionId: event.executionId };
   }
   ctx.state.overLimitActionCalls = advanceOverLimitActionCalls(
@@ -569,7 +577,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     loopGuard.stuck ||
     ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
   ) {
-    await stopStuckToolLoop(ctx, event.name);
+    await stopStuckToolLoop(ctx, event.name, previousRefusal);
     return true;
   }
   if (!ctx.scripted) return false;
@@ -604,7 +612,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
 }
 
 /** The model keeps repeating the same call: finish the run with what it has and say why. */
-async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
+async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: ToolRefusal) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   const { reply } = ctx.state;
   // Otherwise the model keeps calling tools while the stop is saved. The run's own signal stays
@@ -641,7 +649,6 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   });
   if (!stopped) return;
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
-  const refusal = ctx.state.lastToolRefusal;
   logLoopGuardStop(
     {
       spaceId: run.spaceId,
@@ -655,7 +662,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
       reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
       count: stoppedForOverLimit ? overLimit : loopGuardStop(ctx.state.toolCallStreak).count,
       failures: ctx.state.toolCallStreak.failures ?? 0,
-      ...(refusal?.tool === toolName ? { refusal: refusal.code } : {}),
+      ...(refusal ? { refusal } : {}),
     },
     ctx.secrets,
   );

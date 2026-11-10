@@ -259,9 +259,8 @@ describe("daily check-in dispatch restriction", () => {
     });
     expect(audited).toEqual([]);
     // Kept for the log line of a loop this refusal goes on to cause.
-    expect((ctx.state as { lastToolRefusal?: unknown }).lastToolRefusal).toEqual({
-      tool: name,
-      code: "daily_check_in_tool_not_allowed",
-    });
+    expect(
+      (ctx.state as { toolRefusals?: Map<string, unknown> }).toolRefusals?.get("call-1"),
+    ).toEqual({ code: "daily_check_in_tool_not_allowed" });
   });
 });
