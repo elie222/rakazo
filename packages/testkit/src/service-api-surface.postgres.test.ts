@@ -284,6 +284,7 @@ describeWithDatabase("service API surface", () => {
           blocks: [
             { kind: "text", text: "visible" },
             { kind: "card", lines: [{ k: "private tool step", v: "done" }] },
+            { kind: "steps", steps: [{ label: "private reasoning", count: 1 }] },
             {
               kind: "ask",
               text: "password?",
@@ -299,6 +300,7 @@ describeWithDatabase("service API surface", () => {
       expect(raw).toContain("password?");
       expect(raw).not.toContain("hunter2");
       expect(raw).not.toContain("private tool step");
+      expect(raw).not.toContain("private reasoning");
       void actor;
     });
   });
