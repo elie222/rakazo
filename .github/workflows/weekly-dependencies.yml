@@ -116,10 +116,14 @@ jobs:
           if [ "$status" -ne 0 ]; then
             echo "::error::Codex exited with status $status"
             # The log may hold the refreshed login: show only Codex's own error
-            # lines, minus anything that could carry a credential.
+            # lines, minus anything that could carry a credential. Package output can
+            # reach the log, so workflow commands stay off while it prints.
+            resume="$(openssl rand -hex 16)"
+            echo "::stop-commands::$resume"
             grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$log" \
               | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
               | tail -n 20 | cut -c1-300 || true
+            echo "::$resume::"
             exit "$status"
           fi
       - name: Persist refreshed subscription login
