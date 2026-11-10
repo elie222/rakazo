@@ -287,6 +287,8 @@ async function removeDeletedBotFolders(
         names.slice(start, start + DELETED_BOT_FOLDER_BATCH),
         context,
       ).catch((error) => {
+        // The deadline's own warning covers a removal it cut short.
+        if (context.signal.aborted) return;
         getLogger().error("team bot folder cleanup", error);
       });
     }
