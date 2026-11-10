@@ -18,6 +18,12 @@
     "screens": ["index", "artifacts"]
   },
   {
+    "id": "needs-you",
+    "title": "Needs you",
+    "flow": "flows/needs-you.yaml",
+    "screens": ["needs"]
+  },
+  {
     "id": "thread",
     "title": "Thread",
     "flow": "flows/thread.yaml",

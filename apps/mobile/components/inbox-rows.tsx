@@ -154,6 +154,35 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
   );
 }
 
+/** One line above the inbox when a question, approval or failure is waiting. */
+export function NeedsYouRow({ count, onPress }: { count: number; onPress: () => void }) {
+  const styles = useThemedStyles(createHomeStyles);
+  const { t } = useLingui();
+  if (count < 1) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t`Needs you, ${count} waiting`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.sectionToggle,
+        styles.needsYouRow,
+        pressed && styles.rowPressed,
+      ]}
+    >
+      <NativeSymbol ios="tray.full" android="mail-unread-outline" size={16} color={native.label} />
+      <Text style={styles.needsYouTitle}>{t`Needs you`}</Text>
+      <Text style={styles.sectionCount}>{count}</Text>
+      <NativeSymbol
+        ios="chevron.right"
+        android="chevron-forward"
+        size={12}
+        color={native.tertiaryLabel}
+      />
+    </Pressable>
+  );
+}
+
 /** Points right while a section is collapsed and turns down as it opens. */
 /** A folding section header's title, count, and chevron; `count` shows when given. */
 export function SectionToggle({

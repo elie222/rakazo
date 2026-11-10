@@ -18,6 +18,7 @@ import {
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_COUNT_CEILING,
 } from "./attachments.js";
+import { AttentionListOutputSchema } from "./attention.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import {
   BillingClientSchema,
@@ -1525,6 +1526,10 @@ export const appContract = {
   },
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
+  },
+  /** What waits on the signed-in user across the space's bots, oldest important item first. */
+  attention: {
+    list: oc.output(AttentionListOutputSchema),
   },
   /** The account's spending limit for payments its bots make. */
   spendingLimit: {

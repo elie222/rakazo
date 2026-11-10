@@ -1,0 +1,14 @@
+appId: com.rakazo.app
+name: Needs you
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///needs"
+- extendedWaitUntil:
+    visible: ".*Needs you.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-needs-you

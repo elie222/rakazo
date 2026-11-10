@@ -8,6 +8,7 @@ export * from "./app-connect.js";
 export * from "./artifact-sandbox.js";
 export * from "./async.js";
 export * from "./attachments.js";
+export * from "./attention.js";
 export * from "./avatar-clips.js";
 export * from "./avatar-life.js";
 export * from "./avatar-motion.js";

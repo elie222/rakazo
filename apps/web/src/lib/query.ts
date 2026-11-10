@@ -27,6 +27,9 @@ export const queryClient = new QueryClient({
   },
 });
 
+/** The Needs you inbox refreshes at one cadence wherever its count appears. */
+export const ATTENTION_REFETCH_MS = 30_000;
+
 export type SpaceQueries = RouterUtils<RpcClient>;
 
 const scopes = new Map<string, SpaceQueries>();
