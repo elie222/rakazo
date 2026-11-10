@@ -880,23 +880,90 @@ export class MolaSandboxProvider implements SandboxProvider {
     const normalized = normalizeWorkspacePath(file.path);
     const fullPath = path.posix.join(MOLA_WORKSPACE, normalized);
 
-    // Mola Cloud API expects 'content' field (base64-encoded for binary safety)
-    // Self-hosted mola-core may accept content_base64, but content works for both
-    const contentBase64 = Buffer.from(
+    const buffer = Buffer.from(
       file.content.buffer,
       file.content.byteOffset,
       file.content.byteLength,
-    ).toString("base64");
-
-    await this.executeAction(
-      computer.providerRef,
-      {
-        action: "write_file",
-        path: fullPath,
-        content: contentBase64,
-      },
-      { signal: context.signal },
     );
+
+    if (this.apiMode === "cloud") {
+      // Cloud (mola-cp): content field expects plain UTF-8 text (no base64 decoding)
+      // For binary/non-UTF-8 files, write via exec with base64 -d
+      let isUtf8 = true;
+      let textContent = "";
+      try {
+        textContent = buffer.toString("utf-8");
+        // Verify round-trip to detect invalid UTF-8
+        if (Buffer.from(textContent, "utf-8").length !== buffer.length) {
+          isUtf8 = false;
+        }
+      } catch {
+        isUtf8 = false;
+      }
+
+      if (isUtf8) {
+        // UTF-8 text file: send as plain text
+        await this.executeAction(
+          computer.providerRef,
+          {
+            action: "write_file",
+            path: fullPath,
+            content: textContent,
+          },
+          { signal: context.signal },
+        );
+      } else {
+        // Binary file: write via exec with base64 -d
+        const base64Content = buffer.toString("base64");
+        // Cloud has 1MB content limit; chunk if needed
+        const MAX_CHUNK_SIZE = 900_000; // Leave margin for command overhead
+        if (base64Content.length <= MAX_CHUNK_SIZE) {
+          await this.executeAction(
+            computer.providerRef,
+            {
+              action: "exec",
+              command: `printf '%s' ${shellQuote(base64Content)} | base64 -d > ${shellQuote(fullPath)}`,
+              timeout: 30,
+            },
+            { signal: context.signal },
+          );
+        } else {
+          // Large binary: write in chunks
+          await this.executeAction(
+            computer.providerRef,
+            {
+              action: "exec",
+              command: `rm -f ${shellQuote(fullPath)}`,
+              timeout: 10,
+            },
+            { signal: context.signal },
+          );
+          for (let offset = 0; offset < base64Content.length; offset += MAX_CHUNK_SIZE) {
+            const chunk = base64Content.slice(offset, offset + MAX_CHUNK_SIZE);
+            await this.executeAction(
+              computer.providerRef,
+              {
+                action: "exec",
+                command: `printf '%s' ${shellQuote(chunk)} | base64 -d >> ${shellQuote(fullPath)}`,
+                timeout: 30,
+              },
+              { signal: context.signal },
+            );
+          }
+        }
+      }
+    } else {
+      // Self-hosted (mola-core): accepts content_base64
+      await this.executeAction(
+        computer.providerRef,
+        {
+          action: "write_file",
+          path: fullPath,
+          content_base64: buffer.toString("base64"),
+        },
+        { signal: context.signal },
+      );
+    }
 
     // Apply executable permission if specified
     if (file.executable) {

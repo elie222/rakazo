@@ -535,5 +535,167 @@ describe("MolaSandboxProvider", () => {
       if (!call) throw new Error("Provision call not made");
       expect(call[0]).toBe("http://mola.internal:4141/v1/machines");
     });
+
+    it("writes UTF-8 text file on Cloud using plain content field", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-cloud";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, {
+          data: { ok: true, path: "/home/dev/rakazo-home/test.txt", bytes_written: 6 },
+        }),
+      );
+
+      const textContent = "hello\n";
+      await provider.writeFile(
+        computer,
+        {
+          path: "test.txt",
+          content: new TextEncoder().encode(textContent),
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      expect(body.action).toBe("write_file");
+      expect(body.path).toBe("/home/dev/rakazo-home/test.txt");
+      expect(body.content).toBe(textContent); // Plain text, not base64
+      expect(body).not.toHaveProperty("content_base64");
+    });
+
+    it("writes binary file on Cloud using exec with base64 -d", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-binary-cloud";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-binary",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+      );
+
+      // Binary content (PNG header bytes)
+      const binaryContent = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      await provider.writeFile(
+        computer,
+        {
+          path: "test.png",
+          content: binaryContent,
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      expect(body.action).toBe("exec");
+      expect(body.command).toContain("base64 -d");
+      expect(body.command).toContain("/home/dev/rakazo-home/test.png");
+      // Verify base64 encoding of binary content is in command
+      const expectedBase64 = Buffer.from(binaryContent).toString("base64");
+      expect(body.command).toContain(expectedBase64);
+    });
+
+    it("writes file on self-hosted using content_base64", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://localhost:4141/v1",
+      });
+
+      const machineId = "test-write-selfhosted";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-self",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, {
+          data: { ok: true, path: "/home/dev/rakazo-home/test.txt", bytes_written: 6 },
+        }),
+      );
+
+      const textContent = "hello\n";
+      await provider.writeFile(
+        computer,
+        {
+          path: "test.txt",
+          content: new TextEncoder().encode(textContent),
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      expect(body.action).toBe("write_file");
+      expect(body.path).toBe("/home/dev/rakazo-home/test.txt");
+      expect(body.content_base64).toBe(Buffer.from(textContent).toString("base64"));
+      expect(body).not.toHaveProperty("content");
+    });
+
+    it("writes empty file on Cloud", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-empty";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-empty",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, {
+          data: { ok: true, path: "/home/dev/rakazo-home/empty.txt", bytes_written: 0 },
+        }),
+      );
+
+      await provider.writeFile(
+        computer,
+        {
+          path: "empty.txt",
+          content: new Uint8Array(0),
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      expect(body.action).toBe("write_file");
+      expect(body.content).toBe(""); // Empty string
+    });
   });
 });
