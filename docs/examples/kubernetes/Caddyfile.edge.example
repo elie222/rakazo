@@ -8,10 +8,27 @@
 			Cache-Control "no-store"
 			Referrer-Policy "no-referrer"
 		}
-		reverse_proxy {$RAKAZO_PRIVATE_UPSTREAM}
+		reverse_proxy {$RAKAZO_PRIVATE_UPSTREAM} {
+			header_up -X-Access-Key
+		}
+	}
+	# Optional native clients: a separate 32-byte hex key, never the origin key.
+	# Fail closed when the environment value is absent or malformed.
+	@native {
+		path /api/* /rpc/*
+		header X-Access-Key "{$RAKAZO_NATIVE_ACCESS_KEY}"
+		expression `"{$RAKAZO_NATIVE_ACCESS_KEY}".matches("^[a-f0-9]{64}$")`
+	}
+	handle @native {
+		header Cache-Control "no-store"
+		reverse_proxy {$RAKAZO_PRIVATE_UPSTREAM} {
+			header_up -X-Access-Key
+		}
 	}
 	# Includes /oauth2/callback, all normal pages, /api/* and /novnc/.
 	handle {
-		reverse_proxy {$RAKAZO_AUTH_UPSTREAM}
+		reverse_proxy {$RAKAZO_AUTH_UPSTREAM} {
+			header_up -X-Access-Key
+		}
 	}
 }

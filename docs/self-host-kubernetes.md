@@ -201,10 +201,49 @@ For an optional Google gate, follow the
    allowed account should reach Rakazo's own login; use `OWNER_EMAIL` and the saved
    `OWNER_PASSWORD` there. Outer Google login does not create a Rakazo session.
 
-This gate is a browser-oriented deployment choice. Mobile/desktop clients, external
-webhooks and integrations may need a different entry design; do not add broad auth
-exceptions to make them work. App-native SSO is a separate option in
-[sign-in and accounts](./self-host-accounts.md).
+### Connect the mobile app through the same gate
+
+A browser can complete Google's login page. The native app instead sends a server
+probe to `/rpc/health` and expects JSON. A redirect to Google is not that response,
+even if Safari on the same phone is already signed in.
+
+The app already has **Server → Headers** for an access proxy's credentials. Give
+that device a separate entry key; keep Rakazo's account login behind it. In the
+Caddy example, the optional `@native` route requires **both** a matching
+`X-Access-Key` and an `/api/*` or `/rpc/*` path. Missing/wrong keys still go through
+the Google gate. An unset or malformed configured key leaves this route disabled.
+
+Generate 32 random bytes as 64 lowercase hex characters using your secret manager
+(or `python3 -c 'import secrets; print(secrets.token_hex(32))'` in a private terminal).
+Store it securely as `RAKAZO_NATIVE_ACCESS_KEY` in the **Caddy process environment**,
+then validate and reload Caddy. With containers, changing an env-file normally
+requires recreating the Caddy container to update its process environment; an
+in-process config reload alone does not import a changed external env-file. Plan
+for the connection interruption. Never reuse `SCREEN_PROXY_SECRET`, the app auth
+secret, or a private-origin credential.
+
+On the phone, enter the HTTPS server origin, add **Header name** `X-Access-Key` and
+put the generated value in **Header value**, then save. Sign in with the existing
+Rakazo account. The app stores configured headers securely, scopes them to that
+server, and refuses redirects on requests carrying them. The edge strips this key
+before forwarding; Rakazo still checks the separate app session and permissions.
+Do not use an `X-Rakazo-*` name: the client reserves those headers for the app.
+
+Verify four different results: no key → Google gate; wrong key → Google gate;
+correct key → JSON health response; correct key without an app session → protected
+RPC denied. Then test native sign-in and the desktop screen on the actual phone.
+A successful server probe alone does not prove the entire mobile workflow.
+
+Treat the entry key like a password. Keep it out of logs and screenshots; deliver
+it through a private password manager. This example has one native key; for
+multiple devices use separate revocable credentials in your access proxy. To
+revoke it, remove/rotate the key in Caddy's actual process environment and apply
+the configuration, then revoke the device's Rakazo session too. Browser Google
+logout does not revoke this independent device credential.
+
+External webhooks and other integrations require their own authentication design;
+do not add broad unauthenticated API exceptions. App-native SSO is a separate
+option in [sign-in and accounts](./self-host-accounts.md).
 
 ## Find the failing boundary before changing a setting
 
