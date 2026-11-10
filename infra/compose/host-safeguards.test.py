@@ -655,6 +655,7 @@ class HostCheckTests(unittest.TestCase):
                 "stat": 'if [[ "$3" == / ]]; then echo 1; else echo 2; fi',
                 "systemctl": "exit 1",
                 "sshd": 'echo "port 2222"',
+                "nproc": "echo 4",
                 "alert": 'echo "$*" >> "$ALERT_LOG"; if (($# < 2)); then cat >> "$ALERT_LOG"; fi',
             }
             for name, command in commands.items():
@@ -669,6 +670,16 @@ class HostCheckTests(unittest.TestCase):
             source = source.replace("/usr/sbin/sshd", str(bin_dir / "sshd"))
             reboot_required = root / "reboot-required"
             source = source.replace("/run/reboot-required", str(reboot_required))
+            loadavg = root / "loadavg"
+            loadavg.write_text("0.50 0.50 0.50 1/100 1\n")
+            source = source.replace("/proc/loadavg", str(loadavg))
+            meminfo = root / "meminfo"
+            healthy_memory = (
+                "MemTotal: 8000000 kB\nMemAvailable: 4000000 kB\n"
+                "SwapTotal: 4000000 kB\nSwapFree: 4000000 kB\n"
+            )
+            meminfo.write_text(healthy_memory)
+            source = source.replace("/proc/meminfo", str(meminfo))
             source = source.replace(
                 "/usr/local/sbin/rakazo-host-alert", str(bin_dir / "alert")
             )
@@ -716,6 +727,23 @@ class HostCheckTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("need a reboot", alert_log.read_text())
             reboot_required.unlink()
+            loadavg.write_text("6.00 5.50 5.00 1/100 1\n")
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("CPU is overloaded", alert_log.read_text())
+            loadavg.write_text("0.50 0.50 0.50 1/100 1\n")
+            meminfo.write_text(
+                "MemTotal: 8000000 kB\nMemAvailable: 500000 kB\n"
+                "SwapTotal: 4000000 kB\nSwapFree: 4000000 kB\n"
+            )
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Memory is low", alert_log.read_text())
+            meminfo.write_text(healthy_memory)
             rules.write_text(
                 "### tuple ### allow any 2222 0.0.0.0/0 any 0.0.0.0/0 in\n"
             )
