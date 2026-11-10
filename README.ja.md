@@ -91,7 +91,7 @@ Gmail、Slack、GitHub、Notion、Linear など数千のアプリに加え、自
 
 ### すべてのデバイスで
 
-Web、デスクトップ、iPhone、Android が同じサーバーにつながります。
+Web、デスクトップ、iPhone、iPad、Android が同じサーバーにつながります。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone のボット一覧とチャット" width="100%">
 
