@@ -279,18 +279,4 @@ describe("importAccountZip", () => {
     expect(headers["x-rakazo-backup-password"]).toBe("backup-password-long");
     expect(call.url).not.toContain("backup-password-long");
   });
-
-  it("omits the password header when no restore password was entered", async () => {
-    fsMocks.files.set("file:///cache/webdav-backup/rakazo-backup.zip", {
-      exists: true,
-      chunks: [],
-    });
-    await importAccountZip({
-      apiBase: "https://api.example.com",
-      headers: {},
-      fileUri: "file:///cache/webdav-backup/rakazo-backup.zip",
-    });
-    const headers = fsMocks.uploadCalls[0]!.options.headers as Record<string, string>;
-    expect(headers).not.toHaveProperty("x-rakazo-backup-password");
-  });
 });

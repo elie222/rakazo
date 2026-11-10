@@ -1657,6 +1657,27 @@ export const JA_MESSAGES: Record<string, string> = {
   "URL subscription": "URL購読",
   Unfavorite: "お気に入りを解除",
   "{count} favorites": "{count}件のお気に入り",
+  "Hero background height": "Hero background height",
+  "Message background": "Message background",
+  "My message": "My message",
+  "AI reply": "AI reply",
+  "This is my message.": "This is my message.",
+  Waiting: "Waiting",
+  Replace: "Replace",
+  "Restore built-in": "Restore built-in",
+  Refresh: "Refresh",
+  Unsubscribe: "Unsubscribe",
+  "Paste a pack URL": "Paste a pack URL",
+  "Subscribed: {name}": "Subscribed: {name}",
+  "Subscription failed. Check the address and try again.":
+    "Subscription failed. Check the address and try again.",
+  "On-device voice": "デバイス内音声",
+  "Download voice models ({size} MB)": "音声モデルをダウンロード（{size} MB）",
+  "Downloading voice models… {percent}%": "音声モデルをダウンロード中…{percent}％",
+  "Delete voice models": "音声モデルを削除",
+  "Could not download the voice models.": "音声モデルをダウンロードできませんでした。",
+  "Could not delete the voice models.": "音声モデルを削除できませんでした。",
+  "Voice models are not downloaded yet.": "音声モデルはまだダウンロードされていません。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

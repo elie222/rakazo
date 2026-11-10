@@ -29,6 +29,36 @@ describe("mobile voice call entry", () => {
     expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
   });
 
+  it("starts an on-device call when on-device speech is ready", async () => {
+    const fakes = {
+      ...deps({
+        deviceVoice: false,
+        dictation: false,
+        status: { ready: false, transcribe: false },
+      }),
+      onDeviceSpeechAvailable: vi.fn(async () => true),
+    };
+
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
+      kind: "device",
+      transcribe: false,
+    });
+    expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
+  });
+
+  it("falls through to provider setup when on-device speech is off", async () => {
+    const fakes = {
+      ...deps({
+        deviceVoice: false,
+        dictation: false,
+        status: { ready: false, transcribe: false },
+      }),
+      onDeviceSpeechAvailable: vi.fn(async () => false),
+    };
+
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({ kind: "settings" });
+  });
+
   it("reports missing speech recognition instead of opening provider setup", async () => {
     const fakes = deps({
       deviceVoice: true,

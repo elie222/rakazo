@@ -1,11 +1,12 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 /**
- * The interface's own tuning: hero background width per thread, the chips
+ * The interface's own tuning: hero background height per thread, the chips
  * row's width and card size, the three font slots (title / conversation /
- * error, each with its own size and colour, plus imported font files), and
- * the AI message action row's order and hidden tiles. One object per
- * account, so switching accounts never shows another account's tuning.
+ * error, each with its own size and colour, plus imported font files), the
+ * message backgrounds (mine / AI / error), and the AI message action row's
+ * order and hidden tiles. One object per account, so switching accounts never
+ * shows another account's tuning.
  *
  * The shape mirrors the background settings: a module-level object per user
  * plus listeners, setX() updates memory and notifies at once (the screen
@@ -39,6 +40,13 @@ export type CustomFontSettings = {
 
 export type MessageActionId = "copy" | "speak" | "share" | "favorite" | "regenerate";
 
+/** The three message surfaces' backgrounds; null follows the theme. */
+export type CustomMessageBackgrounds = {
+  user: string | null;
+  ai: string | null;
+  error: string | null;
+};
+
 export type CustomMessageActions = {
   order: MessageActionId[];
   hidden: MessageActionId[];
@@ -46,7 +54,7 @@ export type CustomMessageActions = {
 
 /** A patch for setCustomSettings: each section, and each font slot, is optional on its own. */
 export type CustomSettingsPatch = {
-  heroBackgroundWidths?: Record<string, number>;
+  heroBackgroundHeights?: Record<string, number>;
   chipsRowWidthPct?: number;
   chipsCardWidth?: number;
   font?: Partial<Omit<CustomFontSettings, "title" | "chat" | "error">> & {
@@ -54,23 +62,25 @@ export type CustomSettingsPatch = {
     chat?: Partial<CustomFontSlot>;
     error?: Partial<CustomFontSlot>;
   };
+  messageBackgrounds?: Partial<CustomMessageBackgrounds>;
   messageActions?: Partial<CustomMessageActions>;
 };
 
 export type CustomSettings = {
-  /** Hero background width per thread, in percent; absent means 100. */
-  heroBackgroundWidths: Record<string, number>;
+  /** Hero background height per thread, in percent of the hero height; absent means 100. */
+  heroBackgroundHeights: Record<string, number>;
   chipsRowWidthPct: number;
   chipsCardWidth: number;
   font: CustomFontSettings;
+  messageBackgrounds: CustomMessageBackgrounds;
   messageActions: CustomMessageActions;
 };
 
 export const CUSTOM_SETTINGS_KEY_PREFIX = "rakazo.custom-settings.";
 export const CUSTOM_FONTS_DIR = "custom-fonts";
 
-export const CUSTOM_SETTINGS_HERO_WIDTH_MIN = 60;
-export const CUSTOM_SETTINGS_HERO_WIDTH_MAX = 100;
+export const CUSTOM_SETTINGS_HERO_HEIGHT_MIN = 50;
+export const CUSTOM_SETTINGS_HERO_HEIGHT_MAX = 150;
 export const CUSTOM_SETTINGS_CHIPS_ROW_WIDTH_MIN = 60;
 export const CUSTOM_SETTINGS_CHIPS_ROW_WIDTH_MAX = 100;
 export const CUSTOM_SETTINGS_CHIPS_CARD_WIDTH_MIN = 56;
@@ -99,7 +109,7 @@ export function customSettingsKey(userId: string): string {
 
 export function defaultCustomSettings(): CustomSettings {
   return {
-    heroBackgroundWidths: {},
+    heroBackgroundHeights: {},
     chipsRowWidthPct: 100,
     chipsCardWidth: 72,
     font: {
@@ -109,6 +119,7 @@ export function defaultCustomSettings(): CustomSettings {
       error: { size: 14, color: CUSTOM_SETTINGS_ERROR_COLOR_DEFAULT },
       imported: [],
     },
+    messageBackgrounds: { user: null, ai: null, error: null },
     messageActions: { order: [...DEFAULT_MESSAGE_ACTION_ORDER], hidden: [] },
   };
 }
@@ -175,18 +186,23 @@ export function parseCustomSettings(value: unknown): CustomSettings {
   const fallback = defaultCustomSettings();
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const item = value as Record<string, unknown>;
-  const widths: Record<string, number> = {};
-  const rawWidths = item.heroBackgroundWidths;
-  if (rawWidths && typeof rawWidths === "object" && !Array.isArray(rawWidths)) {
-    for (const [key, width] of Object.entries(rawWidths).slice(0, 500)) {
-      widths[key] = clampInt(
-        width,
-        CUSTOM_SETTINGS_HERO_WIDTH_MIN,
-        CUSTOM_SETTINGS_HERO_WIDTH_MAX,
+  const heights: Record<string, number> = {};
+  const rawHeights = item.heroBackgroundHeights;
+  if (rawHeights && typeof rawHeights === "object" && !Array.isArray(rawHeights)) {
+    for (const [key, height] of Object.entries(rawHeights).slice(0, 500)) {
+      heights[key] = clampInt(
+        height,
+        CUSTOM_SETTINGS_HERO_HEIGHT_MIN,
+        CUSTOM_SETTINGS_HERO_HEIGHT_MAX,
         100,
       );
     }
   }
+  // A stored width map from 1.0.19 is dropped: a width cannot turn into a height.
+  const rawBackgrounds =
+    item.messageBackgrounds && typeof item.messageBackgrounds === "object"
+      ? (item.messageBackgrounds as Record<string, unknown>)
+      : {};
   const rawFont =
     item.font && typeof item.font === "object" ? (item.font as Record<string, unknown>) : {};
   const rawActions =
@@ -212,7 +228,7 @@ export function parseCustomSettings(value: unknown): CustomSettings {
     typeof rawFont.family === "string" && rawFont.family !== "" ? rawFont.family : "system";
   const imported = parseImportedFonts(rawFont.imported);
   return {
-    heroBackgroundWidths: widths,
+    heroBackgroundHeights: heights,
     chipsRowWidthPct: clampInt(
       item.chipsRowWidthPct,
       CUSTOM_SETTINGS_CHIPS_ROW_WIDTH_MIN,
@@ -247,17 +263,22 @@ export function parseCustomSettings(value: unknown): CustomSettings {
       ),
       imported,
     },
+    messageBackgrounds: {
+      user: clampHexColor(rawBackgrounds.user, null),
+      ai: clampHexColor(rawBackgrounds.ai, null),
+      error: clampHexColor(rawBackgrounds.error, null),
+    },
     messageActions: { order, hidden },
   };
 }
 
-/** A thread's hero background width, in percent; 100 is the full width. */
-export function heroBackgroundWidthFor(
+/** A thread's hero background height, in percent of the hero height; 100 fills the hero. */
+export function heroBackgroundHeightFor(
   settings: CustomSettings,
   threadKey: string | undefined,
 ): number {
   if (!threadKey) return 100;
-  return settings.heroBackgroundWidths[threadKey] ?? 100;
+  return settings.heroBackgroundHeights[threadKey] ?? 100;
 }
 
 /** A font size's line height at the body's 22/17 ratio, so a bigger size keeps its leading. */
@@ -382,6 +403,7 @@ export function setCustomSettings(userId: string, patch: CustomSettingsPatch): v
   if (!userId) return;
   const current = customSettingsFor(userId);
   const fontPatch = patch.font;
+  const backgroundsPatch = patch.messageBackgrounds;
   const next = parseCustomSettings({
     ...current,
     ...patch,
@@ -394,6 +416,9 @@ export function setCustomSettings(userId: string, patch: CustomSettingsPatch): v
           error: { ...current.font.error, ...(fontPatch.error ?? {}) },
         }
       : current.font,
+    messageBackgrounds: backgroundsPatch
+      ? { ...current.messageBackgrounds, ...backgroundsPatch }
+      : current.messageBackgrounds,
     messageActions: patch.messageActions
       ? { ...current.messageActions, ...patch.messageActions }
       : current.messageActions,
@@ -404,17 +429,17 @@ export function setCustomSettings(userId: string, patch: CustomSettingsPatch): v
   void ensureCustomFontsLoaded(next);
 }
 
-/** Sets one thread's hero background width, in percent. */
-export function setHeroBackgroundWidth(userId: string, threadKey: string, width: number): void {
+/** Sets one thread's hero background height, in percent of the hero height. */
+export function setHeroBackgroundHeight(userId: string, threadKey: string, height: number): void {
   if (!userId || !threadKey) return;
   const current = customSettingsFor(userId);
   setCustomSettings(userId, {
-    heroBackgroundWidths: {
-      ...current.heroBackgroundWidths,
+    heroBackgroundHeights: {
+      ...current.heroBackgroundHeights,
       [threadKey]: clampInt(
-        width,
-        CUSTOM_SETTINGS_HERO_WIDTH_MIN,
-        CUSTOM_SETTINGS_HERO_WIDTH_MAX,
+        height,
+        CUSTOM_SETTINGS_HERO_HEIGHT_MIN,
+        CUSTOM_SETTINGS_HERO_HEIGHT_MAX,
         100,
       ),
     },

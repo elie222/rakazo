@@ -23,6 +23,12 @@ import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
 import {
+  finishOnDeviceSpeech,
+  listenOnDeviceSpeech,
+  onDeviceSpeechAvailable,
+  stopOnDeviceSpeech,
+} from "./on-device-speech";
+import {
   finishServerDictation,
   listenServerDictation,
   serverTranscribeAvailable,
@@ -502,6 +508,12 @@ async function dictateTurn(
   handlers: VoiceChatDictationHandlers,
   signal: AbortSignal,
 ): Promise<boolean> {
+  // On-device speech first: it needs neither the system recognizer nor a
+  // server, so it is the only path that works on a phone without either.
+  if (await onDeviceSpeechAvailable()) {
+    await listenOnDeviceSpeech({ ...handlers, signal });
+    return true;
+  }
   if (await dictation.available()) {
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
     await dictation.listen({ ...handlers, signal, lang });
@@ -523,10 +535,12 @@ export function productionVoiceChatDeps(): VoiceChatDeps {
     finishDictation: () => {
       dictation.finish();
       finishServerDictation();
+      finishOnDeviceSpeech();
     },
     stopDictation: () => {
       dictation.stop();
       stopServerDictation();
+      stopOnDeviceSpeech();
     },
     send: async (botId, text) => {
       const sent = await rpc("threads/send", { botId, clientNonce: newClientId(), text });

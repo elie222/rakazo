@@ -328,7 +328,7 @@ describe("settings file", () => {
 
   it("carries a provided interface settings snapshot as custom", () => {
     const custom = {
-      heroBackgroundWidths: { thread1: 70 },
+      heroBackgroundHeights: { thread1: 70 },
       chipsRowWidthPct: 80,
       font: { family: "system", title: { size: 19, color: null } },
     };

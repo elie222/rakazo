@@ -43,6 +43,7 @@ import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
 import { blockText } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
+import { listenOnDeviceSpeech, onDeviceSpeechAvailable } from "./on-device-speech";
 import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
@@ -853,6 +854,12 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
 
 /** The device's own speech recognition, which works with a speak-only voice provider. */
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
+  // On-device speech first: it needs neither the system recognizer nor a
+  // server, so it is the only path that works on a phone without either.
+  if (await onDeviceSpeechAvailable()) {
+    await listenOnDeviceSpeech({ ...handlers, signal });
+    return true;
+  }
   if (!(await dictation.available())) return false;
   const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
   await dictation.listen({ ...handlers, signal, lang });

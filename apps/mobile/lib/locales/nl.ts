@@ -1623,6 +1623,27 @@ export const NL_MESSAGES: Record<string, string> = {
   "URL subscription": "URL-abonnement",
   Unfavorite: "Favoriet verwijderen",
   "{count} favorites": "{count} favorieten",
+  "Hero background height": "Hero background height",
+  "Message background": "Message background",
+  "My message": "My message",
+  "AI reply": "AI reply",
+  "This is my message.": "This is my message.",
+  Waiting: "Waiting",
+  Replace: "Replace",
+  "Restore built-in": "Restore built-in",
+  Refresh: "Refresh",
+  Unsubscribe: "Unsubscribe",
+  "Paste a pack URL": "Paste a pack URL",
+  "Subscribed: {name}": "Subscribed: {name}",
+  "Subscription failed. Check the address and try again.":
+    "Subscription failed. Check the address and try again.",
+  "On-device voice": "Stem op apparaat",
+  "Download voice models ({size} MB)": "Spraakmodellen downloaden ({size} MB)",
+  "Downloading voice models… {percent}%": "Spraakmodellen downloaden… {percent} %",
+  "Delete voice models": "Spraakmodellen verwijderen",
+  "Could not download the voice models.": "De spraakmodellen konden niet worden gedownload.",
+  "Could not delete the voice models.": "De spraakmodellen konden niet worden verwijderd.",
+  "Voice models are not downloaded yet.": "De spraakmodellen zijn nog niet gedownload.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

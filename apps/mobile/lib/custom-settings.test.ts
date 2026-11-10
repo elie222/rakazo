@@ -136,9 +136,10 @@ describe("custom settings", () => {
     const { customSettingsFor, defaultCustomSettings } = await import("./custom-settings");
     expect(customSettingsFor("user-1")).toEqual(defaultCustomSettings());
     expect(defaultCustomSettings()).toMatchObject({
-      heroBackgroundWidths: {},
+      heroBackgroundHeights: {},
       chipsRowWidthPct: 100,
       chipsCardWidth: 72,
+      messageBackgrounds: { user: null, ai: null, error: null },
       messageActions: {
         order: ["copy", "speak", "share", "favorite", "regenerate"],
         hidden: [],
@@ -166,13 +167,23 @@ describe("custom settings", () => {
     expect(customSettingsFor("user-1").font.chat).toEqual({ size: 14, color: "#2f6bff" });
     // A patch leaves the untouched slots alone.
     expect(customSettingsFor("user-1").font.error).toEqual({ size: 14, color: "#e5484d" });
-    await waitForSaves(2);
+    setCustomSettings("user-1", {
+      messageBackgrounds: { user: "#E8EFFF", ai: "red", error: "#fde8e8" },
+    });
+    expect(customSettingsFor("user-1").messageBackgrounds).toEqual({
+      user: "#e8efff",
+      ai: null,
+      error: "#fde8e8",
+    });
+    await waitForSaves(3);
   });
 
   it("parses a stored or restored object strictly", async () => {
     const { parseCustomSettings } = await import("./custom-settings");
     const parsed = parseCustomSettings({
-      heroBackgroundWidths: { "bot-1": 80, "bot-2": 5, "bot-3": "wide" },
+      heroBackgroundHeights: { "bot-1": 80, "bot-2": 5, "bot-3": "tall" },
+      // A 1.0.19 width map cannot turn into heights and is dropped.
+      heroBackgroundWidths: { "bot-1": 70 },
       chipsRowWidthPct: "narrow",
       font: {
         family: "Ghost Font",
@@ -181,14 +192,20 @@ describe("custom settings", () => {
           { id: "f1", family: "Ghost Font", fileName: "Ghost.ttf", uri: "file:///doc/x.ttf" },
         ],
       },
+      messageBackgrounds: { user: "#E8EFFF", ai: "red", error: "#fde8e8" },
       messageActions: {
         order: ["share", "copy", "copy", "explode", "favorite"],
         hidden: ["favorite", "explode"],
       },
       unknownField: true,
     });
-    expect(parsed.heroBackgroundWidths).toEqual({ "bot-1": 80, "bot-2": 60, "bot-3": 100 });
+    expect(parsed.heroBackgroundHeights).toEqual({ "bot-1": 80, "bot-2": 50, "bot-3": 100 });
     expect(parsed.chipsRowWidthPct).toBe(100);
+    expect(parsed.messageBackgrounds).toEqual({
+      user: "#e8efff",
+      ai: null,
+      error: "#fde8e8",
+    });
     // The family survives because it is in the imported list.
     expect(parsed.font.family).toBe("Ghost Font");
     // The order keeps the stored order for known actions, drops the unknown
@@ -213,17 +230,33 @@ describe("custom settings", () => {
     expect(parseCustomSettings([]).chipsCardWidth).toBe(72);
   });
 
-  it("keeps each thread's hero width apart", async () => {
-    const { customSettingsFor, heroBackgroundWidthFor, setHeroBackgroundWidth } = await import(
+  it("keeps each thread's hero height apart", async () => {
+    const { customSettingsFor, heroBackgroundHeightFor, setHeroBackgroundHeight } = await import(
       "./custom-settings"
     );
-    expect(heroBackgroundWidthFor(customSettingsFor("user-1"), "bot-1")).toBe(100);
-    setHeroBackgroundWidth("user-1", "bot-1", 70);
-    setHeroBackgroundWidth("user-1", "bot-2", 200);
-    expect(heroBackgroundWidthFor(customSettingsFor("user-1"), "bot-1")).toBe(70);
-    expect(heroBackgroundWidthFor(customSettingsFor("user-1"), "bot-2")).toBe(100);
-    expect(heroBackgroundWidthFor(customSettingsFor("user-1"), undefined)).toBe(100);
+    expect(heroBackgroundHeightFor(customSettingsFor("user-1"), "bot-1")).toBe(100);
+    setHeroBackgroundHeight("user-1", "bot-1", 70);
+    setHeroBackgroundHeight("user-1", "bot-2", 200);
+    expect(heroBackgroundHeightFor(customSettingsFor("user-1"), "bot-1")).toBe(70);
+    expect(heroBackgroundHeightFor(customSettingsFor("user-1"), "bot-2")).toBe(150);
+    expect(heroBackgroundHeightFor(customSettingsFor("user-1"), undefined)).toBe(100);
     await waitForSaves(2);
+  });
+
+  it("merges message backgrounds per slot", async () => {
+    const { customSettingsFor, setCustomSettings } = await import("./custom-settings");
+    setCustomSettings("user-1", { messageBackgrounds: { user: "#e8efff" } });
+    setCustomSettings("user-1", { messageBackgrounds: { error: "#fde8e8" } });
+    // Patching one slot never wipes the others.
+    expect(customSettingsFor("user-1").messageBackgrounds).toEqual({
+      user: "#e8efff",
+      ai: null,
+      error: "#fde8e8",
+    });
+    setCustomSettings("user-1", { messageBackgrounds: { user: null } });
+    expect(customSettingsFor("user-1").messageBackgrounds.user).toBeNull();
+    expect(customSettingsFor("user-1").messageBackgrounds.error).toBe("#fde8e8");
+    await waitForSaves(3);
   });
 
   it("keeps each account's settings apart", async () => {
@@ -236,7 +269,7 @@ describe("custom settings", () => {
 
   it("loads stored settings and persists changes", async () => {
     store.stored = JSON.stringify({
-      heroBackgroundWidths: { "bot-1": 75 },
+      heroBackgroundHeights: { "bot-1": 75 },
       chipsRowWidthPct: 80,
       chipsCardWidth: 64,
       font: {
@@ -250,11 +283,11 @@ describe("custom settings", () => {
     });
     const { mod, seen } = await mountSettingsProbe("user-1");
     await waitFor(() => seen().chipsRowWidthPct === 80);
-    expect(seen().heroBackgroundWidths).toEqual({ "bot-1": 75 });
+    expect(seen().heroBackgroundHeights).toEqual({ "bot-1": 75 });
     expect(seen().font.title).toEqual({ size: 19, color: "#2f6bff" });
-    mod.setHeroBackgroundWidth("user-1", "bot-1", 65);
+    mod.setHeroBackgroundHeight("user-1", "bot-1", 65);
     // The mounted hook re-renders at once, before the persist lands.
-    await waitFor(() => seen().heroBackgroundWidths["bot-1"] === 65);
+    await waitFor(() => seen().heroBackgroundHeights["bot-1"] === 65);
     await waitFor(() => store.setItemAsync.mock.calls.length > 0);
     expect(store.setItemAsync).toHaveBeenCalledWith(
       "rakazo.custom-settings.user-1",
@@ -338,11 +371,13 @@ describe("custom settings", () => {
     applyCustomSettings("user-1", {
       chipsRowWidthPct: 70,
       font: { title: { size: 22, color: "#111111" } },
+      messageBackgrounds: { ai: "#e6f4ea" },
       messageActions: { hidden: ["favorite"] },
     });
     const restored = customSettingsFor("user-1");
     expect(restored.chipsRowWidthPct).toBe(70);
     expect(restored.font.title).toEqual({ size: 22, color: "#111111" });
+    expect(restored.messageBackgrounds).toEqual({ user: null, ai: "#e6f4ea", error: null });
     expect(restored.messageActions.hidden).toEqual(["favorite"]);
     // The slots the file never mentioned keep their defaults.
     expect(restored.font.chat).toEqual({ size: 17, color: null });

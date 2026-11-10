@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as dictation from "./dictation";
+import * as onDeviceSpeech from "./on-device-speech";
 import * as serverDictation from "./server-dictation";
 import type { VoiceChatDeps, VoiceChatDictationHandlers } from "./voice-chat";
 import { createVoiceChatSession, productionVoiceChatDeps, voiceChatOrbVariant } from "./voice-chat";
@@ -16,6 +17,12 @@ vi.mock("./dictation", () => ({
   listen: vi.fn(),
   finish: vi.fn(),
   stop: vi.fn(),
+}));
+vi.mock("./on-device-speech", () => ({
+  onDeviceSpeechAvailable: vi.fn(async () => false),
+  listenOnDeviceSpeech: vi.fn(),
+  finishOnDeviceSpeech: vi.fn(),
+  stopOnDeviceSpeech: vi.fn(),
 }));
 vi.mock("./server-dictation", () => ({
   serverTranscribeAvailable: vi.fn(async () => false),
@@ -428,6 +435,24 @@ describe("production voice chat dictation", () => {
     expect(started).toBe(true);
     expect(dictation.listen).toHaveBeenCalledOnce();
     expect(serverDictation.listenServerDictation).not.toHaveBeenCalled();
+  });
+
+  it("prefers on-device speech over system recognition", async () => {
+    vi.mocked(onDeviceSpeech.onDeviceSpeechAvailable).mockResolvedValueOnce(true);
+    const started = await productionVoiceChatDeps().dictate(handlers, signal);
+    expect(started).toBe(true);
+    expect(onDeviceSpeech.listenOnDeviceSpeech).toHaveBeenCalledOnce();
+    expect(dictation.listen).not.toHaveBeenCalled();
+    expect(serverDictation.listenServerDictation).not.toHaveBeenCalled();
+  });
+
+  it("falls back to system recognition when on-device speech is off", async () => {
+    vi.mocked(onDeviceSpeech.onDeviceSpeechAvailable).mockResolvedValueOnce(false);
+    vi.mocked(dictation.available).mockResolvedValueOnce(true);
+    const started = await productionVoiceChatDeps().dictate(handlers, signal);
+    expect(started).toBe(true);
+    expect(onDeviceSpeech.listenOnDeviceSpeech).not.toHaveBeenCalled();
+    expect(dictation.listen).toHaveBeenCalledOnce();
   });
 
   it("falls back to server transcription when the device has no recognition", async () => {

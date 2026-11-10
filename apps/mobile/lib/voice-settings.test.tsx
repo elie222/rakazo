@@ -37,6 +37,18 @@ vi.mock("./device-voice", () => ({
   loadDeviceVoiceEnabled: state.load,
   saveDeviceVoiceEnabled: state.save,
 }));
+vi.mock("./on-device-speech", () => ({
+  loadOnDeviceSpeechEnabled: vi.fn(async () => false),
+  saveOnDeviceSpeechEnabled: vi.fn(async () => undefined),
+  onDeviceSpeechModelsStatus: vi.fn(async () => ({
+    stt: "missing",
+    tts: "missing",
+    progress: null,
+  })),
+  onDeviceSpeechModelSizes: () => ({ sttMb: 71, ttsMb: 141, totalMb: 212 }),
+  downloadOnDeviceSpeechModels: vi.fn(async () => undefined),
+  deleteOnDeviceSpeechModels: vi.fn(async () => undefined),
+}));
 vi.mock("./call-sounds", () => ({
   loadCallGreetingEnabled: async () => true,
   loadCallSoundsEnabled: async () => true,

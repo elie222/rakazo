@@ -17,6 +17,7 @@ import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
 import { useI18n } from "./i18n";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
+import { onDeviceSpeechAvailable } from "./on-device-speech";
 import { currentSessionGeneration } from "./session";
 import { speakerColorFor } from "./thread-message-text";
 import { errorText } from "./user-error";
@@ -219,6 +220,7 @@ export function useThreadVoiceCall({
         resolveVoiceCallPlan({
           loadDeviceVoiceEnabled,
           dictationAvailable,
+          onDeviceSpeechAvailable,
           loadVoiceStatus,
         }),
         loadCallCallerName(() => rpc("me")),

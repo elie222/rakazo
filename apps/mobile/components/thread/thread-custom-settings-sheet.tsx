@@ -13,7 +13,11 @@ import {
   View,
 } from "react-native";
 import { mobileTokens } from "../../lib/appearance";
-import type { CustomFontSlot, MessageActionId } from "../../lib/custom-settings";
+import type {
+  CustomFontSlot,
+  CustomMessageBackgrounds,
+  MessageActionId,
+} from "../../lib/custom-settings";
 import {
   CUSTOM_SETTINGS_CHAT_SIZE_MAX,
   CUSTOM_SETTINGS_CHAT_SIZE_MIN,
@@ -24,23 +28,24 @@ import {
   CUSTOM_SETTINGS_ERROR_COLOR_DEFAULT,
   CUSTOM_SETTINGS_ERROR_SIZE_MAX,
   CUSTOM_SETTINGS_ERROR_SIZE_MIN,
-  CUSTOM_SETTINGS_HERO_WIDTH_MAX,
-  CUSTOM_SETTINGS_HERO_WIDTH_MIN,
+  CUSTOM_SETTINGS_HERO_HEIGHT_MAX,
+  CUSTOM_SETTINGS_HERO_HEIGHT_MIN,
   CUSTOM_SETTINGS_TITLE_SIZE_MAX,
   CUSTOM_SETTINGS_TITLE_SIZE_MIN,
   customErrorTextStyle,
   customFontFamily,
   customTitleTextStyle,
   DEFAULT_MESSAGE_ACTION_ORDER,
-  heroBackgroundWidthFor,
+  heroBackgroundHeightFor,
   importCustomFont,
   removeImportedFont,
   scaledLineHeight,
   setCustomSettings,
-  setHeroBackgroundWidth,
+  setHeroBackgroundHeight,
   useCustomSettings,
 } from "../../lib/custom-settings";
 import { useI18n } from "../../lib/i18n";
+import { native } from "../../lib/native";
 import { NativeActionButton } from "../native-action-button";
 import { NativeSheet, useNativeSheet } from "../native-sheet";
 import { NativeSymbol } from "../native-symbol";
@@ -54,6 +59,9 @@ const ERROR_SWATCHES = [
   "#8a5a2b",
   "#111111",
 ];
+
+/** Light tints that read as message bubbles; any hex works through the input below. */
+const MESSAGE_BACKGROUND_SWATCHES = ["#e8efff", "#e6f4ea", "#fff3bf", "#fde8e8", "#e5e7eb"];
 
 const ACTION_LABEL_KEYS: Record<MessageActionId, string> = {
   copy: "Copy",
@@ -292,10 +300,11 @@ function CustomColorInput({
 }
 
 /**
- * The interface settings: this thread's hero background width, the quick row's
+ * The interface settings: this thread's hero background height, the quick row's
  * width and card size, the three font slots with their colours and imported
- * fonts, and the AI reply action row's order and hidden tiles. Every change
- * writes to the settings at once, so the chat behind the sheet follows live.
+ * fonts, the three message backgrounds, and the AI reply action row's order and
+ * hidden tiles. Every change writes to the settings at once, so the chat behind
+ * the sheet follows live.
  */
 export function ThreadCustomSettingsSheet({
   visible,
@@ -319,7 +328,7 @@ export function ThreadCustomSettingsSheet({
 
   if (!visible || Sheet === undefined) return null;
 
-  const heroWidth = heroBackgroundWidthFor(settings, threadKey);
+  const heroHeight = heroBackgroundHeightFor(settings, threadKey);
   const fontFamily = customFontFamily(settings);
 
   function setFontSlot(slot: "title" | "chat" | "error", patch: Partial<CustomFontSlot>) {
@@ -327,6 +336,10 @@ export function ThreadCustomSettingsSheet({
     if (slot === "title") setCustomSettings(userId, { font: { title: next } });
     else if (slot === "chat") setCustomSettings(userId, { font: { chat: next } });
     else setCustomSettings(userId, { font: { error: next } });
+  }
+
+  function setMessageBackground(slot: keyof CustomMessageBackgrounds, color: string | null) {
+    setCustomSettings(userId, { messageBackgrounds: { [slot]: color } });
   }
 
   async function pickFont() {
@@ -390,16 +403,16 @@ export function ThreadCustomSettingsSheet({
       {heroVisible === false ? null : (
         <>
           <SectionTitle>{t("Hero background")}</SectionTitle>
-          <RowLabel label={t("Hero background width")} value={`${heroWidth}%`} />
+          <RowLabel label={t("Hero background height")} value={`${heroHeight}%`} />
           <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
             <SettingSlider
-              value={heroWidth}
-              min={CUSTOM_SETTINGS_HERO_WIDTH_MIN}
-              max={CUSTOM_SETTINGS_HERO_WIDTH_MAX}
+              value={heroHeight}
+              min={CUSTOM_SETTINGS_HERO_HEIGHT_MIN}
+              max={CUSTOM_SETTINGS_HERO_HEIGHT_MAX}
               step={5}
-              accessibilityLabel={t("Hero background width")}
+              accessibilityLabel={t("Hero background height")}
               onChange={(value) => {
-                if (threadKey) setHeroBackgroundWidth(userId, threadKey, value);
+                if (threadKey) setHeroBackgroundHeight(userId, threadKey, value);
               }}
             />
           </View>
@@ -638,6 +651,120 @@ export function ThreadCustomSettingsSheet({
         </Text>
       </View>
 
+      <SectionTitle>{t("Message background")}</SectionTitle>
+      <Text
+        style={{
+          color: tokens.foreground,
+          fontSize: 16,
+          paddingHorizontal: 20,
+          paddingBottom: 4,
+        }}
+      >
+        {t("My message")}
+      </Text>
+      <ColorSwatches
+        colors={MESSAGE_BACKGROUND_SWATCHES}
+        selected={settings.messageBackgrounds.user}
+        allowFollowTheme
+        onSelect={(color) => setMessageBackground("user", color)}
+        label={t("My message")}
+      />
+      <CustomColorInput
+        key={`user-bg-${settings.messageBackgrounds.user ?? "theme"}`}
+        current={settings.messageBackgrounds.user}
+        onApply={(color) => setMessageBackground("user", color)}
+      />
+      <View
+        style={{
+          marginHorizontal: 20,
+          marginTop: 12,
+          borderRadius: 14,
+          backgroundColor: settings.messageBackgrounds.user ?? tokens.chatUser,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+        }}
+      >
+        <Text style={{ color: tokens.chatUserForeground, fontSize: 15 }}>
+          {t("This is my message.")}
+        </Text>
+      </View>
+
+      <View style={{ paddingTop: 12 }}>
+        <Text
+          style={{
+            color: tokens.foreground,
+            fontSize: 16,
+            paddingHorizontal: 20,
+            paddingBottom: 4,
+          }}
+        >
+          {t("AI reply")}
+        </Text>
+        <ColorSwatches
+          colors={MESSAGE_BACKGROUND_SWATCHES}
+          selected={settings.messageBackgrounds.ai}
+          allowFollowTheme
+          onSelect={(color) => setMessageBackground("ai", color)}
+          label={t("AI reply")}
+        />
+        <CustomColorInput
+          key={`ai-bg-${settings.messageBackgrounds.ai ?? "theme"}`}
+          current={settings.messageBackgrounds.ai}
+          onApply={(color) => setMessageBackground("ai", color)}
+        />
+        <View
+          style={{
+            marginHorizontal: 20,
+            marginTop: 12,
+            borderRadius: 14,
+            backgroundColor: settings.messageBackgrounds.ai ?? tokens.muted,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+          }}
+        >
+          <Text style={{ color: tokens.foreground, fontSize: 15 }}>
+            {t("This is a conversation message.")}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ paddingTop: 12 }}>
+        <Text
+          style={{
+            color: tokens.foreground,
+            fontSize: 16,
+            paddingHorizontal: 20,
+            paddingBottom: 4,
+          }}
+        >
+          {t("Error")}
+        </Text>
+        <ColorSwatches
+          colors={MESSAGE_BACKGROUND_SWATCHES}
+          selected={settings.messageBackgrounds.error}
+          allowFollowTheme
+          onSelect={(color) => setMessageBackground("error", color)}
+          label={t("Error")}
+        />
+        <CustomColorInput
+          key={`error-bg-${settings.messageBackgrounds.error ?? "theme"}`}
+          current={settings.messageBackgrounds.error}
+          onApply={(color) => setMessageBackground("error", color)}
+        />
+        <View
+          style={{
+            marginHorizontal: 20,
+            marginTop: 12,
+            borderRadius: 14,
+            backgroundColor: settings.messageBackgrounds.error ?? native.fill,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+          }}
+        >
+          <Text style={customErrorTextStyle(settings)}>{t("Couldn't send. Tap to retry.")}</Text>
+        </View>
+      </View>
+
       <SectionTitle>{t("Message actions")}</SectionTitle>
       {settings.messageActions.order.map((id) => {
         const hidden = settings.messageActions.hidden.includes(id);
@@ -714,9 +841,9 @@ export function ThreadCustomSettingsSheet({
         accessibilityRole="button"
         accessibilityLabel={t("Restore defaults")}
         onPress={() => {
-          // Resets every interface setting, including each thread's hero width.
+          // Resets every interface setting, including each thread's hero height.
           setCustomSettings(userId, {
-            heroBackgroundWidths: {},
+            heroBackgroundHeights: {},
             chipsRowWidthPct: 100,
             chipsCardWidth: 72,
             font: {
@@ -726,6 +853,7 @@ export function ThreadCustomSettingsSheet({
               error: { size: 14, color: CUSTOM_SETTINGS_ERROR_COLOR_DEFAULT },
               imported: settings.font.imported,
             },
+            messageBackgrounds: { user: null, ai: null, error: null },
             messageActions: { order: [...DEFAULT_MESSAGE_ACTION_ORDER], hidden: [] },
           });
         }}

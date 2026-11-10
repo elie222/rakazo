@@ -15,6 +15,7 @@ import {
   resolveSelectableModelId,
 } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import * as ImagePicker from "expo-image-picker";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +28,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
@@ -60,10 +62,19 @@ import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { setComputerFloatEnabled, useComputerFloatEnabled } from "../lib/computer-float-settings";
 import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
+import type { ExpressionFaceSlot } from "../lib/expression-avatar";
 import {
-  chiefExpressionGallery,
+  isExpressionPackUrl,
+  refreshExpressionSubscription,
+  restoreExpressionFace,
+  saveExpressionFaceFile,
+  setExpressionFace,
   setExpressionPack,
+  subscribeExpressionPack,
+  unsubscribeExpressionPack,
+  useExpressionFaces,
   useExpressionPack,
+  useExpressionSubscription,
 } from "../lib/expression-avatar";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
@@ -118,6 +129,12 @@ export default function BotSettingsScreen() {
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
+  const userId = me?.userId;
+  const faces = useExpressionFaces(userId, botId);
+  const subscription = useExpressionSubscription(userId, botId);
+  const [packUrl, setPackUrl] = useState("");
+  const [packError, setPackError] = useState<string | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -415,6 +432,101 @@ export default function BotSettingsScreen() {
     } catch {
       failVoices();
     }
+  }
+
+  const faceLabels: Record<ExpressionFaceSlot, string> = {
+    thinking: t("Thinking"),
+    searching: t("Searching"),
+    working: t("Working"),
+    waiting: t("Waiting"),
+    done: t("Done"),
+    error: t("Error"),
+  };
+
+  async function replaceFace(face: ExpressionFaceSlot) {
+    if (!botId || !userId || packBusy) return;
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"] });
+    } catch {
+      Alert.alert(t("Could not load that file"), t("Try again."));
+      return;
+    }
+    if (result.canceled) return;
+    const asset = result.assets?.[0];
+    if (!asset) return;
+    setPackBusy(true);
+    try {
+      const saved = await saveExpressionFaceFile(
+        userId,
+        botId,
+        face,
+        asset.uri,
+        asset.fileName ?? "face",
+        "local",
+      );
+      setExpressionFace(userId, botId, face, {
+        uri: saved.uri,
+        source: "local",
+        name: saved.name,
+      });
+    } catch {
+      Alert.alert(t("Could not load that file"), t("Try again."));
+    } finally {
+      setPackBusy(false);
+    }
+  }
+
+  function onFacePress(face: ExpressionFaceSlot, customized: boolean) {
+    if (!botId || !userId) return;
+    Alert.alert(faceLabels[face], undefined, [
+      { text: t("Replace"), onPress: () => void replaceFace(face) },
+      ...(customized
+        ? [
+            {
+              text: t("Restore built-in"),
+              onPress: () => restoreExpressionFace(userId, botId, face),
+            },
+          ]
+        : []),
+      { text: t("Cancel"), style: "cancel" },
+    ]);
+  }
+
+  async function subscribePack() {
+    if (!botId || !userId || packBusy) return;
+    const trimmed = packUrl.trim();
+    if (!isExpressionPackUrl(trimmed)) {
+      setPackError(t("Subscription failed. Check the address and try again."));
+      return;
+    }
+    setPackBusy(true);
+    setPackError(null);
+    const result = await subscribeExpressionPack(userId, botId, trimmed);
+    setPackBusy(false);
+    if (result.status === "error") {
+      setPackError(t("Subscription failed. Check the address and try again."));
+      return;
+    }
+    setPackUrl("");
+    setPackError(null);
+  }
+
+  async function refreshPack() {
+    if (!botId || !userId || packBusy) return;
+    setPackBusy(true);
+    setPackError(null);
+    const result = await refreshExpressionSubscription(userId, botId);
+    setPackBusy(false);
+    if (result.status === "error") {
+      setPackError(t("Subscription failed. Check the address and try again."));
+    }
+  }
+
+  function cancelPack() {
+    if (!botId || !userId || packBusy) return;
+    unsubscribeExpressionPack(userId, botId);
+    setPackError(null);
   }
 
   async function save() {
@@ -925,23 +1037,144 @@ export default function BotSettingsScreen() {
               plain
             />
             {expressionPack === "chief" ? (
-              <View
-                style={{
-                  flexDirection: "row",
-                  flexWrap: "wrap",
-                  gap: 10,
-                  marginTop: 12,
-                }}
-              >
-                {chiefExpressionGallery().map((face) => (
-                  <Image
-                    key={face.id}
-                    source={face.image}
-                    style={{ width: 52, height: 52, borderRadius: 26 }}
-                    accessibilityLabel={face.id}
-                  />
-                ))}
-              </View>
+              <>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 10,
+                    marginTop: 12,
+                  }}
+                >
+                  {faces.map((face) => (
+                    <Pressable
+                      key={face.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={faceLabels[face.id]}
+                      disabled={packBusy || !userId}
+                      onPress={() => onFacePress(face.id, face.customized)}
+                      style={{
+                        borderRadius: 26,
+                        borderWidth: 2,
+                        borderColor: face.customized ? tokens.foreground : "transparent",
+                      }}
+                    >
+                      <Image
+                        source={face.image}
+                        style={{ width: 52, height: 52, borderRadius: 26 }}
+                        accessibilityLabel={faceLabels[face.id]}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+                {subscription ? (
+                  <View style={{ marginTop: 16, gap: 8 }}>
+                    <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
+                      {t("Subscribed: {name}", {
+                        name: subscription.name ?? subscription.url,
+                      })}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t("Refresh")}
+                      disabled={packBusy}
+                      onPress={() => void refreshPack()}
+                      style={({ pressed }) => ({
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                        paddingVertical: 12,
+                        ...(pressed ? { opacity: 0.6 } : null),
+                      })}
+                    >
+                      <NativeSymbol
+                        ios="arrow.clockwise"
+                        android="refresh-outline"
+                        size={20}
+                        color={tokens.link}
+                      />
+                      <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Refresh")}</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t("Unsubscribe")}
+                      disabled={packBusy}
+                      onPress={cancelPack}
+                      style={({ pressed }) => ({
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                        paddingVertical: 12,
+                        ...(pressed ? { opacity: 0.6 } : null),
+                      })}
+                    >
+                      <NativeSymbol
+                        ios="xmark"
+                        android="close-outline"
+                        size={20}
+                        color={tokens.link}
+                      />
+                      <Text style={{ color: tokens.foreground, fontSize: 16 }}>
+                        {t("Unsubscribe")}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={{ marginTop: 16, gap: 8 }}>
+                    <Text style={{ color: tokens.foreground, fontSize: 16 }}>
+                      {t("URL subscription")}
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TextInput
+                        value={packUrl}
+                        onChangeText={(next) => {
+                          setPackUrl(next);
+                          setPackError(null);
+                        }}
+                        placeholder={t("Paste a pack URL")}
+                        placeholderTextColor={tokens.mutedForeground}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        style={{
+                          flex: 1,
+                          borderWidth: 1,
+                          borderColor: tokens.border,
+                          borderRadius: 10,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          color: tokens.foreground,
+                          fontSize: 15,
+                        }}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t("Subscribe")}
+                        disabled={packBusy || !userId}
+                        onPress={() => void subscribePack()}
+                        style={{
+                          borderRadius: 10,
+                          backgroundColor: tokens.accent,
+                          paddingHorizontal: 16,
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text style={{ color: tokens.link, fontSize: 15, fontWeight: "600" }}>
+                          {t("Subscribe")}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+                {packError ? (
+                  <Text
+                    accessibilityRole="alert"
+                    style={{ color: tokens.destructive, fontSize: 13, marginTop: 8 }}
+                  >
+                    {packError}
+                  </Text>
+                ) : null}
+              </>
             ) : null}
             <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
               {t("Color")}

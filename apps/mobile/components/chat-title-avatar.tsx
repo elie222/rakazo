@@ -75,12 +75,15 @@ export function ChatTitleAvatar({
   status,
   composing,
   size = CHAT_TITLE_AVATAR_SIZE,
+  userId,
 }: {
   bot: MobileBot | SpaceBot | undefined;
   status: string | undefined;
   composing: boolean;
   /** The avatar's diameter; the capsule default is CHAT_TITLE_AVATAR_SIZE. */
   size?: number;
+  /** The account whose custom or subscribed faces render; built-in faces without one. */
+  userId?: string;
 }) {
   const styles = useThemedStyles(() => createChatTitleAvatarStyles(size));
   const pack = useExpressionPack(bot?.id);
@@ -120,7 +123,13 @@ export function ChatTitleAvatar({
   return (
     <View style={styles.avatar}>
       {pack === "chief" ? (
-        <BotStateAvatar botId={bot.id} size={size} status={status} composing={composing} />
+        <BotStateAvatar
+          botId={bot.id}
+          userId={userId}
+          size={size}
+          status={status}
+          composing={composing}
+        />
       ) : (
         <BotAvatar
           color={bot.color}

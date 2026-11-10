@@ -24,6 +24,13 @@ import { modelConnectionRequest, openModelConnection } from "./model-connection-
 import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
+// Bot settings now uses the image picker for expression-face replacement;
+// without this mock the real expo-image-picker pulls in Expo's async-require
+// setup, which references the __DEV__ global the test environment lacks.
+vi.mock("expo-image-picker", () => ({
+  launchImageLibraryAsync: vi.fn(async () => ({ canceled: true, assets: [] })),
+}));
+
 const mocks = vi.hoisted(() => ({
   showMenu: vi.fn(),
   scrollToLocation: vi.fn(),

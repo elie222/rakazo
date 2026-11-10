@@ -55,6 +55,19 @@ describe("system float window native contract", () => {
     expect(service).toContain("setOnClickListener { stopSelf() }");
   });
 
+  it("hides the phone-operation buttons in the small window and shows them once expanded", () => {
+    const service = read("java/com/rakazo/systemfloat/RakazoSystemFloatService.kt");
+    // The popup takes control when it opens, but the small floating window
+    // is just for watching: the keyboard and return-to-app buttons appear
+    // only once the window is maximized, while expand and close always stay.
+    expect(service).toContain("private fun updateOperationButtons()");
+    expect(service).toContain("if (isMaximized) View.VISIBLE else View.GONE");
+    expect(service).toContain("keyboardButton?.visibility = visibility");
+    expect(service).toContain("openButton?.visibility = visibility");
+    // Expanding the window shows the buttons again; restoring hides them.
+    expect(service).toContain("updateOperationButtons()\n    manager.updateViewLayout");
+  });
+
   it("ships the notification strings for every supported locale", () => {
     const locales = ["", "de", "es", "ja", "nl", "pl", "ru", "zh-rCN", "zh-rTW"];
     for (const locale of locales) {

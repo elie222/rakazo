@@ -35,6 +35,15 @@ import {
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import type { OnDeviceSpeechModelsStatus } from "../../lib/on-device-speech";
+import {
+  deleteOnDeviceSpeechModels,
+  downloadOnDeviceSpeechModels,
+  loadOnDeviceSpeechEnabled,
+  onDeviceSpeechModelSizes,
+  onDeviceSpeechModelsStatus,
+  saveOnDeviceSpeechEnabled,
+} from "../../lib/on-device-speech";
 import { queryClient, rpcQuery } from "../../lib/query";
 import type { SettingsTarget } from "../../lib/settings-target";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
@@ -116,6 +125,10 @@ export default function VoiceSettings() {
   const speechModelSave = useRef<string | null>(null);
   const [deviceVoice, setDeviceVoice] = useState(false);
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(!deviceSettings);
+  const [onDeviceSpeech, setOnDeviceSpeech] = useState(false);
+  const [onDeviceSpeechReady, setOnDeviceSpeechReady] = useState(!deviceSettings);
+  const [modelStatus, setModelStatus] = useState<OnDeviceSpeechModelsStatus | null>(null);
+  const [downloadingModels, setDownloadingModels] = useState(false);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
   const [callGreeting, setCallGreeting] = useState<boolean | null>(null);
@@ -209,6 +222,19 @@ export default function VoiceSettings() {
           setDeviceVoiceReady(true);
           setError(errorText(err, t("Could not load voice settings")));
         });
+      // On-device speech is per account and device-local; its models are
+      // downloaded on demand, so the switch and the model state load together.
+      void Promise.all([loadOnDeviceSpeechEnabled(), onDeviceSpeechModelsStatus()])
+        .then(([enabled, status]) => {
+          if (deviceVoiceRevision.current !== revision) return;
+          setOnDeviceSpeech(enabled);
+          setModelStatus(status);
+          setOnDeviceSpeechReady(true);
+        })
+        .catch(() => {
+          if (deviceVoiceRevision.current !== revision) return;
+          setOnDeviceSpeechReady(true);
+        });
       const soundRevision = soundPrefsRevision.current;
       void Promise.allSettled([
         loadCallSoundsEnabled(),
@@ -291,6 +317,50 @@ export default function VoiceSettings() {
     if (status) setLoadError(null);
     try {
       await saveDeviceVoice(!deviceVoice);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function toggleOnDeviceSpeech() {
+    if (pending !== null || !onDeviceSpeechReady) return;
+    const next = !onDeviceSpeech;
+    setPending("device-voice");
+    setError(null);
+    try {
+      await saveOnDeviceSpeechEnabled(next);
+      setOnDeviceSpeech(next);
+    } catch (err) {
+      setError(errorText(err, t("Could not save that preference")));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function downloadModels() {
+    if (downloadingModels || pending !== null) return;
+    setDownloadingModels(true);
+    setError(null);
+    try {
+      await downloadOnDeviceSpeechModels((status) => setModelStatus(status));
+      setModelStatus(await onDeviceSpeechModelsStatus());
+    } catch (err) {
+      setError(errorText(err, t("Could not download the voice models.")));
+      setModelStatus(await onDeviceSpeechModelsStatus().catch(() => null));
+    } finally {
+      setDownloadingModels(false);
+    }
+  }
+
+  async function deleteModels() {
+    if (downloadingModels || pending !== null) return;
+    setPending("device-voice");
+    setError(null);
+    try {
+      await deleteOnDeviceSpeechModels();
+      setModelStatus(await onDeviceSpeechModelsStatus());
+    } catch (err) {
+      setError(errorText(err, t("Could not delete the voice models.")));
     } finally {
       setPending(null);
     }
@@ -472,7 +542,9 @@ export default function VoiceSettings() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loading || !deviceVoiceReady ? <ActivityIndicator color={native.secondaryLabel} /> : null}
+        {loading || !deviceVoiceReady || !onDeviceSpeechReady ? (
+          <ActivityIndicator color={native.secondaryLabel} />
+        ) : null}
         {failure && !status ? (
           <LoadFailure
             message={failure}
@@ -503,6 +575,66 @@ export default function VoiceSettings() {
               </View>
               {deviceVoice ? <Checkmark /> : null}
             </Pressable>
+          </View>
+        ) : null}
+        {deviceSettings && onDeviceSpeechReady ? (
+          <View style={styles.group}>
+            <View style={styles.groupRow}>
+              <View style={styles.rowCopy}>
+                <Text style={styles.cardTitle}>{t("On-device voice")}</Text>
+              </View>
+              <NativeSwitch
+                accessibilityLabel={t("On-device voice")}
+                value={onDeviceSpeech}
+                disabled={pending !== null}
+                onValueChange={() => void toggleOnDeviceSpeech()}
+              />
+            </View>
+            {onDeviceSpeech && modelStatus ? (
+              modelStatus.stt === "ready" && modelStatus.tts === "ready" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={pending !== null || downloadingModels}
+                  onPress={() => void deleteModels()}
+                  style={({ pressed }) => [
+                    styles.groupRow,
+                    styles.groupDivider,
+                    (pending !== null || downloadingModels) && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.rowCopy}>
+                    <Text style={[styles.cardTitle, styles.destructive]}>
+                      {t("Delete voice models")}
+                    </Text>
+                  </View>
+                </Pressable>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={pending !== null || downloadingModels}
+                  onPress={() => void downloadModels()}
+                  style={({ pressed }) => [
+                    styles.groupRow,
+                    styles.groupDivider,
+                    (pending !== null || downloadingModels) && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.cardTitle}>
+                      {downloadingModels && modelStatus.progress !== null
+                        ? t("Downloading voice models… {percent}%", {
+                            percent: String(Math.round(modelStatus.progress * 100)),
+                          })
+                        : t("Download voice models ({size} MB)", {
+                            size: String(onDeviceSpeechModelSizes().totalMb),
+                          })}
+                    </Text>
+                  </View>
+                </Pressable>
+              )
+            ) : null}
           </View>
         ) : null}
         {catalog.length ? (
@@ -725,6 +857,7 @@ function createVoiceStyles() {
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 10 },
     error: { color: tokens.destructive, marginBottom: 8 },
+    destructive: { color: tokens.destructive },
     group: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
     groupRow: {
       minHeight: 52,

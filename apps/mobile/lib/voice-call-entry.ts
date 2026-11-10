@@ -10,6 +10,8 @@ export type VoiceCallPlan =
 export type VoiceCallPlanDeps = {
   loadDeviceVoiceEnabled: () => Promise<boolean>;
   dictationAvailable: () => Promise<boolean>;
+  /** On-device speech (offline engine); when it is ready the call runs on the phone. */
+  onDeviceSpeechAvailable?: () => Promise<boolean>;
   loadVoiceStatus: () => Promise<VoiceCallStatus>;
 };
 
@@ -19,6 +21,16 @@ export type VoiceCallPlanDeps = {
  * not turn a local-only reply into hosted voice traffic.
  */
 export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<VoiceCallPlan> {
+  // On-device speech first: it handles recognition and read-aloud on the
+  // phone, so a call works with no system recognizer and no voice provider.
+  if (deps.onDeviceSpeechAvailable) {
+    try {
+      if (await deps.onDeviceSpeechAvailable()) return { kind: "device", transcribe: false };
+    } catch {
+      // Unavailable: fall through to the existing paths.
+    }
+  }
+
   let deviceVoiceEnabled = false;
   try {
     deviceVoiceEnabled = await deps.loadDeviceVoiceEnabled();

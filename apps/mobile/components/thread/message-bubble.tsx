@@ -19,6 +19,7 @@ import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { openMobileArtifact } from "../../lib/artifact-open";
 import { allowsSpace } from "../../lib/ask-action-label";
 import { plainAskTitle } from "../../lib/ask-title";
+import { useCustomSettings } from "../../lib/custom-settings";
 import { t, useI18n } from "../../lib/i18n";
 import { isInlineImageBlock } from "../../lib/inline-image";
 import {
@@ -264,6 +265,12 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const [peerExpanded, setPeerExpanded] = useState(false);
   // The conversation font from the interface settings, for this message's body text.
   const chatFont = useMessageChatFont(userId);
+  // The message backgrounds from the interface settings; null follows the theme.
+  const customSettings = useCustomSettings(userId ?? "");
+  const bubbleBackground = (outgoing: boolean) =>
+    outgoing
+      ? (customSettings.messageBackgrounds.user ?? tokens.chatUser)
+      : (customSettings.messageBackgrounds.ai ?? tokens.muted);
   const outgoing = message.role === "user" && !authorName;
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
@@ -543,7 +550,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     const bubbleStyle = {
       maxWidth: "100%",
       borderRadius: 20,
-      backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
+      backgroundColor: bubbleBackground(outgoing),
       paddingHorizontal: 14,
       paddingVertical: 12,
       gap: 8,
@@ -799,6 +806,8 @@ function MessageTextCard({
   const contentText = blockText(message);
   const { t } = useI18n();
   const chatFont = useMessageChatFont(userId);
+  // The message backgrounds from the interface settings; null follows the theme.
+  const customSettings = useCustomSettings(userId ?? "");
   const userMentions = useContext(UserMentionsContext);
   if (!contentText) return null;
   // The surface is one accessibility element, so the bots a message names are offered as its
@@ -834,7 +843,9 @@ function MessageTextCard({
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
+        backgroundColor: outgoing
+          ? (customSettings.messageBackgrounds.user ?? tokens.chatUser)
+          : (customSettings.messageBackgrounds.ai ?? tokens.muted),
         paddingHorizontal: 14,
         paddingVertical: 9,
         borderRadius: 20,

@@ -33,7 +33,7 @@ import { composerDraftScope } from "../../lib/composer-draft";
 import { useComposerThinkingLevel } from "../../lib/composer-thinking-level";
 import { useComputerFloatEnabled } from "../../lib/computer-float-settings";
 import { cronLabels } from "../../lib/cron";
-import { heroBackgroundWidthFor, useCustomSettings } from "../../lib/custom-settings";
+import { heroBackgroundHeightFor, useCustomSettings } from "../../lib/custom-settings";
 import { useI18n } from "../../lib/i18n";
 import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import { useThemedStyles } from "../../lib/native";
@@ -130,8 +130,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const searchBarHeight = searchOpen ? 48 : 0;
-  // The interface settings, live: a slider moves the chat at once, so the hero's
-  // width and height follow the settings without a reload.
+  // The interface settings, live: a slider moves the chat at once, so the hero
+  // background's height follows the settings without a reload.
   const customSettings = useCustomSettings(userId);
   // The list's top clearance always reserves the hero's full height, so the
   // oldest message starts below the hero instead of scrolling underneath it. The
@@ -756,9 +756,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         userId={userId}
       />
     ) : null;
-  // The hero background narrows by this thread's width setting, centred.
-  const heroMargin =
-    ((100 - heroBackgroundWidthFor(customSettings, threadKey)) / 200) * windowWidth;
+  // The hero background's height by this thread's setting, centred in the hero
+  // area: at 100% it fills the hero, lower it covers a middle band, higher it
+  // is clipped to the hero by the wrapper's overflow.
+  const heroBackgroundHeight =
+    (heroHeight * heroBackgroundHeightFor(customSettings, threadKey)) / 100;
+  const heroBackgroundTop = Math.max(0, (heroHeight - heroBackgroundHeight) / 2);
 
   const failedSendBubbles = feedback.unsentSends.map((attempt) => (
     <FailedSendBubble
@@ -847,12 +850,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               style={{
                 position: "absolute",
                 top: heroTop + searchBarHeight,
-                left: heroMargin,
-                right: heroMargin,
+                left: 0,
+                right: 0,
+                overflow: "hidden",
                 backgroundColor: tokens.background,
               }}
             >
-              <HeroBackgroundLayer threadKey={threadKey} />
+              <HeroBackgroundLayer
+                threadKey={threadKey}
+                height={heroBackgroundHeight}
+                top={heroBackgroundTop}
+              />
               {chatHero}
             </View>
           ) : null}

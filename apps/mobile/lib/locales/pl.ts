@@ -1616,6 +1616,27 @@ export const PL_MESSAGES: Record<string, string> = {
   "URL subscription": "Subskrypcja URL",
   Unfavorite: "Usuń z ulubionych",
   "{count} favorites": "{count} ulubionych",
+  "Hero background height": "Hero background height",
+  "Message background": "Message background",
+  "My message": "My message",
+  "AI reply": "AI reply",
+  "This is my message.": "This is my message.",
+  Waiting: "Waiting",
+  Replace: "Replace",
+  "Restore built-in": "Restore built-in",
+  Refresh: "Refresh",
+  Unsubscribe: "Unsubscribe",
+  "Paste a pack URL": "Paste a pack URL",
+  "Subscribed: {name}": "Subscribed: {name}",
+  "Subscription failed. Check the address and try again.":
+    "Subscription failed. Check the address and try again.",
+  "On-device voice": "Głos na urządzeniu",
+  "Download voice models ({size} MB)": "Pobierz modele głosowe ({size} MB)",
+  "Downloading voice models… {percent}%": "Pobieranie modeli głosowych… {percent} %",
+  "Delete voice models": "Usuń modele głosowe",
+  "Could not download the voice models.": "Nie można było pobrać modeli głosowych.",
+  "Could not delete the voice models.": "Nie można było usunąć modeli głosowych.",
+  "Voice models are not downloaded yet.": "Modele głosowe nie zostały jeszcze pobrane.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

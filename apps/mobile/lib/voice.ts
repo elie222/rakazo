@@ -19,6 +19,11 @@ import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
+import {
+  onDeviceSpeechAvailable,
+  speakOnDeviceSpeech,
+  stopOnDeviceSpeechPlayback,
+} from "./on-device-speech";
 import { fetchServer } from "./server-headers";
 import { subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
@@ -248,6 +253,16 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
       useDeviceVoice = true;
     }
     if (!isCurrentSpeech(epoch)) return false;
+    // On-device speech first: the user switched it on explicitly, and it
+    // needs neither the system voice nor a server. It is checked before the
+    // device-voice default, which would otherwise always win for installs
+    // with no hosted voice.
+    if (await onDeviceSpeechAvailable()) {
+      const spoken = await speakWithOnDeviceSpeech(text, opts.botId, opts.messageId, epoch);
+      if (!isCurrentSpeech(epoch)) return false;
+      if (!spoken && playback.status !== "idle") setPlayback(IDLE_PLAYBACK, null);
+      return spoken;
+    }
     if (useDeviceVoice) {
       const spoken = await speakOnDevice(text, opts.botId, opts.messageId, epoch);
       if (!isCurrentSpeech(epoch)) return false;
@@ -360,6 +375,47 @@ export async function speakWithDeviceVoice(
   messageId?: string,
 ): Promise<boolean> {
   return speakOnDevice(text, botId, messageId);
+}
+
+/**
+ * Reads the text with the on-device voice. The control delegates to the
+ * utterance playing now; the engine replaces it as each utterance starts,
+ * so pause, resume and stop keep working across the whole read-aloud.
+ */
+async function speakWithOnDeviceSpeech(
+  text: string,
+  botId?: string,
+  messageId?: string,
+  epoch?: number,
+): Promise<boolean> {
+  const mine = epoch ?? beginSpeech();
+  if (!isCurrentSpeech(mine)) return false;
+  const session = startDeviceSpeechSession();
+  let current: { pause(): void; resume(): void; stop(): void } | null = null;
+  const control: VoiceControl = {
+    pause: () => {
+      current?.pause();
+      setPlayback({ status: "paused", botId, messageId, canPause: true }, control);
+    },
+    resume: () => {
+      current?.resume();
+      setPlayback({ status: "playing", botId, messageId, canPause: true }, control);
+    },
+    stop: () => {
+      deviceSpeechSession += 1;
+      stopOnDeviceSpeechPlayback();
+      setPlayback(IDLE_PLAYBACK, null);
+    },
+  };
+  setPlayback({ status: "playing", botId, messageId, canPause: true }, control);
+  const spoken = await speakOnDeviceSpeech(text, {
+    onPlayback: (playback) => {
+      current = playback;
+    },
+  });
+  if (!isCurrentDeviceSpeechSession(session) || !isCurrentSpeech(mine)) return true;
+  if (!spoken && playback.status !== "idle") setPlayback(IDLE_PLAYBACK, null);
+  return spoken;
 }
 
 async function speakOnDevice(

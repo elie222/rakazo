@@ -330,6 +330,13 @@ export function ThreadBackupSheet({
     if (busyRef.current) return;
     const account = await persistAccount();
     if (!account) return;
+    // A restore must verify the backup password, the same as an upload:
+    // without it the keys stay locked, and a restore with no password at
+    // all would hand the whole backup to whoever holds the phone.
+    if (!restorePassword) {
+      setError(t("Enter the backup password to restore"));
+      return;
+    }
     setBusyState("downloading");
     setError(null);
     setStatus(null);
@@ -365,7 +372,7 @@ export function ThreadBackupSheet({
         apiBase: context.apiBase,
         headers: context.headers,
         fileUri: zipUri,
-        backupPassword: restorePassword || undefined,
+        backupPassword: restorePassword,
       });
       const body = result.body as {
         error?: unknown;

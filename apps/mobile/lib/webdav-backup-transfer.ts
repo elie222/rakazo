@@ -215,12 +215,14 @@ export async function downloadFileFromWebdav(input: {
  * POSTs a downloaded zip to the account import route as `application/zip`.
  * Restore imports as a new copy and never overwrites; the server reports a
  * wrong backup password through the import result, not through this call.
+ * The backup password is required: a restore without one would hand the
+ * whole backup to whoever holds the phone, so callers must verify it first.
  */
 export async function importAccountZip(input: {
   apiBase: string;
   headers: Record<string, string>;
   fileUri: string;
-  backupPassword?: string;
+  backupPassword: string;
 }): Promise<{ status: number; body: unknown }> {
   const { File, UploadType } = await import("expo-file-system");
   const file = new File(input.fileUri);
@@ -231,7 +233,7 @@ export async function importAccountZip(input: {
     headers: {
       ...input.headers,
       "content-type": "application/zip",
-      ...(input.backupPassword ? { [BACKUP_PASSWORD_HEADER]: input.backupPassword } : null),
+      [BACKUP_PASSWORD_HEADER]: input.backupPassword,
     },
   });
   let result: { status: number; body: string };

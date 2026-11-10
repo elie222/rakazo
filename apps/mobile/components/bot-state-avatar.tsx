@@ -1,7 +1,11 @@
 import type { LogoAvatarActivity } from "@rakazo/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Image } from "react-native";
-import { expressionImageFor, useExpressionPack } from "../lib/expression-avatar";
+import {
+  expressionSlotForActivity,
+  useExpressionFaces,
+  useExpressionPack,
+} from "../lib/expression-avatar";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 
 /** How long the done face shows after a run finishes, before resting again. */
@@ -22,18 +26,22 @@ const WORKING_ACTIVITIES: ReadonlySet<LogoAvatarActivity> = new Set([
  */
 export function BotStateAvatar({
   botId,
+  userId,
   size,
   status,
   activity,
   composing = false,
 }: {
   botId: string | undefined;
+  /** The account whose custom or subscribed faces render; built-in faces without one. */
+  userId?: string;
   size: number;
   status: string | undefined;
   activity?: LogoAvatarActivity;
   composing?: boolean;
 }) {
   const pack = useExpressionPack(botId);
+  const faces = useExpressionFaces(userId, botId);
   const liveActivity = useSyncExternalStore(
     mobileLogoAvatarActivity.subscribe,
     () => mobileLogoAvatarActivity.getActivity(botId ?? "", status),
@@ -60,9 +68,11 @@ export function BotStateAvatar({
     };
   }, [resolved]);
   if (pack !== "chief") return null;
+  // The gallery always carries all six slots, so the slot is always present.
+  const face = faces.find((item) => item.id === expressionSlotForActivity(resolved, justFinished))!;
   return (
     <Image
-      source={expressionImageFor(resolved, justFinished)}
+      source={face.image}
       style={{ width: size, height: size, borderRadius: size / 2 }}
       accessibilityLabel={resolved}
     />

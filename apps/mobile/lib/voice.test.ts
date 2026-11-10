@@ -6,6 +6,7 @@ import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
 import { DEVICE_VOICE_KEY } from "./device-voice";
+import * as onDeviceSpeech from "./on-device-speech";
 import {
   createSpeechOwner,
   getVoicePlaybackState,
@@ -55,6 +56,11 @@ vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("./live-notifications", () => ({
   resumeLiveNotifications: vi.fn(async () => undefined),
   stopLiveNotifications: vi.fn(async () => undefined),
+}));
+vi.mock("./on-device-speech", () => ({
+  onDeviceSpeechAvailable: vi.fn(async () => false),
+  speakOnDeviceSpeech: vi.fn(async () => false),
+  stopOnDeviceSpeechPlayback: vi.fn(),
 }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
@@ -506,6 +512,21 @@ describe("hosted voice playback controls", () => {
     expect(ControllableAudio.instances).toHaveLength(0);
     expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
     expect(vi.mocked(rpc).mock.calls.filter(([proc]) => proc === "voice/prepare")).toHaveLength(1);
+  });
+
+  it("reads aloud on the device when on-device speech is ready", async () => {
+    vi.mocked(rpc).mockClear();
+    vi.mocked(onDeviceSpeech.onDeviceSpeechAvailable).mockResolvedValueOnce(true);
+    vi.mocked(onDeviceSpeech.speakOnDeviceSpeech).mockResolvedValueOnce(true);
+    await expect(speakText("Read this", { botId: "bot-1", messageId: "msg-1" })).resolves.toBe(
+      true,
+    );
+    expect(onDeviceSpeech.speakOnDeviceSpeech).toHaveBeenCalledWith(
+      "Read this",
+      expect.objectContaining({ onPlayback: expect.any(Function) }),
+    );
+    expect(vi.mocked(rpc).mock.calls.filter(([proc]) => proc === "voice/prepare")).toHaveLength(0);
+    expect(ControllableAudio.instances).toHaveLength(0);
   });
 
   it("shows Stop while the first clip is still preparing, and idle if Stop cancels it", async () => {

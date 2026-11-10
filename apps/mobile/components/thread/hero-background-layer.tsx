@@ -9,7 +9,19 @@ import { useHeroBackground } from "../../lib/hero-background";
  * can never show through. A video background plays muted on a loop. No
  * background set means nothing renders and the hero is exactly as before.
  */
-export function HeroBackgroundLayer({ threadKey }: { threadKey: string | undefined }) {
+export function HeroBackgroundLayer({
+  threadKey,
+  height,
+  top,
+}: {
+  threadKey: string | undefined;
+  /**
+   * The background band's height in points; without it the layer fills the
+   * hero. Pass top with it to centre the band in the hero area.
+   */
+  height?: number;
+  top?: number;
+}) {
   const background = useHeroBackground(threadKey);
   const player = useVideoPlayer(background?.kind === "video" ? background.uri : null, (p) => {
     p.loop = true;
@@ -18,7 +30,14 @@ export function HeroBackgroundLayer({ threadKey }: { threadKey: string | undefin
   });
   if (!background) return null;
   return (
-    <View style={styles.layer} pointerEvents="none">
+    <View
+      style={
+        height === undefined
+          ? styles.layer
+          : { position: "absolute", left: 0, right: 0, top: top ?? 0, height }
+      }
+      pointerEvents="none"
+    >
       {background.kind === "video" ? (
         <VideoView
           player={player}

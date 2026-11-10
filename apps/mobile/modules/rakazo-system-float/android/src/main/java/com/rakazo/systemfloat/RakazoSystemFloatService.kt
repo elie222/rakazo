@@ -84,6 +84,8 @@ class RakazoSystemFloatService : Service() {
   private var savedParams: WindowManager.LayoutParams? = null
   private var isMaximized = false
   private var maximizeButton: ImageButton? = null
+  private var keyboardButton: ImageButton? = null
+  private var openButton: ImageButton? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -132,6 +134,8 @@ class RakazoSystemFloatService : Service() {
     overlayParams = null
     titleView = null
     maximizeButton = null
+    keyboardButton = null
+    openButton = null
     savedParams = null
     isMaximized = false
     webView?.destroy()
@@ -154,6 +158,21 @@ class RakazoSystemFloatService : Service() {
     view.requestFocus()
     val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
     inputMethodManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+  }
+
+  /**
+   * The phone drives the computer only once the window is expanded: the
+   * popup takes control when it opens, but the small floating window is
+   * just for watching, so its keyboard and return-to-app buttons stay
+   * hidden until the window is maximized. Expand and close always stay:
+   * expand is how the window is taken over, and close is the only way to
+   * dismiss it. The return path stays available through the foreground
+   * notification while the buttons are hidden.
+   */
+  private fun updateOperationButtons() {
+    val visibility = if (isMaximized) View.VISIBLE else View.GONE
+    keyboardButton?.visibility = visibility
+    openButton?.visibility = visibility
   }
 
   /** Toggles the window between its floating size and the full screen. */
@@ -184,6 +203,7 @@ class RakazoSystemFloatService : Service() {
       maximizeButton?.setImageResource(R.drawable.ic_rakazo_system_float_restore)
       maximizeButton?.contentDescription = getString(R.string.rakazo_system_float_restore)
     }
+    updateOperationButtons()
     manager.updateViewLayout(root, params)
   }
 
@@ -235,6 +255,7 @@ class RakazoSystemFloatService : Service() {
       contentDescription = getString(R.string.rakazo_system_float_keyboard)
       setOnClickListener { showKeyboard() }
     }
+    this.keyboardButton = keyboardButton
     val maximizeButton = ImageButton(this).apply {
       layoutParams = LinearLayout.LayoutParams(barPx, barPx)
       setImageResource(R.drawable.ic_rakazo_system_float_maximize)
@@ -250,6 +271,7 @@ class RakazoSystemFloatService : Service() {
       contentDescription = getString(R.string.rakazo_system_float_open_app)
       setOnClickListener { openApp() }
     }
+    this.openButton = openButton
     val closeButton = ImageButton(this).apply {
       layoutParams = LinearLayout.LayoutParams(barPx, barPx)
       setImageResource(R.drawable.ic_rakazo_system_float_close)
@@ -262,6 +284,8 @@ class RakazoSystemFloatService : Service() {
     bar.addView(keyboardButton)
     bar.addView(openButton)
     bar.addView(closeButton)
+    // The window opens small, so the operation buttons start hidden.
+    updateOperationButtons()
 
     val screen = WebView(this).apply {
       layoutParams = LinearLayout.LayoutParams(

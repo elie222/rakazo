@@ -89,6 +89,7 @@ export function ChatTitleHero({
           status={status}
           composing={composing}
           size={CHAT_TITLE_HERO_AVATAR_SIZE}
+          userId={userId}
         />
       </Pressable>
       <ChatTitleLabel

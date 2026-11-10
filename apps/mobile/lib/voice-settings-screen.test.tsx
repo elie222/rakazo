@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   focused: true,
   failStatus: false,
   loadDevice: vi.fn(),
+  loadOnDevice: vi.fn(async () => false),
+  saveOnDevice: vi.fn(async () => undefined),
+  onDeviceStatus: vi.fn(async () => ({ stt: "missing", tts: "missing", progress: null })),
   reads: [] as string[],
   rpc: null as null | ((method: string) => Promise<unknown>),
   typed: {} as Record<string, (value: string) => void>,
@@ -62,6 +65,14 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./device-voice", () => ({
   loadDeviceVoiceEnabled: mocks.loadDevice,
   saveDeviceVoiceEnabled: vi.fn(),
+}));
+vi.mock("./on-device-speech", () => ({
+  loadOnDeviceSpeechEnabled: mocks.loadOnDevice,
+  saveOnDeviceSpeechEnabled: mocks.saveOnDevice,
+  onDeviceSpeechModelsStatus: mocks.onDeviceStatus,
+  onDeviceSpeechModelSizes: () => ({ sttMb: 71, ttsMb: 141, totalMb: 212 }),
+  downloadOnDeviceSpeechModels: vi.fn(async () => undefined),
+  deleteOnDeviceSpeechModels: vi.fn(async () => undefined),
 }));
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
 vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));

@@ -154,7 +154,7 @@ describe("settings backup file", () => {
     store.values.set(
       "rakazo.custom-settings.user-1",
       JSON.stringify({
-        heroBackgroundWidths: { "thread-d": 65 },
+        heroBackgroundHeights: { "thread-d": 65 },
         chipsRowWidthPct: 80,
         chipsCardWidth: 64,
         font: {
@@ -164,6 +164,7 @@ describe("settings backup file", () => {
           error: { size: 13, color: "#c92a2a" },
           imported: [],
         },
+        messageBackgrounds: { user: "#e8efff", ai: null, error: "#fde8e8" },
         messageActions: {
           order: ["copy", "share", "speak", "favorite", "regenerate"],
           hidden: ["favorite"],
@@ -172,9 +173,10 @@ describe("settings backup file", () => {
     );
     const file = await readBackupSettingsFile("user-1");
     expect(file.settings.custom).toMatchObject({
-      heroBackgroundWidths: { "thread-d": 65 },
+      heroBackgroundHeights: { "thread-d": 65 },
       chipsRowWidthPct: 80,
       chipsCardWidth: 64,
+      messageBackgrounds: { user: "#e8efff", ai: null, error: "#fde8e8" },
       messageActions: { hidden: ["favorite"] },
     });
     expect(file.settings.custom.font).toMatchObject({ title: { size: 19, color: "#2f6bff" } });
@@ -190,7 +192,7 @@ describe("settings backup file", () => {
         chatBackgrounds: {},
         expressionPack: "chief",
         custom: {
-          heroBackgroundWidths: { "thread-e": 70 },
+          heroBackgroundHeights: { "thread-e": 70 },
           chipsRowWidthPct: 75,
           chipsCardWidth: 60,
           font: {
@@ -209,11 +211,11 @@ describe("settings backup file", () => {
     };
     applyBackupSettingsFile(base, "user-1", "bot-9");
     expect(customSettingsFor("user-1").chipsRowWidthPct).toBe(75);
-    expect(customSettingsFor("user-1").heroBackgroundWidths).toEqual({ "thread-e": 70 });
+    expect(customSettingsFor("user-1").heroBackgroundHeights).toEqual({ "thread-e": 70 });
     expect(customSettingsFor("user-1").font.title.size).toBe(20);
     // An old file's empty custom never resets the settings that are already there.
     applyBackupSettingsFile({ ...base, settings: { ...base.settings, custom: {} } }, "user-1");
     expect(customSettingsFor("user-1").chipsRowWidthPct).toBe(75);
-    expect(customSettingsFor("user-1").heroBackgroundWidths).toEqual({ "thread-e": 70 });
+    expect(customSettingsFor("user-1").heroBackgroundHeights).toEqual({ "thread-e": 70 });
   });
 });

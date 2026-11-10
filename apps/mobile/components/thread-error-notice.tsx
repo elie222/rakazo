@@ -44,7 +44,10 @@ export function ThreadErrorNotice({
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="assertive"
-      style={[styles.card, { backgroundColor: native.fill }]}
+      style={[
+        styles.card,
+        { backgroundColor: customSettings.messageBackgrounds.error ?? native.fill },
+      ]}
     >
       <View style={styles.header}>
         <View

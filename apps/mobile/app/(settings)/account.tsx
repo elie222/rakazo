@@ -50,6 +50,7 @@ import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { endCallBeforeSessionEnd } from "../../lib/call-session";
+import { clearExpressionFacesForUser } from "../../lib/expression-avatar";
 import {
   getHapticsEnabled,
   loadHapticsPreference,
@@ -390,6 +391,8 @@ export default function Account() {
       await signOut();
       // The WebDAV account belongs to this account, not the device.
       if (me?.userId) await clearWebdavBackupAccount(me.userId).catch(() => undefined);
+      // Custom and subscribed faces belong to this account, not the device.
+      if (me?.userId) await clearExpressionFacesForUser(me.userId).catch(() => undefined);
       replaceWithSignIn();
     } catch (err) {
       setSignOutError(errorText(err, t("Could not sign out")));
