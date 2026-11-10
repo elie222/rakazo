@@ -55,7 +55,7 @@ export class ApnsActivityProvider implements WorkActivityPushProvider {
             "content-state": push.state,
             // Asks iOS for the started card's own token, which the app hands to the server.
             "input-push-token": 1,
-            // iOS shows a card started by push only with an alert; no sound, as when the app starts one.
+            // A start carries an alert, shown as the card itself; no sound, as when the app starts one.
             alert: { title: first?.title ?? "", body: first?.line ?? "" },
           },
         },
