@@ -8,6 +8,7 @@ import {
   connectedModelSeesImages,
   connectionServesModel,
   createFaviconResolver,
+  DEPLOYMENT_MODEL_SETTINGS,
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
@@ -41,6 +42,7 @@ import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from 
 import { createAgentImportServices } from "../agent-import-services.js";
 import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
+import { currentDeploymentModels } from "../deployment-model.js";
 import { createMcpServers } from "../mcp-servers.js";
 import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
 import type { RouterDeps } from "../router.js";
@@ -73,6 +75,22 @@ export async function asTenant<T extends { output: unknown }>(
     },
   };
   return { ...result, output: scoped };
+}
+
+/** Models the deployment serves that the bundled catalog does not list, as an endpoint's are. */
+function servedEndpointEntries(
+  catalog: readonly ModelCatalogEntry[],
+  auth: { deploymentModels?: ReadonlySet<string> },
+): ModelCatalogEntry[] {
+  const listed = new Set(catalog.map((entry) => `${entry.provider}:${entry.id}`));
+  return [...(auth.deploymentModels ?? [])]
+    .filter((key) => !listed.has(key))
+    .map((key) => {
+      const provider = key.slice(0, key.indexOf(":"));
+      const id = key.slice(provider.length + 1);
+      const providerName = catalog.find((entry) => entry.provider === provider)?.providerName;
+      return { provider, ...(providerName ? { providerName } : {}), id, label: id, billing: "" };
+    });
 }
 
 export function createRouterContext(deps: RouterDeps) {
@@ -110,17 +128,21 @@ export function createRouterContext(deps: RouterDeps) {
     deps.refreshExpiredModelCredential ??
     ((scope: { userId: string; spaceId: string }, secretId: string, provider: string) =>
       kickModelCredentialRefresh(deps.prisma, deps.secrets, scope, secretId, provider));
-  const botModelValidation = (actor: Actor) => ({
-    prisma: deps.prisma,
-    secretStore: deps.secrets,
-    codexCatalog,
-    refreshExpiredCredential,
-    hostedProvider: deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
-    defaultModel: async () => {
-      const me = await meDto(deps, actor);
-      return { provider: me.defaultProvider, model: me.defaultModel };
-    },
-  });
+  const botModelValidation = async (actor: Actor) => {
+    const deployment = await currentDeploymentModels(deps);
+    return {
+      prisma: deps.prisma,
+      secretStore: deps.secrets,
+      codexCatalog,
+      refreshExpiredCredential,
+      hostedProvider: deps.billing?.modelCreditsEnabled ? deployment.default.provider : undefined,
+      deployment,
+      defaultModel: async () => {
+        const me = await meDto(deps, actor);
+        return { provider: me.defaultProvider, model: me.defaultModel };
+      },
+    };
+  };
   const removeBot = createBotRemoval(deps, repos);
   const agentImportServices = createAgentImportServices({
     deps,
@@ -139,11 +161,13 @@ export function createRouterContext(deps: RouterDeps) {
     return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
   };
   const catalogForSpace = async (actor: Actor) => {
+    const deployment = await currentDeploymentModels(deps);
     const auth = await modelCredentialAuthKindsForSpace(
       deps.prisma,
       deps.secrets,
       actor,
-      deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
+      deps.billing?.modelCreditsEnabled ? deployment.default.provider : undefined,
+      deployment,
     );
     const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
     const [live, providerLive] = await Promise.all([
@@ -178,18 +202,22 @@ export function createRouterContext(deps: RouterDeps) {
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
-    return offeredCatalog(merged, selected).map((entry) =>
-      entry.provider === auth.managedProvider
-        ? {
-            ...entry,
-            managed: true,
-            billing:
-              auth.secretIdByModel[entry.provider]?.[entry.id] ||
-              auth.secretIdByProvider[entry.provider]
-                ? entry.billing
-                : "Uses Rakazo credits",
-          }
-        : entry,
+    return [...offeredCatalog(merged, selected), ...servedEndpointEntries(merged, auth)].map(
+      (entry) =>
+        entry.provider === auth.managedProvider
+          ? {
+              ...entry,
+              managed: true,
+              billing:
+                auth.secretIdByModel[entry.provider]?.[entry.id] ||
+                auth.secretIdByProvider[entry.provider]
+                  ? entry.billing
+                  : "Uses Rakazo credits",
+            }
+          : // The deployment runs it for this member, who has no connection of their own for it.
+            auth.deploymentModels?.has(`${entry.provider}:${entry.id}`)
+            ? { ...entry, managed: true }
+            : entry,
     );
   };
 
@@ -198,16 +226,22 @@ export function createRouterContext(deps: RouterDeps) {
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
+    const saved =
+      role === "main"
+        ? await deps.prisma.deploymentSettings.findUnique({
+            where: { id: "default" },
+            include: DEPLOYMENT_MODEL_SETTINGS,
+          })
+        : undefined;
+    const fallback = (await currentDeploymentModels(deps, saved)).default;
     const defaults =
       role === "main"
         ? {
-            settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+            settings: saved,
             // Only a model the deployment can run stands in for the member's choice.
-            deployment: deps.env.deploymentModelConfigured
-              ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-              : null,
+            deployment: fallback.configured ? fallback : null,
           }
-        : { env: process.env };
+        : { env: process.env, deployment: fallback };
     return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
   };
   /**
@@ -257,8 +291,14 @@ export function createRouterContext(deps: RouterDeps) {
   const modelRoleCatalog = async (actor: Actor, role: ModelRole): Promise<ModelCatalogEntry[]> => {
     const catalog = await chatCatalog(actor);
     const decisions = role === "approval" ? decisionModelCatalog() : [];
+    // A provider funded by hosted credits runs its decision models too. Models the deployment
+    // serves members are served one by one, never a provider's decision models with them.
     const managedProviders = new Set(
-      catalog.filter((entry) => "managed" in entry && entry.managed).map((entry) => entry.provider),
+      deps.billing?.modelCreditsEnabled
+        ? catalog
+            .filter((entry) => "managed" in entry && entry.managed)
+            .map((entry) => entry.provider)
+        : [],
     );
     return withServingConnections(
       actor,
@@ -392,7 +432,8 @@ export function createRouterContext(deps: RouterDeps) {
         actor,
         choice.provider,
         choice.modelId,
-        resolution,
+        // An endpoint the deployment serves runs without the member's own connection.
+        { ...resolution, deployment: () => currentDeploymentModels(deps) },
       );
       if (error || choice.provider !== OPENAI_COMPATIBLE_PROVIDER_ID)
         throw new ORPCError("BAD_REQUEST", {

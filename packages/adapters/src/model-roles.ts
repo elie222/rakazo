@@ -9,14 +9,16 @@ import { backupChoiceKey, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "./auto-review.js";
+import type { DeploymentModels } from "./deployment-model.js";
+import { deploymentServes } from "./deployment-model.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
-  /** The owner's saved default, ahead of the environment's. */
+  /** The deployment's saved default, ahead of the environment's. */
   settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
-  /** The environment's model, when the deployment can run it. */
+  /** The deployment model in effect (an admin's, else the environment's), when it can run. */
   deployment?: { provider: string; model: string } | null;
   env?: NodeJS.ProcessEnv;
 };
@@ -27,7 +29,7 @@ export function deploymentModelRole(
   defaults: DeploymentModelDefaults,
 ): ModelRoleSettings {
   if (role === "approval") {
-    const checker = resolveAutoReviewChecker(defaults.env);
+    const checker = resolveAutoReviewChecker(defaults.env, defaults.deployment ?? undefined);
     return {
       primary: checker ? { provider: checker.provider, modelId: checker.model } : null,
       backups: [],
@@ -95,18 +97,30 @@ export function selectConfiguredModel(input: {
   /** The bot's or the run's own model; null follows the main model. */
   override: ModelChoice | null;
   hostedProvider?: string;
+  /** Models the deployment's own connections run for members without one. */
+  deploymentModels?: DeploymentModels;
   overrideCredential: ModelCredential;
   main: MemberMainModel | null;
   defaults: DeploymentModelDefaults;
 }) {
   const { override: bot, overrideCredential, main } = input;
   const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
-  // A model runs on its own connection, or on the deployment's for its funded provider.
-  const runnable = (provider: string | null | undefined, credential: ModelCredential) =>
-    Boolean(credential || (provider && provider === input.hostedProvider));
+  // A model runs on its own connection, or on the deployment's for its funded provider or
+  // for a model the deployment serves members.
+  const runnable = (
+    provider: string | null | undefined,
+    modelId: string | null | undefined,
+    credential: ModelCredential,
+  ) =>
+    Boolean(
+      credential ||
+        (provider && provider === input.hostedProvider) ||
+        deploymentServes(input.deploymentModels, provider, modelId),
+    );
   // The override provider, model and credential must win together.
-  const useOverride = hasOverride && runnable(bot?.modelProvider, overrideCredential);
-  const useMain = !useOverride && main !== null && runnable(main.provider, main.credential);
+  const useOverride = hasOverride && runnable(bot?.modelProvider, bot?.modelId, overrideCredential);
+  const useMain =
+    !useOverride && main !== null && runnable(main.provider, main.modelId, main.credential);
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
     ? {

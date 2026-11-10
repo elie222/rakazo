@@ -11,6 +11,7 @@ import {
 
 function prismaWith(options: {
   voice?: boolean;
+  deploymentVoice?: boolean;
   recent?: boolean;
   status?: string;
   updated?: number;
@@ -33,6 +34,17 @@ function prismaWith(options: {
     event: { create: vi.fn(async () => ({ seq: 0 })) },
     userVoiceCredential: {
       findFirst: vi.fn(async () => (options.voice === false ? null : { id: "voice-1" })),
+    },
+    deploymentSettings: {
+      findUnique: vi.fn(async () =>
+        options.deploymentVoice
+          ? {
+              defaultVoiceProvider: "elevenlabs",
+              defaultVoiceId: "voice-a",
+              defaultVoiceCredentialCipher: "cipher",
+            }
+          : null,
+      ),
     },
     message: {
       findFirst: vi.fn(async () => (options.recent ? { id: "earlier" } : null)),
@@ -67,6 +79,20 @@ describe("call_user", () => {
     await expect(callRequestRefusal(prismaWith({ recent: true }), input)).resolves.toMatch(
       /last 2 minutes/,
     );
+  });
+
+  it("rings a user without a voice connection on the deployment's voice", async () => {
+    const input = { userId: "user-1", threadId: "thread-1", groupChat: false };
+    await expect(
+      callRequestRefusal(prismaWith({ voice: false, deploymentVoice: true }), input),
+    ).resolves.toBeNull();
+    vi.stubEnv("VOICE_DEFAULT_PROVIDER", "cartesia");
+    vi.stubEnv("VOICE_DEFAULT_API_KEY", "test-voice-key");
+    try {
+      await expect(callRequestRefusal(prismaWith({ voice: false }), input)).resolves.toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("limits calls across every chat owned by the recipient", async () => {

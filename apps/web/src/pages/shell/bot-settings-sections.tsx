@@ -124,6 +124,7 @@ export function ModelSection({
   thinkingLevel,
   defaultThinkingLevel,
   onThinkingLevelChange,
+  error,
 }: {
   ids: string;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -135,6 +136,8 @@ export function ModelSection({
   thinkingLevel: string;
   defaultThinkingLevel: ThinkingLevel;
   onThinkingLevelChange: (level: string) => void;
+  /** Why the last pick did not save. */
+  error?: string | null;
 }) {
   const { t } = useLingui();
   return (
@@ -188,6 +191,11 @@ export function ModelSection({
               ))}
             </NativeSelect>
           </label>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-body-sm text-destructive">
+            {error}
+          </p>
         ) : null}
       </div>
     </div>

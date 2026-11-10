@@ -9,6 +9,7 @@ import {
   CommandList,
   ListSearchInput,
   NativeSelect,
+  NativeSelectOptGroup,
   NativeSelectOption,
   Popover,
   PopoverContent,
@@ -19,7 +20,10 @@ import { useId, useMemo, useState } from "react";
 import { TextOnlyMark } from "../../components/TextOnlyMark";
 import { useListSearch } from "../../lib/use-list-search";
 
-/** A chat's model: a native select, or a searchable list once there are too many to scan. */
+/**
+ * A bot's model, grouped by provider: a native select, or a searchable list once there are too
+ * many to scan. A saved model nothing offers any more stays selected and is marked.
+ */
 export function ChatModelPicker({
   id,
   choices,
@@ -33,6 +37,7 @@ export function ChatModelPicker({
 }) {
   const { t } = useLingui();
   const imagesHintId = useId();
+  const unavailableHintId = useId();
   const [open, setOpen] = useState(false);
   const { query, setQuery, showSearch, visible } = useListSearch(choices, {
     text: modelChoiceSearchText,
@@ -40,29 +45,63 @@ export function ChatModelPicker({
   const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
   const selected = choices.find((choice) => choice.key === value) ?? choices[0];
   const textOnly = selected?.images === false;
-  const imagesHint = <span id={imagesHintId} hidden>{t`Can't read images`}</span>;
+  const unavailable = selected?.unavailable === true;
+  const describedBy = (choice: ChatModelChoice | undefined) =>
+    choice?.unavailable ? unavailableHintId : choice?.images === false ? imagesHintId : undefined;
+  const hints = (
+    <>
+      <span id={imagesHintId} hidden>
+        {t`Can't read images`}
+      </span>
+      {choices.some((choice) => choice.unavailable) ? (
+        <span id={unavailableHintId} hidden>
+          {t`Unavailable`}
+        </span>
+      ) : null}
+    </>
+  );
+  const marks = (
+    <>
+      {unavailable ? (
+        <span aria-hidden="true" className="text-body-sm">
+          {t`Unavailable`}
+        </span>
+      ) : null}
+      {textOnly ? <TextOnlyMark /> : null}
+    </>
+  );
 
   if (!showSearch) {
     return (
       <div className="mt-2 flex items-center gap-2">
-        {imagesHint}
+        {hints}
         <NativeSelect
           id={id}
           className="w-full"
-          aria-describedby={textOnly ? imagesHintId : undefined}
+          aria-describedby={describedBy(selected)}
           value={value}
           onChange={(event) => onChange(event.target.value)}
         >
-          {choices.map((choice) => (
-            <NativeSelectOption key={choice.key} value={choice.key}>
-              {choice.label}
-            </NativeSelectOption>
-          ))}
+          {sections.map((section) =>
+            section.heading ? (
+              <NativeSelectOptGroup key={section.key} label={section.heading}>
+                {section.data.map((choice) => (
+                  <NativeSelectOption key={choice.key} value={choice.key}>
+                    {choice.title ?? choice.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelectOptGroup>
+            ) : (
+              section.data.map((choice) => (
+                <NativeSelectOption key={choice.key} value={choice.key}>
+                  {choice.label}
+                </NativeSelectOption>
+              ))
+            ),
+          )}
         </NativeSelect>
-        {textOnly ? (
-          <span className="text-muted-foreground">
-            <TextOnlyMark />
-          </span>
+        {textOnly || unavailable ? (
+          <span className="flex shrink-0 items-center gap-2 text-muted-foreground">{marks}</span>
         ) : null}
       </div>
     );
@@ -75,15 +114,15 @@ export function ChatModelPicker({
 
   return (
     <Popover open={open} onOpenChange={openChange}>
-      {imagesHint}
+      {hints}
       <PopoverTrigger
         id={id}
-        aria-describedby={textOnly ? imagesHintId : undefined}
+        aria-describedby={describedBy(selected)}
         className="mt-2 flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent pr-2.5 pl-2.5 text-start text-body text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
       >
         <span className="min-w-0 truncate">{selected?.label}</span>
         <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-          {textOnly ? <TextOnlyMark /> : null}
+          {marks}
           <ChevronDownIcon className="size-4" aria-hidden="true" />
         </span>
       </PopoverTrigger>
@@ -118,7 +157,7 @@ export function ChatModelPicker({
                       // cmdk falls back to the row's text for an empty value.
                       value={choice.key || "space-default"}
                       data-checked={choice.key === value}
-                      aria-describedby={choice.images === false ? imagesHintId : undefined}
+                      aria-describedby={describedBy(choice)}
                       onSelect={() => {
                         onChange(choice.key);
                         openChange(false);
@@ -127,6 +166,11 @@ export function ChatModelPicker({
                       <span className="min-w-0 flex-1 truncate">
                         {choice.title ?? choice.label}
                       </span>
+                      {choice.unavailable ? (
+                        <span aria-hidden="true" className="shrink-0 text-muted-foreground">
+                          {t`Unavailable`}
+                        </span>
+                      ) : null}
                       {choice.images === false ? (
                         <span className="shrink-0 text-muted-foreground">
                           <TextOnlyMark />

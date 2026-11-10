@@ -20,6 +20,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
+import type { DeploymentModels } from "./deployment-model.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -47,8 +48,14 @@ export interface ExecutorDeps {
   secrets: string[];
   secretStore: SecretStore;
   billingEnabled?: boolean;
+  /**
+   * The deployment's models as the environment configures them; an admin's settings apply over
+   * them at run time. Without it, only the default model below runs on a deployment key.
+   */
+  deploymentModels?: DeploymentModels;
+  /** The environment's default model key. */
   deploymentModelKey?: string;
-  /** The deployment default model can run; see resolveDeploymentModel. */
+  /** The environment's default model can run; see resolveDeploymentModel. */
   deploymentModelConfigured?: boolean;
   dataDir?: string;
   notifications?: NotificationProvider;

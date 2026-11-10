@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { CodexLiveCatalog } from "@rakazo/adapters";
+import type { CodexLiveCatalog, DeploymentModels } from "@rakazo/adapters";
 import {
   CHATGPT_OAUTH_PROVIDER,
   codexLiveModel,
@@ -40,6 +40,8 @@ export async function assertThreadImageInput(
   configuration?: {
     secrets: Pick<SecretStore, "load">;
     deployment: { provider: string; model: string } | null;
+    /** Models the deployment's connections run for members without their own. */
+    deploymentModels?: DeploymentModels;
     hostedProvider?: string;
     codexCatalog?: CodexLiveCatalog;
   },
@@ -76,6 +78,7 @@ export async function assertThreadImageInput(
       deployment: configuration?.deployment ?? null,
     },
     hostedProvider: configuration?.hostedProvider,
+    deploymentModels: configuration?.deploymentModels,
   });
   const provider = running ? run.modelProvider : selected.provider;
   const id = running ? run.modelId : selected.id;

@@ -14,6 +14,7 @@ import type { EffectiveModelRole } from "./model-roles.js";
 import { effectiveModelRole } from "./model-roles.js";
 import { routineTaskInstructions } from "./routine-watch.js";
 import { CATALOG_APPROVAL_TOOL, PASSED_EFFECT_STATUSES } from "./run-effects.js";
+import { runDeploymentModels } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "./run-tool-selection.js";
 
 /**
@@ -86,11 +87,10 @@ export function createRunTrustLoaders(
   };
   let approvalModelPromise: Promise<EffectiveModelRole> | undefined;
   const loadApprovalModel = () =>
-    (approvalModelPromise ??= effectiveModelRole(
-      deps.prisma,
-      { userId: run.userId, spaceId: run.spaceId },
-      "approval",
-      {},
+    (approvalModelPromise ??= runDeploymentModels(deps).then((models) =>
+      effectiveModelRole(deps.prisma, { userId: run.userId, spaceId: run.spaceId }, "approval", {
+        deployment: models.default,
+      }),
     ));
   let autoReviewPreferencePromise:
     | Promise<{ enabled: boolean; skipApprovals: boolean }>

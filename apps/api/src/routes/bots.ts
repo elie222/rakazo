@@ -413,7 +413,7 @@ export function botsRoutes(ctx: RouterContext) {
           });
           if (!section) throw new IsolationError();
         }
-        const modelChange = await validateBotModelChange(botModelValidation(context.actor), {
+        const modelChange = await validateBotModelChange(await botModelValidation(context.actor), {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
           provider:

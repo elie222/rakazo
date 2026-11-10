@@ -58,6 +58,26 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "bots.rotateWebhookSecret": { type: "credential.changed", kind: "webhook", fields: ["botId"] },
   "voice.connect": { type: "credential.created", kind: "voice", fields: ["provider"] },
   "voice.disconnect": { type: "credential.deleted", kind: "voice", fields: ["provider"] },
+  "voice.deployment.update": {
+    type: "credential.changed",
+    kind: "deployment_voice",
+    fields: ["provider"],
+  },
+  "models.deployment.connect": {
+    type: "credential.changed",
+    kind: "deployment_model",
+    fields: ["provider"],
+  },
+  "models.deployment.disconnect": {
+    type: "credential.deleted",
+    kind: "deployment_model",
+    fields: ["provider"],
+  },
+  "models.deployment.update": {
+    type: "deployment.settings.changed",
+    kind: "deployment_model",
+    fields: ["defaultModel.provider", "defaultModel.modelId"],
+  },
   "memory.connectProvider": { type: "credential.created", kind: "memory" },
   "memory.disconnectProvider": { type: "credential.deleted", kind: "memory" },
   // Starting a sign-in replaces any wallet already connected.
@@ -151,7 +171,7 @@ export function procedureSecurityEvent(
     if (typeof value === "string" || typeof value === "boolean" || value === null)
       metadata[field.split(".").at(-1)!] = value;
   }
-  if (procedure === "deployment.update") {
+  if (procedure === "deployment.update" || procedure === "models.deployment.update") {
     metadata.changed = Object.keys(fields)
       .filter((key) => fields[key] !== undefined)
       .sort()

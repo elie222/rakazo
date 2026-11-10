@@ -28,6 +28,40 @@ Google Vertex works the same way with `PI_DEFAULT_PROVIDER=google-vertex`, using
 application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `GOOGLE_CLOUD_LOCATION`). Runs on host credentials are billed to that cloud account.
 
+### Models members can use
+
+By default, only the deployment model runs on the deployment's keys. To let people choose other
+models without connecting their own, list them in `PI_DEPLOYMENT_MODELS`, comma-separated:
+`provider:model` for one catalog model, `provider:*` for every catalog model of a provider, or `*`
+for every model of every provider the deployment has a key for. For example,
+`PI_DEPLOYMENT_MODELS=deepseek:*,anthropic:claude-haiku-5-5` lets a bot run a cheap model and
+another a stronger one, all billed to the deployment's keys. The keys are those in the table above
+and the [local model server](#local-models) (`local:*`). The models then appear in model pickers
+like connected ones, for chat, bots, routines and the approval model; the computer-use model still
+needs a person's own connection. A person who connects the same provider runs it on their own key
+instead. With model credits on, members use the deployment's models through credits as before, and
+this list does not apply.
+
+### Admin settings
+
+Admins (`RAKAZO_ADMIN_EMAILS`, with a verified email) can do the same at the end of
+**Settings → Models**, without a restart:
+
+- add a provider's API key, or an OpenAI-compatible endpoint with its URL, model ids, optional key,
+  context limit and maximum output tokens. Like a person's own connection, the key is checked
+  before it is saved, stored encrypted, and never shown again; leave it blank to keep it. An
+  endpoint follows the same URL rules as a person's (public HTTPS, or a private address with
+  `MCP_ALLOW_PRIVATE_ENDPOINT=true`), so an in-region API such as `https://eu.openrouter.ai/api/v1`
+  works. There is one such endpoint per deployment, and its models are treated as text-only, so
+  they never receive images. A key saved here replaces the environment's for that provider.
+- choose the deployment model from the models these keys run.
+- switch on which providers' models members can choose. This replaces `PI_DEPLOYMENT_MODELS` until
+  an admin resets it.
+
+What applies, first to last: a person's own connection, then the admin's settings, then the
+environment. Removing a provider's saved key, or choosing **Default**, brings the environment's back.
+The API and worker read these settings at use time, so every instance follows a change.
+
 The Compose files also pass the standard provider key variables the agent runtime reads itself
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
@@ -241,6 +275,21 @@ video controls on web and Electron and opened/downloaded through the existing
 native file flow on mobile. No new mobile player or settings screen is required.
 
 ## Voice
+
+### A default voice for everyone
+
+Set `VOICE_DEFAULT_PROVIDER` (`elevenlabs`, `openai`, `cartesia` or `fish-audio`) and
+`VOICE_DEFAULT_API_KEY` on the API and worker to give everyone without their own connection in
+**Settings → Voice** a working voice, billed to that key. `VOICE_DEFAULT_VOICE_ID` picks the voice
+(default: the provider's first) and `VOICE_DEFAULT_SPEECH_MODEL` the speech model for providers
+that take one. Use `VOICE_DEFAULT_API_KEY` even for OpenAI: `OPENAI_API_KEY` would also let runs use
+OpenAI models on the deployment's account.
+
+Admins (`RAKAZO_ADMIN_EMAILS`) can set the provider, key and voice at the end of **Settings →
+Voice** instead. The key is checked with the provider before it is saved, stored encrypted, and never
+shown again; leave it blank to keep it. That choice replaces the environment's until an admin sets
+it back to **Default**. A person's own connection always comes first, and the AI data sharing prompt
+names the provider before their voice reaches it.
 
 ### macOS voices
 

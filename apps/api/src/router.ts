@@ -15,6 +15,7 @@ import type {
   CodexLiveCatalog,
   ComposioProvider,
   ConnectorRegistry,
+  DeploymentModels,
   FaviconResolver,
   IntegrationProviderSettings,
   McpConnector,
@@ -141,6 +142,8 @@ export interface RouterDeps {
     defaultModel: string;
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
+    /** The environment's deployment connections and allowlist; admins' settings apply over them. */
+    deploymentModels?: DeploymentModels;
     webOrigin: string;
     privacyPolicyUrl?: string;
     screenProxySecret: string;

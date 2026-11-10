@@ -18,6 +18,9 @@ const voice = vi.hoisted(() => ({
 }));
 
 const { speak } = vi.hoisted(() => ({ speak: vi.fn(async () => undefined) }));
+vi.mock("../components/DeploymentVoiceSettings", () => ({
+  DeploymentVoiceSettings: () => <div data-testid="deployment-voice-settings" />,
+}));
 vi.mock("../lib/tts.js", () => ({ speaker: { speak, state: {} } }));
 vi.mock("../lib/rpc", () => ({
   rpc: { voice },
@@ -902,6 +905,46 @@ it("picks a Space's own voice from the account's connections without managing th
       voiceId: "voice-2",
       provider: "fish-audio",
     });
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows admins the deployment's voice on the account page only", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
+    ]);
+  voice.credentials.mockReset().mockResolvedValue([]);
+  voice.status.mockReset().mockResolvedValue({
+    configured: true,
+    ready: true,
+    transcribe: true,
+    provider: "elevenlabs",
+    voiceId: "voice-a",
+    deployment: true,
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const block = () => container.querySelector('[data-testid="deployment-voice-settings"]');
+  try {
+    for (const [props, shown] of [
+      [{ scope: "account", canConfigureDeployment: true }, true],
+      [{ scope: "space", canConfigureDeployment: true }, false],
+      [{ scope: "account" }, false],
+    ] as const) {
+      await act(async () => {
+        root.render(
+          withQueries(<VoiceSettingsOverlay embedded onClose={() => undefined} {...props} />),
+        );
+      });
+      expect(Boolean(block())).toBe(shown);
+    }
   } finally {
     await act(async () => root.unmount());
     container.remove();

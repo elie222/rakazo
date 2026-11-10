@@ -98,6 +98,8 @@ import {
   CreateRoutineInput,
   CreateScratchpadItemInput,
   DeploymentSettingsSchema,
+  DeploymentVoiceSettingsSchema,
+  DeploymentVoiceUpdateSchema,
   ExportManifestSchema,
   ExternalConversationPolicySchema,
   GroupDetailSchema,
@@ -169,6 +171,9 @@ import {
   McpSourcePresetSchema,
 } from "./mcp.js";
 import {
+  DeploymentModelConnectSchema,
+  DeploymentModelSettingsSchema,
+  DeploymentModelUpdateSchema,
   ModelApiProtocolSchema,
   ModelBackupChoiceSchema,
   ModelBackupListSchema,
@@ -587,6 +592,25 @@ export const appContract = {
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Admins only: the deployment's connections, default model, and models members may use. */
+    deployment: {
+      get: oc.output(DeploymentModelSettingsSchema),
+      update: oc.input(DeploymentModelUpdateSchema).output(DeploymentModelSettingsSchema),
+      connect: oc.input(DeploymentModelConnectSchema).output(DeploymentModelSettingsSchema),
+      /** Removes a saved connection; the environment's key for the provider, if any, applies again. */
+      disconnect: oc
+        .input(z.object({ provider: z.string().trim().min(1).max(64) }))
+        .output(DeploymentModelSettingsSchema),
+      /** An OpenAI-compatible endpoint's models; a blank key uses the saved one for that URL. */
+      probe: oc
+        .input(
+          z.object({
+            baseUrl: z.string().trim().min(1).max(2048),
+            apiKey: z.string().trim().max(4096).default(""),
+          }),
+        )
+        .output(z.object({ models: z.array(z.string()) })),
+    },
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
@@ -1602,6 +1626,13 @@ export const appContract = {
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
+    /** Admins only: the voice everyone without their own connection uses. */
+    deployment: {
+      get: oc.output(DeploymentVoiceSettingsSchema),
+      update: oc.input(DeploymentVoiceUpdateSchema).output(DeploymentVoiceSettingsSchema),
+      /** The saved provider's voices, listed with its saved key. */
+      voices: oc.output(z.array(VoiceInfoSchema)),
+    },
   },
   externalConversations: {
     updatePolicy: oc

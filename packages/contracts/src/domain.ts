@@ -1331,8 +1331,32 @@ export const VoiceStatusSchema = z.object({
   transcribe: z.boolean(),
   provider: z.string().nullable(),
   voiceId: z.string(),
+  /** The deployment's voice, for an account without its own connection here. */
+  deployment: z.boolean().optional(),
 });
 export type VoiceStatus = z.infer<typeof VoiceStatusSchema>;
+
+/** Admin view of the voice everyone without their own connection uses. Never the key. */
+export const DeploymentVoiceSettingsSchema = z.object({
+  /** Saved in Settings; null leaves the server environment's voice, if any. */
+  provider: z.string().nullable(),
+  voiceId: z.string(),
+  keySaved: z.boolean(),
+  /** The environment's provider, which applies while nothing is saved. */
+  environmentProvider: z.string().nullable(),
+  providers: z.array(VoiceCatalogEntrySchema),
+});
+export type DeploymentVoiceSettings = z.infer<typeof DeploymentVoiceSettingsSchema>;
+
+export const DeploymentVoiceUpdateSchema = z.object({
+  /** Null removes the saved voice, so the environment's applies again. */
+  provider: z.string().trim().min(1).max(64).nullable(),
+  /** Blank keeps the saved key of the same provider. */
+  apiKey: z.string().max(4096).default(""),
+  /** Blank uses the provider's first voice. */
+  voiceId: z.string().max(120).optional(),
+});
+export type DeploymentVoiceUpdate = z.infer<typeof DeploymentVoiceUpdateSchema>;
 
 export const DeploymentSettingsSchema = z.object({
   ownerUserId: Id.nullable(),

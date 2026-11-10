@@ -62,6 +62,72 @@ describe("procedureSecurityEvent", () => {
     expect(JSON.stringify(event)).not.toContain("owner@example.test");
   });
 
+  it("records a deployment voice change without its key", () => {
+    const event = procedureSecurityEvent(
+      ["voice", "deployment", "update"],
+      { provider: "elevenlabs", apiKey: "test-voice-key", voiceId: "voice-a" },
+      actor,
+    );
+    expect(event).toEqual({
+      type: "credential.changed",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "voice.deployment.update",
+        kind: "deployment_voice",
+        provider: "elevenlabs",
+      },
+    });
+  });
+
+  it("records deployment model changes without a key or an endpoint", () => {
+    expect(
+      procedureSecurityEvent(
+        ["models", "deployment", "connect"],
+        {
+          provider: "openai-compatible",
+          apiKey: "test-model-key",
+          baseUrl: "https://models.example.test/v1",
+        },
+        actor,
+      ),
+    ).toEqual({
+      type: "credential.changed",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "models.deployment.connect",
+        kind: "deployment_model",
+        provider: "openai-compatible",
+      },
+    });
+    expect(
+      procedureSecurityEvent(
+        ["models", "deployment", "disconnect"],
+        { provider: "deepseek" },
+        actor,
+      )?.type,
+    ).toBe("credential.deleted");
+    expect(
+      procedureSecurityEvent(
+        ["models", "deployment", "update"],
+        { defaultModel: { provider: "deepseek", modelId: "deepseek-flash" }, allowedModels: ["*"] },
+        actor,
+      ),
+    ).toEqual({
+      type: "deployment.settings.changed",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "models.deployment.update",
+        kind: "deployment_model",
+        provider: "deepseek",
+        modelId: "deepseek-flash",
+        changed: "allowedModels,defaultModel",
+      },
+    });
+  });
+
   it("records an MCP approval as a decision", () => {
     expect(
       procedureSecurityEvent(

@@ -749,18 +749,47 @@ model DeploymentSettings {
   signupsEnabled                  Boolean  @default(true)
   signupAllowlist                 String   @default("")
   signupPolicyInitialized         Boolean  @default(false)
+  /// The default model an admin chose in Settings; null keeps the environment's.
   defaultModelProvider            String?
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
+  /// Deployment models members may use, as PI_DEPLOYMENT_MODELS lists them; null keeps the
+  /// environment's list.
+  allowedModels                   String?
+  modelConnections                DeploymentModelConnection[]
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
   computerProvider                String?
   /// That provider's encrypted connection settings, owned by the deployment rather than a user.
   computerProviderCipher          String?
+  /// Voice provider id an admin chose for everyone without their own connection; null keeps
+  /// the environment's.
+  defaultVoiceProvider            String?
+  defaultVoiceId                  String?
+  /// That provider's encrypted key, owned by the deployment rather than a user.
+  defaultVoiceCredentialCipher    String?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 
   @@map("deployment_settings")
+}
+
+/// A model provider connection an admin added in Settings, owned by the deployment rather
+/// than a user. It replaces the environment's key for the same provider.
+model DeploymentModelConnection {
+  provider   String             @id
+  settingsId String             @default("default")
+  settings   DeploymentSettings @relation(fields: [settingsId], references: [id], onDelete: Cascade)
+  /// The provider's key, or an OpenAI-compatible endpoint's settings, encrypted by the secret
+  /// store.
+  ciphertext String
+  /// The model ids an OpenAI-compatible endpoint runs; empty uses the provider's catalog.
+  models     String[] @default([])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([settingsId])
+  @@map("deployment_model_connections")
 }
 
 /// Append-only security audit trail. No foreign keys, so an account deletion

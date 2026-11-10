@@ -1,7 +1,11 @@
 // `docker compose exec api node dist/cli/diagnostics.js`: a redacted report for a support issue.
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import {
+  contentKeyProviderFromEnv,
+  loadDeploymentModels,
+  unwrapEnvFromKeyManager,
+} from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem } from "@rakazo/db";
 import type { DiagnosticsInput } from "../diagnostics.js";
@@ -75,7 +79,7 @@ async function collect(env: AppEnv, prisma: PrismaClient): Promise<DiagnosticsIn
   } catch {
     return { ...base, database: { reachable: false } };
   }
-  const [bots, assignments, unassigned, runs, migrations] = await Promise.all([
+  const [bots, assignments, unassigned, runs, migrations, deploymentModels] = await Promise.all([
     prisma.bot.findMany({ select: { id: true, spaceId: true, userId: true, archivedAt: true } }),
     prisma.botMcpServer.findMany({
       select: { botId: true, spaceId: true, userId: true, server: { select: serverFields } },
@@ -88,6 +92,8 @@ async function collect(env: AppEnv, prisma: PrismaClient): Promise<DiagnosticsIn
       take: RECENT_RUNS,
     }),
     appliedMigrations(prisma),
+    // An admin's settings apply over the environment's.
+    loadDeploymentModels(prisma, env.deploymentModels).catch(() => undefined),
   ]);
   const flatten = <T extends { availableIn: { spaceId: string }[] }>(server: T) => ({
     ...server,
@@ -95,6 +101,11 @@ async function collect(env: AppEnv, prisma: PrismaClient): Promise<DiagnosticsIn
   });
   return {
     ...base,
+    env: {
+      ...base.env,
+      deploymentModelConfigured:
+        deploymentModels?.default.configured ?? base.env.deploymentModelConfigured,
+    },
     database: {
       reachable: true,
       migrationsInImage: readdirSync(

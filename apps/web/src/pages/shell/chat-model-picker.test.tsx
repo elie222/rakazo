@@ -155,6 +155,80 @@ describe("ChatModelPicker", () => {
     expect(document.body.textContent).toContain("No matching models");
   });
 
+  it("groups a short list's models under their provider, after the default", () => {
+    render(
+      [
+        ...choices(1),
+        {
+          key: "fixture-cloud::small",
+          label: "Small (Fixture Cloud)",
+          provider: "fixture-cloud",
+          providerLabel: "Fixture Cloud",
+          modelLabel: "Small",
+          modelId: "small",
+        },
+      ],
+      "",
+    );
+    const select = container.querySelector("select")!;
+    expect(select.options[0]?.textContent).toBe("Space default");
+    expect(
+      [...select.querySelectorAll("optgroup")].map((group) => [
+        group.label,
+        [...group.querySelectorAll("option")].map((option) => option.textContent),
+      ]),
+    ).toEqual([
+      ["OpenRouter", ["Model 1"]],
+      ["Fixture Cloud", ["Small"]],
+    ]);
+  });
+
+  const unavailable: ChatModelChoice = {
+    key: "fixture-cloud::retired",
+    label: "retired",
+    provider: "fixture-cloud",
+    modelId: "retired",
+    unavailable: true,
+  };
+  const withUnavailable = (count: number) => {
+    const [fallback, ...rest] = choices(count);
+    return [fallback!, unavailable, ...rest];
+  };
+  const marks = (root: ParentNode) =>
+    [...root.querySelectorAll('[aria-hidden="true"]')].filter(
+      (node) => node.textContent === "Unavailable",
+    );
+
+  it("keeps a short list's unavailable model selected and marks it", () => {
+    render(withUnavailable(2), unavailable.key);
+    const select = container.querySelector("select")!;
+    expect(select.value).toBe(unavailable.key);
+    expect(select.options[1]?.textContent).toBe("retired");
+    expect(marks(container)).toHaveLength(1);
+    const hint = document.getElementById(select.getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent).toBe("Unavailable");
+
+    render(withUnavailable(2), "");
+    expect(marks(container)).toHaveLength(0);
+    expect(select.hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("marks a long list's unavailable model on the trigger and its row", () => {
+    render(withUnavailable(11), unavailable.key);
+    const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
+    expect(trigger.textContent).toBe("retiredUnavailable");
+    const hintId = trigger.getAttribute("aria-describedby");
+    expect(document.getElementById(hintId ?? "")?.textContent).toBe("Unavailable");
+
+    act(() => trigger.click());
+    const row = options()[1]!;
+    expect(row.getAttribute("aria-label")).toBe("retired");
+    expect(row.getAttribute("data-checked")).toBe("true");
+    expect(row.getAttribute("aria-describedby")).toBe(hintId);
+    expect(marks(row)).toHaveLength(1);
+    expect(options().filter((option) => marks(option).length)).toHaveLength(1);
+  });
+
   it("lets the popup flip vertically without switching axes", () => {
     render(choices(11), "");
     act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());

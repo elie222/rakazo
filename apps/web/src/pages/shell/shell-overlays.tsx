@@ -187,6 +187,8 @@ export function SettingsOverlays({
           sandboxProvider={bootstrapMe?.sandboxProvider}
           computerSettingsEnabled={bootstrapMe?.computerSettingsEnabled === true}
           canConfigureComputers={bootstrapMe?.isAdmin === true}
+          canConfigureVoice={bootstrapMe?.isAdmin === true}
+          canConfigureModels={bootstrapMe?.isAdmin === true}
           onSandboxProviderChange={(sandboxProvider) =>
             setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
           }

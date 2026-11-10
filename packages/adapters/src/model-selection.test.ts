@@ -3,6 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { loadDeploymentModels } from "./deployment-model.js";
 import { selectConfiguredModel } from "./model-roles.js";
 import { serializeModelSecret } from "./model-secret.js";
 import {
@@ -220,6 +221,7 @@ describe("space catalog auth", () => {
       userModelCredential: { findMany: credentialFindMany },
       userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     return { prisma, credentialFindMany, preferenceFindMany, secretFindMany };
   }
@@ -1040,6 +1042,7 @@ describe("connected model validation", () => {
       userModelPreference: { findFirst: preferenceFindFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
       secret: { findFirst: async () => null },
+      deploymentSettings: { findUnique: async () => null },
     } as unknown as PrismaClient;
     await expect(
       validateConnectedModelChoice(
@@ -1137,6 +1140,7 @@ describe("enabled openai-compatible models", () => {
           ciphertext === null ? null : { id: "secret-openai-compatible", ciphertext },
         ),
       },
+      deploymentSettings: { findUnique: async () => null },
     } as unknown as PrismaClient;
   }
   const store = {
@@ -1150,6 +1154,33 @@ describe("enabled openai-compatible models", () => {
   const listed = JSON.stringify({ kind: "openai_compatible", baseUrl, enabledModelIds: ["X"] });
   const validate = (prisma: PrismaClient, modelId: string) =>
     validateConnectedModelChoice(prisma, store, actor, "openai-compatible", modelId);
+
+  it("leaves an id none of the member's endpoints lists to the deployment's endpoint", async () => {
+    const prisma = compatiblePrisma("Y", listed);
+    Object.assign(prisma, {
+      deploymentSettings: {
+        findUnique: async () => ({
+          allowedModels: "openai-compatible:*",
+          modelConnections: [
+            { provider: "openai-compatible", ciphertext: "admin-fixture", models: ["served"] },
+          ],
+        }),
+      },
+    });
+    const find = (modelId: string) =>
+      findConnectedModelCredential(prisma, store, actor, "openai-compatible", modelId);
+    await expect(find("served")).resolves.toBeNull();
+    await expect(
+      validateConnectedModelChoice(prisma, store, actor, "openai-compatible", "served", {
+        deployment: () => loadDeploymentModels(prisma),
+      }),
+    ).resolves.toBeUndefined();
+    // The member's own endpoint keeps the ids it lists, and its space default.
+    await expect(find("X")).resolves.toMatchObject({ id: "credential-openai-compatible" });
+    await expect(find("Y")).resolves.toMatchObject({ id: "credential-openai-compatible" });
+    // An id nobody serves stays with the member's endpoint, which refuses it as before.
+    await expect(find("unknown")).resolves.toMatchObject({ id: "credential-openai-compatible" });
+  });
 
   it("accepts an id from the stored list that no preference names", async () => {
     await expect(validate(compatiblePrisma("Y", listed), "X")).resolves.toBeUndefined();

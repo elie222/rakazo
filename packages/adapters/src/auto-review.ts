@@ -14,6 +14,7 @@ import type { AutoReviewJudgeDecision } from "@rakazo/core";
 import { escapePromptData, redactSecrets } from "@rakazo/core";
 import { z } from "zod";
 import { formatCurrentTimeInstruction } from "./current-time.js";
+import type { DeploymentModel } from "./deployment-model.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { parseModelJson } from "./model-json.js";
 import { secretValuesToRedact } from "./model-secret.js";
@@ -101,6 +102,8 @@ export function resolveAutoReviewProviderKind(
  */
 export function resolveAutoReviewChecker(
   env: NodeJS.ProcessEnv = process.env,
+  /** The deployment model in effect, an admin's included; the environment's when omitted. */
+  deployment: Pick<DeploymentModel, "provider" | "model"> = resolveDeploymentModel(env),
 ): AutoReviewChecker | null {
   const kind = resolveAutoReviewProviderKind(env);
   if (kind === "jev") {
@@ -124,7 +127,6 @@ export function resolveAutoReviewChecker(
     return { provider: LOCAL_PROVIDER_ID, model: localIds[0]! };
   }
 
-  const deployment = resolveDeploymentModel(env);
   if (!deployment.model) return null;
   return { provider: deployment.provider, model: deployment.model };
 }
@@ -135,16 +137,18 @@ export function resolveAutoReviewChecker(
  */
 export function isAutoReviewCheckerConfigured(input: {
   env?: NodeJS.ProcessEnv;
+  /** The deployment model in effect, an admin's included; the environment's when omitted. */
+  deployment?: Pick<DeploymentModel, "provider" | "model" | "configured">;
   hasUserCredentialForProvider?: (provider: string) => boolean;
 }): boolean {
   const env = input.env ?? process.env;
-  const checker = resolveAutoReviewChecker(env);
+  const deployment = input.deployment ?? resolveDeploymentModel(env);
+  const checker = resolveAutoReviewChecker(env, deployment);
   if (!checker) return false;
   if (checker.provider === JEV_AUTO_REVIEW_PROVIDER) return Boolean(typesafeApiKey(env));
   if (checker.provider === SCRIPTED_AUTO_REVIEW_PROVIDER) return true;
   if (checker.provider === LOCAL_PROVIDER_ID) return localModelIds(env).length > 0;
 
-  const deployment = resolveDeploymentModel(env);
   if (checker.provider === deployment.provider && deployment.configured) return true;
   if (env.OPENROUTER_API_KEY?.trim() && checker.provider === "openrouter") return true;
   if (env.ANTHROPIC_API_KEY?.trim() && checker.provider === "anthropic") return true;

@@ -125,7 +125,7 @@ dbTests("durable model credit audit", () => {
     };
     const reconcile = createModelCreditReconciler({
       prisma,
-      lookup,
+      lookup: async () => lookup,
       now: () => new Date(Date.now() + 10 * 60_000),
     });
     await Promise.all([reconcile(), reconcile()]);
@@ -193,7 +193,7 @@ dbTests("durable model credit audit", () => {
     await recordUsage(prisma, { ...f.event, costUsd: 0.5, costSource: "pi-catalog-estimate" }, f);
     await createModelCreditReconciler({
       prisma,
-      lookup: { provider: "openrouter", lookupUsage: async () => f.usage },
+      lookup: async () => ({ provider: "openrouter", lookupUsage: async () => f.usage }),
       now: () => new Date(Date.now() + 10 * 60_000),
     })();
     expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(9_750_000n);
@@ -215,7 +215,7 @@ dbTests("durable model credit audit", () => {
     const before = await prisma.billingAuditEvent.count({ where: { callId: f.callId } });
     await createModelCreditReconciler({
       prisma,
-      lookup: { provider: "openrouter", lookupUsage: async () => null },
+      lookup: async () => ({ provider: "openrouter", lookupUsage: async () => null }),
       now: () => new Date(Date.now() + 10 * 60_000),
     })();
     expect(await prisma.billingAuditEvent.count({ where: { callId: f.callId } })).toBe(before + 2);
@@ -348,7 +348,7 @@ dbTests("durable model credit audit", () => {
     let now = Date.now() + 10 * 60_000;
     const reconcile = createModelCreditReconciler({
       prisma,
-      lookup: { provider: "openrouter", lookupUsage: async () => null },
+      lookup: async () => ({ provider: "openrouter", lookupUsage: async () => null }),
       now: () => new Date(now),
     });
     for (let i = 0; i < 6; i++) {

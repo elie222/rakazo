@@ -4,6 +4,7 @@ import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { findDefaultVoiceCredential } from "@rakazo/db";
+import { findDeploymentVoice } from "./deployment-voice.js";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import { botModelLabel } from "./fleet-tools.js";
 import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
@@ -126,7 +127,10 @@ export async function readOwnBotSettings(
   return paged(end);
 }
 
-/** The voices the settings screen offers: those of the user's default voice connection here. */
+/**
+ * The voices the settings screen offers: those of the user's default voice connection here,
+ * else the deployment's voice.
+ */
 export async function listDefaultVoices(
   deps: {
     prisma: PrismaClient;
@@ -137,12 +141,15 @@ export async function listDefaultVoices(
   context: AdapterContext,
 ): Promise<VoiceInfo[] | null> {
   const credential = await findDefaultVoiceCredential(deps.prisma, scope);
-  const secret =
-    credential &&
-    (await deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
-    }));
-  if (!credential || !secret) return null;
+  if (!credential) {
+    const deployment = await findDeploymentVoice(deps.prisma, deps.secretStore);
+    if (!deployment) return null;
+    return createVoiceProvider(deployment.provider).listVoices(await deployment.loadKey(), context);
+  }
+  const secret = await deps.prisma.secret.findFirst({
+    where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+  });
+  if (!secret) return null;
   const provider = createVoiceProvider(credential.provider, {
     allowPrivateEndpoint:
       credential.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&

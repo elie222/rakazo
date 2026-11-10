@@ -3,6 +3,8 @@ import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
+  deploymentVoiceId,
+  findDeploymentVoice,
   isSpeechModelId,
   isVoiceProviderId,
   listVoiceCatalog,
@@ -101,6 +103,20 @@ export function toVoiceStatus(cred: { provider: string; voiceId: string } | null
     provider: cred?.provider ?? null,
     voiceId: cred?.voiceId ?? "",
   };
+}
+
+/** The voice that applies: the account's own in the copy that applies, else the deployment's. */
+export async function loadVoiceStatus(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  scope?: SettingsScope,
+): Promise<VoiceStatus> {
+  const own = await findDefaultVoiceCredential(deps.prisma, actor, scope);
+  if (own) return toVoiceStatus(own);
+  const deployment = await findDeploymentVoice(deps.prisma, deps.secrets);
+  if (!deployment) return toVoiceStatus(null);
+  // Without a chosen voice, speaking uses the provider's first one.
+  return { ...toVoiceStatus(deployment), ready: true, deployment: true };
 }
 
 export function toVoiceCredential(row: {
@@ -210,12 +226,28 @@ export function speechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
+/**
+ * The account's default connection in the copy that applies, else the deployment's voice,
+ * which `deployment` marks. Its key never leaves the server.
+ */
 export async function loadDefaultVoiceCredential(
   deps: VoiceDeps,
   actor: Pick<Actor, "userId" | "spaceId">,
   scope?: SettingsScope,
 ) {
-  return loadVoiceCredential(deps, actor, undefined, scope);
+  const own = await loadVoiceCredential(deps, actor, undefined, scope);
+  if (own) return own;
+  const deployment = await findDeploymentVoice(deps.prisma, deps.secrets);
+  if (!deployment) return null;
+  return {
+    cred: {
+      provider: deployment.provider,
+      voiceId: deployment.voiceId,
+      speechModel: deployment.speechModel,
+    },
+    apiKey: await deployment.loadKey(),
+    deployment: true as const,
+  };
 }
 
 export async function loadVoiceCredential(
@@ -238,7 +270,7 @@ export async function loadVoiceCredential(
 export async function resolveVoiceTarget(
   deps: VoiceDeps,
   actor: Actor,
-  input: { botId?: string; voiceId?: string; scope?: SettingsScope },
+  input: { botId?: string; voiceId?: string; scope?: SettingsScope; signal?: AbortSignal },
 ) {
   let botVoiceId: string | null = null;
   if (input.botId) {
@@ -251,7 +283,17 @@ export async function resolveVoiceTarget(
   }
   const loaded = await loadDefaultVoiceCredential(deps, actor, input.scope);
   if (!loaded) throw new NoVoiceConfigured("key");
-  const voiceId = input.voiceId || botVoiceId || loaded.cred.voiceId;
+  const voiceId =
+    input.voiceId ||
+    botVoiceId ||
+    ("deployment" in loaded
+      ? await deploymentVoiceId(
+          loaded.cred,
+          loaded.apiKey,
+          await voiceProviderFor(deps, loaded.cred.provider),
+          voiceContext(actor, input.signal),
+        )
+      : loaded.cred.voiceId);
   if (!voiceId) throw new NoVoiceConfigured("voice");
   return { ...loaded, voiceId };
 }

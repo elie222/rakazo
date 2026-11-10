@@ -210,6 +210,44 @@ it("discloses the self-hosted voice origin without its encrypted key", async () 
   expect(JSON.stringify(status)).not.toContain("apiKey");
 });
 
+it("discloses the deployment's voice provider to an account without its own", async () => {
+  const { deps, actor } = setup();
+  vi.mocked(deps.prisma.userVoicePreference.findFirst).mockResolvedValue(null);
+  vi.mocked(deps.prisma.userVoicePreference.findMany).mockResolvedValue([]);
+  vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+    defaultVoiceProvider: "elevenlabs",
+    defaultVoiceId: "voice-a",
+    defaultVoiceCredentialCipher: "encrypted-fixture",
+  } as never);
+  for (const query of [{ uses: ["voice" as const] }, {}]) {
+    const status = await aiConsentStatus(deps, actor, query);
+    expect(status.recipients).toEqual([
+      expect.objectContaining({
+        name: "ElevenLabs",
+        use: "voice",
+        privacyUrl: "https://elevenlabs.io/privacy-policy",
+      }),
+    ]);
+    expect(JSON.stringify(status)).not.toContain("encrypted-fixture");
+  }
+});
+
+it("does not disclose the deployment's voice while the account's own applies", async () => {
+  const { deps, actor } = setup();
+  vi.mocked(deps.prisma.userVoicePreference.findMany).mockResolvedValue([
+    { isDefault: true, credential: { provider: "openai" } },
+  ] as never);
+  vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+    defaultVoiceProvider: "elevenlabs",
+    defaultVoiceId: "voice-a",
+    defaultVoiceCredentialCipher: "encrypted-fixture",
+  } as never);
+  for (const query of [{ uses: ["voice" as const] }, {}]) {
+    const status = await aiConsentStatus(deps, actor, query);
+    expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI"]);
+  }
+});
+
 it("discloses the Space's own voices where it overrides voice", async () => {
   const { deps, actor } = setup();
   Object.assign(deps.prisma, {
@@ -269,4 +307,42 @@ it("grants the account's voice provider when the grant names the account copy", 
     settingsScope: "account",
   });
   expect(upsert).toHaveBeenCalled();
+});
+
+it("keys consent for the deployment's own endpoint to its origin", async () => {
+  const consentFor = async (baseUrl: string) => {
+    const { deps, actor } = setup();
+    deps.env = {
+      ...deps.env,
+      agentRuntime: "pi",
+      defaultProvider: "openrouter",
+      defaultModel: "fixture/default",
+    } as never;
+    vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+      defaultModelProvider: "openai-compatible",
+      defaultModelId: "fixture/endpoint-model",
+      modelConnections: [
+        {
+          provider: "openai-compatible",
+          ciphertext: "encrypted-fixture",
+          models: ["fixture/endpoint-model"],
+        },
+      ],
+    } as never);
+    deps.secrets = {
+      load: vi
+        .fn()
+        .mockResolvedValue(
+          JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fixture-endpoint-key" }),
+        ),
+    } as never;
+    return aiConsentStatus(deps, actor, { uses: ["model"] });
+  };
+  const first = await consentFor("https://models.example.test/v1");
+  const moved = await consentFor("https://elsewhere.example.test/v1");
+  expect(JSON.stringify(first)).toContain("models.example.test");
+  expect(JSON.stringify(first)).not.toContain("fixture-endpoint-key");
+  expect(first.recipients.map((recipient) => recipient.key)).not.toEqual(
+    moved.recipients.map((recipient) => recipient.key),
+  );
 });

@@ -51,7 +51,7 @@ dbTests("model credit billing service", () => {
       prisma,
       provider,
       webOrigin: "https://example.test",
-      managedModelsAvailable: false,
+      managedModelsAvailable: async () => false,
     });
     await expect(unavailable.status(actor)).resolves.toMatchObject({
       creditPurchasesEnabled: false,

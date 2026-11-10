@@ -5,10 +5,11 @@ import { autoReviewTimeoutMs, resolveAutoReviewProviderKind } from "./auto-revie
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
+import { deploymentServes } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 import { findConnectedModelCredential, hasHostedModelCredits } from "./model-selection.js";
-import { resolveModelKey } from "./run-model.js";
+import { resolveModelKey, runDeploymentModels } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
@@ -46,7 +47,10 @@ export async function autoReviewCheckerProvider(
         (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
       )) &&
     !reviewCredential &&
-    !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider))
+    !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider)) &&
+    // A choice the deployment serves runs on its key, unless it is pinned to a connection.
+    (checker.credentialId ||
+      !deploymentServes(await runDeploymentModels(deps), checker.provider, checker.model))
   ) {
     throw new Error("Selected checker connection is unavailable");
   }

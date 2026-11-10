@@ -1,12 +1,13 @@
 import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { resolveDeploymentModel } from "./deployment-model.js";
+import { environmentDeploymentModels, resolveDeploymentModel } from "./deployment-model.js";
 import { mcpStdioOptionsFromEnv } from "./mcp-connector.js";
 import { runRuntimeEnvFromProcess } from "./run-runtime.js";
 
 // What the worker read inline before it shared the runtime builder with the API.
 function previousWorkerValues(source: NodeJS.ProcessEnv) {
-  const { key, configured } = resolveDeploymentModel(source);
+  const deploymentModel = resolveDeploymentModel(source);
+  const { key, configured } = deploymentModel;
   return {
     dataDir: source.DATA_DIR ?? "./data",
     encryptionKey: resolveEncryptionKey(source),
@@ -14,6 +15,8 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     cursorApiKey: source.CURSOR_API_KEY,
     deploymentModelKey: key,
     deploymentModelConfigured: configured,
+    // Added with deployment models: the environment's connections and allowlist.
+    deploymentModels: environmentDeploymentModels(source, deploymentModel),
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")
       .split(",")

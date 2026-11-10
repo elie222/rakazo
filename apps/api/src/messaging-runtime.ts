@@ -119,6 +119,7 @@ export async function startMessagingRuntime({
             deploymentProvider: env.defaultProvider,
             deploymentModel: env.defaultModel,
             deploymentModelKey: env.deploymentModelKey,
+            deploymentModels: env.deploymentModels,
             allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
             providerOverride: env.teamChatJudgeProvider,
             modelOverride: env.teamChatJudgeModel,
@@ -130,6 +131,7 @@ export async function startMessagingRuntime({
             deploymentProvider: env.defaultProvider,
             deploymentModel: env.defaultModel,
             deploymentModelKey: env.deploymentModelKey,
+            deploymentModels: env.deploymentModels,
             allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
           });
     const bridge = new TeamChatBridge({

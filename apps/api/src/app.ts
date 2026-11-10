@@ -51,6 +51,7 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  loadDeploymentModels,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -61,7 +62,6 @@ import {
   RunJobPublisher,
   RunStarter,
   removePiUserSessions,
-  resolveDeploymentModel,
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   StripeBillingProvider,
@@ -397,7 +397,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const legacyMessaging =
     messagingOverride ??
     (isMessagingSurfaceEnabled(messagingPlatforms, {
-      deploymentModelConfigured: env.deploymentModelConfigured,
+      // Decided at startup: the surface is a long-lived connection.
+      deploymentModelConfigured:
+        env.deploymentModelConfigured ||
+        (env.messagingOpenSignup &&
+          (await loadDeploymentModels(prisma, env.deploymentModels)).default.configured),
       openSignup: env.messagingOpenSignup,
     })
       ? new ChatSdkMessagingSurface(messagingPlatforms)
@@ -433,7 +437,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         provider: billingProvider,
         sandbox,
         webOrigin: env.webOrigin,
-        managedModelsAvailable: resolveDeploymentModel().configured,
+        managedModelsAvailable: async () =>
+          (await loadDeploymentModels(prisma, env.deploymentModels)).default.configured,
         analytics,
       })
     : undefined;
@@ -640,6 +645,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const reconciler = inMemoryJobs
     ? createRunReconciler({
         prisma,
+        secretStore: secrets,
         jobs,
         events,
         notifications,
@@ -768,6 +774,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       teamChatJudgeModel: env.teamChatJudgeModel,
       deploymentModelConfigured: env.deploymentModelConfigured,
       deploymentModelHostCredentials: env.deploymentModelHostCredentials,
+      deploymentModels: env.deploymentModels,
       webOrigin: env.webOrigin,
       privacyPolicyUrl: env.privacyPolicyUrl,
       screenProxySecret: env.screenProxySecret,

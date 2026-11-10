@@ -6174,6 +6174,7 @@ describe("codex catalog auth", () => {
   function catalogDeps() {
     const load = vi.fn((ciphertext: string) => (ciphertext === "cipher-oauth" ? oauth : apiKey));
     const prisma = {
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelCredential: {
         findMany: vi.fn().mockResolvedValue([
           { provider: "openai-codex", secretId: "secret-api" },
@@ -6333,7 +6334,7 @@ describe("codex live catalog", () => {
             },
           };
     const deps = {
-      prisma,
+      prisma: { ...prisma, deploymentSettings: { findUnique: vi.fn(async () => null) } },
       secrets: { load },
       env: {
         defaultProvider: "fake",
@@ -6431,6 +6432,7 @@ describe("codex live catalog", () => {
     };
     const credentialB = { ...credentialA, id: "cred-b", secretId: "secret-b" };
     const prisma = {
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelCredential: { findMany: vi.fn().mockResolvedValue([credentialA, credentialB]) },
       userModelPreference: {
         findMany: vi.fn().mockResolvedValue([
@@ -6499,6 +6501,7 @@ describe("codex live catalog", () => {
       accountId: "acct-live-test",
     });
     const prisma = {
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelCredential: {
         findMany: vi
           .fn()
@@ -7248,6 +7251,7 @@ describe("bot model auth on save", () => {
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = {
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
       $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
@@ -7786,6 +7790,7 @@ describe("routines.update", () => {
     const moveQueued = vi.fn(async (_args: unknown) => [] as Array<{ taskId: string }>);
     const prisma = {
       secret: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
         findMany: vi.fn(async () => []),
         findFirst: vi.fn(async () => ({ id: "preference-1" })),
@@ -10211,7 +10216,10 @@ describe("API-key live model catalog", () => {
         routine: { findMany: vi.fn(async () => []) },
         userModelRoleChoice: { findMany: vi.fn(async () => []) },
         spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
-        deploymentSettings: { findFirst: vi.fn(async () => null) },
+        deploymentSettings: {
+          findFirst: vi.fn(async () => null),
+          findUnique: vi.fn(async () => null),
+        },
       };
       const load = vi.fn(async () => "fake-api-key");
       const deps = {

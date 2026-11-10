@@ -40,6 +40,7 @@ import {
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  loadDeploymentModels,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -152,9 +153,13 @@ async function main() {
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
     (platform) => platform.provider !== "slack" || !process.env.SLACK_CLIENT_ID,
   );
+  const openSignup = process.env.MESSAGING_OPEN_SIGNUP === "true";
   const legacyMessaging = isMessagingSurfaceEnabled(messagingPlatforms, {
-    deploymentModelConfigured: env.deploymentModelConfigured,
-    openSignup: process.env.MESSAGING_OPEN_SIGNUP === "true",
+    // Decided at startup: the surface is a long-lived connection.
+    deploymentModelConfigured:
+      env.deploymentModelConfigured ||
+      (openSignup && (await loadDeploymentModels(prisma, env.deploymentModels)).default.configured),
+    openSignup,
   })
     ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
@@ -249,7 +254,16 @@ async function main() {
     );
 
   const reconciler = createRunReconciler(
-    { prisma, jobs, events, notifications, cloudAgent, paymentWallet, mediaGeneration },
+    {
+      prisma,
+      secretStore: secrets,
+      jobs,
+      events,
+      notifications,
+      cloudAgent,
+      paymentWallet,
+      mediaGeneration,
+    },
     {
       leadership: createPostgresReconciliationLeadership(pool),
       reconcileRoutineRetryNotices: inMemoryJobs

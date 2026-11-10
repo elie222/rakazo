@@ -59,6 +59,8 @@ export function SettingsOverlay({
   sandboxProvider,
   onSandboxProviderChange,
   canConfigureComputers = false,
+  canConfigureVoice = false,
+  canConfigureModels = false,
   computerSettingsEnabled = false,
   messagingEnabled = false,
   paymentWalletProvider = null,
@@ -93,6 +95,10 @@ export function SettingsOverlay({
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   /** Admins choose where new computers run. */
   canConfigureComputers?: boolean;
+  /** Admins choose the voice everyone without their own connection uses. */
+  canConfigureVoice?: boolean;
+  /** Admins choose the models everyone without their own connection can use. */
+  canConfigureModels?: boolean;
   computerSettingsEnabled?: boolean;
   messagingEnabled?: boolean;
   /** The wallet this deployment lets bots spend from; none hides Wallet. */
@@ -457,7 +463,12 @@ export function SettingsOverlay({
                   ) : null}
                   {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                   {section === "models" ? (
-                    <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />
+                    <ModelSettingsOverlay
+                      embedded
+                      scope="account"
+                      canConfigureDeployment={canConfigureModels}
+                      onClose={requestClose}
+                    />
                   ) : null}
                   {section === "memory" ? (
                     <MemorySettingsOverlay
@@ -472,6 +483,7 @@ export function SettingsOverlay({
                     <VoiceSettingsOverlay
                       embedded
                       scope="account"
+                      canConfigureDeployment={canConfigureVoice}
                       onClose={requestClose}
                       onBusyChange={setVoiceBusy}
                     />

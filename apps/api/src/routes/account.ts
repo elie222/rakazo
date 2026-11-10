@@ -43,6 +43,12 @@ import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../acces
 import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
+import { currentDeploymentModels } from "../deployment-model.js";
+import {
+  getDeploymentVoiceSettings,
+  listDeploymentVoices,
+  updateDeploymentVoiceSettings,
+} from "../deployment-voice.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
 import {
@@ -50,6 +56,7 @@ import {
   listVoiceCatalog,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
+  loadVoiceStatus,
   persistVoiceCredential,
   prepareVoice,
   toVoiceCredential,
@@ -443,10 +450,9 @@ export function accountRoutes(ctx: RouterContext) {
       catalog: authed.voice.catalog.handler(async () =>
         listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint }),
       ),
-      status: authed.voice.status.handler(async ({ context, input }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
-        return toVoiceStatus(cred);
-      }),
+      status: authed.voice.status.handler(({ context, input }) =>
+        loadVoiceStatus(deps, context.actor, input?.scope),
+      ),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);
         const [rows, preferences] = await Promise.all([
@@ -527,6 +533,17 @@ export function accountRoutes(ctx: RouterContext) {
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
         prepareVoice(deps, context.actor, { ...input, signal: context.signal }),
       ),
+      deployment: {
+        get: authed.voice.deployment.get.handler(({ context }) =>
+          getDeploymentVoiceSettings(deps, context.actor),
+        ),
+        update: authed.voice.deployment.update.handler(({ context, input }) =>
+          updateDeploymentVoiceSettings(deps, context.actor, { ...input, signal: context.signal }),
+        ),
+        voices: authed.voice.deployment.voices.handler(({ context }) =>
+          listDeploymentVoices(deps, context.actor, context.signal),
+        ),
+      },
     },
   };
 }
@@ -548,13 +565,15 @@ function approvalRuleDto(row: {
 }
 
 async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: SettingsScope) {
+  // The deployment's checker falls back to its default model, an admin's included.
+  const deployment = (await currentDeploymentModels(deps)).default;
   const [role, preference] = await Promise.all([
     // The account page judges the account's approval model; a Space, the one that applies there.
     effectiveModelRole(
       deps.prisma,
       actor,
       "approval",
-      { env: process.env },
+      { env: process.env, deployment },
       scope === "account" ? "account" : undefined,
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
@@ -569,7 +588,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ...(deploymentChecker || !role.primary ? [] : [role.primary]),
     ...role.backups,
   ];
-  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env, deployment });
   if (memberChoices.length === 0) {
     // The deployment's checker runs on its own configuration or on the member's key for it.
     const requiredUserProvider =

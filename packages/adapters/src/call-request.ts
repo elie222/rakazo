@@ -23,6 +23,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
+import { hasDeploymentVoice } from "./deployment-voice.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { publishMessage, runLeaseFor } from "./run-messages.js";
 
@@ -33,7 +34,7 @@ type CallRequestStatus = CallRequestBlock["status"];
 
 /** Why the bot may not ring the user right now, or null when it may. */
 export async function callRequestRefusal(
-  prisma: Pick<PrismaClient, "message" | "userVoiceCredential">,
+  prisma: Pick<PrismaClient, "message" | "userVoiceCredential" | "deploymentSettings">,
   input: { userId: string; groupChat: boolean; now?: number; phoneCallCooldownMinutes?: number },
 ): Promise<string | null> {
   if (input.groupChat) return "Calls work in a one-to-one chat only. Send a message instead.";
@@ -41,7 +42,8 @@ export async function callRequestRefusal(
     where: { userId: input.userId },
     select: { id: true },
   });
-  if (!voice) {
+  // Without a connection of their own, the user takes the call on the deployment's voice.
+  if (!voice && !(await hasDeploymentVoice(prisma))) {
     return "The user has not connected a voice provider, so they cannot take a call. Send a message instead.";
   }
   const minutes = input.phoneCallCooldownMinutes ?? phoneCallSettings().phoneCallCooldownMinutes;

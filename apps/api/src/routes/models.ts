@@ -45,6 +45,13 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
+import {
+  connectDeploymentModel,
+  disconnectDeploymentModel,
+  getDeploymentModelSettings,
+  probeDeploymentModels,
+  updateDeploymentModelSettings,
+} from "../deployment-model.js";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
@@ -665,6 +672,23 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      deployment: {
+        get: authed.models.deployment.get.handler(({ context }) =>
+          getDeploymentModelSettings(deps, context.actor),
+        ),
+        update: authed.models.deployment.update.handler(({ context, input }) =>
+          updateDeploymentModelSettings(deps, context.actor, input),
+        ),
+        connect: authed.models.deployment.connect.handler(({ context, input }) =>
+          connectDeploymentModel(deps, context.actor, input, context.signal),
+        ),
+        disconnect: authed.models.deployment.disconnect.handler(({ context, input }) =>
+          disconnectDeploymentModel(deps, context.actor, input),
+        ),
+        probe: authed.models.deployment.probe.handler(({ context, input }) =>
+          probeDeploymentModels(deps, context.actor, input, context.signal),
+        ),
+      },
     },
   };
 }

@@ -160,7 +160,8 @@ export function createBillingService(deps: {
   provider: BillingProvider;
   /** Prices computer time for the monthly allowance; without it none is shown. */
   sandbox?: SandboxProvider;
-  managedModelsAvailable?: boolean;
+  /** Whether the deployment's default model can run now; read per call so admins' changes apply. */
+  managedModelsAvailable?: () => Promise<boolean>;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
   analytics?: ProductAnalytics;
@@ -562,7 +563,8 @@ export function createBillingService(deps: {
 
     async purchaseCredits(actor, { client, ...input }) {
       if (!modelCredits || !provider.createCreditCheckout) throw new ORPCError("NOT_FOUND");
-      if (deps.managedModelsAvailable === false) throw new ORPCError("PRECONDITION_FAILED");
+      if (deps.managedModelsAvailable && !(await deps.managedModelsAvailable()))
+        throw new ORPCError("PRECONDITION_FAILED");
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountFor(actor, organizationId);
       await creditAccount(prisma, organizationId);
@@ -640,7 +642,7 @@ export function createBillingService(deps: {
                 : null,
           balanceUsd: Number(credits.balanceMicros) / MICROS_PER_DOLLAR,
           monthlyAmountCents: account?.creditAmountCents ?? null,
-          creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
+          creditPurchasesEnabled: (await deps.managedModelsAvailable?.()) ?? true,
           byokPriceCents:
             BYOK_TIERS.standard.monthlyPriceCents &&
             (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),

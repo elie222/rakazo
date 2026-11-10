@@ -63,7 +63,7 @@ const reconcile = (
   const { prisma, updateMany } = harness({ ...baseCall, ...call }, run);
   return createModelCreditReconciler({
     prisma,
-    lookup: usageLookup,
+    lookup: async () => usageLookup,
     now: () => new Date(0),
   })().then(() => updateMany);
 };
@@ -121,6 +121,18 @@ describe("model credit reconciler", () => {
       where: { id: "entry-1", reconciliationState: "pending" },
       data: { reconciliationState: "complete", nextReconcileAt: null },
     });
+  });
+
+  it("keeps reconciling when the lookup itself cannot be loaded", async () => {
+    const { prisma } = harness({ ...baseCall, usage: stopped, providerRequestId: "gen-fixture" });
+    await createModelCreditReconciler({
+      prisma,
+      lookup: async () => {
+        throw new Error("secret store unavailable");
+      },
+      now: () => new Date(0),
+    })();
+    expect(charged()).toMatchObject({ costUsd: 0.04, costSource: "reconciled-estimate" });
   });
 
   it("prices counted tokens at once when the provider offers no lookup", async () => {

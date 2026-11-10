@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
+import type { DeploymentModels } from "@rakazo/adapters";
 import {
+  compatibleModelSeesImages,
+  DEPLOYMENT_MODEL_SETTINGS,
+  defaultOnlyDeploymentModels,
+  deploymentConnection,
+  deploymentConnectionSecret,
   deploymentModelRole,
+  deploymentServes,
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
+  loadDeploymentModels,
   parseModelSecret,
   refreshStoredModelCredential,
   resolveMemberMainModel,
@@ -12,6 +20,7 @@ import {
   retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
+  storedSecretRunFields,
   toOAuthCredential,
 } from "@rakazo/adapters";
 import { redactSecrets } from "@rakazo/core";
@@ -117,6 +126,8 @@ interface ModelTeamChatEngagementJudgeDeps {
   deploymentProvider: string;
   deploymentModel: string;
   deploymentModelKey?: string;
+  /** The environment's deployment connections and allowlist; admins' settings apply over them. */
+  deploymentModels?: DeploymentModels;
   providerOverride?: string;
   modelOverride?: string;
   /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
@@ -221,7 +232,20 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
   } | null> {
     const settings = await this.deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
+      include: DEPLOYMENT_MODEL_SETTINGS,
     });
+    const models = await loadDeploymentModels(
+      this.deps.prisma,
+      this.deps.deploymentModels ??
+        defaultOnlyDeploymentModels({
+          provider: this.deps.deploymentProvider,
+          model: this.deps.deploymentModel,
+          key: this.deps.deploymentModelKey,
+          configured: Boolean(this.deps.deploymentModelKey),
+          hostCredentials: false,
+        }),
+      settings,
+    );
     const scope = { userId: bot.userId, spaceId: bot.spaceId };
     const member = await resolveMemberMainModel(
       { prisma: this.deps.prisma, secretStore: this.deps.secrets },
@@ -240,14 +264,12 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const main =
       member &&
       (member.credential ||
+        deploymentServes(models, member.provider, member.modelId) ||
         (settings?.modelCreditsEnabled &&
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
-    const fallback = deploymentModelRole("main", {
-      settings,
-      deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
-    }).primary;
+    const fallback = deploymentModelRole("main", { settings, deployment: models.default }).primary;
     const credential = useOverride ? overrideCredential : (main?.credential ?? null);
     const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
     const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
@@ -257,12 +279,37 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
     if (!credential || hosted) {
+      // A deployment key goes only to its own provider, for the default or a served model.
+      const secret = await deploymentConnectionSecret(
+        this.deps.secrets,
+        provider === models.default.provider || deploymentServes(models, provider, modelId)
+          ? deploymentConnection(models, provider)
+          : undefined,
+      );
+      // An endpoint brings its URL, headers and limits, as it does for a run.
+      const fields =
+        secret && secret.kind !== "oauth"
+          ? storedSecretRunFields(
+              { mcpAllowPrivateEndpoint: this.deps.allowPrivateEndpoint },
+              provider,
+              secret,
+              secret.kind === "openai_compatible"
+                ? compatibleModelSeesImages({}, secret, modelId)
+                : undefined,
+            )
+          : {};
       const apiKey =
-        provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined;
+        secret?.kind === "api_key"
+          ? secret.key
+          : secret?.kind === "openai_compatible"
+            ? secret.apiKey
+            : undefined;
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
-      return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}), callObserver } };
+      return {
+        model: { provider, id: modelId, ...fields, ...(apiKey ? { apiKey } : {}), callObserver },
+      };
     }
 
     const secret = await this.deps.prisma.secret.findFirst({

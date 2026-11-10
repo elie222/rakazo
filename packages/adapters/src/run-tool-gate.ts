@@ -71,6 +71,7 @@ import {
   uncertainEffectError,
 } from "./run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
+import { runDeploymentModels } from "./run-model.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -344,7 +345,9 @@ export async function gateToolCall(
       memberChecker ||
       Boolean(reviewSettings?.backups.length) ||
       (checker
-        ? isAutoReviewCheckerConfigured({}) ||
+        ? isAutoReviewCheckerConfigured({
+            deployment: (await runDeploymentModels(deps)).default,
+          }) ||
           Boolean(
             await findConnectedModelCredential(
               deps.prisma,

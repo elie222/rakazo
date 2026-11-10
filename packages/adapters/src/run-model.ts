@@ -5,7 +5,7 @@ import type {
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
@@ -13,7 +13,16 @@ import {
   cloudflareModelConfigMessage,
   cloudflareProviderEnv,
 } from "./cloudflare-ai-gateway.js";
-import { resolveDeploymentModel } from "./deployment-model.js";
+import type { DeploymentModels, SavedDeploymentModels } from "./deployment-model.js";
+import {
+  DEPLOYMENT_MODEL_SETTINGS,
+  defaultOnlyDeploymentModels,
+  deploymentConnection,
+  deploymentConnectionSecret,
+  deploymentServes,
+  loadDeploymentModels,
+  resolveDeploymentModel,
+} from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import {
@@ -29,6 +38,7 @@ import {
   hostedModelCreditObserver,
 } from "./model-credit-observer.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
+import { storedSecretRunFields } from "./model-run-fields.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
@@ -41,7 +51,6 @@ import {
   validateModelAuthAvailability,
 } from "./model-selection.js";
 import { compatibleModelSeesImages } from "./model-vision.js";
-import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
@@ -62,17 +71,55 @@ export function isTerminalModelSetupError(error: unknown): boolean {
   );
 }
 
+/**
+ * The deployment's models now: the environment's as this process read it, with an admin's
+ * settings applied. Pass the settings row when it is already loaded.
+ */
+export async function runDeploymentModels(
+  deps: Pick<
+    ExecutorDeps,
+    | "prisma"
+    | "deploymentModels"
+    | "deploymentModelKey"
+    | "deploymentModelConfigured"
+    | "billingEnabled"
+  >,
+  saved?: SavedDeploymentModels | null,
+): Promise<DeploymentModels> {
+  const environment =
+    deps.deploymentModels ??
+    defaultOnlyDeploymentModels({
+      ...resolveDeploymentModel(),
+      key: deps.deploymentModelKey,
+      configured: Boolean(deps.deploymentModelConfigured),
+    });
+  const models = await loadDeploymentModels(deps.prisma, environment, saved);
+  // A process told whether model credits bill knows better than the settings row it was given.
+  return deps.billingEnabled === undefined
+    ? models
+    : { ...models, creditsOnly: deps.billingEnabled };
+}
+
+/** The default model's provider while hosted credits pay for it. */
+async function hostedDeploymentProvider(
+  deps: Parameters<typeof runDeploymentModels>[0] & Pick<ExecutorDeps, "billingEnabled">,
+  models?: DeploymentModels,
+) {
+  if (!(await modelCreditBillingEnabled(deps))) return undefined;
+  return (models ?? (await runDeploymentModels(deps))).default.provider;
+}
+
 export async function fleetPrepareDeps(
   deps: ExecutorDeps,
   scope: { userId: string; spaceId: string },
 ): Promise<FleetPrepareDeps> {
-  const hostedProvider = (await modelCreditBillingEnabled(deps))
-    ? resolveDeploymentModel().provider
-    : undefined;
+  const deployment = await runDeploymentModels(deps);
+  const hostedProvider = await hostedDeploymentProvider(deps, deployment);
   return {
     prisma: deps.prisma,
     modelChange: {
       hostedProvider,
+      deployment,
       secretStore: deps.secretStore,
       codexCatalog: deps.codexCatalog,
       refreshExpiredCredential: (credentialScope, secretId, provider) =>
@@ -86,16 +133,21 @@ export async function fleetPrepareDeps(
       defaultModel: async () => {
         const [main, settings] = await Promise.all([
           resolveMemberMainModel(deps, scope),
-          deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+          deps.prisma.deploymentSettings.findUnique({
+            where: { id: "default" },
+            include: DEPLOYMENT_MODEL_SETTINGS,
+          }),
         ]);
+        const models = await runDeploymentModels(deps, settings);
         const selected = selectConfiguredModel({
           override: null,
           overrideCredential: null,
           main,
           hostedProvider,
+          deploymentModels: models,
           defaults: {
             settings,
-            deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+            deployment: models.default.configured ? models.default : null,
           },
         });
         return { provider: selected.provider ?? null, model: selected.id ?? null };
@@ -105,13 +157,43 @@ export async function fleetPrepareDeps(
 }
 
 /**
- * The deployment key is a bearer credential for exactly one vendor, so it is handed out
- * only when the provider that won the resolution above is that vendor. A provider named
- * by deployment settings or a bot override gets no key rather than another vendor's.
+ * A deployment key is a bearer credential for exactly one vendor, so it is handed out only
+ * for the provider the default model runs on, or a model the deployment serves members, and
+ * only that provider's own. A provider named by a bot override gets no key rather than
+ * another vendor's.
  */
-function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefined {
-  if (!deps.deploymentModelKey) return undefined;
-  return provider === resolveDeploymentModel().provider ? deps.deploymentModelKey : undefined;
+async function deploymentKeyFor(
+  deps: ExecutorDeps,
+  provider: string,
+  modelId: string,
+  registerSecrets?: (values: string[]) => void,
+) {
+  const models = await runDeploymentModels(deps);
+  const serves =
+    canonicalPiProviderId(provider) === canonicalPiProviderId(models.default.provider) ||
+    deploymentServes(models, provider, modelId);
+  const connection = serves ? deploymentConnection(models, provider) : undefined;
+  const secret = await deploymentConnectionSecret(deps.secretStore, connection);
+  if (!secret || secret.kind === "oauth") {
+    cloudflareProviderEnv({ provider });
+    return { apiKey: undefined, redact: [] };
+  }
+  // The environment's keys are redacted from every run already; an admin's joins each run,
+  // switch, fallback and checker that uses it.
+  const redact = connection?.ciphertext ? secretValuesToRedact(secret) : [];
+  if (redact.length) registerSecrets?.(redact);
+  return {
+    apiKey: secret.kind === "api_key" ? secret.key : secret.apiKey,
+    ...storedSecretRunFields(
+      deps,
+      provider,
+      secret,
+      secret.kind === "openai_compatible"
+        ? compatibleModelSeesImages({}, secret, modelId)
+        : undefined,
+    ),
+    redact,
+  };
 }
 
 /**
@@ -159,23 +241,39 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     args[3] = null;
     // Funded managed backups use deployment credentials just like the primary.
     args[7] = { ...args[7], requireStoredSecret: false };
+  } else if (
+    !args[3] &&
+    args[7]?.requireStoredSecret &&
+    deploymentServes(await runDeploymentModels(deps), provider, args[5])
+  ) {
+    // So do backups and fallbacks the deployment serves members.
+    args[7] = { ...args[7], requireStoredSecret: false };
   }
   const credential = args[3];
   const material = await resolveModelKeyMaterial(...args);
-  const deployment = resolveDeploymentModel();
   // Local and compatible endpoints can intentionally be keyless. Host auth is
   // allowed only for the deployment provider that explicitly opted into it.
-  const keyless =
-    provider === LOCAL_PROVIDER_ID ||
-    (provider === OPENAI_COMPATIBLE_PROVIDER_ID && Boolean(material.baseUrl)) ||
-    (provider === "scripted" && deps.runtime?.describe().capabilities.scripted) ||
-    (!credential && deployment.provider === provider && deployment.hostCredentials);
+  const keyless = async () => {
+    if (
+      provider === LOCAL_PROVIDER_ID ||
+      (provider === OPENAI_COMPATIBLE_PROVIDER_ID && Boolean(material.baseUrl)) ||
+      (provider === "scripted" && deps.runtime?.describe().capabilities.scripted)
+    )
+      return true;
+    if (credential) return false;
+    const models = await runDeploymentModels(deps);
+    if (!deploymentConnection(models, provider)?.keyless) return false;
+    return (
+      (models.default.hostCredentials && models.default.provider === provider) ||
+      deploymentServes(models, provider, args[5])
+    );
+  };
   // Match Pi's OpenRouter fallback only when no explicit key overrides it.
   const runtimeKey =
     material.apiKey === undefined && (provider === "openrouter" || provider === "scripted")
       ? process.env.OPENROUTER_API_KEY
       : undefined;
-  if (!material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
+  if (!material.apiKey?.trim() && !runtimeKey?.trim() && !(await keyless())) {
     throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
   }
   const callObserver =
@@ -237,8 +335,7 @@ async function resolveModelKeyMaterial(
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
-        cloudflareProviderEnv({ provider });
-        return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+        return deploymentKeyFor(deps, provider, modelId, registerSecrets);
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -293,51 +390,18 @@ async function resolveModelKeyMaterial(
       }
       assertCompatibleModelEnabled(credential, resolved.secret, modelId);
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
-      const baseUrl =
-        resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
-      // Recheck operator configuration for saved private connections on every run.
-      const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
-      if (baseUrl) {
-        try {
-          // The public gate stays with the request-time fetch guard.
-          assertAllowedOpenAiCompatibleUrl(baseUrl, {
-            allowPublic: true,
-            allowPrivate: allowPrivateEndpoint,
-          });
-        } catch (error) {
-          throw new UnavailableModelForAuthError((error as Error).message);
-        }
-      }
-      const acceptsImages =
+      const fields = storedSecretRunFields(
+        deps,
+        provider,
+        resolved.secret,
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-        resolved.secret.kind === "openai_compatible"
+          resolved.secret.kind === "openai_compatible"
           ? compatibleModelSeesImages(credential, resolved.secret, modelId)
-          : liveCodex?.supportsImages;
-      const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
-      const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
-      cloudflareProviderEnv({ provider, accountId, gatewayId });
+          : liveCodex?.supportsImages,
+      );
       return {
         apiKey: resolved.apiKey,
-        accountId,
-        gatewayId,
-        baseUrl,
-        apiProtocol:
-          resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
-        headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
-        allowPrivateEndpoint,
-        cacheCapabilities:
-          resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
-        contextWindow: resolved.secret.kind !== "oauth" ? resolved.secret.contextWindow : undefined,
-        reasoning:
-          resolved.secret.kind === "openai_compatible" ? resolved.secret.reasoning : undefined,
-        maxTokens: resolved.secret.maxTokens,
-        thinkingLevel:
-          resolved.secret.kind === "openai_compatible" ? resolved.secret.thinkingLevel : undefined,
-        acceptsImages,
-        maxImagesPerPrompt:
-          resolved.secret.kind === "openai_compatible"
-            ? resolved.secret.maxImagesPerPrompt
-            : undefined,
+        ...fields,
         oauth,
         persistOAuth: oauth
           ? async (next) => {
@@ -388,8 +452,7 @@ async function resolveModelKeyMaterial(
     });
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
-  cloudflareProviderEnv({ provider });
-  return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+  return deploymentKeyFor(deps, provider, modelId, registerSecrets);
 }
 
 /** Translate resolved credentials and capabilities consistently for every run path. */
@@ -435,16 +498,22 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
-  const hostedProvider = (await modelCreditBillingEnabled(deps))
-    ? resolveDeploymentModel().provider
-    : undefined;
+  const hostedProvider = await hostedDeploymentProvider(deps);
+  // Read only when no connection of the member's serves the model. A row pinned to a
+  // connection runs only there, never on the deployment's.
+  let models: Promise<DeploymentModels> | undefined;
+  const deployment = async () => {
+    if (credentialId) return undefined;
+    models ??= runDeploymentModels(deps);
+    return models;
+  };
   const validationError = await validateConnectedModelChoice(
     deps.prisma,
     deps.secretStore,
     scope,
     provider,
     modelId,
-    { hostedProvider, credentialId, codexCatalog: deps.codexCatalog },
+    { hostedProvider, credentialId, codexCatalog: deps.codexCatalog, deployment },
   );
   if (validationError) throw new Error(validationError);
   const credential = await findConnectedModelCredential(
@@ -455,7 +524,12 @@ export async function resolveConnectedModelKey(
     modelId,
     { credentialId },
   );
-  if (!credential && provider !== hostedProvider) throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
+  if (
+    !credential &&
+    provider !== hostedProvider &&
+    !deploymentServes(await deployment(), provider, modelId)
+  )
+    throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
   const resolved = await resolveModelKey(
     deps,
     scope.userId,
@@ -535,19 +609,17 @@ export async function resolveRunModel(
     resolveMemberMainModel(deps, scope),
     deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
+      include: DEPLOYMENT_MODEL_SETTINGS,
     }),
   ]);
+  const models = await runDeploymentModels(deps, settings);
   const selected = selectConfiguredModel({
     override,
     overrideCredential,
     main,
-    hostedProvider: (await modelCreditBillingEnabled(deps))
-      ? resolveDeploymentModel().provider
-      : undefined,
-    defaults: {
-      settings,
-      deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
-    },
+    hostedProvider: await hostedDeploymentProvider(deps, models),
+    deploymentModels: models,
+    defaults: { settings, deployment: models.default.configured ? models.default : null },
   });
   const { credential, thinkingLevel } = selected;
   let { provider, id } = selected;

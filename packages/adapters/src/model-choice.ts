@@ -18,9 +18,9 @@ const ECHOED_QUERY_LIMIT = 200;
 export const echoedQuery = (query: string) =>
   query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
 
-/** The catalog models this user's connections, or hosted credits, can run. */
+/** The catalog models this user's connections, hosted credits, or the deployment can run. */
 export async function connectedModelChoices(
-  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider">,
+  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider" | "deployment">,
   scope: Pick<Actor, "userId" | "spaceId">,
 ): Promise<ModelChoice[]> {
   const auth = await modelCredentialAuthKindsForSpace(
@@ -28,6 +28,7 @@ export async function connectedModelChoices(
     deps.secretStore,
     scope,
     deps.hostedProvider,
+    deps.deployment,
   );
   return offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter((entry) => {
     if (entry.placeholder) return false;
@@ -117,7 +118,7 @@ const choiceKey = (choice: ModelChoice) => `${choice.provider}/${choice.id}`;
  * to one provider; `preferredProvider` breaks ties toward it.
  */
 export async function resolveModelChoice(
-  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider">,
+  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider" | "deployment">,
   scope: Pick<Actor, "userId" | "spaceId">,
   input: { model: string; provider?: string; preferredProvider?: string | null },
 ): Promise<ModelChoiceResult> {

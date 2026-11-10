@@ -160,8 +160,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await replyMode.selectOption("messages");
   await expect(replyMode).toHaveValue("messages");
   await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
+  await modelSelect.scrollIntoViewIfNeeded();
   await expect(modelSelect).toBeVisible();
-  await expect(modelSelect).toContainText("Space default");
+  // The default names the model it runs on.
+  await expect(modelSelect.locator("option").first()).toHaveText(/^Default/);
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await openBotPanelTab(page, "Computer");
   const sidePanel = page.getByTestId("side-panel");
