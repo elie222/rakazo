@@ -39,7 +39,7 @@ function WindowRow({ window }: { window: PlanLimitWindow }) {
   const used = Math.round(window.usedPercent);
   const reset = formatTimeUntil(window.resetsAt, i18n.locale);
   return (
-    <div className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-x-3">
+    <>
       <span className="text-body-sm text-muted-foreground">{label}</span>
       <Progress
         value={used}
@@ -50,7 +50,7 @@ function WindowRow({ window }: { window: PlanLimitWindow }) {
         {t`${used}% used`}
         {reset ? <span className="text-muted-foreground">{` · ${reset}`}</span> : null}
       </span>
-    </div>
+    </>
   );
 }
 
@@ -63,7 +63,7 @@ function PlanCard({ plan }: { plan: PlanLimits }) {
           <span className="min-w-0 truncate text-body-sm text-muted-foreground">{plan.label}</span>
         ) : null}
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-x-3 gap-y-2">
         {plan.windows.map((window) => (
           <WindowRow key={window.period} window={window} />
         ))}
