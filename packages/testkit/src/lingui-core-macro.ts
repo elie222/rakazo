@@ -24,8 +24,13 @@ function isPlaceholder(value: unknown): value is Placeholder {
  * then it is found from the working folder.
  */
 function englishCatalog(): string {
-  const here = new URL("../../i18n/locales/en/messages.po", import.meta.url);
-  if (here.protocol === "file:" && existsSync(fileURLToPath(here))) return fileURLToPath(here);
+  try {
+    const here = fileURLToPath(import.meta.url);
+    const file = path.join(path.dirname(here), "../../i18n/locales/en/messages.po");
+    if (existsSync(file)) return file;
+  } catch {
+    // Not a file URL: search from the working folder below.
+  }
   for (let dir = process.cwd(); ; dir = path.dirname(dir)) {
     const file = path.join(dir, "packages/i18n/locales/en/messages.po");
     if (existsSync(file)) return file;
