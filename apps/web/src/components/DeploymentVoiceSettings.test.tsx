@@ -154,6 +154,31 @@ it("changes the voice keeping the saved key, and clears back to the default", as
   expect(onSaved).toHaveBeenCalledTimes(2);
 });
 
+it("keeps a slow listing of the replaced provider's voices off the new one", async () => {
+  let finishOld: (voices: { id: string; label: string }[]) => void = () => undefined;
+  deployment.voices.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishOld = resolve;
+    }),
+  );
+  deployment.voices.mockResolvedValueOnce([{ id: "cartesia-voice", label: "Cartesia voice" }]);
+  deployment.get.mockResolvedValue(saved);
+  deployment.update.mockResolvedValue({
+    ...saved,
+    provider: "cartesia",
+    voiceId: "cartesia-voice",
+  });
+  await act(async () => root.render(<DeploymentVoiceSettings />));
+
+  await act(async () => enter("Provider", "cartesia"));
+  await act(async () => enter("API key", "test-cartesia-key"));
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  await act(async () => finishOld([{ id: "voice-a", label: "Voice A" }]));
+
+  const options = [...(field("Voice")?.options ?? [])].map((option) => option.value);
+  expect(options).toEqual(["cartesia-voice"]);
+});
+
 it("shows why a save failed", async () => {
   deployment.get.mockResolvedValue(unset);
   deployment.update.mockRejectedValue(new Error("That key was rejected."));

@@ -147,6 +147,26 @@ describe("deployment voice settings", () => {
     expect(state.secrets.size).toBe(1);
   });
 
+  it("saves only a voice the key can use", async () => {
+    const { deps } = makeDeps();
+    const { provider } = voiceProvider();
+    // A voice from the replaced key's account gives way to one this key has.
+    const replaced = await updateDeploymentVoiceSettings(deps, actor, {
+      provider: "elevenlabs",
+      apiKey: "test-voice-key",
+      voiceId: "old-account-voice",
+    });
+    expect(replaced.voiceId).toBe("first-voice");
+    // A provider that cannot list its voices keeps the one asked for.
+    provider.listVoices.mockRejectedValueOnce(new Error("listing unavailable"));
+    const unlisted = await updateDeploymentVoiceSettings(deps, actor, {
+      provider: "elevenlabs",
+      apiKey: "",
+      voiceId: "asked-voice",
+    });
+    expect(unlisted.voiceId).toBe("asked-voice");
+  });
+
   it("needs a new key for another provider", async () => {
     const { deps, state } = makeDeps();
     const { provider } = voiceProvider();
@@ -231,9 +251,9 @@ describe("deployment voice settings", () => {
     await updateDeploymentVoiceSettings(deps, actor, {
       provider: "fish-audio",
       apiKey: "test-voice-key",
-      voiceId: "chosen-voice",
+      voiceId: "second-voice",
     });
-    expect(provider.listVoices).not.toHaveBeenCalled();
+    provider.listVoices.mockClear();
 
     await expect(listDeploymentVoices(deps, actor)).resolves.toHaveLength(2);
     expect(provider.listVoices).toHaveBeenCalledWith("test-voice-key", expect.anything());

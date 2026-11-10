@@ -401,6 +401,30 @@ describe("requestUserCall security", () => {
     expect(deps.jobs.enqueue).not.toHaveBeenCalled();
   });
 
+  it("refuses a call on a deployment voice whose key cannot be read, before ringing", async () => {
+    const { deps, tx } = fixture();
+    (tx.userVoiceCredential.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const prisma = Object.assign(deps.prisma, {
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({
+          defaultVoiceProvider: "elevenlabs",
+          defaultVoiceId: "voice-a",
+          defaultVoiceCredentialCipher: "fixture-cipher",
+        })),
+      },
+    });
+    const secretStore = {
+      load: vi.fn(async (): Promise<string> => {
+        throw new Error("secret gone");
+      }),
+    };
+    expect(await requestUserCall({ ...deps, prisma, secretStore }, run, input)).toEqual({
+      error: expect.stringMatching(/voice provider/),
+    });
+    expect(secretStore.load).toHaveBeenCalledWith("fixture-cipher", "deployment-voice");
+    expect(deps.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("does no work while disabled", async () => {
     const { deps } = fixture();
     expect(await requestUserCall({ ...deps, phoneCallsEnabled: false }, run, input)).toHaveProperty(

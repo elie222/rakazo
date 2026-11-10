@@ -38,8 +38,13 @@ export function DeploymentVoiceSettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
+  // Only the newest listing is shown, so a slow one for a provider since replaced cannot offer its
+  // voices for the new one.
+  const listing = useRef(0);
 
   function show(next: Settings) {
+    const request = ++listing.current;
+    const current = () => alive.current && request === listing.current;
     setSettings(next);
     setDraft(draftFrom(next));
     setVoices([]);
@@ -47,10 +52,10 @@ export function DeploymentVoiceSettings({
     // The RPC client hands out a new object on every property read, so never hold it.
     rpc.voice.deployment.voices().then(
       (listed) => {
-        if (alive.current) setVoices(listed);
+        if (current()) setVoices(listed);
       },
       (caught: unknown) => {
-        if (alive.current) setError(errorText(caught, t`Could not load voice settings`));
+        if (current()) setError(errorText(caught, t`Could not load voice settings`));
       },
     );
   }

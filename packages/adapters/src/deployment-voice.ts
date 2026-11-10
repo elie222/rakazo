@@ -112,6 +112,21 @@ export async function hasDeploymentVoice(
   return Boolean(resolveDeploymentVoiceEnv(env)) || Boolean(await findSavedDeploymentVoice(prisma));
 }
 
+/**
+ * Whether the deployment's voice can speak: there is one and its key can be read. A saved key
+ * whose secret is gone or unreadable cannot.
+ */
+export async function deploymentVoiceSpeaks(
+  prisma: Pick<PrismaClient, "deploymentSettings">,
+  secrets: Pick<SecretStore, "load">,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  const voice = await findDeploymentVoice(prisma, secrets, env);
+  if (!voice) return false;
+  const key = await voice.loadKey().catch(() => "");
+  return key.trim().length > 0;
+}
+
 /** The last provider and key whose first voice was listed, kept as a digest. */
 let firstVoice: { digest: string; voiceId: string } | null = null;
 

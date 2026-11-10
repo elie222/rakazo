@@ -128,7 +128,13 @@ export async function updateDeploymentVoiceSettings(
   if (!verified.ok) {
     throw new ORPCError("BAD_REQUEST", { message: verified.message ?? "That key was rejected." });
   }
-  const voiceId = input.voiceId?.trim() || (await voices.listVoices(apiKey, context))[0]?.id || "";
+  // A voice the key cannot use would leave everyone without speech, so the one saved must be
+  // among the key's voices: a voice kept from another key or provider gives way to its first one.
+  // A provider that cannot list its voices keeps the one asked for.
+  const asked = input.voiceId?.trim() || "";
+  const listed = await voices.listVoices(apiKey, context).catch(() => []);
+  const voiceId =
+    listed.length && !listed.some((voice) => voice.id === asked) ? listed[0]!.id : asked;
   // Owned by the deployment row, not a user or space, so no account deletion removes it.
   const stored = await deps.secrets.put(apiKey, context, { recordId: DEPLOYMENT_VOICE_RECORD });
   let replaced: string | null;
