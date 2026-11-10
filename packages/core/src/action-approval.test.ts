@@ -223,7 +223,7 @@ describe("isOwnerStartedRun", () => {
 });
 
 it("gates built-ins that change something only in runs outside text started", () => {
-  for (const name of ["shell", "write_file", "computer_act", "remember", "skill_create"]) {
+  for (const name of ["shell", "write_file", "computer_act", "remember", "render_plot"]) {
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
     expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
   }

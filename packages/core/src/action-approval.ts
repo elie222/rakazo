@@ -51,7 +51,6 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
   "read_file",
   "read_history",
   "recall_memory",
-  "render_plot",
   "request_takeover",
   "run_subagent",
   "schedule_list",
