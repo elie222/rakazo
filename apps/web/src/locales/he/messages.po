@@ -701,7 +701,6 @@ msgstr "יש להוסיף שם שרת."
 msgid "Add a stdio command."
 msgstr "יש להוסיף פקודת stdio."
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
 msgid "Add a trigger to run this routine."
 msgstr "יש להוסיף טריגר כדי להריץ את הרוטינה הזו."
@@ -813,12 +812,12 @@ msgstr "שורת כתובת 2"
 msgid "Adds"
 msgstr "מה יתווסף"
 
+#: src/lib/cron.ts
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "מתקדם"
@@ -1175,8 +1174,8 @@ msgid "Automated senders"
 msgstr "שולחים אוטומטיים"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "Available after the routine is saved"
-msgstr "זמין אחרי שמירת הרוטינה"
+msgid "Available after saving"
+msgstr "זמין לאחר השמירה"
 
 #: src/components/ModelCredits.tsx
 msgid "Available credits"
@@ -2072,6 +2071,7 @@ msgstr "שיחות"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/model-step.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copied"
@@ -2088,6 +2088,10 @@ msgstr "העתקה"
 #: src/components/vault/BotEmailAddresses.tsx
 msgid "Copy {address}"
 msgstr "העתקת {address}"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Copy {label}"
+msgstr "העתקת {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2632,6 +2636,10 @@ msgstr "לא ניתן לשלוח את זה"
 msgid "Could not show the credential"
 msgstr "לא ניתן היה להציג את פרטי הגישה"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not show the webhook key"
+msgstr "לא ניתן היה להציג את מפתח ה-webhook"
+
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not sign in"
 msgstr "לא ניתן להתחבר"
@@ -2781,7 +2789,7 @@ msgid "Create organization"
 msgstr "יצירת ארגון"
 
 #: src/pages/RoutineList.tsx
-msgid "Create Routine"
+msgid "Create routine"
 msgstr "יצירת רוטינה"
 
 #: src/components/AskCard.tsx
@@ -3353,14 +3361,10 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "כל הבוטים במרחב הזה קוראים את ההערות האלה ומעדכנים אותן."
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "כל יום"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "כל שעה"
 
@@ -3376,16 +3380,6 @@ msgstr "כל הודעה"
 #: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "כל יום שני"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every month"
-msgstr "כל חודש"
-
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
-msgid "Every week"
-msgstr "כל שבוע"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -3704,8 +3698,8 @@ msgid "Hang up, then enter the code on screen."
 msgstr "יש לנתק את השיחה ואז להזין את הקוד שעל המסך."
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "header"
-msgstr "header"
+msgid "Header"
+msgstr "Header"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
@@ -3742,6 +3736,10 @@ msgstr "מוסתר"
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Hide"
 msgstr "הסתרה"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Hide key"
+msgstr "הסתרת המפתח"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
@@ -3945,8 +3943,7 @@ msgstr "דומיין האינטגרציה"
 msgid "Integrations"
 msgstr "אינטגרציות"
 
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Interval"
 msgstr "מרווח זמן"
 
@@ -4037,8 +4034,8 @@ msgid "Keep tool results whole"
 msgstr "שמירת תוצאות כלים במלואן"
 
 #: src/pages/routine-editor/trigger-cards.tsx
-msgid "key"
-msgstr "מפתח"
+msgid "Key options"
+msgstr "אפשרויות המפתח"
 
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -4548,6 +4545,10 @@ msgstr "קרדיטים חודשיים"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "הקרדיטים החודשיים פגים בחידוש. טעינות נוספות לא פגות."
 
+#: src/lib/cron.ts
+msgid "Monthly on the 1st"
+msgstr "ב-1 בכל חודש"
+
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4865,6 +4866,10 @@ msgstr "ללא איפוס"
 msgid "No results"
 msgstr "אין תוצאות"
 
+#: src/pages/RoutineList.tsx
+msgid "No routines yet"
+msgstr "עדיין אין רוטינות"
+
 #: src/components/markdown-copy.tsx
 msgid "No rows"
 msgstr "אין שורות"
@@ -4873,7 +4878,7 @@ msgstr "אין שורות"
 msgid "No runs match these filters."
 msgstr "אין הרצות שתואמות למסננים האלה."
 
-#: src/pages/RoutineRunHistory.tsx
+#: src/pages/ActivityList.tsx
 msgid "No runs yet"
 msgstr "עדיין אין הרצות"
 
@@ -4983,6 +4988,7 @@ msgid "Offline"
 msgstr "לא מחובר"
 
 #: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "On a schedule"
 msgstr "לפי תזמון"
 
@@ -5014,6 +5020,10 @@ msgstr "יש להזין רק קוד ש-{codeHost} שלח לך."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "רק אני"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can see its webhook key."
+msgstr "רק יוצר הבוט יכול לראות את מפתח ה-webhook שלו."
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
@@ -5374,10 +5384,6 @@ msgstr "תוספים"
 msgid "Post \"No changes\" in chat"
 msgstr "פרסום „אין שינויים” בצ׳אט"
 
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "POST to"
-msgstr "POST אל"
-
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "PR reviewer"
 msgstr "סוקר PR"
@@ -5727,7 +5733,7 @@ msgstr "הסרת header"
 msgid "Remove message trigger"
 msgstr "הסרת טריגר ההודעה"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Remove schedule"
 msgstr "הסרת התזמון"
 
@@ -5993,6 +5999,10 @@ msgstr "הרצה ב-"
 msgid "Run history"
 msgstr "היסטוריית הרצות"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Run now"
+msgstr "הרצה עכשיו"
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
 msgstr "זמן ההרצה חייב להיות בעתיד."
@@ -6082,10 +6092,6 @@ msgstr "נשמר, אבל רענון הרשימה נכשל"
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "נשמר."
-
-#: src/pages/routine-editor/trigger-cards.tsx
-msgid "Saved. Rotate to reveal."
-msgstr "נשמר. יש להחליף את המפתח כדי להציג אותו."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -6210,6 +6216,10 @@ msgstr "חיפוש: {0}"
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "מחפש…"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Secret"
+msgstr "סוד"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -6383,6 +6393,10 @@ msgstr "הצגת הכול"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "הצגת בוטים"
+
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "Show key"
+msgstr "הצגת המפתח"
 
 #: src/pages/Artifacts.tsx
 msgid "Show list"
@@ -6857,10 +6871,6 @@ msgstr "בדיקת מפתח API"
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "בדיקת חיבור"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Test run"
-msgstr "הרצת בדיקה"
 
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Testing"
@@ -7425,6 +7435,10 @@ msgstr "העלאה"
 msgid "Urgent"
 msgstr "דחוף"
 
+#: src/pages/routine-editor/trigger-cards.tsx
+msgid "URL"
+msgstr "URL"
+
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "שימוש"
@@ -7619,8 +7633,6 @@ msgid "week"
 msgstr "שבוע"
 
 #: src/lib/cron.ts
-#: src/pages/routine-editor/add-trigger-menu.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "שני עד שישי"
 
