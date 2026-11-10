@@ -455,16 +455,19 @@ describe("artifactTypeLabel", () => {
 describe("tool step history", () => {
   it("lists each step with its count and the note written before it", () => {
     expect(
-      blocksToAgentHistoryText([
-        {
-          kind: "steps",
-          steps: [
-            { label: "Searched the web", count: 2 },
-            { label: "Shell", count: 1, note: "Installing\n\nthe extension." },
-          ],
-        },
-        { kind: "text", text: "Installed." },
-      ]),
+      blocksToAgentHistoryText(
+        [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Searched the web", count: 2 },
+              { label: "Shell", count: 1, note: "Installing\n\nthe extension." },
+            ],
+          },
+          { kind: "text", text: "Installed." },
+        ],
+        { toolSteps: true },
+      ),
     ).toBe(
       "[tool calls this reply made]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
     );
@@ -472,7 +475,7 @@ describe("tool step history", () => {
 
   it("lists at most 40 steps", () => {
     const steps = Array.from({ length: 45 }, (_, index) => ({ label: `Tool ${index}`, count: 1 }));
-    const text = blocksToAgentHistoryText([{ kind: "steps", steps }]);
+    const text = blocksToAgentHistoryText([{ kind: "steps", steps }], { toolSteps: true });
     expect(text).toContain("- Tool 39\n- …and 5 more");
     expect(text).not.toContain("Tool 40");
   });
@@ -482,7 +485,9 @@ describe("tool step history", () => {
       { kind: "steps", steps: "nope" },
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: 42 }, { count: 1 }] },
     ] as unknown as MessageBlock[];
-    expect(blocksToAgentHistoryText(blocks)).toBe("[tool calls this reply made]\n- Shell");
+    expect(blocksToAgentHistoryText(blocks, { toolSteps: true })).toBe(
+      "[tool calls this reply made]\n- Shell",
+    );
   });
 
   it("keeps full notes and every step when asked", () => {
@@ -504,25 +509,29 @@ describe("tool step history", () => {
   });
 
   it("shortens a long note", () => {
-    const text = blocksToAgentHistoryText([
-      { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
-    ]);
+    const text = blocksToAgentHistoryText(
+      [{ kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] }],
+      { toolSteps: true },
+    );
     expect(text).toBe(`[tool calls this reply made]\n- Shell: ${"a".repeat(300)}…`);
   });
 
   it("says how each step's calls ended, and leaves steps without outcomes as they were", () => {
     expect(
-      blocksToAgentHistoryText([
-        {
-          kind: "steps",
-          steps: [
-            { label: "Shell", count: 2, outcomes: { succeeded: 2 }, note: "Installing it." },
-            { label: "Computer", count: 3, outcomes: { succeeded: 1, failed: 1, stopped: 1 } },
-            { label: "Read file", count: 2, outcomes: { failed: 1 } },
-            { label: "Web search", count: 1 },
-          ],
-        },
-      ]),
+      blocksToAgentHistoryText(
+        [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Shell", count: 2, outcomes: { succeeded: 2 }, note: "Installing it." },
+              { label: "Computer", count: 3, outcomes: { succeeded: 1, failed: 1, stopped: 1 } },
+              { label: "Read file", count: 2, outcomes: { failed: 1 } },
+              { label: "Web search", count: 1 },
+            ],
+          },
+        ],
+        { toolSteps: true },
+      ),
     ).toBe(
       [
         "[tool calls this reply made]",
@@ -535,6 +544,49 @@ describe("tool step history", () => {
   });
 
   it("renders nothing for an empty steps block", () => {
-    expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
+    expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }], { toolSteps: true })).toBe("");
+  });
+
+  it("leaves steps out of replayed history by default", () => {
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+        { kind: "text", text: "Installed." },
+      ]),
+    ).toBe("Installed.");
+  });
+
+  it("drops a step list a reply copied into its text", () => {
+    expect(
+      blocksToAgentHistoryText(
+        [
+          {
+            kind: "text",
+            text: "Checking now.\n[tool calls this reply made]\n- Schedule list (succeeded)\n- List files (succeeded)\n\nDone.",
+          },
+        ],
+        { fromBot: true },
+      ),
+    ).toBe("Checking now.\n\nDone.");
+    expect(
+      blocksToAgentHistoryText(
+        [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
+        { fromBot: true },
+      ),
+    ).toBe("");
+  });
+
+  it("keeps a bot's mention of the marker when no list follows it", () => {
+    const text = "That line is:\n[tool calls this reply made]\nIt came from the app.";
+    expect(blocksToAgentHistoryText([{ kind: "text", text }], { fromBot: true })).toBe(text);
+  });
+
+  it("keeps a step list a person wrote", () => {
+    for (const text of [
+      "[tool calls this reply made]",
+      "Why did you send this?\n[tool calls this reply made]\n- List files (succeeded)",
+    ]) {
+      expect(blocksToAgentHistoryText([{ kind: "text", text }])).toBe(text);
+    }
   });
 });
