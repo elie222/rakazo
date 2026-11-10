@@ -99,10 +99,10 @@ import {
 import {
   advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
+  loopGuardStop,
   loopGuardStopText,
   MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
   overLimitStopText,
-  toolCallStreakLength,
   toolResultFingerprint,
 } from "./tool-loop.js";
 import {
@@ -639,9 +639,9 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
     {
       tool: toolName,
       reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
-      count: stoppedForOverLimit ? overLimit : toolCallStreakLength(ctx.state.toolCallStreak),
+      count: stoppedForOverLimit ? overLimit : loopGuardStop(ctx.state.toolCallStreak).count,
       failures: ctx.state.toolCallStreak.failures ?? 0,
-      ...(refusal?.tool === toolName ? { refusal: refusal.reason } : {}),
+      ...(refusal?.tool === toolName ? { refusal: refusal.code } : {}),
     },
     ctx.secrets,
   );

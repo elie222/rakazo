@@ -1,6 +1,7 @@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
 import { logLoopGuardStop, logToolRefusal } from "./tool-completion-audit.js";
+import { refusal } from "./tool-refusal.js";
 
 const target = {
   spaceId: "space-1",
@@ -21,39 +22,28 @@ afterEach(() => {
 });
 
 describe("tool refusal log", () => {
-  it("logs why a call was refused, with the run it happened in", () => {
+  it("logs a refused call by its code, with the run it happened in", () => {
     const sink = capture();
-    const reason = logToolRefusal(target, "update_bot", {
-      error: "Bot management tools need a run you started.",
-    });
-    expect(reason).toBe("Bot management tools need a run you started.");
+    const refused = refusal("run_not_owner_started", 'No bot named "Chief". Ask the owner.');
+    expect(refused).toEqual({ error: 'No bot named "Chief". Ask the owner.' });
+    expect(logToolRefusal(target, "update_bot", refused)).toBe("run_not_owner_started");
     expect(sink.events).toEqual([
       expect.objectContaining({
         message: "agent.tool.refused",
         "run.id": "run-1",
         "run.trigger": "bot_message",
         tool: "update_bot",
-        "tool.refusal": reason,
+        "tool.refusal": "run_not_owner_started",
       }),
     ]);
+    expect(JSON.stringify(sink.events)).not.toContain("Chief");
   });
 
-  it("leaves out the names a refusal quotes, and secrets", () => {
+  it("logs nothing for an error that carries no code", () => {
     const sink = capture();
-    logToolRefusal(target, "update_group", {
-      error: 'Bot "Chief of "staff"" is not in group "Launch".',
-    });
-    logToolRefusal(target, "shell", { error: "Blocked: hunter2-token is not allowed." }, [
-      "hunter2-token",
-    ]);
-    expect(sink.events.map((event) => event["tool.refusal"])).toEqual([
-      'Bot "…".',
-      "Blocked: [redacted] is not allowed.",
-    ]);
-  });
-
-  it("logs nothing for a result that ends the turn without an error", () => {
-    const sink = capture();
+    expect(logToolRefusal(target, "crm_search", { error: "upstream said: private" })).toBe(
+      undefined,
+    );
     expect(logToolRefusal(target, "update_bot", { terminate: true })).toBeUndefined();
     expect(sink.events).toEqual([]);
   });
@@ -67,7 +57,7 @@ describe("loop guard stop log", () => {
       reason: "repeated_calls",
       count: 6,
       failures: 5,
-      refusal: "Bot management tools need a run you started.",
+      refusal: "run_not_owner_started",
     });
     logLoopGuardStop(target, {
       tool: "computer_act",
@@ -83,7 +73,7 @@ describe("loop guard stop log", () => {
         "loop.reason": "repeated_calls",
         "loop.count": 6,
         "loop.failures": 5,
-        "tool.refusal": "Bot management tools need a run you started.",
+        "tool.refusal": "run_not_owner_started",
       }),
       expect.not.objectContaining({ "tool.refusal": expect.anything() }),
     ]);

@@ -46,6 +46,8 @@ function dispatchContext(tainted: boolean) {
       },
     },
     run: { userId: "user-1" },
+    bot: { id: "bot-1" },
+    thread: { id: "thread-1" },
     source: { ownerStartedRun: true },
     runId: "run-1",
     state: { tainted, handedOff: false, ownerSettingsRefused: false },
@@ -256,5 +258,10 @@ describe("daily check-in dispatch restriction", () => {
       error: "Daily check-ins can only ask or message the user.",
     });
     expect(audited).toEqual([]);
+    // Kept for the log line of a loop this refusal goes on to cause.
+    expect((ctx.state as { lastToolRefusal?: unknown }).lastToolRefusal).toEqual({
+      tool: name,
+      code: "daily_check_in_tool_not_allowed",
+    });
   });
 });

@@ -5,6 +5,7 @@ import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import { refusalCode } from "./tool-refusal.js";
 import { isFailedToolResult, toolResultError } from "./tool-result-error.js";
 
 function isAuditableToolResult(value: unknown): value is {
@@ -153,32 +154,28 @@ const runLogFields = (target: RunLogTarget) => ({
   "run.trigger": target.trigger,
 });
 
-const REFUSAL_LOG_LIMIT = 300;
-
 /**
- * Logs a call refused before its tool ran, and returns the logged reason. The reason is a sentence
- * written in this codebase about the run, not anything the tool or a person produced, which is
- * what makes it safe to log where a tool's own error is not. A refusal quotes the names and ids it
- * was given, so everything from its first quote to its last is left out.
+ * Logs a call turned away before its tool ran, and returns its refusal code. Only the code is
+ * logged: the sentence the model reads can name bots, arguments or sites. A refusal without a
+ * code, such as a connector's own error, logs nothing here.
  */
 export function logToolRefusal(
   target: RunLogTarget,
   tool: string,
-  refusal: unknown,
+  refused: unknown,
   secrets: string[] = [],
 ): string | undefined {
-  const error = (refusal as { error?: unknown } | null)?.error;
-  if (typeof error !== "string") return undefined;
-  const reason = redactSecrets(error, secrets).replace(/".*"/s, '"…"').slice(0, REFUSAL_LOG_LIMIT);
+  const code = refusalCode(refused);
+  if (!code) return undefined;
   getLogger().info("agent.tool.refused", {
     ...runLogFields(target),
     tool: redactSecrets(tool, secrets),
-    "tool.refusal": reason,
+    "tool.refusal": code,
   });
-  return reason;
+  return code;
 }
 
-/** Logs a run stopped for repeating a call, with the refusal it kept getting when there was one. */
+/** Logs a run stopped for repeating a call, with the code of the refusal it kept getting, if any. */
 export function logLoopGuardStop(
   target: RunLogTarget,
   stop: {

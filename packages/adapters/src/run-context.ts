@@ -44,6 +44,7 @@ import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
+import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
@@ -177,7 +178,7 @@ export interface RunState {
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
   /** The last call refused before its tool ran, for the log line of a loop it then causes. */
-  lastToolRefusal?: { tool: string; reason: string };
+  lastToolRefusal?: { tool: string; code: string };
   /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
   overLimitActionCalls: number;
   /**
@@ -379,7 +380,7 @@ export function refuseOwnerSettingsChange(
     return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
   }
   ctx.state.ownerSettingsRefused = true;
-  return { error };
+  return refusal("outside_content_blocks_owner_settings", error);
 }
 
 export async function isRunTainted(ctx: RunContext) {

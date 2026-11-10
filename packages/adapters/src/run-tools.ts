@@ -35,6 +35,7 @@ import {
 } from "./run-tools-user-computer.js";
 import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
 import { logToolRefusal } from "./tool-completion-audit.js";
+import { refusal } from "./tool-refusal.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
@@ -99,9 +100,9 @@ async function dispatchTool(
   observer: AgentToolExecutionObserver | undefined,
 ) {
   ctx.context.signal.throwIfAborted();
-  // Everything returned before the tool runs is a refusal in this codebase's own words.
-  const refuse = <T>(refusal: T): T => {
-    const reason = logToolRefusal(
+  // A call turned away before its tool runs is logged by its refusal code.
+  const refuse = <T>(refused: T): T => {
+    const code = logToolRefusal(
       {
         spaceId: ctx.run.spaceId,
         threadId: ctx.thread.id,
@@ -110,22 +111,32 @@ async function dispatchTool(
         trigger: ctx.run.trigger,
       },
       name,
-      refusal,
+      refused,
       ctx.secrets,
     );
-    if (reason) ctx.state.lastToolRefusal = { tool: name, reason };
-    return refusal;
+    if (code) ctx.state.lastToolRefusal = { tool: name, code };
+    return refused;
   };
+  // A loop stop reports the refusal only when the call before it was the one refused.
+  ctx.state.lastToolRefusal = undefined;
   if (!strategicInitiativeToolAllowed(name, ctx.run)) {
-    return refuse({ error: "Daily check-ins can only ask or message the user." });
+    return refuse(
+      refusal(
+        "daily_check_in_tool_not_allowed",
+        "Daily check-ins can only ask or message the user.",
+      ),
+    );
   }
   if (ctx.state.handedOff) {
-    return refuse({
-      error: "This stage was handed off. End the turn without more tool calls.",
-    });
+    return refuse(
+      refusal(
+        "stage_handed_off",
+        "This stage was handed off. End the turn without more tool calls.",
+      ),
+    );
   }
   if (ctx.tools.disabled.has(name)) {
-    return refuse({ error: "This tool is disabled for this bot." });
+    return refuse(refusal("tool_disabled", "This tool is disabled for this bot."));
   }
   // Only offered tools reach the model, but a runtime can still emit any name, and a connector
   // tool named like a local one still runs the local handler.
@@ -134,28 +145,35 @@ async function dispatchTool(
     (BUILTIN_AGENT_TOOL_NAMES.has(name) || TOOL_HANDLERS.has(name)) &&
     !BACKGROUND_HELPER_TOOL_NAMES.has(name)
   ) {
-    return refuse({
-      error: `${name} is not available to a background helper. Don't retry; say in your result what the bot should do.`,
-    });
+    return refuse(
+      refusal(
+        "helper_tool_unavailable",
+        `${name} is not available to a background helper. Don't retry; say in your result what the bot should do.`,
+      ),
+    );
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
-    return refuse({ error: "Page browser is unavailable on this computer." });
+    return refuse(
+      refusal("page_browser_unavailable", "Page browser is unavailable on this computer."),
+    );
   }
   if (IMAGE_RETURNING_COMPUTER_TOOLS.has(name) && !ctx.computer.acceptsImages) {
-    return refuse({ error: MODEL_CANNOT_SEE_MESSAGE });
+    return refuse(refusal("model_cannot_see_images", MODEL_CANNOT_SEE_MESSAGE));
   }
   const request = await resolveToolRequest(ctx, name, args, executionId);
   if ("error" in request) return refuse(request);
   // A catalog call resolves to a connector tool after the checks above; one named like a local
   // tool (message_agent, cloud_agent_*, ...) would otherwise run that local handler instead.
   if (request.catalogRemapped && toolHandler(request.name) !== connectorTool) {
-    return refuse({ error: "Connector tool name conflicts with a built-in tool" });
+    return refuse(
+      refusal("connector_name_conflict", "Connector tool name conflicts with a built-in tool"),
+    );
   }
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refuse(refused);
   noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) return gate.result;
+  if ("result" in gate) return refuse(gate.result);
   if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {
