@@ -52,9 +52,9 @@ die() { printf 'backup failed: %s\n' "$*" >&2; exit 1; }
 source "$ROOT/scripts/lib/data-source.sh"
 
 # ---------------------------------------------------------------- preflight
-if [[ -d "$OUT" && -n "$(ls -A "$OUT" 2>/dev/null)" ]]; then
-  die "backup directory '$OUT' already exists and is not empty; refusing to overwrite it"
-fi
+# A backup directory may already exist: the artifacts in it are replaced by
+# this run, and the previous ones survive a failed run because the archive is
+# written to a temporary file and renamed only after it is complete.
 mkdir -p "$OUT"
 chmod 700 "$ROOT/backups" "$OUT"
 for artifact in "$OUT/rakazo.sql" "$OUT/rakazo.dump" "$OUT/homes.tgz" "$OUT/MANIFEST"; do
@@ -70,10 +70,14 @@ done
 # one that can be checked with pg_restore --list, which is what proves the
 # dump is restorable instead of merely present.
 log "dumping the database"
-"${compose[@]}" exec -T postgres pg_dump -U rakazo rakazo > "$OUT/rakazo.sql"
-[[ -s "$OUT/rakazo.sql" ]] || die "the SQL dump is empty"
-"${compose[@]}" exec -T postgres pg_dump -U rakazo -Fc rakazo > "$OUT/rakazo.dump"
-[[ -s "$OUT/rakazo.dump" ]] || die "the custom-format dump is empty"
+# The dumps are written to a temporary file and renamed into place, so a
+# failed dump leaves the previous backup untouched instead of truncating it.
+"${compose[@]}" exec -T postgres pg_dump -U rakazo rakazo > "$OUT/.rakazo.sql.tmp"
+[[ -s "$OUT/.rakazo.sql.tmp" ]] || die "the SQL dump is empty"
+mv -f "$OUT/.rakazo.sql.tmp" "$OUT/rakazo.sql"
+"${compose[@]}" exec -T postgres pg_dump -U rakazo -Fc rakazo > "$OUT/.rakazo.dump.tmp"
+[[ -s "$OUT/.rakazo.dump.tmp" ]] || die "the custom-format dump is empty"
+mv -f "$OUT/.rakazo.dump.tmp" "$OUT/rakazo.dump"
 chmod 600 "$OUT/rakazo.sql" "$OUT/rakazo.dump"
 
 # --------------------------------------------------- 2. archive the data dir
@@ -96,7 +100,10 @@ else
     [[ ! -L "$SRC_PATH" && -d "$SRC_PATH" ]] || die "data must be a directory, not a symlink"
     parent="$(cd "$SRC_PATH/.." && pwd)"
     base="$(basename "$SRC_PATH")"
-    tar -czf "$OUT/homes.tgz" -C "$parent" "$base"
+    # Archive to a temporary file and rename it into place, so a failed tar
+    # leaves the previous archive in the backup directory untouched.
+    tar -czf "$OUT/.homes.tgz.tmp" -C "$parent" "$base"       || die "archiving the data directory failed"
+    mv -f "$OUT/.homes.tgz.tmp" "$OUT/homes.tgz"
   else
     # A named volume: read it through a throwaway container so no host path
     # is needed and the volume is never modified.
@@ -104,8 +111,9 @@ else
       -v "${SRC_PATH}:/data:ro" \
       -v "${OUT}:/out" \
       "$HELPER_IMAGE" \
-      tar -czf /out/homes.tgz -C / data \
+      tar -czf /out/.homes.tgz.tmp -C / data \
       || die "archiving the docker volume '$SRC_PATH' failed"
+    mv -f "$OUT/.homes.tgz.tmp" "$OUT/homes.tgz"
   fi
   [[ -s "$OUT/homes.tgz" ]] || die "the data archive is empty"
 fi
@@ -135,15 +143,15 @@ if [[ "$SKIPPED_DATA" != "1" ]]; then
   ARCHIVE_BLOBS="$( { tar -tzf "$OUT/homes.tgz" | grep -E '^data/artifacts/[^/]+/[^/]+$' || true; } | wc -l | tr -d '[:space:]')"
   [[ "$ARCHIVE_BLOBS" =~ ^[0-9]+$ ]] || die "could not count the artifact blobs inside the archive"
   if [[ "$SRC_KIND" == "dir" ]]; then
-    DISK_BLOBS="$(find "$SRC_PATH/artifacts" -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
+    # A deployment with no attachments yet has no artifacts directory, and find
+    # exits non-zero on a missing path. Under pipefail that would abort an
+    # otherwise good backup, so the count is taken from a tolerant pipeline.
+    DISK_BLOBS="$( { find "$SRC_PATH/artifacts" -type f 2>/dev/null || true; } | wc -l | tr -d '[:space:]')"
   else
     DISK_BLOBS="$(docker run --rm -v "${SRC_PATH}:/data:ro" "$HELPER_IMAGE" \
-      sh -c 'find /data/artifacts -type f 2>/dev/null | wc -l' | tr -d '[:space:]')"
+      sh -c 'find /data/artifacts -type f 2>/dev/null || true; ' | tr -d '[:space:]')"
   fi
   [[ "$DISK_BLOBS" =~ ^[0-9]+$ ]] || die "could not count the artifact blobs on disk"
-  if [[ "$ARCHIVE_BLOBS" -lt 1 ]]; then
-    die "the data archive contains ZERO artifact blobs: the attachment files are not in this backup"
-  fi
   if [[ "$ARCHIVE_BLOBS" != "$DISK_BLOBS" ]]; then
     die "artifact blob count mismatch: archive=$ARCHIVE_BLOBS on-disk=$DISK_BLOBS"
   fi
@@ -157,6 +165,9 @@ if "${compose[@]}" exec -T postgres psql -U rakazo -d rakazo -tAc \
   'select count(*) from artifacts' > "$OUT/.artifact-rows" 2>/dev/null; then
   ART_ROWS="$(awk 'NF {print $1; exit}' "$OUT/.artifact-rows")"
   rm -f "$OUT/.artifact-rows"
+fi
+if [[ "$SKIPPED_DATA" != "1" && "$ART_ROWS" =~ ^[0-9]+$ && "$ART_ROWS" -gt 0 && "$ARCHIVE_BLOBS" -lt 1 ]]; then
+  die "the data archive contains ZERO artifact blobs but the database has $ART_ROWS artifact rows: the attachment files are not in this backup"
 fi
 if [[ "$SKIPPED_DATA" != "1" && "$ART_ROWS" =~ ^[0-9]+$ ]]; then
   # An artifact row points at its blob through artifacts/<spaceId>/<storageKey>.

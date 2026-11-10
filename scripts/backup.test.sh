@@ -108,8 +108,10 @@ case "${1-}" in
     log "run vol=$vol out=$out"
     hostdir="$(volume_dir "$vol")"
     if [[ -n "$hostdir" && -n "$out" ]]; then
-      # Emulate `tar -czf /out/homes.tgz -C / data` over the volume contents.
-      ( cd "$(dirname "$hostdir")" && tar -czf "$out/homes.tgz" "$(basename "$hostdir")" )
+      # Emulate the volume archive: the script asks the container to write
+      # /out/.homes.tgz.tmp and renames it on the host, so the fake has to use
+      # the same name.
+      ( cd "$(dirname "$hostdir")" && tar -czf "$out/.homes.tgz.tmp" "$(basename "$hostdir")" )
       exit 0
     fi
     if [[ -n "$hostdir" && -d "$hostdir/artifacts" ]]; then
@@ -134,6 +136,19 @@ exit 0
 DOCKER
 chmod +x "$STUB/bin/docker"
 
+# A tar stub that can fail on demand, so the test can prove that a failed
+# archive does not replace the previous one.
+cat > "$STUB/bin/tar" <<'TAR'
+#!/usr/bin/env bash
+set -eu
+if [[ "${1-}" == "-czf" && -n "${FAIL_TAR:-}" ]]; then
+  echo "simulated archive read failure" >&2
+  exit "$FAIL_TAR"
+fi
+exec /usr/bin/tar "$@"
+TAR
+chmod +x "$STUB/bin/tar"
+
 # ---------------------------------------------------------------- helpers
 setup_repo() {
   local repo="$1"
@@ -157,6 +172,7 @@ run_backup() {
       FAKE_VOLUME_DIR="${FAKE_VOLUME_DIR:-}" \
       FAKE_INSPECT_MOUNT="${FAKE_INSPECT_MOUNT:-}" \
       FAKE_COMPOSE_CONTAINERS="${FAKE_COMPOSE_CONTAINERS:-}" \
+      FAIL_TAR="${FAIL_TAR:-}" \
       "$repo/scripts/backup.sh" "$@" )
 }
 
@@ -256,8 +272,12 @@ grep -q 'NO artifact blob is recoverable' "$REPO/backups/test4/MANIFEST" \
   && pass "manifest warns that no blob is recoverable" \
   || fail "manifest warns that no blob is recoverable"
 
-# -------------------------------- 5. an existing backup is not overwritten
-REPO="$WORK/refuse"
+# -------------------------------- 5. an existing backup is reused, not refused
+# The upstream contract: a backup directory may already exist. The run
+# replaces the artifacts in it and keeps them private. A FAILED run must
+# leave the previous artifacts untouched, because the archive is written to a
+# temporary file and renamed only when it is complete.
+REPO="$WORK/reuse"
 setup_repo "$REPO"
 mkdir -p "$REPO/data/artifacts/space-c"
 printf 'blob4' > "$REPO/data/artifacts/space-c/blob-4"
@@ -265,14 +285,25 @@ export FAKE_ARTIFACT_ROWS=1
 export FAKE_ARTIFACT_KEYS="space-c/blob-4"
 run_backup "$REPO" test5 >/dev/null 2>&1 || true
 if out="$(run_backup "$REPO" test5 2>&1)"; then
-  fail "a second run on the same stamp must fail"
+  pass "a second run on the same stamp reuses the directory"
 else
-  pass "a second run on the same stamp fails (exit non-zero)"
+  fail "a second run on the same stamp must succeed: $out"
 fi
-case "$out" in
-  *"already exists"*) pass "refusal names the existing backup" ;;
-  *) fail "refusal names the existing backup: $out" ;;
-esac
+if [[ -f "$REPO/backups/test5/MANIFEST" ]]; then
+  pass "the reused directory holds the new manifest"
+else
+  fail "the reused directory has no manifest"
+fi
+# A failed archive must not replace the previous one.
+printf 'previous archive' > "$REPO/backups/test5/homes.tgz"
+export FAIL_TAR=1
+run_backup "$REPO" test5 >/dev/null 2>&1 || true
+unset FAIL_TAR
+if [[ "$(cat "$REPO/backups/test5/homes.tgz" 2>/dev/null)" == "previous archive" ]]; then
+  pass "a failed archive leaves the previous one in place"
+else
+  fail "a failed archive replaced the previous one"
+fi
 
 echo
 if [[ "$FAILURES" -eq 0 ]]; then
