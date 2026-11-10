@@ -62,7 +62,10 @@ jobs:
           fi
       - name: Typecheck and test adapters
         if: steps.changed.outputs.changed == 'true'
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
         run: |
+          pnpm db:generate
           pnpm --filter @rakazo/adapters check
           pnpm --filter @rakazo/adapters test
       - name: Record bump patch
