@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Bot, ComputerStatus, Me, ThreadSnapshot } from "@rakazo/contracts";
+import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -10,15 +10,13 @@ import { createPageSession } from "../../lib/pages";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useComposerActions } from "./use-composer-actions";
 
-vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({
-    t: (parts: TemplateStringsArray, ...values: unknown[]) =>
-      parts.reduce(
-        (text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`,
-        "",
-      ),
-  }),
-}));
+vi.mock("@lingui/react/macro", () => {
+  // One t per module, like the real catalog: a new t per render would recreate
+  // every callback and hide stale-closure bugs.
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
+  return { useLingui: () => ({ t }) };
+});
 vi.mock("../../lib/prepare-image", () => ({
   canPrepareImage: () => false,
   prepareImage: async (file: File) => file,
@@ -37,6 +35,22 @@ let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
+let refreshThread: (id: string) => Promise<ThreadSnapshot>;
+let activeSnapshot: ThreadSnapshot | null;
+// One stable ref object per value, like the real Shell: a fresh object per
+// render would leave stale closures reading the previous chat. The same goes
+// for the plain functions; a fresh arrow per render would recreate callbacks.
+const activeBotId = ref<string | undefined>(undefined);
+const activeGroupId = ref<string | undefined>(undefined);
+const botsRef = ref<Bot[]>([]);
+const terminalRunReceipts = ref(new Set<string>());
+const computerRef = ref<ComputerStatus | null>(null);
+const refreshBots = async () => undefined;
+const updateSnapshot = () => undefined;
+const commitComputer = () => undefined;
+const clearReadBoundary = () => undefined;
+const flushPendingBrowserNotifications = () => undefined;
+const refreshThreadRef = ref((id: string) => refreshThread(id));
 
 function ref<T>(current: T) {
   return { current };
@@ -50,27 +64,28 @@ function Harness({ extras }: { extras?: Record<string, unknown> }) {
     activeId: activeChat,
     inGroup: false,
     groupId: undefined,
-    activeBotId: ref<string | undefined>(activeChat),
-    activeGroupId: ref<string | undefined>(undefined),
-    botsRef: ref<Bot[]>([]),
+    activeBotId,
+    activeGroupId,
+    botsRef,
     bootstrapMe: me,
-    activeSnapshot: null,
+    activeSnapshot,
     navigate: navigate as never,
-    refreshBots: async () => undefined,
-    refreshThreadRef: ref(async () => ({}) as ThreadSnapshot),
+    refreshBots,
+    refreshThreadRef,
     refreshGroupThreadRef: ref(async () => ({}) as ThreadSnapshot),
-    updateSnapshot: () => undefined,
-    terminalRunReceipts: ref(new Set<string>()),
-    computerRef: ref<ComputerStatus | null>(null),
-    commitComputer: () => undefined,
-    clearReadBoundary: () => undefined,
-    flushPendingBrowserNotifications: () => undefined,
+    updateSnapshot,
+    terminalRunReceipts,
+    computerRef,
+    commitComputer,
+    clearReadBoundary,
+    flushPendingBrowserNotifications,
   } as Parameters<typeof useComposerActions>[0]);
   return null;
 }
 
 function switchChat(activeId: string) {
   activeChat = activeId;
+  activeBotId.current = activeId;
   act(() => root.render(<Harness />));
 }
 
@@ -85,6 +100,13 @@ beforeEach(() => {
   me = null;
   navigate = vi.fn();
   activeChat = "bot-1";
+  refreshThread = async () => ({}) as ThreadSnapshot;
+  activeSnapshot = null;
+  activeBotId.current = activeChat;
+  activeGroupId.current = undefined;
+  botsRef.current = [];
+  terminalRunReceipts.current = new Set();
+  computerRef.current = null;
   pageSession = createPageSession();
   rpc = {
     routines: { testRun: vi.fn() },
@@ -299,6 +321,16 @@ it("runs routines without text in one request", async () => {
   expect(rpc.threads.send).not.toHaveBeenCalled();
 });
 
+it("counts a routines-only send as sent when its follow-up refresh fails", async () => {
+  rpc.threads.sendWithRoutines.mockResolvedValue({ routineRunIds: ["routine-run"] });
+  // The routine is already running; only the thread read that follows the send fails.
+  refreshThread = () => Promise.reject(new TypeError("Failed to fetch"));
+
+  expect(await send("@digest", [digest])).toBe(true);
+
+  expect(latest.sendError).toBeNull();
+});
+
 it("opens a mentioned group without running anything", async () => {
   const team = { kind: "group" as const, id: "group-2", name: "Team" };
   let accepted!: boolean;
@@ -365,4 +397,158 @@ it("names the open page only on text the chat itself sends", async () => {
   expect(rpc.threads.sendWithRoutines).toHaveBeenLastCalledWith(
     expect.objectContaining({ botId: "bot-1", text: "[Sales](page:p1)\nand notes" }),
   );
+});
+
+it("reuses an attachment's upload nonce across send retries", async () => {
+  const file = new File(["a"], "a.txt", { type: "text/plain" });
+  rpc.artifacts.create.mockResolvedValue({ id: "artifact-1" });
+  rpc.threads.send.mockRejectedValueOnce(new Error("offline"));
+  act(() => void latest.onAttachmentPick([file]));
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+  // The failed send keeps its attachment; an edited draft retries under a new
+  // send nonce and must still reach the artifact the first upload created.
+  expect(await latest.sendMessage("hello again", [], "nonce-2")).toBe(true);
+
+  expect(rpc.artifacts.create).toHaveBeenCalledTimes(2);
+  const firstCall = rpc.artifacts.create.mock.calls[0]![0] as { clientNonce?: string };
+  const retryCall = rpc.artifacts.create.mock.calls[1]![0] as { clientNonce?: string };
+  expect(firstCall.clientNonce).toBe(retryCall.clientNonce);
+  expect(firstCall.clientNonce).toContain("bot-1");
+  expect(rpc.threads.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ artifactIds: ["artifact-1"] }),
+  );
+});
+
+function replyCandidate(id: string): ThreadMessage {
+  return { id, role: "user", blocks: [] } as unknown as ThreadMessage;
+}
+
+it("keeps a reply picked while an older message send is in flight", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  let finishSend!: () => void;
+  rpc.threads.send.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ runId: "run-1", taskId: "task-1" });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello", [], "nonce-1");
+  });
+  await flush();
+  const pickedMeanwhile = replyCandidate("m-2");
+  act(() => {
+    latest.setReplyTarget(pickedMeanwhile);
+    latest.setReplyQuote("picked while sending");
+  });
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ replyToMessageId: "m-1" }),
+  );
+  expect(latest.replyTarget).toBe(pickedMeanwhile);
+});
+
+it("keeps a reply picked while a routines-only send is in flight", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  let finishSend!: () => void;
+  rpc.threads.sendWithRoutines.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ routineRunIds: ["routine-run"] });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("@digest", [digest], "nonce-1");
+  });
+  await flush();
+  const pickedMeanwhile = replyCandidate("m-2");
+  act(() => latest.setReplyTarget(pickedMeanwhile));
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(latest.replyTarget).toBe(pickedMeanwhile);
+});
+
+it("clears the reply a finished send used when no newer one was picked", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+
+  expect(latest.replyTarget).toBeNull();
+});
+
+it("keeps a newer excerpt of the same message picked while its older send is in flight", async () => {
+  const message = replyCandidate("m-1");
+  act(() => {
+    latest.setReplyTarget(message);
+    latest.setReplyQuote("first excerpt");
+  });
+  let finishSend!: () => void;
+  rpc.threads.send.mockReturnValue(
+    new Promise((resolve) => {
+      finishSend = () => resolve({ runId: "run-1", taskId: "task-1" });
+    }),
+  );
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello", [], "nonce-1");
+  });
+  await flush();
+  // Re-arming the same message object with a different excerpt must read as
+  // a newer pick, not as the reply the in-flight send still holds.
+  act(() => {
+    latest.setReplyTarget(message);
+    latest.setReplyQuote("second excerpt");
+  });
+
+  finishSend();
+  await act(async () => void (await sent));
+
+  expect(latest.replyTarget).toBe(message);
+  expect(latest.replyQuote).toBe("second excerpt");
+});
+
+it("clears a reply re-picked as a fresh object after a thread refresh", async () => {
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  // A thread refresh replaces the message objects; picking the same message
+  // again arms a fresh object with the same id and quote.
+  activeSnapshot = { messages: [replyCandidate("m-1")] } as ThreadSnapshot;
+  act(() => root.render(<Harness />));
+  act(() => latest.setReplyTarget(replyCandidate("m-1")));
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ replyToMessageId: "m-1" }),
+  );
+  expect(latest.replyTarget).toBeNull();
+});
+
+it("clears a quoted reply re-picked as a fresh object after a thread refresh", async () => {
+  act(() => {
+    latest.setReplyTarget(replyCandidate("m-1"));
+    latest.setReplyQuote("same excerpt");
+  });
+  activeSnapshot = { messages: [replyCandidate("m-1")] } as ThreadSnapshot;
+  act(() => root.render(<Harness />));
+  act(() => {
+    latest.setReplyTarget(replyCandidate("m-1"));
+    latest.setReplyQuote("same excerpt");
+  });
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+
+  await act(async () => void (await latest.sendMessage("hello", [], "nonce-1")));
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({ replyToMessageId: "m-1", replyQuote: "same excerpt" }),
+  );
+  expect(latest.replyTarget).toBeNull();
+  expect(latest.replyQuote).toBeNull();
 });

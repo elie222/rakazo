@@ -5,6 +5,7 @@ import { measureCalls } from "./measurement.js";
 export type LedgerCall = MeasuredCall & {
   runId?: string | null;
   parentRunId?: string | null;
+  createdAt?: Date;
 };
 
 export function measureWorkflowSteps(
@@ -12,6 +13,7 @@ export function measureWorkflowSteps(
   runSteps: ReadonlyMap<string, number>,
   pricing?: EvalPricing,
   minimumCacheTokens?: number,
+  pricedModel?: { provider: string; modelId: string },
 ) {
   const unique = [...new Map(calls.map((call) => [call.id, call])).values()];
   const steps = new Map<number, LedgerCall[]>(
@@ -30,8 +32,36 @@ export function measureWorkflowSteps(
     if (step === undefined) unattributed.push(call);
     else steps.get(step)!.push(call);
   }
-  const measure = (bucket: LedgerCall[]) => measureCalls(bucket, pricing, minimumCacheTokens);
-  const foreground = [...steps].map(([step, bucket]) => ({ step, ...measure(bucket) }));
+  const measure = (bucket: LedgerCall[]) =>
+    measureCalls(bucket, pricing, minimumCacheTokens, pricedModel);
+  // Each call in the order it was recorded, so the first call of an answer can be told apart
+  // from the round trips its tool calls added. The ledger keeps no sequence, only a timestamp:
+  // calls that share one (or have none) are listed in a fixed order but marked unordered, so
+  // none of them is taken for the first.
+  const ordered = (bucket: LedgerCall[]) => {
+    const time = (call: LedgerCall) => call.createdAt?.getTime();
+    const sorted = [...bucket].sort(
+      (a, b) => (time(a) ?? 0) - (time(b) ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    return sorted.map((call) => {
+      const m = measure([call]);
+      const at = time(call);
+      return {
+        ordered: at !== undefined && sorted.filter((other) => time(other) === at).length === 1,
+        operation: call.operation ?? "answer",
+        inputTokens: m.inputTokens,
+        cacheReadTokens: m.cacheReadTokens,
+        cacheWriteTokens: m.cacheWriteTokens,
+        outputTokens: m.outputTokens,
+        costUsd: m.costUsd,
+      };
+    });
+  };
+  const foreground = [...steps].map(([step, bucket]) => ({
+    step,
+    ...measure(bucket),
+    calls: ordered(bucket),
+  }));
   const background = { compaction: measure(compaction), unattributed: measure(unattributed) };
   const workflow = measure(unique);
   const buckets = [...foreground, background.compaction, background.unattributed];

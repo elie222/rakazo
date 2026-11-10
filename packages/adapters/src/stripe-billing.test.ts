@@ -1,5 +1,9 @@
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingPaymentNotCompletedError,
+} from "@rakazo/adapter-kit";
+import { describe, expect, it, vi } from "vitest";
 import {
   encodeStripeForm,
   mapStripeSubscriptionStatus,
@@ -262,6 +266,26 @@ describe("Stripe billing HTTP boundary", () => {
     expect(() => wire.completeCheckout(customerId)).toThrow(/open checkout/);
   });
 
+  it("keeps the trial when the early charge is declined or needs confirming", async () => {
+    for (const failure of [
+      { status: 402, type: "invalid_request_error", message: "requires additional user action" },
+      { status: 402, type: "card_error", code: "card_declined", message: "declined" },
+    ]) {
+      const { wire, provider } = setup((wire) => async (input, init) => {
+        if (init?.method === "POST" && String(init.body).includes("trial_end=now"))
+          wire.failures.push(failure);
+        return wire.fetch(input, init);
+      });
+      const { customerId } = await provider.createCustomer(owner);
+      await provider.createCheckout({ customerId, seats: 1, trialDays: 7, ...urls });
+      wire.completeCheckout(customerId);
+      await expect(provider.endTrial(customerId)).rejects.toBeInstanceOf(
+        BillingPaymentNotCompletedError,
+      );
+      expect(wire.subscriptions[0]!.status).toBe("trialing");
+    }
+  });
+
   it("maps Stripe statuses onto the neutral set", () => {
     for (const status of ["trialing", "active", "past_due", "incomplete", "unpaid", "paused"])
       expect(mapStripeSubscriptionStatus(status)).toBe(status);
@@ -465,6 +489,21 @@ describe("Stripe billing HTTP boundary", () => {
     );
     expect(error.message).toBe("Stripe request failed (400): Bad key [redacted] rejected");
     expect(error.message).not.toContain(wire.secretKey);
+  });
+
+  it("does not read an oversized Stripe response", async () => {
+    let cancel: unknown;
+    const { provider } = setup((wire) => async (input, init) => {
+      const response = await wire.fetch(input, init);
+      const oversized = new Response(response.body, {
+        status: response.status,
+        headers: { "content-length": String(1024 * 1024 * 1024) },
+      });
+      cancel = vi.spyOn(oversized.body!, "cancel");
+      return oversized;
+    });
+    await expect(provider.getPrice()).rejects.toThrow("Invalid Stripe response");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("re-syncs the customer when Stripe reports it deleted", () => {

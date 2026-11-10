@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   copy: vi.fn(),
   size: 3 as number | undefined,
   remove: vi.fn(),
+  // The iOS app group container; null on Android and on iOS builds without the extension.
+  container: null as { uri: string; files: string[] } | null,
 }));
 vi.mock("react-native", () => ({
   Platform: {
@@ -22,15 +24,16 @@ vi.mock("expo-sharing", () => ({
     state.payloads = [];
   },
 }));
-vi.mock("expo-file-system", () => ({
-  Paths: { cache: "file:///cache/" },
-  File: class {
+vi.mock("expo-file-system", () => {
+  class File {
     uri: string;
     exists = true;
-    name = "photo.png";
     type = "image/png";
     constructor(...parts: string[]) {
       this.uri = parts.join("/");
+    }
+    get name() {
+      return this.uri.split("/").pop() ?? "";
     }
     info() {
       return { size: state.size };
@@ -41,8 +44,24 @@ vi.mock("expo-file-system", () => ({
     delete() {
       state.remove(this.uri);
     }
-  },
-}));
+  }
+  return {
+    File,
+    Paths: {
+      cache: "file:///cache/",
+      get appleSharedContainers() {
+        const container = state.container;
+        if (!container) return {};
+        return {
+          "group.com.rakazo.app": {
+            uri: container.uri,
+            list: () => container.files.map((name) => new File(`${container.uri}${name}`)),
+          },
+        };
+      },
+    },
+  };
+});
 const {
   isIncomingShareCurrent,
   receiveIncomingShare,
@@ -50,12 +69,14 @@ const {
   cancelIncomingShare,
   hasIncomingShare,
   readIncomingShareFile,
+  releaseIncomingShareFiles,
   retryIncomingShare,
 } = await import("./incoming-share");
 
 beforeEach(() => {
   vi.useFakeTimers();
   state.os = "android";
+  state.container = null;
   cancelIncomingShare();
   state.payloads = [];
   vi.clearAllMocks();
@@ -108,7 +129,7 @@ describe("incoming share", () => {
     receiveIncomingShare(false, false);
     expect(hasIncomingShare()).toBe(true);
   });
-  it("does nothing off Android", () => {
+  it("does nothing on iOS builds without the share extension", () => {
     state.os = "ios";
     receive();
     expect(takeIncomingShare()).toBeNull();
@@ -157,6 +178,76 @@ describe("incoming share", () => {
     receiveIncomingShare(true, true);
     cancelIncomingShare();
     expect(state.copy).not.toHaveBeenCalled();
+    expect(state.remove).not.toHaveBeenCalled();
+  });
+});
+
+const GROUP = "file:///group/";
+function receiveIos(names: string[], initial = false) {
+  state.payloads = names.map((name) => ({ value: `${GROUP}${name}`, shareType: "image" }));
+  receiveIncomingShare(true, initial);
+}
+describe("incoming share on iOS", () => {
+  beforeEach(() => {
+    state.os = "ios";
+    state.container = { uri: GROUP, files: [] };
+  });
+  it("receives files the extension copied and hands them off once", () => {
+    receiveIos(["a.png", "b.pdf"]);
+    expect(takeIncomingShare()?.files.map((file) => file.name)).toEqual(["a.png", "b.pdf"]);
+    expect(takeIncomingShare()).toBeNull();
+    expect(state.clear).toHaveBeenCalled();
+  });
+  it("deletes the extension's copies when the share is cancelled or expires", () => {
+    receiveIos(["a.png"]);
+    cancelIncomingShare();
+    expect(state.remove).toHaveBeenCalledWith(`${GROUP}a.png`);
+    state.remove.mockClear();
+    receiveIos(["b.png"]);
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    expect(state.remove).toHaveBeenCalledWith(`${GROUP}b.png`);
+  });
+  it("deletes an expired share's copies when it is taken late", () => {
+    receiveIos(["a.png"]);
+    vi.setSystemTime(Date.now() + 5 * 60 * 1000);
+    expect(takeIncomingShare()).toBeNull();
+    expect(state.remove).toHaveBeenCalledWith(`${GROUP}a.png`);
+  });
+  it("keeps files put back for retry and those a newer share reuses", () => {
+    receiveIos(["a.png", "b.png"]);
+    const share = takeIncomingShare()!;
+    retryIncomingShare({ ...share, files: share.files.slice(1) });
+    releaseIncomingShareFiles(share.files);
+    expect(state.remove.mock.calls).toEqual([[`${GROUP}a.png`]]);
+    state.remove.mockClear();
+    // The extension names its copy after the file, so a newer share can reuse the same path.
+    receiveIos(["b.png"]);
+    expect(state.remove).not.toHaveBeenCalled();
+    retryIncomingShare(share);
+    expect(state.remove.mock.calls).toEqual([[`${GROUP}a.png`]]);
+  });
+  it("never deletes outside the share container", () => {
+    releaseIncomingShareFiles([{ uri: "file:///elsewhere/a.png", name: "a.png", mimeType: null }]);
+    expect(state.remove).not.toHaveBeenCalled();
+  });
+  it("sweeps leftovers on a cold start, keeping the share it opened with", () => {
+    state.container!.files = [
+      ".com.apple.mobile_container_manager.metadata.plist",
+      "old.png",
+      "new.png",
+    ];
+    receiveIos(["new.png"], true);
+    expect(state.remove.mock.calls).toEqual([[`${GROUP}old.png`]]);
+    state.remove.mockClear();
+    cancelIncomingShare();
+    state.remove.mockClear();
+    state.container!.files = ["old.png"];
+    receiveIncomingShare(false, true);
+    expect(state.remove.mock.calls).toEqual([[`${GROUP}old.png`]]);
+  });
+  it("does not sweep on a warm share, while another import may be reading", () => {
+    state.container!.files = ["in-flight.png"];
+    receiveIos(["new.png"]);
     expect(state.remove).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import type { ComponentProps } from "react";
 import { useState, useSyncExternalStore } from "react";
@@ -11,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useI18n } from "../lib/i18n";
+import { hapticImpact } from "../lib/haptics";
 import { messageMenuPlacement } from "../lib/message-menu-placement";
 import { useMobileTokens } from "../lib/native";
 
@@ -40,6 +41,7 @@ function setMenu(next: MessageMenuSpec | null) {
 
 /** Opens the reaction and action menu for a long-pressed message (Android). */
 export function presentMessageMenu(spec: MessageMenuSpec) {
+  hapticImpact();
   setMenu(spec);
 }
 
@@ -55,7 +57,7 @@ const MENU_MAX_WIDTH = 340;
 export function MessageMenuHost() {
   const menu = useSyncExternalStore(subscribe, getMenu, getMenu);
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -80,7 +82,7 @@ export function MessageMenuHost() {
     <Modal transparent visible animationType="fade" statusBarTranslucent onRequestClose={close}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t("Cancel")}
+        accessibilityLabel={t`Cancel`}
         style={[StyleSheet.absoluteFill, { backgroundColor: tokens.overlay }]}
         onPress={close}
       />

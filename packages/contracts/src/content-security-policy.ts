@@ -9,6 +9,9 @@
  * app policy the way a srcdoc frame would; its own meta CSP governs it and its nested preview. */
 export const HTML_VIEWER_PATH = "/html-viewer.html";
 
+/** Static shell for MCP app cards; see `MCP_APP_SHELL_HTML` in core. Framed only by the app. */
+export const MCP_APP_VIEWER_PATH = "/mcp-app-viewer.html";
+
 /** Embedded computer screen and its local runtime assets. */
 export const COMPUTER_SCREEN_PATH = "/computer-screen/screen.html";
 export const COMPUTER_SCREEN_PREFIX = "/computer-screen/";
@@ -145,7 +148,8 @@ export function contentSecurityPolicyFor(
     PASSTHROUGH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
   )
     return null;
-  if (pathname === HTML_VIEWER_PATH) return HTML_VIEWER_CONTENT_SECURITY_POLICY;
+  if (pathname === HTML_VIEWER_PATH || pathname === MCP_APP_VIEWER_PATH)
+    return HTML_VIEWER_CONTENT_SECURITY_POLICY;
   // The nested runtime has an opaque ancestor, which cannot match 'self'. Its sandbox
   // policy still prevents access to the app even when visited directly.
   if (screenPolicy && pathname === COMPUTER_SCREEN_RUNTIME_PATH) return screenPolicy.runtime;

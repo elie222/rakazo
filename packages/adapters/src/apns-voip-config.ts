@@ -31,3 +31,10 @@ export async function createApnsVoipProvider(config: ApnsVoipConfig | undefined)
   const { ApnsVoipProvider } = await import("./apns-voip.js");
   return new ApnsVoipProvider(config);
 }
+
+/** The same key also sends Live Activity updates. */
+export async function createApnsActivityProvider(config: ApnsVoipConfig | undefined) {
+  if (!config) return undefined;
+  const { ApnsActivityProvider } = await import("./apns-activity.js");
+  return new ApnsActivityProvider(config);
+}

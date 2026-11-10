@@ -11,7 +11,12 @@ import {
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
-import { bootstrapUserSpace, personalOrganizationIds, recordSecurityEvent } from "@rakazo/db";
+import {
+  bootstrapUserSpace,
+  personalOrganizationIds,
+  recordSecurityEvent,
+  SpaceDeletionInProgressError,
+} from "@rakazo/db";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -35,6 +40,7 @@ import {
   signedBearer,
 } from "./account-security.js";
 import { breachedPasswordCheck } from "./breached-password.js";
+import { DEACTIVATED_AT_FIELD } from "./directory.js";
 import type { EmailLocaleOf } from "./email.js";
 import { emailLocale, passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
 import { hasRecentIdentityConfirmation, identityConfirmation } from "./identity-confirmation.js";
@@ -44,6 +50,8 @@ import { passkeyRelyingParty } from "./passkey.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
+export type { DirectoryAccountChange } from "./directory.js";
+export { createDirectory } from "./directory.js";
 export {
   emailLocale,
   passwordResetEmail,
@@ -89,6 +97,8 @@ export interface AuthEnv {
   afterReplaceSession?: (previous: AuthSession, session: AuthSession) => Promise<void>;
   /** Runs after each sign-in, with the headers of the request that signed in. */
   afterSignIn?: (userId: string, headers?: Headers) => Promise<void>;
+  /** The operator provisions accounts from a directory over SCIM (see `createDirectory`). */
+  directoryProvisioning?: boolean;
 }
 
 type AuthSession = { id: string; userId: string };
@@ -203,6 +213,27 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       await bootstrapUserSpace(prisma, { id: userId }, env);
       return true;
     });
+  /** The directory provisioned this account, so it is admitted whatever the signup policy. */
+  const provisioned = async (userId: string) =>
+    Boolean(env.directoryProvisioning) &&
+    Boolean(
+      await prisma.scimUser.findFirst({ where: { userId, active: true }, select: { id: true } }),
+    );
+  /**
+   * The directory created this account and nobody has signed in to it yet. Every first
+   * sign-in, by any method, gives the account its workspace, so one without a workspace has
+   * never been used. Its first SSO sign-in with the same verified email claims it.
+   */
+  const claimable = async (userId: string) => {
+    if (!env.directoryProvisioning) return false;
+    const [subject, membership, user] = await Promise.all([
+      prisma.scimSubject.findUnique({ where: { userId }, select: { profileSourceId: true } }),
+      prisma.spaceMember.findFirst({ where: { userId }, select: { userId: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { deactivatedAt: true } }),
+    ]);
+    // A deactivated account takes no new login, so nothing is linked while it is off.
+    return Boolean(subject?.profileSourceId) && !membership && !user?.deactivatedAt;
+  };
   // SSO-only deployments keep every email credential closed, codes included.
   const emailCodeSignIn = Boolean(env.email) && env.passwordAuth !== false;
   // SSO-only deployments keep the identity provider as the only way in.
@@ -218,7 +249,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
-    trustedOrigins: [...buildTrustedOrigins(env), "rakazo://"],
+    trustedOrigins: [
+      ...buildTrustedOrigins({
+        origins: [env.webOrigin, env.baseURL],
+        extraOrigins: env.extraOrigins,
+      }),
+      APP_SCHEME_ORIGIN,
+    ],
     account: {
       accountLinking: { enabled: true, disableImplicitLinking: true, trustedProviders: [] },
       encryptOAuthTokens: true,
@@ -284,6 +321,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         : undefined,
     },
     user: {
+      // Set by the directory; read with every session so a deactivated account is refused.
+      additionalFields: DEACTIVATED_AT_FIELD,
       validateUserInfo: async ({ user, source }, ctx) => {
         if (source.method !== "oauth" || source.oauth?.providerId !== "oidc") return;
         const expectedUser = (await getOAuthState())?.serverContext?.reauthUserId;
@@ -294,6 +333,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
         if (source.action === "link-account") {
           if (!verified) return { error: "unable_to_link_account" };
+          // Without a link request, this is sign-in finding an account with the same email.
+          // Sign-in never links by email, except to claim an account the directory made.
+          if (!(await getOAuthState())?.link)
+            return (await claimable(String(user.id))) ? undefined : { error: "account_not_linked" };
           // Anyone can register an address, so linking waits for verification. Without email
           // nothing can verify; then only the account's own browser may link, since the
           // native authorization proxy can plant a link state in any other.
@@ -335,7 +378,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       deleteUser: {
         enabled: true,
         beforeDelete: async (user) => {
-          await env.beforeDeleteUser?.(user.id);
+          try {
+            await env.beforeDeleteUser?.(user.id);
+          } catch (error) {
+            if (error instanceof SpaceDeletionInProgressError)
+              throw new APIError("CONFLICT", { message: error.message });
+            throw error;
+          }
           const organizationIds = await personalOrganizationIds(prisma, user.id);
 
           await prisma.$transaction(async (tx) => {
@@ -513,15 +562,27 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           requireEmailVerification = policy.allowlist.length > 0;
         }
         const { findSession, updateUser } = ctx.context.internalAdapter;
+        // An SSO sign-in may find an account the directory made; validateUserInfo decides.
+        const directoryClaim = Boolean(env.directoryProvisioning) && isOidcCallback(ctx);
         // Return a request-local override; mutating the shared auth options
         // would leak a concurrent request's policy into another signup.
         return {
           context: {
             context: {
-              ...(policy
+              ...(policy || directoryClaim
                 ? {
                     options: {
-                      emailAndPassword: { requireEmailVerification },
+                      ...(policy ? { emailAndPassword: { requireEmailVerification } } : {}),
+                      ...(directoryClaim
+                        ? {
+                            account: {
+                              accountLinking: {
+                                disableImplicitLinking: false,
+                                requireLocalEmailVerified: false,
+                              },
+                            },
+                          }
+                        : {}),
                     },
                   }
                 : {}),
@@ -543,6 +604,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 findSession: async (token: string) => {
                   const session = await findSession(token);
                   if (!session || isMessagingEmail(session.user.email)) return null;
+                  if (deactivated(session.user)) return null;
                   if (session.user.emailVerified) return session;
                   if (env.oidc?.allowSignupBypass) {
                     const accounts = await ctx.context.internalAdapter.findAccounts(
@@ -616,6 +678,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 message: "Email verification required",
               });
             }
+            if (deactivated(user)) {
+              throw new APIError("FORBIDDEN", {
+                code: "ACCOUNT_DEACTIVATED",
+                message: "This account is deactivated",
+              });
+            }
             if (!user.emailVerified && policy.allowlist.length > 0 && !bypassAllowlist) {
               throw new APIError("FORBIDDEN", {
                 code: "EMAIL_VERIFICATION_REQUIRED",
@@ -626,8 +694,9 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
             if (!membership) {
               if (
-                !policy.enabled ||
-                (!bypassAllowlist && !emailAllowed(user.email, policy.allowlist))
+                (!policy.enabled ||
+                  (!bypassAllowlist && !emailAllowed(user.email, policy.allowlist))) &&
+                !(await provisioned(user.id))
               ) {
                 throw new APIError("FORBIDDEN", {
                   code: "REGISTRATION_CLOSED",
@@ -842,11 +911,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Assemble Better Auth trustedOrigins, adding localhost↔127.0.0.1 twins for loopback. */
-export function buildTrustedOrigins(env: Pick<AuthEnv, "webOrigin" | "baseURL" | "extraOrigins">) {
-  const configured = [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])];
-  const twins = [env.webOrigin, env.baseURL].flatMap(loopbackTwinOrigins);
-  return [...new Set([...configured, ...twins])];
+export interface TrustedOriginsInput {
+  /** Trusted along with their localhost↔127.0.0.1 twins. */
+  origins: string[];
+  /** Trusted exactly as given. */
+  extraOrigins?: string[];
+  /**
+   * For matching a request's Origin header: also trust each origin's normalized form and its
+   * [::1] twin, and leave out empty values and the app scheme, which that check accepts first.
+   */
+  requestOrigins?: boolean;
+}
+
+/** The one trusted-origin list, for Better Auth and the API's request origin check. */
+export function buildTrustedOrigins({
+  origins,
+  extraOrigins = [],
+  requestOrigins = false,
+}: TrustedOriginsInput): string[] {
+  const listed = requestOrigins
+    ? origins.filter((origin) => origin && origin !== APP_SCHEME_ORIGIN)
+    : origins;
+  const variants = listed.flatMap(requestOrigins ? requestOriginVariants : loopbackTwinOrigins);
+  return [...new Set([...listed, ...extraOrigins, ...variants])];
+}
+
+const APP_SCHEME_ORIGIN = "rakazo://";
+
+function requestOriginVariants(origin: string): string[] {
+  const variants = loopbackTwinOrigins(origin);
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      variants.push(url.origin);
+    }
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      const v6 = new URL(origin);
+      v6.hostname = "[::1]";
+      variants.push(v6.origin);
+    }
+  } catch {
+    return variants;
+  }
+  return variants;
 }
 
 function isLoopbackHost(host: string): boolean {
@@ -854,7 +961,7 @@ function isLoopbackHost(host: string): boolean {
 }
 
 /** Same-scheme/port localhost and 127.0.0.1 variants when `origin` is loopback. */
-export function loopbackTwinOrigins(origin: string): string[] {
+function loopbackTwinOrigins(origin: string): string[] {
   try {
     const url = new URL(origin);
     if (!isLoopbackHost(url.hostname)) return [];
@@ -878,6 +985,11 @@ export function loopbackTwinOrigins(origin: string): string[] {
  */
 export function isBlockedAuthPath(path: string): boolean {
   return path.startsWith("/organization");
+}
+
+/** Set while the directory has turned the account off. */
+function deactivated(user: object): boolean {
+  return "deactivatedAt" in user && Boolean(user.deactivatedAt);
 }
 
 function isOidcCallback(

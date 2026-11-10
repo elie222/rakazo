@@ -2,20 +2,31 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult } from "@rakazo/contracts";
 import { newClientId } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import type { ErrorDetails } from "../../lib/user-error";
+import { errorDetails } from "../../lib/user-error";
+import { ErrorNotice } from "../ErrorNotice";
 
 /** Personal MCP connections never configure deployment-wide provider credentials. */
-export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId?: string }) {
+export function IntegrationSetup({
+  onDone,
+  botId,
+  initialQuery,
+}: {
+  onDone?: () => void;
+  botId?: string;
+  /** Searches the public catalog for this once on open. */
+  initialQuery?: string;
+}) {
   const { t } = useLingui();
   const [endpoint, setEndpoint] = useState("");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<IntegrationCatalogResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [connected, setConnected] = useState<string[]>([]);
   const remoteResults = [
     ...new Map(
@@ -35,11 +46,30 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
     try {
       await action();
     } catch (err) {
-      setError(errorText(err, t`Could not connect`));
+      setError(errorDetails(err, t`Could not connect`));
     } finally {
       setBusy(false);
     }
   }
+
+  function search(text: string) {
+    void run(async () => {
+      const response = await rpc.capabilities.catalogSearch({
+        query: text,
+        usePublicCatalog: true,
+      });
+      setResults(response.results);
+      setSearched(true);
+    });
+  }
+
+  // Ref, not state: a development remount must not send the search twice.
+  const searchedInitial = useRef(false);
+  useEffect(() => {
+    if (searchedInitial.current || !initialQuery?.trim()) return;
+    searchedInitial.current = true;
+    search(initialQuery);
+  }, []);
 
   async function connect(name: string, url: string) {
     await run(async () => {
@@ -61,21 +91,14 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
 
   return (
     <div className="space-y-6">
-      <h1 className="text-[32px] font-medium text-foreground">
+      <h1 className="text-display font-medium text-foreground">
         <Trans>Add MCP server</Trans>
       </h1>
       <form
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void run(async () => {
-            const response = await rpc.capabilities.catalogSearch({
-              query,
-              usePublicCatalog: true,
-            });
-            setResults(response.results);
-            setSearched(true);
-          });
+          search(query);
         }}
       >
         <Input
@@ -101,11 +124,14 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
         </div>
       ))}
       {searched && !remoteResults.length ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           <Trans>No remote MCP servers found</Trans>
         </p>
       ) : null}
-      <Disclosure className="text-sm text-muted-foreground" summary={<Trans>Add server URL</Trans>}>
+      <Disclosure
+        className="text-body text-muted-foreground"
+        summary={<Trans>Add server URL</Trans>}
+      >
         <div className="mt-3 space-y-3">
           <Input
             aria-label={t`Server URL`}
@@ -121,11 +147,7 @@ export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId
           </Button>
         </div>
       </Disclosure>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
       {onDone ? (
         <Button disabled={busy} onClick={onDone}>
           <Trans>Continue</Trans>

@@ -16,7 +16,11 @@ import type * as ComputerControl from "./computer-control.js";
 import { expireComputerControl } from "./computer-control.js";
 import { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
-import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
+import {
+  deliverMessagingOutbound,
+  mirrorMessagingOutbound,
+  mirrorMessagingProgress,
+} from "./messaging-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 vi.mock("./history-compaction.js", () => ({ compactHistory: vi.fn(async () => undefined) }));
@@ -27,6 +31,7 @@ vi.mock("./computer-control.js", async (importOriginal) => ({
 vi.mock("./messaging-delivery.js", () => ({
   deliverMessagingOutbound: vi.fn(async () => undefined),
   mirrorMessagingOutbound: vi.fn(async () => undefined),
+  mirrorMessagingProgress: vi.fn(async () => undefined),
 }));
 
 const owner = { spaceId: "space-1", userId: "user-1" };
@@ -76,6 +81,29 @@ describe("createBackgroundJobHandlers", () => {
     installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
   });
 
+  it("sends a running run's interim messages without marking the run mirrored", async () => {
+    vi.mocked(mirrorMessagingOutbound).mockClear();
+    const handlers = createBackgroundJobHandlers({
+      executor: {} as unknown as ReturnType<typeof createRunExecutor>,
+      prisma: { run: owned() } as unknown as PrismaClient,
+      sandbox: {} as unknown as SandboxProvider,
+      home: {} as unknown as AgentHomeStore,
+      artifacts: {} as unknown as ArtifactStore,
+      jobs: {} as unknown as JobPublisher,
+      events: {} as unknown as ThreadEvents,
+      workerId: "worker-1",
+      runtime: {} as unknown as AgentRuntime,
+      secretStore: {} as unknown as EncryptedSecretStore,
+      memoryProviders: { resolve: vi.fn(async () => null) },
+      messaging: {} as unknown as MessagingSurface,
+    });
+
+    await handlers["messaging.progress"]({ runId: "run-1" });
+
+    expect(mirrorMessagingProgress).toHaveBeenCalledWith(expect.anything(), "run-1");
+    expect(mirrorMessagingOutbound).not.toHaveBeenCalled();
+  });
+
   it("compacts the requested thread with the runtime, job publisher, and model key it was given", async () => {
     const prisma = { thread: owned() } as unknown as PrismaClient;
     const runtime = {} as unknown as AgentRuntime;
@@ -101,7 +129,7 @@ describe("createBackgroundJobHandlers", () => {
       deploymentModelConfigured: true,
     });
 
-    await handlers["history.compact"]({ threadId: "thread-1" });
+    await handlers["history.compact"]({ threadId: "thread-1", userId: "user-1" });
 
     expect(compactHistory).toHaveBeenCalledWith(
       {
@@ -114,6 +142,7 @@ describe("createBackgroundJobHandlers", () => {
         resolveModel,
       },
       "thread-1",
+      "user-1",
     );
   });
 
@@ -236,7 +265,7 @@ describe("createBackgroundJobHandlers", () => {
       executor.resolveModel({ userId: "user-1", spaceId: "workspace-1" }),
     ).resolves.toEqual({
       provider: "openrouter",
-      id: "openai/gpt-6-luna",
+      id: "anthropic/claude-haiku-5.5",
       apiKey: "deployment-key",
       baseUrl: undefined,
       thinkingLevel: null,

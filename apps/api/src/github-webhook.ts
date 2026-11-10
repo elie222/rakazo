@@ -8,6 +8,7 @@ import {
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
+  webhookDeliveryResponse,
 } from "./webhook-inbound.js";
 
 export function hasValidGithubSignature(
@@ -198,6 +199,8 @@ export function mountGithubWebhookRoute(
       where: {
         botId: target.bot.id,
         spaceId: target.bot.spaceId,
+        // The delivery runs as the bot's creator, so only their own routines may ride on it.
+        userId: target.bot.userId,
         active: true,
         githubEnabled: true,
       },
@@ -227,8 +230,9 @@ export function mountGithubWebhookRoute(
     const githubEvent = githubEventName(c.req.header("x-github-event"));
     const eventPrompt = formatGithubEventPrompt(githubEvent, payload);
 
-    return c.json(
-      await deliverWebhookEvent(deps, target, {
+    return webhookDeliveryResponse(
+      c,
+      deliverWebhookEvent(deps, target, {
         prompt: eventPrompt,
         routines: githubRoutines,
         source: "github",

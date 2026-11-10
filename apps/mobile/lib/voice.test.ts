@@ -29,7 +29,7 @@ vi.mock("expo-file-system", () => ({
   File: class {
     uri = "file:///cache/rakazo-voice.mp3";
     create() {}
-    write() {}
+    writeSync() {}
     delete() {}
   },
   Paths: { cache: "cache" },
@@ -58,12 +58,17 @@ vi.mock("./live-notifications", () => ({
 }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   aiConsentCoalesceKey: vi.fn(() => "test-consent-context"),
   authHeaders: vi.fn(),
   captureApiRequestContext: vi.fn(),
   currentApiBase: vi.fn(() => "https://api.example"),
   rpc: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  subscribeConfirmedSpaceSwitch: vi.fn(() => () => {}),
 }));
 
 async function waitFor(predicate: () => boolean, attempts = 50): Promise<void> {

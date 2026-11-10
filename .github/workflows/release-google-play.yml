@@ -1,0 +1,76 @@
+name: release-google-play
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # APK and AAB builds increment the same remote Android version counter.
+  group: release-android
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  release:
+    name: Build Android and submit to Google Play
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Require Expo automation token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [[ -z "$EXPO_TOKEN" ]]; then
+            echo "Add an EXPO_TOKEN repository secret with access to the mobile project." >&2
+            exit 1
+          fi
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify mobile project
+        run: |
+          pnpm --filter @rakazo/mobile exec expo install --check
+          pnpm --filter @rakazo/mobile check
+      - name: Require Firebase config
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          vars="$(pnpm exec eas env:list production --format short)"
+          if ! grep -q '^GOOGLE_SERVICES_JSON=' <<< "$vars"; then
+            echo "Set the GOOGLE_SERVICES_JSON file variable in the EAS production environment." >&2
+            exit 1
+          fi
+      - name: Build production bundle on EAS
+        id: build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          pnpm exec eas build --platform android --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          id="$(jq -er '.[0].id' "$RUNNER_TEMP/build.json")"
+          url="$(jq -er '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
+          [[ "$url" == https://* ]]
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/rakazo.aab" "$url"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Check bundle optimization
+        run: python3 .github/scripts/check-android-bundle.py "$RUNNER_TEMP/rakazo.aab"
+      # EAS holds the upload key and the Google service account. Nothing private is written to Git.
+      - name: Submit to Google Play production
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ steps.build.outputs.id }}
+        run: pnpm exec eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait

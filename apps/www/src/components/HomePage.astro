@@ -37,9 +37,8 @@ import {
   localeHomePath,
 } from "../i18n/locales";
 import {
-  availableDesktopPlatforms,
+  DESKTOP_PLATFORMS,
   desktopDownloadHref,
-  fetchDesktopDownloads,
   fetchRecentChanges,
   githubStarsLabel,
 } from "../github";
@@ -65,13 +64,12 @@ const availableLanguages = LOCALES.map((supportedLocale) =>
   getHomeCopy(supportedLocale).availableLanguage
 );
 const homeHref = localeHomePath(locale);
-const [starsLabel, desktopDownloads, recentChanges] = await Promise.all([
+const [starsLabel, recentChanges] = await Promise.all([
   githubStarsLabel(),
-  fetchDesktopDownloads(),
   fetchRecentChanges(5),
 ]);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
-const desktopPlatforms = availableDesktopPlatforms(desktopDownloads);
+const desktopPlatforms = DESKTOP_PLATFORMS;
 const PLATFORM_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
 const PROVIDER_LOGOS: Record<string, string> = {
   Claude: claudeLogo,
@@ -379,7 +377,7 @@ const structuredData = homeStructuredData({
               </svg>
               <h3>{copy.platforms.mobile}</h3>
               <div class="platform-card__links">
-                <a href={IOS_APP_URL}>iOS</a>
+                <a href={IOS_APP_URL}>iPhone and iPad</a>
                 <a href={ANDROID_APP_STORE_URL}>Android</a>
               </div>
             </article>
@@ -430,7 +428,7 @@ const structuredData = homeStructuredData({
           <GetStartedActions
             class="cta-actions"
             copy={copy.hero}
-            downloads={desktopDownloads}
+            desktop
             placement="cta"
           />
         </div>

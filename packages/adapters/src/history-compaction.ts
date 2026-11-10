@@ -3,11 +3,16 @@ import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, botMessageContext, escapePromptData } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { recordUsage } from "@rakazo/db";
+import { recordUsage, runAsTenant } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
-import { loadBotNames, UNKNOWN_BOT_SPEAKER, USER_SPEAKER } from "./history-speakers.js";
+import {
+  loadBotNames,
+  loadSpacePeople,
+  personLineSpeaker,
+  UNKNOWN_BOT_SPEAKER,
+} from "./history-speakers.js";
 import type {
   ConfiguredMemoryProvider,
   MemoryProviderResolver,
@@ -226,9 +231,25 @@ export interface CompactHistoryDeps {
   }) => Promise<AgentRunRequest["model"]>;
 }
 
-export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
+export async function compactHistory(
+  deps: CompactHistoryDeps,
+  threadId: string,
+  requesterId?: string,
+): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
   if (!thread.botId) return;
+  // The member whose turn asked for the summary pays for it, as for the turn. One who has since
+  // left pays nothing: the next member's turn asks again.
+  if (
+    requesterId &&
+    requesterId !== thread.userId &&
+    !(await deps.prisma.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: thread.spaceId, userId: requesterId } },
+      select: { id: true },
+    }))
+  ) {
+    return;
+  }
   const previousCursor = thread.historyCompactedUpToSeq;
   const previousGeneration = thread.historyCompactionGeneration;
   const previousSummary = thread.historyCompactionSummary?.trim() || null;
@@ -249,7 +270,13 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   }
 
   let fromSeqExclusive = previousCursor ?? NOTHING_COMPACTED;
-  let batch: Array<{ seq: number; role: string; botId?: string | null; blocks: unknown }> = [];
+  let batch: Array<{
+    seq: number;
+    role: string;
+    botId?: string | null;
+    authorUserId?: string | null;
+    blocks: unknown;
+  }> = [];
   let bootstrappingLocalSummary = false;
   if (needsLocalBootstrap) {
     if (previousCursor < 0) {
@@ -260,7 +287,13 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       where: { threadId, seq: { lte: previousCursor } },
       orderBy: { seq: "desc" },
       take: LEGACY_HISTORY_WINDOW_SIZE + 1,
-      select: { seq: true, role: true, botId: true, blocks: true },
+      select: {
+        seq: true,
+        role: true,
+        botId: true,
+        authorUserId: true,
+        blocks: true,
+      },
     });
     batch = bootstrapCandidates.reverse();
     if (batch.length > 0) {
@@ -289,7 +322,13 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       where: { threadId, seq: { gt: range.fromSeqExclusive } },
       orderBy: { seq: "asc" },
       take: range.take,
-      select: { seq: true, role: true, botId: true, blocks: true },
+      select: {
+        seq: true,
+        role: true,
+        botId: true,
+        authorUserId: true,
+        blocks: true,
+      },
     });
     if (batch.some((message, index) => message.seq !== fromSeqExclusive + index + 1)) {
       logHistoryCompactPermanentFailure(threadId, "message_coverage_gap");
@@ -298,25 +337,31 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   }
   if (batch.length === 0) return;
 
-  // The summarizer reads who said what: "User" for the person (never their name) and each bot by
-  // its current name, including a bot that has since been archived or that relayed a message here.
+  // The summarizer reads who said what, labelled the way a run's history is: each person as "User"
+  // (by name only in a space several people share) and each bot by its current name, including a
+  // bot that has since been archived or that relayed a message here.
   const authorBotId = (message: (typeof batch)[number]) =>
     message.role === "bot"
       ? (message.botId ?? thread.botId!)
       : message.role === "user"
         ? botMessageContext(message.blocks as MessageBlock[])?.fromBotId
         : undefined;
-  const botNames = await loadBotNames(deps.prisma, thread.spaceId, [
-    ...new Set(batch.flatMap((message) => authorBotId(message) ?? [])),
+  const [botNames, people] = await Promise.all([
+    loadBotNames(deps.prisma, thread.spaceId, [
+      ...new Set(batch.flatMap((message) => authorBotId(message) ?? [])),
+    ]),
+    deps.prisma.spaceMember
+      .count({ where: { spaceId: thread.spaceId } })
+      .then((count) => loadSpacePeople(deps.prisma, count, thread.userId, batch)),
   ]);
   const speaker = (message: (typeof batch)[number]) => {
     const botId = authorBotId(message);
     if (botId) return botNames.get(botId) ?? UNKNOWN_BOT_SPEAKER;
-    return message.role === "user" ? USER_SPEAKER : message.role;
+    return message.role === "user" ? personLineSpeaker(people, message) : message.role;
   };
   const transcriptParts = batch.map(
     (message) =>
-      `${speaker(message)}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[])}`,
+      `${speaker(message)}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[], { toolSteps: true, fromBot: message.role === "bot" })}`,
   );
   let transcript = transcriptParts.join("\n\n");
   if (transcript.length > MAX_TRANSCRIPT_CHARS) {
@@ -355,12 +400,13 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
   const deploymentFallback = resolveDeploymentModel();
-  const model = deps.resolveModel
-    ? await deps.resolveModel({
-        userId: thread.userId,
-        spaceId: thread.spaceId,
-        botId: thread.botId,
-      })
+  // Departure hands a shared thread to the Space's owner, so this is always a member.
+  const { spaceId, botId } = thread;
+  const userId = requesterId ?? thread.userId;
+  const resolveModel = deps.resolveModel;
+  const model = resolveModel
+    ? // Their credentials are only readable as them.
+      await runAsTenant({ spaceId, userId }, () => resolveModel({ userId, spaceId, botId }))
     : deps.deploymentModelConfigured
       ? {
           // Provider must come from the same resolver as the key, not a hardcoded one.
@@ -394,7 +440,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       onUsage: async (event) => {
         await recordUsage(deps.prisma, event, {
           spaceId: thread.spaceId,
-          userId: thread.userId,
+          userId,
           botId: thread.botId!,
           operationId: `compact:${threadId}:${fromSeqExclusive}`,
           operationKind: "compaction",
@@ -417,14 +463,14 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       operationId: `compact:${threadId}`,
       traceId: `compact:${threadId}`,
       spaceId: thread.spaceId,
-      userId: thread.userId,
+      userId,
       signal: AbortSignal.timeout(summarizeTimeoutMs(prompt.length)),
     },
   )) {
     if (event.type === "usage" && !event.accounted) {
       await recordUsage(deps.prisma, event, {
         spaceId: thread.spaceId,
-        userId: thread.userId,
+        userId,
         botId: thread.botId,
         operationId: `compact:${threadId}:${fromSeqExclusive}`,
         operationKind: "compaction",
@@ -494,7 +540,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     operationId: `history-compact:${threadId}`,
     traceId: `history-compact:${threadId}`,
     spaceId: thread.spaceId,
-    userId: thread.userId,
+    userId,
     botId: thread.botId,
     signal: new AbortController().signal,
   };
@@ -560,6 +606,6 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       COMPACTION_BATCH_SIZE,
     )
   ) {
-    await deps.jobs.enqueue(historyCompactJob(threadId));
+    await deps.jobs.enqueue(historyCompactJob(threadId, requesterId));
   }
 }

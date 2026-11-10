@@ -16,6 +16,8 @@ vi.mock("../../lib/rpc", () => {
       list: vi.fn(async () => []),
     },
     me: vi.fn(async () => ({})),
+    // This server receives no email, so the panel offers no address.
+    bots: { emailAddress: vi.fn(async () => null) },
   };
   return {
     rpc,

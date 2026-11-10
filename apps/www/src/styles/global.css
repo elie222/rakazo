@@ -153,6 +153,7 @@ button {
 }
 
 .site-header__left {
+  align-items: baseline;
   gap: 28px;
 }
 
@@ -176,12 +177,15 @@ button {
 }
 
 .brand-lockup {
+  /* The wordmark's line box matches the mark's height, so it reads as centered
+     while giving the lockup a text baseline the nav links can align to. */
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 9px;
 }
 
 .brand-lockup__mark {
+  align-self: center;
   width: 36px;
   height: 36px;
   flex: none;
@@ -192,6 +196,7 @@ button {
   font-family: Aeonik, Geist, ui-sans-serif, system-ui, sans-serif;
   font-size: 21px;
   font-weight: 500;
+  line-height: 36px;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
@@ -2614,10 +2619,38 @@ button.product-demo__dock-icon {
 
 .pricing__plans {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
-  margin-top: 44px;
+  max-width: 800px;
+  margin: 44px auto 0;
   text-align: left;
+}
+
+.pricing__credits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 800px;
+  margin: 20px auto 0;
+  padding: 16px 16px 16px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  text-align: left;
+}
+
+.pricing__credits p {
+  flex: 1 1 320px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.pricing__credits strong {
+  margin-right: 12px;
+  color: var(--ink);
+  font-weight: 500;
 }
 
 .pricing__plan {
@@ -2697,9 +2730,13 @@ button.product-demo__dock-icon {
   text-align: center;
 }
 
-.pricing-compare__table tbody tr:last-child th,
-.pricing-compare__table tbody tr:last-child td {
+.pricing-compare__table tfoot td {
+  padding-block: 20px;
   border-bottom: 0;
+}
+
+.pricing-compare__table tfoot .button {
+  white-space: nowrap;
 }
 
 .pricing-compare__table th:first-child {
@@ -2721,6 +2758,12 @@ button.product-demo__dock-icon {
 .pricing-compare__table tr > :nth-child(3),
 .pricing-compare__table tr > :last-child {
   border-left: 1px solid var(--line);
+}
+
+/* Self-hosted and credits sit apart from the own-model tiers. */
+.pricing-compare__table tr > :nth-child(2),
+.pricing-compare__table tr > :last-child {
+  background: var(--surface-soft);
 }
 
 .pricing-compare__plan {
@@ -2807,10 +2850,13 @@ td:last-child .pricing-hint__tip {
 }
 
 @media (max-width: 1000px) {
+  .pricing__plans,
+  .pricing__credits {
+    max-width: 480px;
+  }
+
   .pricing__plans {
     grid-template-columns: minmax(0, 1fr);
-    max-width: 480px;
-    margin-inline: auto;
   }
 }
 
@@ -4582,6 +4628,7 @@ td:last-child .pricing-hint__tip {
 
 .docs-topbar .brand-lockup__word {
   font-size: 19px;
+  line-height: 30px;
 }
 
 .docs-topbar .star-pill,

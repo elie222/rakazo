@@ -65,7 +65,7 @@ export function ModelThinkingOptions({
   const imagesId = useId();
   const maxImagesId = useId();
   return (
-    <Disclosure className="mt-4 text-sm text-muted-foreground" summary={advancedLabel}>
+    <Disclosure className="mt-4 text-body text-muted-foreground" summary={advancedLabel}>
       {showThinking && onReasoningChange && thinkingLabel ? (
         <label htmlFor={id} className="mt-3 flex items-center gap-2">
           <Checkbox

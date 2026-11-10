@@ -52,6 +52,8 @@ vi.mock("expo-file-system", () => ({
 vi.mock("expo-document-picker", () => ({}));
 vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn(async () => ({ canceled: false, assets: state.assets })),
+  launchCameraAsync: vi.fn(async () => ({ canceled: false, assets: [state.asset] })),
+  requestCameraPermissionsAsync: vi.fn(async () => ({ granted: true })),
 }));
 vi.mock("./file-drop", () => ({ releaseDroppedFile: async () => {} }));
 vi.mock("expo-modules-core", () => ({
@@ -65,6 +67,7 @@ const nodeModule = Module as unknown as {
 const originalLoad = nodeModule._load;
 
 let pickFromLibrary: typeof PickFromLibrary;
+let takePhoto: typeof import("./pick-attachments").takePhoto;
 let readDroppedFiles: typeof ReadDroppedFiles;
 
 function asset(overrides: Partial<typeof state.asset> = {}) {
@@ -91,7 +94,7 @@ beforeEach(async () => {
       ? state.loadManipulator(id)
       : originalLoad.call(Module, id, ...args),
   );
-  ({ pickFromLibrary, readDroppedFiles } = await import("./pick-attachments"));
+  ({ pickFromLibrary, readDroppedFiles, takePhoto } = await import("./pick-attachments"));
   asset();
   state.assets = [state.asset];
   state.file.mockReset();
@@ -329,4 +332,39 @@ it("does not resize a pasted photo once the draft is full", async () => {
   expect(result.skipped).toEqual([
     { name: "image.jpeg", reason: `max ${ATTACHMENT_MAX_COUNT} attachments` },
   ]);
+});
+
+describe("unreadable picks", () => {
+  it("keeps readable photos when one cannot be read", async () => {
+    state.assets = [
+      state.asset,
+      // Small, so it skips resizing and is read from its own URI.
+      {
+        ...state.asset,
+        uri: "file:///fake/broken.jpg",
+        fileName: "broken.jpg",
+        width: 100,
+        height: 100,
+      },
+    ];
+    state.base64.mockImplementation((uri: string) =>
+      uri === "file:///fake/broken.jpg"
+        ? Promise.reject(new Error("read failed"))
+        : Promise.resolve("aGVsbG8="),
+    );
+
+    const result = await pickFromLibrary();
+
+    expect(result.attachments.map((item) => item.name)).toEqual(["photo.jpg"]);
+    expect(result.skipped).toEqual([{ name: "broken.jpg", reason: "could not read" }]);
+  });
+
+  it("reports a photo the camera could not deliver", async () => {
+    state.base64.mockRejectedValue(new Error("read failed"));
+
+    const result = await takePhoto();
+
+    expect(result.attachments).toEqual([]);
+    expect(result.skipped).toEqual([{ name: "photo.jpg", reason: "could not read" }]);
+  });
 });

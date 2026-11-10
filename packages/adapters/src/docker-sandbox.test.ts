@@ -251,6 +251,24 @@ describe("Docker sandbox", () => {
     });
   });
 
+  it("sends the owner's time zone and language with the computer request only when known", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ id: "computer", resumed: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const body = () => JSON.parse(String(fetchMock.mock.lastCall?.[1]?.body));
+
+    await provider.provision(
+      { botId: "bot", homePath: "/tmp/bot", timezone: "Europe/Warsaw", language: "pl" },
+      context,
+    );
+    expect(body()).toMatchObject({ timezone: "Europe/Warsaw", language: "pl" });
+    await provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context);
+    expect(body()).not.toHaveProperty("timezone");
+    expect(body()).not.toHaveProperty("language");
+  });
+
   it("translates a 429 computer limit reached error from the supervisor", async () => {
     vi.stubGlobal(
       "fetch",

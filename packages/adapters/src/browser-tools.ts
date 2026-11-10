@@ -168,6 +168,13 @@ export async function browserActFromTool(
     uploadRoots?: string[];
     /** The purchase the user approved for this call; its clicks alone may complete it. */
     approvedPurchase?: PurchaseApproval;
+    /**
+     * Counts the approved purchase against the spending limit just before the page is asked; returns
+     * why it may not go ahead.
+     */
+    countPurchase?: () => Promise<string | undefined>;
+    /** Called when the counted purchase was clearly not pressed, so it no longer counts. */
+    releasePurchase?: () => Promise<void>;
   } = {},
 ) {
   try {
@@ -297,11 +304,23 @@ export async function browserActFromTool(
       const step = actions[index];
       if (step?.kind === "click" && approved) {
         const { site, label, amount } = approved;
-        actions[index] = { ...step, approved: true, site, label, amount };
+        actions[index] = {
+          ...step,
+          approved: true,
+          site,
+          label,
+          amount,
+          total: approved.total ?? "",
+        };
       }
+    }
+    if (approved) {
+      const refused = await options.countPurchase?.();
+      if (refused) return { ...refusedInput(refused), completed: 0 };
     }
     // Taken just before the page is asked, by one call only, so two fills never both type it.
     if (codeTyped && !(await codeTyped.claim())) {
+      if (approved) await options.releasePurchase?.();
       return {
         ...refusedInput("No code is waiting. Use request_secret with oneTimeCode."),
         completed: 0,
@@ -312,6 +331,14 @@ export async function browserActFromTool(
       { actions, downloads: options.downloads?.folder, signal: context.signal },
       context,
     );
+    // A purchase the page refused (it changed, or another step failed first) never went through.
+    if (
+      approvedSteps.length &&
+      result.uncertain === false &&
+      result.completed <= Math.min(...approvedSteps)
+    ) {
+      await options.releasePurchase?.();
+    }
     // A code the page took is spent. One it clearly refused goes back, so a fill on the right page
     // can use it; any doubt about the outcome keeps it spent, never typed twice.
     if (codeTyped && result.uncertain === false && result.completed <= codeTyped.index) {

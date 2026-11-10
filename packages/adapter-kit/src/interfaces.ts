@@ -103,6 +103,8 @@ export interface SandboxProvider {
   ownsReference?(computer: Pick<ComputerRef, "kind" | "providerRef">): boolean;
   /** True when every running minute is billed, so the active-lifetime cap applies. */
   billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
+  /** Whether the provider running this computer keeps its disk when it stops. */
+  keepsHome?(computer: ComputerRef): Promise<boolean>;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Workspace directory operations for hosts without the standard Unix command tools. */
   workspaceDirectories?(
@@ -140,6 +142,13 @@ export interface SandboxProvider {
        * the provider cannot move to throws `SandboxSizeUnavailableError`.
        */
       size?: ComputerSize;
+      /**
+       * The owner's IANA time zone (`Europe/Warsaw`) and app language (`pl`, `pt-BR`), for the
+       * computer's clock and browser. Absent when unknown: the provider keeps its defaults.
+       * Values are not validated here; a provider ignores one it cannot use.
+       */
+      timezone?: string;
+      language?: string;
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
@@ -524,6 +533,8 @@ export interface BillingProvider {
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
   createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
+  /** Expires every open checkout session of the customer; resolves once none can be paid. */
+  expireOpenCheckouts(customerId: string): Promise<void>;
   createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
@@ -542,7 +553,12 @@ export interface ExecutionRunner {
 export interface VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities>;
   verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
-  listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
+  /** `options.language` narrows the listing for providers that advertise `languages`. */
+  listVoices(
+    apiKey: string,
+    context: AdapterContext,
+    options?: { language?: string },
+  ): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
 }

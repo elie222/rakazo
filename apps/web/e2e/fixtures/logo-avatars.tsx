@@ -1,7 +1,7 @@
 import type { ProductEvent } from "@rakazo/contracts";
+import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import type { LogoAvatarActivity } from "@rakazo/core";
 import {
-  BOT_COLOR_LIST,
   createLogoAvatarActivityStore,
   initialLogoAvatarSignals,
   logoAvatarActivity,
@@ -103,15 +103,12 @@ function Study() {
   const send = (sample: Sample) => {
     setSignals((previous) =>
       reduceLogoAvatarSignals(previous, {
-        id: `event-${previous.cursor + 1}`,
-        spaceId: "demo-space",
         threadId: "demo-thread",
         botId: "prototype-bot",
         runId: "demo-run",
         seq: previous.cursor + 1,
         type: sample.type,
         payload: sample.payload ?? {},
-        createdAt: "2026-10-27T12:00:00.000Z",
       }),
     );
     setEventName(sample.type);
@@ -144,7 +141,7 @@ function Study() {
       >
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-body1 font-medium">Same activity, independent timing</h2>
+            <h2 className="text-body-lg font-medium">Same activity, independent timing</h2>
             <p className="mt-1 text-label text-muted-foreground">
               All six are {teamActivity === "computer" ? "using the computer" : teamActivity}.
               Stable identity, colour and rhythm.
@@ -187,7 +184,7 @@ function Study() {
                   motion={motion}
                 />
               </div>
-              <p className="mt-3 text-body2 font-medium">{bot.name}</p>
+              <p className="mt-3 text-body-sm font-medium">{bot.name}</p>
               <p className="text-caption text-muted-foreground">76 / 38 px</p>
             </div>
           ))}
@@ -234,7 +231,7 @@ function Study() {
       >
         <article className="rounded-2xl border border-border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-body1 font-medium">Pose switcher</h2>
+            <h2 className="text-body-lg font-medium">Pose switcher</h2>
             <span className="text-caption text-muted-foreground">Demonstration only</span>
           </div>
           <div className="mb-5 flex flex-wrap gap-1.5">
@@ -260,8 +257,8 @@ function Study() {
               label={`Selected pose: ${selected}`}
             />
             <div>
-              <p className="text-body1 font-medium">Inbox</p>
-              <p className="mt-1 text-body2 text-muted-foreground">
+              <p className="text-body-lg font-medium">Inbox</p>
+              <p className="mt-1 text-body-sm text-muted-foreground">
                 {selected === "thinking"
                   ? "Thinking pose preview"
                   : `${selected.charAt(0).toUpperCase()}${selected.slice(1)} preview`}
@@ -280,7 +277,7 @@ function Study() {
         </article>
         <article className="rounded-2xl border border-border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-body1 font-medium">Real event format → expression</h2>
+            <h2 className="text-body-lg font-medium">Real event format → expression</h2>
             <span className="text-caption text-muted-foreground">
               Fixture replay · no live connection
             </span>
@@ -301,7 +298,7 @@ function Study() {
               motion={motion}
             />
             <div>
-              <p className="text-body1 font-medium" data-testid="resolved-activity">
+              <p className="text-body-lg font-medium" data-testid="resolved-activity">
                 {activity}
               </p>
               <p
@@ -327,7 +324,7 @@ function Study() {
             motion={motion}
           />
           <div>
-            <p className="text-body2">Waiting on you</p>
+            <p className="text-body-sm">Waiting on you</p>
             <p className="text-caption text-muted-foreground">Still, attentive</p>
           </div>
         </div>
@@ -340,7 +337,7 @@ function Study() {
             motion={motion}
           />
           <div>
-            <p className="text-body2">Error</p>
+            <p className="text-body-sm">Error</p>
             <p className="text-caption text-muted-foreground">Still; no flashing</p>
           </div>
         </div>
@@ -353,7 +350,7 @@ function Study() {
             motion={false}
           />
           <div>
-            <p className="text-body2">Reduced motion</p>
+            <p className="text-body-sm">Reduced motion</p>
             <p className="text-caption text-muted-foreground">Static state pose</p>
           </div>
         </div>
@@ -420,7 +417,7 @@ function SizeComparison() {
             key={`${pose.name}-${index}`}
             className="flex flex-col items-center rounded-xl border border-border bg-card py-3"
           >
-            <h2 className="mb-3 text-body2 font-medium">{pose.name}</h2>
+            <h2 className="mb-3 text-body-sm font-medium">{pose.name}</h2>
             <LogoAvatar
               identity={team[index]!.id}
               avatarValue={team[index]!.value}
@@ -455,7 +452,7 @@ function NativeSizeStrip() {
   const samples = [...poses, { ...poses[3], name: "Thinking B" }];
   return (
     <main className="bg-background p-4 text-foreground" style={{ width: 650, height: 300 }}>
-      <h1 className="mb-4 text-body1 font-semibold">
+      <h1 className="mb-4 text-body-lg font-semibold">
         {params.get("revision") || "Local prototype"} · native 1× avatars · {theme}
       </h1>
       <div

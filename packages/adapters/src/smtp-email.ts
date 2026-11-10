@@ -1,4 +1,5 @@
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type { NodemailerError, Transporter } from "nodemailer";
 import nodemailer from "nodemailer";
 
@@ -43,6 +44,7 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
   private readonly inFlight = new Set<Promise<void>>();
   private readonly shutdown = new AbortController();
   private accepting = true;
+  private draining?: Promise<void>;
 
   constructor(
     private readonly config: SmtpEmailConfig,
@@ -82,20 +84,28 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
     return delivery;
   }
 
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
     this.accepting = false;
-    const deadline = Date.now() + this.drainTimeoutMs;
-    while (this.inFlight.size > 0) {
-      const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
-      if (completed) continue;
-      this.shutdown.abort();
-      this.inFlight.clear();
+    this.draining ??= this.finishDrain();
+    return this.draining;
+  }
+
+  private async finishDrain(): Promise<void> {
+    try {
+      const deadline = Date.now() + this.drainTimeoutMs;
+      while (this.inFlight.size > 0) {
+        const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
+        if (completed) continue;
+        this.shutdown.abort();
+        this.inFlight.clear();
+        return;
+      }
+    } finally {
       try {
         this.transport.close();
       } catch {
         // Cleanup must continue even when the transport cannot close cleanly.
       }
-      return;
     }
   }
 
@@ -106,17 +116,22 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
       }
       try {
         await this.transport.sendMail({
-          from: this.config.from,
+          from: message.from ?? this.config.from,
           to: message.to,
+          ...(message.cc?.length ? { cc: message.cc } : {}),
           subject: message.subject,
           text: message.text,
           html: message.html,
-          replyTo: this.config.replyTo,
+          replyTo: message.replyTo ?? this.config.replyTo,
           headers: message.headers,
         });
         return;
       } catch (error) {
         if (this.shutdown.signal.aborted) throw error;
+        const refused = refusedRecipientCode(error);
+        if (refused) {
+          throw new EmailRecipientRejectedError(`SMTP server rejected the recipient (${refused})`);
+        }
         const retryDelay = this.retryDelaysMs[attempt];
         if (retryDelay === undefined || !retrySafe(error)) throw error;
         await this.sleep(retryDelay, this.shutdown.signal);
@@ -164,6 +179,14 @@ function retrySafe(error: unknown): boolean {
     return CONNECT_ERRNOS.has(originalCode ?? "");
   }
   return false;
+}
+
+/** The permanent reply code when the server refused a recipient address, before any data. */
+function refusedRecipientCode(error: unknown): number | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const { code, command, responseCode } = error as NodemailerError;
+  if (code !== "EENVELOPE" || command !== "RCPT TO") return undefined;
+  return responseCode && responseCode >= 500 ? responseCode : undefined;
 }
 
 function wait(delayMs: number, signal: AbortSignal): Promise<void> {

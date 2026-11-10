@@ -1,4 +1,10 @@
-import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -19,6 +25,8 @@ afterEach(() => {
   vi.useRealTimers();
   installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
+type Match = { status: string; updatedAt?: { lt: Date } };
+type Where = Match | { OR: Match[] };
 function fixture(status = "queued") {
   const row = {
     id: "update-1",
@@ -37,28 +45,47 @@ function fixture(status = "queued") {
       bots: [{ id: "bot-1", name: "Writer" }],
     },
   };
+  const rows = [row];
   const computer = {
     updateMany: vi.fn(async () => ({ count: 1 })),
     findUniqueOrThrow: vi.fn(async () => row.computer),
   };
   const computerUpdate = {
     create: vi.fn(async () => row),
+    findUnique: vi.fn(async () => row),
     findUniqueOrThrow: vi.fn(async () => row),
-    findMany: vi.fn(async () => [row]),
+    findMany: vi.fn(async ({ where, take }: { where: Where; take: number }) =>
+      rows
+        .filter((each) =>
+          ("OR" in where ? where.OR : [where]).some(
+            (match) =>
+              match.status === each.status &&
+              (!match.updatedAt || each.updatedAt < match.updatedAt.lt),
+          ),
+        )
+        .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime())
+        .slice(0, take)
+        .map((each) => ({ ...each })),
+    ),
     updateMany: vi.fn(async ({ where, data }) => {
+      const target = where.id ? rows.find((each) => each.id === where.id) : row;
+      if (!target) return { count: 0 };
       if (
         where.status &&
         (typeof where.status === "string"
-          ? where.status !== row.status
-          : !where.status.in.includes(row.status))
+          ? where.status !== target.status
+          : !where.status.in.includes(target.status))
       )
         return { count: 0 };
-      Object.assign(row, data);
+      if (where.updatedAt && where.updatedAt.getTime() !== target.updatedAt.getTime())
+        return { count: 0 };
+      Object.assign(target, data);
       return { count: 1 };
     }),
   };
   const prisma = {
     $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     computer,
     bot: { findFirst: vi.fn(async () => ({ userId: "user" })) },
     computerUpdate,
@@ -66,7 +93,7 @@ function fixture(status = "queued") {
   };
   const jobs = { enqueue: vi.fn(async () => {}) };
   const deps = { prisma, jobs } as unknown as Parameters<typeof performComputerUpdate>[0];
-  return { row, computer, computerUpdate, deps, jobs };
+  return { row, rows, computer, computerUpdate, deps, jobs };
 }
 describe("background computer maintenance", () => {
   it("persists stages and releases its reservation only after completion; redelivery is harmless", async () => {
@@ -97,15 +124,21 @@ describe("background computer maintenance", () => {
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
   });
-  it("records a spent computer allowance as a warning, not an error report", async () => {
+  it.each([
+    ["a spent computer allowance", new SandboxAllowanceUsedError(), "warn"],
+    ["a provider outage", new SandboxUnresponsiveError("provider down"), "warn"],
+    ["a provider rate limit", new SandboxRateLimitError(), "warn"],
+    ["a computer that did not start", new SandboxUnavailableError(), "warn"],
+    ["an unpaid provider account", new SandboxProviderAccountError(), "error"],
+  ])("records %s as a %s", async (_, error, level) => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     const { row, deps } = fixture();
-    replacement.mockRejectedValueOnce(new SandboxAllowanceUsedError());
+    replacement.mockRejectedValueOnce(error);
     await performComputerUpdate(deps, row.id);
     expect(row.status).toBe("failed");
     const logged = sink.events.filter((event) => event.message === "computer update failed");
-    expect(logged.map((event) => event.level)).toEqual(["warn"]);
+    expect(logged.map((event) => event.level)).toEqual([level]);
   });
   it("checks the computer for idle sleep again after a failed update", async () => {
     const { row, deps, jobs } = fixture();
@@ -151,6 +184,68 @@ describe("background computer maintenance", () => {
     await work;
     expect(row.status).toBe("failed");
     expect(computer.updateMany).toHaveBeenCalledOnce();
+  });
+  it("frees a computer whose interrupted update never settled", async () => {
+    const { row, deps, computer, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenLastCalledWith({
+      where: { id: row.computerId, maintenanceId: row.id },
+      data: { maintenanceId: null },
+    });
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ replaceKey: `computer.sleep:${row.computerId}` }),
+    );
+  });
+  it("keeps a recently interrupted update reserved", async () => {
+    const { row, deps, computer, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 59 * 60_000);
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("interrupted");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+  it("keeps the outcome of a worker that settles before the release", async () => {
+    const { row, deps, computer, computerUpdate, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    const select = computerUpdate.findMany.getMockImplementation();
+    let selected = 0;
+    computerUpdate.findMany.mockImplementation(async (args) => {
+      const found = (await select?.(args)) ?? [];
+      selected += found.length;
+      if (found.length) Object.assign(row, { status: "completed", updatedAt: new Date() });
+      return found;
+    });
+    await reconcileComputerUpdates(deps);
+    expect(selected).toBe(1);
+    expect(row.status).toBe("completed");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("reaches stale and abandoned updates behind a backlog of queued ones", async () => {
+    const { row, rows, deps, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    const reserving = { ...row, id: "update-2", status: "reserving", updatedAt: new Date(1) };
+    rows.push(reserving);
+    for (let i = 0; i < 101; i++)
+      rows.push({ ...row, id: `queued-${i}`, status: "queued", updatedAt: new Date(0) });
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("failed");
+    expect(reserving.status).toBe("failed");
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "computer.update", payload: { updateId: "queued-0" } }),
+    );
+  });
+
+  it("frees an abandoned update even when republishing a queued one fails", async () => {
+    const { row, rows, deps, jobs } = fixture("interrupted");
+    row.updatedAt = new Date(Date.now() - 61 * 60_000);
+    rows.push({ ...row, id: "queued-0", status: "queued", updatedAt: new Date(0) });
+    jobs.enqueue.mockRejectedValue(new Error("queue unavailable"));
+    await expect(reconcileComputerUpdates(deps)).rejects.toThrow("queue unavailable");
+    expect(row.status).toBe("failed");
   });
 
   it("rejects a busy computer before publishing an operation", async () => {
@@ -373,6 +468,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -492,6 +588,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -529,6 +626,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -608,6 +706,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,

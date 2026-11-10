@@ -167,10 +167,16 @@ export function extractReadableText(html: string, url: string): { title: string;
   return stripHtmlFallback(html);
 }
 
+// Readability runs synchronously and slows sharply on element-heavy pages (tens of seconds past
+// tens of thousands of elements), freezing the server. Bigger pages take the linear fallback.
+const MAX_READABILITY_ELEMENTS = 10_000;
+
 function extractWithReadability(html: string, url: string): { title: string; text: string } | null {
   try {
     const dom = new JSDOM(html, { url });
-    const article = new Readability(dom.window.document).parse();
+    const article = new Readability(dom.window.document, {
+      maxElemsToParse: MAX_READABILITY_ELEMENTS,
+    }).parse();
     if (article?.textContent && article.textContent.length > 0) {
       return {
         title: article.title?.trim() || "Untitled",
@@ -181,6 +187,20 @@ function extractWithReadability(html: string, url: string): { title: string; tex
   } catch {
     return null;
   }
+}
+
+/** Visible text of an HTML document: entities decoded, scripts and styles dropped, blocks on lines. */
+export function htmlToPlainText(html: string): string {
+  // JSDOM runs no scripts and loads nothing unless asked to.
+  const { document } = new JSDOM(html).window;
+  for (const element of document.querySelectorAll("head, script, style, template")) {
+    element.remove();
+  }
+  for (const element of document.querySelectorAll("br")) element.replaceWith("\n");
+  for (const element of document.querySelectorAll("p, div, li, tr, h1, h2, h3, h4, h5, h6")) {
+    element.append("\n");
+  }
+  return normalizeArticleText(document.body?.textContent ?? "");
 }
 
 // These scans give the same result as the obvious regexes (/<title[^>]*>([\s\S]*?)<\/title>/i,

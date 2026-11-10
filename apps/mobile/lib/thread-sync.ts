@@ -1,11 +1,12 @@
-import { isRetryableError } from "@rakazo/core";
+import { useLingui } from "@lingui/react/macro";
+import { isRetryableError, reconcileRefreshedThread } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
-import { mergeMobileSnapshot, mobileThreadRefreshResult, rpc, selectedSpaceId } from "./api";
+import { rpc, selectedSpaceId } from "./api";
 import { onConversationCleared } from "./conversation-cleared";
-import { useI18n } from "./i18n";
 import { isIntegrationsScopeCurrent } from "./integrations-cache";
+import { mobileThreadRefreshResult } from "./mobile-types";
 import { threadRefreshDelayMs } from "./refresh";
 import {
   liveSavedChatsScope,
@@ -38,7 +39,9 @@ export function useThreadSync({
   messageId,
   readOnly,
   foreground,
+  focused,
   sessionEpoch,
+  userId,
   activeBotId,
   activeGroupId,
   readVisibleTarget,
@@ -56,7 +59,10 @@ export function useThreadSync({
   messageId?: string;
   readOnly: boolean;
   foreground: boolean;
+  focused: boolean;
   sessionEpoch: number;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  userId: string;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
   readVisibleTarget: RefObject<string | null>;
@@ -67,7 +73,7 @@ export function useThreadSync({
   refreshMentionBots: () => Promise<unknown>;
   markReadIfVisible: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const {
     snap,
     showingSaved,
@@ -155,9 +161,10 @@ export function useThreadSync({
       snapshotOrigin.current = scope;
       pendingSave.current = null;
       writeSavedThread(scope, savedChatTarget(next), next);
-      commitSnap(
-        mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
-      );
+      // A refresh at the cursor already applied keeps a waiting_takeover its events set. The
+      // computer screen loads its own status, so the thread's copy is not reconciled here.
+      const preserveHistory = expandedHistoryThread.current === next.threadId;
+      commitSnap(reconcileRefreshedThread(snapRef.current, next, null, preserveHistory).snapshot);
       setShowingSaved(false);
     }
     if (isCurrentTarget(targetBotId, targetGroupId)) {
@@ -187,8 +194,10 @@ export function useThreadSync({
     botId,
     groupId,
     foreground,
+    focused,
     readOnly,
     sessionEpoch,
+    userId,
     messageId,
     historyEpoch,
     expandedHistoryThread,
@@ -196,6 +205,7 @@ export function useThreadSync({
     jumpScrollTarget,
     jumpAnchor,
     snapRef,
+    terminalRunIds: history.terminalRunIds,
     readVisibleTarget,
     showSavedThread,
     refresh,
@@ -296,7 +306,7 @@ export function useThreadSync({
     jumpAnchor.current.begin(messageId);
     void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId }).catch(
       (err) => {
-        setError(errorText(err, t("Could not open message")));
+        setError(errorText(err, t`Could not open message`));
       },
     );
   }, [botId, groupId, messageId, sessionEpoch]);

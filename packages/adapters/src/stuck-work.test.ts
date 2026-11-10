@@ -8,6 +8,7 @@ import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
 import { reconcileStuckWork, STUCK_NOTICE_CLAIM_TTL_MS } from "./stuck-work.js";
 
 const now = new Date("2026-09-28T16:00:00.000Z");
+const budget = { timeout: 20_000 };
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -124,6 +125,8 @@ describe("reconcileStuckWork", () => {
         },
       }),
     ]);
+    // The claim and the delivered stamp lock the thread row behind snapshot reads.
+    expect(prisma.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget, budget]);
   });
 
   it("does not send again when this episode was already reminded", async () => {
@@ -429,6 +432,7 @@ describe("reconcileStuckWork", () => {
       }),
       expect.anything(),
     );
+    expect(client.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget]);
   });
 
   it("alerts open apps when work is cancelled, even without a push provider", async () => {
@@ -685,6 +689,7 @@ function noticePrisma(run: ReturnType<typeof candidate>, stamps: NoticeStamp[]) 
       }),
     },
     thread: { update: vi.fn(async () => ({ nextEventSeq: stamps.length + 1 })) },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
@@ -740,9 +745,12 @@ function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?:
         },
       ]),
     },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
   };
   return Object.assign(client, {
-    $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+    $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>, _options?: unknown) =>
+      fn(client),
+    ),
   });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadEnv } from "./env.js";
+import { loadEnv, parseExtraAuthOrigins } from "./env.js";
 
 const base = {
   DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
@@ -453,5 +453,48 @@ describe("web origin", () => {
     const load = () => loadEnv({ ...base, [name]: value });
     expect(load).toThrow(`${name} must be an absolute http(s) URL`);
     expect(load).not.toThrow(value);
+  });
+});
+
+describe("directory provisioning environment", () => {
+  it("stays off without a token and keeps a long one", () => {
+    expect(loadEnv(base).scimBearerToken).toBeUndefined();
+    expect(loadEnv({ ...base, SCIM_BEARER_TOKEN: " " }).scimBearerToken).toBeUndefined();
+    const token = "a".repeat(32);
+    expect(loadEnv({ ...base, SCIM_BEARER_TOKEN: ` ${token} ` }).scimBearerToken).toBe(token);
+  });
+  it.each(["a".repeat(31), `${"a".repeat(16)} ${"a".repeat(16)}`])(
+    "refuses a short or spaced token",
+    (token) => {
+      expect(() => loadEnv({ ...base, SCIM_BEARER_TOKEN: token })).toThrow("SCIM_BEARER_TOKEN");
+    },
+  );
+});
+
+describe("RAKAZO_EXTRA_AUTH_ORIGINS", () => {
+  it("is empty when unset or blank", () => {
+    expect(loadEnv(base).extraAuthOrigins).toEqual([]);
+    expect(parseExtraAuthOrigins(" , ")).toEqual([]);
+  });
+
+  it("keeps https origins and http on loopback or a private network, normalized", () => {
+    expect(
+      parseExtraAuthOrigins(
+        "https://host.tailnet.ts.net/, http://192.168.1.20:5173 ,http://100.64.1.2,http://localhost:5173,https://host.tailnet.ts.net",
+      ),
+    ).toEqual([
+      "https://host.tailnet.ts.net",
+      "http://192.168.1.20:5173",
+      "http://100.64.1.2",
+      "http://localhost:5173",
+    ]);
+  });
+
+  it("drops invalid entries", () => {
+    expect(
+      parseExtraAuthOrigins(
+        "http://example.com,ftp://host,rakazo://,not a url,https://host/path,https://u:p@host,*",
+      ),
+    ).toEqual([]);
   });
 });

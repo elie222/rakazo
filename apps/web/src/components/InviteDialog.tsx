@@ -1,6 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
-import { BOT_COLORS, DEFAULT_NEW_BOT_AVATAR_SET, INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
+import { DEFAULT_NEW_BOT_AVATAR_SET, INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
+import { INVITE_AVATAR_COLORS } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -17,8 +18,6 @@ type Referral = NonNullable<BillingStatus["referral"]>;
 // Named for the copy's placeholder.
 const weeks = INVITED_TRIAL_WEEKS;
 
-const AVATAR_COLORS = BOT_COLORS.slice(0, 5);
-
 export function InviteDialog({
   referral,
   open,
@@ -34,7 +33,7 @@ export function InviteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <div aria-hidden="true" className="flex items-center justify-center gap-1 pt-2">
-          {AVATAR_COLORS.map((color, index) => (
+          {INVITE_AVATAR_COLORS.map((color, index) => (
             <BotAvatar
               key={color}
               identity={`invite-${index}`}
@@ -49,7 +48,7 @@ export function InviteDialog({
             <Trans>Give a friend {weeks} weeks free</Trans>
           </DialogTitle>
         </DialogHeader>
-        <ul className="flex flex-col gap-3 text-sm">
+        <ul className="flex flex-col gap-3 text-body">
           <li className="flex items-center gap-3">
             <Gift aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
             <Trans>They get {weeks} weeks free.</Trans>
@@ -60,7 +59,7 @@ export function InviteDialog({
           </li>
         </ul>
         {referral.rewards > 0 ? (
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-body text-muted-foreground">
             <Plural
               value={referral.rewards}
               one="# free month earned"

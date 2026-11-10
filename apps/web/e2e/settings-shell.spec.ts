@@ -9,7 +9,7 @@ test("changing language updates settings overflow without resizing", async ({ pa
   // Below the desktop breakpoint, where the section list scrolls sideways.
   await page.setViewportSize({ width: 640, height: 700 });
   const nav = settings.getByTestId("settings-nav");
-  const next = settings.getByRole("button", { name: "Next settings sections" });
+  const next = settings.getByRole("button", { name: "Nächste Einstellungsbereiche" });
   const overflow = () => nav.evaluate((node) => node.scrollWidth - node.clientWidth);
   const english = await overflow();
 
@@ -35,20 +35,21 @@ test("narrow settings reveals the active section and offers scroll controls", as
   const stamp = Date.now();
   await signup(page, `settings-narrow-${stamp}@rakazo.test`, "password12", "Settings");
   await completeOnboarding(page);
-  const settings = await openUserSettings(page, "usage");
+  const settings = await openUserSettings(page, "organization");
   const nav = settings.getByTestId("settings-nav");
-  const usage = settings.getByTestId("settings-nav-usage");
+  // The last section, so the nav has nothing further to scroll to.
+  const last = settings.getByTestId("settings-nav-organization");
   const previous = settings.getByRole("button", { name: "Previous settings sections" });
   const next = settings.getByRole("button", { name: "Next settings sections" });
 
   for (const width of [640, 390]) {
     await page.setViewportSize({ width, height: 700 });
-    await expect(usage).toHaveAttribute("aria-current", "page");
+    await expect(last).toHaveAttribute("aria-current", "page");
     // Deep links and resizing must reveal the whole selected section.
     await expect
       .poll(async () => {
         const viewport = await nav.boundingBox();
-        const active = await usage.boundingBox();
+        const active = await last.boundingBox();
         return Boolean(
           viewport &&
             active &&
@@ -78,14 +79,14 @@ test("narrow settings reveals the active section and offers scroll controls", as
     expect(await settings.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
     await expect(settings.getByRole("button", { name: "Close user settings" })).toBeVisible();
     await captureScreenshot(page, testInfo, `settings-narrow-scrolled-${width}`);
-    await usage.click();
-    await expect(settings).toHaveAttribute("data-settings-section", "usage");
+    await last.click();
+    await expect(settings).toHaveAttribute("data-settings-section", "organization");
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(previous).toBeHidden();
   await expect(next).toBeHidden();
-  await expect(usage).toBeVisible();
-  await expect(usage).toHaveAttribute("aria-current", "page");
+  await expect(last).toBeVisible();
+  await expect(last).toHaveAttribute("aria-current", "page");
 });
 
 test("settings shell is two-pane and deep-links Models Memory Voice Usage", async ({
@@ -168,6 +169,10 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
+  const voice = settings.getByTestId("voice-settings");
+  await voice.getByLabel("Provider", { exact: true }).selectOption("xai");
+  await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);
@@ -206,7 +211,13 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "memory-honcho-user-peer-reserved");
   await userPeer.fill("user-alex");
+  await expect(
+    memory.getByText("Recall from this peer; save to Rakazo’s own peers."),
+  ).toBeVisible();
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await memory
+    .getByText("Recall from this peer; save to Rakazo’s own peers.")
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-honcho-filled");
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");

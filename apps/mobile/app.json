@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.12",
+    "version": "1.0.14",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -53,9 +53,20 @@
           "microphonePermission": "Rakazo uses the microphone for voice calls with your bots."
         }
       ],
+      "./plugins/with-share-extension",
       [
         "expo-sharing",
         {
+          "ios": {
+            "enabled": true,
+            "appGroupId": "group.com.rakazo.app",
+            "activationRule": {
+              "supportsText": true,
+              "supportsWebUrlWithMaxCount": 1,
+              "supportsImageWithMaxCount": 10,
+              "supportsFileWithMaxCount": 10
+            }
+          },
           "android": {
             "enabled": true,
             "singleShareMimeTypes": [
@@ -79,10 +90,9 @@
         }
       ],
       "./plugins/with-worklets-headers",
-      "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext",
+      "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
-      "./plugins/with-android-r8",
       "./plugins/with-app-intents"
     ],
     "locales": {
@@ -138,6 +148,13 @@
                 {
                   "targetName": "RakazoWidgets",
                   "bundleIdentifier": "com.rakazo.app.widgets"
+                },
+                {
+                  "targetName": "expo-sharing-extension",
+                  "bundleIdentifier": "com.rakazo.app.expo-sharing-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                  }
                 },
                 {
                   "targetName": "AgentNotifications",

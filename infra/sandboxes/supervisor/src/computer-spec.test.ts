@@ -37,6 +37,7 @@ import {
   controlPortPublicationMatches,
   homeVolumeMatches,
   hostComputerUser,
+  isIpv6NetworkUnavailable,
   isRegistryQualifiedImage,
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
@@ -394,6 +395,7 @@ describe("graphical computer spec", () => {
       Name: computerNetworkNameFor("bot_1"),
       Driver: "bridge",
       CheckDuplicate: true,
+      EnableIPv6: true,
       Labels: { "rakazo.computerOwner": "owner", "rakazo.botId": "bot_1" },
     });
     expect(open).not.toHaveProperty("Options");
@@ -406,6 +408,65 @@ describe("graphical computer spec", () => {
     // The bridge name differs from the network name so `docker network` output
     // still shows the readable rakazo-computer-* name while iptables matches the interface.
     expect(restricted.Options?.["com.docker.network.bridge.name"]).not.toBe(restricted.Name);
+  });
+
+  it("enables IPv6 with automatic subnets and can leave it out for daemons without it", () => {
+    // No IPAM config: the daemon allocates its own IPv6 ULA /64 (Docker 27+),
+    // unique per network, which keeps the payload daemon-agnostic.
+    expect(computerNetworkCreateOptions("bot_1", "owner", "open")).not.toHaveProperty("IPAM");
+
+    // The IPv4-only payload for daemons that refuse the dual-stack network
+    // (Docker 26, Docker-in-Docker without ip6_tables, IPv6 off in the kernel).
+    expect(computerNetworkCreateOptions("bot_1", "owner", "open", false)).not.toHaveProperty(
+      "EnableIPv6",
+    );
+  });
+
+  it("keeps restricted networks IPv4-only with their named bridge", () => {
+    // Restricted egress is enforced and startup-verified for IPv4 only
+    // (infra/compose/restrict-computer-egress.sh, egress-probe.ts); IPv6 would
+    // leave a restricted computer paths the ruleset does not cover.
+    const restricted = computerNetworkCreateOptions("bot_1", "owner", "restricted");
+    expect(restricted).not.toHaveProperty("EnableIPv6");
+    expect(restricted.Options).toEqual({
+      "com.docker.network.bridge.name": computerBridgeNameFor("bot_1"),
+    });
+  });
+
+  it("falls back for every IPv6 capability error the daemon wording uses", () => {
+    // Transient failures without IPv6 in them must surface, so the next start
+    // retries the dual-stack create.
+    expect(isIpv6NetworkUnavailable(new Error("daemon busy"))).toBe(false);
+    expect(isIpv6NetworkUnavailable(new Error("ETIMEDOUT"))).toBe(false);
+
+    // The daemon's IPv6 capability errors across releases, all matched broadly
+    // because the wording changes between releases.
+    const unavailable = [
+      // Engine 26, no IPv6 pool (libnetwork/ipam/allocator.go at v26.1.4).
+      "could not find an available, non-overlapping IPv6 address pool among the defaults to assign to the network",
+      // IPv6 off in the kernel (drivers/bridge/setup_ipv6_linux.go), wrapped by
+      // the daemon ("failed to create network ...").
+      "Error response from daemon: failed to create network rakazo-computer-bot_1: Cannot read IPv6 setup for bridge br-x: open /proc/sys/net/ipv6/conf/br-x/disable_ipv6: no such file or directory",
+      "Unable to enable IPv6 addresses on bridge: ...",
+      // ip6tables disabled in the daemon config (setup_ip_tables_linux.go at v26.1.4).
+      "Cannot program chains, EnableIP6Tables is disabled",
+      // Newer engines name ip6tables and forwarding directly.
+      "ip6tables is missing",
+      "ip6tables not found",
+      "IPv6 global forwarding is disabled",
+    ];
+    for (const message of unavailable) {
+      expect(isIpv6NetworkUnavailable(new Error(message)), message).toBe(true);
+    }
+
+    // A transient error that names ip6tables (fork pressure running the binary)
+    // falls back too. That is bounded: a stop gives the network back and the
+    // next start creates it again, retrying IPv6 (see reclaimComputerNetwork).
+    expect(
+      isIpv6NetworkUnavailable(
+        new Error("fork/exec /usr/sbin/ip6tables: resource temporarily unavailable"),
+      ),
+    ).toBe(true);
   });
 
   it("lists prior network name variants for cleanup", () => {
@@ -500,6 +561,101 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/rakazo-focus-or-launch/);
   });
 
+  it("creates every browser policy directory before copying the policy into it", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+    // COPY --chmod=644 gives the directories it creates that mode too, and the browser user
+    // then cannot enter them, so the browser silently runs without the policy.
+    const created = dockerfile.match(/mkdir -p (\/etc\/rakazo\/fluxbox [^\\\n]+)/)?.[1]?.split(" ");
+    const targets = [...dockerfile.matchAll(/COPY --chmod=644 browser-policy\.json (\S+)\//g)].map(
+      (match) => match[1],
+    );
+    expect(targets).toEqual([
+      "/etc/chromium/policies/managed",
+      "/etc/brave/policies/managed",
+      "/etc/opt/chrome/policies/managed",
+    ]);
+    for (const target of targets) expect(created).toContain(target);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "fetches Google's signing key only for a Google Chrome build on amd64",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+      const stage = dockerfile.split(/^FROM /m).find((part) => / AS chrome-keyring\n/.test(part));
+      const run = stage
+        ?.replace(/\\\n/g, " ")
+        .split("\n")
+        .filter((line) => line.startsWith("RUN "))
+        .at(-1)
+        ?.slice(4);
+      expect(run).toBeTruthy();
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-chrome-keyring-"));
+      const bin = path.join(temp, "bin");
+      const keyring = path.join(temp, "google-chrome.gpg");
+      const calls = path.join(temp, "calls");
+      mkdirSync(bin);
+      // Every network step records itself; the download fails as if Google were unreachable.
+      for (const [name, body] of [
+        ["dpkg", 'printf "%s\\n" "$RAKAZO_TEST_ARCH"'],
+        ["apt-security.sh", 'printf "apt-security\\n" >> "$RAKAZO_TEST_CALLS"'],
+        ["apt-get", 'printf "apt-get\\n" >> "$RAKAZO_TEST_CALLS"'],
+        ["curl", 'printf "curl\\n" >> "$RAKAZO_TEST_CALLS"; exit 7'],
+        ["gpg", 'printf "gpg\\n" >> "$RAKAZO_TEST_CALLS"'],
+      ] as const) {
+        writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`);
+        chmodSync(path.join(bin, name), 0o755);
+      }
+      const build = (browser: string, arch: string) => {
+        rmSync(keyring, { force: true });
+        writeFileSync(calls, "");
+        const result = spawnSync(
+          "sh",
+          [
+            "-c",
+            run!
+              .replaceAll("/google-chrome.gpg", keyring)
+              .replaceAll("/tmp/apt-security.sh", path.join(bin, "apt-security.sh"))
+              .replaceAll("/tmp/google.pub", path.join(temp, "google.pub")),
+          ],
+          {
+            env: {
+              ...process.env,
+              BROWSER: browser,
+              PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+              RAKAZO_TEST_ARCH: arch,
+              RAKAZO_TEST_CALLS: calls,
+            },
+            encoding: "utf8",
+          },
+        );
+        return {
+          status: result.status,
+          calls: readFileSync(calls, "utf8").trim().split("\n").filter(Boolean),
+          stderr: result.stderr,
+        };
+      };
+      try {
+        for (const browser of ["chromium", "brave"]) {
+          // No network at all, and an empty keyring for the image's COPY.
+          expect(build(browser, "amd64"), browser).toMatchObject({ status: 0, calls: [] });
+          expect(readFileSync(keyring, "utf8")).toBe("");
+        }
+        // Google publishes no Chrome for arm64: the build says so instead of falling back.
+        const arm = build("chrome", "arm64");
+        expect(arm).toMatchObject({ status: 1, calls: [] });
+        expect(arm.stderr).toMatch(/amd64 only/);
+        expect(build("chrome", "amd64")).toMatchObject({
+          status: 7,
+          calls: ["apt-security", "apt-get", "apt-get", "curl"],
+        });
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
   it.skipIf(process.platform === "win32")(
     "finds Google Chrome and passes over Ubuntu's snap chromium",
     () => {
@@ -585,6 +741,22 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/import openpyxl/);
   });
 
+  it("ships search and inspection tools agents reach for", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+    expect(dockerfile).toMatch(/\bripgrep\b/);
+    expect(dockerfile).toMatch(/\bfd-find\b/);
+    // "file" is a common word in the Dockerfile; anchor it to the package list.
+    expect(dockerfile).toMatch(/^ {4}file \\/m);
+    expect(dockerfile).toMatch(/\bsqlite3\b/);
+    // Debian names fd-find's binary fdfind; the image exposes it as fd.
+    expect(dockerfile).toMatch(/ln -s \/usr\/bin\/fdfind \/usr\/local\/bin\/fd/);
+    expect(dockerfile).toMatch(/rg --version/);
+    expect(dockerfile).toMatch(/fd --version/);
+    expect(dockerfile).toMatch(/file --version/);
+    expect(dockerfile).toMatch(/sqlite3 --version/);
+  });
+
   it.skipIf(process.platform === "win32")(
     "delivers desktop menu exec arguments intact through /bin/sh",
     () => {
@@ -660,7 +832,10 @@ describe("graphical computer spec", () => {
           "[begin] (Desktop)\n[exec] (Browser) {/tmp/rakazo/browser-launch-1}\n[end]\n",
         );
         writeFileSync(initPath, init);
-        const lines = generated.replaceAll("/tmp/fluxbox-home-1", fluxHome).split("\n");
+        const lines = generated
+          .replaceAll("/tmp/fluxbox-home-1", fluxHome)
+          .replaceAll("/etc/rakazo/fluxbox/menu", path.join(temp, "no-image-menu"))
+          .split("\n");
         const start = lines.indexOf(`mkdir -p ${fluxHome}/.fluxbox`);
         const end = lines.findIndex((line, index) => index > start && line === "fi");
         expect(start).toBeGreaterThanOrEqual(0);
@@ -791,6 +966,55 @@ describe("graphical computer spec", () => {
         expect(explicit).not.toContain(
           `--user-data-dir=${home}/.browser-profiles/chromium-screen-3`,
         );
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "offers pages the account's language on new and saved profiles",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-language-"));
+      const bin = path.join(temp, "bin");
+      const capture = path.join(temp, "args");
+      mkdirSync(bin);
+      const chromium = path.join(bin, "chromium");
+      writeFileSync(
+        chromium,
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+        '#!/bin/sh\nprintf "LANGUAGE=%s\\n" "${LANGUAGE-unset}" > "$RAKAZO_TEST_ARGS"\nprintf "%s\\n" "$@" >> "$RAKAZO_TEST_ARGS"\n',
+      );
+      chmodSync(chromium, 0o755);
+      const run = (language: string | undefined) => {
+        const { LANGUAGE: _host, ...env } = process.env;
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser")], {
+          env: {
+            ...env,
+            ...(language === undefined ? {} : { LANGUAGE: language }),
+            DISPLAY: ":1",
+            HOME: path.join(temp, "home"),
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        const [first, ...args] = readFileSync(capture, "utf8").trim().split(/\r?\n/);
+        return { language: first, accept: args.filter((arg) => arg.startsWith("--accept-lang")) };
+      };
+      try {
+        // Unknown: the browser's own default, as before.
+        expect(run(undefined)).toEqual({ language: "LANGUAGE=unset", accept: [] });
+        // Chrome reads LANGUAGE itself; --accept-lang also reaches a profile saved in English.
+        expect(run("pl")).toEqual({
+          language: "LANGUAGE=pl",
+          accept: ["--accept-lang=pl,en-US,en"],
+        });
+        expect(run("pt_BR:pt").accept).toEqual(["--accept-lang=pt-BR,pt,en-US,en"]);
+        expect(run("en-GB").accept).toEqual(["--accept-lang=en-GB,en"]);
+        for (const value of ["", "pl;id", "-x", "pl pl"]) expect(run(value).accept).toEqual([]);
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }
@@ -1553,6 +1777,8 @@ describe("graphical computer spec", () => {
               "spec = importlib.util.spec_from_file_location('control', sys.argv[1])",
               "module = importlib.util.module_from_spec(spec)",
               "spec.loader.exec_module(module)",
+              // The fixture launcher lives outside the image's trusted command folders.
+              "module.CHILD_PATH = sys.argv[3] + ':' + module.CHILD_PATH",
               "argv = ['env', 'DISPLAY=:1', 'rakazo-browser', sys.argv[2]]",
               "try:",
               "    module.run_control_argv(argv, ':1')",
@@ -1564,6 +1790,7 @@ describe("graphical computer spec", () => {
             ].join("\n"),
             path.join(root, "control.py"),
             "https://example.com/unanswered",
+            bin,
           ],
           { env: launchEnv, encoding: "utf8" },
         );

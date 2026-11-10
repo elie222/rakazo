@@ -11,3 +11,8 @@ export function localModelIds(env: NodeJS.ProcessEnv = process.env): string[] {
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 }
+
+/** Bearer key for a local server that requires one; unset sends the placeholder `local`. */
+export function localModelsApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.RAKAZO_LOCAL_MODELS_API_KEY?.trim() || undefined;
+}

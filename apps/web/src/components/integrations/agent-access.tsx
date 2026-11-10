@@ -65,7 +65,7 @@ export function AgentAccessControl({
     });
 
   return (
-    <div data-testid="agent-access" className="flex flex-wrap items-center gap-1 text-xs">
+    <div data-testid="agent-access" className="flex flex-wrap items-center gap-1 text-label">
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -73,7 +73,7 @@ export function AgentAccessControl({
               variant="ghost"
               size="sm"
               disabled={disabled}
-              className="h-7 gap-1 px-1.5 text-xs font-normal text-foreground"
+              className="h-7 gap-1 px-1.5 text-label font-normal text-foreground"
             />
           }
         >

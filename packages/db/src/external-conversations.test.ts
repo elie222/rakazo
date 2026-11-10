@@ -32,7 +32,7 @@ describe("createExternalConversationRepos", () => {
         updatedAt: new Date("2026-09-01T00:00:00.000Z"),
         thread: {
           id: "thread-1",
-          unread: true,
+          reads: [{ unread: true }],
         },
       },
     ]);
@@ -62,7 +62,7 @@ describe("createExternalConversationRepos", () => {
       $queryRaw: queryRaw,
     } as never);
 
-    await expect(repos.listForSpaces(actor, ["space-1"])).resolves.toEqual([
+    await expect(repos.listForSpaces(["space-1"], "user-1")).resolves.toEqual([
       expect.objectContaining({
         id: "ext-1",
         threadId: "thread-1",
@@ -73,10 +73,7 @@ describe("createExternalConversationRepos", () => {
     ]);
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          spaceId: { in: ["space-1"] },
-          userId: "user-1",
-        }),
+        where: expect.objectContaining({ spaceId: { in: ["space-1"] } }),
       }),
     );
   });
@@ -87,7 +84,7 @@ describe("createExternalConversationRepos", () => {
       externalConversation: { findMany: vi.fn() },
       $queryRaw: queryRaw,
     } as never);
-    await expect(repos.listForSpaces(actor, [])).resolves.toEqual([]);
+    await expect(repos.listForSpaces([], "user-1")).resolves.toEqual([]);
     expect(queryRaw).not.toHaveBeenCalled();
   });
 

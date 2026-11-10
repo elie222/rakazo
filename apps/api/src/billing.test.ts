@@ -1,4 +1,5 @@
 import type { BillingProvider } from "@rakazo/adapter-kit";
+import { BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -14,7 +15,10 @@ const price = { amount: 1000, currency: "usd", interval: "month" as const, inter
 
 function service(getPrice: BillingProvider["getPrice"], role = "owner") {
   const prisma = {
-    space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }) },
+    space: {
+      findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     member: {
       findUnique: vi.fn().mockResolvedValue({ role }),
       count: vi.fn().mockResolvedValue(3),
@@ -31,6 +35,7 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
   } as unknown as BillingProvider;
   return {
     provider,
+    prisma,
     billing: createBillingService({ prisma, provider, webOrigin: "https://app.example.com" }),
   };
 }
@@ -57,6 +62,19 @@ describe("billing status", () => {
     await expect(billing.endTrial(actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(provider.endTrial).not.toHaveBeenCalled();
   });
+
+  it("answers payment required when the card is not charged", async () => {
+    const { billing, provider, prisma } = service(async () => price);
+    vi.mocked(prisma.billingAccount.findUnique).mockResolvedValue({
+      organizationId: "org-1",
+      customerId: "cus-1",
+    } as never);
+    vi.mocked(provider.endTrial!).mockRejectedValue(new BillingPaymentNotCompletedError());
+    await expect(billing.endTrial(actor)).rejects.toMatchObject({
+      code: "PAYMENT_REQUIRED",
+      status: 402,
+    });
+  });
 });
 
 describe("model credit checkout", () => {
@@ -74,6 +92,7 @@ describe("model credit checkout", () => {
       },
       billingAccount: {
         findUnique: vi.fn().mockResolvedValue(account),
+        findFirst: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       modelCreditAccount: {

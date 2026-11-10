@@ -4,7 +4,13 @@ import type { ComponentProps } from "react";
 import { act, createContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 const surfaces = vi.hoisted(() => [] as Record<string, unknown>[]);
 
@@ -69,11 +75,13 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 

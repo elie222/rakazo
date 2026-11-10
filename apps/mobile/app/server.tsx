@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow } from "@rakazo/contracts";
 import { serverHeadersFromRows } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
@@ -7,25 +8,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderRowsEditor } from "../components/header-rows-editor";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
+import { currentApiBase } from "../lib/api";
+import { resetApiBase, saveApiBase } from "../lib/api-server";
 import {
   apiBaseWarning,
-  currentApiBase,
   defaultApiBase,
   normalizeApiBase,
   probeApiBase,
-  resetApiBase,
-  saveApiBase,
   usesCustomApiBase,
-} from "../lib/api";
-import { useI18n } from "../lib/i18n";
+} from "../lib/endpoint";
 import { useMobileTokens } from "../lib/native";
 import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const current = currentApiBase();
@@ -56,10 +56,11 @@ export default function ServerScreen() {
 
   async function save() {
     if (saving.current) return;
+    // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      setPending(true);
+      setError(null);
       let headers: Record<string, string>;
       try {
         headers = serverHeadersFromRows(headerRows);
@@ -73,6 +74,10 @@ export default function ServerScreen() {
         setError(probed.error);
         return;
       }
+      // Asked once the switch can happen. Only a different server clears the device; the same
+      // address saves without a switch.
+      if (probed.url !== current && !(await confirmUnsentSendLoss("server-switch"))) return;
+      if (!active.current) return;
       const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
         setError(saved.error);
@@ -87,10 +92,12 @@ export default function ServerScreen() {
 
   async function restoreDefault() {
     if (saving.current) return;
+    // Held across the confirmation, like save, so the two cannot run a switch in parallel.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      if (usesCustomApiBase(current) && !(await confirmUnsentSendLoss("server-switch"))) return;
+      setPending(true);
+      setError(null);
       const saved = await resetApiBase();
       if (!active.current) return;
       if (!saved.ok) {
@@ -108,13 +115,9 @@ export default function ServerScreen() {
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.background }}>
       <Stack.Screen
         options={{
-          title: t("Server"),
-          ...cancelHeaderOptions(t("Cancel"), close),
-          ...trailingHeaderOptions(
-            pending ? t("Checking…") : t("Save"),
-            () => void save(),
-            pending,
-          ),
+          title: t`Server`,
+          ...cancelHeaderOptions(t`Cancel`, close),
+          ...trailingHeaderOptions(pending ? t`Checking…` : t`Save`, () => void save(), pending),
         }}
       />
       <KeyboardAvoidingView
@@ -129,7 +132,7 @@ export default function ServerScreen() {
         >
           <TextInput
             testID="server-address"
-            accessibilityLabel={t("Server")}
+            accessibilityLabel={t`Server`}
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
@@ -169,7 +172,7 @@ export default function ServerScreen() {
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton
               disabled={pending}
-              label={t("Use default server")}
+              label={t`Use default server`}
               onPress={() => void restoreDefault()}
               prominence="plain"
               style={{ marginTop: 28, alignSelf: "center" }}

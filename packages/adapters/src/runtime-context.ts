@@ -459,6 +459,7 @@ export function createRuntimeContextPolicy(
         const insertIndex = messages[0]?.role === "system" ? 1 : 0;
         messages.splice(insertIndex, 0, summary);
         protectedIndexes = protectedIndexes.map((index) => index + Number(index >= insertIndex));
+        if (currentIndex >= insertIndex) currentIndex += 1;
       }
       protectedIndexes.push(messages.indexOf(summary));
     }
@@ -551,6 +552,11 @@ export function createRuntimeContextPolicy(
       cacheWarmth: predictedCache,
       recentExchanges:
         retainShortHistory || standaloneHistoryFallback ? messages.length : 8 + laterUserMessages,
+      // Eight exchanges is a floor: a request often depends on a decision made before them
+      // without sounding like a question about the past, so the bot never thinks to search.
+      ...(strategy === "retrieval"
+        ? { earlier: { before: currentIndex, tokens: shortHistoryAllowance } }
+        : {}),
     });
     const shortenedStructuredResults = selected.messages.filter((message) => {
       if (message.role !== "toolResult") return false;

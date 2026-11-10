@@ -19,23 +19,29 @@ import {
   ContentKeyRing,
   claimOrganizationForDeletion,
   createDb,
+  deleteClaimedSpace,
   extendByokFreePeriod,
   IsolationError,
   installAuditEventStore,
   LocalKeyProvider,
   personalOrganizationIds,
+  requireMembership,
   runAsSystem,
+  setOrganizationDeletionLease,
 } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryObjectStorage } from "../../../packages/adapters/src/object-storage.test-support.js";
-import { deleteAccountContent } from "./account-deletion.js";
+import {
+  deleteAccountContent,
+  deleteOrganization,
+  finishStalledOrganizationDeletions,
+} from "./account-deletion.js";
 import { createBillingService } from "./billing.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("organizations (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}-${randomBytes(3).toString("hex")}`;
@@ -206,6 +212,54 @@ describePostgres("organizations (PostgreSQL)", () => {
     ]);
   });
 
+  it("opens where the user last worked, not where a background helper finished later", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const finishedRun = async (spaceId: string, trigger: string, completedAt: Date) => {
+      const bot = await system.bot.create({
+        data: { spaceId, userId: ada.userId, name: trigger, color: "blue" },
+      });
+      const thread = await system.thread.create({
+        data: { spaceId, userId: ada.userId, botId: bot.id },
+      });
+      const task = await system.task.create({
+        data: {
+          spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          userId: ada.userId,
+          prompt: trigger,
+          status: "completed",
+        },
+      });
+      await system.run.create({
+        data: {
+          spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          userId: ada.userId,
+          status: "completed",
+          trigger,
+          completedAt,
+        },
+      });
+    };
+    const start = Date.now();
+    await finishedRun(ada.spaceId, "user", new Date(start));
+    // A helper started in Work and the turn relaying its result finish after the user moved on.
+    await finishedRun(work.id, "helper", new Date(start + 1_000));
+    await finishedRun(work.id, "helper_result", new Date(start + 2_000));
+    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+      spaceId: ada.spaceId,
+    });
+
+    await finishedRun(work.id, "user", new Date(start + 3_000));
+    await expect(requireMembership(system, ada.userId)).resolves.toMatchObject({
+      spaceId: work.id,
+    });
+  });
+
   it("caps organizations at ten per person, even when two creates race", async () => {
     const ada = await signup();
     for (let index = 2; index <= 9; index += 1)
@@ -353,7 +407,7 @@ describePostgres("organizations (PostgreSQL)", () => {
       "provider unavailable",
     );
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
-      deletionClaimId: `organization-deletion:${work.id}`,
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
     });
     expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
 
@@ -362,6 +416,293 @@ describePostgres("organizations (PostgreSQL)", () => {
 
     await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
     expect(sandbox.destroyed).toEqual([`sb-retry-${suffix}`]);
+  });
+
+  const sweep = (signal = new AbortController().signal) =>
+    finishStalledOrganizationDeletions(deps())(signal);
+
+  /** Polls with real timers, which the lease tests leave unfaked. */
+  async function until(check: () => Promise<boolean> | boolean) {
+    for (let attempt = 0; attempt < 500; attempt++) {
+      if (await check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("condition not reached");
+  }
+
+  /**
+   * Ages the attempt's lease past the claim timeout, as if it had last been renewed minutes ago,
+   * then lets one renewal fire on the faked interval and waits for it to land.
+   */
+  async function outlastClaimTimeout(organizationId: string) {
+    const aged = new Date(Date.now() - 10 * 60_000);
+    await system.space.updateMany({ where: { organizationId }, data: { deletingAt: aged } });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await until(async () => {
+      const space = await system.space.findUniqueOrThrow({ where: { id: organizationId } });
+      return space.deletingAt!.getTime() > aged.getTime();
+    });
+  }
+
+  async function failRemoval(actor: Actor, organizationId: string, providerRef: string) {
+    sandbox.failDestroy.add(providerRef);
+    await expect(client(actor).organizations.remove({ organizationId })).rejects.toThrow(
+      "provider unavailable",
+    );
+    sandbox.failDestroy.delete(providerRef);
+  }
+
+  const deletedAudits = (organizationId: string) =>
+    system.auditEvent.count({ where: { organizationId, action: "organization.deleted" } });
+
+  it("finishes a deletion that stopped part way in the background", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await botWithComputer(work.id, ada.userId, `sb-sweep-${suffix}`);
+    await failRemoval(ada, work.id, `sb-sweep-${suffix}`);
+
+    await sweep();
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.destroyed).toContain(`sb-sweep-${suffix}`);
+    await expect(deletedAudits(work.id)).resolves.toBe(1);
+  });
+
+  it("starts no second deletion beside a request whose provider call outlasts the claim timeout", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-held-rpc-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
+    const release = sandbox.hold(ref);
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const removing = client(ada).organizations.remove({ organizationId: work.id });
+      await until(() => sandbox.started.includes(ref));
+      await outlastClaimTimeout(work.id);
+
+      await sweep();
+      await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+        "already in progress",
+      );
+      release();
+      await removing;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(cancel.mock.calls.filter(([id]) => id === work.id)).toHaveLength(1);
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+    await expect(deletedAudits(work.id)).resolves.toBe(1);
+  });
+
+  it("lets one sweep at a time resume a deletion whose provider call outlasts the claim timeout", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-held-sweep-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    await failRemoval(ada, work.id, ref);
+    const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
+    const release = sandbox.hold(ref);
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const first = sweep();
+      await until(() => sandbox.started.includes(ref));
+      await outlastClaimTimeout(work.id);
+
+      await sweep();
+      release();
+      await first;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(cancel.mock.calls.filter(([id]) => id === work.id)).toHaveLength(1);
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+    await expect(deletedAudits(work.id)).resolves.toBe(1);
+  });
+
+  it("finishes one stalled deletion while another's provider call hangs", async () => {
+    const ada = await signup();
+    const hung = await client(ada).organizations.create({ name: "Hung" });
+    const other = await client(ada).organizations.create({ name: "Other" });
+    const hungRef = `sb-hung-${suffix}`;
+    await botWithComputer(hung.id, ada.userId, hungRef);
+    await botWithComputer(other.id, ada.userId, `sb-other-${suffix}`);
+    await failRemoval(ada, hung.id, hungRef);
+    await failRemoval(ada, other.id, `sb-other-${suffix}`);
+    const release = sandbox.hold(hungRef);
+    const stopping = new AbortController();
+
+    const running = sweep(stopping.signal);
+    await until(async () => !(await system.organization.findUnique({ where: { id: other.id } })));
+    await until(() => sandbox.started.includes(hungRef));
+    stopping.abort();
+    await running;
+
+    // Cut off mid-call, the attempt keeps its lease until it lapses.
+    expect(await system.space.findUnique({ where: { id: hung.id } })).toMatchObject({
+      deletionClaimId: expect.stringContaining(`organization-deletion:${hung.id}:`),
+      deletingAt: expect.any(Date),
+    });
+    const space = await system.space.findUniqueOrThrow({ where: { id: hung.id } });
+    expect(space.deletingAt!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    release();
+    await until(() => sandbox.destroyed.includes(hungRef));
+  });
+
+  it("starts no teardown from an attempt whose billing call returns after its deadline", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-late-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    let billingCalled!: () => void;
+    const called = new Promise<void>((resolve) => {
+      billingCalled = resolve;
+    });
+    let returnBilling!: () => void;
+    const held = new Promise<void>((resolve) => {
+      returnBilling = resolve;
+    });
+    const deadline = new AbortController();
+    const late = runAsSystem("an attempt cut off at its deadline", () =>
+      deleteOrganization(
+        {
+          ...deps(),
+          billing: {
+            cancelForDeletedOrganization: async () => {
+              billingCalled();
+              await held;
+            },
+          },
+        } as Parameters<typeof deleteOrganization>[0],
+        ada.userId,
+        work.id,
+        deadline.signal,
+      ),
+    );
+    await called;
+    deadline.abort(new Error("Organization deletion timed out"));
+    await expect(late).rejects.toThrow("timed out");
+    // Its lease lapses, and a retry takes over and starts tearing the bot down.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+    });
+    const release = sandbox.hold(ref);
+    const retry = client(ada).organizations.remove({ organizationId: work.id });
+    await until(() => sandbox.started.includes(ref));
+
+    returnBilling();
+    // Give the cut-off attempt time to go on, if it would.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+    release();
+    await retry;
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+  });
+
+  it("starts no teardown from an attempt whose claim another attempt took while billing waited", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    const ref = `sb-lost-${suffix}`;
+    await botWithComputer(work.id, ada.userId, ref);
+    let billingCalled!: () => void;
+    const called = new Promise<void>((resolve) => {
+      billingCalled = resolve;
+    });
+    let returnBilling!: () => void;
+    const held = new Promise<void>((resolve) => {
+      returnBilling = resolve;
+    });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const stale = runAsSystem("an attempt whose renewals stopped landing", () =>
+        deleteOrganization(
+          {
+            ...deps(),
+            billing: {
+              cancelForDeletedOrganization: async () => {
+                billingCalled();
+                await held;
+              },
+            },
+          } as Parameters<typeof deleteOrganization>[0],
+          ada.userId,
+          work.id,
+        ),
+      );
+      stale.catch(() => undefined);
+      await called;
+      // Its lease lapses, and a retry takes the claim over and starts tearing the bot down.
+      await system.space.updateMany({
+        where: { organizationId: work.id },
+        data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+      });
+      const release = sandbox.hold(ref);
+      const retry = client(ada).organizations.remove({ organizationId: work.id });
+      await until(() => sandbox.started.includes(ref));
+
+      // The first attempt's next renewal finds the claim taken; then its billing call returns.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      returnBilling();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+      release();
+      await retry;
+      await expect(stale).rejects.toThrow("lost its claim");
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
+  });
+
+  it("takes over a claim the previous release left, keeping it when billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    // A deletion that stalled under the previous release's bare claim id.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: {
+        deletionClaimId: `organization-deletion:${work.id}`,
+        deletingAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletingAt: expect.any(Date),
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
+    });
+    expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
+  });
+
+  it("deletes the organization with its last Space, so no crash leaves it without its claim", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+
+    await runAsSystem("delete the last Space", async () => {
+      const { claimId } = await claimOrganizationForDeletion(system, {
+        userId: ada.userId,
+        organizationId: work.id,
+      });
+      await deleteClaimedSpace(system, { spaceId: work.id, claimId, organizationId: work.id });
+    });
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
   });
 
   it("keeps a Space whose files could not be removed, and removes them on a retry", async () => {
@@ -421,9 +762,18 @@ describePostgres("organizations (PostgreSQL)", () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });
     await subscribe(asUser(ada, work.id));
-    const first = await runAsSystem("an earlier deletion attempt", () =>
-      claimOrganizationForDeletion(system, { userId: ada.userId, organizationId: work.id }),
-    );
+    await runAsSystem("an earlier deletion attempt", async () => {
+      const { claimId } = await claimOrganizationForDeletion(system, {
+        userId: ada.userId,
+        organizationId: work.id,
+      });
+      // That attempt stopped, so its lease lapsed.
+      await setOrganizationDeletionLease(system, {
+        organizationId: work.id,
+        claimId,
+        at: new Date(0),
+      });
+    });
     vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
       new Error("billing unavailable"),
     );
@@ -433,8 +783,70 @@ describePostgres("organizations (PostgreSQL)", () => {
     );
 
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
-      deletionClaimId: first.claimId,
+      deletingAt: expect.any(Date),
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
     });
+  });
+
+  it("keeps the claim another attempt took over when the placing attempt's billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    await botWithComputer(work.id, ada.userId, `sb-takeover-${suffix}`);
+    sandbox.failDestroy.add(`sb-takeover-${suffix}`);
+
+    // The placing attempt stalls in billing, after its claim is in place.
+    let claimPlaced!: () => void;
+    const placed = new Promise<void>((resolve) => {
+      claimPlaced = resolve;
+    });
+    let failBilling!: () => void;
+    const stalled = new Promise<void>((resolve) => {
+      failBilling = resolve;
+    });
+    const placing = runAsSystem("an earlier deletion attempt", () =>
+      deleteOrganization(
+        {
+          ...deps(),
+          billing: {
+            cancelForDeletedOrganization: async () => {
+              claimPlaced();
+              await stalled;
+              throw new Error("billing unavailable");
+            },
+          },
+        } as Parameters<typeof deleteOrganization>[0],
+        ada.userId,
+        work.id,
+      ),
+    );
+    await placed;
+    // Its lease lapses, as if it had stopped renewing it.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: { deletingAt: new Date(Date.now() - 10 * 60_000) },
+    });
+
+    // Another attempt takes the claim over and gets stuck destroying the bot.
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "provider unavailable",
+    );
+
+    failBilling();
+    await expect(placing).rejects.toThrow("billing unavailable");
+
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletingAt: expect.any(Date),
+      deletionClaimId: expect.any(String),
+    });
+    expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
+
+    // Deleting again finishes what the stuck attempt left behind.
+    sandbox.failDestroy.clear();
+    await client(ada).organizations.remove({ organizationId: work.id });
+
+    await expect(system.organization.findUnique({ where: { id: work.id } })).resolves.toBeNull();
+    expect(sandbox.destroyed).toEqual([`sb-takeover-${suffix}`]);
   });
 
   it("deletes only one of two organizations removed at once, leaving the other's billing live", async () => {
@@ -634,12 +1046,23 @@ describePostgres("organizations (PostgreSQL)", () => {
 /** A provider that records destroys. */
 function fakeSandbox() {
   const destroyed: string[] = [];
+  const started: string[] = [];
   const failDestroy = new Set<string>();
+  const held = new Map<string, Promise<void>>();
   return {
     destroyed,
+    started,
     failDestroy,
+    /** Keeps destroying this sandbox pending until the returned release is called. */
+    hold(providerRef: string) {
+      let release!: () => void;
+      held.set(providerRef, new Promise((resolve) => (release = resolve)));
+      return () => release();
+    },
     async destroy(computer: ComputerRef) {
       if (failDestroy.has(computer.providerRef)) throw new Error("provider unavailable");
+      started.push(computer.providerRef);
+      await held.get(computer.providerRef);
       destroyed.push(computer.providerRef);
     },
     async releaseScreen() {},

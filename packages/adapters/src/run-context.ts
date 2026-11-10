@@ -4,11 +4,13 @@ import type {
   ComputerRef,
   ConnectorTool,
   MediaGenerationProvider,
+  PaidServiceProvider,
   SandboxProvider,
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
+import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -35,12 +37,15 @@ import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
+import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
+import type { ToolRefusal } from "./tool-refusal.js";
+import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
@@ -116,6 +121,10 @@ export interface ReplyState {
    * sentence boundary, so the step chips never render in the middle of a clause.
    */
   pendingToolNames: string[];
+  /** Every step label a call made, in call order, so its outcome can be saved on its step. */
+  toolCalls: { label: string; executionId: string }[];
+  /** How each finished call ended, by execution id. */
+  toolOutcomes: Map<string, ToolStepOutcome>;
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;
@@ -169,6 +178,8 @@ export interface RunState {
   toolCallStreak: LoopGuardStreak;
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
+  /** Calls refused before their tool ran, by execution id, for the log of a loop one causes. */
+  toolRefusals?: Map<string, ToolRefusal>;
   /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
   overLimitActionCalls: number;
   /**
@@ -209,6 +220,8 @@ export interface RunComputerContext {
   lazy: ReturnType<typeof lazyRunComputer>;
   /** Starts the computer on first use and copies the turn's files before each tool. */
   get: (reason: "tool" | "takeover" | "script", tool?: string) => Promise<ComputerRef>;
+  /** Queue files from earlier messages; `get` copies them before the next computer tool. */
+  copyEarlierFiles: (files: Array<Extract<MessageBlock, { kind: "file" | "image" }>>) => void;
   checkpoint: ReturnType<typeof createRunWorkspaceCheckpoint>;
   hostEnvironment: Awaited<ReturnType<NonNullable<SandboxProvider["environment"]>>> | undefined;
   graphical: boolean;
@@ -250,6 +263,7 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 export interface RunProviders {
   web: WebProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
+  paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;
   cloudAgent: ExecutorDeps["cloudAgent"];
 }
@@ -273,6 +287,8 @@ export interface RunContext {
   /** Provider context for this run's calls; aborting the run aborts its signal. */
   context: AdapterContext;
   abortController: AbortController;
+  /** Stops the model and its next tool calls; the run's own signal stays live to save and finish. */
+  runtimeAbortController: AbortController;
   fleetRun: FleetRun;
   /** Every value redacted from what this run shows or stores. Grows during the run. */
   secrets: string[];
@@ -290,6 +306,8 @@ export interface RunContext {
   /** A group message that named no member: this member may end without replying. */
   groupReplyOptional: boolean;
   emptyResponseText: string | undefined;
+  /** Messages mode keeps working text on the steps; only message_user and the final answer reach chat. */
+  replyMode: ReplyMode;
   state: RunState;
   settleRunningHelpers: () => Promise<void>;
   stopHeartbeatAfterCompletion: () => void;
@@ -363,7 +381,7 @@ export function refuseOwnerSettingsChange(
     return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
   }
   ctx.state.ownerSettingsRefused = true;
-  return { error };
+  return refusal("outside_content_blocks_owner_settings", error);
 }
 
 export async function isRunTainted(ctx: RunContext) {
@@ -428,7 +446,8 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
 /**
  * Reserve the effect occurrences a saved turn already assigned, so its pending call claims the
  * same effect when it resumes. Returns undefined when the turn cannot resume with this run's
- * tools or transcript format.
+ * tools or transcript format. A pinned computer-mode turn whose pending tool is not offered
+ * right now throws PausedTurnToolsUnavailableError instead, so setup retries it quietly.
  */
 export function restoreTurnCheckpointEffects(
   ctx: RunContext,
@@ -454,19 +473,25 @@ export function restoreTurnCheckpointEffects(
         return undefined;
       available.add(computerMode === "main" ? "enter_computer_mode" : "leave_computer_mode");
     }
-    if (
-      saved.messages.some(
-        (message) =>
-          message.role === "assistant" &&
-          message.content.some(
+    const missing = saved.messages.flatMap((message) =>
+      message.role === "assistant"
+        ? message.content.filter(
             (call) =>
               call.type === "toolCall" &&
               unresolved.has(call) &&
               (saved.executionMode === "sequential" || call.id === saved.pendingToolCallId) &&
               !available.has(call.name),
-          ),
-      )
-    ) {
+          )
+        : [],
+    );
+    if (missing.length) {
+      // A transition for the other mode is an invalid checkpoint, not a tool that went offline.
+      const transition = missing.some(
+        (call) =>
+          call.type === "toolCall" &&
+          (call.name === "enter_computer_mode" || call.name === "leave_computer_mode"),
+      );
+      if (computerMode && !transition) throw new PausedTurnToolsUnavailableError();
       return undefined;
     }
     if (saved.effectOccurrences) {
@@ -508,7 +533,8 @@ export function restoreTurnCheckpointEffects(
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
-  } catch {
+  } catch (error) {
+    if (error instanceof PausedTurnToolsUnavailableError) throw error;
     // Incompatible transcripts use the existing canonical approval replay.
     // Decryption happens earlier and must still fail closed.
     return undefined;

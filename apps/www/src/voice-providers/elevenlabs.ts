@@ -219,7 +219,7 @@ export const elevenlabs: VoiceProvider = {
     {
       heading: "Limits and gotchas",
       bullets: [
-        "Rakazo always speaks with Eleven Flash v2.5 (`eleven_flash_v2_5`), ElevenLabs' fast model for conversation. You can't switch to a more expressive model such as Eleven v4 from Rakazo.",
+        "Rakazo speaks with Eleven Flash v2.5 (`eleven_flash_v2_5`), ElevenLabs' fast model for conversation, unless you enter another **Speech model**.",
         "Rakazo doesn't clone voices itself. Create the clone in ElevenLabs first, then pick it in Rakazo.",
         "Each sentence is generated as a finished clip and played in order, rather than streamed word by word, so there is a short pause before the bot starts talking.",
         "Speech and transcription go through ElevenLabs' servers and use your ElevenLabs account's balance. If it runs out, Rakazo tells you so instead of failing quietly.",
@@ -239,6 +239,7 @@ export const elevenlabs: VoiceProvider = {
         "Create an API key in your [ElevenLabs](https://elevenlabs.io) account. Give it permission for text to speech, speech to text and reading voices.",
         "In Rakazo, open **Settings → Voice**, choose **ElevenLabs** as the **Provider**, paste the **API key** and choose **Connect**.",
         "Pick a **Voice** and use **Hear a sample** to check it.",
+        "Optionally enter a **Speech model**, such as `eleven_v4`, to use a more expressive model than the default `eleven_flash_v2_5`.",
         "Optionally, open a bot's settings, expand **Advanced**, turn on **Read replies aloud** and give it its own **Voice**.",
         "If you run your own server and want calls and hold-to-talk, set `PHONE_CALLS_ENABLED=true` on the API and worker.",
       ],
@@ -273,7 +274,7 @@ export const elevenlabs: VoiceProvider = {
     {
       question: "Which ElevenLabs model does Rakazo use?",
       answer:
-        "Eleven Flash v2.5 (`eleven_flash_v2_5`) for speech, chosen for low latency in conversation, and Scribe v2 (`scribe_v2`) for transcription. Neither can be changed in the app.",
+        "Eleven Flash v2.5 (`eleven_flash_v2_5`) for speech, chosen for low latency in conversation, and Scribe v2 (`scribe_v2`) for transcription. You can enter another speech model, such as Eleven v4 (`eleven_v4`), in **Settings → Voice**; transcription always uses Scribe v2.",
     },
     {
       question: "What is the best ElevenLabs alternative?",

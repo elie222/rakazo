@@ -36,7 +36,9 @@ describe("jsonSchemaParameters", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
     const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
     for (const field of ["query", "queries"]) {
-      expect(wire.properties[field].description).toContain("never both; one is required");
+      expect(wire.properties[field].description).toContain(
+        "never both; one is required unless kinds is set",
+      );
     }
     expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
     expect(wire).not.toHaveProperty("oneOf");
@@ -45,6 +47,9 @@ describe("jsonSchemaParameters", () => {
     expect(() =>
       parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
     ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { kinds: ["tool_work"] })).toEqual({
+      kinds: ["tool_work"],
+    });
     expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
       queries: ["a"],
     });

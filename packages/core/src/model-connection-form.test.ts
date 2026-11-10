@@ -334,10 +334,14 @@ describe("modelConnectRequest", () => {
     expect(model.status === "ready" && "thinkingLevel" in model.input).toBe(true);
   });
 
-  it("sends Cloudflare routing ids trimmed", () => {
+  it("sends routing ids trimmed when the provider asks for them", () => {
     const request = modelConnectRequest({
       form: draft({ apiKey: "cf-long-enough", accountId: " acct ", gatewayId: " gw " }),
-      selected: { provider: "cloudflare-ai-gateway", id: "model" },
+      selected: {
+        provider: "example-gateway",
+        id: "model",
+        routingFields: ["accountId", "gatewayId"],
+      },
       credentialId: null,
     });
     expect(request.status === "ready" && request.input).toMatchObject({

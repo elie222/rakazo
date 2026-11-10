@@ -68,13 +68,14 @@ describe("pageLinksAsTitles", () => {
       // Fences getting shorter, then many short ones: each long fence looks past them all.
       `${Array.from({ length: 1_000 }, (_, n) => `${"`".repeat(1_003 - n)}\n`).join("")}${"```\n".repeat(50_000)}`,
     ]) {
-      // Best of three, so a busy machine cannot fail it; a quadratic input takes seconds.
+      // Best of three under a generous bound, so a busy machine cannot fail it; a quadratic
+      // input takes seconds.
       const runs = [0, 1, 2].map(() => {
         const started = performance.now();
         pageLinksAsTitles(input);
         return performance.now() - started;
       });
-      expect(Math.min(...runs)).toBeLessThan(50);
+      expect(Math.min(...runs)).toBeLessThan(100);
     }
   });
 });

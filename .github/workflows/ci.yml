@@ -24,15 +24,14 @@ env:
 jobs:
   # Pull requests skip suites their files cannot affect (see .github/scripts/changed-areas.sh); a
   # job skipped by `if` still satisfies a required check. Main skips this job, and with it every
-  # job that needs it.
+  # job that needs it. Web E2E checks its own areas instead, so its shards start with the first jobs.
   changes:
     name: Changed areas
     if: github.event_name == 'pull_request'
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       web: ${{ steps.areas.outputs.web }}
-      e2e: ${{ steps.areas.outputs.e2e }}
       server: ${{ steps.areas.outputs.server }}
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
@@ -51,24 +50,35 @@ jobs:
     name: Production builds
     needs: changes
     if: needs.changes.outputs.web == 'true'
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          electron: "true"
+          turbo: build
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+      - name: Save turbo build cache
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
       - name: Upload desktop setup screenshots
         if: always()
@@ -84,7 +94,7 @@ jobs:
   # main always runs everything.
   static-checks:
     name: Lint and typecheck
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
       group: ci-checks-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
@@ -96,32 +106,15 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          turbo: ${{ github.event_name == 'pull_request' && 'check' || 'none' }}
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
-      - name: Check translation catalogs are current
-        if: github.event_name == 'pull_request'
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      # Pull requests reuse main's typecheck results for packages whose inputs they leave unchanged.
-      # Main starts with an empty cache, so it typechecks everything before a deploy.
-      - name: Restore typecheck cache
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .turbo/cache
-          key: turbo-check-${{ github.sha }}
-          restore-keys: turbo-check-
       - name: Typecheck
         if: steps.areas.outputs.all_packages != 'false'
         run: pnpm check
@@ -135,16 +128,25 @@ jobs:
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: .turbo/cache
-          key: turbo-check-${{ github.sha }}
+          key: turbo-check-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Host operations safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
+      - name: Preview startup tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 infra/preview/start.test.py
       - name: Codex subscription auth safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/codex-subscription-auth.test.py
       - name: Dependency update patch safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/dependency-update-patch.test.py
+      - name: Issue triage labeling tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/apply-issue-triage.test.py
+      - name: PR screenshot section tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/pr-screenshots.test.py
       - name: Changed-area classification tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py
@@ -157,14 +159,14 @@ jobs:
       - name: Optional vendor SDKs load lazily
         run: node --test scripts/lazy-vendors.test.mjs
 
-  # The unit suite is CPU-bound, so three runners finish in about a third of the time.
+  # The unit suite is CPU-bound; six runners keep it under the native install floor.
   unit-tests-shard:
-    name: Unit tests (${{ matrix.shard }}/3)
-    runs-on: incredibuild-ubuntu-latest
+    name: Unit tests (${{ matrix.shard }}/6)
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     timeout-minutes: 20
     concurrency:
       group: ci-unit-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
@@ -176,20 +178,20 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Install age for the encrypted backup round trip
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" \
+            "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz"
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP" age/age age/age-keygen
+          sudo install -m 755 "$RUNNER_TEMP/age/age" "$RUNNER_TEMP/age/age-keygen" /usr/local/bin/
       - name: Unit tests
         if: steps.areas.outputs.all_packages != 'false'
-        run: pnpm run test --shard=${{ matrix.shard }}/3
+        run: pnpm run test --shard=${{ matrix.shard }}/6
       - name: Unit tests for affected packages
         if: steps.areas.outputs.all_packages == 'false'
         env:
@@ -198,21 +200,34 @@ jobs:
           affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
           mapfile -t packages < <(printf "%s" "$affected")
           # These read other packages' files without importing them, so the package graph misses them.
-          pnpm exec vitest run "${packages[@]}" \
+          targets=("${packages[@]}" \
             infra/updater/src/compose-env.test.ts \
+            packages/adapters/src/builtin-skills.test.ts \
             packages/adapters/src/lark-lazy-loading.test.ts \
-            packages/testkit/src/ios-screenshot-catalog.test.ts \
-            --shard=${{ matrix.shard }}/3
+            packages/page-kit/src/kit/labels.test.tsx \
+            packages/testkit/src/ios-screenshot-catalog.test.ts)
+          # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
+          files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"
+          if (( files < 6 )); then
+            (( ${{ matrix.shard }} == 1 )) || exit 0
+            pnpm exec vitest run "${targets[@]}"
+          else
+            pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/6
+          fi
 
   # The required check and the deploy gate, under one stable name.
   checks:
     name: Checks
     needs: [static-checks, unit-tests-shard]
     if: always()
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
 
+  # Desktop + its workspace deps only. A full-workspace install on Windows also links supervisor
+  # (dockerode → cpu-features) and spends about a minute on a node-gyp rebuild that fails without
+  # Visual Studio and is unused by these tests. Electron's binary is cached separately from the
+  # pnpm store.
   native-computer:
     name: Native computer (${{ matrix.os }})
     needs: changes
@@ -227,20 +242,23 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
-      - run: pnpm install --frozen-lockfile
+      - name: Worktree environment setup test
+        run: node --test scripts/setup-worktree.test.mjs
+      - uses: ./.github/actions/setup-workspace
+        with:
+          electron: "true"
+          filter: "@rakazo/desktop..."
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          electron_config_cache: ${{ runner.temp }}/electron-cache
       - run: pnpm --filter @rakazo/desktop build
-      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
         run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
@@ -248,17 +266,18 @@ jobs:
         run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
         env:
           ELECTRON_RUN_AS_NODE: "1"
+          electron_config_cache: ${{ runner.temp }}/electron-cache
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
-  # The suites are CPU-bound, so two runners finish in about half the time.
+  # The suites are CPU-bound; six runners keep them under the native install floor.
   test-integration-shard:
-    name: Postgres journeys (${{ matrix.shard }}/2)
-    runs-on: incredibuild-ubuntu-latest
+    name: Postgres journeys (${{ matrix.shard }}/6)
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5, 6]
     concurrency:
       group: ci-postgres-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     timeout-minutes: 15
@@ -270,16 +289,45 @@ jobs:
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - name: Postgres cache week
         if: steps.areas.outputs.server != 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image cache
         if: steps.areas.outputs.server != 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          path: ${{ runner.temp }}/docker-postgres-cache
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+      - name: Load or pull Postgres image
         if: steps.areas.outputs.server != 'false'
-      - run: pnpm test:integration --shard=${{ matrix.shard }}/2
+        run: bash .github/scripts/restore-postgres-image.sh
+      - name: Start Postgres
+        if: steps.areas.outputs.server != 'false'
+        run: |
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=rakazo \
+            -p 5432:5432 \
+            mirror.gcr.io/library/postgres:18-alpine \
+            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
+          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-workspace
+        if: steps.areas.outputs.server != 'false'
+      - name: Wait for Postgres
+        if: steps.areas.outputs.server != 'false'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres did not become ready" >&2
+          docker logs ci-postgres >&2 || true
+          exit 1
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/6
         if: steps.areas.outputs.server != 'false'
 
   # The required check and the deploy gate, under one stable name.
@@ -287,7 +335,7 @@ jobs:
     name: Postgres journeys
     needs: test-integration-shard
     if: always()
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.test-integration-shard.result }}" = success
 
@@ -295,7 +343,7 @@ jobs:
     name: Postgres upgrade
     needs: changes
     if: needs.changes.outputs.compose == 'true'
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -303,14 +351,14 @@ jobs:
           persist-credentials: false
       - run: bash infra/compose/upgrade-postgres.docker-test.sh
 
+  # Main leaves Web E2E to the nightly run.
   test-e2e:
     name: Web E2E
-    needs: changes
+    if: github.event_name == 'pull_request'
     uses: ./.github/workflows/playwright.yml
     with:
       upload_artifacts: true
-      # Skipped inside the called workflow so the required "Web E2E / Web E2E" check still reports.
-      skip: ${{ needs.changes.outputs.e2e != 'true' }}
+      changed_areas: true
 
   # Publishes sha-<commit> and edge alongside the checks, so the production deploy pulls the
   # image this run built instead of building on the production host.
@@ -398,7 +446,9 @@ jobs:
               apps/mobile \
               packages/chat-ui \
               packages/contracts \
-              packages/core
+              packages/core \
+              packages/logging \
+              packages/ui-tokens
           )
           if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
             files+=("pnpm-lock.yaml (mobile dependency tree)")
@@ -423,12 +473,12 @@ jobs:
                   *.ts|*.tsx) eligible=true ;;
                 esac
                 ;;
-              packages/chat-ui/src/*)
+              packages/chat-ui/src/*|packages/ui-tokens/src/*)
                 case "$file" in
                   *.ts|*.tsx|*.css) eligible=true ;;
                 esac
                 ;;
-              packages/contracts/src/*|packages/core/src/*)
+              packages/contracts/src/*|packages/core/src/*|packages/logging/src/*)
                 case "$file" in
                   *.ts|*.tsx) eligible=true ;;
                 esac
@@ -478,20 +528,13 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: steps.ota.outputs.publish == 'true'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.ota.outputs.publish == 'true'
         with:
           node-version: 24
           cache: pnpm
-      - name: Set up Expo
-        if: steps.ota.outputs.publish == 'true'
-        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
-        with:
-          eas-version: latest
-          packager: pnpm
-          token: ${{ secrets.EXPO_TOKEN }}
       - name: Install dependencies
         if: steps.ota.outputs.publish == 'true'
         run: pnpm install --frozen-lockfile
@@ -502,6 +545,7 @@ jobs:
         if: steps.ota.outputs.publish == 'true'
         working-directory: apps/mobile
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
@@ -529,7 +573,7 @@ jobs:
             echo "Sentry uploads require SENTRY_ORG and SENTRY_PROJECT." >&2
             exit 1
           fi
-          eas env:exec production 'pnpm exec expo export --platform ios --platform android --clear --source-maps --dump-assetmap' --non-interactive
+          pnpm exec eas env:exec production 'pnpm exec expo export --platform ios --platform android --clear --source-maps --dump-assetmap' --non-interactive
           if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
             # The SDK uploader only warns when there are no source maps; fail instead.
             if [[ -z "$(find dist -type f -name '*.map' -print -quit)" ]]; then
@@ -539,7 +583,7 @@ jobs:
             SENTRY_URL="${SENTRY_URL:-https://sentry.io/}" pnpm exec sentry-expo-upload-sourcemaps dist
           fi
           check_current_main
-          eas update --platform all --channel production --environment production --skip-bundler --input-dir dist --upload-source-maps --message "$GITHUB_SHA" --non-interactive
+          pnpm exec eas update --platform all --channel production --environment production --skip-bundler --input-dir dist --upload-source-maps --message "$GITHUB_SHA" --non-interactive
 
   deploy-production:
     if: >-

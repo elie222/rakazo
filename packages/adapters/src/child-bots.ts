@@ -7,7 +7,12 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
+import {
+  isSandboxProviderOutage,
+  routineJobKey,
+  runContinueJob,
+  runJobKey,
+} from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -26,6 +31,8 @@ import {
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  teamComputerUserId,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -230,21 +237,17 @@ type LifecycleBot = {
   webhookSecretId?: string | null;
 };
 
-/** Management stays within the current user's space, regardless of who created the bot. */
-export function managedBotsWhere(caller: {
-  userId: string;
-  spaceId: string;
-}): Prisma.BotWhereInput {
-  return { userId: caller.userId, spaceId: caller.spaceId };
+/** Management stays within the current space, whichever member created the bot. */
+export function managedBotsWhere(caller: { spaceId: string }): Prisma.BotWhereInput {
+  return { spaceId: caller.spaceId };
 }
 
-/** Creation provenance for the roster metadata; this does not grant management permissions. */
-export function createdByWhere(caller: {
-  botId: string;
-  userId: string;
-  spaceId: string;
-}): Prisma.BotWhereInput {
-  return { parentBotId: caller.botId, userId: caller.userId, spaceId: caller.spaceId };
+/**
+ * Creation provenance for the roster metadata, whichever member's run spawned the bot; this
+ * does not grant management permissions.
+ */
+export function createdByWhere(caller: { botId: string; spaceId: string }): Prisma.BotWhereInput {
+  return { parentBotId: caller.botId, spaceId: caller.spaceId };
 }
 
 export async function archiveSpawnedBot(
@@ -425,6 +428,7 @@ export async function destroyBot(
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
   await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
+  // Deleting the bot deletes its thread, so this waits out snapshot reads holding that row.
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
@@ -493,7 +497,7 @@ export async function destroyBot(
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if (!deletion) return;
   await Promise.allSettled(
@@ -647,6 +651,7 @@ function releasedComputerLease() {
   return {
     controlHolder: "none" as const,
     controlLeaseId: null,
+    controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
     controlRunId: null,
@@ -681,7 +686,8 @@ async function releaseTeamComputerScreen(
   } catch (error) {
     // No browser runs on a sandbox that is gone, so only its stored profile is left to remove.
     if (isSandboxGoneError(error)) return { ...computer, providerRef: null };
-    getLogger().error("team screen release", error);
+    if (isSandboxProviderOutage(error)) getLogger().warn("team screen release", { error });
+    else getLogger().error("team screen release", error);
     if (error instanceof BrowserStoppedReleaseError) return computer;
     return null;
   }
@@ -805,14 +811,15 @@ async function removeTeamBotWorkspace(
   context: AdapterContext,
 ) {
   if (!isTeamBotFolderName(bot.id)) return;
-  // Look the owner's Team Computer up by scope: a bot moved to its own computer can still have
+  // Look the Space's Team Computer up by scope: a bot moved to its own computer can still have
   // a folder there. The space's Team Computer from before each person got their own still holds
   // the folders and browser profiles of every member's bots from then. Any other team computer
   // in the space drops them on boot (botDeletion).
+  const teamUserId = await teamComputerUserId(deps.prisma, bot);
   const [own, legacy] = await Promise.all([
     deps.prisma.computer.findUnique({
       where: {
-        scopeKey: computerScopeKey({ mode: "team", spaceId: bot.spaceId, userId: bot.userId }),
+        scopeKey: computerScopeKey({ mode: "team", spaceId: bot.spaceId, userId: teamUserId }),
       },
     }),
     deps.prisma.computer.findUnique({ where: { homeKey: legacyTeamHomeKey(bot.spaceId) } }),

@@ -6,15 +6,15 @@ import type {
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  ScrollView,
-  View,
+  ScrollViewInstance,
+  ViewInstance,
 } from "react-native";
 import { Platform } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import { useReducedMotion } from "react-native-reanimated";
-import type { MobileMessage } from "./api";
 import { helperHeaderOffset, helperOpenTarget } from "./helper-header-offset";
 import { KeyboardScrollBack } from "./keyboard-scroll-back";
+import type { MobileMessage } from "./mobile-types";
 import type { ThreadHistory } from "./thread-history";
 import type { ThreadRowKey, ThreadScrollAction, ThreadScrollState } from "./thread-scroll";
 import { ThreadScrollBehavior } from "./thread-scroll";
@@ -57,8 +57,8 @@ export function useThreadListScroll({
     pinnedScrollMetrics,
   } = history;
   const list = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
-  const pinnedList = useRef<ScrollView>(null);
-  const helperViewport = useRef<View>(null);
+  const pinnedList = useRef<ScrollViewInstance>(null);
+  const helperViewport = useRef<ViewInstance>(null);
   const helperScrollOffset = useRef(0);
   const helperResize = useRef<(() => void) | null>(null);
   const behavior = useRef(new ThreadScrollBehavior());

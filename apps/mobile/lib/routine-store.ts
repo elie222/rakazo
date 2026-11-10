@@ -1,4 +1,4 @@
-import type { Routine } from "@rakazo/contracts";
+import type { Routine, RpcInput } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { QueryFunction } from "@tanstack/react-query";
 import { hashKey, useQuery } from "@tanstack/react-query";
@@ -134,6 +134,38 @@ export function setRoutineActive(
     toggles.set(id, toggle);
   }
   toggle.update(active);
+}
+
+/** Creates or edits a routine; the list shows the server's copy once it answers. */
+export async function saveBotRoutine(
+  botId: string,
+  request: { create: RpcInput<"routines/create"> } | { update: RpcInput<"routines/update"> },
+): Promise<Routine> {
+  const { queryKey } = routinesQuery(botId);
+  const scope = hashKey(queryKey);
+  const requestContext = captureApiRequestContext();
+  requestContext.catch(() => undefined);
+  countWrite(scope, 1);
+  try {
+    await queryClient.cancelQueries({ queryKey, exact: true });
+    const context = await requestContext;
+    if (hashKey(routinesQuery(botId).queryKey) !== scope) throw new Error("Space changed");
+    const saved =
+      "create" in request
+        ? await rpc("routines/create", request.create, { requestContext: context })
+        : await rpc("routines/update", request.update, { requestContext: context });
+    if (hashKey(routinesQuery(botId).queryKey) === scope) {
+      // An update only replaces its row, so a routine deleted meanwhile stays gone.
+      await writeSaved(queryClient, queryKey, (rows) =>
+        "create" in request
+          ? [...(rows ?? []), saved]
+          : (rows ?? []).map((row) => (row.id === saved.id ? saved : row)),
+      );
+    }
+    return saved;
+  } finally {
+    countWrite(scope, -1);
+  }
 }
 
 /** Deletes a routine; its row goes once the server confirms. */

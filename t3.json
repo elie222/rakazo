@@ -1,0 +1,9 @@
+{
+  "scripts": [
+    {
+      "name": "Set up worktree",
+      "command": "pnpm setup:worktree",
+      "runOnWorktreeCreate": true
+    }
+  ]
+}

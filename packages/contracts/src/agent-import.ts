@@ -1,7 +1,9 @@
 import * as z from "zod";
 import { AgentImportStatusSchema } from "./agent-import-setup.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
-import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
+import { BOT_TEMPLATE_IMPORT_KEY_PREFIX } from "./bot-template.js";
+import { ComputerModeSchema } from "./computer.js";
+import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
 export const AGENT_IMPORT_MAX_FILE_LENGTH = 100_000;
@@ -44,7 +46,7 @@ export const AgentImportFilesSchema = z
     }
   });
 
-export const AgentImportSourceSchema = z.enum(["openclaw", "hermes", "document"]);
+export const AgentImportSourceSchema = z.enum(["openclaw", "hermes", "document", "template"]);
 export type AgentImportSource = z.infer<typeof AgentImportSourceSchema>;
 
 /**
@@ -227,7 +229,16 @@ export const AgentImportPreviewInput = z.strictObject({
 
 export const AgentImportCreateInput = z.strictObject({
   /** Chosen by the client once per import, so a retried create returns the same bot. */
-  importKey: z.string().trim().min(8).max(100).optional(),
+  importKey: z
+    .string()
+    .trim()
+    .min(8)
+    .max(100)
+    .refine(
+      (key) => !key.startsWith(BOT_TEMPLATE_IMPORT_KEY_PREFIX),
+      "That import key is reserved.",
+    )
+    .optional(),
   files: AgentImportFilesSchema,
   includeSecrets,
   skillFiles,

@@ -20,7 +20,7 @@ import {
 import { listVaultItems } from "./bot-secrets.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
-import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
+import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
@@ -44,10 +44,13 @@ import {
 } from "./run-effects.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
+import { holdSharedPageSave } from "./run-tools-pages.js";
+import { scheduleCreateRefusal } from "./run-tools-tasks.js";
 import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "./skill-tools.js";
-import { argumentGiven } from "./update-bot-patch.js";
+import { refusal } from "./tool-refusal.js";
+import { argumentGiven, dropUnchangedOwnBotArgs } from "./update-bot-patch.js";
 import type { VaultCardUse } from "./vault-card-use.js";
 import { cardUseSummary, requestedCardUse, vaultCardUseOf } from "./vault-card-use.js";
 
@@ -114,9 +117,10 @@ export async function resolveToolRequest(
   let catalogRemapped = false;
   let resolvedTool: ConnectorTool | undefined;
   if (name.startsWith("cloud_agent_") && !validCloudAgentArgs(name, args)) {
-    return {
-      error: "Invalid cloud agent arguments. Raw environment variables are not supported.",
-    };
+    return refusal(
+      "invalid_cloud_agent_arguments",
+      "Invalid cloud agent arguments. Raw environment variables are not supported.",
+    );
   }
   let effectRequest: unknown = name === "paid_request" ? paidRequestEffect(args) : args;
   if (connectorCall.route && deps.connector?.resolveCall) {
@@ -124,9 +128,10 @@ export async function resolveToolRequest(
       const resolved = await deps.connector.resolveCall(connectorCall, context);
       if (resolved) {
         if (BUILTIN_AGENT_TOOL_NAMES.has(resolved.tool.name)) {
-          return {
-            error: "Connector tool name conflicts with a built-in tool",
-          };
+          return refusal(
+            "connector_name_conflict",
+            "Connector tool name conflicts with a built-in tool",
+          );
         }
         name = resolved.tool.name;
         args = resolved.call.args;
@@ -155,10 +160,10 @@ export async function resolveToolRequest(
     }
   }
   if (approvedReplay.args && !catalogRemapped) {
-    return {
-      error:
-        "Approved catalog request could not be resolved to a tool. Deny and retry the direct tool call.",
-    };
+    return refusal(
+      "approved_catalog_request_unresolved",
+      "Approved catalog request could not be resolved to a tool. Deny and retry the direct tool call.",
+    );
   }
   if (
     !catalogRemapped &&
@@ -208,9 +213,10 @@ export async function resolveToolRequest(
     nextCatalog && catalogApprovalMatchesLiveRoute(nextCatalog, liveRoute),
   );
   if (nextApprovedTool && nextApprovedTool !== name && !sameBoundResource && !sameCatalogTarget) {
-    return {
-      error: `Approved request ${nextApprovedTool} must be replayed before ${name}.`,
-    };
+    return refusal(
+      "approved_request_not_replayed",
+      `Approved request ${nextApprovedTool} must be replayed before ${name}.`,
+    );
   }
   // Drain FIFO only when the pending approval matches this path (catalog vs direct).
   const replayEffectToolName = approvalReplayEffectToolName(
@@ -242,9 +248,10 @@ export async function resolveToolRequest(
       // Shrink-to-direct: restore approved inner arguments, not the wrapper envelope.
       const innerArgs = catalogApprovalInnerArgs(approvedCatalog);
       if (!innerArgs) {
-        return {
-          error: `Approved catalog request ${name} is missing tool arguments.`,
-        };
+        return refusal(
+          "approved_catalog_request_missing_arguments",
+          `Approved catalog request ${name} is missing tool arguments.`,
+        );
       }
       args = innerArgs;
     } else {
@@ -316,14 +323,26 @@ export async function prepareToolRequest(
         select: { id: true },
       })))
   ) {
-    return { error: "This tool is unavailable after a shared-channel message." };
+    return refusal(
+      "shared_channel_tool_unavailable",
+      "This tool is unavailable after a shared-channel message.",
+    );
   }
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
   if (USER_COMPUTER_TOOLS.has(name)) {
     if (!ctx.source.userComputerOwner || !deps.userDevices)
-      return { error: "The user's computer is not available in this run." };
+      return refusal(
+        "user_computer_unavailable",
+        "The user's computer is not available in this run.",
+      );
     if (isSubagentToolExecution(executionId))
-      return { error: "Helpers cannot use the user's computer." };
+      return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+  }
+  // Before the gate, so a routine that cannot be saved shows no approval card. An approved
+  // replay goes on to the handler, which checks again.
+  if (name === "schedule_create" && nextApprovedTool !== name) {
+    const refused = await scheduleCreateRefusal(ctx, args);
+    if (refused) return refusal("schedule_create_refused", refused.error);
   }
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
@@ -331,20 +350,26 @@ export async function prepareToolRequest(
     (name === "update_bot" && argumentGiven(args.bot_id));
   if (fleetWrite || name === "list_fleet") {
     if (isSubagentToolExecution(executionId))
-      return { error: "Helpers cannot use bot management tools." };
+      return refusal("helper_bot_management", "Helpers cannot use bot management tools.");
     // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
     const live = await deps.prisma.bot.findUnique({
       where: { id: bot.id },
       select: { fleetManagement: true },
     });
-    if (!live?.fleetManagement) return { error: "This tool is disabled for this bot." };
+    if (!live?.fleetManagement)
+      return refusal("tool_disabled", "This tool is disabled for this bot.");
     if (!ctx.source.ownerStartedRun)
-      return { error: "Bot management tools need a run you started." };
+      return refusal("run_not_owner_started", "Bot management tools need a run you started.");
     if (fleetWrite && !(await neverAsks(ctx)) && (await ctx.trust.receivedOutsideMessage()))
-      return {
-        error:
-          "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-      };
+      return refusal(
+        "outside_message_blocks_bot_management",
+        "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
+      );
+  }
+  if (name === "save_page") {
+    const refused = await holdSharedPageSave(ctx, request);
+    if (refused) return refused;
+    args = request.args;
   }
   if (name === "update_bot" && !argumentGiven(args.bot_id)) {
     const refused = await prepareOwnBotUpdate(ctx, request);
@@ -361,7 +386,7 @@ export async function prepareToolRequest(
       args,
       ctx.secrets,
     );
-    if (!prepared.ok) return { error: prepared.error };
+    if (!prepared.ok) return refusal("bot_management_request_invalid", prepared.error);
     args = prepared.canonical;
     request.fleetSummary = prepared.summary;
   }
@@ -372,14 +397,15 @@ export async function prepareToolRequest(
         bot.id,
         Boolean(args.accept),
       );
-      if (!pending) return { error: "no pending connection request" };
+      if (!pending)
+        return refusal("no_pending_connection_request", "no pending connection request");
       args = pending;
     } else if (
       typeof args.requester_name !== "string" ||
       typeof args.requester_address !== "string" ||
       typeof args.requester_provider !== "string"
     ) {
-      return { error: "connection request is no longer pending" };
+      return refusal("connection_request_not_pending", "connection request is no longer pending");
     }
   }
   if (PURCHASE_CHECKED_TOOLS.has(name)) {
@@ -398,15 +424,15 @@ export async function prepareToolRequest(
         approvedCard &&
         (approvedCard.card !== wantedCard.card || approvedCard.site !== wantedCard.site)
       )
-        return {
-          error:
-            "This types a saved card the user has not approved, so nothing was typed. Call the tool again with only that card; that asks the user.",
-        };
+        return refusal(
+          "card_not_approved",
+          "This types a saved card the user has not approved, so nothing was typed. Call the tool again with only that card; that asks the user.",
+        );
       let cardUse = approvedCard;
       if (!cardUse) {
         const [item] = await listVaultItems(deps.prisma, deps.secretStore, run, wantedCard.card);
         if (BotSecretAuth.safeParse(item?.auth).data?.type !== "card")
-          return { error: "No card is saved under this name. Check list_secrets." };
+          return refusal("card_not_found", "No card is saved under this name. Check list_secrets.");
         cardUse = { ...wantedCard, title: item!.title, savedAt: item!.updatedAt.toISOString() };
       }
       args = { ...args, cardApproval: cardUse };
@@ -426,12 +452,13 @@ export async function prepareToolRequest(
         !now ||
         now.site !== approved.site ||
         now.label !== approved.label ||
-        now.amount !== approved.amount
+        now.amount !== approved.amount ||
+        (now.total ?? "") !== (approved.total ?? "")
       )
-        return {
-          error:
-            "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
-        };
+        return refusal(
+          "purchase_page_changed",
+          "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
+        );
     }
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
     // An unreadable page is an inspection failure, not evidence of a purchase.
@@ -442,10 +469,10 @@ export async function prepareToolRequest(
       };
     // An approval given for something else never covers a purchase: the call is made again and asks.
     if (purchase && !approved && nextApprovedTool === name)
-      return {
-        error:
-          "This would complete a purchase, which the user has not approved, so nothing was pressed. Call the tool again with only that step; that asks the user.",
-      };
+      return refusal(
+        "purchase_not_approved",
+        "This would complete a purchase, which the user has not approved, so nothing was pressed. Call the tool again with only that step; that asks the user.",
+      );
     if (purchase) {
       args = { ...args, purchaseApproval: purchase };
       // The person approved paying at a site this run typed the approved card or pay token into: the
@@ -487,6 +514,29 @@ const OWN_FIELDS = new Set([
 ]);
 
 /**
+ * Every way an own update_bot call can name the model this bot runs on now: its id,
+ * provider/id, and the label update_bot's read shows. A bot without its own model runs on the
+ * space default, read fresh rather than from this run, which may record an earlier attempt.
+ */
+async function currentModelNames(
+  ctx: RunContext,
+  bot: { modelProvider: string | null; modelId: string | null },
+): Promise<string[]> {
+  const pinned = Boolean(bot.modelProvider && bot.modelId);
+  const { provider, model } = pinned
+    ? { provider: bot.modelProvider, model: bot.modelId }
+    : await (await fleetPrepareDeps(ctx.deps, ctx.run)).modelChange.defaultModel();
+  if (!provider || !model) return pinned ? [] : ["default"];
+  const label = modelLabel(provider, model);
+  return [
+    model,
+    `${provider}/${model}`,
+    label,
+    ...(pinned ? [] : ["default", `${label} (default)`]),
+  ];
+}
+
+/**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
  * they go through approval like any other action, and outside runs cannot change them.
  */
@@ -501,20 +551,50 @@ async function prepareOwnBotUpdate(
     request.heldForApproval = typeof request.args.previousInstructions === "string";
     return undefined;
   }
-  const { previousInstructions: _previous, reason: _reason, ...args } = request.args;
+  const { previousInstructions: _previous, reason: _reason, ...given } = request.args;
+  const current = await ctx.deps.prisma.bot.findUnique({
+    where: { id: run.botId },
+    select: {
+      name: true,
+      description: true,
+      instructions: true,
+      color: true,
+      notifyOnFinish: true,
+      dailyCheckIns: true,
+      modelProvider: true,
+      modelId: true,
+      thinkingLevel: true,
+      autoSpeak: true,
+      voiceId: true,
+    },
+  });
+  const args = current
+    ? dropUnchangedOwnBotArgs(
+        given,
+        current,
+        argumentGiven(given.model) ? await currentModelNames(ctx, current) : [],
+        current.thinkingLevel ? undefined : run.thinkingLevel,
+      )
+    : given;
   request.args = args;
+  // A paged read never writes: the handler answers with the settings and names every other field
+  // it left out, so the write checks below do not apply to those fields.
+  if (argumentGiven(args.instructions_offset ?? args.instructionsOffset)) return undefined;
   const settingsOnly = Object.keys(args).filter(
     (key) => !OWN_FIELDS.has(key) && argumentGiven(args[key]),
   );
   if (settingsOnly.length)
-    return { error: `Only the owner can change ${settingsOnly.join(", ")}, in Settings.` };
+    return refusal(
+      "owner_only_settings",
+      `Only the owner can change ${settingsOnly.join(", ")}, in Settings.`,
+    );
   const unguarded = await neverAsks(ctx);
   if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
     if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
-      return {
-        error:
-          "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
-      };
+      return refusal(
+        "owner_only_model_settings",
+        "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+      );
     if (!unguarded && (await isRunTainted(ctx)))
       return refuseOwnerSettingsChange(
         ctx,
@@ -522,21 +602,31 @@ async function prepareOwnBotUpdate(
       );
   }
   if (!argumentGiven(args.instructions)) return undefined;
-  if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
+  if (isSubagentToolExecution(executionId))
+    return refusal("helper_instructions", "Helpers cannot set instructions.");
   const instructions = String(args.instructions).trim();
   if (instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH)
-    return { error: `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.` };
+    return refusal(
+      "instructions_too_long",
+      `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.`,
+    );
   if (redactSecrets(instructions, ctx.secrets) !== instructions)
-    return { error: "Instructions cannot contain credentials." };
+    return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
   if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
-    return { error: "Instruction changes are blocked for runs someone else started." };
+    return refusal(
+      "instructions_run_not_owner_started",
+      "Instruction changes are blocked for runs someone else started.",
+    );
   if (Object.keys(args).some((key) => key !== "instructions"))
-    return { error: "Change your instructions in their own update_bot call." };
+    return refusal(
+      "instructions_need_own_call",
+      "Change your instructions in their own update_bot call.",
+    );
   // An older checkpoint predates the baseline; this attempt must not guess.
   if (ctx.state.ownInstructionsBaseline === undefined)
-    return { error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR };
+    return refusal("instructions_baseline_unknown", OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR);
   request.args = {
     instructions,
     reason: "Set in chat",

@@ -186,6 +186,39 @@ describe("parseAutoReviewJudgeText", () => {
     expect(parseAutoReviewJudgeText('{"decision":"pass"')).toEqual({ decision: "error" });
   });
 
+  it.each([
+    [
+      "pass then a cut-off ask",
+      '{"decision":"pass","reason":"initial"}\n{"decision":"ask","reason":"private data',
+      { decision: "ask" },
+    ],
+    [
+      "ask then a cut-off pass",
+      '{"decision":"ask","reason":"Sends email."}\n{"decision":"pass","reason":"fi',
+      { decision: "ask", reason: "Sends email." },
+    ],
+    ["a cut-off pass alone", '{"decision":"pass","reason":"Fits', { decision: "error" }],
+    [
+      "one fenced object",
+      '```json\n{"decision":"pass","reason":"Fits."}\n```',
+      { decision: "pass", reason: "Fits." },
+    ],
+    [
+      "one fenced object with CRLF line endings",
+      '```json\r\n{"decision":"pass","reason":"Fits."}\r\n```',
+      { decision: "pass", reason: "Fits." },
+    ],
+    [
+      "prose around a pass",
+      'Sure:\n{"decision":"pass","reason":"Fits."}\nDone.',
+      { decision: "ask" },
+    ],
+    ["repeated keys", '{"decision":"ask","decision":"pass"}', { decision: "ask" }],
+    ["a pass that needs repair", '{"decision":"pass",reason:"Fits.",}', { decision: "ask" }],
+  ])("reads %s", (_name, text, expected) => {
+    expect(parseAutoReviewJudgeText(text)).toEqual(expected);
+  });
+
   it("strips em dashes from reasons", () => {
     expect(parseAutoReviewJudgeText('{"decision":"ask","reason":"Risky \u2014 pause"}')).toEqual({
       decision: "ask",

@@ -12,12 +12,17 @@ import { FakeSandboxProvider } from "./fake-sandbox.js";
 
 class TestDesktop {
   readonly calls: string[] = [];
+  keepsDisk = true;
   provider(desktopId = "ecd-fake") {
     const provider = new FakeSandboxProvider();
     const provision = provider.provision.bind(provider);
     const descriptor = provider.describe();
     return Object.assign(provider, {
-      describe: () => ({ ...descriptor, id: "desktop" }),
+      describe: () => ({
+        ...descriptor,
+        id: "desktop",
+        capabilities: { ...descriptor.capabilities, persistentHome: this.keepsDisk },
+      }),
       provision: async (...args: Parameters<typeof provision>) => ({
         ...(await provision(...args)),
         kind: "desktop",
@@ -291,6 +296,22 @@ it("routes an existing computer through a retained deployment connection after a
   desktop.calls.length = 0;
   await sandbox.listFiles(computer, "", ctx);
   expect(desktop.calls.some((call) => call === "listFiles")).toBe(true);
+});
+
+it("asks the retained connection, not the selected provider, whether a computer keeps its disk", async () => {
+  const { sandbox, select, desktop } = setup({ provider: "desktop", settings });
+  desktop.keepsDisk = false;
+  const computer = await sandbox.provision({ botId: "a", homePath: "/h" }, ctx);
+  await select({
+    provider: "test-cloud",
+    settings: {
+      provider: "test-cloud",
+      values: { apiKey: "test-key" },
+      connections: { desktop: values },
+    },
+  });
+  expect(sandbox.describe().capabilities.persistentHome).toBe(true);
+  expect(await sandbox.keepsHome(computer)).toBe(false);
 });
 
 it("reports a computer no saved connection reaches as gone, so it can be reset", async () => {

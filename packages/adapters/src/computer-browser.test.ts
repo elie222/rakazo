@@ -467,6 +467,15 @@ describe("page browser safety", () => {
       },
     });
     expect(commands).toEqual([{ command: "purchase_check", actions }]);
+    // The order lines the page lists pass on; anything that is not a name and an amount is dropped.
+    const items = [{ name: "Bananas × 6", amount: "$3.00" }];
+    reply = {
+      ...answer,
+      purchase: { ...answer.purchase, items: [...items, "Tax $1", { name: 1 }] },
+    };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toMatchObject({
+      purchase: { label: "Pay $5", items },
+    });
     reply = { ...answer, purchase: null };
     expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
       purchase: null,

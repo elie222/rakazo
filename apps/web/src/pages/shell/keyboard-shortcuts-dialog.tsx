@@ -74,7 +74,10 @@ export function KeyboardShortcutsDialog({
           {rows
             .filter((row): row is Row => row !== false)
             .map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-4 py-2 text-sm">
+              <div
+                key={row.label}
+                className="flex items-center justify-between gap-4 py-2 text-body"
+              >
                 <dt className="text-foreground">{row.label}</dt>
                 <dd className="flex shrink-0 items-center gap-2">
                   {row.keys.map((chord) => (

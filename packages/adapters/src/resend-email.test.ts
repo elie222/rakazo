@@ -1,3 +1,4 @@
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { ResendEmailProvider } from "./resend-email.js";
 
@@ -41,6 +42,26 @@ describe("ResendEmailProvider", () => {
     });
   });
 
+  it("sends as a bot's own address, with its copies and reply-to", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id: "email-1" }));
+    await new ResendEmailProvider(
+      { ...config, replyTo: "founder@example.test" },
+      { fetch: request },
+    ).send({
+      ...message,
+      from: "Scout <scout@bots.test>",
+      cc: ["grace@example.test"],
+      replyTo: "scout@bots.test",
+    });
+    const body = JSON.parse(request.mock.calls[0]![1]!.body as string);
+    expect(body).toMatchObject({
+      from: "Scout <scout@bots.test>",
+      cc: ["grace@example.test"],
+      reply_to: "scout@bots.test",
+    });
+    expect(body).not.toHaveProperty("replyTo");
+  });
+
   it("gives separate deliveries different keys", async () => {
     const request = vi
       .fn<typeof fetch>()
@@ -76,9 +97,26 @@ describe("ResendEmailProvider", () => {
         { status: 422 },
       ),
     );
-    await expect(provider(request).send(message)).rejects.toThrow(
+    const delivery = provider(request).send(message);
+    await expect(delivery).rejects.toThrow(
       /^Resend email request failed \(HTTP 422: validation_error: Invalid `to` field: <address>\)$/,
     );
+    await expect(delivery).rejects.toBeInstanceOf(EmailRecipientRejectedError);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat other validation errors as a refused recipient", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { statusCode: 422, name: "validation_error", message: "Invalid `from` field." },
+          { status: 422 },
+        ),
+      );
+    const delivery = provider(request).send(message);
+    await expect(delivery).rejects.toThrow(/HTTP 422/);
+    await expect(delivery).rejects.not.toBeInstanceOf(EmailRecipientRejectedError);
   });
 
   it("does not read an oversized error body", async () => {
@@ -103,6 +141,17 @@ describe("ResendEmailProvider", () => {
       .fn<typeof fetch>()
       .mockImplementation(async () => Response.json({ error: "private" }));
     await expect(provider(request).send(message)).rejects.toThrow("invalid email response");
+  });
+
+  it("does not read an oversized success body", async () => {
+    const response = () =>
+      Response.json({ id: "email_1" }, { headers: { "content-length": String(1024 * 1024) } });
+    const responses = [response(), response(), response()];
+    const request = vi.fn<typeof fetch>();
+    for (const sent of responses) request.mockResolvedValueOnce(sent);
+    const cancels = responses.map((sent) => vi.spyOn(sent.body!, "cancel"));
+    await expect(provider(request).send(message)).rejects.toThrow(/^Resend email request failed$/);
+    for (const cancel of cancels) expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("bounds a stalled response body and drains without accepting new sends", async () => {

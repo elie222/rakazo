@@ -1,14 +1,16 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
+import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import {
   createScreenReconnect,
   displayName,
   isRetryableError,
-  SCREEN_RECONNECT_DELAY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -17,6 +19,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   useWindowDimensions,
   View,
@@ -35,7 +38,6 @@ import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
 import { currentApiBase, rpc } from "../lib/api";
 import { useAppForeground } from "../lib/app-foreground";
-import type { ComputerStatus } from "../lib/computer";
 import {
   COMPUTER_HEARTBEAT_MS,
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
@@ -46,9 +48,7 @@ import {
   isProxiedScreenPage,
   nextLoadedScreenUrl,
   previewPlaceholder,
-  readScreenUrl,
   retainScreenSource,
-  SCREEN_URL_OPEN_ATTEMPTS,
   screenPageState,
   screenPageStatus,
   screenStreamKey,
@@ -61,44 +61,53 @@ import {
   isComputerKeyboardReadyMessage,
   NATIVE_COMPUTER_KEYBOARD_BOOT,
 } from "../lib/computer-keyboard";
-import { createComputerRefresh } from "../lib/computer-refresh";
 import { tabletopLayout } from "../lib/fold-layout";
 import { useFoldRegions } from "../lib/fold-regions";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
-import { computerBootErrorDetail, errorText } from "../lib/user-error";
+import { useComputerBoot } from "../lib/use-computer-boot";
+import { errorText } from "../lib/user-error";
 
 export default function Computer() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const navigation = useNavigation();
+  const router = useRouter();
   const windowSize = useWindowDimensions();
   const stacked = stacksAtTextScale(windowSize.fontScale);
   const folds = useFoldRegions();
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
-  const name = displayName(nameParam, t("Bot"));
+  const name = displayName(nameParam, t`Bot`);
   const foreground = useAppForeground();
-  const [computer, setComputer] = useState<ComputerStatus | null>(null);
+  const {
+    computer,
+    setComputer,
+    screenUrl,
+    setScreenUrl,
+    error,
+    setError,
+    readyBotId,
+    setReadyBotId,
+    booting,
+    setBootingCount,
+    bootFailed,
+    setBootFailed,
+    refreshController,
+    bootComputer,
+  } = useComputerBoot(botId);
   const [cleaningUp, setCleaningUp] = useState(false);
-  const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [readyBotId, setReadyBotId] = useState<string | null>(null);
-  const [bootingCount, setBootingCount] = useState(0);
   const [switchingCount, setSwitchingCount] = useState(0);
-  const booting = bootingCount > 0;
-  const [bootFailed, setBootFailed] = useState(false);
   const switching = switchingCount > 0;
   const [computerOpen, setComputerOpen] = useState(false);
   // The keyboard closes on the Release tap, not when the server answers.
   const [releasing, setReleasing] = useState(false);
   const autoBooted = useRef<string | null>(null);
-  const screenWebViewRef = useRef<WebView>(null);
+  const screenWebViewRef = useRef<WebView<object>>(null);
   const keyboardGate = useRef({
     key: "",
     session: 0,
@@ -119,7 +128,10 @@ export default function Computer() {
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
-  const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
+  const hasControl =
+    computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
+    !computer.controlledByOther;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
   const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
@@ -163,25 +175,6 @@ export default function Computer() {
     navigation.setOptions({ title: label });
   }, [label, navigation]);
 
-  const refreshController = useMemo(
-    () =>
-      createComputerRefresh({
-        readStatus: () => rpc("computer/status", { botId: botId ?? "" }),
-        readScreen: (attempts) =>
-          readScreenUrl(() => rpc("computer/screenUrl", { botId: botId ?? "" }), {
-            attempts,
-          }),
-        onStatus: (status) => {
-          setComputer(status);
-          // Another client may have started it since this one failed.
-          if (status.state === "running") setBootFailed(false);
-        },
-        onScreen: setScreenUrl,
-        onReady: () => setReadyBotId(botId ?? null),
-        onInitialError: (err) => setError(errorText(err)),
-      }),
-    [botId],
-  );
   const refresh = refreshController.refresh;
   const refreshAfterMaintenance = useCallback(async () => {
     await refresh();
@@ -211,66 +204,6 @@ export default function Computer() {
     else refreshController.pause();
   }, [botId, foreground, refreshController]);
 
-  async function bootComputer({
-    takeControl,
-    showProgress,
-    force = false,
-  }: {
-    takeControl: boolean;
-    showProgress: boolean;
-    force?: boolean;
-  }) {
-    if (!botId || !refreshController.isActive()) return false;
-    const action = refreshController.beginAction();
-    const needsBoot = force || computer?.state !== "running" || !screenUrl;
-    let starting = needsBoot;
-    const showBooting = showProgress && needsBoot;
-    if (showBooting) {
-      setBootingCount((count) => count + 1);
-      setError(null);
-    }
-    setBootFailed(false);
-    try {
-      if (needsBoot) {
-        const answered = await rpc(
-          "computer/boot",
-          { botId },
-          { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
-        ).then(
-          () => true,
-          (err: unknown) => {
-            // The server keeps booting after the client stops waiting; the status poll takes over.
-            if (err instanceof Error && err.name === "TimeoutError") return false;
-            throw err;
-          },
-        );
-        if (!answered) return false;
-      }
-      starting = false;
-      if (!action.isActive()) return false;
-      if (takeControl) await rpc("computer/takeover", { botId });
-      if (!action.isActive()) return false;
-      await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
-      if (!action.isActive()) return false;
-      setError(null);
-      return true;
-    } catch (err) {
-      if (!action.isActive()) return false;
-      setError(
-        starting
-          ? computerBootErrorDetail(err)
-          : err instanceof Error && err.name === "TimeoutError"
-            ? t("Request timed out")
-            : errorText(err, t("Could not open computer")),
-      );
-      setBootFailed(starting);
-      throw err;
-    } finally {
-      if (action.isActive() && showBooting) setBootingCount((count) => count - 1);
-      action.finish();
-    }
-  }
-
   useEffect(() => {
     if (!botId || readyBotId !== botId || switching) return;
     if (computer?.state === "booting" || computer?.state === "suspended") return;
@@ -292,14 +225,21 @@ export default function Computer() {
 
   // A screen that drops after connecting loads again by itself now and then; the load goes
   // through the screen's full authorization, so a revoked one stays closed.
-  const screenReconnect = useRef(createScreenReconnect());
+  // One reconnect at a time: once its reload is on its way, the same drop's further reports
+  // must not start another.
+  const screenReconnecting = useRef(false);
+  // Each bot's screen has its own reconnect budget, so a committed switch of bots starts a
+  // fresh one. useMemo ties the new budget to a committed render: a render that never
+  // commits, such as a suspended transition toward another bot that is then cancelled,
+  // leaves the screen on screen with its budget.
+  const screenReconnect = useMemo(() => createScreenReconnect(), [botId]);
   const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const screenReconnectWait = useRef<AbortController | null>(null);
   const currentScreenUrl = useRef<string | null>(null);
   currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
   const onScreenState = useCallback(
     (state: ScreenPageState) => {
-      const next = screenReconnect.current.report(state);
+      const next = screenReconnect.report(state);
       if (next !== "reconnect") {
         // A drop that won't reconnect by itself shows why, with Retry.
         const failed = next === "error";
@@ -308,16 +248,21 @@ export default function Computer() {
           !failed
             ? null
             : state === "failed"
-              ? t("Could not connect to the computer screen")
-              : t("The screen connection closed."),
+              ? t`Could not connect to the computer screen`
+              : t`The screen connection closed.`,
         );
         return;
       }
+      // One reconnect at a time: while its reload is still on its way, further reports of the
+      // same drop only describe it again and must not start a second reload.
+      if (screenReconnecting.current) return;
+      screenReconnecting.current = true;
       clearTimeout(screenReconnectTimer.current);
       screenReconnectWait.current?.abort();
       const wait = new AbortController();
       screenReconnectWait.current = wait;
       const url = currentScreenUrl.current;
+      const delay = screenReconnect.delayMs();
       screenReconnectTimer.current = setTimeout(() => {
         // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
         // reload then shows whatever the page answers.
@@ -327,22 +272,35 @@ export default function Computer() {
           async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
           { signal: wait.signal },
         ).then((outcome) => {
-          if (outcome !== "cancelled") void reloadScreen();
+          if (outcome === "cancelled") {
+            screenReconnecting.current = false;
+            return;
+          }
+          void reloadScreen();
         });
-      }, SCREEN_RECONNECT_DELAY_MS);
+      }, delay);
     },
-    [reloadScreen, t],
+    [reloadScreen, screenReconnect, t],
   );
-  const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
-  // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
-  // cancels a pending reconnect.
+  const onScreenLoadStart = useCallback(() => {
+    screenReconnecting.current = false;
+    screenReconnect.loaded();
+  }, [screenReconnect]);
+  // Closing the screen, leaving the app, switching bots or a new screen URL (taking or
+  // releasing control) cancels a pending reconnect.
   useEffect(
     () => () => {
       screenReconnectWait.current?.abort();
       clearTimeout(screenReconnectTimer.current);
+      screenReconnecting.current = false;
     },
     // A renewed link for the same screen keeps the page and the pending reconnect.
-    [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
+    [
+      botId,
+      computerOpen,
+      foreground,
+      embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null,
+    ],
   );
 
   useEffect(() => {
@@ -397,9 +355,7 @@ export default function Computer() {
     try {
       await rpc("threads/send", {
         botId: botId ?? "",
-        text: t(
-          "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
-        ),
+        text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
       });
       dismissDiskWarning();
     } catch (err) {
@@ -421,7 +377,7 @@ export default function Computer() {
     } catch {
       if (action.isActive()) {
         setScreenOriginError(false);
-        setScreenError(t("Could not continue"));
+        setScreenError(t`Could not continue`);
       }
     } finally {
       setReleasing(false);
@@ -450,7 +406,7 @@ export default function Computer() {
       await action.refresh();
     } catch (err) {
       if (!action.isActive()) return;
-      setError(errorText(err, t("Could not switch computer")));
+      setError(errorText(err, t`Could not switch computer`));
     } finally {
       if (action.isActive()) setSwitchingCount((count) => count - 1);
       action.finish();
@@ -468,21 +424,27 @@ export default function Computer() {
   const placeholder =
     screenError ??
     (unreachableScreen
-      ? t("Could not load the desktop. This device cannot reach the screen URL.")
+      ? t`Could not load the desktop. This device cannot reach the screen URL.`
       : previewPlaceholder(computer?.state, booting, name, computer?.mode));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
-  const canRetry = !bootPending && (bootFailed || computer?.state === "error");
+  // Retrying cannot help once the hours are spent; only a plan change can.
+  const allowanceUsed = computer?.state !== "running" && isComputerAllowanceUsed(error);
+  const canRetry = !allowanceUsed && !bootPending && (bootFailed || computer?.state === "error");
   const screenRetry =
     unreachableScreen ||
     (computer?.state === "running" && screenOriginError && Boolean(screenError));
   const retryScreenAction = screenRetry ? (
     <NativeActionButton
       style={{ marginBottom: 16 }}
-      label={t("Retry screen")}
+      label={t`Retry screen`}
       prominence="primary"
       size="default"
-      onPress={() => void reloadScreen()}
+      onPress={() => {
+        // A pressed retry starts the screen's reconnects over, with their whole budget.
+        screenReconnect.reset();
+        void reloadScreen();
+      }}
     />
   ) : null;
 
@@ -498,10 +460,10 @@ export default function Computer() {
       {canRetry && computer?.state !== "running" ? (
         <View style={{ gap: 8, marginBottom: 16 }}>
           <Text style={{ color: tokens.destructive, fontSize: 17, fontWeight: "600" }}>
-            {t("Couldn't start the computer")}
+            {t`Couldn't start the computer`}
           </Text>
           <Text style={{ color: tokens.mutedForeground }}>
-            {t("Something went wrong while it was starting. Try again in a moment.")}
+            {t`Something went wrong while it was starting. Try again in a moment.`}
           </Text>
           {error ? (
             <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{error}</Text>
@@ -509,13 +471,22 @@ export default function Computer() {
         </View>
       ) : error || canRetry ? (
         <Text style={{ color: tokens.mutedForeground, marginBottom: 12 }}>
-          {error ?? t("Something went wrong while it was starting. Try again in a moment.")}
+          {error ?? t`Something went wrong while it was starting. Try again in a moment.`}
         </Text>
       ) : null}
       {retryScreenAction}
+      {allowanceUsed ? (
+        <NativeActionButton
+          label={t`Upgrade`}
+          prominence="primary"
+          size="default"
+          style={{ marginBottom: 16 }}
+          onPress={() => router.push("/billing")}
+        />
+      ) : null}
       {canRetry ? (
         <NativeActionButton
-          label={t("Try again")}
+          label={t`Try again`}
           prominence="primary"
           size="default"
           style={{ marginBottom: 16 }}
@@ -537,7 +508,7 @@ export default function Computer() {
       >
         {computerOpen ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: tokens.mutedForeground }}>{t("Open in full window")}</Text>
+            <Text style={{ color: tokens.mutedForeground }}>{t`Open in full window`}</Text>
           </View>
         ) : foreground && computer?.state === "running" && embeddedScreenUrl && !screenError ? (
           <ScreenWebView
@@ -551,7 +522,7 @@ export default function Computer() {
               refreshController.invalidateScreen();
               setScreenOriginError(true);
               setScreenError(
-                t("Could not load the desktop. This device cannot reach the screen URL."),
+                t`Could not load the desktop. This device cannot reach the screen URL.`,
               );
             }}
           />
@@ -573,7 +544,7 @@ export default function Computer() {
         )}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={bootPending ? placeholder : t("Open computer")}
+          accessibilityLabel={bootPending ? placeholder : t`Open computer`}
           accessibilityState={{ disabled: bootPending, busy: bootPending }}
           disabled={bootPending}
           onPress={() => void openComputer({ takeControl: false })}
@@ -604,7 +575,7 @@ export default function Computer() {
           />
         ) : (
           <NativeActionButton
-            label={t("Take control")}
+            label={t`Take control`}
             prominence="secondary"
             disabled={bootPending}
             style={{ alignSelf: "center" }}
@@ -624,15 +595,11 @@ export default function Computer() {
           <Text
             style={{ color: tokens.warning, ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }) }}
           >
-            {t("Computer is {percent}% full", { percent: computer.diskFullPercent })}
+            {t`Computer is ${ph({ percent: computer.diskFullPercent })}% full`}
           </Text>
+          <NativeActionButton label={t`Dismiss`} prominence="plain" onPress={dismissDiskWarning} />
           <NativeActionButton
-            label={t("Dismiss")}
-            prominence="plain"
-            onPress={dismissDiskWarning}
-          />
-          <NativeActionButton
-            label={t("Clean up")}
+            label={t`Clean up`}
             prominence="secondary"
             busy={cleaningUp}
             onPress={() => void cleanUpDisk()}
@@ -710,7 +677,7 @@ export default function Computer() {
                     }}
                   >
                     <Text numberOfLines={1} style={{ color: tokens.success, fontSize: 12 }}>
-                      {t("You have control")}
+                      {t`You have control`}
                     </Text>
                   </View>
                 ) : null}
@@ -723,7 +690,7 @@ export default function Computer() {
                   />
                 ) : (
                   <NativeActionButton
-                    label={t("Take control")}
+                    label={t`Take control`}
                     prominence="secondary"
                     fill={false}
                     style={{ alignSelf: "center" }}
@@ -735,7 +702,7 @@ export default function Computer() {
                   />
                 )}
                 <GlassIconButton
-                  accessibilityLabel={t("Close computer")}
+                  accessibilityLabel={t`Close computer`}
                   onPress={() => setComputerOpen(false)}
                   ios="xmark"
                   android="close"
@@ -744,6 +711,14 @@ export default function Computer() {
                 />
               </View>
             </SafeAreaView>
+            {hasControl && computer?.shared ? (
+              <Text
+                testID="computer-shared-browser"
+                style={[styles.sharedBrowser, { color: tokens.mutedForeground }]}
+              >
+                {t`Sites you sign in to stay signed in for everyone in this space`}
+              </Text>
+            ) : null}
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
               {foreground && loadedScreenUrl ? (
                 <ScreenWebView
@@ -765,7 +740,7 @@ export default function Computer() {
                     refreshController.invalidateScreen();
                     setScreenOriginError(true);
                     setScreenError(
-                      t("Could not load the desktop. This device cannot reach the screen URL."),
+                      t`Could not load the desktop. This device cannot reach the screen URL.`,
                     );
                   }}
                 />
@@ -807,14 +782,14 @@ function ComputerReleaseActions({
   takeoverRequested: boolean;
   onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const actions: Array<{ label: string; reason?: ComputerReleaseReason; primary?: boolean }> =
     takeoverRequested
       ? [
-          { label: t("Skip"), reason: "skipped" },
-          { label: t("I’m done"), reason: "done", primary: true },
+          { label: t`Skip`, reason: "skipped" },
+          { label: t`I’m done`, reason: "done", primary: true },
         ]
-      : [{ label: t("Release") }];
+      : [{ label: t`Release` }];
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       {actions.map((action) => (
@@ -847,7 +822,7 @@ function ScreenWebView({
   interactive: boolean;
   nativeKeyboard?: boolean;
   keyboardSession?: string;
-  webViewRef?: RefObject<WebView | null>;
+  webViewRef?: RefObject<WebView<object> | null>;
   onKeyboardMessage?: (data: string) => void;
   onScreenState?: (state: ScreenPageState) => void;
   onLoadStart?: () => void;
@@ -924,3 +899,7 @@ function ScreenWebView({
     />
   );
 }
+
+const styles = StyleSheet.create({
+  sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+});

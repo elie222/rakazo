@@ -1,9 +1,15 @@
+import { ph, t } from "@lingui/core/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { botAvatarActivity, groupBotsForSidebar, logoAvatarNeedsAttention } from "@rakazo/core";
-import type { MobileBot, MobileGroup, MobileSpace } from "./api";
-import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
-import { t } from "./i18n";
+import {
+  botAvatarActivity,
+  chatSnoozed,
+  groupBotsForSidebar,
+  logoAvatarNeedsAttention,
+} from "@rakazo/core";
+import { rpc, selectedSpaceId } from "./api";
+import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import type { MobileBot, MobileGroup, MobileSpace } from "./mobile-types";
 import type { InboxSignal } from "./offscreen-unreads";
 
 export type InboxSpace = Pick<
@@ -35,19 +41,23 @@ export type PinnedChat =
   | { kind: "group"; group: MobileGroup | SpaceGroup };
 export type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] };
 
+/** A bot waiting on you: a question or an approval only you can answer. */
+export function botNeedsAttention(bot: MobileBot | SpaceBot): boolean {
+  const activity = mobileLogoAvatarActivity.getActivity(bot.id, bot.status);
+  // Every row asks, so read the avatar only for a bot that is waiting.
+  return logoAvatarNeedsAttention(activity) && botAvatarActivity(bot, activity) === activity;
+}
+
 /** What a chat adds to the off-screen unread pills: unread, and a bot waiting on you. */
 function chatSignal(chat: PinnedChat): InboxSignal {
+  // A snoozed chat asks for nothing until it wakes, even shown under its open Snoozed heading.
+  if (chatSnoozed(chat.kind === "bot" ? chat.bot : chat.group, Date.now())) {
+    return { unread: 0, attention: 0 };
+  }
   return chat.kind === "bot"
     ? {
         unread: chat.bot.unread ? 1 : 0,
-        attention: logoAvatarNeedsAttention(
-          botAvatarActivity(
-            chat.bot,
-            mobileLogoAvatarActivity.getActivity(chat.bot.id, chat.bot.status),
-          ),
-        )
-          ? 1
-          : 0,
+        attention: botNeedsAttention(chat.bot) ? 1 : 0,
       }
     : { unread: chat.group.unread ? 1 : 0, attention: 0 };
 }
@@ -80,9 +90,9 @@ export function canDeleteInboxSpace(space: Pick<InboxSpace, "isDefault" | "canDe
 export function deleteSpaceTitle(space: Pick<InboxSpace, "name" | "botCount" | "bots">) {
   // Servers before botCount only listed the member's active bots.
   const bots = space.botCount ?? space.bots.length;
-  if (bots === 0) return t("Delete {name}?", { name: space.name });
-  if (bots === 1) return t("Delete {name} and its bot?", { name: space.name });
-  return t("Delete {name} and its {count} bots?", { name: space.name, count: bots });
+  if (bots === 0) return t`Delete ${ph({ name: space.name })}?`;
+  if (bots === 1) return t`Delete ${ph({ name: space.name })} and its bot?`;
+  return t`Delete ${ph({ name: space.name })} and its ${ph({ count: bots })} bots?`;
 }
 
 /** Only headings with no chats under them, counting chats in collapsed sections. */
@@ -95,14 +105,23 @@ export function inboxNeedsCreateHint(items: readonly { type: string; count?: num
   return items.length > 0 && inboxHasNoChats(items);
 }
 
-/** `collapsed` holds section heading keys. */
+/** The heading of a space's snoozed chats, which starts folded. */
+export function snoozedHeadingKey(spaceId: string) {
+  return `${spaceId}:snoozed`;
+}
+
+/**
+ * `collapsed` holds section heading keys; for the snoozed heading, which starts folded, it holds
+ * it open. Snoozed chats leave their sections for that heading, at the end of their space.
+ */
 export function spaceInboxItems(
   spaces: InboxSpace[],
   collapsed: ReadonlySet<string> = new Set(),
   editableSpaceId?: string,
+  now = Date.now(),
 ): InboxSpaceItem[] {
   return spaces.flatMap((space): InboxSpaceItem[] => {
-    const chats = [
+    const allChats = [
       ...space.bots.map((chat) => ({
         type: "bot" as const,
         bot: chat,
@@ -118,13 +137,17 @@ export function spaceInboxItems(
         sectionId: chat.sectionId,
       })),
     ];
+    const isSnoozed = (item: (typeof allChats)[number]) =>
+      chatSnoozed(item.type === "bot" ? item.bot : item.group, now);
+    const snoozed = allChats.filter(isSnoozed);
+    const chats = allChats.filter((item) => !isSnoozed(item));
     const items: InboxSpaceItem[] = [];
-    if (spaces.length > 1 || !space.isDefault || chats.length === 0) {
+    if (spaces.length > 1 || !space.isDefault || allChats.length === 0) {
       items.push({ type: "heading", key: space.id, title: space.name, space });
     }
     for (const group of groupBotsForSidebar(chats, space.botSections, {
       includeEmptySections: true,
-      labels: { pinned: t("Pinned"), unassigned: t("Unassigned") },
+      labels: { pinned: t`Pinned`, unassigned: t`Unassigned` },
     })) {
       if (group.title) {
         const key = `${space.id}:${group.key}`;
@@ -145,6 +168,26 @@ export function spaceInboxItems(
           items.push({ type: "bot", bot: item.bot });
         } else {
           items.push({ type: "group", group: item.group });
+        }
+      }
+    }
+    if (snoozed.length > 0) {
+      const key = snoozedHeadingKey(space.id);
+      const folded = !collapsed.has(key);
+      items.push({
+        type: "heading",
+        key,
+        title: t`Snoozed`,
+        collapsed: folded,
+        count: snoozed.length,
+      });
+      if (!folded) {
+        for (const item of snoozed) {
+          items.push(
+            item.type === "bot"
+              ? { type: "bot", bot: item.bot }
+              : { type: "group", group: item.group },
+          );
         }
       }
     }

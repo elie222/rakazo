@@ -41,7 +41,7 @@ export function AvailabilityLabel({ availability }: { availability?: SpaceAvaila
       ? spaces.find((s) => s.id === availability.spaceIds[0])
       : null;
   return (
-    <span className="shrink-0 text-[12.5px] text-muted-foreground">
+    <span className="shrink-0 text-body-sm text-muted-foreground">
       {only ? (
         only.name
       ) : (
@@ -100,7 +100,7 @@ export function AvailabilityControl({
   };
 
   return (
-    <div data-testid="availability" className="flex flex-wrap items-center gap-1 text-xs">
+    <div data-testid="availability" className="flex flex-wrap items-center gap-1 text-label">
       <span className="text-muted-foreground">
         <Trans>Available in</Trans>
       </span>
@@ -111,7 +111,7 @@ export function AvailabilityControl({
               variant="ghost"
               size="sm"
               disabled={saving}
-              className="h-6 gap-1 px-1.5 text-xs font-normal text-foreground"
+              className="h-6 gap-1 px-1.5 text-label font-normal text-foreground"
             />
           }
         >
@@ -144,7 +144,7 @@ export function AvailabilityControl({
         </DropdownMenuContent>
       </DropdownMenu>
       {error ? (
-        <span role="alert" className="text-[13px] text-destructive">
+        <span role="alert" className="text-body-sm text-destructive">
           {error}
         </span>
       ) : null}

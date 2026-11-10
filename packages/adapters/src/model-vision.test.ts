@@ -57,7 +57,7 @@ describe("model vision gating for computer tools", () => {
     vi.stubEnv("PI_DEFAULT_MODEL", "");
     expect(resolveModelRefForVisionCheck("scripted", "scripted")).toEqual({
       provider: "openrouter",
-      id: "openai/gpt-6-luna",
+      id: "anthropic/claude-haiku-5.5",
     });
     expect(modelAcceptsImageInput("scripted", "scripted")).toBe(true);
 
@@ -70,7 +70,7 @@ describe("model vision gating for computer tools", () => {
   });
 
   it("follows the account catalog for a live Codex slug outside its sibling family", () => {
-    const id = "gpt-6.1-terra";
+    const id = "gpt-6.2-terra";
     const provider = CHATGPT_OAUTH_PROVIDER;
     const auth: CodexCatalogSpaceAuth = {
       byProvider: { [provider]: "oauth" },

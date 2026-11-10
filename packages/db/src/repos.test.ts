@@ -29,7 +29,7 @@ const baseBot = {
   memoryScope: null as string | null,
   createdAt: new Date("2026-08-19T00:00:00.000Z"),
   updatedAt: new Date("2026-08-19T00:00:00.000Z"),
-  thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+  thread: { id: "thread-1", reads: [{ unread: false }], messages: [], runs: [] },
   runs: [],
   computer: null,
 };
@@ -450,7 +450,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           id: "thread-2",
-          unread: true,
+          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running", threadId: "group-thread" }],
@@ -478,7 +478,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         ]),
     } as unknown as PrismaClient);
 
-    await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
+    await expect(repos.listSpaceBotsForSpaces(["ws-2"], "user-1")).resolves.toEqual([
       {
         id: "bot-2",
         spaceId: "ws-2",
@@ -490,6 +490,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         pinned: true,
         sectionId: null,
         unread: true,
+        snoozedUntil: "2026-08-21T09:00:00.000Z",
         parentBotId: null,
         preview: "Waiting for a reply",
         status: "running",
@@ -506,9 +507,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         }),
       }),
     );
-    expect(query.where).toEqual(
-      expect.objectContaining({ spaceId: { in: ["ws-2"] }, userId: actor.userId }),
-    );
+    expect(query.where).toEqual(expect.objectContaining({ spaceId: { in: ["ws-2"] } }));
     expect(query.select).not.toHaveProperty("description");
     expect(query.select).not.toHaveProperty("instructions");
     expect(query.select).not.toHaveProperty("computer");
