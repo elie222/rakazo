@@ -885,7 +885,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
   const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
-  await dictation.listen({ ...handlers, signal, lang });
+  await dictation.listen({ ...handlers, signal, lang, call: true });
   return true;
 }
 

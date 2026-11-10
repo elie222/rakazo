@@ -133,6 +133,19 @@ describe("mobile dictation", () => {
     expect(fake.abort).toHaveBeenCalled();
   });
 
+  it("shares the call's audio session only when a call is listening", async () => {
+    await listen({ onFinal: vi.fn(), call: true });
+    expect(fake.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        iosCategory: {
+          category: "playAndRecord",
+          categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
+          mode: "default",
+        },
+      }),
+    );
+  });
+
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {
     const onFinal = vi.fn();
     const interims: string[] = [];
@@ -141,11 +154,6 @@ describe("mobile dictation", () => {
       lang: "en-US",
       interimResults: true,
       continuous: true,
-      iosCategory: {
-        category: "playAndRecord",
-        categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
-        mode: "default",
-      },
     });
 
     fake.hear("how is the");

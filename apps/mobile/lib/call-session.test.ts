@@ -1546,6 +1546,11 @@ describe("mobile call recognition recovery", () => {
     fake.speeches[0]?.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(start).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        iosCategory: expect.objectContaining({ category: "playAndRecord" }),
+      }),
+    );
     return {
       ...fake,
       start,

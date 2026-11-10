@@ -43,7 +43,7 @@ export type SpeechRecognizer = {
     lang: string;
     interimResults: boolean;
     continuous: boolean;
-    iosCategory: typeof IOS_CALL_SESSION;
+    iosCategory?: typeof IOS_CALL_SESSION;
   }): void;
   stop(): void;
   abort(): void;
@@ -59,6 +59,7 @@ export type SpeechRecognizer = {
 type Session = {
   recognizer: SpeechRecognizer;
   lang: string;
+  call: boolean;
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
@@ -159,6 +160,7 @@ export async function listen(opts: {
   signal?: AbortSignal;
   lang?: string;
   endpointMs?: number;
+  call?: boolean;
 }): Promise<void> {
   // A cancelled request can arrive after a newer session started; it must not stop that one.
   if (opts.signal?.aborted) return;
@@ -173,6 +175,7 @@ export async function listen(opts: {
   const session: Session = {
     recognizer,
     lang,
+    call: opts.call ?? false,
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
@@ -221,7 +224,7 @@ function start(session: Session): void {
     lang: session.lang,
     interimResults: true,
     continuous: true,
-    iosCategory: IOS_CALL_SESSION,
+    ...(session.call ? { iosCategory: IOS_CALL_SESSION } : {}),
   });
   watchQuiet(session);
 }
