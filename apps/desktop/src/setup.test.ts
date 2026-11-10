@@ -406,6 +406,37 @@ describe("setup", () => {
     expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
   });
 
+  // The follow may be waiting on the stack, or reading the app's state after the stack became
+  // ready, when the person switches to an existing instance.
+  for (const leaveAfterReady of [false, true]) {
+    it(`saves nothing when This computer is left ${leaveAfterReady ? "after the stack became ready" : "before the stack is ready"}`, async () => {
+      const ui = await boot(null);
+      selectMode("new");
+      submitForm();
+      ui.startResult.resolve(stackState("pulling"));
+      await flush();
+      expect(element("stack-phase").textContent).toBe("Downloading Rakazo…");
+
+      if (leaveAfterReady) {
+        ui.resolveStackState(stackState("ready"));
+        await flush();
+      }
+      selectMode("existing");
+      await flush();
+      // Answer every read a follow could still make, so a save it would start has started.
+      for (let round = 0; round < 3; round += 1) {
+        ui.pushStackState(stackState("ready"));
+        ui.resolveStackState(stackState("ready"));
+        await flush();
+        ui.resolveAppState(null);
+        await flush();
+      }
+
+      expect(ui.saves).toEqual([]);
+      expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+    });
+  }
+
   it("lays a right-to-left language out right to left", async () => {
     await boot(null, { lang: "he", dir: "rtl", messages: HE_MESSAGES });
     expect(document.documentElement.lang).toBe("he");
