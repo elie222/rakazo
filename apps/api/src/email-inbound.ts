@@ -232,7 +232,8 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
     {
       prompt,
-      title: [name || sender, payload.subject].filter(Boolean).join(" · "),
+      // The verified address: a sender picks their own display name.
+      title: [sender, payload.subject].filter(Boolean).join(" · "),
       artifacts,
       routines: matched,
       source: "email",

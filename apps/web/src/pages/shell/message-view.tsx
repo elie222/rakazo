@@ -8,7 +8,12 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
+import {
+  deliveryPromptText,
+  isPeerReceiptBlocks,
+  isToolActivityBlock,
+  otherAuthor,
+} from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -418,7 +423,7 @@ export const MessageView = memo(function MessageView({
                 key={i}
                 block={block}
                 quoteMessageId={quoteMessageId}
-                text={blocks.flatMap((b) => (b.kind === "text" ? [b.text] : [])).join("\n\n")}
+                text={deliveryPromptText(blocks)}
               >
                 {i === hoverAnchorIndex ? hoverActions : null}
               </DeliveryDisclosure>

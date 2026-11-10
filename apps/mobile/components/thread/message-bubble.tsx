@@ -5,6 +5,7 @@ import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
+  deliveryPromptText,
   formatFileSize,
   isApprovalAskBlock,
   memberName,
@@ -315,10 +316,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     );
   }
   const delivery = message.blocks.find((block) => block.kind === "delivery");
-  // The text block is the full prompt the delivery woke the bot with.
-  const deliveryPrompt = message.blocks
-    .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-    .join("\n\n");
+  const deliveryPrompt = deliveryPromptText(message.blocks);
   // A delivery with files keeps its file cards, captioned with its title below.
   if (delivery && isDeliveryLine(message.blocks)) {
     return (
