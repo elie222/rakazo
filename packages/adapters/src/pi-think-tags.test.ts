@@ -26,11 +26,18 @@ const base = {
 } as unknown as AssistantMessage;
 
 /** A response the way a chat-completions server streams it: one text block, then tool calls. */
-function upstream(chunks: string[], toolCalls: ToolCall[] = [], end: "done" | "error" = "done") {
+function upstream(
+  chunks: string[],
+  toolCalls: ToolCall[] = [],
+  end: "done" | "error" = "done",
+  live = false,
+) {
   const stream = createAssistantMessageEventStream();
   const text: TextContent = { type: "text", text: "" };
   const content: AssistantMessage["content"] = [];
-  const partial = () => ({ ...base, content: content.map((block) => ({ ...block })) });
+  const output = { ...base, content };
+  const partial = () =>
+    live ? output : { ...base, content: content.map((block) => ({ ...block })) };
   stream.push({ type: "start", partial: partial() });
   if (chunks.length) {
     content.push(text);
@@ -161,5 +168,74 @@ describe("text without a leading think block", () => {
       expect.objectContaining({ type: "text_end", contentIndex: 0, content: text }),
     );
     expect(result.content).toEqual([{ type: "text", text }]);
+  });
+});
+
+describe("stream consistency", () => {
+  it.each([
+    { chunks: ["Hello ", "there"], answerDeltas: ["Hello ", "there"] },
+    { chunks: [" ", "<", "th", "ing>", "reply"], answerDeltas: [" <th", "ing>", "reply"] },
+    {
+      chunks: [" ", "<th", "ink>plan</th", "ink>\n", "answer", "!"],
+      answerDeltas: ["answer", "!"],
+    },
+  ])("handles a live partial ahead of deltas: $chunks", async ({ chunks, answerDeltas }) => {
+    const stream = splitLeadingThinkBlock(upstream(chunks, [], "done", true));
+    const events: AssistantMessageEvent[] = [];
+    for await (const event of stream) events.push(event);
+    const result = await stream.result();
+    expect(deltas(events, "text_delta")).toBe(
+      result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""),
+    );
+    expect(deltas(events, "thinking_delta")).toBe(
+      result.content
+        .flatMap((block) => (block.type === "thinking" ? [block.thinking] : []))
+        .join(""),
+    );
+    expect(
+      events.filter((event) => event.type === "text_delta").map((event) => event.delta),
+    ).toEqual(answerDeltas);
+  });
+
+  it.each([
+    ["<think>plan</think>\n", "  \n\t", "   code"],
+    ["<think>plan</think>", "    code"],
+  ])("preserves answer indentation: %j", async (...chunks) => {
+    const { events, result } = await collect(chunks);
+    const answer = chunks.at(-1) === "    code" ? "    code" : "\t   code";
+    expect(deltas(events, "text_delta")).toBe(answer);
+    expect(result.content.at(-1)).toEqual({ type: "text", text: answer });
+  });
+
+  it("retains the tool index when later partials omit the text block", async () => {
+    const source = upstream(["<think>plan</think>Answer"], [lookup]);
+    const sparse = createAssistantMessageEventStream();
+    for await (const event of source) {
+      if (event.type === "toolcall_end") {
+        sparse.push({
+          type: "toolcall_delta",
+          contentIndex: 1,
+          delta: "{}",
+          partial: { ...base, content: [] },
+        });
+        sparse.push({ ...event, partial: { ...base, content: [] } });
+      } else sparse.push(event);
+    }
+    sparse.end();
+    const events: AssistantMessageEvent[] = [];
+    for await (const event of splitLeadingThinkBlock(sparse)) events.push(event);
+    expect(
+      events
+        .filter((event) => event.type.startsWith("toolcall_"))
+        .map((event) => "contentIndex" in event && event.contentIndex),
+    ).toEqual([2, 2, 2]);
+  });
+
+  it("flushes an unfinished closing tag before a terminal error", async () => {
+    const { events, result } = await collect(["<think>working</thi"], [], "error");
+    expect(deltas(events, "thinking_delta")).toBe("working</thi");
+    expect(types(events).slice(-3)).toEqual(["thinking_delta", "thinking_end", "error"]);
+    expect(events.at(-2)).toMatchObject({ content: "working</thi" });
+    expect(result.content).toEqual([{ type: "thinking", thinking: "working</thi" }]);
   });
 });

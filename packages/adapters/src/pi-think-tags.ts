@@ -31,7 +31,7 @@ function splitLeadingThink(raw: string, final: boolean): Split {
     return {
       thinking: body.slice(0, end),
       closed: true,
-      text: body.slice(end + CLOSE.length).trimStart(),
+      text: stripAnswerSeparators(body.slice(end + CLOSE.length), final),
       pending: false,
     };
   }
@@ -44,6 +44,12 @@ function splitLeadingThink(raw: string, final: boolean): Split {
     text: "",
     pending: false,
   };
+}
+
+// Remove blank separator lines, retaining indentation on the first answer line.
+function stripAnswerSeparators(raw: string, final: boolean): string {
+  const text = raw.replace(/^(?:[ \t]*\r?\n)+/, "");
+  return !final && /^[ \t]*\r?$/.test(text) ? "" : text;
 }
 
 type Rewritten = { message: AssistantMessage; index: number; split: Split };
@@ -88,6 +94,9 @@ export function splitLeadingThinkBlock(
       let plain = false;
       let textEnded = false;
       let heldTextStart = false;
+      let receivedText = "";
+      let firstTextIndex: number | undefined;
+      let answerInserted = false;
       let thinkingStarted = false;
       let thinkingEnded = false;
       let thinkingSent = 0;
@@ -100,46 +109,82 @@ export function splitLeadingThinkBlock(
         }
         if (event.type === "done" || event.type === "error") {
           const message = event.type === "done" ? event.message : event.error;
-          const rewritten = rewriteMessage(message, true)?.message;
+          const final = rewriteMessage(message, true);
+          const rewritten = final?.message;
+          const thinking = final?.split.thinking;
+          if (final && thinking !== undefined && thinkingStarted && !thinkingEnded) {
+            const { index } = final;
+            const partial = final.message;
+            if (thinking.length > thinkingSent) {
+              yield {
+                type: "thinking_delta",
+                contentIndex: index,
+                delta: thinking.slice(thinkingSent),
+                partial,
+              };
+            }
+            yield { type: "thinking_end", contentIndex: index, content: thinking, partial };
+            thinkingEnded = true;
+          }
           if (!rewritten) yield event;
           else if (event.type === "done") yield { ...event, message: rewritten };
           else yield { ...event, error: rewritten };
           continue;
         }
-        const ownIndex = event.partial.content.findIndex((block) => block.type === "text");
+        if (event.type === "start") {
+          yield { ...event, partial: { ...event.partial, content: [] } };
+          continue;
+        }
+        if (firstTextIndex === undefined && event.type === "text_start") {
+          firstTextIndex = event.contentIndex;
+        }
+        const ownIndex = firstTextIndex ?? -1;
         const own = ownIndex !== -1 && "contentIndex" in event && event.contentIndex === ownIndex;
+        if (own && event.type === "text_delta") receivedText += event.delta;
         if (own && event.type === "text_end") textEnded = true;
-        const rewritten = rewriteMessage(event.partial, textEnded);
+        // Upstream partials may be snapshots or one live object already ahead of this event.
+        const observed =
+          ownIndex === -1
+            ? event.partial
+            : {
+                ...event.partial,
+                content: event.partial.content.map((block, index) =>
+                  index === ownIndex && block.type === "text"
+                    ? { ...block, text: receivedText }
+                    : block,
+                ),
+              };
+        const rewritten =
+          ownIndex !== -1 && event.partial.content[ownIndex]?.type === "text"
+            ? rewriteMessage(observed, textEnded)
+            : undefined;
         if (!rewritten) {
-          if (ownIndex === -1) {
-            yield event;
+          if (ownIndex === -1 || event.partial.content[ownIndex]?.type !== "text") {
+            if ("contentIndex" in event && answerInserted && firstTextIndex !== undefined) {
+              yield {
+                ...event,
+                contentIndex: event.contentIndex + (event.contentIndex > firstTextIndex ? 1 : 0),
+              };
+            } else yield event;
             continue;
           }
           // The first text block opens some other way: release what was held and stand aside.
           plain = true;
           if (heldTextStart) {
-            const text = (event.partial.content[ownIndex] as TextContent).text;
-            yield { type: "text_start", contentIndex: ownIndex, partial: event.partial };
-            if (event.type !== "text_delta" && text) {
-              yield {
-                type: "text_delta",
-                contentIndex: ownIndex,
-                delta: text,
-                partial: event.partial,
-              };
-            } else if (event.type === "text_delta" && text.length > event.delta.length) {
-              yield {
-                type: "text_delta",
-                contentIndex: ownIndex,
-                delta: text.slice(0, text.length - event.delta.length),
-                partial: event.partial,
-              };
+            yield { type: "text_start", contentIndex: ownIndex, partial: observed };
+            const held =
+              event.type === "text_delta"
+                ? receivedText.slice(0, receivedText.length - event.delta.length)
+                : receivedText;
+            if (held) {
+              yield { type: "text_delta", contentIndex: ownIndex, delta: held, partial: observed };
             }
           }
           yield event;
           continue;
         }
         const { message: partial, index, split } = rewritten;
+        if (split.thinking !== undefined && split.text) answerInserted = true;
         if (split.thinking !== undefined) {
           if (!thinkingStarted) {
             thinkingStarted = true;
@@ -171,11 +216,7 @@ export function splitLeadingThinkBlock(
           }
           continue;
         }
-        if (!("contentIndex" in event)) {
-          yield { ...event, partial };
-          continue;
-        }
-        const shift = split.thinking !== undefined && split.text && event.contentIndex > index;
+        const shift = answerInserted && event.contentIndex > index;
         yield { ...event, contentIndex: event.contentIndex + (shift ? 1 : 0), partial };
       }
     }
