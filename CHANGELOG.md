@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Local and compatible model streams honor the configured timeouts without a hidden five-minute limit. Leading inline thought blocks are treated as reasoning instead of appearing in replies, and rejected thinking levels recover from more endpoint error formats.
 - Unresponsive Docker computers recover instead of leaving commands hanging or blaming the model connection. Quiet long-running commands keep their connection alive; recovery retains home files but ends running programs.
 - Team computer file choosers open on the screen that requested them, screen startup waits for a chooser still launching, and stale process records no longer interfere with other screens after a restart.
+- Computer workspace saves avoid repeated large-buffer copies, and mounted-home checkpoints keep screens available. Kubernetes computers whose pods disappear are recognized as gone and replaced automatically.
 - Concurrent page-browser calls no longer read partially written settings. Group computer screens refresh when control changes in another tab, and typed input appears sooner during takeover.
 - Voice calls keep a steady audio session so replies play and the microphone keeps working. Web and desktop no longer transcribe the bot's own spoken reply, and failed playback reports an error.
 - Switching bots returns the transcript to the latest messages reliably. Snoozed open chats suppress ordinary browser notifications, and computer takeover requests produce one notification.
