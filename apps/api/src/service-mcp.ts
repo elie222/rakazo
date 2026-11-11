@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { ServiceScope, ServiceTool } from "@rakazo/contracts";
-import { buildServiceTools, SERVICE_API_PREFIX, SERVICE_ROUTES } from "@rakazo/contracts";
+import {
+  buildServiceTools,
+  SERVICE_API_PREFIX,
+  SERVICE_BODY_MAX_BYTES,
+  SERVICE_ROUTES,
+} from "@rakazo/contracts";
 import { readBoundedBody } from "./http-body.js";
 
 /**
@@ -13,7 +18,15 @@ import { readBoundedBody } from "./http-body.js";
 export const SERVICE_MCP_PATH = `${SERVICE_API_PREFIX}/mcp`;
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-const MAX_MESSAGE_BYTES = 65536;
+/** Room for the largest body a route accepts, with the arguments and envelope around it. */
+const MAX_MESSAGE_BYTES =
+  Math.max(
+    ...Object.values(SERVICE_ROUTES).map((definition) =>
+      "maxBodyBytes" in definition && definition.maxBodyBytes
+        ? definition.maxBodyBytes
+        : SERVICE_BODY_MAX_BYTES,
+    ),
+  ) + 65_536;
 const PATH_VALUE = /^[A-Za-z0-9_-]{1,128}$/;
 const TOOLS = buildServiceTools();
 
@@ -49,6 +62,7 @@ function requestFor(
   tool: ServiceTool,
   input: Record<string, unknown>,
   authorization: string,
+  signal: AbortSignal,
 ): Request | string {
   const definition = SERVICE_ROUTES[tool.name];
   const used = new Set<string>();
@@ -83,7 +97,8 @@ function requestFor(
   const unknown = Object.keys(input).find((key) => !used.has(key));
   if (unknown) return `Unknown argument "${unknown}".`;
   if (invalid) return `Argument "${invalid}" is missing or malformed.`;
-  return new Request(url, { method: definition.method, headers, body });
+  // The caller's disconnect reaches the route, which stops waiting on a prompt.
+  return new Request(url, { method: definition.method, headers, body, signal });
 }
 
 export function serviceMcpHandler(inner: (request: Request) => Promise<Response>) {
@@ -112,7 +127,7 @@ export function serviceMcpHandler(inner: (request: Request) => Promise<Response>
       tool: ServiceTool,
       input: Record<string, unknown>,
     ): Promise<{ response: Response; text: string } | { error: string }> => {
-      const built = requestFor(tool, input, authorization);
+      const built = requestFor(tool, input, authorization, request.signal);
       if (typeof built === "string") return { error: built };
       const response = await inner(built);
       return { response, text: await response.text() };

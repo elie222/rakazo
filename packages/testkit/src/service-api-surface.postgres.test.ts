@@ -994,7 +994,7 @@ describeWithDatabase("service API surface", () => {
       const oversized = await app.request(`${SERVICE_API_PREFIX}/mcp`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: "x".repeat(70_000),
+        body: "x".repeat(1_300_000),
       });
       expect(oversized.status).toBe(413);
       expect(await oversized.json()).toEqual({
@@ -1060,6 +1060,27 @@ describeWithDatabase("service API surface", () => {
         where: { action: "service_api.prompt", actorId: credential.id, runId: result.runId },
       });
       expect(audited).not.toBeNull();
+
+      // A body as large as the route accepts goes through the tool too.
+      const owner = await db.bot.findUniqueOrThrow({ where: { id: bot.id } });
+      const doc = (await db.memoryDocument.create({
+        data: {
+          spaceId: owner.spaceId,
+          userId: owner.userId,
+          botId: bot.id,
+          scope: "bot",
+          path: "LARGE.md",
+          content: "small",
+          revision: 1,
+        },
+      } as never)) as { id: string };
+      const large = "m".repeat(200_000);
+      const memory = await mcp(token, "tools/call", {
+        name: "updateMemory",
+        arguments: { botId: bot.id, documentId: doc.id, body: { content: large } },
+      });
+      expect(memory.status).toBe(200);
+      expect(memory.json.result?.isError, memory.json.result?.content?.[0]?.text).not.toBe(true);
 
       const reader = await newKey(cookie, ["bots:read"]);
       const refused = await mcp(reader.token, "tools/call", {
