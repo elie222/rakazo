@@ -68,29 +68,33 @@ export async function createServiceCredential(
     if (owned !== botIds.length) throw new ORPCError("NOT_FOUND", { message: "Bot not found" });
   }
   const now = new Date();
-  const active = await prisma.serviceCredential.count({
-    where: {
-      userId: actor.userId,
-      spaceId: actor.spaceId,
-      revokedAt: null,
-      expiresAt: { gt: now },
-    },
-  });
-  if (active >= SERVICE_CREDENTIALS_PER_MEMBER) {
-    throw new ORPCError("BAD_REQUEST", { message: "Revoke a key before creating another" });
-  }
   const token = `${TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
-  const row = await prisma.serviceCredential.create({
-    data: {
-      userId: actor.userId,
-      spaceId: actor.spaceId,
-      name: input.name,
-      tokenHash: hashToken(token),
-      tokenPrefix: token.slice(0, TOKEN_PREFIX.length + 6),
-      scopes: [...new Set(input.scopes)],
-      botIds,
-      expiresAt: new Date(now.getTime() + input.expiresInDays * DAY_MS),
-    },
+  const row = await prisma.$transaction(async (tx) => {
+    // Two creations at the limit queue here, so the second counts the first.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-credentials:${actor.userId}:${actor.spaceId}`}, 0))`;
+    const active = await tx.serviceCredential.count({
+      where: {
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+    });
+    if (active >= SERVICE_CREDENTIALS_PER_MEMBER) {
+      throw new ORPCError("BAD_REQUEST", { message: "Revoke a key before creating another" });
+    }
+    return tx.serviceCredential.create({
+      data: {
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        name: input.name,
+        tokenHash: hashToken(token),
+        tokenPrefix: token.slice(0, TOKEN_PREFIX.length + 6),
+        scopes: [...new Set(input.scopes)],
+        botIds,
+        expiresAt: new Date(now.getTime() + input.expiresInDays * DAY_MS),
+      },
+    });
   });
   await recordAuditEvent({
     action: "service_credential.created",
