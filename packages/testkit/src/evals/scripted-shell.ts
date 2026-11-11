@@ -7,6 +7,8 @@ export interface ScriptedCheck {
   output: string;
   /** Defaults to 0. */
   exitCode?: number;
+  /** Matches the whole command, pipes included, for a pipeline whose output can't be derived. */
+  whole?: true;
 }
 
 /**
@@ -102,6 +104,11 @@ export function scriptedShell(
       if (!STDOUT_REDIRECT.test(part))
         out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2").replaceAll("$?", String(code)));
       code = 0;
+      continue;
+    }
+    const wholeCheck = script.shell.find((entry) => entry.whole && entry.match.test(part));
+    if (wholeCheck) {
+      code = emit(wholeCheck, part);
       continue;
     }
     // `a | grep b` filters a's output; any other pipe is a program the script cannot run.

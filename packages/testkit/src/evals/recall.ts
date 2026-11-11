@@ -1459,6 +1459,8 @@ const RecallFileCaseSchema = z.object({
               .default(""),
             output: z.string(),
             exitCode: z.number().int().optional(),
+            /** Match the whole command, pipes included. */
+            whole: z.boolean().optional(),
           }),
         )
         .default([]),
@@ -1485,10 +1487,11 @@ function recallCaseFromFile(entry: RecallFileCase): EvalCase {
   };
   const computer: ComputerScript = {
     shell: [
-      ...(entry.computer?.shell ?? []).map(({ match, flags, output, exitCode }) => ({
+      ...(entry.computer?.shell ?? []).map(({ match, flags, output, exitCode, whole }) => ({
         match: new RegExp(match, flags),
         output,
         ...(exitCode === undefined ? {} : { exitCode }),
+        ...(whole ? { whole: true as const } : {}),
       })),
       ...HOME,
       ...CHROMIUM,
