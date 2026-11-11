@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll } from "vitest";
+import { pinLocalSecretStore } from "./pin-secret-store.js";
 
 const dom = (
   globalThis as typeof globalThis & {
@@ -41,6 +42,7 @@ if (!process.env.VERIFY_PROVIDERS) {
   delete process.env.EMAIL_PROVIDER;
   delete process.env.EMAIL_API_KEY;
   delete process.env.SMTP_URL;
+  pinLocalSecretStore();
   if (!process.env.VERIFY_DATABASE) {
     delete process.env.DATABASE_URL;
     delete process.env.REALTIME_DATABASE_URL;
