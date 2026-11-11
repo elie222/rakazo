@@ -7,9 +7,6 @@ metadata:
     rakazo.example/phase: foundation
 spec:
   failurePolicy: Fail
-  paramKind:
-    apiVersion: v1
-    kind: ConfigMap
   matchConstraints:
     namespaceSelector:
       matchLabels:
@@ -27,7 +24,7 @@ spec:
       - pods/ephemeralcontainers
   validations:
   - expression: object.spec.containers.size() == 1 && object.spec.containers.all(c,
-      c.image == params.data.KUBERNETES_SANDBOX_COMPUTER_IMAGE)
+      c.image == 'REPLACED_BY_KUSTOMIZE')
     message: Computer pod exceeds the example sandbox boundary
   - expression: '!has(object.spec.initContainers) && !has(object.spec.ephemeralContainers)'
     message: Computer pod exceeds the example sandbox boundary
@@ -74,9 +71,5 @@ metadata:
     rakazo.example/phase: foundation
 spec:
   policyName: rakazo-example-computers
-  paramRef:
-    name: rakazo-config
-    namespace: rakazo
-    parameterNotFoundAction: Deny
   validationActions:
   - Deny

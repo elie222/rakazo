@@ -45,3 +45,18 @@ replacements:
       name: rakazo-(api|worker)
     fieldPaths:
     - spec.egress.5.to.0.ipBlock.cidr
+# Render the image boundary from the same setting as API/worker; no runtime
+# admission parameter lookup or extra ConfigMap access is needed by the controller.
+- source:
+    kind: ConfigMap
+    name: rakazo-config
+    fieldPath: data.KUBERNETES_SANDBOX_COMPUTER_IMAGE
+  targets:
+  - select:
+      kind: ValidatingAdmissionPolicy
+      name: rakazo-example-computers
+    fieldPaths:
+    - spec.validations.0.expression
+    options:
+      delimiter: "'"
+      index: 1

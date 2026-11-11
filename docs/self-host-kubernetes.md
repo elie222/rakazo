@@ -283,7 +283,10 @@ The example gives API and worker permission to create/get/delete Pods and execut
 commands only in `rakazo-sandboxes`. A separate admission policy limits what those
 credentials can create: the pinned computer image, no host mounts, no extra
 containers, no service-account token, and no Secret-based environment variables.
-It reads the allowed image from `rakazo-config`; missing parameters deny creation.
+Kustomize renders the allowed image from the same `rakazo-config` setting used by the
+API and worker. Admission does not need a runtime ConfigMap parameter lookup or extra
+ConfigMap permissions for the computer controller. Apply the rendered installation,
+not the standalone policy template.
 The two-computer quota and limits cap capacity. A per-user limit alone would not
 cap every user together.
 
