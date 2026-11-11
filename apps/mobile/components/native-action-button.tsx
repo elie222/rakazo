@@ -86,6 +86,8 @@ export function NativeActionButton({
             <Text
               style={{
                 color: colors.label,
+                flexShrink: 1,
+                textAlign: "center",
                 fontSize:
                   variant === "text"
                     ? 16
