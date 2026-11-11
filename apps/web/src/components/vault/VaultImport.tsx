@@ -33,7 +33,7 @@ export function VaultImportPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VaultImportResult>();
-  const { labels, fileProblems } = vaultImportText();
+  const { labels, botsNote, fileProblems } = vaultImportText();
 
   const problems = vaultImportProblemLines(
     "rows" in csv && plan ? vaultImportProblems(csv.problems, plan, result) : [],
@@ -87,6 +87,8 @@ export function VaultImportPage({
         <p className="text-body-sm text-muted-foreground">
           <Trans>Delete the exported file now. It holds your passwords unencrypted.</Trans>
         </p>
+      ) : plan?.rows.length ? (
+        <p className="text-body-sm text-muted-foreground">{botsNote}</p>
       ) : null}
       {error ? (
         <p role="alert" className="whitespace-pre-line text-body-sm text-destructive">

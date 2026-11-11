@@ -148,6 +148,11 @@ export function vaultImportText() {
   };
   return {
     labels,
+    // Said in the review of logins about to be added, where no item's Bots setting is in sight.
+    botsNote: i18n._({
+      id: "Bots can use each imported login until you change its Bots setting.",
+      message: "Bots can use each imported login until you change its Bots setting.",
+    }),
     reasons: {
       notHttps: labels.notHttps,
       noPassword: labels.noPassword,

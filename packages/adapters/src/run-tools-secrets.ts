@@ -195,6 +195,19 @@ export const secretTools: ToolHandlers = {
           ...botSecretToolView(siteLogin),
           ...(await loginToolHints(deps.prisma, deps.secretStore, run, siteLogin.name)),
         });
+      // A card shows neither a login's authenticator key nor its other sites, which only its
+      // owner sets, for the site it has. So a card never moves a login that has them: its
+      // owner changes the site in the Vault, where both are in sight.
+      if (replaces) {
+        const kept = await loginToolHints(deps.prisma, deps.secretStore, run, destination.name);
+        if (kept.alsoOn || kept.authenticatorCode)
+          return call.finish({
+            error:
+              `The login ${destination.name} has an authenticator key or other sites, which ` +
+              "only the user sets, so a card can't move it to another site. Ask the user to " +
+              "change its site in the Vault, or use another name for a different account.",
+          });
+      }
       // Action approval authorizes showing the card; it is not a credential submission.
       // Return the claim to intended so the answer transaction can approve the saved value.
       if (call.claimedEffect) {

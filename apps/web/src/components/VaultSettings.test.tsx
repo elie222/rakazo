@@ -1390,6 +1390,9 @@ describe("VaultSettings item details", () => {
     expect(find("vault-import-problems")?.textContent).toBe(
       "Row 2 · GitHub · Already savedRow 4 · Old · Not on an HTTPS site",
     );
+    // Said before the logins are added, the one moment no Bots setting is in sight.
+    const botsNote = "Bots can use each imported login until you change its Bots setting.";
+    expect(find("vault-import-page")?.textContent).toContain(botsNote);
     vault.import.mockResolvedValue({
       added: 1,
       skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
@@ -1408,6 +1411,7 @@ describe("VaultSettings item details", () => {
     });
     expect(counts()).toEqual(["Added1", "Already saved1", "Not on an HTTPS site1"]);
     expect(find("vault-import-page")?.textContent).toContain("Delete the exported file now.");
+    expect(find("vault-import-page")?.textContent).not.toContain(botsNote);
     expect(find("vault-import-page")?.textContent).not.toContain(FAKE_VALUE);
     await click(buttonIn(find("vault-import-page"), "Done")!);
     expect(find("vault-import-page")).toBeNull();
@@ -1434,6 +1438,8 @@ describe("VaultSettings item details", () => {
       ...[0, 1, 2, 3, 4].map((index) => `Zeile ${index + 2} · Old ${index} · Not on an HTTPS site`),
       "Und 2 weitere",
     ]);
+    // With nothing to add, nothing is said of what bots may use.
+    expect(find("vault-import-page")?.textContent).not.toContain("Bots can use");
   });
 
   it("imports the file picked last, whichever read finishes first", async () => {

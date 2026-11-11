@@ -798,7 +798,8 @@ export async function prepareBotSecret(input: {
   });
   // A save the bot started, such as a login card the person answered for the site the bot
   // proposed, moves the login there without its key or other sites: only the owner sets them,
-  // for the site they were set for, and the card shows neither.
+  // for the site they were set for, and the card shows neither. request_secret asks for no
+  // such move while the login has either, so this drops only what was added while a card waited.
   const botMoves = (row: typeof existing) =>
     Boolean(scope.botId && row && normalizeSecretDestination(row).origin !== destination.origin);
   // A login saved without its authenticator key keeps the saved one; an empty key removes it.
@@ -875,8 +876,10 @@ export async function prepareBotSecret(input: {
       )
         throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
       const labelled = {
-        // A saved value may carry a fixed key, so its codes are typed again.
-        ...(current?.codesStoppedAt ? { codesStoppedAt: null } : {}),
+        // Its owner's own save may carry a fixed key, so its codes are typed again. A save a bot
+        // started, such as a login card answered in chat, shows no key and keeps the saved one:
+        // the key that was stopped is still the one there, so the stop stays.
+        ...(current?.codesStoppedAt && !scope.botId ? { codesStoppedAt: null } : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.note !== undefined ? { note: input.note } : {}),
         ...policy,
@@ -2027,8 +2030,9 @@ export const LOGIN_CODES_USED_UP = `A site asked for this login's authenticator 
 /**
  * Typing a saved login's authenticator code once in this run. The state, all of it under the
  * login's row lock:
- * - The login is stopped or not (`codesStoppedAt`). Only the claim below stops it; only the
- *   owner's save of its value clears it. A relabel changes neither.
+ * - The login is stopped or not (`codesStoppedAt`). Only the claim below stops it; only its
+ *   owner's own save of its value clears it. A relabel changes neither, nor does a save a bot
+ *   started, such as a login card answered in chat: it keeps the key that was stopped.
  * - Per run and saved value the code came from (the row's ciphertext; a save makes a new one),
  *   the codes claimed, each with the time it was claimed, as spent run codes the run's later
  *   attempts reload to hide. Codes of an earlier value are never counted again.

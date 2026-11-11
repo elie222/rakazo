@@ -274,7 +274,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     const { skipped } = csv;
     const { problems: fileProblems } = csv;
     const plan = newVaultImportRows(csv.rows, items ?? [], csv.lines);
-    const { labels } = vaultImportText();
+    const { labels, botsNote: importNote } = vaultImportText();
     // A short list of the rows left out: the counts already say how many.
     const lines = (result?: VaultImportResult) => {
       const problems = vaultImportProblemLines(vaultImportProblems(fileProblems, plan, result));
@@ -314,7 +314,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
         requestListRefresh();
       }
     }
-    Alert.alert(t`Import CSV`, lines(), [
+    Alert.alert(t`Import CSV`, plan.rows.length ? `${lines()}\n\n${importNote}` : lines(), [
       { text: t`Cancel`, style: "cancel" },
       ...(plan.rows.length ? [{ text: t`Import`, onPress: () => void save() }] : []),
     ]);

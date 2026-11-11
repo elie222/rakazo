@@ -1148,6 +1148,168 @@ describe("a save that leaves out the authenticator key", () => {
   });
 });
 
+describe("what a save leaves of a login's key, its stop, its other sites and its bots", () => {
+  const site = "https://shop.example.test";
+  const www = "https://www.shop.example.test";
+  const shop = { name: "shop", origin: site, auth: { type: "login" as const } };
+  const fields = [{ label: "Password", value: "fake-pass", hidden: true }];
+  const typed = JSON.stringify({ fields: [{ ...fields[0]!, value: "fake-pass-2" }] });
+  const withKey = (otp: string) => JSON.stringify({ ...JSON.parse(typed), otp });
+  const first = TEST_KEY;
+  const second = OTHER_TEST_KEY;
+  const bot = { ...scope, botId: "bot-1" };
+  // The login before the save: its key, and whether its codes were stopped.
+  const states = ["no key", "a key", "a key its owner removed", "a key that was stopped"] as const;
+
+  /** The login in one of those states, after its owner took a site and a bot off it. */
+  async function login(state: (typeof states)[number], ownVault: boolean) {
+    const db = fakeDatabase();
+    if (ownVault) db.useOwnVault("space-1");
+    const save = (plaintext: string, scoped: BotSecretScope = scope, more: object = {}) =>
+      storeBotSecret({
+        prisma: db.prisma,
+        secretStore,
+        scope: scoped,
+        destination: shop,
+        plaintext,
+        ...more,
+      });
+    await save(JSON.stringify(state === "no key" ? { fields } : { fields, otp: first }), scope, {
+      alsoOn: [www, "https://app.shop.example.test"],
+      policy: "ask",
+      bots: { botIds: ["bot-1", "bot-2"] },
+    });
+    await relabelVaultItem(db.prisma, scope, "shop", {
+      alsoOn: [www],
+      bots: { botIds: ["bot-1"] },
+    });
+    if (state === "a key its owner removed") await save(withKey(""));
+    if (state === "a key that was stopped") db.rows()[0]!.codesStoppedAt = new Date(0);
+    return { db, save };
+  }
+  type Made = Awaited<ReturnType<typeof login>>;
+
+  // Every save that reaches a login already saved, with what it carries of the key. Then the key
+  // the login has afterwards, for each state above in order, and whether a stop is still in place.
+  // A key left out is never brought back or dropped by the save, but for a bot's card for another
+  // site, which moves the login without what only its owner sets.
+  it.each<[string, (made: Made) => Promise<unknown>, (string | undefined)[], boolean]>([
+    [
+      "the owner's, leaving the key out",
+      ({ save }) => save(typed),
+      [undefined, first, undefined, first],
+      false,
+    ],
+    [
+      "an older app's, as a username and password",
+      ({ save }) => save(JSON.stringify({ username: "fake-user", password: "fake-pass-2" })),
+      [undefined, first, undefined, first],
+      false,
+    ],
+    [
+      "the owner's, with the key it had",
+      ({ save }) => save(withKey(first)),
+      [first, first, first, first],
+      false,
+    ],
+    [
+      "the owner's, with another key",
+      ({ save }) => save(withKey(second)),
+      [second, second, second, second],
+      false,
+    ],
+    [
+      "the owner's, with the key emptied",
+      ({ save }) => save(withKey("")),
+      [undefined, undefined, undefined, undefined],
+      false,
+    ],
+    [
+      "a login card a bot asked for, answered",
+      ({ save }) => save(typed, bot),
+      [undefined, first, undefined, first],
+      true,
+    ],
+    [
+      "a login card a bot asked for another site, answered",
+      ({ db }) =>
+        storeBotSecret({
+          prisma: db.prisma,
+          secretStore,
+          scope: bot,
+          destination: { ...shop, origin: "https://new.shop.example.test" },
+          plaintext: typed,
+          replaces: db.rows()[0]!.id,
+        }),
+      [undefined, undefined, undefined, undefined],
+      true,
+    ],
+    [
+      "an import of the same login, which is refused",
+      ({ db }) =>
+        storeBotSecret({
+          prisma: db.prisma,
+          secretStore,
+          scope,
+          destination: { ...shop, name: "shop-2" },
+          plaintext: typed,
+          createOnly: true,
+          newLoginOnly: new Map(),
+        }).catch((error: Error) => error.message),
+      [undefined, first, undefined, first],
+      true,
+    ],
+    [
+      "generate_secret under its name, which is refused",
+      ({ db }) =>
+        secretTools.generate_secret!(
+          {
+            deps: { prisma: db.prisma, secretStore },
+            run: { ...bot, id: "run-1" },
+            secrets: [],
+            state: { reply: { pendingProgress: "" } },
+          } as never,
+          {
+            args: { name: "shop", type: "login", origin: site, username: "fake-user" },
+            finish: async (result: unknown) => result,
+          } as never,
+        ),
+      [undefined, first, undefined, first],
+      true,
+    ],
+  ])("%s", async (name, saved, keys, stopped) => {
+    // In the account vault for every state, and once in the Space's own.
+    for (const [index, ownVault] of [...states.map(() => false), true].entries()) {
+      const state = states[index] ?? "a key that was stopped";
+      const made = await login(state, ownVault);
+      await saved(made);
+      const [row] = made.db.rows();
+      const revealed = await revealBotSecret({
+        prisma: made.db.prisma,
+        secretStore,
+        scope,
+        name: "shop",
+      });
+      const where = `${state}${ownVault ? ", in the Space's own vault" : ""}`;
+      expect(made.db.rows(), where).toHaveLength(1);
+      expect(revealed && "otp" in revealed ? revealed.otp : undefined, where).toBe(
+        keys[states.indexOf(state)],
+      );
+      // Only a key that was stopped can still be; no save stops one.
+      expect(Boolean(row!.codesStoppedAt), where).toBe(
+        state === "a key that was stopped" && stopped,
+      );
+      // The site and the bot its owner took off never come back, nor does Ask first go.
+      expect(row, where).toMatchObject({
+        alsoOn: name.includes("another site") ? [] : [www],
+        policy: "ask",
+      });
+      expect(made.db.assignments().map((entry) => entry.botId)).toEqual(["bot-1"]);
+      expect(made.db.limits()).toHaveLength(1);
+    }
+  });
+});
+
 describe("what a bot sees of a login with a key and other sites", () => {
   it("says it can type its code and where else it fills, never the key", async () => {
     const secretStore = new EncryptedSecretStore("test-only-encryption-key");

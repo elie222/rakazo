@@ -985,6 +985,52 @@ describeIntegration("reusable credential lifecycle", () => {
     expect(stopped.updatedAt).toEqual(before.updatedAt);
     expect(await code()).toEqual({ error: LOGIN_CODES_USED_UP });
     expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP });
+    // The bot asks for the login again and the person types its password on the card: the card
+    // shows no key, so the saved one stays, and the stop with it.
+    const runtime = vi
+      .spyOn(ScriptedAgentRuntime.prototype, "run")
+      .mockImplementation(async function* (request): AsyncIterable<AgentRuntimeEvent> {
+        yield {
+          type: "tool",
+          name: "request_secret",
+          args: {
+            label: "Sign in",
+            purpose: "password",
+            credential: { ...login, name: saved.name },
+            fields: ["Password"],
+            replace: true,
+          },
+          executionId: `${request.runId}:0`,
+        };
+        yield { type: "done", text: "Done" };
+      });
+    try {
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(seeded.run.id, "test-worker"),
+      );
+      const card = await db.message.findFirstOrThrow({
+        where: { runId: seeded.run.id, role: "bot" },
+        orderBy: { seq: "desc" },
+      });
+      await rpc(seeded.cookie, "threads/answer", {
+        botId: seeded.bot.id,
+        runId: seeded.run.id,
+        messageId: card.id,
+        answer: "",
+        fields: [{ label: "Password", value: "fake-stop-pass-2", hidden: true }],
+      });
+    } finally {
+      runtime.mockRestore();
+    }
+    const answered = await row();
+    expect(answered.ciphertext).not.toBe(stopped.ciphertext);
+    expect(JSON.parse(await secretStore.load(answered.ciphertext, answered.id))).toEqual({
+      fields: [{ label: "Password", value: "fake-stop-pass-2", hidden: true }],
+      otp: TEST_KEY,
+    });
+    expect(answered.codesStoppedAt).toEqual(stopped.codesStoppedAt);
+    expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP });
+    // Only the owner's own save in the Vault lifts it.
     await rpc(seeded.cookie, "vault/put", { destination: { ...login, name: saved.name }, value });
     expect((await row()).codesStoppedAt).toBeNull();
     expect(await code("another-run")).toMatchObject({ text: expect.stringMatching(/^\d{6}$/) });
@@ -1127,7 +1173,8 @@ describeIntegration("reusable credential lifecycle", () => {
     }
   });
 
-  it("moves a saved login to the site of the card answered last, with that card's value, and none of the key or sites the owner set for the old one", async () => {
+  // With that card's value, and none of the key or sites its owner added while the cards waited.
+  it("moves a login to the site of the card answered last, less what was added since", async () => {
     const www = { name: "acme", origin: "https://www.acme.example.test", auth: { type: "login" } };
     const sites = {
       login: { ...www, origin: "https://login.acme.example.test" },
@@ -1149,19 +1196,15 @@ describeIntegration("reusable credential lifecycle", () => {
     try {
       const seeded = await seedRun("login-replace", "Sign in");
       const { userId, spaceId } = seeded.me;
+      const fields = [
+        { label: "Username", value: "fake-user", hidden: false },
+        { label: "Password", value: "fake-password-www", hidden: true },
+      ];
       await rpc(seeded.cookie, "vault/put", {
         destination: www,
-        value: JSON.stringify({
-          fields: [
-            { label: "Username", value: "fake-user", hidden: false },
-            { label: "Password", value: "fake-password-www", hidden: true },
-          ],
-          otp: TEST_KEY,
-        }),
-        alsoOn: ["https://shop.acme.example.test"],
+        value: JSON.stringify({ fields }),
       });
       const saved = await db.vaultCredential.findFirstOrThrow({ where: { userId } });
-      expect(saved.alsoOn).toEqual(["https://shop.acme.example.test"]);
       // A second bot of the same member asks to replace the same login for another site.
       const bot = await rpc<{ id: string }>(seeded.cookie, "bots/create", {
         name: "Executor login-replace 2",
@@ -1213,6 +1256,13 @@ describeIntegration("reusable credential lifecycle", () => {
         runs[site].card = message.id;
       }
       expect(await db.vaultCredential.findMany({ where: { userId } })).toEqual([saved]);
+      // While the cards wait, its owner adds a key and another site, which no card shows. A bot
+      // asking to move it now would be refused; these cards were already shown.
+      await rpc(seeded.cookie, "vault/put", {
+        destination: www,
+        value: JSON.stringify({ fields, otp: TEST_KEY }),
+        alsoOn: ["https://shop.acme.example.test"],
+      });
 
       // Both answered at once, as the apps send them.
       const results = await Promise.all(
@@ -1254,7 +1304,7 @@ describeIntegration("reusable credential lifecycle", () => {
       for (const other of ["www", last === "login" ? "other" : "login"]) {
         expect(value).not.toContain(`fake-password-${other}`);
       }
-      // The bot proposed the new site and the card showed neither, so they stay with the old one.
+      // The bot proposed the new site and the card showed neither, so neither goes there.
       expect(value).not.toContain("GEZDGNBVGY3TQOJQ");
       expect(rows[0]!.alsoOn).toEqual([]);
     } finally {

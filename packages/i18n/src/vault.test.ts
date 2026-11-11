@@ -129,6 +129,7 @@ it("names import results and unusable files", () => {
     unreadable: "This file can't be read as CSV.",
     no_logins: "No website and password columns found.",
   });
+  expect(text.botsNote).toBe("Bots can use each imported login until you change its Bots setting.");
 });
 
 it("lists an import's left-out rows the same way in both apps", () => {

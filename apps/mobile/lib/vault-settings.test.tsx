@@ -1089,8 +1089,10 @@ it("reviews a picked CSV export, imports only new logins and reminds to delete t
   await act(async () => button("Import CSV", menu("New item"))!.click());
   // Which rows were left out, by row and site, never by username or password.
   const left = "Row 1 · Old · Not on an HTTPS site\nRow 2 · shop.example.com · Already saved";
+  // Said before the logins are added, the one moment no Bots setting is in sight.
+  const botsNote = "Bots can use each imported login until you change its Bots setting.";
   expect(state.alert.mock.lastCall?.[1]).toBe(
-    `To add: 1\nAlready saved: 1\nNot on an HTTPS site: 1\n\n${left}`,
+    `To add: 1\nAlready saved: 1\nNot on an HTTPS site: 1\n\n${left}\n\n${botsNote}`,
   );
   state.rpc.mockImplementationOnce(async () => ({
     added: 1,
@@ -1131,6 +1133,8 @@ it("lists left-out rows with the wording and limit both apps share", async () =>
       "Und 2 weitere",
     ].join("\n"),
   );
+  // With nothing to add, nothing is said of what bots may use.
+  expect(state.alert.mock.lastCall?.[1]).not.toContain("Bots can use");
 });
 
 it("drops an import's result that arrives once another screen covers this one", async () => {

@@ -473,6 +473,34 @@ describe("request_secret for a login saved for another site", () => {
     expect(vaultWrites(calls)).toBeNull();
   });
 
+  it("with replace, never moves a login that has other sites or an authenticator key", async () => {
+    // RFC 6238's test key, written in pieces so it never reads as a saved secret.
+    const otp = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
+    const keyed = await secretStore.put(
+      encodeLoginSecret({
+        fields: [{ label: "Password", value: "fake-password-1", hidden: true }],
+        otp,
+      }),
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { recordId: SAVED.id },
+    );
+    // A card shows neither, and only the login's owner sets them, for the site it has.
+    for (const saved of [
+      { ...SAVED, alsoOn: ["https://shop.example.test"] },
+      { ...SAVED, ciphertext: keyed.ciphertext },
+    ]) {
+      const { toolResults, calls, cards } = await runTool(requestLogin({ replace: true }), {
+        saved,
+      });
+      expect(toolResults).toEqual([
+        { error: expect.stringContaining("Ask the user to change its site in the Vault") },
+      ]);
+      expect(JSON.stringify(toolResults)).not.toContain(otp);
+      expect(cards).toEqual([]);
+      expect(vaultWrites(calls)).toBeNull();
+    }
+  });
+
   it("asks for an international site under the same punycode site it is saved for", async () => {
     const { cards } = await runTool(
       requestLogin({
