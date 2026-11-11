@@ -39,6 +39,7 @@ export const SERVICE_ERRORS = {
   unauthenticated: [401, "Service credential required."],
   forbidden: [403, "This key does not have that scope."],
   bot_limited_key: [403, "A key limited to certain bots cannot make this call."],
+  not_permitted: [403, "The person who made this key cannot do that."],
   not_found: [404, "Resource not found."],
   method_not_allowed: [405, "Method not allowed."],
   idempotency_conflict: [409, "Idempotency key already used for a different request."],
