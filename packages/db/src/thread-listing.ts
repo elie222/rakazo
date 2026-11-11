@@ -75,6 +75,8 @@ export async function withLatestBotRuns<T extends { thread: { id: string } | nul
 
 export function previewFromBlocks(blocks: unknown): string {
   const rows = Array.isArray(blocks) ? blocks : [];
+  // A delivery's text is the bot's prompt, hidden in chat.
+  if (rows.some((block) => (block as { kind?: unknown } | null)?.kind === "delivery")) return "";
   for (const block of rows) {
     if (
       block &&

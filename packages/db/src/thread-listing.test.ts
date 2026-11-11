@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { previewFromBlocks, primaryActiveRun, threadRunStatus } from "./thread-listing.js";
 
 describe("previewFromBlocks", () => {
+  it("shows nothing for a delivery, whose text is the bot's hidden prompt", () => {
+    expect(
+      previewFromBlocks([
+        { kind: "delivery", source: "webhook", title: "CRM sync" },
+        { kind: "text", text: 'Run routine "CRM sync":' },
+      ]),
+    ).toBe("");
+  });
   it("preserves literal URL paths in autolinks", () => {
     expect(previewFromBlocks([{ kind: "text", text: "Open <https://example.test/_draft_>" }])).toBe(
       "Open https://example.test/_draft_",

@@ -391,6 +391,8 @@ function pushMessageHits(
   const destination = ctx.groupId
     ? { groupId: ctx.groupId, groupName: ctx.groupName ?? "" }
     : { botId: ctx.botId!, botName: ctx.botName! };
+  // A delivery is hidden in chat, so a hit on it would lead nowhere.
+  if (blocks.some((block) => block.kind === "delivery")) return;
   const title = ctx.groupId ? (ctx.groupName ?? "") : (ctx.botName ?? "");
   let messageHit = false;
   for (const block of blocks) {
