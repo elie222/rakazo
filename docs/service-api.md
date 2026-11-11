@@ -56,7 +56,7 @@ A message sent while the bot is busy waits for a run of its own. The response ha
 
 Stopping a run leaves its request in the conversation, as it does in the chat, so the bot can pick that work up again on its next message. Say so in that message if it should not.
 
-The mobile app does not show the mark yet, and key management is only in the web app.
+The web and mobile apps both show the mark. Creating and revoking keys is only in the web app for now.
 
 ## Requests
 
