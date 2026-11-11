@@ -1066,7 +1066,8 @@ export async function sendThreadMessage(
               ...steeringPlacement(active, actor, input.serviceOrigin),
             },
           });
-          runs.push(active);
+          // A key's message waits for a run of its own, so the busy one is not its run.
+          if (!input.serviceOrigin) runs.push(active);
           continue;
         }
         const task = await tx.task.create({
@@ -1122,7 +1123,7 @@ export async function sendThreadMessage(
         threadId: target.threadId,
         botId: eventBotId,
         type: "thread.message.created",
-        runId: firstRun ? ownRun?.id : activeRuns[0]?.id,
+        runId: firstRun ? ownRun?.id : input.serviceOrigin ? undefined : activeRuns[0]?.id,
         payload: {
           messageId: message.id,
           seq: message.seq,
