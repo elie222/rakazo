@@ -20,18 +20,18 @@ Organization owners and admins can export it as JSON Lines, and operators can fo
 | `auth.account.deactivated`, `auth.account.reactivated`                                                         | The identity provider ([directory provisioning](./self-host-accounts.md#directory-provisioning-scim)) or the operator turned an account off or back on; the actor is the system, labelled `directory` or `operator`                                                                                                                                                                                                           |
 | `audit_log.exported`                                                                                           | Someone exported the audit log                                                                                                                                                                                                                                                                                                                                                                                                |
 
-Every vault item belongs to one person, in their account's vault or their own vault in a space.
-For a full member of the space's organization, every event about their item is recorded there in
-full. For a guest of a [shared space](./spaces.md#share-a-space), or someone who has left it, an
-event that happens in the space (a bot using one of their items in their run, or their saving,
-importing, revealing or removing an item in their vault there) is recorded in the space's
-organization in a withheld form: its time, action, outcome, actor, space, the item's id, the run
-and chat ids, a person's client address and user agent, and of its details only the procedure,
-kind, scope and tool. It never holds the item's name, username or site. The full record goes to
-the oldest organization they own, if any, with the space's id but not its name. Their own save,
-import, reveal or removal of an account vault item happens in no space: it is recorded only in
-their own organization, or in that withheld form in the space's when they own none. A vault event
-that doesn't say which vault it was is treated as in the space.
+An event about an item in a space's own vault, whatever it is, is recorded only in the space's
+organization: in full when the person whose vault it is is a full member of that organization, and
+otherwise, for a guest of a [shared space](./spaces.md#share-a-space) or someone who has left it,
+in a withheld form. The withheld form keeps its time, action, outcome, actor, space, the item's id,
+the run and chat ids, a person's client address and user agent, and of its details only the
+procedure, kind, scope and tool; it never holds the item's name, username or site. No other
+organization gets a record of it. An item in a person's account vault is their own: their own save,
+import, reveal or removal of it is recorded only in their own organization, or in the withheld form
+in the space's when they own none. A bot using it in their run in a space is recorded in the
+space's organization, in full for a full member and withheld for a guest, who also gets the full
+record in the oldest organization they own, with the space's id but not its name. A vault event
+that doesn't say which vault it was is treated as one about a space's own vault.
 
 Each event has the time, actor (user, bot or system, with a display label), action, target,
 outcome, space, run and chat ids, the client address and user agent for people, and a few

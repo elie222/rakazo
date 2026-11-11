@@ -385,6 +385,24 @@ it("offers Ask first for any login, and shows it on the item", async () => {
   expect([...container.querySelectorAll('[role="row"]')].map((row) => row.textContent)).toContain(
     "Bots | Ask first · No bots",
   );
+  // Seen from a Space with its own vault, an account item's saved setting isn't this Space's.
+  await act(async () =>
+    root.render(
+      createElement(VaultItemSheet, {
+        item: { ...login, allBots: false, botIds: [] },
+        ownVault: true,
+        uses: [],
+        busy: false,
+        onClose: () => {},
+        onShow: () => {},
+        onEdit: () => {},
+        onRemove: () => {},
+      }),
+    ),
+  );
+  expect([...container.querySelectorAll('[role="row"]')].map((row) => row.textContent)).toContain(
+    "Bots | This Space keeps its own vault, so its bots can't use account items.",
+  );
 });
 
 it("says under the bots what a choice covers, or why none can be made", async () => {

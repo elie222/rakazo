@@ -164,6 +164,22 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     };
   }, [opened, rpc, scope]);
 
+  // Whether this Space keeps its own vault, so an opened account item says its bots can't use it.
+  const [ownVault, setOwnVault] = useState(false);
+  useEffect(() => {
+    setOwnVault(false);
+    if (!opened || scope !== "account") return;
+    let current = true;
+    void rpc("spaceSettings/overrides")
+      .then((overrides) => {
+        if (current) setOwnVault(overrides.includes("credentials"));
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [opened, rpc, scope]);
+
   const canChooseBots = vaultBotsChoosable(items);
   // Read for each edit, so bots added or a Space's vault changed since are what it offers.
   const [picker, setPicker] = useState<{
@@ -584,6 +600,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       {openedItem ? (
         <VaultItemSheet
           item={openedItem}
+          ownVault={ownVault}
           billingTitle={billingTitle(openedItem.preview?.card?.billing)}
           uses={uses?.key === `${scope}:${openedItem.name}` ? uses.list : []}
           notice={notice?.name === openedItem.name ? notice.text : undefined}

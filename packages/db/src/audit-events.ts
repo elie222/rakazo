@@ -27,7 +27,11 @@ export interface AuditEventInput {
     | { type: "system"; label?: string };
   /** The space acted in; its organization owns the event. */
   spaceId?: string | null;
-  /** The person whose vault item the event names: the acting user, or the run's for a bot's use. */
+  /**
+   * The person whose vault holds the item the event names: the acting user, or the run's for a
+   * bot's use. It decides whether the event may name the item; only an account vault item's event
+   * goes on to their own organization.
+   */
   userId?: string;
   /** For a space that may already be gone. Without either, a user's event goes to each of their organizations. */
   organizationId?: string;
@@ -41,14 +45,16 @@ export interface AuditEventInput {
 }
 
 /**
- * Where an event about a vault item lands and what it says there, the one place this is decided,
- * by who acts and where. Every vault item is its person's own, in their account's vault or in
- * their own vault in a Space. An event in a space lands in the space's organization, naming the
- * item, its username or its site only when the person is a full member there; otherwise that row
- * keeps just these fields and no target label. A guest, or someone who has left, also gets the
- * named row in the oldest organization they own, and an action of their own on an account vault
- * item lands only there when they own one. Without a known vault scope it is treated as in the
- * space.
+ * Where an event about a vault item lands and what it says there, the one place this is decided.
+ * - A Space vault item (`scope: "space"`), whatever the event: rows only in the Space's
+ *   organization, naming the item, its username or its site only when the acting person is a full
+ *   member of it; for a guest, or someone who has left, the row keeps just these fields and no
+ *   target label. No row goes to any other organization.
+ * - An account vault item is its person's own. Their own action on it lands only in their own
+ *   organization, or withheld in the Space's when they own none. A bot's use of it in a Space run
+ *   lands in the Space's organization, withheld for a guest, who also gets the named row, without
+ *   the Space's name, in the oldest organization they own.
+ * - Without a vault scope (an older client), an event in a Space is treated as a Space vault item.
  */
 const VAULT_TARGETS = new Set(["vault_credential", "bot_secret"]);
 const VAULT_FIELDS_FOR_OTHERS = new Set(["procedure", "kind", "scope", "tool"]);
@@ -117,12 +123,15 @@ async function auditRows(
         })
       : [],
   ]);
-  // The person whose vault item it is (see VAULT_TARGETS), when the event is about one.
+  // The person whose vault holds the item (see VAULT_TARGETS), when the event is about one.
   const owner =
     VAULT_TARGETS.has(input.target?.type ?? "") && !input.organizationId
       ? (input.userId ?? personId)
       : undefined;
-  // Whether that person is only a guest of the space's organization, or no longer in it.
+  // Only an account vault item is its person's own, to follow them to their own organization.
+  const ownItem = Boolean(owner) && input.metadata?.scope === "account";
+  // Whether that person is only a guest of the space's organization, or no longer in it, so the
+  // row there must not name the item, whichever vault holds it.
   const outsider =
     space && owner
       ? await db.member
@@ -134,15 +143,17 @@ async function auditRows(
           })
           .then((member) => !member || member.role === GUEST_ROLE)
       : false;
+  // Their own organization, computed only for an account vault item: nothing of a Space vault
+  // item, or of one whose vault isn't said, leaves the Space's organization.
   const personal =
-    owner && outsider
+    owner && ownItem && outsider
       ? await ownedOrganizationId(db, owner).catch((error: unknown) => {
           if (error instanceof IsolationError) return undefined;
           throw error;
         })
       : undefined;
   // Their own action on an account vault item happened in no space, so it is theirs alone.
-  const ownTrail = actor.type === "user" && input.metadata?.scope === "account" && personal;
+  const ownTrail = actor.type === "user" && personal;
   const landings: { organizationId: string; withheld: boolean }[] = input.organizationId
     ? [{ organizationId: input.organizationId, withheld: false }]
     : space

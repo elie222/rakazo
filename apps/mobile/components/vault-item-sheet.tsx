@@ -8,6 +8,7 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { vaultBotsLine } from "@rakazo/i18n/vault";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -29,6 +30,7 @@ type DetailRow = { label: string; value: string; hidden?: boolean };
  */
 export function VaultItemSheet({
   item,
+  ownVault = false,
   billingTitle,
   uses,
   notice,
@@ -39,6 +41,8 @@ export function VaultItemSheet({
   onRemove,
 }: {
   item: BotSecretMetadata;
+  /** An account item seen from a Space that keeps its own vault, whose bots never use it. */
+  ownVault?: boolean;
   /** The title of the contact a card is billed to. */
   billingTitle?: string;
   uses: VaultUse[];
@@ -107,18 +111,16 @@ export function VaultItemSheet({
       list.push({ label: t`Value`, ...hidden });
     }
     add(t`When to use`, entry.note);
-    if (hasVaultAccess(vaultKind(entry.auth.type)) && entry.policy === "off")
-      add(t`Bots`, t`Block`);
-    else
-      add(
-        t`Bots`,
-        [
-          entry.policy === "ask" ? t`Ask first` : "",
-          entry.allBots === false ? (entry.botIds?.length ? t`Chosen bots` : t`No bots`) : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      );
+    add(
+      t`Bots`,
+      vaultBotsLine({
+        blockable: hasVaultAccess(vaultKind(entry.auth.type)),
+        policy: entry.policy,
+        allBots: entry.allBots,
+        botIds: entry.botIds,
+        unusedHere: ownVault,
+      }),
+    );
     return list;
   }
 

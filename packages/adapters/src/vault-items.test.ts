@@ -412,15 +412,15 @@ describe("approving a saved login", () => {
 });
 
 describe("an item's uses, for its owner", () => {
-  // Rows written in one instant by one bot in one run and chat. A guest's use is an unnamed row
-  // and a named one; every use with its own site stays its own.
+  // Rows written in one instant by one bot in one run and chat. A guest's use of an account item
+  // is an unnamed row and a named one; every use with its own site stays its own.
   const unnamed = { kind: "login", scope: "space", tool: "browser_act" };
   const on = (site: string) => ({ site: `https://${site}.example.test` });
   it.each([
     ["two uses on two sites", [on("a"), on("b")], ["a", "b"]],
-    ["a guest's use, written twice", [unnamed, on("a")], ["a"]],
+    ["a guest's use of an account item, written twice", [unnamed, on("a")], ["a"]],
     ["a guest's use and another on another site", [unnamed, on("a"), on("b")], ["a", "b"]],
-    ["a use of a guest who owns no organization", [unnamed], [null]],
+    ["a guest's use of a Space vault item, its one unnamed row", [unnamed], [null]],
   ])("lists %s", async (_, metadata, sites) => {
     const db = await vaultWithCard();
     const at = new Date("2026-11-05T10:00:00.000Z");
@@ -444,7 +444,7 @@ describe("an item's uses, for its owner", () => {
     const db = await vaultWithCard();
     const visa = db.rows().find((row) => row.name === "visa")!;
     const use = { actorLabel: "Shopper" };
-    // A guest's use is written twice at once: unnamed in the space's organization, named in theirs.
+    // A guest's use of an account item is written twice: unnamed in the space's, named in theirs.
     const twice = { ...use, createdAt: new Date("2026-11-05T10:00:00.000Z"), threadId: "thread-1" };
     const events = vi.fn(async () => [
       { ...twice, metadata: { kind: "card", scope: "account", tool: "browser_act" } },

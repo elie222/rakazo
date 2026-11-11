@@ -8,7 +8,7 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
-import { vaultPolicyLabels } from "@rakazo/i18n/vault";
+import { vaultBotsLine } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
@@ -82,6 +82,7 @@ function addressLines(contact: NonNullable<NonNullable<BotSecretMetadata["previe
  */
 export function VaultItemDetail({
   scope,
+  ownVault,
   item,
   contactTitles,
   busy,
@@ -92,6 +93,8 @@ export function VaultItemDetail({
   onRemove,
 }: {
   scope: SettingsScope;
+  /** An account item seen from a Space that keeps its own vault, whose bots never use it. */
+  ownVault: boolean;
   item: BotSecretMetadata;
   /** Saved contacts' titles by name, for a card's billing address. */
   contactTitles: ReadonlyMap<string, string>;
@@ -107,8 +110,7 @@ export function VaultItemDetail({
 }) {
   const { t } = useLingui();
   const { one } = useVaultKindLabels();
-  const policyLabels = vaultPolicyLabels();
-  const bots = useVaultBots(item.allBots === false, item.botIds);
+  const bots = useVaultBots(item.allBots === false && !ownVault, item.botIds);
   // An item saved under a name the current rules refuse can only be removed.
   const auth: VaultAuth | null =
     item.auth && BotSecretName.safeParse(item.name).success ? item.auth : null;
@@ -341,27 +343,23 @@ export function VaultItemDetail({
         {item.note}
       </DetailRow>,
     );
-  // Blocked, no bot may use it; asking first, only the bots it is limited to may ask. The bots it
-  // is limited to show once the list has loaded, never as No bots before, nor as every bot when
-  // it can't be read.
-  const blocked = item.policy === "off";
+  // The bots it is limited to are named once the list has loaded, never as No bots before, nor as
+  // every bot when it can't be read.
   const chosen = (bots ?? []).filter((bot) => item.botIds?.includes(bot.id)).map((bot) => bot.name);
-  const access = [
-    kind && hasVaultAccess(kind) && (blocked || item.policy === "ask")
-      ? policyLabels[item.policy as "off" | "ask"]
-      : "",
-    kind && !blocked && item.allBots === false
-      ? bots === null
-        ? t`Could not load bots. Reload to try again.`
-        : bots
-          ? chosen.join(", ") || t`No bots`
-          : ""
-      : "",
-  ].filter(Boolean);
-  if (access.length)
+  const access = kind
+    ? vaultBotsLine({
+        blockable: hasVaultAccess(kind),
+        policy: item.policy,
+        allBots: item.allBots,
+        botIds: item.botIds,
+        unusedHere: ownVault,
+        chosen: bots === null ? "failed" : bots ? chosen : "loading",
+      })
+    : "";
+  if (access)
     rows.push(
       <DetailRow key="access" label={t`Bots`} testId="vault-item-access-detail">
-        {access.join(" · ")}
+        {access}
       </DetailRow>,
     );
 

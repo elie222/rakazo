@@ -339,6 +339,7 @@ export function VaultSettings({
         <VaultItemDetail
           key={openedItem.name}
           scope={scope}
+          ownVault={ownVault}
           item={openedItem}
           contactTitles={new Map(contacts.map((contact) => [contact.name, contact.title]))}
           busy={busy}

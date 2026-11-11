@@ -168,12 +168,12 @@ describe("authenticated secret requests", () => {
     expect(JSON.stringify(rows)).not.toContain(secret);
   });
 
-  it("records a guest's use unnamed in the Space's organization and named in theirs", async () => {
+  it("records a guest's use of a Space vault item only in the Space, unnamed", async () => {
     const { input } = await fixture();
     const rows: Array<Record<string, unknown>> = [];
-    // space-1 belongs to org-1 and keeps its own vault, which is the run's person's own there.
-    // They are first its owner, then a guest whose own organization is org-2. The audit-events
-    // table covers every actor, vault and event.
+    // space-1 belongs to org-1 and keeps its own vault, where the run's person keeps the item.
+    // They are first its owner, then a guest whose own organization is org-2, which gets nothing
+    // of it. The audit-events table covers every actor, vault and event.
     let role = "owner";
     installAuditEventStore({
       auditEvent: { createMany: async ({ data }: { data: typeof rows }) => rows.push(...data) },
@@ -210,7 +210,6 @@ describe("authenticated secret requests", () => {
     expect(rows.map((row) => [row.organizationId, row.targetLabel])).toEqual([
       ["org-1", destination.name],
       ["org-1", null],
-      ["org-2", destination.name],
     ]);
     expect(JSON.stringify(rows[1])).not.toContain(destination.name);
   });

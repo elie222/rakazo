@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import { afterEach, expect, it } from "vitest";
 import {
   secretAnswerErrorText,
+  vaultBotsLine,
   vaultBotsNote,
   vaultImportProblemLines,
   vaultImportText,
@@ -51,6 +52,56 @@ it.each([
     expect(vaultBotsNote({ ownVault, otherSpaces })).toBe(note);
   },
 );
+
+// What an item's details say of its bots, the same on web (which names chosen bots) and mobile.
+const OWN_VAULT = "This Space keeps its own vault, so its bots can't use account items.";
+const item = { blockable: true, unusedHere: false };
+const some = { allBots: false, botIds: ["bot-1", "bot-2"] };
+it.each([
+  // An account item seen from a Space with its own vault: nothing saved for it applies here.
+  [
+    "an account item here, asking first",
+    { ...item, ...some, policy: "ask", unusedHere: true },
+    OWN_VAULT,
+  ],
+  ["an account item here, blocked", { ...item, policy: "off", unusedHere: true }, OWN_VAULT],
+  ["every bot", { ...item, policy: "allow", allBots: true, botIds: [] }, ""],
+  ["an older server", { ...item }, ""],
+  [
+    "blocked, its choice moot",
+    { ...item, ...some, policy: "off", chosen: ["Researcher"] },
+    "Block",
+  ],
+  ["asking first", { ...item, policy: "ask", allBots: true, botIds: [] }, "Ask first"],
+  [
+    "chosen bots, named",
+    { ...item, ...some, policy: "allow", chosen: ["Researcher", "Writer"] },
+    "Researcher, Writer",
+  ],
+  [
+    "asking first, chosen",
+    { ...item, ...some, policy: "ask", chosen: ["Researcher"] },
+    "Ask first · Researcher",
+  ],
+  ["a choice of none", { ...item, allBots: false, botIds: [], chosen: [] }, "No bots"],
+  [
+    "chosen bots still loading",
+    { ...item, ...some, policy: "ask", chosen: "loading" },
+    "Ask first",
+  ],
+  [
+    "chosen bots that can't be read",
+    { ...item, ...some, chosen: "failed" },
+    "Could not load bots. Reload to try again.",
+  ],
+  // An app that doesn't name them says that there is a choice.
+  ["chosen bots, unnamed", { ...item, ...some }, "Chosen bots"],
+  ["a choice of none, unnamed", { ...item, allBots: false, botIds: [] }, "No bots"],
+  ["a contact limited to chosen bots", { ...item, ...some, blockable: false }, "Chosen bots"],
+] as const)("says of %s: %j", (_, state, line) => {
+  i18n.activate("en");
+  expect(vaultBotsLine(state)).toBe(line);
+});
 
 it("names import results and unusable files", () => {
   i18n.activate("en");

@@ -68,7 +68,7 @@ describe("recordAuditEvent", () => {
     ]);
   });
 
-  it("records a use in the space, named for a member, and for a guest in theirs", async () => {
+  it("names a member's use in the space, and a guest's account item use in theirs", async () => {
     // space-1 belongs to org-1; a guest owns org-own, made before org-later.
     const roles: Record<string, string | undefined> = { owner: "owner", guest: "guest" };
     Object.assign(store.member, {
@@ -83,21 +83,21 @@ describe("recordAuditEvent", () => {
         { organizationId: "org-later", role: "owner" },
       ]),
     });
-    const use = (userId: string) =>
+    const use = (userId: string, scope = "account") =>
       recordAuditEvent({
         action: "credential.used",
         actor: { type: "bot", id: "bot-1", label: "Researcher" },
         spaceId: "space-1",
         userId,
         target: { type: "vault_credential", id: "item-1", label: "chase-personal" },
-        metadata: { name: "chase-personal", site: "https://bank.example.test" },
+        metadata: { scope, name: "chase-personal", site: "https://bank.example.test" },
       });
     const landed = () =>
       store.rows.splice(0).map((row) => [row.organizationId, row.targetLabel ?? "withheld"]);
     await use("owner");
     expect(landed()).toEqual([["org-1", "chase-personal"]]);
-    // One whose membership is gone mid-write counts as a guest: unnamed in the space's, and named,
-    // at the same time, in the oldest organization they own.
+    // One whose membership is gone mid-write counts as a guest: an account item's use is unnamed
+    // in the space's, and named, at the same time, in the oldest organization they own.
     for (const person of ["guest", "departed"]) {
       await use(person);
       const [inSpace, own] = store.rows;
@@ -106,6 +106,9 @@ describe("recordAuditEvent", () => {
         ["org-1", "withheld"],
         ["org-own", "chase-personal"],
       ]);
+      // A Space vault item's use stays in the space alone.
+      await use(person, "space");
+      expect(landed()).toEqual([["org-1", "withheld"]]);
     }
     // Owning none, the use stays in the space it happened in, unnamed, rather than being lost.
     store.member.findMany.mockResolvedValue([]);
@@ -256,8 +259,9 @@ describe("security events in the audit log", () => {
         },
       }),
   };
-  // space-1 belongs to org-1, and the person's own organization is org-own. Every vault item is its
-  // person's own, in their account's vault or theirs in the space; who acts and where decides.
+  // space-1 belongs to org-1, and the person's own organization is org-own. An account vault item
+  // is its person's own; a Space vault item, or one whose vault isn't said, is recorded only in
+  // the Space's organization, named there only for a full member of it.
   const N = "named";
   const W = "withheld";
   const both = [
@@ -272,8 +276,9 @@ describe("security events in the audit log", () => {
     ["member", undefined, [["org-1", N]], [["org-1", N]]],
     // An account vault action of their own happened in no space; a use did.
     ["guest owning an organization", "account", [["org-own", N]], both],
-    ["guest owning an organization", "space", both, both],
-    ["guest owning an organization", undefined, both, both],
+    // Nothing of a Space vault item reaches their own organization.
+    ["guest owning an organization", "space", [["org-1", W]], [["org-1", W]]],
+    ["guest owning an organization", undefined, [["org-1", W]], [["org-1", W]]],
     ["guest owning none", "account", [["org-1", W]], [["org-1", W]]],
     ["guest owning none", "space", [["org-1", W]], [["org-1", W]]],
     ["guest owning none", undefined, [["org-1", W]], [["org-1", W]]],
@@ -301,7 +306,10 @@ describe("security events in the audit log", () => {
         ),
       });
       await vaultEvents[kind](scope);
+      // Exactly these organizations: no row anywhere else.
       expect(store.rows.map((row) => row.organizationId)).toEqual(rows.map(([org]) => org));
+      if (scope !== "account")
+        expect(store.rows.filter((row) => row.organizationId !== "org-1")).toEqual([]);
       for (const [index, [org, named]] of rows.entries()) {
         const row = store.rows[index]!;
         const text = JSON.stringify(row);

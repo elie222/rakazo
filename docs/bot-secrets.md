@@ -195,11 +195,12 @@ and an export's notes can hold private data such as security answers; add one by
 helps the bot. If a saved login can't be read for now, the import stops there; importing the file
 again later counts what was saved as already saved. Each login it adds is a new item that bots may use, like one
 you add yourself, and is audited as `credential.created`. As with every vault event, a shared
-Space's organization names the login only when you are a full member of it; a guest's full record
-goes to the organization they own (see the
-[audit log](./self-host-audit-log.md#what-is-recorded)). An item's activity lists each use, and a
-guest who owns no organization sees their uses in a shared Space without the site, since only the
-unnamed record exists. Authenticator keys aren't imported; add
+Space's organization names the login only when you are a full member of it. A guest's full record
+of an item in their account vault goes to the organization they own; one in the Space's vault is
+recorded only in the Space (see the [audit log](./self-host-audit-log.md#what-is-recorded)). An
+item's activity lists each use, and a guest sees a use in a shared Space without its site where
+only the unnamed record exists: a use of an item in the Space's vault, or any use when they own no
+organization. Authenticator keys aren't imported; add
 one in the login's editor where a bot must sign in on its own. A file whose quotes are broken is
 not read at all, so no password is read differently from the export. Delete the export file
 afterwards: it holds your passwords unencrypted.

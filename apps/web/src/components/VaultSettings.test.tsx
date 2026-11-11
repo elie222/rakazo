@@ -398,6 +398,12 @@ describe("an item for chosen bots", () => {
     spaceSettings.overrides.mockResolvedValue(["credentials"]);
     await render();
     await click(rowNamed("custom"));
+    // Its details don't present the choice saved for it as this Space's either.
+    await vi.waitFor(() =>
+      expect(byTestId("vault-item-access-detail").textContent).toBe(
+        "BotsThis Space keeps its own vault, so its bots can't use account items.",
+      ),
+    );
     await click("vault-item-edit");
     await vi.waitFor(() =>
       expect(byTestId("vault-item-access").textContent).toContain(

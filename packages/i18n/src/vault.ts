@@ -41,17 +41,59 @@ export function vaultPolicyLabels(): Record<VaultPolicy, string> {
  * Spaces, that a choice covers only this one's bots.
  */
 export function vaultBotsNote(space: { ownVault: boolean; otherSpaces: boolean }) {
-  if (space.ownVault)
-    return i18n._({
-      id: "This Space keeps its own vault, so its bots can't use account items.",
-      message: "This Space keeps its own vault, so its bots can't use account items.",
-    });
+  if (space.ownVault) return ownVaultText();
   if (space.otherSpaces)
     return i18n._({
       id: "This limits only this Space's bots. Your other Spaces choose for their own.",
       message: "This limits only this Space's bots. Your other Spaces choose for their own.",
     });
   return undefined;
+}
+
+const ownVaultText = () =>
+  i18n._({
+    id: "This Space keeps its own vault, so its bots can't use account items.",
+    message: "This Space keeps its own vault, so its bots can't use account items.",
+  });
+
+/**
+ * What an item's details say of which bots may use it, the same on web and mobile, or "" when
+ * every bot may. An account item seen from a Space that keeps its own vault is used by none of
+ * that Space's bots, whatever was saved for it, so only that is said.
+ */
+export function vaultBotsLine(item: {
+  /** False for a contact, which has no Allow or Block. */
+  blockable: boolean;
+  policy?: VaultPolicy;
+  allBots?: boolean;
+  botIds?: readonly string[];
+  /** An account item, seen from a Space that keeps its own vault. */
+  unusedHere: boolean;
+  /** The chosen bots by name where the app names them: "loading" until read, "failed" if not. */
+  chosen?: readonly string[] | "loading" | "failed";
+}): string {
+  if (item.unusedHere) return ownVaultText();
+  const blocked = item.policy === "off";
+  const policy =
+    item.blockable && (blocked || item.policy === "ask") && item.policy
+      ? vaultPolicyLabels()[item.policy]
+      : "";
+  const noBots = () => i18n._({ id: "No bots", message: "No bots" });
+  const { chosen } = item;
+  const bots =
+    blocked || item.allBots !== false || chosen === "loading"
+      ? ""
+      : chosen === "failed"
+        ? i18n._({
+            id: "Could not load bots. Reload to try again.",
+            message: "Could not load bots. Reload to try again.",
+          })
+        : chosen
+          ? chosen.join(", ") || noBots()
+          : item.botIds?.length
+            ? i18n._({ id: "Chosen bots", message: "Chosen bots" })
+            : noBots();
+  return [policy, bots].filter(Boolean).join(" · ");
 }
 
 function dropText(drop: VaultSaveDrop): string {

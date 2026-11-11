@@ -30,9 +30,10 @@ export async function listVaultItemUses(
     });
     const siteOf = (row: (typeof rows)[number]) =>
       (row.metadata as Record<string, unknown> | null)?.site;
-    // A guest's use is written twice at one time, unnamed in the space's organization and named
-    // in their own, so each unnamed row is dropped for one named row of the same moment, bot, run
-    // and chat. A row with a site is always its own use: a login used on two sites is two.
+    // A guest's use of an account item is written twice at one time, unnamed in the space's
+    // organization and named in their own, so each unnamed row is dropped for one named row of the
+    // same moment, bot, run and chat; a Space vault item's is one unnamed row, listed as it is. A
+    // row with a site is always its own use: a login used on two sites is two.
     const key = (row: (typeof rows)[number]) =>
       JSON.stringify([row.createdAt.getTime(), row.actorId, row.runId, row.threadId]);
     const named = new Map<string, number>();

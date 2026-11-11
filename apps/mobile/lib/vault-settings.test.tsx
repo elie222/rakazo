@@ -209,6 +209,7 @@ vi.mock("../components/settings-group", () => ({
 vi.mock("../components/vault-item-sheet", () => ({
   VaultItemSheet: ({
     item,
+    ownVault,
     billingTitle,
     uses,
     notice,
@@ -218,6 +219,7 @@ vi.mock("../components/vault-item-sheet", () => ({
     onClose,
   }: {
     item: Credential;
+    ownVault?: boolean;
     billingTitle?: string;
     uses: Array<{ botName: string }>;
     notice?: string;
@@ -234,6 +236,7 @@ vi.mock("../components/vault-item-sheet", () => ({
         "data-billing": billingTitle,
         "data-uses": uses.map((use) => use.botName).join(","),
         "data-notice": notice,
+        "data-own-vault": String(Boolean(ownVault)),
       },
       ...[
         ["Show", onShow],
@@ -709,6 +712,22 @@ it("says an account item's other Spaces choose their own bots, and offers none f
   expect(dialog().getAttribute("data-bots")).toBe("none");
   expect(dialog().getAttribute("data-bots-note")).toBe(
     "This Space keeps its own vault, so its bots can't use account items.",
+  );
+});
+
+it("opens an account item knowing whether this Space keeps its own vault", async () => {
+  const opened = async () => {
+    await render();
+    await open("netbird-key");
+    return container.querySelector("dialog[aria-label='Detail netbird-key']")!;
+  };
+  expect((await opened()).getAttribute("data-own-vault")).toBe("false");
+  act(() => root.unmount());
+  root = createRoot(container);
+  state.overrides = ["credentials"];
+  // Its details then say this Space's bots can't use it, whatever was saved for it.
+  await vi.waitFor(async () =>
+    expect((await opened()).getAttribute("data-own-vault")).toBe("true"),
   );
 });
 

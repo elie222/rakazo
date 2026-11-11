@@ -121,7 +121,7 @@ describePostgres("audit events (PostgreSQL)", () => {
     expect(await reader("stranger")).toBeNull();
   });
 
-  it("writes a guest's use unnamed in the space's organization and named in theirs", async () => {
+  it("keeps a guest's Space vault use in the space, an account item's also in theirs", async () => {
     const guest = `audit-user-${suffix}-guest`;
     const shared = `${spaceId}-shared`;
     const item = `audit-item-${suffix}`;
@@ -149,27 +149,38 @@ describePostgres("audit events (PostgreSQL)", () => {
         { id: `${shared}-own`, organizationId: guestOrganizationId, name: "Home", isDefault: true },
       ],
     });
-    // Their own login, in their own vault in the space.
-    await recordAuditEvent({
-      action: "credential.used",
-      actor: { type: "bot", id: `audit-bot-${suffix}`, label: "Researcher" },
-      spaceId: shared,
-      userId: guest,
-      target: { type: "vault_credential", id: item, label: "chase-personal" },
-      metadata: { tool: "browser_act", scope: "space", name: "chase-personal", kind: "login" },
-    });
-    const rows = await prisma.auditEvent.findMany({
-      where: { targetId: item },
-      orderBy: { organizationId: "asc" },
-    });
-    expect(rows.map((row) => [row.organizationId, row.targetLabel])).toEqual([
+    const use = (scope: "account" | "space") =>
+      recordAuditEvent({
+        action: "credential.used",
+        actor: { type: "bot", id: `audit-bot-${suffix}`, label: "Researcher" },
+        spaceId: shared,
+        userId: guest,
+        target: { type: "vault_credential", id: `${item}-${scope}`, label: "chase-personal" },
+        metadata: { tool: "browser_act", scope, name: "chase-personal", kind: "login" },
+      });
+    const rows = (scope: string) =>
+      prisma.auditEvent.findMany({
+        where: { targetId: `${item}-${scope}` },
+        orderBy: { organizationId: "asc" },
+      });
+    // A login in their vault in the space: only the space's organization, unnamed.
+    await use("space");
+    const space = await rows("space");
+    expect(space.map((row) => [row.organizationId, row.targetLabel])).toEqual([
+      [organizationId, null],
+    ]);
+    expect(JSON.stringify(space)).not.toContain("chase-personal");
+    // Their account's login: unnamed there, and named in their own at the same time.
+    await use("account");
+    const account = await rows("account");
+    expect(account.map((row) => [row.organizationId, row.targetLabel])).toEqual([
       [organizationId, null],
       [guestOrganizationId, "chase-personal"],
     ]);
-    expect(JSON.stringify(rows[0])).not.toContain("chase-personal");
-    expect(rows[0]?.createdAt).toEqual(rows[1]?.createdAt);
+    expect(JSON.stringify(account[0])).not.toContain("chase-personal");
+    expect(account[0]?.createdAt).toEqual(account[1]?.createdAt);
     // Their own organization keeps the space's id, never its name.
-    expect(rows.map((row) => [row.spaceId, row.spaceName])).toEqual([
+    expect(account.map((row) => [row.spaceId, row.spaceName])).toEqual([
       [shared, "Shared"],
       [shared, null],
     ]);
