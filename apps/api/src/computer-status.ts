@@ -61,6 +61,8 @@ export type ComputerControlView = {
   controllerName?: string | null;
   /** The bot whose request for help the user has not opened yet. */
   requestBotId?: string | null;
+  /** That unopened request waits for another person, so this viewer only watches. */
+  requestForOther?: boolean;
 };
 
 /** Who the computer's control belongs to, beyond what its row says. */
@@ -78,17 +80,22 @@ export async function resolveComputerControl(
     | undefined,
   viewerId: string | undefined,
 ): Promise<ComputerControlView> {
-  // A lease from before holders were recorded belongs to the person the computer is kept for.
-  const userId =
-    computer?.controlHolder === "user" ? computer.controlUserId || computer.userId : null;
   const runId = computer?.controlBotId ? null : computer?.controlRunId;
-  const [user, run] = await Promise.all([
-    viewerId && userId && userId !== viewerId
-      ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
-      : null,
-    runId ? prisma.run.findUnique({ where: { id: runId }, select: { botId: true } }) : null,
-  ]);
-  return { controllerName: user?.name || null, requestBotId: run?.botId ?? null };
+  const run = runId
+    ? await prisma.run.findUnique({ where: { id: runId }, select: { botId: true, userId: true } })
+    : null;
+  // A lease from before holders were recorded belongs to the person the computer is kept for.
+  const holderId =
+    computer?.controlHolder === "user" ? computer.controlUserId || computer.userId : run?.userId;
+  const otherId = viewerId && holderId && holderId !== viewerId ? holderId : null;
+  const user = otherId
+    ? await prisma.user.findUnique({ where: { id: otherId }, select: { name: true } })
+    : null;
+  return {
+    controllerName: user?.name || null,
+    requestBotId: run?.botId ?? null,
+    requestForOther: Boolean(run && otherId),
+  };
 }
 
 export function toComputerStatus(
@@ -113,9 +120,10 @@ export function toComputerStatus(
   viewerId?: string,
   control: ComputerControlView = {},
 ): ComputerStatus {
-  const controlledByOther = Boolean(
-    viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
-  );
+  const controlledByOther =
+    Boolean(
+      viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
+    ) || Boolean(control.requestForOther);
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   const state =
     kind === "none"

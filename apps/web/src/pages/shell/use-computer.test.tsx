@@ -670,3 +670,74 @@ it("hands control back on close after a failed I’m done", async () => {
   expect(release).toHaveBeenLastCalledWith({ botId: "bot-1" });
   expect(takeover).not.toHaveBeenCalled();
 });
+
+it("takes control of the bot switched to while another bot's takeover is still on its way", async () => {
+  const takeover = vi.fn(({ botId }: { botId: string }) =>
+    botId === "bot-1"
+      ? new Promise(() => undefined)
+      : Promise.resolve({ leaseId: "l", expiresAt: "" }),
+  );
+  const first = { id: "bot-1", name: "Ada" } as never;
+  const second = { id: "bot-2", name: "Grace" } as never;
+  function Controls() {
+    state = useComputerState({
+      rpc: { computer: { screenUrl } } as never,
+      panel: null,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    useComputerControls({
+      rpc: {
+        computer: {
+          boot: vi.fn(async () => null),
+          takeover,
+          release: vi.fn(async () => ({ ok: true })),
+          screenUrl,
+          status: vi.fn(async ({ botId }: { botId: string }) => free(botId)),
+          heartbeat: vi.fn(async () => ({ ok: true })),
+        },
+      } as never,
+      state,
+      panel: null,
+      active: first,
+      bots: [first, second],
+      botsRef: { current: [first, second] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      recording: false,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => ({}) as never),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  const free = (botId: string) =>
+    ({
+      botId,
+      mode: "dedicated",
+      kind: "boat",
+      state: "running",
+      controlHolder: "none",
+      controlBotId: null,
+      takeoverRequested: false,
+      screenAvailable: true,
+      screenWidth: 1280,
+      screenHeight: 800,
+      homeRevision: null,
+      busyBotName: null,
+      canUpdate: false,
+      terminalAvailable: false,
+    }) as const;
+  await act(async () => root.render(<Controls />));
+  await act(async () => state.commitComputer(free("bot-1")));
+  await act(async () => state.setComputerOpen(true));
+  expect(takeover).toHaveBeenCalledWith({ botId: "bot-1" });
+
+  await act(async () => {
+    state.setComputerBotId("bot-2");
+    state.commitComputer(free("bot-2"));
+  });
+  expect(takeover).toHaveBeenLastCalledWith({ botId: "bot-2" });
+});

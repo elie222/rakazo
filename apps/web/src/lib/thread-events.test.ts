@@ -4,6 +4,7 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { userHoldsComputerControl } from "@rakazo/contracts";
 import { reconcileRefreshedThread, reduceThreadSnapshot } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,12 +12,10 @@ import {
   computerPanelNeedsMaintenance,
   computerPanelNeedsScreen,
   computerTakeoverBlocked,
-  mayTakeControl,
   reduceComputerStatus,
   screenMissing,
   screenReadLoaded,
   threadRunError,
-  userHoldsComputerControl,
 } from "./thread-events.js";
 
 describe("thread event reduction with web state", () => {
@@ -351,6 +350,13 @@ describe("computer event reduction", () => {
       controlHolder: "none",
       controlBotId: "bot-1",
     });
+    // On a shared computer the request's owner comes with the next snapshot.
+    expect(
+      reduceComputerStatus(
+        { ...busy, shared: true },
+        event({ type: "computer.takeover.requested", payload: {} }),
+      ),
+    ).toMatchObject({ takeoverRequested: true, controlBotId: null });
     expect(
       reduceComputerStatus(
         computer({
@@ -504,37 +510,6 @@ function event(overrides: Partial<ProductEvent>): ProductEvent {
     ...overrides,
   };
 }
-
-describe("mayTakeControl", () => {
-  const running = (overrides: Partial<ComputerStatus>) =>
-    computer({ state: "running", ...overrides });
-
-  it("takes a free computer and answers this bot's own request", () => {
-    expect(mayTakeControl(running({}), "bot-1")).toBe(true);
-    expect(
-      mayTakeControl(running({ takeoverRequested: true, controlBotId: "bot-1" }), "bot-1"),
-    ).toBe(true);
-  });
-
-  it("never skips another bot's request for help on a shared computer", () => {
-    expect(
-      mayTakeControl(running({ takeoverRequested: true, controlBotId: "bot-2" }), "bot-1"),
-    ).toBe(false);
-    expect(
-      mayTakeControl(
-        running({ takeoverRequested: true, controlHolder: "user", controlBotId: "bot-2" }),
-        "bot-1",
-      ),
-    ).toBe(false);
-  });
-
-  it("leaves a computer someone else or a working bot is using", () => {
-    expect(
-      mayTakeControl(running({ controlledByOther: true, controlHolder: "user" }), "bot-1"),
-    ).toBe(false);
-    expect(mayTakeControl(running({ busyBotName: "Ada" }), "bot-1", "running")).toBe(false);
-  });
-});
 
 describe("screen read ownership", () => {
   it("does not promote a booting read into a running-screen failure", () => {

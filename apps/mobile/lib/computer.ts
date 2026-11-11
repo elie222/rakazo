@@ -1,6 +1,10 @@
 import { ph, t } from "@lingui/core/macro";
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
-import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
+import {
+  isLocalhostOrLoopbackIp,
+  isPrivateNetworkHost,
+  userHoldsComputerControl,
+} from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
 
@@ -184,32 +188,9 @@ export function previewPlaceholder(
   return t`Computer is stopped`;
 }
 
-export function holdsControl(computer: ComputerStatus | null, botId?: string): boolean {
-  return Boolean(
-    botId &&
-      computer?.controlHolder === "user" &&
-      computer.controlBotId === botId &&
-      !computer.controlledByOther,
-  );
-}
-
-/** Whether opening the computer takes control: no one else and no run is using it. */
-export function mayTakeControl(computer: ComputerStatus | null, botId?: string): boolean {
-  return Boolean(
-    botId &&
-      computer &&
-      computer.kind !== "desktop" &&
-      !computer.controlledByOther &&
-      !computer.busyBotName &&
-      // Taking control would skip another bot's request for help.
-      !(computer.takeoverRequested && computer.controlBotId !== botId) &&
-      !holdsControl(computer, botId),
-  );
-}
-
 /** Who is using the screen, when it is not free. */
 export function controlPillLabel(computer: ComputerStatus | null, botId?: string): string | null {
-  if (holdsControl(computer, botId)) return t`You’re in control`;
+  if (userHoldsComputerControl(computer, botId)) return t`You’re in control`;
   if (computer?.controlledByOther) {
     return computer.controlledByName
       ? t`${ph({ name: computer.controlledByName })} is in control`

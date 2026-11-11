@@ -53,6 +53,43 @@ export const ComputerStatusSchema = z.object({
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
+/** Whether the viewer holds this bot's control of its computer. */
+export function userHoldsComputerControl(
+  computer:
+    | Pick<ComputerStatus, "controlHolder" | "controlBotId" | "controlledByOther">
+    | null
+    | undefined,
+  botId: string | undefined,
+): boolean {
+  return Boolean(
+    botId &&
+      computer?.controlHolder === "user" &&
+      computer.controlBotId === botId &&
+      !computer.controlledByOther,
+  );
+}
+
+/**
+ * Whether opening this bot's computer takes control: no person, no working run (`busy`) and no
+ * other bot's request for help is using it.
+ */
+export function mayTakeComputerControl(
+  computer: ComputerStatus | null | undefined,
+  botId: string | undefined,
+  busy: boolean,
+): boolean {
+  return Boolean(
+    botId &&
+      computer &&
+      computer.kind !== "desktop" &&
+      !computer.controlledByOther &&
+      !busy &&
+      // Taking control would skip another bot's request for help.
+      !(computer.takeoverRequested && computer.controlBotId !== botId) &&
+      !userHoldsComputerControl(computer, botId),
+  );
+}
+
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 

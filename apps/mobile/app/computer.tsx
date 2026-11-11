@@ -1,7 +1,11 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
-import { isComputerAllowanceUsed } from "@rakazo/contracts";
+import {
+  isComputerAllowanceUsed,
+  mayTakeComputerControl,
+  userHoldsComputerControl,
+} from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import {
   createScreenReconnect,
@@ -46,9 +50,7 @@ import {
   controlPillLabel,
   embeddableScreenUrl,
   fromScreenPage,
-  holdsControl,
   isProxiedScreenPage,
-  mayTakeControl,
   nextLoadedScreenUrl,
   previewPlaceholder,
   retainScreenSource,
@@ -131,7 +133,7 @@ export default function Computer() {
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
-  const hasControl = holdsControl(computer, botId);
+  const hasControl = userHoldsComputerControl(computer, botId);
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
   const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
@@ -343,7 +345,7 @@ export default function Computer() {
     if (!botId) return;
     try {
       const opened = await bootComputer({
-        takeControl: mayTakeControl(computer, botId),
+        takeControl: mayTakeComputerControl(computer, botId, Boolean(computer?.busyBotName)),
         showProgress: computer?.state !== "running",
         force: computer?.state !== "running",
       });
@@ -355,6 +357,8 @@ export default function Computer() {
     }
   }
 
+  // The bot a takeover is on its way for; another bot's window may take control meanwhile.
+  const [takingControlOf, setTakingControlOf] = useState<string | null>(null);
   // The open window takes control once nothing stands in the way: the run it waited for
   // ended, or the person holding it let go.
   const shouldTakeControl =
@@ -365,16 +369,16 @@ export default function Computer() {
     !error &&
     computer?.botId === botId &&
     computer?.state === "running" &&
-    mayTakeControl(computer, botId);
-  const takingControl = useRef(false);
+    takingControlOf !== botId &&
+    mayTakeComputerControl(computer, botId, Boolean(computer?.busyBotName));
   useEffect(() => {
-    if (!shouldTakeControl || takingControl.current) return;
-    takingControl.current = true;
+    if (!shouldTakeControl || !botId) return;
+    const id = botId;
+    setTakingControlOf(id);
     void bootComputer({ takeControl: true, showProgress: false })
       .catch(() => undefined)
-      .finally(() => {
-        takingControl.current = false;
-      });
+      // Held until the status read shows the grant, so it is asked for once.
+      .finally(() => setTakingControlOf((current) => (current === id ? null : current)));
   }, [shouldTakeControl]);
 
   // Closing the window hands back control it holds. A bot waiting on the user keeps waiting

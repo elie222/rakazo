@@ -1,6 +1,11 @@
 import { ComputerStatusSchema } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
-import { executionBlocksUserTakeover, toComputerStatus } from "./computer-status.js";
+import {
+  executionBlocksUserTakeover,
+  resolveComputerControl,
+  toComputerStatus,
+} from "./computer-status.js";
 
 describe("toComputerStatus", () => {
   it("shows a quarantined computer as an error without making its screen available", () => {
@@ -187,5 +192,35 @@ describe("executionBlocksUserTakeover", () => {
         now,
       }),
     ).toBe(false);
+  });
+});
+
+describe("resolveComputerControl", () => {
+  const waiting = {
+    kind: "fake",
+    state: "running",
+    scope: "team",
+    controlHolder: "none",
+    controlBotId: null,
+    controlRunId: "run-1",
+    homeRevision: "revision-1",
+  };
+  const prisma = {
+    run: { findUnique: async () => ({ botId: "bot-1", userId: "grace" }) },
+    user: { findUnique: async () => ({ name: "Grace" }) },
+  } as unknown as PrismaClient;
+
+  it("leaves a bot's unopened request to the person it waits for", async () => {
+    const forOther = await resolveComputerControl(prisma, waiting, "ada");
+    expect(toComputerStatus("bot-2", waiting, null, true, "ada", forOther)).toMatchObject({
+      takeoverRequested: true,
+      controlBotId: "bot-1",
+      controlledByOther: true,
+      controlledByName: "Grace",
+    });
+    const forViewer = await resolveComputerControl(prisma, waiting, "grace");
+    const status = toComputerStatus("bot-1", waiting, null, true, "grace", forViewer);
+    expect(status).toMatchObject({ takeoverRequested: true, controlBotId: "bot-1" });
+    expect(status).not.toHaveProperty("controlledByOther");
   });
 });

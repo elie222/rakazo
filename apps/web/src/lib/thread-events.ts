@@ -49,21 +49,6 @@ export function prependThreadMessagePage(
   return prependThreadHistoryPage(prev, page);
 }
 
-export function userHoldsComputerControl(
-  computer:
-    | Pick<ComputerStatus, "controlHolder" | "controlBotId" | "controlledByOther">
-    | null
-    | undefined,
-  botId: string | undefined,
-): boolean {
-  return Boolean(
-    botId &&
-      computer?.controlHolder === "user" &&
-      computer.controlBotId === botId &&
-      !computer.controlledByOther,
-  );
-}
-
 /** True when a live bot run keeps the user from taking control (API would return 409). */
 export function computerTakeoverBlocked(
   computer: Pick<ComputerStatus, "busyBotName"> | null | undefined,
@@ -74,24 +59,6 @@ export function computerTakeoverBlocked(
   // busyBotName is briefly stale while the executor still holds the lease in finally.
   if (!runStatus || runStatus === "waiting_takeover") return false;
   return isActive(runStatus as RunStatus);
-}
-
-/** Whether opening this bot's computer takes control: no one else, no run and no other bot's request is using it. */
-export function mayTakeControl(
-  computer: ComputerStatus | null | undefined,
-  botId: string | undefined,
-  runStatus?: string | null,
-): boolean {
-  return Boolean(
-    botId &&
-      computer &&
-      computer.kind !== "desktop" &&
-      !computer.controlledByOther &&
-      !userHoldsComputerControl(computer, botId) &&
-      // Taking control would skip another bot's request for help.
-      !(computer.takeoverRequested && computer.controlBotId !== botId) &&
-      !computerTakeoverBlocked(computer, runStatus),
-  );
 }
 
 /**
@@ -126,7 +93,10 @@ export function reduceComputerStatus(
       ...prev,
       busyBotName: null,
       takeoverRequested: true,
-      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: event.botId }),
+      // On a shared computer the snapshot says whose request this is before anyone may answer it.
+      ...(retainedControl
+        ? {}
+        : { controlHolder: "none" as const, controlBotId: prev.shared ? null : event.botId }),
     };
     return prev.busyBotName === next.busyBotName &&
       prev.takeoverRequested === next.takeoverRequested &&

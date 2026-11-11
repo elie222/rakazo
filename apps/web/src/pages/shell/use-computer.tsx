@@ -7,7 +7,11 @@ import type {
   Run,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { isComputerAllowanceUsed } from "@rakazo/contracts";
+import {
+  isComputerAllowanceUsed,
+  mayTakeComputerControl,
+  userHoldsComputerControl,
+} from "@rakazo/contracts";
 import {
   createScreenReconnects,
   isRetryableError,
@@ -39,10 +43,8 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import {
   computerPanelNeedsScreen,
   computerTakeoverBlocked,
-  mayTakeControl,
   screenMissing,
   screenReadLoaded,
-  userHoldsComputerControl,
 } from "../../lib/thread-events";
 import { errorText } from "../../lib/user-error";
 
@@ -609,7 +611,8 @@ export function useComputerControls({
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
   const autoBooted = useRef<string | null>(null);
-  const takeoverInFlight = useRef(false);
+  // The bot a takeover is on its way for; another bot's window may take control meanwhile.
+  const [takingControlOf, setTakingControlOf] = useState<string | null>(null);
   const [handingBack, setHandingBack] = useState(false);
   // The bot whose control this window took and hands back when it closes.
   const heldControl = useRef<string | null>(null);
@@ -658,12 +661,8 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        takeoverInFlight.current = true;
-        try {
-          await rpc.computer.takeover({ botId: targetBotId });
-        } finally {
-          takeoverInFlight.current = false;
-        }
+        setTakingControlOf(targetBotId);
+        await rpc.computer.takeover({ botId: targetBotId });
         if (!stillThisBoot() || !stillThisBot()) return;
       }
       await refreshComputerFor(targetBotId);
@@ -676,6 +675,8 @@ export function useComputerControls({
       throw error;
     } finally {
       if (stillThisBoot()) setBootingBotId(null);
+      // Held until the status read shows the grant, so it is asked for once.
+      if (takeControl) setTakingControlOf((current) => (current === targetBotId ? null : current));
     }
   }
 
@@ -806,7 +807,13 @@ export function useComputerControls({
       if (!bootsInFlight.current.has(id)) await refreshComputerFor(id).catch(() => undefined);
       return true;
     }
-    const takeControl = !recording && mayTakeControl(targetComputer, id, runStatus);
+    const takeControl =
+      !recording &&
+      mayTakeComputerControl(
+        targetComputer,
+        id,
+        computerTakeoverBlocked(targetComputer, runStatus),
+      );
     try {
       await bootComputer({
         botId: id,
@@ -881,13 +888,14 @@ export function useComputerControls({
     !computerError &&
     computer?.botId === computerBot?.id &&
     computer?.state === "running" &&
-    mayTakeControl(computer, computerBot?.id, runStatus);
+    takingControlOf !== computerBot?.id &&
+    mayTakeComputerControl(computer, computerBot?.id, computerTakeoverBlocked(computer, runStatus));
   useEffect(() => {
     const botId = computerBot?.id;
     if (!shouldTakeControl || !botId) return;
     // A hidden window would hold the computer past its idle expiry.
     const take = () => {
-      if (document.visibilityState !== "visible" || takeoverInFlight.current) return;
+      if (document.visibilityState !== "visible") return;
       void bootComputer({ botId, takeControl: true, showProgress: false }).catch(() => undefined);
     };
     take();
