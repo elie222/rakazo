@@ -61,6 +61,14 @@ function isDisabled(button: HTMLButtonElement) {
   return button.disabled || button.getAttribute("aria-disabled") === "true";
 }
 
+function previewQuery() {
+  const found = queryClient.getQueryCache().findAll({
+    predicate: (query) => JSON.stringify(query.queryKey).includes("removePreview"),
+  });
+  if (found.length !== 1) throw new Error(`Expected one preview query, found ${found.length}`);
+  return found[0];
+}
+
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.matchMedia ??= ((query: string) => ({
@@ -75,7 +83,8 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The dialog itself turns retry off. A client default of false would hide that.
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1 } } });
 });
 
 afterEach(() => {
@@ -122,9 +131,10 @@ describe("DeleteBotDialog", () => {
     expect(dialogText()).not.toContain("fewer than two");
     expect(rpc.bots.remove).not.toHaveBeenCalled();
 
-    resolvePreview([{ id: "g1", name: "Alpha" }]);
-    await flush();
-    expect(dialogText()).toContain("Alpha");
+    await act(async () => {
+      resolvePreview([{ id: "g1", name: "Alpha" }]);
+      await vi.waitFor(() => expect(dialogText()).toContain("Alpha"));
+    });
 
     expect(dialogText()).toContain("its messages, files, and pages");
     expect(dialogText()).toContain("Keep memories");
@@ -146,7 +156,7 @@ describe("DeleteBotDialog", () => {
       { id: "g2", name: "Beta" },
     ]);
     await renderDialog();
-    expect(dialogText()).toContain("Beta");
+    await vi.waitFor(() => expect(dialogText()).toContain("Beta"));
     expect(dialogText()).toContain("their messages, files, and pages");
     expect(rpc.bots.remove).not.toHaveBeenCalled();
   });
@@ -154,17 +164,21 @@ describe("DeleteBotDialog", () => {
   it("delete-bot-warns-dissolved-groups leaves today's description when no group is removed", async () => {
     rpc.bots.removePreview.mockResolvedValue([]);
     await renderDialog();
-    expect(dialogText()).toContain(baseDescription);
+    await vi.waitFor(() => {
+      expect(dialogText()).toContain(baseDescription);
+      expect(isDisabled(deleteButton())).toBe(false);
+    });
     expect(dialogText()).not.toContain("deleted too");
     expect(dialogText()).not.toContain("fewer than two");
-    expect(isDisabled(deleteButton())).toBe(false);
     expect(rpc.bots.remove).not.toHaveBeenCalled();
   });
 
   it("delete-bot-warns-dissolved-groups warns in general when the preview fails", async () => {
     rpc.bots.removePreview.mockRejectedValue(new Error("offline"));
     await renderDialog();
-    expect(dialogText()).toContain("fewer than two bots");
+    await vi.waitFor(() => expect(dialogText()).toContain("fewer than two bots"));
+    expect(previewQuery()?.options.retry).toBe(false);
+    expect(rpc.bots.removePreview).toHaveBeenCalledTimes(1);
     expect(dialogText()).toContain("messages, files, and pages");
     expect(dialogText()).toContain(baseDescription);
     expect(isDisabled(deleteButton())).toBe(false);

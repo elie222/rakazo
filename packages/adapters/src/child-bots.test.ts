@@ -792,8 +792,10 @@ describe("destroyBot", () => {
       },
     ];
     const deleteGroups = vi.fn().mockResolvedValue({ count: 2 });
+    const findGroups = vi.fn().mockResolvedValue(groups);
+    const findGroupsDuringDelete = vi.fn().mockResolvedValue(groups);
     const prisma = {
-      chatGroup: { findMany: vi.fn().mockResolvedValue(groups) },
+      chatGroup: { findMany: findGroups },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
       spaceMember: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn() },
@@ -814,7 +816,7 @@ describe("destroyBot", () => {
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
           },
           chatGroup: {
-            findMany: vi.fn().mockResolvedValue(groups),
+            findMany: findGroupsDuringDelete,
             deleteMany: deleteGroups,
           },
           chatGroupMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -851,6 +853,10 @@ describe("destroyBot", () => {
       { id: "group-3", name: "Gamma" },
     ]);
     expect(deleteGroups).toHaveBeenCalledWith({ where: { id: { in: ["group-1", "group-3"] } } });
+    const previewWhere = findGroups.mock.calls[0]?.[0].where;
+    const deleteWhere = findGroupsDuringDelete.mock.calls[0]?.[0].where;
+    expect(previewWhere).toEqual(deleteWhere);
+    expect(previewWhere).toEqual({ members: { some: { botId: "bot-1" } } });
   });
 
   it("surfaces transaction failures instead of reporting deletion success", async () => {
