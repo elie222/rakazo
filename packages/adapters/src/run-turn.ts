@@ -768,22 +768,23 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
 /**
  * Whether this run took in outside content, recorded on the run row so bots learning from its
  * replies leave them out. A retried run restored earlier tool results, and channel or webhook
- * text it took in mid-turn counts too; an unreadable answer counts as outside content.
+ * text it took in mid-turn counts too; an unreadable answer counts as outside content. The row is
+ * written again here because an earlier write may have failed; it only changes a false row.
  */
 async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
   const { state } = ctx;
-  if (state.readOutsideContent) return true;
-  let outside: boolean;
-  try {
-    state.earlierAttempt ??= ctx.deps.prisma.attempt
-      .count({ where: { runId: ctx.runId } })
-      .then((count) => count > 1);
-    outside = (await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage());
-  } catch {
-    outside = true;
+  if (!state.readOutsideContent) {
+    try {
+      state.earlierAttempt ??= ctx.deps.prisma.attempt
+        .count({ where: { runId: ctx.runId } })
+        .then((count) => count > 1);
+      state.readOutsideContent =
+        (await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage());
+    } catch {
+      state.readOutsideContent = true;
+    }
   }
-  if (!outside) return false;
-  state.readOutsideContent = true;
+  if (!state.readOutsideContent) return false;
   await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
   return true;
 }

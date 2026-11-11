@@ -171,8 +171,7 @@ describe("learning a finished turn", () => {
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ payload: { runId: "run-1", withoutReplies: true } }),
     );
-    // A run that read outside content recorded it when it did; the rest record it now.
-    if (read) expect(updateMany).not.toHaveBeenCalledWith(persisted);
-    else expect(updateMany).toHaveBeenCalledWith(persisted);
+    // Recorded again at completion, so a failed earlier write never leaves the row unmarked.
+    expect(updateMany).toHaveBeenCalledWith(persisted);
   });
 });
