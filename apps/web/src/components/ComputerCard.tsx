@@ -99,7 +99,7 @@ function PendingComputerCard({
     retry: false,
     // A later request must never paint an earlier screen, and a return to the tab redraws it.
     gcTime: 0,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: "always",
   });
   const image = preview.data?.image ?? null;
   const release = async (reason: ComputerReleaseReason) => {
