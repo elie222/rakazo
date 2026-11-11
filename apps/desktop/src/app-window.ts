@@ -16,6 +16,7 @@ import {
   forwardedRendererRequestInit,
   isRendererAssetMiss,
 } from "./renderer-assets.js";
+import { installRendererRecovery } from "./renderer-recovery.js";
 import {
   probeFailureMessage,
   safeExternalUrl,
@@ -248,6 +249,7 @@ export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:load-url-start");
   const loaded = loadAppUrl(win, url).then(
     (state) => {
+      installRendererRecovery(win, () => desktop.quitting);
       markOnce("rk:main:load-url-resolved");
       return state;
     },
