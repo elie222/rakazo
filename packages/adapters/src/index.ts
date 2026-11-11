@@ -222,6 +222,7 @@ export {
   migrateVaultValues,
   openSealedVaultValue,
   rotateVaultKeys,
+  vaultItemsNotUnderKeys,
   vaultItemsUnderOlderKeys,
 } from "./vault-values.js";
 export * from "./voice-factory.js";

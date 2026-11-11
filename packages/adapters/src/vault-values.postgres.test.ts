@@ -5,7 +5,6 @@ import {
   asSystem,
   ciphertextKeyId,
   contentEncryptionOf,
-  contentEncryptionStatus,
   createDb,
   LocalKeyProvider,
   masterKeysFromEnv,
@@ -16,7 +15,12 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resolveLoginFill, revealBotSecret, storeBotSecret } from "./bot-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { migrateVaultValues, rotateVaultKeys, vaultItemsUnderOlderKeys } from "./vault-values.js";
+import {
+  migrateVaultValues,
+  rotateVaultKeys,
+  vaultItemsNotUnderKeys,
+  vaultItemsUnderOlderKeys,
+} from "./vault-values.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -142,9 +146,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     system.vaultCredential.findMany({ where: { userId: scope.userId }, orderBy: { name: "asc" } });
 
   const memberKeys = () => system.spaceKey.findMany({ where: { spaceId: `user:${scope.userId}` } });
-  const waiting = async () =>
-    (await contentEncryptionStatus(system)).tables.find((t) => t.table === "vault_credentials")!
-      .plaintext;
+  const waiting = async () => (await vaultItemsNotUnderKeys(system)).waiting;
 
   it("moves old rows beside new ones, once, and back for a rollback", async () => {
     await save(plain.prisma, "old", "fake-old-password");
@@ -203,6 +205,15 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
         revealBotSecret({ prisma: sealing.prisma, secretStore, scope, name: "new" }),
       ),
     ).toMatchObject({ fields: [{ value: "fake-new-password" }] });
+
+    // A value kept in an external store is not one migrate has yet to move.
+    const left = await waiting();
+    const item = (await rows()).find((row) => row.name === "broken")!;
+    const keep = (ciphertext: string) =>
+      system.vaultCredential.update({ where: { id: item.id }, data: { ciphertext } });
+    await keep("infisical:v1:fake-reference");
+    expect(await waiting()).toBeLessThanOrEqual(left - 1);
+    await keep(item.ciphertext);
   });
 
   it("keeps a save and migrate from undoing each other on the same item", async () => {
@@ -751,12 +762,28 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
         const versions = () => system.spaceKey.count({ where: { spaceId: scope } });
         const before = await versions();
         const controller = new AbortController();
+        // The key manager answers when the test lets it, which is after the command has stopped.
+        let answerNow = () => {};
+        const answered = new Promise<void>((resolve) => {
+          answerNow = resolve;
+        });
         const wrap = provider.wrap.bind(provider);
         provider.wrap = (key, context) => {
           controller.abort(new Error("interrupted"));
           if (answer === "never answers") return new Promise(() => {});
-          return new Promise((resolve) => setTimeout(resolve, 5)).then(() => wrap(key, context));
+          return answered.then(() => wrap(key, context));
         };
+        // The key creations the command starts, to wait for the one it gave up on.
+        const ring = contentEncryptionOf(command.prisma)!.ring;
+        const creations: Promise<unknown>[] = [];
+        for (const method of ["current", "rotate"] as const) {
+          const create = ring[method].bind(ring);
+          ring[method] = (spaceId, signal) => {
+            const creation = create(spaceId, signal);
+            creations.push(creation);
+            return creation;
+          };
+        }
         try {
           const run = (): Promise<unknown> =>
             mode === "rotate"
@@ -768,7 +795,11 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
                   { mode },
                 );
           await expect(runAsSystem("vault interruption", run)).rejects.toThrow("interrupted");
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          // A key manager that never answers leaves nothing to wait for.
+          if (answer === "answers after the interruption") {
+            answerNow();
+            await Promise.allSettled(creations);
+          }
           expect(await versions()).toBe(before);
         } finally {
           provider.wrap = wrap;

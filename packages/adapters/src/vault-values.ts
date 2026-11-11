@@ -251,6 +251,19 @@ export async function migrateVaultValues(
 }
 
 /**
+ * Vault items `migrate` has yet to move: every value not under a vault key, apart from values in
+ * an external store, which `migrate` leaves there. Read-only.
+ */
+export async function vaultItemsNotUnderKeys(
+  prisma: PrismaClient,
+): Promise<{ rows: number; waiting: number }> {
+  const [counts] = await prisma.$queryRaw<Array<{ rows: bigint; waiting: bigint }>>`
+    SELECT count(*) AS rows, count(*) FILTER (WHERE ciphertext NOT LIKE ${`${CIPHERTEXT_PREFIX}%`}
+      AND ciphertext NOT LIKE ${`${INFISICAL_REF_PREFIX}%`}) AS waiting FROM vault_credentials`;
+  return { rows: Number(counts!.rows), waiting: Number(counts!.waiting) };
+}
+
+/**
  * Vault items under a version of their vault's key other than the newest stored one, such as
  * saves a process sealed with the version it had cached when another process rotated the key.
  * `reencrypt` moves them. Items naming no key of their vault, as a damaged value or one whose key

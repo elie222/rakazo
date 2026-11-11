@@ -10,6 +10,7 @@ import {
   rotateVaultKeys,
   unwrapEnvFromKeyManager,
   upgradeLegacySecrets,
+  vaultItemsNotUnderKeys,
   vaultItemsUnderOlderKeys,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -227,9 +228,11 @@ try {
     if (command === "status") {
       const status = await contentEncryptionStatus(prisma);
       for (const table of status.tables)
-        write(
-          `${table.table}: ${table.plaintext} of ${table.rows} ${table.table === "vault_credentials" ? "not yet under the content keys" : "in plaintext"}`,
-        );
+        write(`${table.table}: ${table.plaintext} of ${table.rows} in plaintext`);
+      const waiting = await vaultItemsNotUnderKeys(prisma);
+      write(
+        `vault_credentials: ${waiting.waiting} of ${waiting.rows} not yet under the content keys`,
+      );
       const vaultItems = await vaultItemsUnderOlderKeys(prisma);
       write(
         `vault items under an older vault key version: ${vaultItems.older} (reencrypt moves them)`,
