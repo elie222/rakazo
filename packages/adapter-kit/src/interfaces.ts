@@ -39,6 +39,7 @@ import type {
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ConnectedConnector,
   ConnectorCall,
   ConnectorCapabilities,
   ConnectorCatalogItem,
@@ -695,4 +696,43 @@ export interface CloudAgentProvider {
 export interface AutoReviewProvider {
   describe(): AdapterDescriptor<AutoReviewCapabilities>;
   review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult>;
+}
+
+/** One message as the mailbox received it: the raw RFC 5322 bytes, which carry its signature. */
+export interface ConnectedMailMessage {
+  /** The provider's id for the message, stable across reads. */
+  id: string;
+  raw: Uint8Array;
+  /** When the mailbox received it, as the provider records; absent when it does not say. */
+  receivedAt?: Date;
+}
+
+/**
+ * Reads a mailbox someone connected through an integration, only ever reading: it never marks
+ * mail read, moves or sends it. Core runs with none configured.
+ */
+export interface ConnectedMailReader {
+  /** The address of the mailbox, lowercased. */
+  mailbox(context: AdapterContext): Promise<string>;
+  /**
+   * One page, newest first, of the messages received since `after` that the provider matches to
+   * senders at `fromDomain`: the first page, or the one `page` names. The provider's match is
+   * loose (a name or another domain holding `fromDomain` matches), so the caller judges the
+   * sender itself and reads on through `next` until it has what it needs.
+   */
+  recent(
+    context: AdapterContext,
+    query: { fromDomain: string; after: Date; limit: number; page?: string },
+  ): Promise<ConnectedMailPage>;
+}
+
+export interface ConnectedMailPage {
+  messages: ConnectedMailMessage[];
+  /** Names the page after this one when the window holds more; absent on the last. */
+  next?: string;
+}
+
+/** The reader for a connected mailbox, from the connections a provider knows how to read. */
+export interface ConnectedMailSource {
+  readerFor(connection: ConnectedConnector): ConnectedMailReader | undefined;
 }

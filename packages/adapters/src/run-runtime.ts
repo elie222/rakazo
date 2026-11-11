@@ -14,6 +14,7 @@ import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { reconcileCloudAgents } from "./cloud-agent-service.js";
 import type { ComposioProvider } from "./composio-connector.js";
 import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
+import { composioMailSource } from "./composio-mail.js";
 import { createIdleComputerSweeper } from "./computer-idle.js";
 import { reconcileComputerUpdates } from "./computer-update.js";
 import { createConnectorStack } from "./connector-registry.js";
@@ -207,6 +208,8 @@ export function createRunRuntime(
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     inboundEmailDomain: env.inboundEmailDomain,
+    // Reads mail connections through the registry, which routes them to the connector they use.
+    connectedMail: composioMailSource(connectors.stack.connector),
     messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
     web: createWebProvider(),
   });

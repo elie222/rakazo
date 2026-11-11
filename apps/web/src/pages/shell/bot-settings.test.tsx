@@ -510,3 +510,24 @@ it("defaults daily check-ins on and saves the opt-out", async () => {
   await flush();
   expect(onSave).toHaveBeenCalledWith({ dailyCheckIns: false });
 });
+
+it("offers connected mail codes only to the bot's creator", async () => {
+  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+  // The server reports the choice only to the creator, whose email it reads.
+  await renderSettings(onSave, { ...bot, connectedMailCodes: undefined });
+  expect(container.querySelector('[id$="-connected-mail-codes"]')).toBeNull();
+  expect(container.textContent).not.toContain("connected email");
+});
+
+it("defaults connected mail codes off and saves the opt-in", async () => {
+  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+  await renderSettings(onSave, { ...bot, connectedMailCodes: false });
+  const toggle = container.querySelector<HTMLButtonElement>('[id$="-connected-mail-codes"]');
+  expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  expect(container.querySelector('label[for$="-connected-mail-codes"]')?.textContent?.trim()).toBe(
+    "Fill sign-in codes from my connected email",
+  );
+  await act(async () => toggle?.click());
+  await flush();
+  expect(onSave).toHaveBeenCalledWith({ connectedMailCodes: true });
+});

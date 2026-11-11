@@ -114,6 +114,24 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 12-bot-settings
+- scrollUntilVisible:
+    element: "Fill sign-in codes from my connected email"
+    direction: DOWN
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 12b-bot-settings-connected-mail-codes-off
+- tapOn:
+    text: "Fill sign-in codes from my connected email"
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 12c-bot-settings-connected-mail-codes-on
+- tapOn:
+    text: "Fill sign-in codes from my connected email"
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
 - openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
     visible: ".*Routines.*"

@@ -1,0 +1,1 @@
+ALTER TABLE "bots" ADD COLUMN "connectedMailCodes" BOOLEAN NOT NULL DEFAULT false;

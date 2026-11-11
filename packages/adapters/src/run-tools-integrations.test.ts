@@ -140,3 +140,11 @@ describe("connector tool with an MCP app", () => {
     expect(storeMcpAppHtml).not.toHaveBeenCalled();
   });
 });
+
+describe("connector tool results in a run that holds a secret", () => {
+  it("returns what the call did: the call already ran", async () => {
+    const data = { data: { sent: true, id: "m9" } };
+    const { ctx, call } = setup([{ type: "result", data }], {}, ["482913"]);
+    expect(await connectorTool(ctx, call)).toEqual(data);
+  });
+});

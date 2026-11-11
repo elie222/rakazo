@@ -103,6 +103,7 @@ export function BotSettings({
     replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
+    connectedMailCodes?: boolean;
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
@@ -150,6 +151,8 @@ export function BotSettings({
   );
   const [dailyCheckIns, setDailyCheckIns] = useState(bot.dailyCheckIns ?? true);
   useEffect(() => setDailyCheckIns(bot.dailyCheckIns ?? true), [bot.dailyCheckIns]);
+  const [connectedMailCodes, setConnectedMailCodes] = useState(bot.connectedMailCodes);
+  useEffect(() => setConnectedMailCodes(bot.connectedMailCodes), [bot.connectedMailCodes]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [replyMode, setReplyMode] = useState(bot.replyMode);
@@ -217,6 +220,7 @@ export function BotSettings({
         replyMode?: ReplyMode;
         crossSpaceCommunication?: boolean;
         dailyCheckIns?: boolean;
+        connectedMailCodes?: boolean;
         disabledBuiltinTools?: string[];
         baseDisabledBuiltinTools?: string[];
       },
@@ -307,6 +311,7 @@ export function BotSettings({
       replyMode?: ReplyMode;
       crossSpaceCommunication?: boolean;
       dailyCheckIns?: boolean;
+      connectedMailCodes?: boolean;
       disabledBuiltinTools?: string[];
       baseDisabledBuiltinTools?: string[];
     },
@@ -321,6 +326,10 @@ export function BotSettings({
       }
       if (patchOverrides?.dailyCheckIns !== undefined) {
         await onSave({ dailyCheckIns: patchOverrides.dailyCheckIns });
+        return;
+      }
+      if (patchOverrides?.connectedMailCodes !== undefined) {
+        await onSave({ connectedMailCodes: patchOverrides.connectedMailCodes });
         return;
       }
       if (patchOverrides?.fleetManagement !== undefined) {
@@ -435,6 +444,8 @@ export function BotSettings({
         setCrossSpaceCommunication(!patchOverrides.crossSpaceCommunication);
       if (patchOverrides?.dailyCheckIns !== undefined)
         setDailyCheckIns(!patchOverrides.dailyCheckIns);
+      if (patchOverrides?.connectedMailCodes !== undefined)
+        setConnectedMailCodes(!patchOverrides.connectedMailCodes);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
       if (patchOverrides?.replyMode !== undefined) setReplyMode(bot.replyMode);
@@ -470,6 +481,7 @@ export function BotSettings({
     replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
+    connectedMailCodes?: boolean;
     disabledBuiltinTools?: string[];
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
@@ -609,6 +621,11 @@ export function BotSettings({
               onDailyCheckInsChange={(checked) => {
                 setDailyCheckIns(checked);
                 void enqueueSave({ dailyCheckIns: checked });
+              }}
+              connectedMailCodes={connectedMailCodes}
+              onConnectedMailCodesChange={(checked) => {
+                setConnectedMailCodes(checked);
+                void enqueueSave({ connectedMailCodes: checked });
               }}
               crossSpaceCommunication={crossSpaceCommunication}
               onCrossSpaceCommunicationChange={(checked) => {

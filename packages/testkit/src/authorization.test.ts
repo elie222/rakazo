@@ -235,6 +235,117 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ]);
   });
 
+  it("gives the choice to read one's connected email only to a bot's creator, on that bot", async () => {
+    // The rule: the choice is made on a bot by its creator, and reported to them alone. A bot
+    // that comes to exist any other way starts with it off (an imported one too:
+    // account-import.postgres.test.ts, as import has no endpoint). Each state of the table is
+    // checked in order, with the same two members of one space.
+    const owner = await signup(app, `mail-codes-owner-${stamp}@rakazo.test`, "Owner");
+    const peer = await signup(app, `mail-codes-peer-${stamp}@rakazo.test`, "Peer");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const peerActor = await rpc<Actor>(app, peer, "me");
+    const space = await db.space.findUniqueOrThrow({ where: { id: ownerActor.spaceId } });
+    await db.member.create({
+      data: {
+        id: `mail-codes-member-${stamp}`,
+        organizationId: space.organizationId,
+        userId: peerActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    type Bot = { id: string; connectedMailCodes?: boolean };
+    const bot = await rpc<Bot>(app, owner, "bots/create", botInput("Own"), space.id);
+    const seen = async (cookie: string, botId: string) =>
+      (await rpc<Bot[]>(app, cookie, "bots/list", {}, space.id)).find((row) => row.id === botId)
+        ?.connectedMailCodes;
+    const table: Array<[state: string, act: () => Promise<Bot | undefined>, expected: boolean]> = [
+      ["created", async () => bot, false],
+      [
+        "created asking for it on",
+        () =>
+          rpc<Bot>(
+            app,
+            owner,
+            "bots/create",
+            { ...botInput("Asked"), connectedMailCodes: true },
+            space.id,
+          ),
+        false,
+      ],
+      [
+        "set by its creator",
+        () =>
+          rpc<Bot>(
+            app,
+            owner,
+            "bots/update",
+            { botId: bot.id, connectedMailCodes: true },
+            space.id,
+          ),
+        true,
+      ],
+      [
+        "set by another member of the space",
+        async () => {
+          const response = await raw(
+            app,
+            peer,
+            "bots/update",
+            { botId: bot.id, connectedMailCodes: false },
+            space.id,
+          );
+          expect(response.status).toBe(403);
+          return undefined;
+        },
+        true,
+      ],
+      [
+        "returned to another member who creates a bot with its spawn key",
+        async () => {
+          const keyed = await rpc<Bot>(
+            app,
+            owner,
+            "bots/create",
+            { ...botInput("Keyed"), spawnKey: `mail-codes-${stamp}` },
+            space.id,
+          );
+          await rpc(
+            app,
+            owner,
+            "bots/update",
+            { botId: keyed.id, connectedMailCodes: true },
+            space.id,
+          );
+          const returned = await rpc<Bot>(
+            app,
+            peer,
+            "bots/create",
+            { ...botInput("Keyed"), spawnKey: `mail-codes-${stamp}` },
+            space.id,
+          );
+          expect(returned.id).toBe(keyed.id);
+          expect(returned.connectedMailCodes).toBeUndefined();
+          return { id: keyed.id };
+        },
+        true,
+      ],
+      [
+        "duplicated from a bot that has it on",
+        () => rpc<Bot>(app, owner, "bots/duplicate", { botId: bot.id }, space.id),
+        false,
+      ],
+    ];
+    for (const [state, act, expected] of table) {
+      const result = await act();
+      const id = result?.id ?? bot.id;
+      expect(result?.connectedMailCodes ?? (await seen(owner, id)), state).toBe(expected);
+      expect(await seen(owner, id), state).toBe(expected);
+      // Reported to the creator alone: another member never sees whether it is on.
+      expect(await seen(peer, id), state).toBeUndefined();
+    }
+  });
+
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],

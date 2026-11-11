@@ -1,5 +1,9 @@
-import type { ComputerRef } from "@rakazo/adapter-kit";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { promises as dnsPromises } from "node:dns";
+import type { ComputerRef, ConnectedMailMessage } from "@rakazo/adapter-kit";
 import { runCodeKind } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { dkimSign } from "mailauth";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeRunCode } from "./bot-secrets.js";
 import { builtinAgentTools } from "./builtin-tools.js";
@@ -115,6 +119,13 @@ function world(printed = "") {
   const asked: Array<{ blocks: Array<Record<string, unknown>> }> = [];
   /** The bot's inbox, newest first as listed. */
   const emails: Row[] = [];
+  /** Whether reading the inbox fails, as when its database is unreachable. */
+  const inboxDown = { value: false };
+  /** The bot's switches the owner sets. */
+  const bot = { connectedMailCodes: false };
+  /** The mail the owner connected: its messages from the site, and the reads made of it. */
+  const connectedInbox: ConnectedMailMessage[] = [];
+  const connectedReads: unknown[] = [];
   const matches = (row: Row, where: Row = {}) =>
     Object.entries(where).every(([key, value]) =>
       value && typeof value === "object" && "in" in value
@@ -179,9 +190,23 @@ function world(printed = "") {
             computerId: "computer-1",
             computerSwitching: false,
             memoryScope: null,
+            connectedMailCodes: bot.connectedMailCodes,
             computer: { id: "computer-1", scope: "dedicated", kind: "e2b", homeKey: "home-1" },
           }),
+          findUnique: async () => ({ connectedMailCodes: bot.connectedMailCodes }),
           findMany: async () => [],
+        },
+        connection: {
+          findMany: async () => [
+            {
+              id: "connection-1",
+              connectorId: "composio",
+              provider: "GMAIL",
+              providerRef: "ca_1",
+              displayName: "Mail",
+              status: "connected",
+            },
+          ],
         },
         attempt: {
           create: async () => ({ id: "attempt-1" }),
@@ -252,6 +277,7 @@ function world(printed = "") {
             skip?: number;
             take?: number;
           }) => {
+            if (inboxDown.value) throw new Error("connection reset: inbox-db.internal");
             const { gte, gt, lt } = where.receivedAt ?? {};
             const found = emails
               .filter((email) => {
@@ -347,6 +373,20 @@ function world(printed = "") {
       prisma,
       deploymentModelKey: "fake-deployment-key",
       inboundEmailDomain: "bots.test",
+      connectedMail: {
+        readerFor: (connection: { externalId: string }) =>
+          connection.externalId === "GMAIL"
+            ? {
+                mailbox: async () => "owner@example.net",
+                recent: async (_context: unknown, query: unknown) => {
+                  connectedReads.push(query);
+                  if (connectedInbox.some((message) => message.id === "unreadable"))
+                    throw new Error("The mailbox's grant was revoked: owner@example.net");
+                  return { messages: [...connectedInbox].reverse() };
+                },
+              }
+            : undefined,
+      },
       browser: {
         describe: () => ({ capabilities: { page: true } }),
         snapshot: async () =>
@@ -429,6 +469,7 @@ function world(printed = "") {
       fromName: "Example",
       subject: "Your sign-in code",
       verified: true,
+      mailingList: false,
       sent: false,
       to: ["helper@bots.test"],
       cc: [],
@@ -443,6 +484,10 @@ function world(printed = "") {
     userAnswers,
     receives,
     run,
+    bot,
+    inboxDown,
+    connectedInbox,
+    connectedReads,
     thread,
     page,
     whilePausing,
@@ -666,6 +711,19 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.everythingWritten()).not.toContain(CODE);
   });
 
+  it.each([
+    "https://login.example.test/",
+    "https://Login.Example.test",
+    "https://login.example.test:443",
+  ])("takes the inbox code when the bot names the page's origin as %s", async (origin) => {
+    const run = world();
+    run.receives(CODE_EMAIL);
+    const [result] = await run.attempt([requestCode({ oneTimeCode: { origin } })]);
+    expect(result).toMatchObject({ note: expect.stringContaining("was entered") });
+    expect(run.asked).toEqual([]);
+    expect(await decoded(run.secrets[0]!)).toMatchObject({ origin: ORIGIN });
+  });
+
   it("hides the code from the email when the run reads it afterwards", async () => {
     const run = world();
     run.receives({ ...CODE_EMAIL, subject: `${CODE} is your code` });
@@ -698,6 +756,25 @@ describe("request_secret for a code the site emailed to the bot", () => {
       code: NEWER_CODE,
       fromEmail: "email-1",
     });
+  });
+
+  it("asks the owner when the inbox cannot be read, saying only what failed", async () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    const run = world();
+    run.receives(CODE_EMAIL);
+    run.inboxDown.value = true;
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith("emailed code could not be looked up for a request", {
+      errorName: "Error",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("inbox-db");
+    // And the owner's answer is taken as ever.
+    run.inboxDown.value = false;
+    await run.userAnswers();
+    const [again] = await run.attempt([requestCode()]);
+    expect(again).toMatchObject({ note: expect.stringContaining("The user entered the code") });
   });
 
   it("shows the card when two emails from the site hold different codes", async () => {
@@ -813,6 +890,19 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(results[3]).toMatchObject({ emails: [{ id: "email-1" }] });
   });
 
+  it("never matches a search on the word that stands in for the hidden code", async () => {
+    const run = world();
+    run.receives(CODE_EMAIL);
+    const results = await run.attempt([
+      requestCode(),
+      { name: "read_email", args: { query: "redacted" } },
+      { name: "read_email", args: { query: "[redacted]" } },
+    ]);
+    expect(results[0]).toMatchObject({ submitted: true });
+    expect(results[1]).toMatchObject({ emails: [] });
+    expect(results[2]).toMatchObject({ emails: [] });
+  });
+
   it("returns the same for a search matching only the hidden code as for one matching nothing", async () => {
     const run = world();
     const since = minutesAgo(5).toISOString();
@@ -854,6 +944,17 @@ describe("request_secret for a code the site emailed to the bot", () => {
       expect(run.effects.some((effect) => effect.kind === "emailed_code")).toBe(false);
     },
   );
+
+  it("shows the card for a sign-in page on a public mailbox domain, whatever mail came", async () => {
+    const run = world();
+    run.page.url = "https://login.yahoo.com/verify";
+    run.receives({ ...CODE_EMAIL, fromAddress: "no-reply@yahoo.com" });
+    const [result] = await run.attempt([
+      requestCode({ oneTimeCode: { origin: "https://login.yahoo.com" } }),
+    ]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.secrets).toEqual([]);
+  });
 
   it("answers the card with mail that came while it was being saved", async () => {
     notified.length = 0;
@@ -1038,5 +1139,179 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.everythingWritten()).not.toContain(CODE);
     expect(run.effects).toHaveLength(effectsBefore);
     expect(run.secrets).toHaveLength(1);
+  });
+});
+
+describe("request_secret for a code the site emailed to the mail the owner connected", () => {
+  const dkim = (() => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    return {
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      record: `v=DKIM1; k=rsa; p=${publicKey.export({ type: "spki", format: "der" }).toString("base64")}`,
+    };
+  })();
+  /** The claim on message m1 in the owner's mailbox. */
+  const CONNECTED_CLAIM = `emailed-code:connected:${createHash("sha256").update("owner@example.net:m1").digest("base64url")}`;
+  const decoded = async (row: Row) =>
+    JSON.parse(await secretStore.load(String(row.ciphertext), String(row.id)));
+
+  /** A message in the owner's mailbox, signed by the sender's domain as the site's mail is. */
+  async function connectedMail(options: { id?: string; from?: string; code?: string } = {}) {
+    const from = options.from ?? "no-reply@example.test";
+    const domain = from.slice(from.indexOf("@") + 1);
+    const raw = [
+      `From: Example <${from}>`,
+      "To: owner@example.net",
+      "Subject: Your sign-in code",
+      `Date: ${new Date().toUTCString()}`,
+      `Message-ID: <${options.id ?? "m1"}@${domain}>`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      `Your verification code is ${options.code ?? CODE}. It expires in 10 minutes.`,
+      "",
+    ].join("\r\n");
+    const { signatures } = await dkimSign(raw, {
+      signatureData: [{ signingDomain: domain, selector: "s1", privateKey: dkim.privateKey }],
+    });
+    return {
+      id: options.id ?? "m1",
+      raw: new TextEncoder().encode(signatures + raw),
+      receivedAt: new Date(),
+    };
+  }
+
+  /** A world whose owner turned the switch on, with the site's signing key published. */
+  async function connectedWorld() {
+    vi.spyOn(dnsPromises, "resolve").mockImplementation((async (name: string, type: string) => {
+      if (type === "TXT" && name.startsWith("s1._domainkey.")) return [[dkim.record]];
+      throw Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), { code: "ENOTFOUND" });
+    }) as never);
+    const run = world();
+    run.bot.connectedMailCodes = true;
+    return run;
+  }
+
+  it("takes the one code the site sent there when the bot's own inbox has none", async () => {
+    notified.length = 0;
+    const run = await connectedWorld();
+    run.connectedInbox.push(await connectedMail());
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({
+      submitted: true,
+      note: "The code from the email the site sent was entered. Type it with browser_act fill_code {ref}; it is not shown to you.",
+    });
+    expect(run.asked).toEqual([]);
+    expect(notified).toMatchObject([{ kind: "completion" }]);
+    expect(run.secrets).toHaveLength(1);
+    expect(await decoded(run.secrets[0]!)).toEqual({
+      origin: ORIGIN,
+      code: CODE,
+      fromEmail: CONNECTED_CLAIM,
+    });
+    // The message is claimed for this run, with the site's one code for the run.
+    expect(run.effects).toContainEqual(
+      expect.objectContaining({ idempotencyKey: CONNECTED_CLAIM, runId: "run-1", status: "taken" }),
+    );
+    expect(run.effects).toContainEqual(
+      expect.objectContaining({ idempotencyKey: "emailed-code:run:run-1:example.test" }),
+    );
+    // Only the site's newest mail in the window was asked for.
+    expect(run.connectedReads).toEqual([
+      { fromDomain: "example.test", after: expect.any(Date), limit: 5 },
+    ]);
+    expect(run.everythingWritten()).not.toContain(CODE);
+  });
+
+  it("never reads it unless the owner turned that on", async () => {
+    const run = await connectedWorld();
+    run.bot.connectedMailCodes = false;
+    run.connectedInbox.push(await connectedMail());
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked).toHaveLength(1);
+    expect(run.connectedReads).toEqual([]);
+  });
+
+  it("takes the bot's own inbox first and never reads the connected mail for that request", async () => {
+    const run = await connectedWorld();
+    run.receives({ text: `Your verification code is ${CODE}.` });
+    run.connectedInbox.push(await connectedMail({ code: "731905" }));
+    await run.attempt([requestCode()]);
+    expect(await decoded(run.secrets[0]!)).toMatchObject({ code: CODE, fromEmail: "email-1" });
+    expect(run.connectedReads).toEqual([]);
+  });
+
+  it("fills a site's code once per run across both mailboxes", async () => {
+    const run = await connectedWorld();
+    run.connectedInbox.push(await connectedMail());
+    const results = await run.attempt([
+      requestCode(),
+      // The page took the code and asks for another; the bot's inbox now has one too.
+      () => {
+        run.secrets[0]!.kind = "run-code-spent:run-1";
+        run.receives({ text: "Your verification code is 731905.", receivedAt: new Date() });
+      },
+      requestCode(),
+    ]);
+    expect(results[0]).toMatchObject({ submitted: true });
+    expect(results[1]).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked).toHaveLength(1);
+    expect(run.connectedReads).toHaveLength(1);
+  });
+
+  it("hides the code it took there from every email the run reads afterwards", async () => {
+    const run = await connectedWorld();
+    run.connectedInbox.push(await connectedMail());
+    // Someone forwarded the code to the bot, with spaces in it.
+    run.receives({ fromAddress: "friend@elsewhere.test", text: `Code: 4 8 2 9 1 3 and ${CODE}` });
+    const results = await run.attempt([
+      requestCode(),
+      { name: "read_email", args: { id: "email-1" } },
+    ]);
+    expect(results[0]).toMatchObject({ submitted: true });
+    expect(results[1]).toMatchObject({ email: { id: "email-1" } });
+    expect(JSON.stringify(results)).not.toContain(CODE);
+    expect(JSON.stringify(results)).not.toContain("4 8 2 9 1 3");
+  });
+
+  it("answers the card with connected mail that came while it was being saved", async () => {
+    notified.length = 0;
+    const run = await connectedWorld();
+    const message = await connectedMail();
+    run.whilePausing.push(() => run.connectedInbox.push(message));
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.answered).toMatchObject([
+      { runId: "run-1", messageId: "card-1", answer: CODE, fromEmail: CONNECTED_CLAIM },
+    ]);
+    expect(notified).not.toContainEqual(expect.objectContaining({ kind: "help" }));
+    expect(run.everythingWritten()).not.toContain(CODE);
+  });
+
+  it("asks the owner when the connected mail cannot be read, saying only what failed", async () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    const run = await connectedWorld();
+    run.connectedInbox.push({ id: "unreadable", raw: new Uint8Array(), receivedAt: new Date() });
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith("connected mail could not be read for a code", {
+      errorName: "Error",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("owner@example.net");
+  });
+
+  it("asks the owner when the mail there is from another site or not signed by it", async () => {
+    const run = await connectedWorld();
+    const other = await connectedMail({ from: "no-reply@other.test" });
+    const forged = await connectedMail({ id: "m2" });
+    forged.raw = new TextEncoder().encode(
+      new TextDecoder().decode(forged.raw).replace("verification", "sign-in"),
+    );
+    run.connectedInbox.push(other, forged);
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked).toHaveLength(1);
   });
 });

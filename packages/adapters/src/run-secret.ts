@@ -278,8 +278,9 @@ async function holdRunCode(
 }
 
 /**
- * Take the code for a request from the bot's own inbox (takeEmailedCode) and keep it for this
- * run's page, sealed and stored as the answer to a code card is: nothing when there is none.
+ * Take the code for a request from the bot's own inbox or the owner's connected mail
+ * (takeEmailedCode) and keep it for this run's page, sealed and stored as the answer to a code
+ * card is: nothing when there is none.
  */
 export async function holdEmailedCode(
   prisma: PrismaClient,
@@ -290,7 +291,7 @@ export async function holdEmailedCode(
     const sealed = await sealRunCode(secretStore, input.scope, input.runId, {
       origin: input.origin,
       code: found.code,
-      fromEmail: found.emailId,
+      fromEmail: found.fromEmail,
     });
     const stored = await persistPreparedSecret(prisma, secretStore, sealed, () =>
       prisma.$transaction(async (tx) => {

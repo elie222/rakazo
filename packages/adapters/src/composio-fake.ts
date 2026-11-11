@@ -47,6 +47,8 @@ type MailMessage = {
   messageText: string;
   labelIds: string[];
   internalDate: string;
+  /** The message as received, RFC 5322, for reads in raw form; absent for seeded summaries. */
+  raw?: string;
 };
 
 type MailDraft = {
@@ -59,6 +61,7 @@ type MailDraft = {
 };
 
 type Mailbox = {
+  address: string;
   messages: MailMessage[];
   drafts: MailDraft[];
   nextMessageSeq: number;
@@ -104,6 +107,7 @@ const GMAIL_TOOLS: SessionTools = [
       },
       include_spam_trash: { type: "boolean" },
       ids_only: { type: "boolean" },
+      page_token: { type: "string", description: "Token of the page to return" },
     },
   }),
   functionTool("GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "Fetch a single Gmail message by message id", {
@@ -357,6 +361,34 @@ export class FakeComposioClient implements ComposioClient {
     return this.mailboxesByUser.get(userId);
   }
 
+  /**
+   * Deliver a raw RFC 5322 message to the user's inbox, as its mail provider would keep it,
+   * received at `receivedAt` or the message's own date.
+   */
+  receiveMail(userId: string, raw: string, receivedAt?: Date): string {
+    const mailbox = this.ensureMailbox(userId);
+    const header = (name: string) =>
+      raw.match(new RegExp(`^${name}:[ \\t]*(.*)$`, "im"))?.[1]?.trim() ?? "";
+    const text = raw
+      .split(/\r?\n\r?\n/)
+      .slice(1)
+      .join("\n\n");
+    const date = receivedAt?.getTime() ?? Date.parse(header("Date"));
+    const ids = nextMessageIds(mailbox);
+    mailbox.messages.unshift({
+      ...ids,
+      subject: header("Subject"),
+      sender: header("From").match(/<([^>]+)>/)?.[1] ?? header("From"),
+      to: header("To").match(/<([^>]+)>/)?.[1] ?? header("To"),
+      snippet: text.slice(0, 80),
+      messageText: text,
+      labelIds: ["INBOX", "UNREAD"],
+      internalDate: String(Number.isNaN(date) ? Date.now() : date),
+      raw,
+    });
+    return ids.messageId;
+  }
+
   seedGithubReleases(releases: readonly EmulatedGithubRelease[]): void {
     this.githubReleases = [...releases];
   }
@@ -503,28 +535,46 @@ export class FakeComposioClient implements ComposioClient {
         const labelIds = asStringArray(args.label_ids);
         const includeSpamTrash = args.include_spam_trash === true;
         const idsOnly = args.ids_only === true;
-        const messages = mailbox.messages
-          .filter((message) => {
-            if (
-              !includeSpamTrash &&
-              message.labelIds.some((id) => id === "SPAM" || id === "TRASH")
-            ) {
-              return false;
-            }
-            if (labelIds.length > 0 && !labelIds.every((id) => message.labelIds.includes(id))) {
-              return false;
-            }
-            return matchesQuery(message, query);
-          })
-          .slice(0, maxResults)
+        // Pages as the provider does: a token names where the next page starts.
+        const start = asPositiveInt(args.page_token, 0);
+        const matching = mailbox.messages.filter((message) => {
+          if (!includeSpamTrash && message.labelIds.some((id) => id === "SPAM" || id === "TRASH")) {
+            return false;
+          }
+          if (labelIds.length > 0 && !labelIds.every((id) => message.labelIds.includes(id))) {
+            return false;
+          }
+          return matchesQuery(message, query);
+        });
+        const messages = matching
+          .slice(start, start + maxResults)
           .map((message) => summarizeMessage(message, idsOnly));
-        return { data: { messages, resultSizeEstimate: messages.length }, error: null };
+        const end = start + maxResults;
+        return {
+          data: {
+            messages,
+            resultSizeEstimate: matching.length,
+            ...(end < matching.length ? { nextPageToken: String(end) } : {}),
+          },
+          error: null,
+        };
       }
       case "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID": {
         const messageId = asString(args.message_id);
         const message = mailbox.messages.find((item) => item.messageId === messageId);
         if (!message) return { data: {}, error: `Message not found: ${messageId}` };
+        if (args.format === "raw") {
+          const { messageId: id, threadId, labelIds, internalDate } = message;
+          const raw = Buffer.from(message.raw ?? plainRaw(message)).toString("base64url");
+          return { data: { messageId: id, threadId, labelIds, internalDate, raw }, error: null };
+        }
         return { data: fullMessage(message), error: null };
+      }
+      case "GMAIL_GET_PROFILE": {
+        return {
+          data: { emailAddress: mailbox.address, messagesTotal: mailbox.messages.length },
+          error: null,
+        };
       }
       case "GMAIL_FETCH_MESSAGE_BY_THREAD_ID": {
         const threadId = asString(args.thread_id);
@@ -656,6 +706,7 @@ function asStringArray(value: unknown): string[] {
 function seedMailbox(): Mailbox {
   const base = Date.UTC(2024, 0, 15, 12, 0, 0);
   return {
+    address: "me@example.test",
     messages: [
       {
         messageId: "18c5f5d1a2b3c4d5",
@@ -719,10 +770,18 @@ function matchesQuery(message: MailMessage, query: string): boolean {
     .toLowerCase()
     .split(/\s+/)
     .every((token) => {
-      const labeled = token.match(/^(from|to|subject|label):(.*)$/);
+      const labeled = token.match(/^(from|to|subject|label|after):(.*)$/);
       if (!labeled) return haystack.includes(token);
       const [, field, value] = labeled;
       if (!value) return true;
+      // after:<epoch seconds> is exact; after:YYYY/MM/DD is a day on the mailbox's own clock,
+      // which this fake keeps eight hours behind UTC, as the provider resolves it.
+      if (field === "after") {
+        const since = /^\d+$/.test(value)
+          ? Number(value) * 1000
+          : Date.parse(value.replaceAll("/", "-")) + MAILBOX_CLOCK_BEHIND_UTC_MS;
+        return Number(message.internalDate) >= since;
+      }
       if (field === "from") return message.sender.toLowerCase().includes(value);
       if (field === "to") return message.to.toLowerCase().includes(value);
       if (field === "subject") return message.subject.toLowerCase().includes(value);
@@ -730,6 +789,8 @@ function matchesQuery(message: MailMessage, query: string): boolean {
       return haystack.includes(token);
     });
 }
+
+const MAILBOX_CLOCK_BEHIND_UTC_MS = 8 * 3_600_000;
 
 function summarizeMessage(message: MailMessage, idsOnly: boolean) {
   if (idsOnly) return { messageId: message.messageId, threadId: message.threadId };
@@ -747,4 +808,16 @@ function summarizeMessage(message: MailMessage, idsOnly: boolean) {
 
 function fullMessage(message: MailMessage) {
   return { ...summarizeMessage(message, false), messageText: message.messageText };
+}
+
+/** A seeded summary as a plain message, for a raw read of one that was never raw. */
+function plainRaw(message: MailMessage): string {
+  return [
+    `From: ${message.sender}`,
+    `To: ${message.to}`,
+    `Subject: ${message.subject}`,
+    `Date: ${new Date(Number(message.internalDate)).toUTCString()}`,
+    "",
+    message.messageText,
+  ].join("\r\n");
 }

@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AnswerRunInput } from "@rakazo/db";
 import { answerRunInput, createDb, runAsSystem, runCodeKind } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   answerCodeCardsFromInbox,
+  claimConnectedMailCode,
   claimEmailedCode,
   EmailedCodeTaken,
   findEmailedCode,
@@ -89,7 +90,11 @@ postgres("emailed code claims (PostgreSQL)", () => {
     }
   });
 
-  async function receive(code: string, from = "no-reply@example.test") {
+  async function receive(
+    code: string,
+    from = "no-reply@example.test",
+    options: { mailingList?: false } = { mailingList: false },
+  ) {
     return system(() =>
       prisma.botEmailMessage.create({
         data: {
@@ -99,6 +104,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
           fromAddress: from,
           fromName: "Example",
           verified: true,
+          ...options,
           to: ["signer@bots.test"],
           cc: [],
           subject: "Your sign-in code",
@@ -134,9 +140,86 @@ postgres("emailed code claims (PostgreSQL)", () => {
     botId,
     spaceId,
     runId,
+    userId,
     origin,
     after: new Date(Date.now() - 60_000),
     botEmailDomain: "bots.test",
+    sources: { inbox: true, connected: undefined },
+  });
+
+  const connectedClaim = (messageId: string) =>
+    `emailed-code:connected:${createHash("sha256").update(`owner@example.net:${messageId}`).digest("base64url")}`;
+  /** Claim a message of a connected mailbox as a run keeping its code does: false when taken. */
+  const claimConnected = (runId: string, messageId: string, site = "example.test") =>
+    system(() =>
+      prisma.$transaction((tx) =>
+        claimConnectedMailCode(tx, {
+          runId,
+          spaceId,
+          mailbox: "owner@example.net",
+          messageId,
+          site,
+        }),
+      ),
+    ).then(
+      () => true,
+      (error) => {
+        if (error instanceof EmailedCodeTaken) return false;
+        throw error;
+      },
+    );
+
+  it("gives a message of a connected mailbox to one run, and a site's code once across both", async () => {
+    const runId = await newRun("running");
+    const other = await newRun("running");
+    // Two runs want the same message: one gets it.
+    const claims = await Promise.all([
+      claimConnected(runId, "message-1"),
+      claimConnected(other, "message-1"),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    const taker = claims[0] ? runId : other;
+    const loser = claims[0] ? other : runId;
+    // Neither another connected message nor the bot's own inbox gives the taker a second code
+    // for the site in this run; a code for another site is still free.
+    expect(await claimConnected(taker, "message-2")).toBe(false);
+    expect(await claimFor(taker, await receive("884201"))).toBe(false);
+    expect(await claimConnected(taker, "message-3", "other.example")).toBe(true);
+    // The loser took no code for the site, so the inbox's is still free for it.
+    expect(await claimFor(loser, await receive("884202"))).toBe(true);
+    // The refused claims wrote nothing but the taken ones.
+    const taken = await system(() =>
+      prisma.externalEffect.findMany({
+        where: { runId: { in: [runId, other] }, kind: "emailed_code", status: "taken" },
+        select: { runId: true, idempotencyKey: true },
+        orderBy: { idempotencyKey: "asc" },
+      }),
+    );
+    const keys = taken.map((effect) => effect.idempotencyKey);
+    expect(keys.filter((key) => key.startsWith("emailed-code:email:"))).toHaveLength(1);
+    expect(keys.filter((key) => !key.startsWith("emailed-code:email:")).sort()).toEqual(
+      [
+        connectedClaim("message-1"),
+        connectedClaim("message-3"),
+        `emailed-code:run:${taker}:example.test`,
+        `emailed-code:run:${taker}:other.example`,
+        `emailed-code:run:${loser}:example.test`,
+      ].sort(),
+    );
+    // This case's inbox mail would make the site's code ambiguous for the cases after it.
+    await system(() => prisma.botEmailMessage.deleteMany({ where: { botId } }));
+  });
+
+  it("never takes mail saved before it was known whether it came through a list", async () => {
+    // As the previous release saves mail while it still runs, and as every older row reads.
+    const runId = runs[0]!;
+    await receive("482913", "no-reply@example.test", {});
+    expect(await system(() => findEmailedCode(prisma, lookup(runId)))).toBeUndefined();
+    await receive("482913");
+    expect(await system(() => findEmailedCode(prisma, lookup(runId)))).toMatchObject({
+      code: "482913",
+    });
+    await system(() => prisma.botEmailMessage.deleteMany({ where: { botId } }));
   });
 
   it("finds the site's email under sixty newer signed emails from other senders", async () => {
@@ -224,7 +307,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
     expect(await heldCodes(runId)).toBe(0);
 
     // The next try takes it, once.
-    expect(await hold()).toMatchObject({ code: "605118", emailId: email.id });
+    expect(await hold()).toMatchObject({ code: "605118", fromEmail: email.id });
     expect(await takers(email.id)).toEqual([runId]);
     expect(await heldCodes(runId)).toBe(1);
     expect(await hold()).toBeUndefined();

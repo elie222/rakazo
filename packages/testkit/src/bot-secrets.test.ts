@@ -6,8 +6,10 @@ import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
 import {
+  ComposioConnector,
   EncryptedSecretStore,
   FakeBrowserProvider,
+  FakeComposioClient,
   pageBrowserSessionKey,
   ScriptedAgentRuntime,
 } from "@rakazo/adapters";
@@ -33,6 +35,8 @@ describeIntegration("reusable credential lifecycle", () => {
   let db: Awaited<ReturnType<typeof createApp>>["prisma"];
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-secret-lifecycle-"));
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  /** The integration the owner connects their own mailbox through. */
+  const connectedMail = new FakeComposioClient();
   const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
     const auth = new Headers(init?.headers).get("Authorization");
     return Response.json({
@@ -52,6 +56,7 @@ describeIntegration("reusable credential lifecycle", () => {
       defaultProvider: "scripted",
       defaultModel: "scripted",
       inboundEmail,
+      composio: new ComposioConnector({ client: connectedMail }),
       remoteConnectors: {
         fetch,
         resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
@@ -757,6 +762,132 @@ describeIntegration("reusable credential lifecycle", () => {
       }
     });
 
+    it("fills it from the mail the owner connected only once they allow that, once, never showing it", async () => {
+      const ownerCode = "20240601";
+      /** The site's mail arrives in the owner's own mailbox. */
+      const receive = (from: string) =>
+        connectedMail.receiveMail(
+          run.seeded.me.userId,
+          signedEmail(from, run.connectedMailbox().address, mail),
+          new Date(),
+        );
+      const run = await codeRun("emailed-code-connected", (results) => [
+        { name: "browser_navigate", args: { url: `${site}/verify` } },
+        // The owner has not allowed reading their mail: the card waits for them.
+        requestCode,
+        { name: "browser_snapshot", args: {} },
+        () => ({
+          name: "browser_act",
+          args: { actions: [{ kind: "fill_code", ref: refNamed(results.at(-1)?.result, "Code") }] },
+        }),
+        // Now allowed: the site's next mail in their mailbox answers the next request.
+        () => {
+          receive("no-reply@example.test");
+          return requestCode;
+        },
+        () => ({
+          name: "browser_act",
+          args: { actions: [{ kind: "fill_code", ref: refNamed(results[3]?.result, "Code") }] },
+        }),
+        // A run takes one emailed code per site, from whichever mailbox.
+        requestCode,
+      ]);
+      try {
+        const { me, bot } = run.seeded;
+        const mailbox = run.connectedMailbox();
+        // Not on the site's own domain, whose every address could send it signed mail.
+        mailbox.address = "owner@example.net";
+        receive("no-reply@example.test");
+        const card = await run.pendingCard();
+        expect(card?.pendingAsk.oneTimeCode).toEqual({ origin: site });
+        // Nothing was read from the owner's mailbox.
+        expect(connectedMail.executions).toEqual([]);
+
+        await rpc(run.seeded.cookie, "bots/update", { botId: bot.id, connectedMailCodes: true });
+        expect(await db.bot.findUniqueOrThrow({ where: { id: bot.id } })).toMatchObject({
+          connectedMailCodes: true,
+        });
+        // The owner types this code themselves; the site then emails the next one.
+        await rpc(run.seeded.cookie, "threads/answer", {
+          botId: bot.id,
+          runId: run.seeded.run.id,
+          messageId: card!.messageId,
+          answer: ownerCode,
+        });
+        await vi.waitFor(
+          async () => {
+            const second = await run.pendingCard();
+            expect(second?.messageId).toBeDefined();
+            expect(second?.messageId).not.toBe(card!.messageId);
+            expect(run.results).toHaveLength(8);
+          },
+          { timeout: 15_000 },
+        );
+        expect(run.results.map((entry) => entry.name)).toEqual([
+          "browser_navigate",
+          "request_secret",
+          "request_secret",
+          "browser_snapshot",
+          "browser_act",
+          "request_secret",
+          "browser_act",
+          "request_secret",
+        ]);
+        expect(run.results[1]?.text).toContain("Waiting for protected input");
+        expect(run.results[2]?.text).not.toContain("the email the site sent");
+        expect(run.results[5]?.text).toContain("The code from the email the site sent was entered");
+        expect(run.results[7]?.text).toContain("Waiting for protected input");
+        // Both codes were typed into the field: the owner's, then the mailbox's.
+        const ref = refNamed(run.results[3]?.result, "Code");
+        expect(run.typed).toEqual([
+          [{ kind: "fill", ref, text: ownerCode, field: "code", origin: site }],
+          [{ kind: "fill", ref, text: code, field: "code", origin: site }],
+        ]);
+        // Only read, by the site's domain, the newest few: never marked or changed.
+        const tools = connectedMail.executions.map((execution) => execution.tool);
+        expect(new Set(tools)).toEqual(
+          new Set(["GMAIL_GET_PROFILE", "GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"]),
+        );
+        expect(
+          connectedMail.executions.find((execution) => execution.tool === "GMAIL_FETCH_EMAILS")
+            ?.args,
+        ).toMatchObject({
+          query: expect.stringMatching(/^from:example\.test after:\d+$/),
+          max_results: 5,
+        });
+        expect(
+          mailbox.messages
+            .filter((message) => message.sender === "no-reply@example.test")
+            .map((message) => message.labelIds),
+        ).toEqual([
+          ["INBOX", "UNREAD"],
+          ["INBOX", "UNREAD"],
+        ]);
+        // The message is claimed for this run, with the site's one code for the run.
+        expect(
+          await db.externalEffect.findMany({
+            where: { runId: run.seeded.run.id, kind: "emailed_code", status: "taken" },
+            select: { idempotencyKey: true },
+          }),
+        ).toEqual(
+          expect.arrayContaining([
+            { idempotencyKey: `emailed-code:run:${run.seeded.run.id}:example.test` },
+            { idempotencyKey: expect.stringMatching(/^emailed-code:connected:/) },
+          ]),
+        );
+        const [messages, events, effects] = await Promise.all([
+          db.message.findMany({ where: { threadId: run.seeded.thread.id } }),
+          db.event.findMany({ where: { threadId: run.seeded.thread.id } }),
+          db.externalEffect.findMany({ where: { spaceId: me.spaceId } }),
+        ]);
+        expect(
+          JSON.stringify({ results: run.results, seen: run.seen, messages, events, effects }),
+        ).not.toContain(code);
+      } finally {
+        run.restore();
+      }
+    });
+
     it("leaves the card waiting when the code comes from another site's domain", async () => {
       const run = await codeRun("emailed-code-other", () => [
         { name: "browser_navigate", args: { url: `${site}/verify` } },
@@ -893,6 +1024,18 @@ describeIntegration("reusable credential lifecycle", () => {
           where: { id: seeded.bot.id },
           data: { modelProvider: credential.provider, modelId: "scripted" },
         });
+        // The owner connected their own mailbox in this Space.
+        await db.connection.create({
+          data: {
+            spaceId: seeded.me.spaceId,
+            userId: seeded.me.userId,
+            connectorId: "composio",
+            provider: "GMAIL",
+            providerRef: connectedMail.connect(seeded.me.userId, "GMAIL"),
+            displayName: "Mail",
+            status: "connected",
+          },
+        });
         await runAsSystem("background job run.continue", () =>
           handles.executor.continueRun(seeded.run.id, "test-worker"),
         );
@@ -904,6 +1047,11 @@ describeIntegration("reusable credential lifecycle", () => {
           restore,
           pendingCard: () =>
             findPendingAsk(db, { threadId: seeded.thread.id, runId: seeded.run.id }),
+          connectedMailbox: () => {
+            const mailbox = connectedMail.mailboxFor(seeded.me.userId);
+            if (!mailbox) throw new Error("The owner's mailbox was not connected");
+            return mailbox;
+          },
           /** The site's mail, signed as `from`'s domain, through the relay's inbound route. */
           deliver: async (from: string, text = mail) => {
             const response = await handles.app.request(

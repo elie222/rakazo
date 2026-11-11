@@ -994,6 +994,7 @@ model Bot {
   teamChatRules          String  @default("")
   crossSpaceCommunication Boolean @default(true)
   dailyCheckIns Boolean @default(true)
+  connectedMailCodes Boolean @default(false)
   fleetManagement        Boolean @default(true)
   replyMode              String  @default("chat")
   routines          Routine[]
@@ -1556,8 +1557,9 @@ model BotEmailMessage {
   verified    Boolean
   /// The bot sent this one; its other messages are mail it received.
   sent        Boolean   @default(false)
-  /// Came through a mailing list, which sends on what anyone on it writes.
-  mailingList Boolean   @default(false)
+  /// Came through a mailing list, which sends on what anyone on it writes; null when not known
+  /// (saved before lists were told apart).
+  mailingList Boolean?
   to          String[]
   cc          String[]
   subject     String

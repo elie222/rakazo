@@ -1,4 +1,9 @@
-const KNOWN_DOMAINS = [
+/**
+ * Domains that give mailboxes to the public, so mail signed by one can come from anyone with an
+ * address there: a sign-in page on one of them never fills a code from mail. Also what a
+ * mistyped address is corrected to.
+ */
+export const PUBLIC_MAILBOX_DOMAINS: readonly string[] = [
   "gmail.com",
   "icloud.com",
   "outlook.com",
@@ -61,10 +66,10 @@ function splitDomain(domain: string): [name: string, tld: string] {
 }
 
 function correctedDomain(domain: string): string | null {
-  if (domain.length > 253 || KNOWN_DOMAINS.includes(domain)) return null;
+  if (domain.length > 253 || PUBLIC_MAILBOX_DOMAINS.includes(domain)) return null;
   const [name, rawTld] = splitDomain(domain);
   const tld = COM_TYPOS.has(rawTld) ? "com" : rawTld;
-  for (const known of KNOWN_DOMAINS) {
+  for (const known of PUBLIC_MAILBOX_DOMAINS) {
     const [knownName, knownTld] = splitDomain(known);
     if (domain.replaceAll(".", "") === known.replaceAll(".", "")) return known;
     // Short names sit one edit from real domains (gm.com, ge.com), so only longer ones are fuzzy.

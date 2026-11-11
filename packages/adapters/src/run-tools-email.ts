@@ -27,6 +27,8 @@ const SEARCH_CANDIDATES = 100;
 /** Emails a search in a run holding a code from an email reads, at most, to check them itself. */
 const SEARCH_HIDDEN_EMAILS = 1_000;
 const SEARCHED_FIELDS = ["fromAddress", "fromName", "subject", "text"] as const;
+/** What redactSecrets and hideOneTimeCodeInEmail put where a hidden value was. */
+const REDACTED_MARK = "[redacted]";
 /**
  * What the inbox itself writes about an email. Every other field the tool returns is the sender's
  * and is masked; masking these could only hint at a hidden value's characters.
@@ -101,6 +103,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   }
   const hide = (value: string) =>
     emailedCodes.reduce(hideOneTimeCodeInEmail, redactSecrets(value, ctx.secrets));
+  /** For matching a search: what is hidden is left out, so the word standing in for it never matches. */
+  const searchable = (value: string) => hide(value).replaceAll(REDACTED_MARK, "");
   /** An email as the tool returns it, hidden as a whole, so no field of it can be missed. */
   const shown = (email: Record<string, unknown>) =>
     redactConnectorPayload(
@@ -122,7 +126,11 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     // Masked whole before paging, so a secret split across two pages is still caught.
     const body = hide(email.text);
     const text = body.slice(offset, offset + TEXT_PAGE_CHARS);
-    const files = email.attachments as SavedFile[];
+    // A file can hold the code as the text does, and nothing hides it in there: while the run
+    // holds an emailed code, every email's files stay out of its reach, as any could hold it.
+    const files = (email.attachments as SavedFile[]).map((file) =>
+      emailedCodes.length ? { name: file.name } : file,
+    );
     const kept = files.flatMap((file) =>
       file.artifactId && file.mimeType
         ? [
@@ -137,7 +145,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         : [],
     );
     // Copied before the bot's next computer tool, where history tools put files too.
-    ctx.computer.copyEarlierFiles(kept);
+    if (kept.length) ctx.computer.copyEarlierFiles(kept);
     // A service can echo a password or code the bot holds as a secret.
     return call.finish({
       untrusted: true,
@@ -229,7 +237,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         // Mail arriving between pages shifts them, so one may come twice.
         if (seen.has(email.id)) continue;
         seen.add(email.id);
-        if (matchesSearchQuery(query, ...SEARCHED_FIELDS.map((field) => hide(email[field]))))
+        if (matchesSearchQuery(query, ...SEARCHED_FIELDS.map((field) => searchable(email[field]))))
           matches.push(email);
       }
       if (page.length < SEARCH_CANDIDATES) break;

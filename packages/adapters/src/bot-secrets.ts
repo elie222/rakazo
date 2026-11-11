@@ -312,7 +312,8 @@ export function resolveRequestSecretDestination(
   if (connectionId) return { connectionId };
   if (args.oneTimeCode !== undefined) {
     const target = OneTimeCodeTarget.safeParse(args.oneTimeCode);
-    if (target.success) return { oneTimeCodeOrigin: target.data.origin };
+    // In the form a browser reports an origin, so the page's can be compared with it.
+    if (target.success) return { oneTimeCodeOrigin: new URL(target.data.origin).origin };
     const origin = isPlainObject(args.oneTimeCode) ? args.oneTimeCode.origin : undefined;
     return {
       error:

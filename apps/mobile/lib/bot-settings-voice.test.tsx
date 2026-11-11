@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   instructions: "",
   description: "",
   crossSpaceCommunication: false,
+  ownBot: true,
   avatarSet: undefined as "organic" | "rakazo" | undefined,
   focus: undefined as string | undefined,
   os: "ios",
@@ -100,6 +101,7 @@ vi.mock("./api", () => ({
         computerMode: "team",
         fleetManagement: false,
         crossSpaceCommunication: mocks.crossSpaceCommunication,
+        ...(mocks.ownBot ? { connectedMailCodes: false } : {}),
       };
     }
     if (procedure === "scratchpad/list") return mocks.work;
@@ -364,6 +366,7 @@ describe("bot settings device voice menu", () => {
     mocks.focus = undefined;
     mocks.instructions = "";
     mocks.description = "";
+    mocks.ownBot = true;
     mocks.os = "ios";
     mocks.work = [];
     mocks.history = [];
@@ -399,6 +402,29 @@ describe("bot settings device voice menu", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
       botId: "bot-fixture",
       dailyCheckIns: false,
+    });
+  });
+
+  it("offers connected mail codes only to the bot's creator", async () => {
+    // The server reports the choice only to the creator, whose email it reads.
+    mocks.ownBot = false;
+    await render();
+    expect(
+      container.querySelector('[aria-label="Fill sign-in codes from my connected email"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain("connected email");
+  });
+
+  it("defaults connected mail codes off and saves an opt-in", async () => {
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Fill sign-in codes from my connected email"]',
+    )!;
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await act(async () => toggle.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      connectedMailCodes: true,
     });
   });
 
@@ -742,6 +768,7 @@ describe("bot settings device voice menu", () => {
       dailyCheckIns: "Daily check-ins on unfinished work",
       crossSpaceCommunication: "Allow cross-space bot communication",
       fleetManagement: "Manage other bots",
+      connectedMailCodes: "Fill sign-in codes from my connected email",
     };
     const actual = [...container.querySelectorAll("span")].flatMap((span) =>
       Object.entries(labels)
@@ -764,6 +791,7 @@ describe("bot settings device voice menu", () => {
       "dailyCheckIns",
       "crossSpaceCommunication",
       "fleetManagement",
+      "connectedMailCodes",
     ]);
 
     await expand();

@@ -237,6 +237,26 @@ describe("readInboundEmail", () => {
     expect(injected.authenticated).toBe(false);
   });
 
+  it("does not authenticate a copy of someone else's mail with the bot added as a Cc", async () => {
+    // A site's mail to someone else, signed over its To but with no Cc to sign.
+    const toOther = plain
+      .filter((line) => !line.startsWith("Cc:"))
+      .map((line) => (line.startsWith("To:") ? "To: eve@evil.test" : line));
+    const original = await signed(message(toOther), "example.test", "From:To:Subject:Date");
+    const addCc = (raw: string, where: "top" | "bottom") =>
+      where === "top"
+        ? `Cc: helper@bots.test\r\n${raw}`
+        : raw.replace("\r\n\r\n", "\r\nCc: helper@bots.test\r\n\r\n");
+
+    expect((await readInboundEmail(bytes(original), { resolver })).authenticated).toBe(true);
+    for (const where of ["top", "bottom"] as const) {
+      expect(await readInboundEmail(bytes(addCc(original, where)), { resolver })).toMatchObject({
+        authenticated: false,
+        cc: ["helper@bots.test"],
+      });
+    }
+  });
+
   it("authenticates recipient-unsigned mail the relay saw come from the sender's own server", async () => {
     const raw = bytes(
       await sealed(

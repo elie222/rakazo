@@ -246,6 +246,8 @@ export interface RunSource {
   userComputerOwner: string | undefined;
   /** The bot has an email address and this run may read its inbox (see readsBotInbox). */
   emailInbox: boolean;
+  /** The owner lets the bot read their connected mail for codes, in a run that reads its inbox. */
+  connectedMail: boolean;
 }
 
 export interface RunTools {

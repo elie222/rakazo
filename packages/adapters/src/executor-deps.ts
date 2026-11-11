@@ -5,6 +5,7 @@ import type {
   ArtifactStore,
   AutoReviewProvider,
   BrowserProvider,
+  ConnectedMailSource,
   ConnectorProvider,
   JobPublisher,
   ManagedConnectorProvider,
@@ -59,6 +60,8 @@ export interface ExecutorDeps {
   phoneCallsEnabled?: boolean;
   /** The domain bot email addresses are on; absent when this server receives no email. */
   inboundEmailDomain?: string;
+  /** Reads mailboxes owners connected, for codes a site emails; absent when none can be read. */
+  connectedMail?: ConnectedMailSource;
   /** Sends a bot's email from its own address; absent when this server sends no email. */
   email?: TransactionalEmailProvider;
   phoneCallCooldownMinutes?: number;

@@ -349,12 +349,14 @@ const stem = (cue: string) => String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})[\p{L}\p
  * text (a sentence or a line) yields a code only when it is made of nothing but these words and
  * the code, in one of the forms readUnit lists. `cue` names a sign-in code (code, passcode, OTP,
  * PIN); `qualifier` is a word a cue may carry (verification, security, one-time); `filler` is
- * the little words such a sentence has around them (your, is, enter). Any other word, a number
- * among them, or a noun that makes the cue name something else (tracking code, code de suivi,
- * ZIP code, promo code) keeps the unit from yielding anything: the owner's card is the fallback.
- * Each entry is a regex alternative for a whole word; a `stem` takes any ending.
+ * the little words such a sentence has around them (your, is, enter); `stale` is a word that says
+ * the code named is no longer good (old, previous, expired), so the unit names a code but never
+ * yields it. Any other word, a number among them, or a noun that makes the cue name something
+ * else (tracking code, code de suivi, ZIP code, promo code) keeps the unit from yielding
+ * anything: the owner's card is the fallback. Each entry is a regex alternative for a whole word;
+ * a `stem` takes any ending.
  */
-const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[] }[] = [
+const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?: string[] }[] = [
   {
     // English, and the words every language's emails borrow.
     cue: [
@@ -407,11 +409,9 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[] }[] = [
       "new",
       "requested",
       "you",
-      "old",
-      "previous",
       "has",
-      "expired",
     ].map(word),
+    stale: ["old", "previous", "expired", "invalid"].map(word),
   },
   {
     // German.
@@ -779,6 +779,7 @@ export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: Re
   ["N", new RegExp(`${CODE_LEAD}(?:${CODE_FORMS.join("|")})${CODE_TRAIL}`, "yu")],
   ["C", sticky(longestFirst(LANGUAGES.flatMap((language) => language.cue)))],
   ["Q", sticky(longestFirst(LANGUAGES.flatMap((language) => language.qualifier)))],
+  ["X", sticky(longestFirst(LANGUAGES.flatMap((language) => language.stale ?? [])))],
   ["F", sticky(longestFirst(LANGUAGES.flatMap((language) => language.filler)))],
   ["S", new RegExp(SEPARATOR, "yu")],
 ];
@@ -827,13 +828,15 @@ function units(text: string): Unit[] {
 }
 
 /**
- * The token kinds of a unit as a string ("FCSN" for "Your code: 482913") and the code tokens as
- * written, or undefined when the unit holds anything that is not a known word, a code or a
- * separator, or is longer than ONE_TIME_CODE_UNIT_LIMIT.
+ * The token kinds of a unit as a string ("FCSN" for "Your code: 482913"), whether a stale word
+ * (X, left out of the kinds) said the code is no longer good, and the code tokens as written; or
+ * undefined when the unit holds anything that is not a known word, a code or a separator, or is
+ * longer than ONE_TIME_CODE_UNIT_LIMIT.
  */
-function scanUnit(unit: string): { kinds: string; codes: string[] } | undefined {
+function scanUnit(unit: string): { kinds: string; stale: boolean; codes: string[] } | undefined {
   if (unit.length > ONE_TIME_CODE_UNIT_LIMIT) return undefined;
   let kinds = "";
+  let stale = false;
   const codes: string[] = [];
   let at = 0;
   while (at < unit.length) {
@@ -852,11 +855,12 @@ function scanUnit(unit: string): { kinds: string; codes: string[] } | undefined 
     }
     if (!token) return undefined;
     const [kind, written] = token;
-    kinds += kind;
+    if (kind === "X") stale = true;
+    else kinds += kind;
     if (kind === "N") codes.push(written);
     at += written.length;
   }
-  return { kinds, codes };
+  return { kinds, stale, codes };
 }
 
 /** A phrase naming a code: cues, qualifiers and fillers in any order, with a cue among them. */
@@ -887,16 +891,22 @@ function yieldsCode(kinds: string): boolean {
 
 /**
  * The code a unit writes in a form yieldsCode accepts, or, when the unit only names a code and
- * ends its line, the code the line below holds alone. Undefined when the unit takes no such form.
+ * ends its line, the code the line below holds alone; and whether the unit says that code is no
+ * longer good. Undefined when the unit takes no such form.
  */
-function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
+function readUnit(
+  unit: Unit,
+  below: Unit | undefined,
+): { written: string; stale: boolean } | undefined {
   const scanned = scanUnit(unit.text);
   if (!scanned) return undefined;
-  if (yieldsCode(scanned.kinds)) return scanned.codes[0];
+  if (yieldsCode(scanned.kinds)) return { written: scanned.codes[0]!, stale: scanned.stale };
   const cueOnly = namesCode(withoutSeparator(scanned.kinds, "end"));
   if (!cueOnly || !unit.endsLine || !below?.wholeLine) return undefined;
   const next = scanUnit(below.text);
-  return next?.kinds === "N" ? next.codes[0] : undefined;
+  return next?.kinds === "N" && !next.stale
+    ? { written: next.codes[0]!, stale: scanned.stale }
+    : undefined;
 }
 
 /**
@@ -907,20 +917,25 @@ function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
  * on a line with the code alone on the next; the subject counts as the line above the text.
  * Anything else, an order or tracking number near a code word included, yields nothing. Nothing
  * unless the email holds exactly one such code, the same one wherever it appears, so an email
- * that also writes another number as a code gives none rather than a guess; and nothing unless
- * that code stands alone (oneTimeCodeStandsAlone), as a shorter one could not be hidden.
+ * that also writes another number as a code gives none rather than a guess, and an email that
+ * names a code as old or expired gives none, whether or not it also names a current one; and
+ * nothing unless that code stands alone (oneTimeCodeStandsAlone), as a shorter one could not be
+ * hidden.
  */
 export function extractOneTimeCode(email: { subject: string; text: string }): string | undefined {
   const codes = new Set<string>();
+  let stale = false;
   const all = [...units(email.subject), ...units(email.text)];
   for (const [index, unit] of all.entries()) {
-    const written = readUnit(unit, all[index + 1]);
-    if (written === undefined) continue;
-    const code = normalizeOneTimeCode(written.replace(/[ -]/g, ""));
-    if (code && !YEAR.test(code) && oneTimeCodeWritings(code).includes(written)) codes.add(code);
+    const read = readUnit(unit, all[index + 1]);
+    if (read === undefined) continue;
+    const code = normalizeOneTimeCode(read.written.replace(/[ -]/g, ""));
+    if (!code || YEAR.test(code) || !oneTimeCodeWritings(code).includes(read.written)) continue;
+    codes.add(code);
+    stale ||= read.stale;
   }
   const [code] = codes;
-  return codes.size === 1 && code && oneTimeCodeStandsAlone(code) ? code : undefined;
+  return codes.size === 1 && !stale && code && oneTimeCodeStandsAlone(code) ? code : undefined;
 }
 
 export const LOGIN_FIELD_LIMIT = 8;

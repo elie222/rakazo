@@ -465,6 +465,23 @@ describe("read_email", () => {
     ]);
   });
 
+  it("gives the run no file from any email while it holds an emailed code", async () => {
+    // A file can hold the code as the text does, and nothing can hide it in there.
+    const { call, copyEarlierFiles } = fakeRun(
+      [
+        row({
+          attachments: [
+            { artifactId: "art-1", name: "code.pdf", mimeType: "application/pdf", size: 3 },
+          ],
+        }),
+      ],
+      { emailedCode: "482913" },
+    );
+    const email = (await call({ id: "email-1" })).email as Record<string, unknown>;
+    expect(email.files).toEqual([{ name: "code.pdf", unavailable: true }]);
+    expect(copyEarlierFiles).not.toHaveBeenCalled();
+  });
+
   it("reads only this bot's mail, and only in its owner's runs", async () => {
     const mine = fakeRun([row({ id: "theirs", botId: "bot-2" })]);
     const visitor = fakeRun([row({})], { runUserId: "visitor-1" });

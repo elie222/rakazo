@@ -12,6 +12,7 @@ export const BOT_SETTINGS_SECTIONS = {
     "dailyCheckIns",
     "crossSpaceCommunication",
     "fleetManagement",
+    "connectedMailCodes",
     "replyMode",
     "instructions",
     "description",

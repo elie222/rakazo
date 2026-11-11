@@ -426,9 +426,25 @@ describe("inbound email route", () => {
       },
     );
 
+    it("answers the card from mail the site copied the bot on", async () => {
+      const { post, answerRunInput } = setup({
+        message: codeMail({ to: ["owner@example.test"], cc: ["helper@bots.test"] }),
+        codeCardFor: SITE,
+      });
+      expect(await (await post()).json()).toMatchObject({ ok: true, saved: true });
+      expect(answerRunInput).toHaveBeenCalledTimes(1);
+    });
+
     it("still saves the mail when the card was answered first", async () => {
       const { post, answerRunInput, enqueue } = setup({ message: codeMail(), codeCardFor: SITE });
       answerRunInput.mockResolvedValueOnce(false);
+      expect(await (await post()).json()).toMatchObject({ ok: true, saved: true });
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it("still delivers the mail when answering the card fails", async () => {
+      const { post, answerRunInput, enqueue } = setup({ message: codeMail(), codeCardFor: SITE });
+      answerRunInput.mockRejectedValueOnce(new Error("database unavailable"));
       expect(await (await post()).json()).toMatchObject({ ok: true, saved: true });
       expect(enqueue).not.toHaveBeenCalled();
     });

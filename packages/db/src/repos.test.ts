@@ -68,6 +68,24 @@ describe("createRepos.listBots", () => {
     },
   );
 
+  it("shows the choice to read one's connected email to the bot's creator only", async () => {
+    const rows = [
+      { ...baseBot, id: "mine", userId: actor.userId, connectedMailCodes: true },
+      { ...baseBot, id: "theirs", userId: "user-2", connectedMailCodes: true },
+    ];
+    const prisma = {
+      bot: { findMany: vi.fn(async () => rows) },
+      run: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn(async () => []),
+    };
+    const bots = await createRepos(prisma as unknown as PrismaClient).listBots(actor);
+    expect(bots.map((bot) => [bot.id, bot.connectedMailCodes])).toEqual([
+      ["mine", true],
+      ["theirs", undefined],
+    ]);
+    expect("connectedMailCodes" in bots[1]!).toBe(false);
+  });
+
   it("surfaces a failed foreground run and clears the signal after recovery", async () => {
     const findMany = vi.fn(async () => [baseBot]);
     const queryRaw = vi.fn(async () => [] as unknown[]);

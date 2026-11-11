@@ -7,6 +7,7 @@ import {
   runSecretKind,
   spaceIsShared,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import {
   completeExternalEffect,
   replaceCompletedExternalEffectResult,
@@ -222,29 +223,43 @@ export const secretTools: ToolHandlers = {
       storedSecret = null;
       heldCode = undefined;
     }
-    // The site may have emailed the code to the bot itself: that answers this request as the
-    // owner's typing it into the card would, without asking them. Only a request not yet answered.
-    // Only when the run's own browser reports the page on that exact origin: never on the bot's
-    // word for where the page is.
+    // The site may have emailed the code to the bot itself, or to the mail its owner connected:
+    // that answers this request as the owner's typing it into the card would, without asking
+    // them. Only a request not yet answered. Only when the run's own browser reports the page on
+    // that exact origin: never on the bot's word for where the page is.
+    const codeSources = {
+      inbox: ctx.source.emailInbox,
+      connected: ctx.source.connectedMail ? deps.connectedMail : undefined,
+    };
     const pageOnOrigin =
       !storedSecret &&
       codeOrigin !== undefined &&
-      ctx.source.emailInbox &&
+      (codeSources.inbox || codeSources.connected !== undefined) &&
       (!applied || applied.effect.status === "intended") &&
       (await runPageOrigin(ctx)) === codeOrigin;
     if (pageOnOrigin) {
+      // Mail is a shortcut past the card, never a way to lose it: when looking fails for any
+      // reason, the card is shown as if nothing had come, and only the error's name is logged.
       const emailed = await holdEmailedCode(deps.prisma, deps.secretStore, {
         scope: run,
         botId: bot.id,
         spaceId: run.spaceId,
         runId,
+        userId: bot.userId,
         origin: codeOrigin,
         after: emailedCodeWindowStart(new Date(), run.createdAt),
         botEmailDomain: deps.inboundEmailDomain,
+        sources: codeSources,
+      }).catch((error: unknown) => {
+        context.signal.throwIfAborted();
+        getLogger().warn("emailed code could not be looked up for a request", {
+          errorName: error instanceof Error ? error.name : typeof error,
+        });
+        return undefined;
       });
       if (emailed) {
         storedSecret = emailed.stored;
-        heldCode = { origin: codeOrigin, code: emailed.code, fromEmail: emailed.emailId };
+        heldCode = { origin: codeOrigin, code: emailed.code, fromEmail: emailed.fromEmail };
       }
     }
     if (storedSecret) {
@@ -439,7 +454,7 @@ export const secretTools: ToolHandlers = {
     const answeredByEmail =
       pageOnOrigin &&
       (await answerCodeCardsFromInbox(
-        { ...deps, botEmailDomain: deps.inboundEmailDomain },
+        { ...deps, botEmailDomain: deps.inboundEmailDomain, connectedMail: codeSources.connected },
         { id: bot.id, userId: bot.userId },
         runId,
       )) > 0;
