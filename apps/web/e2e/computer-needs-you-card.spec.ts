@@ -121,6 +121,7 @@ async function mockMemberComputerRpcs(page: Page, botId: string) {
     screenHeight: 768,
     homeRevision: null,
     busyBotName: null,
+    canRestart: false,
   };
   const computerJson = JSON.stringify({ json: status });
   const fulfillForBot = async (route: Route, body: string) => {

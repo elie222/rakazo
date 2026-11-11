@@ -3,7 +3,7 @@ import type { ComputerStatus } from "@rakazo/contracts";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useNavigation } from "expo-router";
 import { useLayoutEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Text } from "react-native";
 import { computerUpdates } from "../lib/computer-updates";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -24,7 +24,7 @@ export function ComputerMaintenanceActions({
   const navigation = useNavigation();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const available = Boolean(computer) && computer?.state !== "booting";
+  const available = Boolean(computer?.canRestart) && computer?.state !== "booting";
   const busy = Boolean(computer?.busyBotName) || pending;
 
   async function restart() {
@@ -42,46 +42,48 @@ export function ComputerMaintenanceActions({
   }
 
   useLayoutEffect(() => {
-    if (!iosAtLeast(26)) return;
-    navigation.setOptions({
-      unstable_headerRightItems: () =>
-        available
-          ? [
-              {
-                type: "button" as const,
-                label: t`Restart computer`,
-                accessibilityLabel: t`Restart computer`,
-                icon: { type: "sfSymbol" as const, name: "arrow.clockwise" },
-                disabled: busy,
-                onPress: () => void restart(),
-              },
-            ]
-          : [],
-    } satisfies NativeStackNavigationOptions);
+    const label = t`Restart computer`;
+    navigation.setOptions(
+      (iosAtLeast(26)
+        ? {
+            unstable_headerRightItems: () =>
+              available
+                ? [
+                    {
+                      type: "button" as const,
+                      label,
+                      accessibilityLabel: label,
+                      icon: { type: "sfSymbol" as const, name: "arrow.clockwise" },
+                      disabled: busy,
+                      onPress: () => void restart(),
+                    },
+                  ]
+                : [],
+          }
+        : {
+            headerRight: available
+              ? () => (
+                  <GlassIconButton
+                    accessibilityLabel={label}
+                    ios="arrow.clockwise"
+                    android="refresh"
+                    disabled={busy}
+                    onPress={() => void restart()}
+                  />
+                )
+              : () => null,
+          }) satisfies NativeStackNavigationOptions,
+    );
     return () => {
-      navigation.setOptions({ unstable_headerRightItems: () => [] });
+      navigation.setOptions(
+        iosAtLeast(26) ? { unstable_headerRightItems: () => [] } : { headerRight: () => null },
+      );
     };
   }, [navigation, available, busy, t, botId, onChanged]);
 
-  if (!available) return null;
-  return (
-    <View>
-      {!iosAtLeast(26) ? (
-        <View style={{ alignSelf: "flex-end" }}>
-          <GlassIconButton
-            accessibilityLabel={t`Restart computer`}
-            ios="arrow.clockwise"
-            android="refresh"
-            disabled={busy}
-            onPress={() => void restart()}
-          />
-        </View>
-      ) : null}
-      {error ? (
-        <Text accessibilityRole="alert" style={{ color: tokens.destructive, fontSize: 13 }}>
-          {error}
-        </Text>
-      ) : null}
-    </View>
-  );
+  return error ? (
+    <Text accessibilityRole="alert" style={{ color: tokens.destructive, fontSize: 13 }}>
+      {error}
+    </Text>
+  ) : null;
 }

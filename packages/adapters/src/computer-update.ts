@@ -8,7 +8,7 @@ import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { spaceTakesWork } from "@rakazo/db";
+import { holdsUserControl, spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   enqueueTakeoverContinuation,
@@ -19,7 +19,6 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
-  isAbandonedLifecycleClaim,
   replaceComputer,
 } from "./computer-lifecycle.js";
 
@@ -57,7 +56,12 @@ export function computerUpdateView(row: {
   });
 }
 
-export async function queueComputerUpdate(deps: QueueDeps, computerId: string, botId: string) {
+export async function queueComputerUpdate(
+  deps: QueueDeps,
+  computerId: string,
+  botId: string,
+  userId: string,
+) {
   const prepared = await deps.prisma.$transaction(async (tx) => {
     // Mode switches lock this same row before marking a bot as switching.
     // The following statement then observes their committed reservation.
@@ -71,7 +75,9 @@ export async function queueComputerUpdate(deps: QueueDeps, computerId: string, b
     ) {
       throw new ComputerBusyError();
     }
-    const idleTakeover = isIdleOwnComputerTakeover(computer, botId);
+    // Only the person holding the screen hands it back; another member's session is never taken.
+    const idleTakeover =
+      isIdleOwnComputerTakeover(computer, botId) && holdsUserControl(computer, userId);
     // Holder "none" plus a lease means a provider revoke failed and control may remain.
     if (computer.controlLeaseId && !idleTakeover) throw new ComputerBusyError();
 
@@ -84,6 +90,7 @@ export async function queueComputerUpdate(deps: QueueDeps, computerId: string, b
           controlBotId: botId,
           controlRunId: null,
           controlLeaseId: computer.controlLeaseId,
+          controlUserId: computer.controlUserId,
         },
         data: computer.controlLeaseId
           ? { controlHolder: "none" }
@@ -123,10 +130,7 @@ export async function queueComputerUpdate(deps: QueueDeps, computerId: string, b
       where: {
         id: computerId,
         maintenanceId: null,
-        // A boot or suspend a dead worker left behind is only cleared by a restart.
-        ...(isAbandonedLifecycleClaim(computer.updatedAt)
-          ? {}
-          : { state: { notIn: ["booting", "suspending"] } }),
+        state: { notIn: ["booting", "suspending"] },
         controlHolder: { not: "user" },
         controlLeaseId: revokeLeaseId,
         executionLeases: { none: { expiresAt: { gt: new Date() } } },
@@ -700,11 +704,11 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (abandoned.count !== 1) return false;
-        // A booting or suspending claim under this reservation is this update's own or an
-        // abandoned one it took over. This cannot tell what the claim started from, so a
-        // machine still attached may be running or half destroyed: quarantine it, as after an
-        // unconfirmed stop, so no bot uses it until it is replaced. Any other claim ends as an
-        // error, as provisionComputer's failure write leaves a boot.
+        // Only this update can hold a booting or suspending claim under its reservation, and
+        // restart refuses both. Unlike its worker, this cannot tell what the claim started
+        // from, so a machine still attached may be running or half destroyed: quarantine it,
+        // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
+        // claim ends as an error, as provisionComputer's failure write leaves a boot.
         const reserved = { id: update.computerId, maintenanceId: update.id };
         await tx.computer.updateMany({
           where: { ...reserved, state: "suspending", providerRef: { not: null } },

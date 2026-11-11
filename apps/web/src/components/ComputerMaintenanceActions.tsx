@@ -21,7 +21,7 @@ export function ComputerMaintenanceActions({
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
 
-  if (!computer || computer.state === "booting") return null;
+  if (!computer?.canRestart || computer.state === "booting") return null;
   const disabled = pending || Boolean(computer.busyBotName);
 
   async function restart() {

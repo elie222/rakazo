@@ -75,10 +75,7 @@ const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
  * Older ones are abandoned: the worker died mid-transition, and Reset or a later
  * provision may reclaim them. Missing stamps fail closed (treated as live).
  */
-export function isAbandonedLifecycleClaim(
-  updatedAt: Date | null | undefined,
-  now = Date.now(),
-): boolean {
+function isAbandonedLifecycleClaim(updatedAt: Date | null | undefined, now = Date.now()): boolean {
   return updatedAt instanceof Date && now - updatedAt.getTime() >= BOOT_CLAIM_STALE_MS;
 }
 
@@ -116,24 +113,6 @@ function heldByNobodyElse(lease: { ownerId: string; fence: number } | null) {
       },
     },
   };
-}
-
-/**
- * A live execution lease held by some OTHER bot on this computer.
- *
- * replaceComputer already holds the lease for its own bot, so "any live lease" would always
- * be true there; a shared Team Computer mid-boot for a different bot must still be refused.
- */
-async function hasForeignExecutionLease(
-  prisma: PrismaClient,
-  computerId: string,
-  botId: string,
-): Promise<boolean> {
-  const live = await prisma.computerExecutionLease.findFirst({
-    where: { computerId, botId: { not: botId }, expiresAt: { gt: new Date() } },
-    select: { id: true },
-  });
-  return live !== null;
 }
 
 /**
@@ -1008,7 +987,8 @@ export async function releaseComputerExecutionLease(
   });
 }
 
-export function computerSupportsUpdate(kind: string): boolean {
+/** Desktop and Wuying computers keep their own system; restarting them would only lose work. */
+export function computerSupportsRestart(kind: string): boolean {
   return kind !== "desktop" && kind !== "wuying" && kind !== "none";
 }
 
@@ -1071,30 +1051,14 @@ export async function replaceComputer(
     }
   }
   if (hasActiveComputerControl(existing)) throw new ComputerBusyError();
-  // A "booting" or "suspending" claim may be one a dead worker left behind, which only a restart
-  // clears. Dedicated computers never create an execution-lease row, so the foreign-lease check
-  // alone cannot see an in-flight dedicated boot or idle stop. Refuse claim stamps younger than an
-  // execution-lease TTL so a slow provision or suspend is not destroyed mid-flight, and refuse
-  // while a run still uses the computer.
+  // A boot or suspend in flight finishes first; provisioning and the idle sweep take over one a
+  // dead worker left behind.
   if (existing.state === "booting" || existing.state === "suspending") {
-    if (await hasForeignExecutionLease(deps.prisma, computerId, botId)) {
-      throw new ComputerBusyError();
-    }
-    if (!isAbandonedLifecycleClaim(existing.updatedAt)) {
-      throw new ComputerBusyError();
-    }
-    const activeBootRun = await deps.prisma.run.findFirst({
-      where: {
-        status: { in: [...ACTIVE_RUN_STATUSES] },
-        bot: { computerId },
-        ...COMPUTER_USING_RUNS,
-      },
-      select: { id: true },
-    });
-    if (activeBootRun) throw new ComputerBusyError();
+    throw new ComputerBusyError();
   }
 
   const previousState = existing.state;
+  const broken = previousState === "error" || previousState === "quarantined";
   const now = new Date();
   const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
   // Nothing is torn down or provisioned in a Space being deleted except by the deletion. Its lock
@@ -1106,10 +1070,6 @@ export async function replaceComputer(
         id: computerId,
         state: previousState,
         maintenanceId: existing.maintenanceId ?? null,
-        // CAS the booting/suspending stamp so a concurrent live claim cannot be overwritten.
-        ...(previousState === "booting" || previousState === "suspending"
-          ? { updatedAt: existing.updatedAt }
-          : {}),
         executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
         OR: [
           { controlHolder: { not: "user" } },
@@ -1152,16 +1112,10 @@ export async function replaceComputer(
   // running.
   let tornDown = false;
   try {
-    // A stopped or suspended computer was saved when it went down, and a quarantined one is not
-    // trusted. Kinds without software of their own to replace keep their workspace in place.
-    if (
-      oldRef &&
-      (previousState === "running" || previousState === "error") &&
-      computerSupportsUpdate(existing.kind)
-    ) {
-      // A computer that is broken or out of reach falls back to the last saved workspace. A
-      // working one keeps its live work through a failed save, and so does one whose export
-      // finished but could not be stored: the restart stops and leaves it running.
+    if (oldRef) {
+      // A computer that is broken or out of reach falls back to the last saved workspace. Any
+      // other keeps its live work through a failed save, and so does one whose export finished
+      // but could not be stored: the restart stops and leaves the computer as it was.
       await onProgress?.("saving");
       const checkpointedAt = new Date();
       let revision: string | undefined;
@@ -1183,7 +1137,7 @@ export async function replaceComputer(
         );
       } catch (error) {
         const unreachable =
-          previousState === "error" ||
+          broken ||
           isSandboxGoneError(error) ||
           isSandboxDamagedError(error) ||
           error instanceof SandboxUnresponsiveError;
@@ -1243,9 +1197,9 @@ export async function replaceComputer(
     const failedState =
       previousState === "quarantined"
         ? "quarantined"
-        : previousState === "running" && !tornDown
-          ? "running"
-          : "error";
+        : tornDown || broken
+          ? "error"
+          : previousState;
     await deps.prisma.computer
       .updateMany({
         where: {

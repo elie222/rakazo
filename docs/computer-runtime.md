@@ -160,12 +160,14 @@ active operations and failures from the API.
 
 Restart rebuilds with the configured provider/image; it does not detect whether a
 newer image exists, and nothing restarts a computer on its own for new software.
-A running or errored computer is saved before teardown. When that save fails on a
-computer that is in error, gone, damaged or unresponsive, the restart falls back to
-the last saved workspace, or a fresh one when nothing was saved. A save that fails
-on a working computer, or an export that cannot be stored or recorded, stops the
-restart and leaves the computer running with its live work. A stuck boot or
-suspend claim older than an execution-lease TTL can be restarted too.
+Desktop and Wuying computers keep their own system and cannot be restarted. Any
+computer with a machine attached is saved before teardown, whether it is running,
+suspended or stopped. When that save fails on a computer that is in error, gone,
+damaged or unresponsive, the restart falls back to the last saved workspace, or a
+fresh one when nothing was saved. Any other failed save, or an export that cannot
+be stored or recorded, stops the restart and leaves the computer as it was with
+its live work. Restart refuses a computer that is booting or suspending;
+provisioning and the idle sweep take over a claim a dead worker left behind.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten

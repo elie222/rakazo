@@ -254,6 +254,7 @@ const botWorking: ComputerStatus = {
   screenHeight: 800,
   homeRevision: null,
   busyBotName: "Basil",
+  canRestart: false,
   terminalAvailable: false,
 };
 

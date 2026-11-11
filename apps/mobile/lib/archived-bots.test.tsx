@@ -670,7 +670,7 @@ describe("archived chat read failures", () => {
       root.render(
         <ComputerMaintenanceActions
           botId="bot-fixture"
-          computer={{ state: "running" } as ComputerStatus}
+          computer={{ state: "running", canRestart: true } as ComputerStatus}
           onChanged={async () => {}}
         />,
       ),

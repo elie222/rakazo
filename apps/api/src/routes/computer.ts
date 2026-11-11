@@ -6,6 +6,7 @@ import {
   applyTeachingDesktopInput,
   COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
+  computerSupportsRestart,
   computerSupportsTerminal,
   computerUpdateView,
   diskUsedPercent,
@@ -127,8 +128,12 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
+        if (!computerSupportsRestart(bot.computer.kind))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Computer restart is not available on this device",
+          });
         try {
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id);
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id, context.actor.userId);
         } catch (error) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });

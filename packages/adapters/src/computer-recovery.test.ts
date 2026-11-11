@@ -648,8 +648,8 @@ describe("computer recovery preserves live work", () => {
     expect(await deps.home.readFile("bot", "notes.txt", context)).toBe("checkpoint");
   });
 
-  it.each(["running", "error"])(
-    "updates a %s computer only after saving its current workspace",
+  it.each(["running", "error", "suspended", "stopped"])(
+    "restarts a %s computer only after saving its current workspace",
     async (state) => {
       const { deps, row } = await fixture();
       row.state = state;
@@ -663,15 +663,21 @@ describe("computer recovery preserves live work", () => {
     },
   );
 
-  it("resets a computer stuck suspending after a hung stop", async () => {
-    const { deps, row } = await fixture();
-    row.state = "suspending";
-    const updated = await replaceComputer(deps, row.id, context);
-    expect(updated.fresh).toBe(true);
-    expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
-    expect(
-      new TextDecoder().decode(await deps.sandbox.readFile(updated, "notes.txt", context)),
-    ).toBe("checkpoint");
+  it("leaves a suspended computer and its live work alone when its save fails", async () => {
+    const { deps, row, first } = await fixture();
+    row.state = "suspended";
+    const error = new Error("workspace too large");
+    vi.spyOn(deps.sandbox, "exportWorkspace").mockImplementation(async function* () {
+      yield { path: "notes.txt", content: new TextEncoder().encode("incomplete checkpoint") };
+      throw error;
+    });
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, context)).rejects.toBe(error);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "suspended", providerRef: first.providerRef });
+    expect(new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context))).toBe(
+      "live work",
+    );
   });
 
   it("refuses Reset while a suspend claim is still live", async () => {

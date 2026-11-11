@@ -72,6 +72,7 @@ describe("toComputerStatus", () => {
     expect(ComputerStatusSchema.parse(stopped)).toMatchObject({
       kind: "none",
       state: "stopped",
+      canRestart: false,
       terminalAvailable: false,
       screenAvailable: false,
     });
@@ -85,9 +86,31 @@ describe("toComputerStatus", () => {
     });
     expect(ComputerStatusSchema.parse(running)).toMatchObject({
       state: "stopped",
+      canRestart: false,
       terminalAvailable: false,
       screenAvailable: false,
     });
+  });
+
+  it("hides restart on desktop computers", () => {
+    expect(
+      toComputerStatus("bot-1", {
+        kind: "desktop",
+        state: "running",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "r1",
+      }).canRestart,
+    ).toBe(false);
+    expect(
+      toComputerStatus("bot-1", {
+        kind: "e2b",
+        state: "running",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "r1",
+      }).canRestart,
+    ).toBe(true);
   });
 });
 
