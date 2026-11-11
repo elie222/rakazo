@@ -94,12 +94,12 @@ export function ComputerCard({
   async function release(reason: ComputerReleaseReason) {
     if (!botId) return;
     setReleasing(true);
+    // An answer that went through stays busy until the card settles, so it cannot be sent twice.
     try {
       await rpc("computer/release", { botId, runId, reason });
     } catch (error) {
-      Alert.alert(t`Could not continue`, errorText(error));
-    } finally {
       setReleasing(false);
+      Alert.alert(t`Could not continue`, errorText(error));
     }
   }
 

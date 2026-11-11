@@ -106,12 +106,12 @@ function PendingComputerCard({
     if (!botId) return;
     setReleasing(reason);
     setReleaseError(null);
+    // An answer that went through stays busy until the card settles, so it cannot be sent twice.
     try {
       await onRelease(botId, runId, reason);
     } catch (error) {
-      setReleaseError(errorText(error, t`Could not continue`));
-    } finally {
       setReleasing(null);
+      setReleaseError(errorText(error, t`Could not continue`));
     }
   };
   return (
