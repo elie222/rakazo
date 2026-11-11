@@ -3661,76 +3661,93 @@ describe("computer replacement", () => {
     expect(prisma.run.findFirst).not.toHaveBeenCalled();
   });
 
-  it("restarts a computer in error when its save fails with an ordinary provider error", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
-    const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
-    const home = new LocalAgentHomeStore(homeRoot);
-    const sandbox = new FakeSandboxProvider();
-    const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
-    const exportWorkspace = vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
-      throw new Error("ECONNRESET");
-    });
-
-    const computerRecord = {
-      id: "computer-1",
-      homeKey: "bot-1",
-      providerRef: first.providerRef,
-      kind: "fake",
-      scope: "dedicated",
-      state: "error",
-      controlLeaseId: null,
-      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-      homeRevision: null,
-    };
-    const findUniqueOrThrow = vi
-      .fn()
-      .mockResolvedValueOnce(computerRecord)
-      .mockResolvedValue({
-        ...computerRecord,
-        state: "stopped",
-        providerRef: null,
-      });
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const update = vi.fn().mockResolvedValue({});
+  it("restarts a computer a crashed worker left suspending", async () => {
+    // No live lease and the suspend stamp is older than an execution-lease TTL:
+    // Reset must reach the claim instead of answering "Computer is busy" for good.
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const stale = new Date("2024-01-01T00:00:00.000Z");
     const prisma = {
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn(async () => null) },
       computer: {
-        findUniqueOrThrow,
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "team",
+          state: "suspending",
+          controlLeaseId: null,
+          updatedAt: stale,
+        }),
         updateMany,
-        update,
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
       },
+      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
-    const destroy = vi.spyOn(sandbox, "destroy");
 
-    try {
-      const ref = await replaceComputer(
+    await expect(
+      replaceComputer(
         {
           prisma,
-          sandbox,
-          home,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
           jobs: {} as JobPublisher,
           events: {} as ThreadEvents,
-          dataDir,
         },
         "computer-1",
         context,
-      );
-      expect(exportWorkspace).toHaveBeenCalledOnce();
-      expect(destroy).toHaveBeenCalledOnce();
-      expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
-        destroy.mock.invocationCallOrder[0]!,
-      );
-      expect(ref.fresh).toBe(true);
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-      await rm(homeRoot, { recursive: true, force: true });
-    }
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ state: "suspending", updatedAt: stale }),
+      }),
+    );
+  });
+
+  it("restarts a computer a crashed worker left booting", async () => {
+    // No live lease from anyone else: the worker that set "booting" is gone, so Reset must
+    // reach the claim instead of answering "Computer is busy" for good.
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn(async () => null) },
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "",
+          kind: "fake",
+          scope: "dedicated",
+          state: "booting",
+          controlLeaseId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany,
+      },
+      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ state: "booting" }) }),
+    );
   });
 
   it("aborts update when checkpoint fails with an ordinary provider error", async () => {

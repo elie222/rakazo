@@ -338,6 +338,41 @@ describe("background computer maintenance", () => {
     });
   });
 
+  it("reserves a boot a dead worker left behind without refreshing its stamp", async () => {
+    const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
+    const stale = new Date(Date.now() - 60 * 60_000);
+    Object.assign(harness.computerRow, {
+      state: "booting",
+      controlLeaseId: null,
+      updatedAt: stale,
+    });
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user");
+    expect(harness.computer.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ state: "booting", updatedAt: stale }),
+      data: { maintenanceId: "update-1", updatedAt: stale },
+    });
+  });
+
+  it("refuses a boot still in progress", async () => {
+    const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
+    Object.assign(harness.computerRow, {
+      state: "booting",
+      controlLeaseId: null,
+      updatedAt: new Date(),
+    });
+    harness.computer.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user")).rejects.toThrow(
+      "Computer is busy",
+    );
+    expect(harness.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ state: { notIn: ["booting", "suspending"] } }),
+      }),
+    );
+  });
+
   it("leaves another member's takeover alone", async () => {
     const harness = takeoverQueue();
 

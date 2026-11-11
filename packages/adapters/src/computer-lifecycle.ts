@@ -75,7 +75,10 @@ const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
  * Older ones are abandoned: the worker died mid-transition, and Reset or a later
  * provision may reclaim them. Missing stamps fail closed (treated as live).
  */
-function isAbandonedLifecycleClaim(updatedAt: Date | null | undefined, now = Date.now()): boolean {
+export function isAbandonedLifecycleClaim(
+  updatedAt: Date | null | undefined,
+  now = Date.now(),
+): boolean {
   return updatedAt instanceof Date && now - updatedAt.getTime() >= BOOT_CLAIM_STALE_MS;
 }
 
@@ -113,6 +116,24 @@ function heldByNobodyElse(lease: { ownerId: string; fence: number } | null) {
       },
     },
   };
+}
+
+/**
+ * A live execution lease held by some OTHER bot on this computer.
+ *
+ * replaceComputer already holds the lease for its own bot, so "any live lease" would always
+ * be true there; a shared Team Computer mid-boot for a different bot must still be refused.
+ */
+async function hasForeignExecutionLease(
+  prisma: PrismaClient,
+  computerId: string,
+  botId: string,
+): Promise<boolean> {
+  const live = await prisma.computerExecutionLease.findFirst({
+    where: { computerId, botId: { not: botId }, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return live !== null;
 }
 
 /**
@@ -1052,13 +1073,31 @@ export async function replaceComputer(
     }
   }
   if (hasActiveComputerControl(existing)) throw new ComputerBusyError();
-  // A boot or suspend in flight finishes first; nothing tells a live one from a dead one here.
+  // Allow a restart of a stale "booting" or "suspending" row unless another bot still holds a
+  // live lease. Dedicated computers never create an execution-lease row, so the foreign-lease
+  // check alone cannot see an in-flight dedicated boot or idle stop. Refuse claim stamps younger
+  // than an execution-lease TTL (not merely the boot-wait poll) so a slow dedicated provision or
+  // suspend is not destroyed mid-flight. Also refuse while a run still uses the computer —
+  // before claiming suspending — so rollback cannot bump @updatedAt under an in-flight boot.
   if (existing.state === "booting" || existing.state === "suspending") {
-    throw new ComputerBusyError();
+    if (await hasForeignExecutionLease(deps.prisma, computerId, botId)) {
+      throw new ComputerBusyError();
+    }
+    if (!isAbandonedLifecycleClaim(existing.updatedAt)) {
+      throw new ComputerBusyError();
+    }
+    const activeBootRun = await deps.prisma.run.findFirst({
+      where: {
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+        bot: { computerId },
+        ...COMPUTER_USING_RUNS,
+      },
+      select: { id: true },
+    });
+    if (activeBootRun) throw new ComputerBusyError();
   }
 
   const previousState = existing.state;
-  const broken = previousState === "error" || previousState === "quarantined";
   const now = new Date();
   const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
   // Nothing is torn down or provisioned in a Space being deleted except by the deletion. Its lock
@@ -1070,6 +1109,10 @@ export async function replaceComputer(
         id: computerId,
         state: previousState,
         maintenanceId: existing.maintenanceId ?? null,
+        // CAS the booting/suspending stamp so a concurrent live claim cannot be overwritten.
+        ...(previousState === "booting" || previousState === "suspending"
+          ? { updatedAt: existing.updatedAt }
+          : {}),
         executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
         OR: [
           { controlHolder: { not: "user" } },
@@ -1113,9 +1156,9 @@ export async function replaceComputer(
   let tornDown = false;
   try {
     if (oldRef && !options.discardUnsaved) {
-      // A computer that is broken or out of reach falls back to the last saved workspace. Any
-      // other keeps its live work through a failed save, and so does one whose export finished
-      // but could not be stored: the restart stops and leaves the computer as it was.
+      // Restart never gives up live work on its own: a failed save stops it and leaves the computer
+      // as it was, and the person may then restart without saving. Only a sandbox that is already
+      // gone, with nothing left on it, restores the last saved workspace.
       await onProgress?.("saving");
       const checkpointedAt = new Date();
       let revision: string | undefined;
@@ -1136,16 +1179,7 @@ export async function replaceComputer(
           },
         );
       } catch (error) {
-        const unreachable =
-          broken ||
-          isSandboxGoneError(error) ||
-          isSandboxDamagedError(error) ||
-          error instanceof SandboxUnresponsiveError;
-        if (exported || !unreachable) throw error;
-        getLogger().warn("computer.restart_save_skipped", {
-          "computer.id": computerId,
-          reason: error instanceof Error ? error.name : "unknown",
-        });
+        if (exported || !isSandboxGoneError(error)) throw error;
       }
       if (revision !== undefined) {
         const recorded = await deps.prisma.computer.updateMany({
@@ -1197,7 +1231,7 @@ export async function replaceComputer(
     const failedState =
       previousState === "quarantined"
         ? "quarantined"
-        : tornDown || broken
+        : tornDown || previousState === "booting" || previousState === "suspending"
           ? "error"
           : previousState;
     // Saving may have woken a computer that was down; put it back to match its row.

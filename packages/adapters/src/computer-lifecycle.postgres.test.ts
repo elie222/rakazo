@@ -521,7 +521,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     }
   });
 
-  it("lets a stale boot be reclaimed or reset past a background helper, but not past a turn", async () => {
+  it("lets a stale boot be reclaimed or restarted past a background helper, but not past a turn", async () => {
     const { spaceId, botId, userId } = identity;
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-helper-lifecycle-"));
     const deps = {

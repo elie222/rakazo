@@ -98,8 +98,10 @@ export function canOfferComputerRestart(computer: Pick<ComputerStatus, "canResta
 }
 
 /** A restart that failed while saving can only go ahead by giving up the unsaved work. */
-export function computerRestartFailedSaving(update: ComputerUpdate): boolean {
-  return update.status === "failed" && update.stage === "saving";
+export function computerRestartFailedSaving(
+  update: { status: string; stage: string } | null | undefined,
+): boolean {
+  return update?.status === "failed" && update.stage === "saving";
 }
 
 export function computerUpdateNeedsAttention(update: ComputerUpdate): boolean {

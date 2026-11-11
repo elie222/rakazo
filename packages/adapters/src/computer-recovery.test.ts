@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import { SandboxDamagedError } from "@rakazo/adapter-kit";
+import { SandboxDamagedError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -676,9 +676,21 @@ describe("computer recovery preserves live work", () => {
     ).toBe("checkpoint");
   });
 
+  it("restarts a computer stuck suspending after a hung stop, saving it first", async () => {
+    const { deps, row } = await fixture();
+    row.state = "suspending";
+    const updated = await replaceComputer(deps, row.id, context);
+    expect(updated.fresh).toBe(true);
+    expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(updated, "notes.txt", context)),
+    ).toBe("live work");
+  });
+
   it("refuses a computer that is still booting", async () => {
     const { deps, row } = await fixture();
     row.state = "booting";
+    row.updatedAt = new Date();
     const destroy = vi.spyOn(deps.sandbox, "destroy");
     await expect(replaceComputer(deps, row.id, context)).rejects.toBeInstanceOf(ComputerBusyError);
     expect(destroy).not.toHaveBeenCalled();
@@ -718,11 +730,15 @@ describe("computer recovery preserves live work", () => {
     expect(row.state).toBe("suspending");
   });
 
-  it("restarts a missing computer after idempotent provider teardown", async () => {
+  it("restarts a missing computer without saving after its save fails", async () => {
     const { deps, row, first } = await fixture();
     await deps.sandbox.destroy(first, context);
     row.state = "error";
-    const updated = await replaceComputer(deps, row.id, context);
+    await expect(replaceComputer(deps, row.id, context)).rejects.toThrow();
+    expect(row).toMatchObject({ state: "error", providerRef: first.providerRef });
+    const updated = await replaceComputer(deps, row.id, context, "none", undefined, {
+      discardUnsaved: true,
+    });
     expect(updated.fresh).toBe(true);
     expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
     expect(
@@ -806,19 +822,27 @@ describe("computer recovery preserves live work", () => {
     );
   });
 
-  it("records nothing for a save a broken computer's restart skipped", async () => {
-    const { deps, row, computer } = await fixture();
-    row.state = "error";
+  it.each([
+    ["an errored", "error", new Error("export process killed")],
+    ["an unresponsive", "running", new SandboxUnresponsiveError("provider timed out")],
+    ["a damaged", "running", new SandboxDamagedError()],
+  ])("keeps %s computer and its live work when its save fails", async (_case, state, error) => {
+    const { deps, row, computer, first } = await fixture();
+    row.state = state;
     vi.spyOn(deps.sandbox, "exportWorkspace").mockImplementationOnce(async function* () {
       yield { path: "notes.txt", content: new TextEncoder().encode("incomplete checkpoint") };
-      throw new Error("export process killed");
+      throw error;
     });
-    const recovered = await replaceComputer(deps, row.id, context);
-    expect(row).toMatchObject({ state: "running", providerRef: recovered.providerRef });
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, context)).rejects.toBe(error);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state, providerRef: first.providerRef });
     for (const [args] of computer.updateMany.mock.calls) {
       expect(args.data).not.toHaveProperty("homeRevisionAt");
     }
-    expect(await deps.home.readFile("bot", "notes.txt", context)).toBe("checkpoint");
+    expect(new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context))).toBe(
+      "live work",
+    );
   });
 
   it("stops Recover instead of rebuilding when it cannot store the exported files", async () => {

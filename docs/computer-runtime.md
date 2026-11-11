@@ -162,15 +162,16 @@ Restart rebuilds with the configured provider/image; it does not detect whether 
 newer image exists, and nothing restarts a computer on its own for new software.
 Desktop and Wuying computers keep their own system and cannot be restarted. Any
 computer with a machine attached is saved before teardown, whether it is running,
-suspended or stopped. When that save fails on a computer that is in error, gone,
-damaged or unresponsive, the restart falls back to the last saved workspace, or a
-fresh one when nothing was saved. Any other failed save, or an export that cannot
-be stored or recorded, stops the restart and leaves the computer as it was with
-its live work; a stopped or suspended computer the save woke is stopped again.
+suspended or stopped. Only a sandbox that is already gone restores the last saved
+workspace (or a fresh one when nothing was saved). Any other failed save, or an
+export that cannot be stored or recorded, stops the restart and leaves the
+computer as it was with its live work; a stopped or suspended computer the save woke is stopped again.
 After a restart fails while saving, the person can choose to restart without
 saving, which restores the last saved workspace; the server refuses that choice
-unless the computer's latest restart failed while saving. Restart refuses a computer that is
-booting or suspending.
+unless the computer's latest restart failed while saving. Like Reset before it, restart refuses a
+live boot or suspend but takes over one older than an execution-lease TTL that a
+dead worker left behind, unless another bot holds a live lease or a run still
+uses the computer.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
