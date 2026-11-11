@@ -1,7 +1,7 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { BillingStatus } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
 const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
 
@@ -236,6 +236,47 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
     reactivated.getByRole("button", { name: "Use Rakazo credits", exact: true }),
   ).toHaveCount(0);
   expect(purchase).toEqual({ amountCents: 5000, monthly: false });
+});
+
+test("delete an unpaid organization from the plan choice", async ({ page }, testInfo) => {
+  await signup(page, `org-paywall-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  const work = await rpc<{ id: string; defaultSpaceId: string }>(page, "organizations/create", {
+    name: "Work",
+  });
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  // Only the new organization is unpaid.
+  await page.route("**/rpc/billing/status", async (route) => {
+    const unpaid = route.request().headers()["x-rakazo-space-id"] === work.defaultSpaceId;
+    await route.fulfill({
+      json: { json: billingStatus(unpaid ? {} : { access: true, state: "active" }) },
+    });
+  });
+  await page.evaluate(
+    (spaceId) => window.localStorage.setItem("rakazo:space-id", spaceId),
+    work.defaultSpaceId,
+  );
+  await page.reload();
+  await expect(page.getByTestId("billing-paywall")).toBeVisible();
+
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete organization" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Delete Work?" });
+  await confirm.getByLabel("Type Work to confirm").fill("Work");
+  await captureScreenshot(page, testInfo, "billing-delete-organization");
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Chief").first()).toBeVisible();
+  const { organizations } = await rpc<{ organizations: Array<{ name: string }> }>(
+    page,
+    "organizations/list",
+    {},
+  );
+  expect(organizations.map((organization) => organization.name)).toEqual(["Personal"]);
 });
 
 test("start the own-key plan billed yearly", async ({ page }, testInfo) => {

@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { canDeleteOrganization } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
@@ -47,9 +48,7 @@ export default function OrganizationSettings() {
   }
   const current = organization;
   const name = draft ?? current.name;
-  const canDelete =
-    current.canManage &&
-    (query.data?.organizations.filter((each) => each.canManage).length ?? 0) > 1;
+  const canDelete = canDeleteOrganization(query.data?.organizations ?? [], current);
 
   async function rename() {
     const next = name.trim();
