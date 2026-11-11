@@ -39,7 +39,7 @@ test("a bot gets its email address from its settings and lists it in the Vault",
 
 test("a bot email claim stays in its shell's Space when another tab switches Spaces", async ({
   page,
-}) => {
+}, testInfo) => {
   const stamp = Date.now();
   await signup(page, `bot-email-space-${stamp}@rakazo.test`, "password12", "Bot Email Space");
   await completeOnboarding(page);
@@ -76,6 +76,7 @@ test("a bot email claim stays in its shell's Space when another tab switches Spa
   await header.getByRole("button", { name: "Claim" }).click();
   const address = `scout-${stamp}@bots.rakazo.test`;
   await expect(header.getByText(address)).toBeVisible();
+  await captureScreenshot(page, testInfo, "bot-email-space-claim");
   const response = await page.request.post("/rpc/bots/emailAddress", {
     headers: { "x-rakazo-space-id": home.id },
     data: { json: { botId: scout.id } },
