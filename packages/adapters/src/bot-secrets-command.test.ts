@@ -248,6 +248,67 @@ describe("shell command environment", () => {
     expect(`${output.stdout}${output.stderr}`).not.toContain("fake-bot-setup-key");
   });
 
+  it("decrypts each variable once per command, still redacting those the bot can't use", async () => {
+    const db = fakeDatabase();
+    await save(db, "cli-token", "fake-bot-token");
+    await save(db, "blocked-token", "fake-blocked-token");
+    db.rows().find((row) => row.name === "blocked-token")!.policy = "off";
+    const load = vi.fn((ciphertext: string, recordId: string) =>
+      secretStore.load(ciphertext, recordId),
+    );
+    const redactions: string[] = [];
+    const { env } = await shellCommandEnvironment({
+      prisma: db.prisma,
+      secretStore: { load },
+      scope: { ...scope, botId: "bot-1" },
+      registerRedactions: (values) => redactions.push(...values),
+    });
+    expect(env).toEqual({ CLI_TOKEN: "fake-bot-token" });
+    expect(redactions).toEqual(expect.arrayContaining(["fake-bot-token", "fake-blocked-token"]));
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("never exports a value the read that allowed it didn't see", async () => {
+    const db = fakeDatabase();
+    await save(db, "cli-token", "fake-allowed-token");
+    const rows = db.rows();
+    const index = rows.findIndex((row) => row.name === "cli-token");
+    const replaced = await secretStore.put(
+      "fake-blocked-replacement",
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { recordId: String(rows[index]!.id) },
+    );
+    const read = db.prisma.vaultCredential.findMany as unknown as (query: {
+      where: unknown;
+    }) => Promise<unknown>;
+    // The owner replaces the value and blocks the item just after a read that checks who may use
+    // it; a read that doesn't check runs later and sees the replacement.
+    const findMany = async (query: { where: unknown }) => {
+      if (!JSON.stringify(query.where).includes('"policy"')) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return read(query);
+      }
+      const result = await read(query);
+      rows[index] = { ...rows[index]!, ciphertext: replaced.ciphertext, policy: "off" };
+      return result;
+    };
+    const prisma = {
+      ...db.prisma,
+      vaultCredential: { ...db.prisma.vaultCredential, findMany },
+    } as unknown as typeof db.prisma;
+    const redactions: string[] = [];
+    const { env } = await shellCommandEnvironment({
+      prisma,
+      secretStore,
+      scope: { ...scope, botId: "bot-1" },
+      registerRedactions: (values) => redactions.push(...values),
+    });
+    expect(env).toEqual({ CLI_TOKEN: "fake-allowed-token" });
+    expect(redactions).toEqual(
+      expect.arrayContaining(["fake-allowed-token", "fake-blocked-replacement"]),
+    );
+  });
+
   it("does not let one unencodable stored value abort the shell environment", async () => {
     const db = fakeDatabase();
     await save(db, "good-token", "fake-good-token");
@@ -385,6 +446,36 @@ describe("shell command environment", () => {
     const printed = encoded.join("\n");
     const output = redactAgentCommandResult({ stdout: printed, stderr: "", code: 0 }, runSecrets);
     for (const form of encoded) expect(output.stdout).not.toContain(form);
+  });
+
+  it("redacts the value a bot's command gets even if it is replaced right after the read", async () => {
+    const db = fakeDatabase();
+    await save(db, "api-token", "fake-first-token");
+    // The vault changes right after the read whose values the command gets.
+    const findMany = vi.mocked(db.prisma.vaultCredential.findMany);
+    const read = findMany.getMockImplementation()!;
+    let replaced = false;
+    findMany.mockImplementation((async (args: Parameters<typeof read>[0]) => {
+      const rows = (await read(args)).map((row) => ({ ...row }));
+      if (!replaced && args?.select?.ciphertext) {
+        replaced = true;
+        await save(db, "api-token", "fake-second-token");
+      }
+      return rows;
+    }) as never);
+    const runSecrets: string[] = [];
+    const command = () =>
+      shellCommandEnvironment({
+        prisma: db.prisma,
+        secretStore,
+        scope: { ...scope, botId: "bot-1" },
+        registerRedactions: (values) => runSecrets.push(...values),
+      });
+    expect((await command()).env).toEqual({ API_TOKEN: "fake-first-token" });
+    expect(redactSecrets("fake-first-token", runSecrets)).not.toMatch(/fake-/);
+    // The next command gets the new value, and its output hides it too.
+    expect((await command()).env).toEqual({ API_TOKEN: "fake-second-token" });
+    expect(redactSecrets("fake-first-token fake-second-token", runSecrets)).not.toMatch(/fake-/);
   });
 
   it("applies a variable added, replaced, or removed between two commands", async () => {

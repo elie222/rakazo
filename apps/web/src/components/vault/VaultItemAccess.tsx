@@ -1,0 +1,128 @@
+import { useLingui } from "@lingui/react/macro";
+import type { VaultKind, VaultPolicy } from "@rakazo/contracts";
+import { hasVaultAccess, VaultPolicy as Policies } from "@rakazo/contracts";
+import { ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useSpaceQueries } from "../../lib/query";
+import type { AgentAccess } from "../integrations/agent-access";
+import { AgentAccessControl } from "../integrations/agent-access";
+
+/**
+ * The owner's bots in this Space, which an item can be limited to; undefined until loaded, null
+ * if they, or archived ones it is limited to, can't be read. An archived bot the item is limited to is named so, as restoring it
+ * brings the choice back.
+ */
+export function useVaultBots(enabled: boolean, chosen: string[] = []) {
+  const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const { data, isError } = useQuery({ ...queries.bots.list.queryOptions(), enabled });
+  // Archived bots are listed apart; without them, a chosen one stays chosen, unnamed.
+  const archived = useQuery({
+    ...queries.bots.listArchived.queryOptions(),
+    enabled: enabled && chosen.length > 0,
+  });
+  if (isError && !data) return null;
+  if (enabled && chosen.length > 0) {
+    // Not listed until they are known, or the item would read as limited to no bots meanwhile;
+    // and unreadable if a chosen one can't be named, as for the bots' own list.
+    if (archived.isPending) return undefined;
+    if (archived.isError && data && chosen.some((id) => !data.some((bot) => bot.id === id)))
+      return null;
+  }
+  return (
+    data && [
+      ...data.filter((bot) => !bot.archivedAt),
+      ...(archived.data ?? [])
+        .filter((bot) => chosen.includes(bot.id) && !data.some((active) => active.id === bot.id))
+        .map((bot) => ({ ...bot, name: `${bot.name} · ${t`Archived`}` })),
+    ]
+  );
+}
+
+export function usePolicyLabels(): Record<VaultPolicy, string> {
+  const { t } = useLingui();
+  return { allow: t`Allow`, ask: t`Ask first`, off: t`Block` };
+}
+
+export function VaultItemAccess({
+  kind,
+  policy,
+  access,
+  note,
+  disabled,
+  onChange,
+  onAccessChange,
+}: {
+  kind: VaultKind;
+  policy: VaultPolicy;
+  /** Which bots may use it; left out on a server that can't limit an item to chosen bots. */
+  access?: AgentAccess;
+  /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
+  note?: string;
+  disabled?: boolean;
+  onChange: (next: VaultPolicy) => void;
+  onAccessChange: (next: AgentAccess) => void;
+}) {
+  const { t } = useLingui();
+  const labels = usePolicyLabels();
+  // As the item was saved, so an archived bot let go of stays in the list until saving. Taken
+  // when the bots are first offered, which may be after this opened.
+  const [saved, setSaved] = useState(access && (access.allBots ? [] : access.botIds));
+  if (!saved && access) setSaved(access.allBots ? [] : access.botIds);
+  const bots = useVaultBots(Boolean(access), saved) ?? [];
+  const policies = hasVaultAccess(kind);
+  const picker = access && policy !== "off" && bots.length > 0;
+  const noted = note && (!access || (!access.allBots && policy !== "off"));
+  if (!policies && !picker && !noted) return null;
+  // Bots chosen that this list doesn't show, such as archived ones, stay chosen.
+  const shown = new Set(bots.map((bot) => bot.id));
+  const choose = (next: AgentAccess) =>
+    onAccessChange({
+      allBots: next.allBots,
+      botIds: [
+        ...new Set([...next.botIds, ...(access?.botIds ?? []).filter((id) => !shown.has(id))]),
+      ],
+    });
+  return (
+    <div data-testid="vault-item-access" className="flex flex-wrap items-center gap-2">
+      <span className="text-body-sm text-muted-foreground">{t`Bots`}</span>
+      {policies ? (
+        <ToggleGroup
+          aria-label={t`Bots`}
+          value={[policy]}
+          onValueChange={([next]) => {
+            const chosen = Policies.safeParse(next).data;
+            if (chosen) onChange(chosen);
+          }}
+          disabled={disabled}
+          spacing={1}
+          className="rounded-lg bg-muted p-1"
+        >
+          {(["allow", "ask", "off"] as const)
+            // Only a login asks first.
+            .filter((option) => option !== "ask" || kind === "login" || policy === "ask")
+            .map((option) => (
+              <ToggleGroupItem
+                key={option}
+                value={option}
+                className="h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                {labels[option]}
+              </ToggleGroupItem>
+            ))}
+        </ToggleGroup>
+      ) : null}
+      {picker ? (
+        <AgentAccessControl
+          bots={bots}
+          access={access}
+          disabled={disabled}
+          withOneBot
+          onChange={choose}
+        />
+      ) : null}
+      {noted ? <p className="w-full text-body-sm text-muted-foreground">{note}</p> : null}
+    </div>
+  );
+}

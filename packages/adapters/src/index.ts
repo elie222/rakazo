@@ -25,15 +25,21 @@ export {
   forgetBotSecret,
   getBotSecretMetadata,
   isSecretAlreadySaved,
+  LOGIN_ALREADY_SAVED,
+  LOGIN_CODES_USED_UP,
   listBotSecretMetadata,
   listVaultItems,
   newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
   relabelVaultItem,
+  resolveLoginFill,
   revealBotSecret,
+  SAVED_LOGIN_UNREADABLE,
   SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
+  UNKNOWN_BOTS,
+  UNSUPPORTED_ACCESS,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
@@ -218,6 +224,7 @@ export { dispatcherFetch } from "./undici-fetch.js";
 export * from "./user-device-emulator.js";
 export * from "./user-device-gateway.js";
 export * from "./user-device-protocol.js";
+export { listVaultItemUses } from "./vault-activity.js";
 export * from "./voice-factory.js";
 export * from "./voice-model-connection.js";
 export * from "./wakeup.js";

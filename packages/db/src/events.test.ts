@@ -2642,6 +2642,76 @@ describe("answerRunInput approvals", () => {
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 
+  it("leaves an Ask first sign-in to the run's own user in a group thread", async () => {
+    const effect = {
+      id: "effect-1",
+      kind: "browser_act",
+      status: "intended",
+      request: {
+        actions: [{ kind: "fill_secret", ref: "e1", secret: "work", field: "Password" }],
+        loginApproval: {
+          kind: "login",
+          login: "work",
+          site: "https://example.test",
+          title: "Work login",
+          fields: ["Password"],
+          savedAt: "2026-11-01T00:00:00.000Z",
+        },
+      },
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              approvalEffectId: "effect-1",
+              text: "Sign in to example.test with Work login?",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        }),
+        update: vi.fn(),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "run-owner" }),
+        updateMany: vi.fn(),
+      },
+      task: { updateMany: vi.fn() },
+      externalEffect: { findFirst: vi.fn().mockResolvedValue(effect), update: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    // Another member of the group, for either answer: only the owner's runs use their vault.
+    for (const answer of ["allow", "deny"]) {
+      await expect(
+        answerRunInput(
+          prisma,
+          {
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            runId: "run-1",
+            messageId: "message-1",
+            answeredByUserId: "group-member",
+            answer,
+          },
+          new TestFanout(),
+        ),
+      ).resolves.toBe(false);
+    }
+    expect(tx.externalEffect.update).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalled();
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["destination.write", {}, "tool", "destination.write", false],
     ["web_fetch", { url: "https://docs.example.com/a?b=c" }, "site", "example.com", true],

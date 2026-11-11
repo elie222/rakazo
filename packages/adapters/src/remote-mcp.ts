@@ -84,6 +84,15 @@ export class RemoteMcpTransportError extends Error {
   }
 }
 
+/** The guarded fetch failed once it may have sent the request, so its headers may have reached
+ * the server. A refusal, or a failure that proves no connection was made, is a plain error. */
+export class RemoteRequestSentError extends Error {
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options);
+    this.name = "RemoteRequestSentError";
+  }
+}
+
 export class ConnectorRedirectError extends Error {
   constructor() {
     super("Connector redirects are not allowed");
@@ -706,10 +715,7 @@ export function createSafeRemoteFetch(
             baseFetch!(url, requestInitWithHost(url, requestInit)),
           );
     } catch (error) {
-      const detail = transportFailureDetail(error);
-      throw new Error(`Could not reach ${url.host}${detail ? `: ${detail}` : ""}`, {
-        cause: error,
-      });
+      throw transportFailure(url, error);
     }
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);
@@ -773,14 +779,11 @@ export function createPrivateNetworkFetch(
             baseFetch!(url, requestInitWithHost(url, requestInit)),
           );
     } catch (error) {
-      const detail = transportFailureDetail(error);
-      throw new Error(`Could not reach ${url.host}${detail ? `: ${detail}` : ""}`, {
-        cause: error,
-      });
+      throw transportFailure(url, error);
     }
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);
-      throw new Error("Private fetch redirects are not allowed");
+      throw new RemoteRequestSentError("Private fetch redirects are not allowed");
     }
     return response;
   };
@@ -790,6 +793,58 @@ export function createPrivateNetworkFetch(
 }
 
 const MAX_CAUSE_DEPTH = 5;
+
+/**
+ * Codes that prove no connection was made, whichever call failed: the name did not resolve, the
+ * connection was not made in time, or the server's certificate failed the client's own checks
+ * during the handshake, before the request is written. A TLS record error may come once the
+ * session is up, so it isn't here.
+ */
+const NEVER_CONNECTED_CODES = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EAI_FAIL",
+  "ENODATA",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "CERT_REVOKED",
+  "CERT_UNTRUSTED",
+  "CERT_SIGNATURE_FAILURE",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
+/** Any socket error, but only from the connect call: once connected the same codes say nothing. */
+const CONNECT_SYSCALL = "connect";
+
+/** By code and failed call only, through `cause` and every address a dual-stack connect tried. */
+function neverConnected(error: unknown, depth = 0): boolean {
+  if (depth >= MAX_CAUSE_DEPTH || !(error instanceof Error)) return false;
+  if (error instanceof AggregateError)
+    return (
+      error.errors.length > 0 && error.errors.every((inner) => neverConnected(inner, depth + 1))
+    );
+  const { code, syscall } = error as { code?: unknown; syscall?: unknown };
+  if (code !== undefined)
+    return (
+      typeof code === "string" && (NEVER_CONNECTED_CODES.has(code) || syscall === CONNECT_SYSCALL)
+    );
+  return neverConnected(error.cause, depth + 1);
+}
+
+/** A failure that may have sent the request counts as sent, so a use is never missed. */
+function transportFailure(url: URL, error: unknown): Error {
+  const detail = transportFailureDetail(error);
+  const message = `Could not reach ${url.host}${detail ? `: ${detail}` : ""}`;
+  return neverConnected(error)
+    ? new Error(message, { cause: error })
+    : new RemoteRequestSentError(message, { cause: error });
+}
 
 /** undici reports refused ports, unreachable hosts, DNS misses and TLS errors
  * alike as `TypeError: fetch failed` and keeps the actionable reason in `cause`

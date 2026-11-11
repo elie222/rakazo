@@ -285,9 +285,10 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  const { purchase, cardUse } = request;
-  // Typing a saved card is approved like a purchase: every time, by a person.
-  const paying = Boolean(purchase) || Boolean(cardUse);
+  const { purchase, cardUse, loginUse } = request;
+  // Typing a saved card, or a login that asks first, is approved like a purchase: every time, by a
+  // person, whatever the rules or mode.
+  const paying = Boolean(purchase) || Boolean(cardUse) || Boolean(loginUse);
   const requiresApprovalByDefault =
     request.heldForApproval ||
     paying ||
@@ -378,13 +379,15 @@ export async function gateToolCall(
         newDestination: siteGate === "new",
         purchase: paying,
       });
-  // Nobody is there to approve a purchase a webhook run reaches.
+  // Nobody is there to approve a purchase, or a sign-in that asks first, a webhook run reaches.
   if (paying && run.trigger === "webhook" && plan !== "deny") {
-    await auditToolCall(ctx, name, "denied", { reason: "purchase_unattended" });
+    await auditToolCall(ctx, name, "denied", {
+      reason: loginUse ? "login_unattended" : "purchase_unattended",
+    });
     return {
       result: refusal(
-        "purchase_needs_approval_unattended",
-        "This would complete a purchase, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.",
+        loginUse ? "login_needs_approval_unattended" : "purchase_needs_approval_unattended",
+        `This would ${loginUse ? "sign in with a saved login" : "complete a purchase"}, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.`,
       ),
     };
   }

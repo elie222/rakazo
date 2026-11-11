@@ -2,6 +2,7 @@ import type { BotSecretDestination } from "@rakazo/contracts";
 import { BOT_SECRET_ORIGIN_MISSING_MESSAGE, encodeLoginSecret } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { installAuditEventStore } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -25,10 +26,15 @@ import {
   storeBotSecret,
 } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
+import { secretTools } from "./run-tools-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
+
+// RFC 6238's test key, written in pieces so it never reads as a saved secret.
+const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  installAuditEventStore(undefined);
 });
 
 const scope = { userId: "user-1", spaceId: "space-1" };
@@ -80,6 +86,121 @@ async function fixture(auth = destination.auth) {
 }
 
 describe("authenticated secret requests", () => {
+  it("records when the vault gives the run a saved key, once per attempt", async () => {
+    const { input, fetch } = await fixture();
+    const rows: Array<Record<string, unknown>> = [];
+    installAuditEventStore({
+      auditEvent: { createMany: async ({ data }: { data: typeof rows }) => rows.push(...data) },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: { findUnique: async () => ({ role: "owner" }) },
+    } as never);
+    const ctx = {
+      deps: { prisma: input.prisma, secretStore, secretHttp: input.remote },
+      run: { ...scope, id: "run-1" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Research bot" },
+      thread: { id: "thread-1" },
+      context: { signal: input.signal },
+      secrets: [] as string[],
+      state: {
+        vaultUses: new Set<string>(),
+        reply: { pendingProgress: "", redactor: { finish: () => "" } },
+      },
+    };
+    const send = (url = `${destination.origin}/v1/items`) =>
+      secretTools.secret_request!(
+        ctx as never,
+        {
+          name: "secret_request",
+          args: { name: destination.name, url },
+          finish: async (result: unknown) => result,
+        } as never,
+      );
+    // Another site never gets the key.
+    expect(await send("https://other.example.test/v1/items")).toHaveProperty("error");
+    expect(rows).toEqual([]);
+    // Nor does a site whose address is refused before anything is sent: the key never left.
+    const { resolveHostname } = input.remote;
+    input.remote.resolveHostname = async () => [{ address: "169.254.169.254", family: 4 }];
+    expect(await send()).toHaveProperty("error");
+    input.remote.resolveHostname = resolveHostname;
+    expect(rows).toEqual([]);
+    // Once the request went out it is a use, even with no answer back; a second request in the
+    // attempt isn't recorded again, and a new attempt is, even a redirect the request refuses.
+    fetch.mockRejectedValueOnce(new TypeError("fetch failed"));
+    expect(await send()).toHaveProperty("error");
+    expect(rows).toHaveLength(1);
+    expect(await send()).toMatchObject({ status: 200 });
+    expect(rows).toHaveLength(1);
+    ctx.state.vaultUses.clear();
+    fetch.mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/" } }));
+    expect(await send()).toHaveProperty("error");
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(rows).toEqual(
+      [1, 2].map(() =>
+        expect.objectContaining({
+          action: "credential.used",
+          actorType: "bot",
+          actorId: "bot-1",
+          targetType: "vault_credential",
+          targetId: "secret-1",
+          targetLabel: destination.name,
+          runId: "run-1",
+          threadId: "thread-1",
+          metadata: {
+            tool: "secret_request",
+            scope: "space",
+            name: destination.name,
+            kind: "bearer",
+            site: destination.origin,
+          },
+        }),
+      ),
+    );
+    expect(JSON.stringify(rows)).not.toContain(secret);
+  });
+
+  it("records a use in the Space's organization for its members, and in a guest's own", async () => {
+    const { input } = await fixture();
+    const rows: Array<Record<string, unknown>> = [];
+    // space-1 belongs to org-1. The run's person is first its owner, then a guest of a shared
+    // Space whose own organization is org-2.
+    let role = "owner";
+    installAuditEventStore({
+      auditEvent: { createMany: async ({ data }: { data: typeof rows }) => rows.push(...data) },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: {
+        findUnique: async () => ({ role }),
+        findMany: async () => [{ organizationId: "org-2", role: "owner" }],
+      },
+    } as never);
+    for (const as of ["owner", "guest"]) {
+      role = as;
+      const ctx = {
+        deps: { prisma: input.prisma, secretStore, secretHttp: input.remote },
+        run: { ...scope, id: "run-1" },
+        runId: "run-1",
+        bot: { id: "bot-1", name: "Research bot" },
+        thread: { id: "thread-1" },
+        context: { signal: input.signal },
+        secrets: [] as string[],
+        state: {
+          vaultUses: new Set<string>(),
+          reply: { pendingProgress: "", redactor: { finish: () => "" } },
+        },
+      };
+      await secretTools.secret_request!(
+        ctx as never,
+        {
+          name: "secret_request",
+          args: { name: destination.name, url: `${destination.origin}/v1/items` },
+          finish: async (result: unknown) => result,
+        } as never,
+      );
+    }
+    expect(rows.map((row) => row.organizationId)).toEqual(["org-1", "org-2"]);
+  });
+
   it("starts the request deadline before loading the credential", async () => {
     const { input, fetch } = await fixture();
     const timeout = vi.spyOn(AbortSignal, "timeout");
@@ -217,6 +338,101 @@ describe("authenticated secret requests", () => {
     controller.abort();
     expect(await pending).toMatchObject({ error: expect.any(String) });
     expect(cancel).toHaveBeenCalled();
+  });
+
+  it("records a key that may have left, once, and none refused before sending", async () => {
+    const { input, fetch } = await fixture();
+    const recordUse = vi.fn(async () => {});
+    // Cancelled while the request is out, with no answer yet.
+    const controller = new AbortController();
+    fetch.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+        ),
+    );
+    const pending = requestWithBotSecret({ ...input, recordUse, signal: controller.signal });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    controller.abort();
+    expect(await pending).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledOnce();
+    // Answered, then cancelled while its body is read: still one use.
+    const stalled = new AbortController();
+    fetch.mockResolvedValueOnce(new Response(new ReadableStream()));
+    const reading = requestWithBotSecret({ ...input, recordUse, signal: stalled.signal });
+    await vi.waitFor(() => expect(recordUse).toHaveBeenCalledTimes(2));
+    stalled.abort();
+    expect(await reading).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledTimes(2);
+    // An owner's private destination: a redirect is its answer; one resolving publicly is
+    // refused before anything is sent.
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    const encrypted = await secretStore.put(
+      secret,
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { recordId: "secret-private" },
+    );
+    const row = {
+      ...scope,
+      name: "hive_api_token",
+      origin: "http://192.168.2.10:8080",
+      auth: { type: "bearer" as const },
+      ...encrypted,
+    };
+    const privateFetch = vi.fn<typeof globalThis.fetch>(
+      async () => new Response(null, { status: 302, headers: { location: "/" } }),
+    );
+    const privateInput = {
+      ...input,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst: vi.fn(async () => row) },
+      } as unknown as PrismaClient,
+      request: { name: row.name, url: `${row.origin}/v1/items` },
+      recordUse,
+      remote: {
+        fetch: privateFetch,
+        resolveHostname: async () => [{ address: "192.168.2.10", family: 4 as const }],
+      },
+    };
+    expect(await requestWithBotSecret(privateInput)).toHaveProperty("error");
+    expect(privateFetch).toHaveBeenCalledOnce();
+    expect(recordUse).toHaveBeenCalledTimes(3);
+    expect(recordUse).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "secret-private" }),
+      row.origin,
+    );
+    const refused = {
+      ...privateInput,
+      remote: {
+        fetch: privateFetch,
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      },
+    };
+    expect(await requestWithBotSecret(refused)).toHaveProperty("error");
+    expect(privateFetch).toHaveBeenCalledOnce();
+    expect(recordUse).toHaveBeenCalledTimes(3);
+  });
+
+  it("records no use for a connection never made, and one for a request cut off", async () => {
+    const { input, fetch } = await fixture();
+    const recordUse = vi.fn(async () => {});
+    const failed = (code: string, syscall?: string) =>
+      new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code, syscall }) });
+    fetch.mockRejectedValueOnce(failed("ECONNREFUSED", "connect"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    fetch.mockRejectedValueOnce(failed("CERT_HAS_EXPIRED"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    expect(recordUse).not.toHaveBeenCalled();
+    fetch.mockRejectedValueOnce(failed("UND_ERR_HEADERS_TIMEOUT"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledOnce();
+    // A bad TLS record or an unreachable error may come once the request is out.
+    fetch.mockRejectedValueOnce(failed("ERR_SSL_WRONG_VERSION_NUMBER"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    fetch.mockRejectedValueOnce(failed("EHOSTUNREACH", "read"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledTimes(3);
   });
 
   it("delivers plain-HTTP private destination requests directly when the owner opts in", async () => {
@@ -938,8 +1154,8 @@ describe("saved website logins", () => {
     }
   });
 
-  it("decrypts nothing for a bot without saved logins", async () => {
-    const { prisma } = await loginFixture("fake-user@example.test", { type: "bearer" });
+  it("decrypts nothing for a bot with only command variables", async () => {
+    const { prisma } = await loginFixture("fake-user@example.test", { type: "command" }, "");
     const load = vi.spyOn(secretStore, "load");
     try {
       expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
@@ -956,7 +1172,9 @@ describe("saved website logins", () => {
       text: "fake-password-1",
       hidden: true,
       origin: "https://login.example.test",
+      sites: ["https://login.example.test"],
       redactions: expect.arrayContaining(["fake-password-1", "fake-user@example.test"]),
+      used: expect.objectContaining({ name: "site_login", kind: "login" }),
     });
     expect(await resolveLoginFill({ runId: "run-1", ...input, field: "username" })).toMatchObject({
       text: "fake-user@example.test",
@@ -1115,7 +1333,7 @@ describe("logins kept for one run", () => {
     { label: "Password", value: "run pass!word+1", hidden: true },
   ];
 
-  async function runLoginFixture(origin = "https://login.example.test") {
+  async function runLoginFixture(origin = "https://login.example.test", otp?: string) {
     const encrypted = await secretStore.put(
       encodeRunLogin(origin, encodeLoginSecret({ fields })),
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -1131,6 +1349,7 @@ describe("logins kept for one run", () => {
     const saved = await secretStore.put(
       encodeLoginSecret({
         fields: [{ label: "Password", value: "saved-password-1", hidden: true }],
+        ...(otp ? { otp } : {}),
       }),
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
       { recordId: "saved-login" },
@@ -1154,6 +1373,25 @@ describe("logins kept for one run", () => {
     } as unknown as PrismaClient;
   }
 
+  it("gives no code for this run's own login, even when a saved one of its name has a key", async () => {
+    // The person chose a login for this run only; the saved key may be another account's.
+    const prisma = await runLoginFixture(undefined, TEST_KEY);
+    const input = {
+      prisma,
+      secretStore,
+      scope,
+      name: "site_login",
+      field: "",
+      code: true as const,
+    };
+    expect(await resolveLoginFill({ ...input, runId: "run-1" })).toEqual({
+      error: "This login has no authenticator key. Use request_secret with oneTimeCode.",
+    });
+    expect(await resolveLoginFill({ ...input, runId: "run-2" })).toMatchObject({
+      text: expect.stringMatching(/^\d{6}$/),
+    });
+  });
+
   it("fills this run's login before a saved one, only in this run", async () => {
     const prisma = await runLoginFixture();
     const input = { prisma, secretStore, scope, name: "site_login" };
@@ -1161,6 +1399,7 @@ describe("logins kept for one run", () => {
       text: "run pass!word+1",
       hidden: true,
       origin: "https://login.example.test",
+      sites: ["https://login.example.test"],
       redactions: expect.arrayContaining(["run pass!word+1", "run-user@example.test"]),
     });
     // Another run of the bot gets the saved login.
@@ -1552,13 +1791,15 @@ describe("replacing a saved login's site", () => {
   it("keeps the site and value of the last of two cards replacing the same login", async () => {
     const db = fakeDatabase();
     const before = await save(db);
+    const other = login("https://other.example.test");
     const toLogin = await prepare(db, login(LOGIN), "fake-password-login", {
       replaces: before.id,
     });
-    const toOther = await prepare(db, login("https://other.example.test"), "fake-password-other", {
-      replaces: before.id,
-    });
-    await Promise.all([commit(db, toLogin), commit(db, toOther)]);
+    const toOther = await prepare(db, other, "fake-password-other", { replaces: before.id });
+    await commit(db, toLogin);
+    // It keeps whatever key is saved, so a value saved since sends it back to be prepared again.
+    await expect(commit(db, toOther)).rejects.toMatchObject({ code: "P2034" });
+    await commit(db, await prepare(db, other, "fake-password-other", { replaces: before.id }));
     expect(db.rows()).toHaveLength(1);
     const [row] = db.rows();
     expect(row).toMatchObject({ id: before.id, origin: "https://other.example.test" });

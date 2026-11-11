@@ -14,7 +14,7 @@ import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
-import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
+import { dropRunTurnCheckpoint, recordAuditEvent, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type {
   ApprovalPausedToolResult,
@@ -28,6 +28,7 @@ import {
   terminatingToolResult,
 } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import type { VaultItemUse } from "./bot-secrets.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
@@ -207,6 +208,9 @@ export interface RunState {
    * the wallet owner approved paying there, so the pay click there asks nothing more.
    */
   walletHosts: Set<string>;
+  /** Where the page browser last said its page was, which picks a login's site to fill on. */
+  pageUrl?: string;
+  vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
 }
@@ -351,6 +355,36 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   reply.pendingProgress += reply.redactor.finish();
   ctx.secrets.push(...additions);
   reply.redactor = createStreamingRedactor(ctx.secrets);
+}
+
+// Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes
+// the run, but a login typed on another of its sites shows there too.
+export async function recordVaultUse(
+  ctx: RunContext,
+  tool: string,
+  item: VaultItemUse,
+  site: string,
+) {
+  const use = JSON.stringify([item.id, site]);
+  if (ctx.state.vaultUses.has(use)) return;
+  ctx.state.vaultUses.add(use);
+  await recordAuditEvent({
+    action: "credential.used",
+    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
+    spaceId: ctx.run.spaceId,
+    // The vault is the run's person's own.
+    userId: ctx.run.userId,
+    target: { type: "vault_credential", id: item.id, label: item.name },
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    metadata: {
+      tool,
+      scope: item.spaceId ? "space" : "account",
+      name: item.name,
+      kind: item.kind,
+      site,
+    },
+  });
 }
 
 export function pauseForApproval(ctx: RunContext) {

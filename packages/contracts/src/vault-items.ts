@@ -1,5 +1,5 @@
 import type { BotSecretAuthType, BotSecretMetadata, ContactFields } from "./bot-secrets.js";
-import { cardExpiry, commandVariableName } from "./bot-secrets.js";
+import { cardExpiry, commandVariableName, VAULT_ALSO_ON_LIMIT } from "./bot-secrets.js";
 
 /**
  * What people add and filter by in the vault, on every surface. API credentials of every auth type
@@ -17,6 +17,32 @@ export const VAULT_KINDS: readonly VaultKind[] = [
 export function vaultKind(type: BotSecretAuthType): VaultKind {
   if (type === "login" || type === "card" || type === "contact") return type;
   return type === "command" ? "variable" : "api_key";
+}
+
+/**
+ * The other sites typed for a login, or why they can't be saved: too many, or one that isn't an
+ * HTTPS address a page can be on (a wildcard never is). The server keeps only each site's origin.
+ */
+export function typedOtherSites(text: string): string[] | "too_many" | "not_https" {
+  const sites = text.split(/[\s,]+/).filter(Boolean);
+  if (sites.length > VAULT_ALSO_ON_LIMIT) return "too_many";
+  const https = (url: URL) =>
+    url.protocol === "https:" && !url.username && !url.password && !url.hostname.includes("*");
+  return sites.every((site) => URL.canParse(site) && https(new URL(site))) ? sites : "not_https";
+}
+
+/** Whether a value being saved is a login carrying an authenticator key. */
+export function hasAuthenticatorKey(value: string | undefined): boolean {
+  try {
+    return Boolean(value && JSON.parse(value)?.otp);
+  } catch {
+    return false;
+  }
+}
+
+// A contact isn't secret, so it has no Allow or Block.
+export function hasVaultAccess(kind: VaultKind): boolean {
+  return kind !== "contact";
 }
 
 function host(origin: string): string {

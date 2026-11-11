@@ -138,8 +138,15 @@ async function runTool(
         : row[key] === value,
     );
   const vault = options.vault ?? (options.saved ? [options.saved] : []);
-  const inVault = (row: Record<string, unknown>, where: Record<string, unknown>) =>
-    (["name", "origin"] as const).every((key) => !(key in where) || row[key] === where[key]);
+  const inVault = (row: Record<string, unknown>, where: Record<string, unknown>): boolean =>
+    (["name", "origin"] as const).every((key) => !(key in where) || row[key] === where[key]) &&
+    (!where.alsoOn ||
+      ((row.alsoOn as string[] | undefined) ?? []).includes(
+        (where.alsoOn as { has: string }).has,
+      )) &&
+    (!where.OR || (where.OR as Record<string, unknown>[]).some((branch) => inVault(row, branch))) &&
+    (!where.AND ||
+      (where.AND as Record<string, unknown>[]).every((branch) => inVault(row, branch)));
   const prisma = recordingPrisma(
     {
       spaceMember: { findUnique: async () => ({ id: "member-1" }) },
@@ -428,6 +435,26 @@ describe("request_secret for a login saved for another site", () => {
     );
     expect(cards).toEqual([]);
     expect(vaultWrites(calls)).toBeNull();
+  });
+
+  it("reuses the login on one of its other sites, by its name or another, and never moves it", async () => {
+    const both = { ...SAVED, alsoOn: [ORIGIN] };
+    for (const credential of [DESTINATION, { ...DESTINATION, name: "other_name" }]) {
+      const { toolResults, calls, cards } = await runTool(requestLogin({ credential }), {
+        saved: both,
+      });
+      expect(toolResults).toEqual([
+        expect.objectContaining({ saved: true, name: "site_login", origin: SAVED.origin }),
+      ]);
+      expect(cards).toEqual([]);
+      expect(vaultWrites(calls)).toBeNull();
+    }
+    // With replace, the card asks for the login at its own site, not a move to this one.
+    const { cards } = await runTool(requestLogin({ replace: true }), { saved: both });
+    expect(cards).toEqual([
+      expect.objectContaining({ credential: { ...DESTINATION, origin: SAVED.origin } }),
+    ]);
+    expect(cards[0]).not.toHaveProperty("replaces");
   });
 
   it("with replace, opens the card for the new site and changes nothing until it is answered", async () => {

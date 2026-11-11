@@ -307,8 +307,60 @@ export const LoginFieldLabels = z
   .max(LOGIN_FIELD_LIMIT)
   .refine(uniqueLabels, "Give each field a different label");
 
+export type AuthenticatorKey = {
+  secret: string;
+  algorithm: "sha1" | "sha256" | "sha512";
+  digits: number;
+  period: number;
+};
+
+/**
+ * An authenticator key as people paste it: a base32 secret, spaces and case ignored, or an
+ * otpauth://totp link, whose algorithm, digits and period are kept. Undefined when it is neither.
+ */
+export const AUTHENTICATOR_KEY_UNREADABLE = "This authenticator key can't be read.";
+const AUTHENTICATOR_KEY_MAX_LENGTH = 1024;
+
+export function authenticatorKey(text: string): AuthenticatorKey | undefined {
+  // The longest a login keeps, so every check that accepts a key also saves it.
+  if (text.trim().length > AUTHENTICATOR_KEY_MAX_LENGTH) return undefined;
+  let secret = text;
+  const options = { algorithm: "sha1", digits: 6, period: 30 } as AuthenticatorKey;
+  if (/^otpauth:/i.test(text.trim())) {
+    if (!URL.canParse(text.trim())) return undefined;
+    const url = new URL(text.trim());
+    if (url.host.toLowerCase() !== "totp") return undefined;
+    // Parameter names are matched without case, so a link with SECRET= reads as one with secret=.
+    const params = new URLSearchParams(
+      [...url.searchParams].map(([k, v]) => [k.toLowerCase(), v] as [string, string]),
+    );
+    secret = params.get("secret") ?? "";
+    const algorithm = (params.get("algorithm") ?? "SHA1").toLowerCase();
+    if (algorithm !== "sha1" && algorithm !== "sha256" && algorithm !== "sha512") return undefined;
+    options.algorithm = algorithm;
+    options.digits = Number(params.get("digits") ?? 6);
+    options.period = Number(params.get("period") ?? 30);
+    // What authenticator apps show, so a code typed here is the one the site expects.
+    if (![6, 8].includes(options.digits) || ![30, 60].includes(options.period)) return undefined;
+  }
+  secret = secret.replace(/[\s-]/g, "").replace(/=+$/, "").toUpperCase();
+  return /^[A-Z2-7]{16,256}$/.test(secret) ? { ...options, secret } : undefined;
+}
+
 export const LoginSecretValue = z
-  .object({ fields: z.array(LoginField).min(1).max(LOGIN_FIELD_LIMIT) })
+  .object({
+    fields: z.array(LoginField).min(1).max(LOGIN_FIELD_LIMIT),
+    /** The authenticator key, opt-in; never typed itself, only the code it makes. */
+    otp: z
+      .string()
+      .trim()
+      .max(AUTHENTICATOR_KEY_MAX_LENGTH)
+      .refine(
+        (otp) => otp === "" || authenticatorKey(otp) !== undefined,
+        "Invalid authenticator key",
+      )
+      .optional(),
+  })
   .refine(
     (login) => uniqueLabels(login.fields.map((field) => field.label)),
     "Give each field a different label",
@@ -739,6 +791,15 @@ export const VaultItemTitle = z.string().trim().max(80);
 /** When the bot should use an item, such as "For travel". */
 export const VaultItemNote = z.string().trim().max(200);
 
+export const VAULT_ALSO_ON_LIMIT = 10;
+/** The most items one vault holds. */
+export const VAULT_ITEM_LIMIT = 100;
+
+// A blocked item's value is still hidden in every run; a saved card still asks before each use.
+// "ask" is for a website login: each browser_act call that signs in with it asks the user first.
+export const VaultPolicy = z.enum(["allow", "off", "ask"]);
+export type VaultPolicy = z.infer<typeof VaultPolicy>;
+
 /**
  * An item the owner saves in a vault: the account's or, with scope "space", the Space's. Without a
  * name it is a new item, named from its title. With the name of a saved item, `value` may be left
@@ -751,6 +812,12 @@ export const VaultPutInput = settingsScopeInput.extend({
   value: BotSecretPutInput.shape.value.optional(),
   title: VaultItemTitle.optional(),
   note: VaultItemNote.optional(),
+  policy: VaultPolicy.optional(),
+  /** False limits the item to `botIds`, the owner's bots chosen in this Space. */
+  allBots: z.boolean().optional(),
+  botIds: z.array(Id).max(100).optional(),
+  /** A login's other sites; left as they are when omitted. */
+  alsoOn: z.array(z.string().max(2048)).max(VAULT_ALSO_ON_LIMIT).optional(),
 });
 export type VaultPutInput = z.infer<typeof VaultPutInput>;
 
@@ -763,11 +830,22 @@ export const VaultRevealInput = settingsScopeInput.extend({ name: StoredBotSecre
 export const VaultRevealed = z.union([
   z.object({
     fields: z.array(z.object({ label: z.string(), value: z.string(), hidden: z.boolean() })),
+    otp: z.string().optional(),
   }),
   z.object({ card: CardSecretValue }),
   z.object({ value: z.string() }),
 ]);
 export type VaultRevealed = z.infer<typeof VaultRevealed>;
+
+export const VAULT_ACTIVITY_LIMIT = 20;
+
+export const VaultUse = z.strictObject({
+  at: z.string(),
+  botName: z.string().max(200),
+  site: z.string().max(2048).nullable(),
+  chat: z.strictObject({ title: z.string() }).nullable(),
+});
+export type VaultUse = z.infer<typeof VaultUse>;
 
 /** What anyone who may see the item sees of a card: never the number or security code. */
 export const CardSummary = z.object({
@@ -785,6 +863,8 @@ export type CardSummary = z.infer<typeof CardSummary>;
 export const VaultPreview = z.object({
   /** A login's first visible field, usually the username or email. */
   username: z.string().optional(),
+  /** A login with an authenticator key. Missing from an older server, which can't keep one. */
+  otp: z.literal(true).optional(),
   card: CardSummary.optional(),
   contact: ContactFields.optional(),
 });
@@ -804,10 +884,25 @@ export const BotSecretMetadata = z.object({
   title: z.string().default(""),
   note: z.string().default(""),
   preview: VaultPreview.optional(),
+  /** Missing from an older server, which means "allow". */
+  policy: VaultPolicy.optional(),
+  /** Both missing from an older server, which lets every bot use every item. */
+  allBots: z.boolean().optional(),
+  /** The bots chosen in this Space. */
+  botIds: z.array(z.string()).optional(),
+  /** Missing from an older server, which fills a login only on its own site. */
+  alsoOn: z.array(z.string()).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type BotSecretMetadata = z.infer<typeof BotSecretMetadata>;
+
+// Fixed text, so apps can show it translated: an answer's other errors could echo the value.
+export const BLOCKED_ITEM_ANSWER =
+  "This item is blocked for bots. Allow it in the Vault, or dismiss the request.";
+/** As BLOCKED_ITEM_ANSWER, for an item allowed but limited to other bots. */
+export const UNCHOSEN_ITEM_ANSWER =
+  "This bot can't use this item. Change it in the Vault, or dismiss the request.";
 
 export const SecretHttpRequest = z
   .object({

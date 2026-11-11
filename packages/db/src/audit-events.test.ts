@@ -68,6 +68,50 @@ describe("recordAuditEvent", () => {
     ]);
   });
 
+  it("gives a person's own event once: to the space's organization for its members, else their own", async () => {
+    // space-1 belongs to org-1; a guest owns org-own, made before org-later.
+    const roles: Record<string, string | undefined> = { owner: "owner", guest: "guest" };
+    Object.assign(store.member, {
+      findUnique: vi.fn(
+        async ({ where }: { where: { organizationId_userId: { userId: string } } }) => {
+          const role = roles[where.organizationId_userId.userId];
+          return role ? { role } : null;
+        },
+      ),
+      findMany: vi.fn(async () => [
+        { organizationId: "org-own", role: "owner" },
+        { organizationId: "org-later", role: "owner" },
+      ]),
+    });
+    const use = (userId: string) =>
+      recordAuditEvent({
+        action: "credential.used",
+        actor: { type: "bot", id: "bot-1", label: "Researcher" },
+        spaceId: "space-1",
+        userId,
+        target: { type: "vault_credential", id: "item-1", label: "chase-personal" },
+        metadata: { name: "chase-personal", site: "https://bank.example.test" },
+      });
+    await use("owner");
+    await use("guest");
+    // One whose membership is gone mid-write never lands in the space's organization, and the
+    // use is one row, in the oldest organization they own.
+    await use("departed");
+    expect(store.rows.map((row) => row.organizationId)).toEqual(["org-1", "org-own", "org-own"]);
+    // Owning none, the use stays in the space it happened in rather than being lost.
+    store.member.findMany.mockResolvedValue([]);
+    await use("guest");
+    await use("departed");
+    expect(store.rows.map((row) => row.organizationId)).toEqual([
+      "org-1",
+      "org-own",
+      "org-own",
+      "org-1",
+      "org-1",
+    ]);
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+  });
+
   it("records a user's caller and gives an account-wide event to each of their organizations", async () => {
     await withSecurityRequest({ ip: "203.0.113.5", userAgent: "Mozilla/5.0" }, () =>
       recordAuditEvent({ action: "auth.sign_in", actor: { type: "user", id: "user-1" } }),

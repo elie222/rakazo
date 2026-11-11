@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { LoginFieldInput } from "@rakazo/contracts";
+import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -39,6 +41,9 @@ let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  // The app renders only once I18nBootstrap has activated a locale; the refusal text is shared.
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -656,6 +661,31 @@ it("keeps the form open with a generic error when a login fails to save", async 
   // The values are cleared as the save starts, so nothing typed is left behind.
   expect(loginInput("PIN").value).toBe("");
 });
+
+it.each([
+  [
+    BLOCKED_ITEM_ANSWER,
+    "This item is blocked for bots. Allow it in the Vault, or dismiss the request.",
+  ],
+  [
+    UNCHOSEN_ITEM_ANSWER,
+    "This bot can't use this item. Change it in the Vault, or dismiss the request.",
+  ],
+])(
+  "says why a login wasn't saved only when bots can't use that item (%s)",
+  async (answer, shown) => {
+    await render(loginCard, undefined, async () => {
+      throw new Error(answer);
+    });
+    await openEditor();
+    await typeIn(loginInput("ID number"), "fake-id-123");
+    await typeIn(loginInput("Phone number"), "+1 555 0100");
+    await typeIn(loginInput("PIN"), "1234");
+    await act(async () => dialogButton("Save")!.click());
+    expect(dialog()?.textContent).toContain(shown);
+    expect(dialog()?.textContent).not.toContain("Could not submit this answer");
+  },
+);
 
 const cardAsk: AskBlock = {
   kind: "ask",

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { inboundRoutineModelPin } from "@rakazo/adapters";
+import { inboundRoutineModelPin, isPermanentDecryptFailure } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -122,13 +122,6 @@ function subscribeWebhookCache(secrets: SecretStore, cache: WebhookSecretCache):
   secrets.onChange?.((ref) => {
     for (const [botId, entry] of cache) if (entry.ciphertext === ref) cache.delete(botId);
   });
-}
-
-function isPermanentDecryptFailure(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : "";
-  return (
-    message.includes("unable to authenticate") || message.includes("Encrypted secret is malformed")
-  );
 }
 
 function touchWebhookSecret(

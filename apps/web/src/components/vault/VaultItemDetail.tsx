@@ -1,6 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata, VaultRevealed } from "@rakazo/contracts";
-import { BotSecretName, cardExpiry, commandVariableName, vaultKind } from "@rakazo/contracts";
+import type { BotSecretMetadata, SettingsScope, VaultRevealed } from "@rakazo/contracts";
+import {
+  BotSecretName,
+  cardExpiry,
+  commandVariableName,
+  hasVaultAccess,
+  vaultKind,
+} from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
@@ -8,6 +14,8 @@ import { useEffect, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import type { VaultAuth } from "./kinds";
 import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
+import { usePolicyLabels, useVaultBots } from "./VaultItemAccess";
+import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
 import { VaultPageHeader } from "./VaultPageHeader";
 
 /** How long a shown value stays on screen. */
@@ -71,6 +79,7 @@ function addressLines(contact: NonNullable<NonNullable<BotSecretMetadata["previe
  * owner confirms it's them, and Edit and Remove.
  */
 export function VaultItemDetail({
+  scope,
   item,
   contactTitles,
   busy,
@@ -80,6 +89,7 @@ export function VaultItemDetail({
   onEdit,
   onRemove,
 }: {
+  scope: SettingsScope;
   item: BotSecretMetadata;
   /** Saved contacts' titles by name, for a card's billing address. */
   contactTitles: ReadonlyMap<string, string>;
@@ -95,6 +105,8 @@ export function VaultItemDetail({
 }) {
   const { t } = useLingui();
   const { one } = useVaultKindLabels();
+  const policyLabels = usePolicyLabels();
+  const bots = useVaultBots(item.allBots === false, item.botIds);
   // An item saved under a name the current rules refuse can only be removed.
   const auth: VaultAuth | null =
     item.auth && BotSecretName.safeParse(item.name).success ? item.auth : null;
@@ -102,6 +114,7 @@ export function VaultItemDetail({
   const [revealed, setRevealed] = useState<VaultRevealed | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [usesOpen, setUsesOpen] = useState(false);
   const hideTimer = useRef<number | undefined>(undefined);
   const attempt = useRef(0);
 
@@ -173,6 +186,12 @@ export function VaultItemDetail({
         {siteHost(item.origin)}
       </DetailRow>,
     );
+    if (item.alsoOn?.length)
+      rows.push(
+        <DetailRow key="also-on" label={t`Also on`}>
+          {item.alsoOn.map((site) => new URL(site).host).join(", ")}
+        </DetailRow>,
+      );
     if (revealed && "fields" in revealed) {
       rows.push(
         ...revealed.fields.map((field, index) => (
@@ -202,6 +221,14 @@ export function VaultItemDetail({
         </DetailRow>,
       );
     }
+    // Shown and hidden with the password: the same reveal holds both.
+    const otp = revealed && "fields" in revealed ? revealed.otp : undefined;
+    if (item.preview?.otp || otp)
+      rows.push(
+        <DetailRow key="otp" label={t`Authenticator key`} copy={otp} testId="vault-item-otp">
+          <span className="font-mono text-body-sm">{otp ?? MASK}</span>
+        </DetailRow>,
+      );
   }
   if (auth && kind === "card" && card) {
     const number = revealedCard?.number.replace(/(\d{4})(?=\d)/g, "$1 ");
@@ -312,8 +339,40 @@ export function VaultItemDetail({
         {item.note}
       </DetailRow>,
     );
+  // Blocked, no bot may use it; asking first, only the bots it is limited to may ask. The bots it
+  // is limited to show once the list has loaded, never as No bots before, nor as every bot when
+  // it can't be read.
+  const blocked = item.policy === "off";
+  const chosen = (bots ?? []).filter((bot) => item.botIds?.includes(bot.id)).map((bot) => bot.name);
+  const access = [
+    kind && hasVaultAccess(kind) && (blocked || item.policy === "ask")
+      ? policyLabels[item.policy as "off" | "ask"]
+      : "",
+    kind && !blocked && item.allBots === false
+      ? bots === null
+        ? t`Could not load bots. Reload to try again.`
+        : bots
+          ? chosen.join(", ") || t`No bots`
+          : ""
+      : "",
+  ].filter(Boolean);
+  if (access.length)
+    rows.push(
+      <DetailRow key="access" label={t`Bots`} testId="vault-item-access-detail">
+        {access.join(" · ")}
+      </DetailRow>,
+    );
 
   const secretName = item.title;
+  if (usesOpen)
+    return (
+      <VaultItemUses
+        scope={scope}
+        name={item.name}
+        title={item.title}
+        onBack={() => setUsesOpen(false)}
+      />
+    );
   return (
     <div data-testid="vault-item-detail" className="flex flex-col gap-4">
       <VaultPageHeader
@@ -329,6 +388,7 @@ export function VaultItemDetail({
         onBack={() => !busy && onClose()}
       />
       {rows.length ? <div>{rows}</div> : null}
+      <VaultItemActivity scope={scope} name={item.name} onOpen={() => setUsesOpen(true)} />
       {error ? (
         <p role="alert" className="text-body-sm text-destructive">
           {error}

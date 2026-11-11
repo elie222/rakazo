@@ -8,10 +8,11 @@ import type {
 } from "@rakazo/contracts";
 import { AuditActorTypeSchema, AuditOutcomeSchema } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
-import { GUEST_ROLE } from "./billing.js";
+import { GUEST_ROLE, ownedOrganizationId } from "./billing.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
 import { runAsSystem } from "./row-security.js";
+import { IsolationError } from "./scope.js";
 import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
 
 type AuditEventDb = Pick<PrismaClient, "auditEvent" | "space" | "user" | "member">;
@@ -26,6 +27,11 @@ export interface AuditEventInput {
     | { type: "system"; label?: string };
   /** The space acted in; its organization owns the event. */
   spaceId?: string | null;
+  /**
+   * The person whose own data the event names, such as their vault item. Where they are a guest,
+   * it goes to their own organization, as their billing does, not to the space's.
+   */
+  userId?: string;
   /** For a space that may already be gone. Without either, a user's event goes to each of their organizations. */
   organizationId?: string;
   spaceName?: string;
@@ -101,11 +107,32 @@ async function auditRows(
         })
       : [],
   ]);
+  // A person's own event goes to one organization: the space's for its members, else, as for a
+  // guest or someone whose membership is gone mid-write, the oldest they own, so a shared space
+  // never sees it. Owning none, it stays with the space it happened in rather than being lost.
+  let personal: string | undefined;
+  if (space && input.spaceId && input.userId && !input.organizationId) {
+    const member = await db.member.findUnique({
+      where: {
+        organizationId_userId: { organizationId: space.organizationId, userId: input.userId },
+      },
+      select: { role: true },
+    });
+    personal =
+      member && member.role !== GUEST_ROLE
+        ? space.organizationId
+        : await ownedOrganizationId(db, input.userId).catch((error: unknown) => {
+            if (error instanceof IsolationError) return space.organizationId;
+            throw error;
+          });
+  }
   const organizations = input.organizationId
     ? [input.organizationId]
-    : space
-      ? [space.organizationId]
-      : memberships.map((member) => member.organizationId);
+    : personal
+      ? [personal]
+      : space
+        ? [space.organizationId]
+        : memberships.map((member) => member.organizationId);
   const row = {
     spaceId: bounded(input.spaceId, 128),
     spaceName: bounded(input.spaceName ?? space?.name, 200),

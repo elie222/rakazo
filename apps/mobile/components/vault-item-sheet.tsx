@@ -1,10 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata, ContactFields } from "@rakazo/contracts";
-import { cardExpiry, commandVariableName, vaultKind } from "@rakazo/contracts";
+import type { BotSecretMetadata, ContactFields, VaultUse } from "@rakazo/contracts";
+import { cardExpiry, commandVariableName, hasVaultAccess, vaultKind } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { formatActivityRelativeTime } from "../lib/activity";
 import { native, useThemedStyles } from "../lib/native";
 import { siteHost } from "../lib/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../lib/vault";
@@ -22,6 +24,8 @@ type DetailRow = { label: string; value: string; hidden?: boolean };
 export function VaultItemSheet({
   item,
   billingTitle,
+  uses,
+  notice,
   busy,
   onClose,
   onShow,
@@ -31,6 +35,8 @@ export function VaultItemSheet({
   item: BotSecretMetadata;
   /** The title of the contact a card is billed to. */
   billingTitle?: string;
+  uses: VaultUse[];
+  notice?: string;
   busy: boolean;
   onClose: () => void;
   onShow: () => void;
@@ -45,6 +51,8 @@ export function VaultItemSheet({
   const symbol = kind ? vaultKindSymbol(kind) : { ios: "questionmark", android: "help" };
   const rows = readable ? detailRows(readable, billingTitle) : [];
   const copy = (text: string) => void Clipboard.setStringAsync(text).catch(() => undefined);
+  const [usesOpen, setUsesOpen] = useState(false);
+  const latest = uses[0];
 
   function detailRows(entry: NonNullable<typeof readable>, billing?: string): DetailRow[] {
     const { preview } = entry;
@@ -55,8 +63,10 @@ export function VaultItemSheet({
     };
     if (entry.auth.type === "login") {
       add(t`Site`, siteHost(entry.origin));
+      add(t`Also on`, entry.alsoOn?.map((site) => new URL(site).host).join(", "));
       add(t`Username`, preview?.username);
       list.push({ label: t`Password`, ...hidden });
+      if (preview?.otp) list.push({ label: t`Authenticator key`, ...hidden });
     } else if (entry.auth.type === "card") {
       const card = preview?.card;
       list.push({
@@ -91,6 +101,18 @@ export function VaultItemSheet({
       list.push({ label: t`Value`, ...hidden });
     }
     add(t`When to use`, entry.note);
+    if (hasVaultAccess(vaultKind(entry.auth.type)) && entry.policy === "off")
+      add(t`Bots`, t`Block`);
+    else
+      add(
+        t`Bots`,
+        [
+          entry.policy === "ask" ? t`Ask first` : "",
+          entry.allBots === false ? (entry.botIds?.length ? t`Chosen bots` : t`No bots`) : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      );
     return list;
   }
 
@@ -107,8 +129,16 @@ export function VaultItemSheet({
         ]}
       >
         <View style={styles.header}>
-          <NativeActionButton label={t`Done`} onPress={onClose} prominence="plain" />
-          {readable ? (
+          {usesOpen ? (
+            <NativeActionButton
+              label={t`Back`}
+              onPress={() => setUsesOpen(false)}
+              prominence="plain"
+            />
+          ) : (
+            <NativeActionButton label={t`Done`} onPress={onClose} prominence="plain" />
+          )}
+          {readable && !usesOpen ? (
             <NativeActionButton
               disabled={busy}
               fill={false}
@@ -127,45 +157,81 @@ export function VaultItemSheet({
               <Text accessibilityRole="header" style={styles.title} numberOfLines={2}>
                 {item.title}
               </Text>
-              {kind ? <Text style={styles.kind}>{vaultKindLabel(kind)}</Text> : null}
+              {usesOpen ? (
+                <Text style={styles.kind}>{t`Activity`}</Text>
+              ) : kind ? (
+                <Text style={styles.kind}>{vaultKindLabel(kind)}</Text>
+              ) : null}
             </View>
           </View>
-          {readable ? null : (
-            <Text style={styles.unreadable}>
-              {t`These saved settings can't be read. Remove it and add it again.`}
-            </Text>
-          )}
-          <SettingsGroup>
-            {rows.map((row) => (
-              <SettingsRow
-                key={row.label}
-                accessibilityRole="button"
-                accessibilityHint={row.hidden ? t`Show` : t`Copy`}
-                disabled={busy}
-                title={row.label}
-                value={row.value}
-                onPress={row.hidden ? onShow : () => copy(row.value)}
-                trailing={
-                  <NativeSymbol
-                    ios={row.hidden ? "eye" : "doc.on.doc"}
-                    android={row.hidden ? "eye-outline" : "copy-outline"}
-                    color={native.tertiaryLabel}
-                    size={16}
+          {usesOpen ? (
+            // Every use on its own page; Back returns to the item.
+            <SettingsGroup>
+              {uses.map((use, index) => (
+                <SettingsRow
+                  key={`${use.at}-${index}`}
+                  title={use.botName}
+                  detail={[
+                    use.chat && use.chat.title !== use.botName ? use.chat.title : "",
+                    use.site ? siteHost(use.site) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  value={formatActivityRelativeTime(use.at)}
+                />
+              ))}
+            </SettingsGroup>
+          ) : (
+            <>
+              {notice ? <Text style={styles.unreadable}>{notice}</Text> : null}
+              {readable ? null : (
+                <Text style={styles.unreadable}>
+                  {t`These saved settings can't be read. Remove it and add it again.`}
+                </Text>
+              )}
+              <SettingsGroup>
+                {rows.map((row) => (
+                  <SettingsRow
+                    key={row.label}
+                    accessibilityRole="button"
+                    accessibilityHint={row.hidden ? t`Show` : t`Copy`}
+                    disabled={busy}
+                    title={row.label}
+                    value={row.value}
+                    onPress={row.hidden ? onShow : () => copy(row.value)}
+                    trailing={
+                      <NativeSymbol
+                        ios={row.hidden ? "eye" : "doc.on.doc"}
+                        android={row.hidden ? "eye-outline" : "copy-outline"}
+                        color={native.tertiaryLabel}
+                        size={16}
+                      />
+                    }
                   />
-                }
-              />
-            ))}
-          </SettingsGroup>
-          <SettingsGroup>
-            <SettingsRow
-              key="remove"
-              accessibilityRole="button"
-              destructive
-              disabled={busy}
-              onPress={onRemove}
-              title={t`Remove`}
-            />
-          </SettingsGroup>
+                ))}
+              </SettingsGroup>
+              {latest ? (
+                <SettingsGroup>
+                  <SettingsRow
+                    accessibilityRole="button"
+                    title={t`Used ${ph({ when: formatActivityRelativeTime(latest.at) })} by ${ph({ bot: latest.botName })}`}
+                    chevron="right"
+                    onPress={() => setUsesOpen(true)}
+                  />
+                </SettingsGroup>
+              ) : null}
+              <SettingsGroup>
+                <SettingsRow
+                  key="remove"
+                  accessibilityRole="button"
+                  destructive
+                  disabled={busy}
+                  onPress={onRemove}
+                  title={t`Remove`}
+                />
+              </SettingsGroup>
+            </>
+          )}
         </ScrollView>
       </View>
     </Modal>

@@ -450,7 +450,7 @@ async function readComputer(
           shellCommandEnvironment({
             prisma: deps.prisma,
             secretStore,
-            scope: { spaceId: routine.spaceId, userId: routine.userId },
+            scope: { spaceId: routine.spaceId, userId: routine.userId, botId: bot.id },
             registerRedactions: (values) => {
               for (const value of values) secrets.add(value);
             },

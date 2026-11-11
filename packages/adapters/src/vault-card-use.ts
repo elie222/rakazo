@@ -8,13 +8,32 @@ import { purchaseCardSummary } from "./purchase-gate.js";
  * replay types exactly that card on exactly that site. `title` is what the approval card showed, and
  * `savedAt` is when the card was last saved, so one replaced while the approval waited is not typed.
  */
-export type VaultCardUse = { card: string; site: string; title: string; savedAt: string };
+export type VaultCardUse = {
+  kind?: "card";
+  card: string;
+  site: string;
+  title: string;
+  savedAt: string;
+};
+/**
+ * A saved login that asks first, approved for one browser_act call: its `fields` on its own site,
+ * as saved at `savedAt`. The approval card names it by `title`, never a username others could read.
+ */
+export type VaultLoginUse = {
+  kind: "login";
+  login: string;
+  site: string;
+  title: string;
+  fields: string[];
+  savedAt: string;
+};
 
 /** A card use as the persisted request holds it, or nothing when it is not one. */
 export function vaultCardUseOf(value: unknown): VaultCardUse | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { card, site, title, savedAt } = value as Record<string, unknown>;
+  const { kind, card, site, title, savedAt } = value as Record<string, unknown>;
   if (
+    (kind !== undefined && kind !== "card") ||
     !BotSecretName.safeParse(card).success ||
     !OneTimeCodeTarget.safeParse({ origin: site }).success ||
     typeof title !== "string" ||
@@ -22,6 +41,65 @@ export function vaultCardUseOf(value: unknown): VaultCardUse | undefined {
   )
     return undefined;
   return { card: card as string, site: new URL(site as string).origin, title, savedAt };
+}
+
+/** A login use as the persisted request holds it, or nothing when it is not one. */
+export function vaultLoginUseOf(value: unknown): VaultLoginUse | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { kind, login, site, title, fields, savedAt } = value as Record<string, unknown>;
+  if (
+    kind !== "login" ||
+    !BotSecretName.safeParse(login).success ||
+    !OneTimeCodeTarget.safeParse({ origin: site }).success ||
+    typeof title !== "string" ||
+    !Array.isArray(fields) ||
+    !fields.every((field) => typeof field === "string") ||
+    typeof savedAt !== "string"
+  )
+    return undefined;
+  return {
+    kind,
+    login: login as string,
+    site: new URL(site as string).origin,
+    title,
+    fields: fields as string[],
+    savedAt,
+  };
+}
+
+/**
+ * What an approval names for a login's authenticator code, which fill_code types. Field labels are
+ * trimmed, so none ends in a space and a field named the same is never taken for the code.
+ */
+export const LOGIN_CODE_FIELD = "Authenticator code ";
+
+/** Each saved login a browser_act call fills, with the fields it fills, as browser_act reads them. */
+export function requestedLoginFills(actions: unknown): Map<string, string[]> {
+  const fills = new Map<string, string[]>();
+  for (const raw of Array.isArray(actions) ? actions : []) {
+    const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const login = String(step.secret ?? "").trim();
+    const field =
+      step.kind === "fill_code"
+        ? LOGIN_CODE_FIELD
+        : typeof step.field === "string"
+          ? step.field.trim()
+          : "";
+    if ((step.kind !== "fill_secret" && step.kind !== "fill_code") || !login || !field) continue;
+    const fields = fills.get(login) ?? [];
+    if (!fields.includes(field)) fills.set(login, [...fields, field]);
+  }
+  return fills;
+}
+
+/** The approval card for signing in with a saved login, named from what is saved. */
+export function loginUseSummary(use: VaultLoginUse): FleetCardSummary {
+  const host = new URL(use.site).host;
+  return {
+    onceOnly: true,
+    title: `Sign in to ${host} with ${use.title}?`,
+    lines: [],
+  };
 }
 
 /** The site a fill_card step names, reduced to its origin, so a page URL names its site. */

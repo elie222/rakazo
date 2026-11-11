@@ -49,7 +49,8 @@ export type CardFillStep = {
 /** The model never supplies or sees the token. */
 export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
 /** Types the code the user entered for the run's last code request; the model never sees it. */
-export type CodeFillStep = { kind: "fill_code"; ref: string };
+/** With `secret`, the current code of that saved login's authenticator key. */
+export type CodeFillStep = { kind: "fill_code"; ref: string; secret?: string };
 export type BrowserActInput =
   | BrowserActStep
   | SecretFillStep
@@ -65,21 +66,34 @@ export type PageToolOptions = {
   desktopTools?: boolean;
   downloads?: { folder: string; botPath: (path: string) => string };
 };
+/** `typed` is called once the page may have typed it, never for a fill refused before that. */
 export type ResolveSecretFill = (
   step: SecretFillStep,
-) => Promise<{ text: string; origin: string; hidden: boolean } | { error: string }>;
+  /** The step's place in the batch. */
+  index: number,
+) => Promise<
+  { text: string; origin: string; hidden: boolean; typed?: () => Promise<void> } | { error: string }
+>;
 
 export type ResolveCardFill = (
   step: CardFillStep,
-) => Promise<{ text: string; origin: string } | { error: string }>;
+) => Promise<{ text: string; origin: string; typed?: () => Promise<void> } | { error: string }>;
 
-/** `claim` takes the code for this one fill; `restore` gives it back if the page refused. */
-export type ResolveCodeFill = (step: CodeFillStep) => Promise<
+/**
+ * `claim` takes the code for this one fill; `restore` gives it back if the page refused. `taken`
+ * is what the bot is told when another fill claimed it first. `typed` is as a login fill's.
+ */
+export type ResolveCodeFill = (
+  step: CodeFillStep,
+  index: number,
+) => Promise<
   | {
       text: string;
       origin: string;
       claim: () => Promise<boolean>;
       restore: () => Promise<void>;
+      taken?: string;
+      typed?: () => Promise<void>;
     }
   | { error: string }
 >;
@@ -177,11 +191,19 @@ export async function browserActFromTool(
     releasePurchase?: () => Promise<void>;
   } = {},
 ) {
+  // Each saved login or card fill with its action, and whether the page was asked.
+  const fills: Array<{ index: number; typed: () => Promise<void> }> = [];
+  let asked = false;
   try {
     const actions: BrowserActStep[] = [];
     // The code this batch types, with the action that types it.
     let codeTyped:
-      | { index: number; claim: () => Promise<boolean>; restore: () => Promise<void> }
+      | {
+          index: number;
+          claim: () => Promise<boolean>;
+          restore: () => Promise<void>;
+          taken?: string;
+        }
       | undefined;
     // Resolve every saved login and card before acting, so a missing one cannot leave a
     // half-filled form.
@@ -226,7 +248,7 @@ export async function browserActFromTool(
         let resolved: Awaited<ReturnType<ResolveCodeFill>>;
         try {
           resolved = options.resolveCodeFill
-            ? await options.resolveCodeFill(step)
+            ? await options.resolveCodeFill(step, actions.length)
             : { error: "Codes are unavailable here." };
         } catch (error) {
           context.signal.throwIfAborted();
@@ -236,7 +258,9 @@ export async function browserActFromTool(
           return { ...refusedInput("This code could not be loaded."), completed: 0 };
         }
         if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
-        codeTyped = { index: actions.length, claim: resolved.claim, restore: resolved.restore };
+        const { claim, restore, taken, typed } = resolved;
+        codeTyped = { index: actions.length, claim, restore, taken };
+        if (typed) fills.push({ index: actions.length, typed });
         actions.push({
           kind: "fill",
           ref: step.ref,
@@ -251,14 +275,16 @@ export async function browserActFromTool(
         continue;
       }
       const card = step.kind === "fill_card";
-      let resolved: { text: string; origin: string; hidden?: boolean } | { error: string };
+      let resolved:
+        | { text: string; origin: string; hidden?: boolean; typed?: () => Promise<void> }
+        | { error: string };
       try {
         resolved = card
           ? options.resolveCardFill
             ? await options.resolveCardFill(step)
             : { error: "Card fills are unavailable here." }
           : options.resolveSecretFill
-            ? await options.resolveSecretFill(step)
+            ? await options.resolveSecretFill(step, actions.length)
             : { error: "Saved logins are unavailable here." };
       } catch (error) {
         context.signal.throwIfAborted();
@@ -279,6 +305,7 @@ export async function browserActFromTool(
       }
       if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
       const { text, origin } = resolved;
+      if (resolved.typed) fills.push({ index: actions.length, typed: resolved.typed });
       if (step.ref === undefined) {
         actions.push({ kind: "fill", text, origin, field: "card", cardField: step.field });
       } else {
@@ -322,15 +349,21 @@ export async function browserActFromTool(
     if (codeTyped && !(await codeTyped.claim())) {
       if (approved) await options.releasePurchase?.();
       return {
-        ...refusedInput("No code is waiting. Use request_secret with oneTimeCode."),
+        ...refusedInput(
+          codeTyped.taken ?? "No code is waiting. Use request_secret with oneTimeCode.",
+        ),
         completed: 0,
       };
     }
+    asked = true;
     const result = await browser.act(
       computer,
       { actions, downloads: options.downloads?.folder, signal: context.signal },
       context,
     );
+    // Only fills the page may have typed: one it clearly never reached left nothing.
+    for (const fill of fills)
+      if (result.uncertain !== false || result.completed > fill.index) await fill.typed();
     // A purchase the page refused (it changed, or another step failed first) never went through.
     if (
       approvedSteps.length &&
@@ -353,6 +386,8 @@ export async function browserActFromTool(
       options.redactions?.() ?? [],
     );
   } catch (error) {
+    // Asked with no answer, the page may have typed any of them.
+    if (asked) for (const fill of fills) await fill.typed().catch(() => undefined);
     context.signal.throwIfAborted();
     if (error instanceof BrowserToolInputError)
       return { ...refusedInput(error.message), completed: 0 };
@@ -414,7 +449,10 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
       return purchase ? { ...step, purchase } : { ...step, card, site: cardFillSite(action.site) };
     }
     if (!ref) throw new BrowserToolInputError(`browser_act action ${index} requires ref`);
-    if (kind === "fill_code") return { kind, ref };
+    if (kind === "fill_code") {
+      const secret = typeof action.secret === "string" ? action.secret.trim() : "";
+      return secret ? { kind, ref, secret } : { kind, ref };
+    }
     if (kind === "upload") {
       const paths = Array.isArray(action.paths)
         ? action.paths.map((path) => (typeof path === "string" ? path.trim() : ""))
