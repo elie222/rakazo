@@ -99,16 +99,18 @@ describe("migration persistence", () => {
     for (const rows of [f.tables.secret, f.tables.botSecret, f.tables.integrationProviderConfig])
       rows.length = 0;
     const keys: SpaceKeyRecord[] = [];
-    const ring = new ContentKeyRing(new LocalKeyProvider([{ id: "test", key: randomBytes(32) }]), {
-      forSpace: async (spaceId) => keys.filter((key) => key.spaceId === spaceId),
-      byId: async (id) => keys.find((key) => key.id === id),
-      insert: async (record) => {
+    const provider = new LocalKeyProvider([{ id: "test", key: randomBytes(32) }]);
+    const store = {
+      forSpace: async (spaceId: string) => keys.filter((key) => key.spaceId === spaceId),
+      byId: async (id: string) => keys.find((key) => key.id === id),
+      insert: async (record: SpaceKeyRecord) => {
         keys.push(record);
         return record;
       },
       rowContext: async () => undefined,
       sampleByMasterKey: async () => [],
-    });
+    };
+    const ring = new ContentKeyRing(provider, store);
     const location = { table: "vault_credentials", column: "ciphertext", owner: "user-1" };
     Object.assign(f.tables.vaultCredential[0]!, {
       userId: "user-1",
@@ -131,6 +133,28 @@ describe("migration persistence", () => {
         spaceId: "test",
         signal: new AbortController().signal,
       };
+      // The key manager takes the unwrap and never answers; the command stops at its
+      // interruption instead of waiting (its exit code says so), and the next run moves the value.
+      ring.clear();
+      const controller = new AbortController();
+      const stalled = vi.spyOn(provider, "unwrap").mockImplementation(() => {
+        controller.abort(new Error("interrupted"));
+        return new Promise(() => {});
+      });
+      expect(
+        await migrateSecrets(
+          f.repository,
+          new EncryptedSecretStore("key"),
+          remote,
+          { ...context, signal: controller.signal },
+          { direction: "forward" },
+        ),
+      ).toMatchObject({ migrated: 0 });
+      expect(f.tables.vaultCredential[0]!.ciphertext).toMatch(/^rkz1:/);
+      stalled.mockRestore();
+      Object.assign(f.client, {
+        $contentEncryption: () => ({ ring: new ContentKeyRing(provider, store) }),
+      });
       expect(
         await migrateSecrets(f.repository, new EncryptedSecretStore("key"), remote, context, {
           direction: "forward",
@@ -142,7 +166,7 @@ describe("migration persistence", () => {
     } finally {
       await remote.close();
     }
-  });
+  }, 2_000);
 
   it("keeps a vault item's date, which a pending card approval checks", async () => {
     const f = fixture();

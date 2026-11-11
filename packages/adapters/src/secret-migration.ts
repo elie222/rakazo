@@ -11,8 +11,11 @@ export interface SecretMigrationRow {
   ephemeral?: boolean;
   /** A vault item's date, kept when its value moves, since a card approval checks it. */
   updatedAt?: Date;
-  /** Reads a vault value kept under its vault's data key, which no secret store can. */
-  open?: () => Promise<string>;
+  /**
+   * Reads a vault value kept under its vault's data key, which no secret store can; the read is
+   * given up at `signal`, the command's interruption.
+   */
+  open?: (signal: AbortSignal) => Promise<string>;
 }
 export interface SecretMigrationRepository {
   rows(): AsyncIterable<SecretMigrationRow>;
@@ -96,7 +99,7 @@ export async function migrateSecrets(
       const remote = row.ref.startsWith(INFISICAL_REF_PREFIX);
       const source = remote ? infisical : encrypted;
       const plaintext = row.open
-        ? await row.open()
+        ? await row.open(context.signal)
         : await source.load(row.ref, { recordId: row.recordId, signal: context.signal });
       const targetRemote = options.direction === "forward" && !row.ephemeral;
       if (remote === targetRemote) {

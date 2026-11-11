@@ -245,7 +245,10 @@ After a suspected key exposure:
 3. Run `content-encryption reencrypt`. It rotates no keys.
 4. Run `content-encryption status`. Its `vault items under an older vault key
    version` line should read 0; if it does not, repeat steps 2 and 3. It counts
-   vault items only, not Space content.
+   vault items only, not Space content, and not damaged items: sealed values
+   that name no key, a key that no longer exists, or another vault's key,
+   which no command can move. `status` lists those on their own line, and
+   every command reports each as failed.
 
 ## External key management
 

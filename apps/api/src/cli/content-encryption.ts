@@ -230,9 +230,14 @@ try {
         write(
           `${table.table}: ${table.plaintext} of ${table.rows} ${table.table === "vault_credentials" ? "not yet under the content keys" : "in plaintext"}`,
         );
+      const vaultItems = await vaultItemsUnderOlderKeys(prisma);
       write(
-        `vault items under an older vault key version: ${await vaultItemsUnderOlderKeys(prisma)} (reencrypt moves them)`,
+        `vault items under an older vault key version: ${vaultItems.older} (reencrypt moves them)`,
       );
+      if (vaultItems.damaged)
+        write(
+          `vault items naming no key of their vault: ${vaultItems.damaged} (damaged; no command moves them)`,
+        );
       for (const [masterKeyId, count] of Object.entries(status.masterKeys))
         write(`space keys under master key ${masterKeyId}: ${count}`);
       write(`active master key: ${contentKeys.provider.activeKeyId()}`);

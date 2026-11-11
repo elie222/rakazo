@@ -38,7 +38,7 @@ export function createSecretMigrationRepository(prisma: PrismaClient): SecretMig
               ),
               ...(label === "vaultCredential" && row.updatedAt ? { updatedAt: row.updatedAt } : {}),
               ...(label === "vaultCredential" && isCiphertext(row.ciphertext)
-                ? { open: () => openSealedVaultValue(prisma, row) }
+                ? { open: (signal: AbortSignal) => openSealedVaultValue(prisma, row, signal) }
                 : {}),
             };
           }

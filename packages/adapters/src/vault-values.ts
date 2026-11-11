@@ -31,6 +31,14 @@ function ringOf(prisma: PrismaClient) {
 }
 
 /**
+ * A command's call to the key ring, given up at its interruption, since the key manager behind it
+ * may hold a call open for longer; the call's own outcome stays handled, so a late answer is quiet.
+ */
+function interruptible<T>(call: Promise<T>, signal?: AbortSignal): Promise<T> {
+  return signal ? withAbort(call, signal) : call;
+}
+
+/**
  * A vault item's stored value: under its vault's data key once `content-encryption migrate` has
  * created one, as content is. Until then the secret store keeps writing the format the previous
  * release reads, since it keeps running for a while after a deploy. An external secret store
@@ -58,7 +66,7 @@ export async function openVaultValue(
   row: VaultRow & { ciphertext: string },
   signal?: AbortSignal,
 ): Promise<string> {
-  if (!ciphertextKeyId(row.ciphertext))
+  if (!row.ciphertext.startsWith(CIPHERTEXT_PREFIX))
     return store.load(row.ciphertext, signal ? { recordId: row.id, signal } : row.id);
   return openSealedVaultValue(prisma, row, signal);
 }
@@ -74,7 +82,7 @@ export async function openSealedVaultValue(
   signal?: AbortSignal,
 ): Promise<string> {
   const keyId = ciphertextKeyId(row.ciphertext);
-  if (!keyId) throw new ContentDecryptionError("Vault item is not under a vault key");
+  if (!keyId) throw new ContentDecryptionError("Vault item names no key");
   const ring = ringOf(prisma);
   const lookup = ring.byId(keyId).catch(async (error: unknown) => {
     // A key its vault no longer has is damaged data, not a key manager outage; listing the
@@ -84,7 +92,7 @@ export async function openSealedVaultValue(
       throw new ContentDecryptionError("Vault item names a key that no longer exists");
     throw error;
   });
-  const key = await (signal ? withAbort(lookup, signal) : lookup);
+  const key = await interruptible(lookup, signal);
   if (key.spaceId !== keyScope(row))
     throw new ContentDecryptionError("Vault item names another vault's key");
   return decryptText(key, location(row), row.ciphertext);
@@ -145,7 +153,7 @@ export async function migrateVaultValues(
       keys = ringOf(prisma).allFresh(scope);
       fresh.set(scope, keys);
     }
-    return keys;
+    return interruptible(keys, context.signal);
   };
   let cursor = "";
   while (true) {
@@ -163,9 +171,12 @@ export async function migrateVaultValues(
       // Each item may wait on the key manager, so an interruption stops before the next one.
       context.signal.throwIfAborted();
       const keyId = ciphertextKeyId(row.ciphertext);
+      // A value in the previous format, not a sealed one naming no key: that one is damaged and
+      // read, so it is reported.
+      const previous = !row.ciphertext.startsWith(CIPHERTEXT_PREFIX);
       if (
         row.ciphertext.startsWith(INFISICAL_REF_PREFIX) ||
-        (!keyId && options.mode === "decrypt")
+        (previous && options.mode === "decrypt")
       ) {
         counts.verified++;
         continue;
@@ -173,7 +184,7 @@ export async function migrateVaultValues(
       // Re-encryption moves only items already under a vault key. One in the previous format
       // stays as it is, readable by the previous release, until `migrate`, which alone creates a
       // vault's first key.
-      if (!keyId && options.mode === "reencrypt") {
+      if (previous && options.mode === "reencrypt") {
         counts.notMigrated++;
         continue;
       }
@@ -190,7 +201,7 @@ export async function migrateVaultValues(
         if (keyId && (options.mode === "encrypt" || keyId === newest?.id)) {
           // Already under its vault's key (its newest, to re-encrypt): read, never rewritten, so
           // an unreadable item is reported.
-          await openSealedVaultValue(prisma, row);
+          await openSealedVaultValue(prisma, row, context.signal);
           counts.verified++;
           continue;
         }
@@ -206,14 +217,19 @@ export async function migrateVaultValues(
         if (options.mode === "decrypt")
           next = (await store.put(plaintext, context, { recordId: row.id })).ciphertext;
         else if (options.mode === "encrypt") {
-          const key = (await keysOf(scope)).at(-1) ?? (await ringOf(prisma).current(scope));
+          const key =
+            (await keysOf(scope)).at(-1) ??
+            (await interruptible(ringOf(prisma).current(scope, context.signal), context.signal));
           next = encryptText(key, location(row), plaintext);
         }
         // Its vault's keys were deleted with its member or Space after the item was read.
         else if (!newest) throw new VaultKeyOwnerGoneError();
         else next = encryptText(newest, location(row), plaintext);
         step = "check";
-        if ((await openVaultValue(prisma, store, { ...row, ciphertext: next })) !== plaintext)
+        if (
+          (await openVaultValue(prisma, store, { ...row, ciphertext: next }, context.signal)) !==
+          plaintext
+        )
           throw new ContentDecryptionError("Rewritten vault value did not round-trip");
         step = "save";
         const { count } = await prisma.vaultCredential.updateMany({
@@ -251,18 +267,40 @@ export async function migrateVaultValues(
 /**
  * Vault items under a version of their vault's key other than the newest stored one, such as
  * saves a process sealed with the version it had cached when another process rotated the key.
- * `reencrypt` moves them. Read-only: it compares the key id each value names, opens nothing and
- * unwraps no key.
+ * `reencrypt` moves them. Items naming no key of their vault, as a damaged value or one whose key
+ * was deleted does, cannot be moved and are counted apart, so they are not mistaken for items a
+ * further `reencrypt` would move. Read-only: it compares the key id each value names, opens
+ * nothing and unwraps no key.
  */
-export async function vaultItemsUnderOlderKeys(prisma: PrismaClient): Promise<number> {
-  const newest = new Map<string, string>();
+export async function vaultItemsUnderOlderKeys(
+  prisma: PrismaClient,
+): Promise<{ older: number; damaged: number }> {
+  type Key = { id: string; spaceId: string; version: number };
+  const newest = new Map<string, Key>();
+  const keys = new Map<string, Key | null>();
+  const learn = (key: Key) => {
+    keys.set(key.id, key);
+    if ((newest.get(key.spaceId)?.version ?? 0) < key.version) newest.set(key.spaceId, key);
+  };
   for (const key of await prisma.spaceKey.findMany({
     where: { OR: [{ spaceId: { startsWith: "user:" } }, { spaceId: { startsWith: "vault:" } }] },
-    orderBy: { version: "asc" },
     select: { id: true, spaceId: true, version: true },
   }))
-    newest.set(key.spaceId, key.id);
-  let count = 0;
+    learn(key);
+  // The keys and the items are read without a snapshot between them, so a key named by an item
+  // and not listed may have been created meanwhile (a vault's first key by `migrate`, a version
+  // by `rotate`); it is looked up before the item is called damaged, and since it may be a newer
+  // version than the listed ones, items are judged once every key is known.
+  const learned = async (id: string) => {
+    if (keys.has(id)) return;
+    const key = await prisma.spaceKey.findUnique({
+      where: { id },
+      select: { id: true, spaceId: true, version: true },
+    });
+    if (key) learn(key);
+    else keys.set(id, null);
+  };
+  const items = new Map<string, { scope: string; keyId: string | undefined; count: number }>();
   let cursor = "";
   while (true) {
     const batch = await prisma.vaultCredential.findMany({
@@ -271,11 +309,23 @@ export async function vaultItemsUnderOlderKeys(prisma: PrismaClient): Promise<nu
       take: 1000,
       select: { id: true, userId: true, spaceId: true, ciphertext: true },
     });
-    for (const row of batch)
-      if (ciphertextKeyId(row.ciphertext) !== newest.get(keyScope(row))) count++;
-    if (batch.length < 1000) return count;
+    for (const row of batch) {
+      const keyId = ciphertextKeyId(row.ciphertext);
+      if (keyId) await learned(keyId);
+      const scope = keyScope(row);
+      const under = `${scope} ${keyId ?? ""}`;
+      items.set(under, { scope, keyId, count: (items.get(under)?.count ?? 0) + 1 });
+    }
+    if (batch.length < 1000) break;
     cursor = batch.at(-1)!.id;
   }
+  const count = { older: 0, damaged: 0 };
+  for (const { scope, keyId, count: n } of items.values()) {
+    const key = keyId ? keys.get(keyId) : undefined;
+    if (key?.spaceId !== scope) count.damaged += n;
+    else if (key.id !== newest.get(scope)?.id) count.older += n;
+  }
+  return count;
 }
 
 /**
@@ -310,7 +360,7 @@ export async function rotateVaultKeys(
     for (const { spaceId } of scopes) {
       options.signal?.throwIfAborted();
       try {
-        await ring.rotate(spaceId);
+        await interruptible(ring.rotate(spaceId, options.signal), options.signal);
         counts.rotated++;
       } catch (error) {
         options.signal?.throwIfAborted();

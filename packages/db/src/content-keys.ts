@@ -381,23 +381,28 @@ export class ContentKeyRing {
     });
   }
 
-  /** The key new content is encrypted with, created on first use. */
-  async current(spaceId: string): Promise<DataKey> {
+  /**
+   * The key new content is encrypted with, created on first use. A command's `signal` keeps a
+   * creation it gave up on, as the key manager held its call open past an interruption, from
+   * storing a key afterwards.
+   */
+  async current(spaceId: string, signal?: AbortSignal): Promise<DataKey> {
     const existing = (await this.all(spaceId)).at(-1);
-    return existing ?? this.create(spaceId, 1);
+    return existing ?? this.create(spaceId, 1, signal);
   }
 
   /** Adds a new version that becomes current. Older versions keep decrypting. */
-  async rotate(spaceId: string): Promise<DataKey> {
+  async rotate(spaceId: string, signal?: AbortSignal): Promise<DataKey> {
     this.versions.deleteWhere((_, key) => key === spaceId);
     const latest = (await this.all(spaceId)).at(-1);
-    return this.create(spaceId, (latest?.version ?? 0) + 1);
+    return this.create(spaceId, (latest?.version ?? 0) + 1, signal);
   }
 
-  private create(spaceId: string, version: number): Promise<DataKey> {
+  private create(spaceId: string, version: number, signal?: AbortSignal): Promise<DataKey> {
     return this.once(`create:${spaceId}:${version}`, async () => {
       const dataKey = randomBytes(32);
       const wrapped = await this.provider.wrap(dataKey, { spaceId, version });
+      signal?.throwIfAborted();
       const stored = await this.store.insert({ id: createRowId(), spaceId, version, ...wrapped });
       this.versions.deleteWhere((_, key) => key === spaceId);
       const key = await this.unwrap(stored);

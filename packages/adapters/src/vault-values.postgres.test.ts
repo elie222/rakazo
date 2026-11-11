@@ -438,8 +438,8 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
         runAsSystem("vault values migration", () =>
           migrateVaultValues(sealing.prisma, secretStore, context, { mode: "reencrypt" }),
         );
-      const olderKeys = () =>
-        runAsSystem("vault status", () => vaultItemsUnderOlderKeys(sealing.prisma));
+      const olderKeys = async () =>
+        (await runAsSystem("vault status", () => vaultItemsUnderOlderKeys(sealing.prisma))).older;
       await saveWith(sealing.prisma, "site");
       await runAsSystem("vault values migration", () =>
         migrateVaultValues(sealing.prisma, secretStore, context, { mode: "encrypt" }),
@@ -707,6 +707,103 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
       await remove();
     }
   });
+
+  it.each([
+    ["migrate creating the vault's key", "never answers", "encrypt"],
+    ["migrate creating the vault's key", "answers after the interruption", "encrypt"],
+    ["rotate creating the new version", "never answers", "rotate"],
+    ["rotate creating the new version", "answers after the interruption", "rotate"],
+  ] as const)(
+    "stops at an interruption while %s and the key manager %s, storing no key afterwards",
+    async (_site, answer, mode) => {
+      const address = `vault-interrupt-${randomUUID()}@rakazo.test`;
+      const member = await runAsSystem("vault interruption fixture", () =>
+        provisionMessagingIdentity(
+          sealing.prisma,
+          { provider: "email", address },
+          { signupsEnabled: undefined, signupAllowlist: undefined },
+        ),
+      );
+      const scope = `user:${member.userId}`;
+      // Its own process, with nothing cached; the key manager is the suite's, stubbed.
+      const provider = keyProvider;
+      const command = createDb(url!, { keyProvider, encryptContent: true });
+      const remove = async () => {
+        await command.pool.end();
+        await system.messagingIdentity.deleteMany({ where: { address } });
+        await system.organization.deleteMany({ where: { id: member.spaceId } });
+        await system.user.deleteMany({ where: { id: member.userId } });
+      };
+      try {
+        await runAsTenant(member, () =>
+          storeBotSecret({
+            prisma: plain.prisma,
+            secretStore,
+            scope: member,
+            destination: { ...login, name: "interrupted" } as BotSecretDestination,
+            plaintext: value("fake-interrupted-password"),
+          }),
+        );
+        if (mode === "rotate")
+          await runAsSystem("vault interruption fixture", () =>
+            contentEncryptionOf(sealing.prisma)!.ring.current(scope),
+          );
+        const versions = () => system.spaceKey.count({ where: { spaceId: scope } });
+        const before = await versions();
+        const controller = new AbortController();
+        const wrap = provider.wrap.bind(provider);
+        provider.wrap = (key, context) => {
+          controller.abort(new Error("interrupted"));
+          if (answer === "never answers") return new Promise(() => {});
+          return new Promise((resolve) => setTimeout(resolve, 5)).then(() => wrap(key, context));
+        };
+        try {
+          const run = (): Promise<unknown> =>
+            mode === "rotate"
+              ? rotateVaultKeys(command.prisma, { signal: controller.signal })
+              : migrateVaultValues(
+                  command.prisma,
+                  secretStore,
+                  { ...context, signal: controller.signal },
+                  { mode },
+                );
+          await expect(runAsSystem("vault interruption", run)).rejects.toThrow("interrupted");
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          expect(await versions()).toBe(before);
+        } finally {
+          provider.wrap = wrap;
+        }
+        // A later run, not interrupted, finishes the work.
+        const next = createDb(url!, { keyProvider, encryptContent: true });
+        try {
+          if (mode === "rotate")
+            expect(
+              await runAsSystem("vault key rotation", () => rotateVaultKeys(next.prisma)),
+            ).toMatchObject({ failed: 0 });
+          else {
+            // The whole table, so only the member's item is judged.
+            const reported = new Map<string, string>();
+            await runAsSystem("vault values migration", () =>
+              migrateVaultValues(next.prisma, secretStore, context, {
+                mode,
+                report: (row, status) => reported.set(row.id, status),
+              }),
+            );
+            const item = await system.vaultCredential.findFirstOrThrow({
+              where: { userId: member.userId },
+              select: { id: true },
+            });
+            expect(reported.get(item.id)).toBe("migrated");
+          }
+        } finally {
+          await next.pool.end();
+        }
+        expect(await versions()).toBe(before + 1);
+      } finally {
+        await remove();
+      }
+    },
+  );
 
   it("shreds vault keys with their Space and their member", async () => {
     // Its own member, with both vault keys, so it does not depend on the tests before it.

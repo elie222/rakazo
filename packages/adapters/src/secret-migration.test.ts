@@ -179,6 +179,32 @@ describe("vault values under the envelope keys", () => {
     }
   });
 
+  it("reads through the vault's reader with the command's signal", async () => {
+    const f = await fixture();
+    try {
+      const signals: AbortSignal[] = [];
+      const repository: SecretMigrationRepository = {
+        ...f.repository,
+        async *rows() {
+          yield {
+            id: "vault",
+            recordId: "vault",
+            label: "vaultCredential",
+            ref: "rkz1:k:x",
+            open: async (signal) => {
+              signals.push(signal);
+              return "fake vault value";
+            },
+          };
+        },
+      };
+      await migrateSecrets(repository, f.encrypted, f.remote, context, { direction: "forward" });
+      expect(signals).toEqual([context.signal]);
+    } finally {
+      await f.close();
+    }
+  });
+
   it("counts an item deleted with its member after it was listed as changed, not failed", async () => {
     const f = await fixture();
     try {
