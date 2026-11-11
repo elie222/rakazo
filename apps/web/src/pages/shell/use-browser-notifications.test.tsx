@@ -76,6 +76,7 @@ const rpc = {
 
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
+const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   hook = useBrowserNotifications(
@@ -87,9 +88,21 @@ function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
       activeGroupId: { current: groupId },
       openChat,
       meId: "user-1",
+      groupsRef: { current: groups },
     },
   );
   return null;
+}
+
+function reply(id: string, blocks: Array<Record<string, unknown>>, threadId = "thread-b") {
+  return {
+    id,
+    type: "thread.message.created" as const,
+    threadId,
+    seq: 5,
+    botId: "bot-b",
+    payload: { role: "bot" as const, blocks },
+  };
 }
 
 async function flush() {
@@ -128,6 +141,8 @@ beforeEach(() => {
   vi.stubGlobal("Notification", FakeNotification);
   FakeNotification.permission = "granted";
   FakeNotification.shown = [];
+  bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
+  groups[0] = { id: "group-g" };
   streams = [];
   signals = [];
   focused = true;
@@ -280,6 +295,97 @@ describe("useBrowserNotifications chat alerts", () => {
     hook.flushPendingBrowserNotifications();
     expect(shown()).toEqual([]);
     root = createRoot(document.createElement("div"));
+  });
+
+  it("stays quiet for an ordinary reply in a snoozed open chat, and still announces a question", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const earlier = new Date(Date.now() - 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    groups[0] = { id: "group-g", snoozedUntil: later };
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("plain-bot", [{ kind: "text", text: "The report is ready." }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("plain-group", [{ kind: "text", text: "Saturday works." }], "thread-g"),
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([]);
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("ask-bot", [{ kind: "ask", text: "Which repo?", status: "pending" }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("ask-group", [{ kind: "ask", text: "Which day?", status: "pending" }], "thread-g"),
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown().map((row) => row[2])).toEqual(["thread-b", "thread-g"]);
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: earlier } as Bot;
+    groups[0] = { id: "group-g", snoozedUntil: earlier };
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("woke-bot", [{ kind: "text", text: "Awake again." }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown().map((row) => row[1])).toContain("Awake again.");
+  });
+
+  it("drops a reply queued for permission when the chat is snoozed before permission arrives", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        reply("held", [{ kind: "text", text: "Still working." }]),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
   });
 
   it("closes the stream when the shell unmounts", async () => {
