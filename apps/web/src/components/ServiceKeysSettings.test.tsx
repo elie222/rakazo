@@ -100,9 +100,7 @@ describe("ServiceKeysSettings", () => {
     rpc.create.mockResolvedValue({ credential: key, token: "rks_secret" });
     await act(async () => typeName("Nightly"));
     const box = (label: string) =>
-      [...container.querySelectorAll("label")]
-        .find((entry) => entry.textContent === label)
-        ?.querySelector("input");
+      [...container.querySelectorAll("label")].find((entry) => entry.textContent === label);
     const canSend = box("prompts:write");
     const bot = box("Worker");
     await act(async () => canSend?.click());
@@ -116,6 +114,18 @@ describe("ServiceKeysSettings", () => {
       expiresInDays: 90,
     });
     expect(container.textContent).toContain("rks_secret");
+  });
+
+  it("keeps a new key on screen when a different key is revoked", async () => {
+    rpc.create.mockResolvedValue({ credential: { ...key, id: "key-2" }, token: "rks_new" });
+    rpc.revoke.mockResolvedValue({ ok: true });
+    await act(async () => typeName("Backup"));
+    await act(async () => button("Create key")?.click());
+    await settle();
+    await act(async () => button("Revoke")?.click());
+    await settle();
+    expect(rpc.revoke).toHaveBeenCalledWith({ id: "key-1" });
+    expect(container.textContent).toContain("rks_new");
   });
 
   it("treats a closed identity confirmation as a choice, not a failure", async () => {
