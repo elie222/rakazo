@@ -1,6 +1,11 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ComputerControlUser, ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
+import type {
+  ComputerControlUser,
+  ComputerMode,
+  ComputerReleaseReason,
+  ComputerStatus,
+} from "@rakazo/contracts";
 import {
   computerControlUser,
   isComputerAllowanceUsed,
@@ -39,6 +44,7 @@ import { ComputerKeyboardBar } from "../components/computer-keyboard-bar";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
+import { GlassSurface } from "../components/glass-surface";
 import { NativeActionButton } from "../components/native-action-button";
 import { currentApiBase, rpc } from "../lib/api";
 import { useAppForeground } from "../lib/app-foreground";
@@ -355,37 +361,33 @@ export default function Computer() {
     }
   }
 
-  // The status the window last asked for control on, so each change asks once.
-  const askedForControlAt = useRef<string | null>(null);
-  // The open window asks for control once per computer status; the server grants it only when
-  // no one else is using the computer.
-  const controlAsk =
+  // The status the window last asked for control on, so each status asks once.
+  const askedForControlOn = useRef<ComputerStatus | null>(null);
+  const controlAskFailed = useRef(false);
+  // The open window asks for control whenever its status says no one is using the computer;
+  // the server decides. A failed ask's error clears with the next status, which asks again.
+  useEffect(() => {
+    if (!controlAskFailed.current) return;
+    controlAskFailed.current = false;
+    setError(null);
+  }, [computer]);
+  const computerFree =
     computerOpen &&
     foreground &&
     !releasing &&
     !booting &&
     !error &&
-    !hasControl &&
     computer?.botId === botId &&
-    computer?.state === "running"
-      ? [
-          computer.botId,
-          computer.controlHolder,
-          computer.controlBotId,
-          computer.takeoverRequested,
-          computer.busyBotName,
-          computer.controlledByOther,
-        ].join(":")
-      : null;
+    computer?.state === "running" &&
+    computer.kind !== "desktop" &&
+    !computerControlUser(computer, botId, computer.busyBotName);
   useEffect(() => {
-    if (!computerOpen) askedForControlAt.current = null;
-    if (!controlAsk || askedForControlAt.current === controlAsk) return;
-    askedForControlAt.current = controlAsk;
+    if (!computerFree || !computer || askedForControlOn.current === computer) return;
+    askedForControlOn.current = computer;
     void bootComputer({ takeControl: true, showProgress: false }).catch(() => {
-      // A failed ask shows its error; trying again asks again.
-      askedForControlAt.current = null;
+      controlAskFailed.current = true;
     });
-  }, [controlAsk, computerOpen]);
+  }, [computerFree, computer]);
 
   // Closing the window hands back control it holds. A bot waiting on the user keeps waiting
   // for I'm done.
@@ -800,12 +802,12 @@ function ComputerControlPill({
           : t`Someone else is in control`;
   return (
     <View pointerEvents="box-none" style={styles.pillDock}>
-      <View
+      <GlassSurface
         testID="computer-control-pill"
-        style={[
-          styles.pill,
+        style={[styles.pill, hasControl ? styles.pillWithActions : null]}
+        fallbackStyle={[
+          styles.pillFallback,
           { backgroundColor: tokens.card, borderColor: tokens.border },
-          hasControl ? styles.pillWithActions : null,
         ]}
       >
         <Text numberOfLines={1} style={{ flexShrink: 1, color: tokens.foreground }}>
@@ -827,7 +829,7 @@ function ComputerControlPill({
             onPress={() => void onFinish(takeoverRequested ? "done" : undefined)}
           />
         ) : null}
-      </View>
+      </GlassSurface>
     </View>
   );
 }
@@ -934,10 +936,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   pillWithActions: { paddingVertical: 6, paddingEnd: 6 },
+  pillFallback: { borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
 });

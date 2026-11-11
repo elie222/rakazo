@@ -62,7 +62,38 @@ export type ComputerControlView = {
   controllerName?: string | null;
   /** A bot's unopened request for help waits for another person, so this viewer only watches. */
   requestForOther?: boolean;
+  /** Another bot on this computer is working or waiting for help, so this viewer only watches. */
+  otherBotName?: string | null;
 };
+
+/**
+ * The name of another bot on this computer that is working or waiting for the user, when taking
+ * control for this bot would interrupt its run or skip its request for help.
+ */
+export async function resolveOtherBotUsingComputer(
+  prisma: PrismaClient,
+  computer:
+    | { id: string; scope: string; controlBotId?: string | null; controlRunId?: string | null }
+    | null
+    | undefined,
+  botId: string,
+): Promise<string | null> {
+  // Only a team computer is shared between bots.
+  if (computer?.scope !== "team") return null;
+  const runIds = (
+    await prisma.computerExecutionLease.findMany({
+      where: { computerId: computer.id, botId: { not: botId } },
+      select: { runId: true },
+    })
+  ).map((lease) => lease.runId);
+  if (computer.controlRunId && computer.controlBotId !== botId) runIds.push(computer.controlRunId);
+  if (runIds.length === 0) return null;
+  const run = await prisma.run.findFirst({
+    where: { id: { in: runIds }, botId: { not: botId }, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    select: { bot: { select: { name: true } } },
+  });
+  return run?.bot.name ?? null;
+}
 
 /** Who the computer's control belongs to, beyond what its row says. */
 export async function resolveComputerControl(
@@ -150,6 +181,7 @@ export function toComputerStatus(
     ...(controlledByOther && control.controllerName
       ? { controlledByName: control.controllerName }
       : {}),
+    ...(control.otherBotName ? { otherBotName: control.otherBotName } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,

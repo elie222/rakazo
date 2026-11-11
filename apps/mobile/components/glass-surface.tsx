@@ -12,9 +12,14 @@ export type GlassSurfaceProps = {
   /** Applied where Liquid Glass is unavailable (Android, iOS before 26). */
   fallbackStyle?: StyleProp<ViewStyle>;
   children?: ReactNode;
+  testID?: string;
 };
 
 /** Android and older iOS draw the fallback fill; iOS 26 renders Liquid Glass. */
-export function GlassSurface({ style, fallbackStyle, children }: GlassSurfaceProps) {
-  return <View style={[style, fallbackStyle]}>{children}</View>;
+export function GlassSurface({ style, fallbackStyle, children, testID }: GlassSurfaceProps) {
+  return (
+    <View testID={testID} style={[style, fallbackStyle]}>
+      {children}
+    </View>
+  );
 }

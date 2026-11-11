@@ -25,7 +25,12 @@ import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, recordComputerRunEnd, spaceIsShared } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { resolveBusyBotName, resolveComputerControl, toComputerStatus } from "./computer-status.js";
+import {
+  resolveBusyBotName,
+  resolveComputerControl,
+  resolveOtherBotUsingComputer,
+  toComputerStatus,
+} from "./computer-status.js";
 import type { RouterDeps } from "./router.js";
 import { computerContext } from "./routes/shared.js";
 
@@ -74,7 +79,7 @@ export async function computerStatus(
   if (await expireStaleComputerControl(deps, bot.computer)) {
     bot = await repos.getBot(actor, botId);
   }
-  const [busyBotName, shared, control] = await Promise.all([
+  const [busyBotName, shared, control, otherBotName] = await Promise.all([
     resolveBusyBotName(deps.prisma, {
       computerId: bot.computer?.id,
       botId,
@@ -82,35 +87,12 @@ export async function computerStatus(
     }),
     spaceIsShared(deps.prisma, actor.spaceId),
     resolveComputerControl(deps.prisma, bot.computer, actor.userId),
+    resolveOtherBotUsingComputer(deps.prisma, bot.computer, botId),
   ]);
-  return toComputerStatus(botId, bot.computer, busyBotName, shared, actor.userId, control);
-}
-
-/**
- * Whether another bot on this computer is working or waiting for the user, so taking control for
- * this bot would interrupt its run or skip its request for help.
- */
-export async function anotherBotUsesComputer(
-  prisma: PrismaClient,
-  computer: { id: string; controlBotId: string | null; controlRunId: string | null },
-  botId: string,
-): Promise<boolean> {
-  const runIds = (
-    await prisma.computerExecutionLease.findMany({
-      where: { computerId: computer.id, botId: { not: botId } },
-      select: { runId: true },
-    })
-  ).map((lease) => lease.runId);
-  if (computer.controlRunId && computer.controlBotId !== botId) runIds.push(computer.controlRunId);
-  if (runIds.length === 0) return false;
-  const running = await prisma.run.count({
-    where: {
-      id: { in: runIds },
-      botId: { not: botId },
-      status: { in: [...ACTIVE_RUN_STATUSES] },
-    },
+  return toComputerStatus(botId, bot.computer, busyBotName, shared, actor.userId, {
+    ...control,
+    otherBotName,
   });
-  return running > 0;
 }
 
 /** Whether this person holds this bot's user control, so they may drive its screen. */

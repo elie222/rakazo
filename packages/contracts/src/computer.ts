@@ -50,6 +50,8 @@ export const ComputerStatusSchema = z.object({
   controlledByOther: z.boolean().optional(),
   /** Who has control when it is someone else. */
   controlledByName: z.string().optional(),
+  /** Another bot on this computer that is working or waiting for help, which keeps the screen. */
+  otherBotName: z.string().optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
@@ -86,8 +88,8 @@ export function computerControlUser(
 ): ComputerControlUser | null {
   if (userHoldsComputerControl(computer, botId)) return { by: "you" };
   if (computer?.controlledByOther) return { by: "person", name: computer.controlledByName ?? null };
-  if (busyBotName) return { by: "bot", name: busyBotName };
-  return null;
+  const bot = busyBotName || computer?.otherBotName;
+  return bot ? { by: "bot", name: bot } : null;
 }
 
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);

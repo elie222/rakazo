@@ -53,7 +53,6 @@ import {
 import { getLogger } from "@rakazo/logging";
 import {
   acquireBootLease,
-  anotherBotUsesComputer,
   assertNotAnotherPersonsControl,
   bindWaitingTakeoverToControl,
   clearGoneSandbox,
@@ -67,7 +66,7 @@ import {
   withViewOnly,
 } from "../computer-control.js";
 import { scrollPoint } from "../computer-input.js";
-import { executionBlocksUserTakeover } from "../computer-status.js";
+import { executionBlocksUserTakeover, resolveOtherBotUsingComputer } from "../computer-status.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -520,7 +519,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (
           !bot.computer?.providerRef ||
           bot.computer.state !== "running" ||
-          (await anotherBotUsesComputer(deps.prisma, bot.computer, bot.id))
+          (await resolveOtherBotUsingComputer(deps.prisma, bot.computer, bot.id))
         ) {
           return null;
         }

@@ -314,6 +314,18 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       );
       expect(response?.status).toBe(200);
       expect(await response?.json()).toMatchObject({ json: null });
+      // The window says which bot keeps the computer.
+      const status = await new RPCHandler(createRouter(fixture.deps)).handle(
+        new Request("http://127.0.0.1/rpc/computer/status", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: other.id } }),
+        }),
+        { prefix: "/rpc", context: { actor: fixture.actor } },
+      );
+      expect(await status.response?.json()).toMatchObject({
+        json: { otherBotName: fixture.bot.name },
+      });
       expect(await fixture.control()).toMatchObject({
         controlHolder: before.controlHolder,
         controlBotId: before.controlBotId,

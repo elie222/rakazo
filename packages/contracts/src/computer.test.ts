@@ -43,6 +43,10 @@ describe("computerControlUser", () => {
       name: null,
     });
     expect(computerControlUser(running(), "bot-1", "Ada")).toEqual({ by: "bot", name: "Ada" });
+    expect(computerControlUser(running({ otherBotName: "Basil" }), "bot-1", null)).toEqual({
+      by: "bot",
+      name: "Basil",
+    });
     expect(computerControlUser(running(), "bot-1", null)).toBeNull();
   });
 });

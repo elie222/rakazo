@@ -74,8 +74,11 @@ export function useComputerBoot(botId: string | undefined) {
       }
       starting = false;
       if (!action.isActive()) return false;
-      // The server grants control only when no one else is using the computer.
-      if (takeControl) await rpc("computer/takeover", { botId, ifAvailable: true });
+      // The server grants control only when no one else is using the computer; when it does not,
+      // nothing changed and the status already shows who keeps it.
+      if (takeControl && !(await rpc("computer/takeover", { botId, ifAvailable: true }))) {
+        return false;
+      }
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
       if (!action.isActive()) return false;

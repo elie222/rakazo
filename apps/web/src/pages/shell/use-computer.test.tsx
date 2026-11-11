@@ -529,12 +529,13 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
   expect(container.textContent).not.toContain("Upgrade");
 });
 
-it("asks for control once per status change and hands it back on close", async () => {
-  // The server answers null while the bot's run keeps the screen.
-  const takeover = vi.fn(async (): Promise<{ leaseId: string; expiresAt: string } | null> => null);
+it("asks whenever the status says the computer is free, and hands control back on close", async () => {
+  const takeover = vi.fn(
+    async (_: unknown): Promise<{ leaseId: string; expiresAt: string } | null> => null,
+  );
   const release = vi.fn(async () => ({ ok: true as const }));
-  const heartbeat = vi.fn(async () => ({ ok: true as const }));
   const bot = { id: "bot-1", name: "Ada" } as never;
+  let runStatus: "running" | undefined = "running";
   function Controls() {
     state = useComputerState({
       rpc: { computer: { screenUrl } } as never,
@@ -544,7 +545,14 @@ it("asks for control once per status change and hands it back on close", async (
     });
     useComputerControls({
       rpc: {
-        computer: { boot: vi.fn(async () => null), takeover, release, screenUrl, heartbeat },
+        computer: {
+          boot: vi.fn(async () => null),
+          takeover,
+          release,
+          screenUrl,
+          status: vi.fn(async () => state.computerRef.current),
+          heartbeat: vi.fn(async () => ({ ok: true as const })),
+        },
       } as never,
       state,
       panel: null,
@@ -553,7 +561,7 @@ it("asks for control once per status change and hands it back on close", async (
       botsRef: { current: [bot] },
       activeBotId: { current: "bot-1" },
       activeGroupId: { current: undefined },
-      runStatus: undefined,
+      runStatus,
       recording: false,
       sandboxProvider: undefined,
       refreshThread: vi.fn(async () => ({}) as never),
@@ -562,43 +570,53 @@ it("asks for control once per status change and hands it back on close", async (
     });
     return null;
   }
-  const status = {
+  const free = {
     botId: "bot-1",
     mode: "team",
     kind: "boat",
     state: "running",
-    controlHolder: "bot",
+    controlHolder: "none",
     controlBotId: null,
     takeoverRequested: false,
     screenAvailable: true,
     screenWidth: 1280,
     screenHeight: 800,
     homeRevision: null,
-    busyBotName: "Ada",
+    busyBotName: null,
     canUpdate: false,
     terminalAvailable: false,
   } as const;
+  const held = { ...free, controlHolder: "user", controlBotId: "bot-1" } as const;
   await act(async () => root.render(<Controls />));
-  await act(async () => state.commitComputer(status));
+  await act(async () => state.commitComputer({ ...free, busyBotName: "Ada" }));
   await act(async () => state.setComputerOpen(true));
+  // The bot's own run keeps the screen.
+  expect(takeover).not.toHaveBeenCalled();
+
+  runStatus = undefined;
+  await act(async () => state.commitComputer({ ...free }));
   expect(takeover).toHaveBeenCalledWith({ botId: "bot-1", ifAvailable: true });
-  // An unchanged status is not asked about again.
-  await act(async () => state.commitComputer({ ...status }));
+  // A refused ask changes nothing, so it waits for the next status.
   expect(takeover).toHaveBeenCalledOnce();
+
   takeover.mockResolvedValue({ leaseId: "lease-1", expiresAt: "" });
-  await act(async () =>
-    state.commitComputer({ ...status, controlHolder: "none", busyBotName: null }),
-  );
+  await act(async () => state.commitComputer({ ...free }));
   expect(takeover).toHaveBeenCalledTimes(2);
-  await act(async () =>
-    state.commitComputer({
-      ...status,
-      controlHolder: "user",
-      controlBotId: "bot-1",
-      busyBotName: null,
-    }),
-  );
-  expect(takeover).toHaveBeenCalledTimes(2);
+  await act(async () => state.commitComputer({ ...held }));
+  // The lease lapsed while the window stayed open: it asks again.
+  await act(async () => state.commitComputer({ ...free }));
+  expect(takeover).toHaveBeenCalledTimes(3);
+
+  // A failed ask shows its error until the next status, which asks again.
+  takeover.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => state.commitComputer({ ...free }));
+  expect(takeover).toHaveBeenCalledTimes(4);
+  expect(state.computerError).toBe("offline");
+  await act(async () => state.commitComputer({ ...free }));
+  expect(state.computerError).toBeNull();
+  expect(takeover).toHaveBeenCalledTimes(5);
+
+  await act(async () => state.commitComputer({ ...held }));
   await act(async () => state.setComputerOpen(false));
   expect(release).toHaveBeenCalledWith({ botId: "bot-1" });
 });
@@ -625,6 +643,7 @@ it("hands control back on close after a failed I’m done", async () => {
           takeover,
           release,
           screenUrl,
+          status: vi.fn(async () => null),
           heartbeat: vi.fn(async () => ({ ok: true })),
         },
       } as never,
@@ -674,11 +693,12 @@ it("hands control back on close after a failed I’m done", async () => {
 });
 
 it("asks for the bot switched to while another bot's answer is still on its way", async () => {
-  const takeover = vi.fn(({ botId }: { botId: string }) =>
-    botId === "bot-1"
-      ? new Promise(() => undefined)
-      : Promise.resolve({ leaseId: "l", expiresAt: "" }),
-  );
+  const granted = new Set<string>();
+  const takeover = vi.fn(({ botId }: { botId: string }) => {
+    if (botId === "bot-1") return new Promise(() => undefined);
+    granted.add(botId);
+    return Promise.resolve({ leaseId: "l", expiresAt: "" });
+  });
   const first = { id: "bot-1", name: "Ada" } as never;
   const second = { id: "bot-2", name: "Grace" } as never;
   function Controls() {
@@ -695,7 +715,11 @@ it("asks for the bot switched to while another bot's answer is still on its way"
           takeover,
           release: vi.fn(async () => ({ ok: true })),
           screenUrl,
-          status: vi.fn(async ({ botId }: { botId: string }) => free(botId)),
+          status: vi.fn(async ({ botId }: { botId: string }) =>
+            granted.has(botId)
+              ? { ...free(botId), controlHolder: "user", controlBotId: botId }
+              : free(botId),
+          ),
           heartbeat: vi.fn(async () => ({ ok: true })),
         },
       } as never,

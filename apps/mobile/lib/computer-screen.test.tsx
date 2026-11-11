@@ -593,9 +593,7 @@ describe("computer screen", () => {
 
     const fullWindow = view.querySelector("section");
     expect(fullWindow?.querySelector('[aria-label="Close computer"]')).not.toBeNull();
-    expect(calls("computer/takeover")).toEqual([
-      ["computer/takeover", { botId: "bot-1", ifAvailable: true }],
-    ]);
+    expect(calls("computer/takeover")).toEqual([]);
     expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
     const screens = view.querySelectorAll("iframe");
     expect(screens).toHaveLength(1);
@@ -608,7 +606,9 @@ describe("computer screen", () => {
     server.set({ ...botWorking, busyBotName: null });
     await returnFromBackground();
 
-    expect(calls("computer/takeover")).toHaveLength(2);
+    expect(calls("computer/takeover")).toEqual([
+      ["computer/takeover", { botId: "bot-1", ifAvailable: true }],
+    ]);
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-elements-hidden")).toBe("false");
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-important")).toBe("auto");
     expect(fullWindow?.querySelector("[data-keyboard-bar]")).not.toBeNull();
@@ -670,6 +670,43 @@ describe("computer screen", () => {
     expect(calls("computer/release")).toHaveLength(2);
   });
 
+  it("names another bot using the shared computer and asks once it is done", async () => {
+    const server = grantTakeover({ ...botWorking, busyBotName: null, otherBotName: "Basil" });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(pill(view)?.textContent).toBe("Basil is working");
+    expect(calls("computer/takeover")).toEqual([]);
+
+    server.set({ ...botWorking, busyBotName: null });
+    await returnFromBackground();
+    expect(calls("computer/takeover")).toHaveLength(1);
+    expect(pill(view)?.textContent).toContain("You’re in control");
+  });
+
+  it("asks again on the next status after a failed ask", async () => {
+    const server = grantTakeover({ ...botWorking, busyBotName: null });
+    const base = rpc.getMockImplementation()!;
+    let failNext = true;
+    rpc.mockImplementation((method: string, ...rest: unknown[]) => {
+      if (method === "computer/takeover" && failNext) {
+        failNext = false;
+        return Promise.reject(new Error("offline"));
+      }
+      return base(method, ...rest);
+    });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(view.textContent).toContain("offline");
+
+    server.set({ ...botWorking, busyBotName: null });
+    await returnFromBackground();
+    expect(view.textContent).not.toContain("offline");
+    expect(calls("computer/takeover")).toHaveLength(2);
+    expect(view.querySelector("[data-keyboard-bar]")).not.toBeNull();
+  });
+
   it("keeps a bot's request for help open when the window closes without I’m done", async () => {
     respond({
       ...botWorking,
@@ -705,8 +742,7 @@ describe("computer screen", () => {
     await settle();
     expect(pill(view)?.textContent).toBe("Grace is in control");
     expect(pill(view)?.querySelector("button")).toBeNull();
-    // The server keeps it with Grace; the window asked once and stays read-only.
-    expect(calls("computer/takeover")).toHaveLength(1);
+    expect(calls("computer/takeover")).toEqual([]);
     expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
   });
 
