@@ -705,6 +705,7 @@ describePostgres("organizations (PostgreSQL)", () => {
       where: { organizationId: work.id },
       data: {
         deletionClaimId: `account-deletion:${ada.userId}`,
+        deletionAttemptId: "account-attempt",
         deletingAt: new Date(Date.now() - 10 * 60_000),
       },
     });
@@ -716,8 +717,10 @@ describePostgres("organizations (PostgreSQL)", () => {
       "billing unavailable",
     );
 
+    // Parked, not released: the lease is at the epoch and the account attempt id is gone.
     expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
-      deletingAt: expect.any(Date),
+      deletingAt: new Date(0),
+      deletionAttemptId: null,
       deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
     });
     expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
