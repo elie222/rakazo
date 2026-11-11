@@ -49,8 +49,9 @@ export function RoutineRunHistory({
           history.runs.map((run) => {
             const destination = routineRunDestination(run, botName);
             const error = run.status === "failed" ? run.error : null;
-            // A silent run kept its reply out of the chat, so it opens here.
-            const reply = routineRunReplyText(run.reply);
+            // A silent run kept its reply out of the chat, so it opens here. A failed run shows
+            // why it failed instead, as the row has room for only one.
+            const reply = error ? "" : routineRunReplyText(run.reply);
             return (
               <RunRow
                 key={run.id}

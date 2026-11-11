@@ -8,7 +8,7 @@ import { mediaPollJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.js";
-import { persistMessageInTransaction } from "./run-messages.js";
+import { holdRunReplyInTransaction, persistMessageInTransaction } from "./run-messages.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 
 /** A short video takes minutes; one still unfinished after this is reported as failed. */
@@ -67,6 +67,8 @@ export function mediaDelivery(
     afterRun?: boolean;
     /** Commits with the job's final state, so what follows it cannot be lost to a crash. */
     onSettled?: (tx: Prisma.TransactionClient, status: Settled) => Promise<void>;
+    /** A silent routine's media goes to its run history, not the chat. */
+    holdReply?: boolean;
   },
 ) {
   return {
@@ -122,6 +124,11 @@ export function mediaDelivery(
           },
         });
         if (!claimed.count) return null;
+        if (options.holdReply) {
+          await holdRunReplyInTransaction(tx, run, [block]);
+          await options.onSettled?.(tx, "completed");
+          return null;
+        }
         const message = await persistMessageInTransaction(
           tx,
           run,

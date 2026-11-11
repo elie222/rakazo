@@ -7,6 +7,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  routineRunTrigger,
   routineScheduleDelayed,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -195,7 +196,7 @@ export async function createRoutineTestRun(
   target: Awaited<ReturnType<typeof routineTestTarget>>,
   prompt: string,
   nonce: string | undefined,
-  trigger = "routine",
+  asSetUp = false,
 ) {
   const { routine, botId, threadId } = target;
   const task = await tx.task.create({
@@ -208,11 +209,12 @@ export async function createRoutineTestRun(
       status: "queued",
     },
   });
-  const currentModel = await tx.routine.findUnique({
+  // Read with the run, so a model or Silent change saved since the request applies to it.
+  const current = await tx.routine.findUnique({
     where: { id: routine.id },
-    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+    select: { modelProvider: true, modelId: true, thinkingLevel: true, silent: true },
   });
-  if (!currentModel) throw new IsolationError();
+  if (!current) throw new IsolationError();
   return tx.run.create({
     data: {
       spaceId: actor.spaceId,
@@ -221,9 +223,9 @@ export async function createRoutineTestRun(
       taskId: task.id,
       userId: actor.userId,
       status: "queued",
-      trigger,
+      trigger: asSetUp ? routineRunTrigger(current) : "routine",
       routineId: routine.id,
-      ...routineRunModelPin(currentModel),
+      ...routineRunModelPin(current),
       clientNonce: nonce,
     },
     select: { id: true, status: true },

@@ -30,7 +30,9 @@ cheaper model for a simple daily check.
 For housekeeping, such as tidying a board, updating memory or a page, or sending an email, turn on
 **Silent** under **Advanced**. Its scheduled and change-triggered runs, and **Run now**, post
 nothing to the chat, mark nothing unread and send no notification when they finish. Each run's
-steps and reply stay in **Run history**: click a run to read them. A silent routine still asks in
+steps and reply, with the files and images it makes, stay in **Run history**: click a run to read
+them. The bot keeps a routine's other tools, such as messaging another bot, but can't message you
+in the chat or make a video, which arrives in the chat after the run. A silent routine still asks in
 the chat when it needs you, and when a run fails it says so there and notifies you. Runs started by
 a webhook, Git event, email or message still post in the chat, since they start from a message.
 You can also ask the bot for a silent routine.

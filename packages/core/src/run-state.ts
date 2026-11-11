@@ -66,6 +66,15 @@ export function isBackgroundRunTrigger(trigger: string | null | undefined): bool
   return BACKGROUND_RUN_TRIGGER_SET.has(trigger ?? "");
 }
 
+/**
+ * Ticket work runs off any chat, so it gets no tools that message, call or show media to anyone.
+ * A silent routine still runs in its bot's chat and keeps the tools a routine has; only what it
+ * would post there goes to its run history.
+ */
+export function isTicketRunTrigger(trigger: string | null | undefined): boolean {
+  return trigger === "tickets";
+}
+
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],
   leased: ["running", "queued", "cancelled"],

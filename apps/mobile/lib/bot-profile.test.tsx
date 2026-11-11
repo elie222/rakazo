@@ -1300,6 +1300,36 @@ describe("routine detail", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("shows why a silent run failed, not the reply it kept before failing", async () => {
+    profileRpc(async () => [routine("r1", "Morning digest")], {
+      history: async () => ({
+        runs: [
+          {
+            id: "run-1",
+            botId: "bot-fixture",
+            groupId: null,
+            status: "failed",
+            error: "504: timed out",
+            createdAt: "2026-01-02T12:00:00Z",
+            startedAt: "2026-01-02T12:00:00Z",
+            completedAt: "2026-01-02T12:01:22Z",
+            messageId: null,
+            reply: [{ kind: "text", text: "Archived 3 done tickets." }],
+          },
+        ],
+        nextCursor: null,
+      }),
+    });
+    await render(createElement(RoutineRuns));
+    const row = [...container.querySelectorAll("button")].find((node) =>
+      node.textContent?.includes("Jan 2,"),
+    );
+    alert.mockClear();
+    await act(async () => row!.click());
+    expect(container.querySelector("dialog")?.textContent).toBe("504: timed out");
+    expect(alert).not.toHaveBeenCalled();
+  });
+
   it("loads older runs a page at a time", async () => {
     const run = {
       id: "run-1",

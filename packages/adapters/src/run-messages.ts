@@ -35,6 +35,24 @@ export function runLeaseFor(
   return deps.runLease?.runId === runId ? deps.runLease : undefined;
 }
 
+/** Keeps blocks a silent routine would have posted for its run history, in the given transaction. */
+export function holdRunReplyInTransaction(
+  tx: Prisma.TransactionClient,
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  blocks: MessageBlock[],
+  lease?: RunLease,
+) {
+  return appendEventInTransaction(tx, {
+    spaceId: run.spaceId,
+    threadId: run.threadId,
+    botId: run.botId,
+    runId: run.id,
+    type: RUN_REPLY_EVENT,
+    payload: { blocks },
+    lease,
+  });
+}
+
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
   return blocks.map((block) => {
     if (block.kind === "text") {
@@ -73,6 +91,7 @@ export async function publishMessage(
     result: "stopped";
   },
 ) {
+  const lease = runLeaseFor(deps, run.id);
   if (isBackgroundRunTrigger(run.trigger)) {
     const reachesChat = (block: MessageBlock) => block.kind === "ask" || block.kind === "computer";
     // What a silent routine would have posted, its files, charts and pages included, goes to its
@@ -86,12 +105,14 @@ export async function publishMessage(
         runId: run.id,
         type: RUN_REPLY_EVENT,
         payload: { blocks: held },
+        // Under the attempt's lease like the chat's own writes, so a superseded attempt can't
+        // add to the history twice.
+        lease,
       });
     }
     blocks = blocks.filter(reachesChat);
     if (blocks.length === 0 && !stoppedHelper) return null;
   }
-  const lease = runLeaseFor(deps, run.id);
   // Concurrent runs in one thread contend for its sequence counters; Postgres aborts a
   // deadlock victim, which commits nothing, so retry instead of failing the run.
   const committed = await withTransactionRetry(() =>

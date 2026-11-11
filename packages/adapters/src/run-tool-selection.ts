@@ -3,7 +3,12 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isOwnerStartedRun,
+  isTicketRunTrigger,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -89,7 +94,7 @@ export function offersAgentConnectionTools(options: {
   return (
     options.hasMessagingIdentity &&
     options.crossSpaceCommunication &&
-    !isBackgroundRunTrigger(options.trigger) &&
+    !isTicketRunTrigger(options.trigger) &&
     options.trigger !== "created" &&
     options.trigger !== BACKGROUND_HELPER_TRIGGER
   );
@@ -174,7 +179,7 @@ export function selectBuiltinToolsForRun(options: {
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
-      (!isBackgroundRunTrigger(options.trigger) ||
+      (!isTicketRunTrigger(options.trigger) ||
         ![
           "message_user",
           "message_bot",
@@ -183,6 +188,10 @@ export function selectBuiltinToolsForRun(options: {
           "generate_image",
           "generate_video",
         ].includes(tool.name)) &&
+      // A silent routine keeps its chat quiet: it can't message the person there, and a video,
+      // which arrives after the run with a turn of its own, would post there.
+      (options.trigger !== SILENT_ROUTINE_TRIGGER ||
+        !["message_user", "generate_video"].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
@@ -195,7 +204,7 @@ export function selectBuiltinToolsForRun(options: {
         !options.groupId &&
         !options.voiceCall &&
         !options.messagingChannelRun &&
-        !isBackgroundRunTrigger(options.trigger)) ||
+        !isTicketRunTrigger(options.trigger)) ||
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&

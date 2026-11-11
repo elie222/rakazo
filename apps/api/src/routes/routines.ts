@@ -11,7 +11,6 @@ import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
-  routineRunTrigger,
 } from "@rakazo/core";
 import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -377,17 +376,7 @@ export function routinesRoutes(ctx: RouterContext) {
                   select: { id: true },
                 })
               : null;
-            return (
-              existing ??
-              createRoutineTestRun(
-                tx,
-                context.actor,
-                target,
-                prompt,
-                nonce,
-                routineRunTrigger(target.routine),
-              )
-            );
+            return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce, true);
           });
         } catch (error) {
           const existing = await findExisting();
