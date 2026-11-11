@@ -224,3 +224,20 @@ it.each(["text", "image"] as const)(
     if (kind === "text") expect(mine).toContain(`background-color:${darkTokens.chatUser}`);
   },
 );
+
+it("marks a message sent with an API key", () => {
+  const html = renderToStaticMarkup(
+    <Bubble
+      message={{
+        id: "message",
+        role: "user",
+        blocks: [
+          { kind: "text", text: "Run the report" },
+          { kind: "service_origin", credentialId: "credential-1", name: "Nightly" },
+        ],
+      }}
+    />,
+  );
+  expect(html).toContain(">Run the report</span>");
+  expect(html).toContain(">Sent with the API key Nightly</span>");
+});
