@@ -880,12 +880,17 @@ describe("KubernetesSandboxProvider", () => {
     ]);
   });
 
-  it("imports every file through one tar exec", async () => {
+  it("imports large files through bounded chunks in one tar exec", async () => {
     const stdinChunks: Buffer[] = [];
+    const large = Buffer.alloc(64 * 1024 * 1024, 0xa5);
+    let largestChunk = 0;
     const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
       const stdin = args[6];
       if (stdin) {
-        stdin.on("data", (data: Buffer) => stdinChunks.push(Buffer.from(data)));
+        stdin.on("data", (data: Buffer) => {
+          largestChunk = Math.max(largestChunk, data.length);
+          stdinChunks.push(data);
+        });
         stdin.on("end", () => args[8]?.({ status: "Success" }));
       } else {
         queueMicrotask(() => args[8]?.({ status: "Success" }));
@@ -897,15 +902,19 @@ describe("KubernetesSandboxProvider", () => {
     async function* files() {
       yield { path: "one", content: Buffer.from("1") };
       yield { path: `${"d/".repeat(60)}two`, content: Buffer.from("2"), executable: true };
+      yield { path: "large.bin", content: large };
     }
     await providerFor({}, exec).importWorkspace(computer, files(), context);
     const tarCalls = exec.mock.calls.filter((call) => (call[3] as string[]).includes("tar"));
     expect(tarCalls).toHaveLength(1);
-    const reader = new TarReader(1024);
+    expect(largestChunk).toBeLessThanOrEqual(1024 * 1024);
+    const reader = new TarReader(large.length);
     const read = reader.push(Buffer.concat(stdinChunks));
+    expect(Buffer.from(read[2]!.content).equals(large)).toBe(true);
     expect(read.map((file) => [file.path, file.executable])).toEqual([
       ["one", undefined],
       [`${"d/".repeat(60)}two`, true],
+      ["large.bin", undefined],
     ]);
   });
 
