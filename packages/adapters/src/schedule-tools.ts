@@ -828,7 +828,7 @@ const WATCH_RETIME_ERROR =
   "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt, active or silent. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
 
 /**
- * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
+ * Edit one of this bot's routines in place: name, prompt, timing (with startAt), active or silent.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
  */
 export async function updateScheduleFromTool(

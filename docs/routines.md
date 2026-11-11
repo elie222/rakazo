@@ -28,15 +28,21 @@ cheaper model for a simple daily check.
 ### Silent routines
 
 For housekeeping, such as tidying a board, updating memory or a page, or sending an email, turn on
-**Silent** under **Advanced**. Its scheduled and change-triggered runs, and **Run now**, post
-nothing to the chat, mark nothing unread and send no notification when they finish. Each run's
-steps and reply, with the files and images it makes, stay in **Run history**: click a run to read
-them. The bot keeps a routine's other tools, such as messaging another bot, but can't message or
-call you, hand a group's conversation to another bot, or make a video, which arrives in the chat
-after the run. A silent routine still asks in
-the chat when it needs you, and when a run fails it says so there and notifies you. Runs started by
-a webhook, Git event, email or message still post in the chat, since they start from a message.
-You can also ask the bot for a silent routine.
+**Silent** under **Advanced**. It shows once the routine runs on a schedule or watches for a change.
+Its scheduled and change-triggered runs, and **Run now**, post nothing to the chat, mark nothing
+unread and send no notification when they finish. Each run's steps and reply, with the pages,
+files and images it makes and its helpers' results, stay in **Run history**: click a run to read
+them.
+
+The bot keeps a routine's other tools, but can't message or call you, hand a group's conversation
+to another bot, or make a video, which arrives in the chat after the run. It can still message
+other bots. When it asks one for something, the answer comes back to the chat and the bot passes
+it on there, as with any routine; an FYI gets no answer.
+
+A silent routine still asks in the chat when it needs you. When a run fails for good, it says so
+there, marks the chat unread and sends the usual failure notification. Runs started by a webhook,
+Git event, email or message still post in the chat, since they start from a message. You can also
+ask the bot for a silent routine.
 
 ## Triggers
 

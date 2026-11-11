@@ -48,8 +48,6 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
   if (
     (name !== "generate_image" && name !== "generate_video") ||
     isTicketRunTrigger(run.trigger) ||
-    // A video arrives after the run, with a turn of its own in the chat.
-    (silent && name === "generate_video") ||
     !mediaGeneration ||
     !deps.artifacts
   )

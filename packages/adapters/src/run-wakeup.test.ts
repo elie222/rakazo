@@ -179,7 +179,7 @@ describe("durable direct run wakeups", () => {
     },
   );
 
-  it.each(["routine", "reaction"])(
+  it.each(["routine", "silent_routine", "reaction"])(
     "discovers new %s work while an interactive sweep is still advancing",
     async (trigger) => {
       vi.useFakeTimers();

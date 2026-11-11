@@ -68,8 +68,8 @@ export function isBackgroundRunTrigger(trigger: string | null | undefined): bool
 
 /**
  * Ticket work runs off any chat, so it gets no tools that message, call or show media to anyone.
- * A silent routine still runs in its bot's chat and keeps the tools a routine has; only what it
- * would post there goes to its run history.
+ * A silent routine still runs in its bot's chat and keeps a routine's tools, apart from the few
+ * that would post there (`SILENT_ROUTINE_WITHHELD_TOOLS`); what it makes goes to its run history.
  */
 export function isTicketRunTrigger(trigger: string | null | undefined): boolean {
   return trigger === "tickets";
