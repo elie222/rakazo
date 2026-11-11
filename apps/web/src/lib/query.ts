@@ -112,7 +112,8 @@ export function useQueryUserId(): string | null {
 /** Query helpers for the space these components act on: a bound settings space or the selected one. */
 export function useSpaceQueries(): SpaceQueries {
   const userId = useQueryUserId();
-  const spaceId = useBoundSpaceId() ?? selectedSpaceId();
+  const boundSpaceId = useBoundSpaceId();
+  const spaceId = boundSpaceId === undefined ? selectedSpaceId() : boundSpaceId;
   return spaceQueries(userId, spaceId);
 }
 
