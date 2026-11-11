@@ -23,7 +23,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "check": "expo install --check && tsc --noEmit -p tsconfig.json",
+    "check": "cross-env EXPO_OFFLINE=1 expo install --check && tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/mobile/lib",
     "test:e2e": "maestro test .maestro/smoke.yaml"
   },
