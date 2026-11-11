@@ -291,6 +291,16 @@ describeWithDatabase("service API", () => {
       runId: receipt.runId,
     });
     expect(JSON.stringify(audited)).not.toContain("first prompt");
+
+    // A request that died between the send and its audit leaves the retry to write it.
+    await db.auditEvent.deleteMany({ where: { id: audited[0]!.id } });
+    expect((await prompt(first.token, bot.id, "first prompt", "same-key")).status).toBe(200);
+    expect((await prompt(first.token, bot.id, "first prompt", "same-key")).status).toBe(200);
+    expect(
+      await db.auditEvent.count({
+        where: { action: "service_api.prompt", actorId: first.credential.id },
+      }),
+    ).toBe(1);
   });
 
   it("stops working when revoked, expired or when the creator leaves the space", async () => {
