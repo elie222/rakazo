@@ -829,6 +829,8 @@ export const appContract = {
         z.object({
           botId: Id,
           reason: ComputerReleaseReasonSchema.optional(),
+          /** The run a needs-you card answers; the release applies only while it waits on the caller. */
+          runId: Id.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),

@@ -805,8 +805,8 @@ export function useComputerControls({
     void openComputerRef.current(botId, takeControl);
   }, []);
 
-  async function releaseComputer(reason?: ComputerReleaseReason, forBotId?: string) {
-    const botId = forBotId ?? computerBotIdRef.current ?? activeBotId.current;
+  async function releaseComputer(reason?: ComputerReleaseReason) {
+    const botId = computerBotIdRef.current ?? activeBotId.current;
     if (!botId) return;
     // The read-only screen is safe to show at once; the release itself takes a while.
     const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
@@ -834,11 +834,23 @@ export function useComputerControls({
     }
   }
 
-  const releaseComputerRef = useRef(releaseComputer);
-  releaseComputerRef.current = releaseComputer;
+  /** Answers a needs-you card from the chat; a failure is the card's to show. */
+  async function answerTakeover(
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) {
+    await rpc.computer.release({ botId, runId, reason });
+    if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
+    await refreshComputerFor(botId).catch(() => undefined);
+    const groupId = activeGroupId.current;
+    if (groupId) await refreshGroupThread(groupId).catch(() => undefined);
+  }
+  const answerTakeoverRef = useRef(answerTakeover);
+  answerTakeoverRef.current = answerTakeover;
   const onReleaseComputer = useCallback(
-    (botId: string | undefined, reason: ComputerReleaseReason) =>
-      releaseComputerRef.current(reason, botId),
+    (botId: string, runId: string | undefined, reason: ComputerReleaseReason) =>
+      answerTakeoverRef.current(botId, runId, reason),
     [],
   );
 

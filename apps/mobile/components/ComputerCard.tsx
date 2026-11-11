@@ -9,16 +9,14 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { rpc } from "../lib/api";
 import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
+import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
-
-/** How often a card waiting on the person redraws its still of the screen. */
-const PREVIEW_REFRESH_MS = 10_000;
 
 const styles = StyleSheet.create({
   card: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
@@ -47,12 +45,14 @@ type ComputerBlock = Extract<MessageBlock, { kind: "computer" }>;
 export function ComputerCard({
   block,
   botId,
+  runId,
   onOpen,
   accessibilityActions,
   onAccessibilityAction,
 }: {
   block: ComputerBlock;
   botId?: string;
+  runId?: string;
   onOpen?: () => void;
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
@@ -81,9 +81,9 @@ export function ComputerCard({
     if (!botId) return;
     setReleasing(true);
     try {
-      await rpc("computer/release", { botId, reason });
-    } catch {
-      // The card stays as it was, so the person can try again.
+      await rpc("computer/release", { botId, runId, reason });
+    } catch (error) {
+      Alert.alert(t`Could not continue`, errorText(error));
     } finally {
       setReleasing(false);
     }
@@ -192,23 +192,19 @@ export function ComputerCard({
   );
 }
 
-/** A still of the bot's screen, redrawn while the card waits. */
+/** A still of the bot's screen while the card waits. */
 function useComputerPreview(botId: string | undefined) {
   const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
     if (!botId) return;
     let live = true;
-    const load = () =>
-      rpc("computer/preview", { botId })
-        .then((result) => {
-          if (live) setImage(result.image);
-        })
-        .catch(() => undefined);
-    void load();
-    const timer = setInterval(() => void load(), PREVIEW_REFRESH_MS);
+    rpc("computer/preview", { botId })
+      .then((result) => {
+        if (live) setImage(result.image);
+      })
+      .catch(() => undefined);
     return () => {
       live = false;
-      clearInterval(timer);
     };
   }, [botId]);
   return image;

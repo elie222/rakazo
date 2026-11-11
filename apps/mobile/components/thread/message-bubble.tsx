@@ -735,6 +735,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           key={`computer-${index}`}
           block={block}
           botId={computerBotId}
+          runId={message.runId}
           onOpen={
             computerBotId ? () => onOpenComputer(computerBotId, speaker ?? t`Bot`) : undefined
           }

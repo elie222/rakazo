@@ -245,12 +245,12 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       );
       return response!;
     };
-    const release = async (reason: "done" | "skipped", as: Actor = actor) => {
+    const release = async (reason: "done" | "skipped", as: Actor = actor, runId = run.id) => {
       const { response } = await handler.handle(
         new Request("http://127.0.0.1/rpc/computer/release", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ json: { botId: bot.id, reason } }),
+          body: JSON.stringify({ json: { botId: bot.id, reason, runId } }),
         }),
         { prefix: "/rpc", context: { actor: as } },
       );
@@ -608,6 +608,17 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     });
   });
 
+  it("does not let an older card answer the takeover a newer run is waiting on", async () => {
+    const fixture = await setup("unopened");
+    const before = await fixture.control();
+    const response = await fixture.release("skipped", fixture.actor, randomUUID());
+    expect(response.status).toBe(409);
+    expect(await fixture.control()).toEqual(before);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "waiting_takeover",
+    });
+  });
+
   it("does not let another member answer a takeover that waits on someone else", async () => {
     const fixture = await setup("unopened");
     const otherId = randomUUID();
@@ -635,11 +646,12 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       },
     });
     const before = await fixture.control();
-    await fixture.release("done", {
+    const response = await fixture.release("done", {
       ...fixture.actor,
       userId: otherId,
       email: `${otherId}@example.test`,
     });
+    expect(response.status).toBe(409);
     expect(await fixture.control()).toEqual(before);
     expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "waiting_takeover",

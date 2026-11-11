@@ -13,9 +13,7 @@ import { Laptop, Monitor } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import type { createSpaceRpc } from "../lib/rpc";
-
-/** How often a card waiting on the person redraws its still of the screen. */
-const PREVIEW_REFRESH_MS = 10_000;
+import { errorText } from "../lib/user-error";
 
 type ComputerBlock = Extract<MessageBlock, { kind: "computer" }>;
 
@@ -47,21 +45,28 @@ function Header({ children }: { children?: ReactNode }) {
 export function ComputerCard({
   block,
   botId,
+  runId,
   rpc,
   onOpen,
   onRelease,
 }: {
   block: ComputerBlock;
   botId: string | undefined;
+  runId?: string;
   rpc: ReturnType<typeof createSpaceRpc>;
   onOpen: (botId: string | undefined, takeControl?: boolean) => void;
-  onRelease: (botId: string | undefined, reason: ComputerReleaseReason) => Promise<void>;
+  onRelease: (
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) => Promise<void>;
 }) {
   if (block.state === TAKEOVER_COMPUTER_PENDING_STATE) {
     return (
       <PendingComputerCard
         block={block}
         botId={botId}
+        runId={runId}
         rpc={rpc}
         onOpen={onOpen}
         onRelease={onRelease}
@@ -74,29 +79,39 @@ export function ComputerCard({
 function PendingComputerCard({
   block,
   botId,
+  runId,
   rpc,
   onOpen,
   onRelease,
 }: {
   block: ComputerBlock;
   botId: string | undefined;
+  runId?: string;
   rpc: ReturnType<typeof createSpaceRpc>;
   onOpen: (botId: string | undefined, takeControl?: boolean) => void;
-  onRelease: (botId: string | undefined, reason: ComputerReleaseReason) => Promise<void>;
+  onRelease: (
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) => Promise<void>;
 }) {
   const [releasing, setReleasing] = useState<ComputerReleaseReason | null>(null);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
   const preview = useQuery({
     queryKey: ["computer-preview", botId],
     queryFn: () => rpc.computer.preview({ botId: botId! }),
     enabled: Boolean(botId),
-    refetchInterval: PREVIEW_REFRESH_MS,
     retry: false,
   });
   const image = preview.data?.image ?? null;
   const release = async (reason: ComputerReleaseReason) => {
+    if (!botId) return;
     setReleasing(reason);
+    setReleaseError(null);
     try {
-      await onRelease(botId, reason);
+      await onRelease(botId, runId, reason);
+    } catch (error) {
+      setReleaseError(errorText(error, t`Could not continue`));
     } finally {
       setReleasing(null);
     }
@@ -126,6 +141,11 @@ function PendingComputerCard({
         </button>
       ) : preview.isPending && botId ? (
         <div className="mt-3 aspect-[16/10] w-full animate-pulse rounded-lg bg-foreground/5" />
+      ) : null}
+      {releaseError ? (
+        <p role="alert" className="mt-3 text-body-sm text-destructive">
+          {releaseError}
+        </p>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
         <Button

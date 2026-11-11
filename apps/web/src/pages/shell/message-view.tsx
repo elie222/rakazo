@@ -127,7 +127,11 @@ export const MessageView = memo(function MessageView({
   callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string, takeControl?: boolean) => void;
-  onReleaseComputer: (botId: string | undefined, reason: ComputerReleaseReason) => Promise<void>;
+  onReleaseComputer: (
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) => Promise<void>;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   rpc: ReturnType<typeof createSpaceRpc>;
@@ -666,6 +670,7 @@ export const MessageView = memo(function MessageView({
                 key={i}
                 block={block}
                 botId={message.botId}
+                runId={message.runId}
                 rpc={rpc}
                 onOpen={onOpenComputer}
                 onRelease={onReleaseComputer}

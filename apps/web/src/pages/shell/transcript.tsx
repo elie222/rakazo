@@ -153,7 +153,11 @@ export const Transcript = memo(function Transcript({
   callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string, takeControl?: boolean) => void;
-  onReleaseComputer: (botId: string | undefined, reason: ComputerReleaseReason) => Promise<void>;
+  onReleaseComputer: (
+    botId: string,
+    runId: string | undefined,
+    reason: ComputerReleaseReason,
+  ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {

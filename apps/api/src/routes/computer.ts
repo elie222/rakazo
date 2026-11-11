@@ -69,25 +69,23 @@ import { executionBlocksUserTakeover } from "../computer-status.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
-/** The run paused for this person to take over this bot's computer. */
-async function takeoverRunWaitingFor(
+/** The run paused for a person to take over this bot's computer, and who it waits on. */
+async function waitingTakeoverRun(
   deps: RouterContext["deps"],
-  actor: { spaceId: string; userId: string },
+  spaceId: string,
   computerId: string,
   botId: string,
-): Promise<string | undefined> {
+) {
   const lease = await deps.prisma.computerExecutionLease.findUnique({
     where: { computerId_botId: { computerId, botId } },
     select: { runId: true },
   });
-  if (!lease) return undefined;
+  if (!lease) return null;
   const run = await deps.prisma.run.findUnique({
-    where: { id: lease.runId, spaceId: actor.spaceId },
-    select: { botId: true, status: true, userId: true },
+    where: { id: lease.runId, spaceId },
+    select: { id: true, botId: true, status: true, userId: true },
   });
-  const waiting =
-    run?.botId === botId && run.status === "waiting_takeover" && run.userId === actor.userId;
-  return waiting ? lease.runId : undefined;
+  return run?.botId === botId && run.status === "waiting_takeover" ? run : null;
 }
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
@@ -530,11 +528,19 @@ export function computerRoutes(ctx: RouterContext) {
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.computer) assertNotAnotherPersonsControl(bot.computer, context.actor);
-        // A run waiting on this person can be answered before they ever open the screen.
-        const waitingRunId = bot.computer
-          ? await takeoverRunWaitingFor(deps, context.actor, bot.computer.id, bot.id)
-          : undefined;
-        await releaseComputerControl(deps, context.actor, input.botId, input.reason, waitingRunId);
+        // A needs-you card answers its own run, before or after the person opens the screen.
+        if (input.runId) {
+          const waiting = bot.computer
+            ? await waitingTakeoverRun(deps, context.actor.spaceId, bot.computer.id, bot.id)
+            : null;
+          if (waiting?.id !== input.runId) {
+            throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
+          }
+          if (waiting.userId !== context.actor.userId) {
+            throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
+          }
+        }
+        await releaseComputerControl(deps, context.actor, input.botId, input.reason, input.runId);
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
@@ -869,7 +875,8 @@ export function computerRoutes(ctx: RouterContext) {
             toComputerRef(computer),
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
-          .catch((error: unknown) => {
+          .catch(async (error: unknown) => {
+            if (isSandboxGoneError(error)) return clearGoneSandbox(deps, computer, error);
             getLogger().warn("computer.preview_failed", { error });
             return null;
           });
