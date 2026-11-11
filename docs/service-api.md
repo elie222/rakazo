@@ -10,20 +10,20 @@ The full, always-current list of operations is `GET /api/service/v1/openapi.json
 
 A key acts as you, in the space it was created in, and never reaches more than you can. Every call runs the same permission checks as the app.
 
-| Scope | Allows |
-| --- | --- |
-| `bots:read`, `bots:write` | List, read, create, change, archive and restore bots |
-| `conversations:read` | Read conversations and runs, and follow live events |
-| `prompts:write` | Send a bot or group a message, and stop its work |
-| `computer:read`, `computer:write` | Read, start and stop a bot's computer |
-| `memory:read`, `memory:write` | Read and replace a bot's memory documents |
-| `routines:read`, `routines:write` | List, create, change and run routines, and read their history |
-| `artifacts:read` | List and download a bot's files |
-| `scratchpad:read`, `scratchpad:write` | Manage a bot's scratchpad |
-| `skills:read`, `pages:read` | List a bot's taught skills and saved pages |
-| `groups:read`, `groups:write` | Manage group chats |
-| `tickets:read`, `tickets:write` | Read boards, and read, create, change and comment on tickets |
-| `usage:read`, `search:read`, `audit:read` | Read usage totals, search, and read the audit log if you may |
+| Scope                                     | Allows                                                        |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `bots:read`, `bots:write`                 | List, read, create, change, archive and restore bots          |
+| `conversations:read`                      | Read conversations and runs, and follow live events           |
+| `prompts:write`                           | Send a bot or group a message, and stop its work              |
+| `computer:read`, `computer:write`         | Read, start and stop a bot's computer                         |
+| `memory:read`, `memory:write`             | Read and replace a bot's memory documents                     |
+| `routines:read`, `routines:write`         | List, create, change and run routines, and read their history |
+| `artifacts:read`                          | List and download a bot's files                               |
+| `scratchpad:read`, `scratchpad:write`     | Manage a bot's scratchpad                                     |
+| `skills:read`, `pages:read`               | List a bot's taught skills and saved pages                    |
+| `groups:read`, `groups:write`             | Manage group chats                                            |
+| `tickets:read`, `tickets:write`           | Read boards, and read, create, change and comment on tickets  |
+| `usage:read`, `search:read`, `audit:read` | Read usage totals, search, and read the audit log if you may  |
 
 A key may be limited to chosen bots. A key with no list reaches every bot you can reach, including ones you add later. A limited key cannot make a call that spans the whole space, such as search, usage or group chats, and it sees only tickets assigned to its bots.
 
@@ -104,20 +104,20 @@ A tool call is carried out as the HTTP request it stands for, so limits, permiss
 
 Errors look like `{"error": {"code": "...", "message": "..."}}`. A body that fails validation adds `fields`, a list of `path` and `message`.
 
-| Status | Code | Meaning |
-| --- | --- | --- |
-| 400 | `invalid_request` | Bad body, header or query |
-| 400 | `idempotency_key_required` | This call needs an `Idempotency-Key` |
-| 401 | `unauthenticated` | Missing, unknown, revoked or expired key, or you left the space |
-| 403 | `forbidden` | The key lacks that scope |
-| 403 | `bot_limited_key` | A key limited to certain bots cannot make this call |
-| 404 | `not_found` | No such resource, or one this key cannot reach |
-| 405 | `method_not_allowed` | See the `Allow` header |
-| 409 | `idempotency_conflict` | Idempotency key already used for another request |
-| 409 | `idempotency_in_progress` | The first request has not finished. See `Retry-After` |
-| 409 | `conflict` | The resource changed, or the space is being deleted |
-| 413 | `payload_too_large` | Body over the limit for this call |
-| 415 | `unsupported_media_type` | Expected `application/json` |
-| 429 | `rate_limited` | See the `Retry-After` header |
-| 429 | `too_many_streams` | Close an event stream first |
-| 503 | `service_unavailable` | Retry; for a write, use the same idempotency key |
+| Status | Code                       | Meaning                                                         |
+| ------ | -------------------------- | --------------------------------------------------------------- |
+| 400    | `invalid_request`          | Bad body, header or query                                       |
+| 400    | `idempotency_key_required` | This call needs an `Idempotency-Key`                            |
+| 401    | `unauthenticated`          | Missing, unknown, revoked or expired key, or you left the space |
+| 403    | `forbidden`                | The key lacks that scope                                        |
+| 403    | `bot_limited_key`          | A key limited to certain bots cannot make this call             |
+| 404    | `not_found`                | No such resource, or one this key cannot reach                  |
+| 405    | `method_not_allowed`       | See the `Allow` header                                          |
+| 409    | `idempotency_conflict`     | Idempotency key already used for another request                |
+| 409    | `idempotency_in_progress`  | The first request has not finished. See `Retry-After`           |
+| 409    | `conflict`                 | The resource changed, or the space is being deleted             |
+| 413    | `payload_too_large`        | Body over the limit for this call                               |
+| 415    | `unsupported_media_type`   | Expected `application/json`                                     |
+| 429    | `rate_limited`             | See the `Retry-After` header                                    |
+| 429    | `too_many_streams`         | Close an event stream first                                     |
+| 503    | `service_unavailable`      | Retry; for a write, use the same idempotency key                |
