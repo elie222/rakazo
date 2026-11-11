@@ -936,6 +936,8 @@ describe("connector read-only metadata and approval enforcement", () => {
       f.setCalls([{ args: saveShared, executionId: "call-1" }]);
       await f.run();
       expect(reviewMock).toHaveBeenCalledOnce();
+      // Judged as a standing instruction for later runs, not as a step of this task.
+      expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({ memoryWrite: true });
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
       expect(f.commit).toHaveBeenCalledOnce();
     });

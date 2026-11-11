@@ -132,6 +132,7 @@ type ToolReview = {
   args: Record<string, unknown>;
   connectorKind: ReturnType<typeof connectorKindFromToolName>;
   newSite: boolean;
+  memoryWrite: boolean;
   fetchUrl: string | undefined;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
@@ -507,6 +508,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
+      memoryWrite: memoryWriteGated,
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
@@ -870,6 +872,7 @@ async function reviewToolCall(
             userTask: redactSecrets(outsideRun ? ownerWords : ctx.task.prompt, ctx.secrets),
             botDescription,
             matchingRules: review.matchingRules,
+            ...(review.memoryWrite ? { memoryWrite: true } : {}),
           };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,

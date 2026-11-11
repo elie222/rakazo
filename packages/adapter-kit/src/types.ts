@@ -1501,6 +1501,11 @@ export interface AutoReviewRequest {
    * tool results or inbound messages, so injected text cannot argue for the site.
    */
   newSite?: boolean;
+  /**
+   * A save to the bot's memory after the run took in outside content. The bot reads saved memory
+   * as trusted context in every later run, so the saved text is judged as a standing instruction.
+   */
+  memoryWrite?: boolean;
 }
 
 export interface AutoReviewResult {
