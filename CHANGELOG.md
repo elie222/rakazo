@@ -40,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Voice calls keep a steady audio session so replies play and the microphone keeps working. Web and desktop no longer transcribe the bot's own spoken reply, and failed playback reports an error.
 - Switching bots returns the transcript to the latest messages reliably. Snoozed open chats suppress ordinary browser notifications, and computer takeover requests produce one notification.
 - The Mac computer-view header clears the window buttons, page views show one scrollbar, and dated bot-to-bot messages are easier to scan.
+- The bot style setting stays available when no preference has been saved, so either style can be chosen.
+- Incoming voice notes and other supported attachments are accepted when their reported media type includes parameters.
 - Group messages, handoffs and membership changes no longer deadlock against a finishing bot turn.
 - Mobile dictation keeps a pending transcription across backgrounding or screen blur, and Send stays disabled until recording and transcription finish.
 - Android custom server settings show Save, sheets fit tablets and foldables, composer controls align with the text, and voice calls show a hang-up icon.
