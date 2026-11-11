@@ -68,7 +68,7 @@ Conversations return only what a person sees: text, questions and their status, 
 
 A call that creates something needs an `Idempotency-Key` header of up to 128 letters, digits or `._:-`. Retrying with the same key and the same request returns the first answer with `Idempotent-Replayed: true`, and starts nothing. Keys are private to each API key and last 24 hours. Using one for a different request returns `409 idempotency_conflict`.
 
-If a write is refused the key is freed. If the outcome is unknown, such as a crash mid-write, the key is held for five minutes (`409 idempotency_in_progress`) and a retry after that runs the write again. Prompts and routine runs are stricter: the message or run itself carries the key, so they can never run twice.
+If a write is refused the key is freed. A write still running keeps its key. If the outcome is unknown, such as a crash mid-write, the key is held for five minutes (`409 idempotency_in_progress`) and a retry after that runs the write again. Prompts and routine runs are stricter: the message or run itself carries the key, so they can never run twice.
 
 Other calls refuse the header, so a program cannot believe a retry is safe when it is not.
 
