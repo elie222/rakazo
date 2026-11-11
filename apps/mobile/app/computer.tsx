@@ -65,6 +65,7 @@ import { tabletopLayout } from "../lib/fold-layout";
 import { useFoldRegions } from "../lib/fold-regions";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { serverHeadersForUrl } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { useComputerBoot } from "../lib/use-computer-boot";
@@ -269,7 +270,10 @@ export default function Computer() {
         // Only the proxy answers probes; another screen is loaded again straight away.
         const probe = url && isProxiedScreenPage(url) ? screenProbeUrl(url) : null;
         void waitForScreenPage(
-          async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
+          async (signal) =>
+            probe
+              ? screenPageStatus(probe, fetch, signal, serverHeadersForUrl(probe, currentApiBase()))
+              : 200,
           { signal: wait.signal },
         ).then((outcome) => {
           if (outcome === "cancelled") {
@@ -852,7 +856,10 @@ function ScreenWebView({
       // Reload when control enables the native keyboard. The boot script only
       // runs on load, and a view-only page never attaches the key bridge.
       key={`${nativeKeyboard ? "keys" : "view"}:${sourceUrl.current}`}
-      source={{ uri: sourceUrl.current }}
+      source={{
+        uri: sourceUrl.current,
+        headers: serverHeadersForUrl(sourceUrl.current, currentApiBase()),
+      }}
       injectedJavaScriptBeforeContentLoaded={
         nativeKeyboard ? NATIVE_COMPUTER_KEYBOARD_BOOT : undefined
       }

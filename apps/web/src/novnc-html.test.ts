@@ -54,6 +54,15 @@ describe("noVNC storage shim gate", () => {
     );
   });
 
+  it("imports the page's modules with credentials", () => {
+    const html = injectNovncStorageShim(
+      '<head><script type="module" crossorigin="anonymous">import "./a.js";</script><script>x</script>',
+    );
+    expect(html).toContain('<script crossorigin="use-credentials" type="module">');
+    expect(html).not.toContain('crossorigin="anonymous"');
+    expect(html).toContain("<script>x</script>");
+  });
+
   it("puts the shim before the first script", () => {
     const headed = injectNovncStorageShim("<html><head><title>x</title>");
     expect(headed).toMatch(/^<html><head><style>[^<]*<\/style><script>/);

@@ -224,6 +224,7 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
+vi.mock("./server-headers", () => ({ serverHeadersForUrl: () => ({}) }));
 
 vi.mock("./native", () => ({
   useMobileTokens: () => ({
