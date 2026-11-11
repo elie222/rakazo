@@ -26,7 +26,13 @@ const styles = StyleSheet.create({
   summary: { flex: 1, ...typeScale.caption },
   heading: { marginTop: 12, ...typeScale.cardTitle },
   body: { marginTop: 2 },
-  preview: { aspectRatio: 16 / 10, borderRadius: 10, marginTop: 12, width: "100%" },
+  preview: {
+    aspectRatio: 16 / 10,
+    backgroundColor: "black",
+    borderRadius: 10,
+    marginTop: 12,
+    width: "100%",
+  },
   actions: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -146,7 +152,7 @@ export function ComputerCard({
               <Image
                 testID="computer-card-preview"
                 source={{ uri: image }}
-                resizeMode="cover"
+                resizeMode="contain"
                 style={[
                   styles.preview,
                   { borderColor: tokens.border, borderWidth: StyleSheet.hairlineWidth },
