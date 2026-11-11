@@ -25,7 +25,8 @@ import {
 const ORIGIN = "https://login.example.test";
 const CODE = "482913";
 /** The claim on the test email's message, which a copy delivered again shares. */
-const EMAIL_CLAIM = `emailed-code:email:bot-1:${createHash("sha256").update("dkim:signature-1").digest("base64url")}`;
+const digest = (text: string) => createHash("sha256").update(text).digest("base64url");
+const EMAIL_CLAIM = `emailed-code:email:bot-1:${digest("dkim:signature-1")}`;
 const bot = { id: "bot-1", userId: "user-1" };
 const ago = (ms: number) => new Date(Date.now() - ms);
 
@@ -230,9 +231,10 @@ function mailConnection(overrides: Row = {}): Row {
 
 const dkim = (() => {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const der = publicKey.export({ type: "spki", format: "der" }).toString("base64");
   return {
     privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-    record: `v=DKIM1; k=rsa; p=${publicKey.export({ type: "spki", format: "der" }).toString("base64")}`,
+    record: `v=DKIM1; k=rsa; p=${der}`,
   };
 })();
 
@@ -446,7 +448,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     },
   );
 
-  it("answers neither card when one email would answer two, also when one run looks again", async () => {
+  it("answers neither card when one email would answer two, also on a run's look", async () => {
     const { deliver, answerRunInput } = inbox({
       runs: [waitingRun(), waitingRun({ id: "run-2", threadId: "thread-2" })],
       cards: { "run-1": codeCard(), "run-2": codeCard() },
@@ -541,7 +543,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
       from: from(index),
       receivedAt: ago(50_000 - index),
     }));
-  it("reads no more of the bot's inbox than its read limit, and leaves the card past it", async () => {
+  it("reads no more of the inbox than its read limit, and leaves the card past it", async () => {
     const other = others(EMAIL_READ_LIMIT, (index) => `news-${index}@elsewhere.test`);
     const { deliver, answerRunInput, prisma } = inbox({
       emails: [
@@ -723,8 +725,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
         codeEmail({ receivedAt: ago(10_000) }),
       ],
       effects: {
-        [`emailed-code:email:bot-1:${createHash("sha256").update("dkim:taken").digest("base64url")}`]:
-          { runId: "run-9" },
+        [`emailed-code:email:bot-1:${digest("dkim:taken")}`]: { runId: "run-9" },
       },
     });
     const findMany = vi.spyOn(prisma.botEmailMessage as { findMany: () => unknown }, "findMany");
@@ -849,7 +850,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     "naver.com",
     "zoho.com",
   ])(
-    "leaves the card for a sign-in page on the public mailbox domain %s, whichever mailbox has the mail",
+    "leaves the card for a sign-in page on the public mailbox domain %s, in any mailbox",
     async (domain) => {
       // Anyone with an address there can send signed mail from that domain.
       publishKeys();
@@ -900,11 +901,15 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
   });
 
-  it("does not fail the email when the lookup fails", async () => {
+  it("does not fail the email when the lookup fails, logging only the error's name", async () => {
+    const logged = vi.spyOn(getLogger(), "error").mockImplementation(() => undefined);
     const { deliver, prisma, answerRunInput } = inbox();
-    prisma.run.findMany.mockRejectedValueOnce(new Error("database unavailable"));
+    prisma.run.findMany.mockRejectedValueOnce(new Error("database unavailable: inbox-db"));
     await expect(deliver()).resolves.toBe(0);
     expect(answerRunInput).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledExactlyOnceWith("emailed code lookup failed", {
+      errorName: "Error",
+    });
   });
 });
 
@@ -953,12 +958,12 @@ describe("emailMayAnswer", () => {
 
 /** The claim on a message in a connected mailbox: on the message in that mailbox. */
 const connectedClaim = (messageId: string, mailbox = "owner@example.net") =>
-  `emailed-code:connected:${createHash("sha256").update(`${mailbox}:${messageId}`).digest("base64url")}`;
+  `emailed-code:connected:${digest(`${mailbox}:${messageId}`)}`;
 
 describe("a code the site emailed to the mail the owner connected", () => {
   const CONNECTED_CLAIM = connectedClaim("m1");
 
-  it("answers the card from it when the bot's inbox has nothing, and claims the message", async () => {
+  it("answers the card from it when the bot's inbox has nothing, claiming it", async () => {
     publishKeys();
     const { deliver, answerRunInput, effects, recent } = inbox({
       emails: [],
@@ -974,7 +979,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     expect(recent).not.toHaveBeenCalled();
   });
 
-  it("asks the reader for the site's newest mail in the window, scoped to the one connection", async () => {
+  it("asks the reader for the site's newest mail in the window, on one connection", async () => {
     publishKeys();
     const { deliver, readerFor, prisma } = inbox({
       emails: [],
@@ -1033,7 +1038,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     expect(readerFor).not.toHaveBeenCalled();
   });
 
-  it("takes the bot's own inbox first and never reads the connected mail for the same request", async () => {
+  it("takes the bot's inbox first, and reads no connected mail for that request", async () => {
     const { deliver, answerRunInput, readerFor } = inbox({ connectedMailCodes: true });
     expect(await deliver("run-1")).toBe(1);
     expect(answerRunInput).toHaveBeenCalledWith(expect.objectContaining({ fromEmail: "email-1" }));
@@ -1089,7 +1094,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
   });
 
-  it("answers nothing when two messages hold different codes, and takes the newest of equal ones", async () => {
+  it("answers nothing for two different codes, and takes the newest of equal ones", async () => {
     publishKeys();
     const differing = inbox({
       emails: [],
@@ -1214,7 +1219,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     },
   );
 
-  it("reads no mailbox once the owner turned the switch off, though the attempt began with it on", async () => {
+  it("reads no mailbox once the owner turned the switch off during the attempt", async () => {
     publishKeys();
     const { deliver, readerFor, recent } = inbox({
       emails: [],

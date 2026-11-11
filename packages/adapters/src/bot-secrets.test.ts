@@ -1388,7 +1388,7 @@ describe("resolveCodeFill", () => {
     expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-2")).toEqual([]);
   });
 
-  it("gives none of a run's hidden codes while one cannot be read, and all once it can", async () => {
+  it("gives none of a run's hidden codes while one is unreadable, then all of them", async () => {
     const { prisma } = await codeFixture(undefined, undefined, "email-1");
     const store = { load: vi.fn(secretStore.load.bind(secretStore)) };
     const unreadable = () => store.load.mockRejectedValueOnce(new Error("store unavailable"));
@@ -1404,7 +1404,7 @@ describe("resolveCodeFill", () => {
     expect(await load[1]!()).toEqual(["123456"]);
   });
 
-  it("skips a code typed in chat that cannot be read, in a run that took none from an email", async () => {
+  it("skips an unreadable code typed in chat, in a run that took none from an email", async () => {
     const { prisma } = await codeFixture();
     const store = { load: vi.fn().mockRejectedValue(new Error("store unavailable")) };
     expect(await loadRunCodeRedactions(prisma, store, codeScope, "run-1")).toEqual([]);

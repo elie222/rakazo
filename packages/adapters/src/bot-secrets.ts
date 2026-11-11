@@ -1181,7 +1181,8 @@ const RunCodeValue = z.object({
 
 /**
  * A code answered in chat, kept with the site it is for until it is typed there. A code read from
- * the bot's inbox names its email, so that email never answers another request.
+ * mail, the bot's inbox or the owner's connected mail, names its email, so that email never
+ * answers another request.
  */
 export function encodeRunCode(origin: string, code: string, fromEmail?: string): string {
   return JSON.stringify({ origin, code, ...(fromEmail ? { fromEmail } : {}) });
@@ -1371,7 +1372,7 @@ export async function resolveLoginFill(input: {
 }
 
 /**
- * A code row of a run that took a code from its inbox cannot be read now, so what to hide is not
+ * A code row of a run that took a code from mail cannot be read now, so what to hide is not
  * known: the run must show no email, and start no attempt, until it can be read.
  */
 export class RunCodeUnreadableError extends Error {
@@ -1383,7 +1384,7 @@ export class RunCodeUnreadableError extends Error {
 
 /**
  * This run's codes, those waiting and those the page took. A row that cannot be read is skipped,
- * unless the run took a code from its inbox: then it throws RunCodeUnreadableError.
+ * unless the run took a code from mail: then it throws RunCodeUnreadableError.
  */
 async function loadRunCodes(
   prisma: PrismaClient,
@@ -1423,7 +1424,7 @@ export async function loadRunCodeRedactions(
   return [...forms];
 }
 
-/** The codes this run took from its inbox, which every email it reads hides however written. */
+/** The codes this run took from mail, which every email it reads hides however written. */
 export async function loadRunEmailedCodes(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,

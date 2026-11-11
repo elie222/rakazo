@@ -127,7 +127,7 @@ export interface AnswerRunInput {
   remember?: false;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
-  /** Only for a code card answered from the bot's own inbox: the email the code was read from. */
+  /** Only for a code card answered from mail: names the email the code was read from. */
   fromEmail?: string;
   /**
    * With `fromEmail`: takes that email for the run in the answer's transaction, so it stays free

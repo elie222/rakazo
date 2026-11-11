@@ -89,7 +89,7 @@ describe("composioMailSource", () => {
     expect(new Set(messages.map((message) => message.id)).size).toBe(2);
   });
 
-  it("reads no more than the limit a page, and names the next page while the window holds more", async () => {
+  it("reads at most the limit a page, and names the next page while there is more", async () => {
     const { client, reader, context } = setup();
     for (let i = 0; i < 7; i++)
       client.receiveMail(USER, rawMail("a@example.com", `Code ${i}`, new Date(Date.now() - i)));
@@ -124,7 +124,7 @@ describe("composioMailSource", () => {
     expect(JSON.stringify(client.mailboxFor(USER))).toBe(before);
   });
 
-  it("asks for mail from the domain since the exact instant of the window, by id, in raw form", async () => {
+  it("asks for the domain's mail since the window's exact instant, by id, raw", async () => {
     const { client, reader, context } = setup();
     client.receiveMail(USER, rawMail("a@example.com", "Code", new Date()));
     await reader.recent(context, {
@@ -141,7 +141,7 @@ describe("composioMailSource", () => {
     expect(read?.args).toEqual({ message_id: expect.any(String), format: "raw" });
   });
 
-  it("finds mail that came early in the UTC day in a mailbox whose clock is behind UTC", async () => {
+  it("finds mail from early in the UTC day in a mailbox whose clock is behind UTC", async () => {
     // A day-granular after: would be resolved on the mailbox's clock and start hours later.
     const { client, reader, context } = setup();
     const runStart = new Date("2026-03-05T02:00:00Z");
@@ -158,7 +158,7 @@ describe("composioMailSource", () => {
     expect(found).toHaveLength(1);
   });
 
-  it("gives every call its own execution, as the connector tells attempts apart by it", async () => {
+  it("gives every call its own execution, as the connector tells attempts apart", async () => {
     const { client, registry, reader, context } = setup();
     const execute = vi.spyOn(registry, "execute");
     client.receiveMail(USER, rawMail("a@example.com", "One", new Date()));
@@ -169,7 +169,7 @@ describe("composioMailSource", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("makes no more calls once the look gave up, though the provider answers after it", async () => {
+  it("makes no more calls once the look gave up, though the provider answers", async () => {
     const { client, registry, reader, context } = setup();
     for (const subject of ["One", "Two", "Three"])
       client.receiveMail(USER, rawMail("a@example.com", subject, new Date()));
@@ -226,6 +226,36 @@ describe("composioMailSource", () => {
     const read = composioMailSource(stub).readerFor(connection)!.recent(context, query);
     if (outcome === "none") await expect(read).resolves.toEqual({ messages: [] });
     else await expect(read).rejects.toThrow(/cannot be read|has no id/);
+  });
+
+  it("fails on a listing longer than asked for, rather than leave some unread", async () => {
+    const ids = ["m1", "m2", "m3", "m4", "m5", "m6"];
+    const mail = "From: a@example.com\r\n\r\nYour code is 482913\r\n";
+    const raw = Buffer.from(mail).toString("base64");
+    const stub: Pick<ConnectorProvider, "execute"> = {
+      async *execute(call) {
+        const listing = call.tool === "GMAIL_FETCH_EMAILS";
+        yield {
+          type: "result",
+          data: {
+            data: listing
+              ? { messages: ids.map((messageId) => ({ messageId })) }
+              : { raw, internalDate: "1" },
+          },
+        };
+      },
+    };
+    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
+    const context = {
+      operationId: "x",
+      traceId: "x",
+      spaceId: "s",
+      userId: USER,
+      signal: AbortSignal.timeout(1000),
+    };
+    const query = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    const read = composioMailSource(stub).readerFor(connection)!.recent(context, query);
+    await expect(read).rejects.toThrow("more messages than");
   });
 
   it("fails when the mailbox's address cannot be read", async () => {

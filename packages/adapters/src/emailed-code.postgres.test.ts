@@ -11,7 +11,7 @@ import {
   notePageForEmailedCode,
   takeEmailedCode,
 } from "./emailed-code.js";
-import { createRunSecretWriter, holdEmailedCode } from "./run-secret.js";
+import { createRunSecretWriter, holdEmailedCode, SecretRequestNotOpen } from "./run-secret.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const postgres =
@@ -147,8 +147,10 @@ postgres("emailed code claims (PostgreSQL)", () => {
     sources: { inbox: true, connected: undefined },
   });
 
-  const connectedClaim = (messageId: string) =>
-    `emailed-code:connected:${createHash("sha256").update(`owner@example.net:${messageId}`).digest("base64url")}`;
+  const connectedClaim = (messageId: string) => {
+    const hash = createHash("sha256").update(`owner@example.net:${messageId}`);
+    return `emailed-code:connected:${hash.digest("base64url")}`;
+  };
   /** Claim a message of a connected mailbox as a run keeping its code does: false when taken. */
   const claimConnected = (runId: string, messageId: string, site = "example.test") =>
     system(() =>
@@ -169,7 +171,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
       },
     );
 
-  it("gives a message of a connected mailbox to one run, and a site's code once across both", async () => {
+  it("gives a connected mailbox's message to one run, and a site's code once in all", async () => {
     const runId = await newRun("running");
     const other = await newRun("running");
     // Two runs want the same message: one gets it.
@@ -257,7 +259,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
     expect(effects).toEqual([{ runId: winner, kind: "emailed_code", status: "taken" }]);
   });
 
-  it("takes one emailed code per site in a run, and leaves the next email for another run", async () => {
+  it("takes one emailed code per site in a run, leaving the next email for another", async () => {
     const email = await receive("731905");
     const claim = (runId: string) => claimFor(runId, email);
     // The run that won above already took this site's code.
@@ -289,13 +291,43 @@ postgres("emailed code claims (PostgreSQL)", () => {
   const heldCodes = (runId: string) =>
     system(() => prisma.secret.count({ where: { userId, kind: runCodeKind(runId) } }));
 
-  it("leaves an email's code for the next try when keeping it for the page fails", async () => {
+  it("leaves the email's code, and its request open, when keeping it fails", async () => {
     const runId = await newRun("running");
     const email = await receive("605118");
+    const request = await system(() =>
+      prisma.externalEffect.create({
+        data: {
+          runId,
+          spaceId,
+          kind: "request_secret",
+          status: "intended",
+          idempotencyKey: `${runId}:request`,
+          request: {},
+        },
+        select: { id: true },
+      }),
+    );
+    const requestNow = () =>
+      system(() =>
+        prisma.externalEffect.findUniqueOrThrow({
+          where: { id: request.id },
+          select: { status: true, result: true },
+        }),
+      );
+    const settle = (status: string) =>
+      system(() => prisma.externalEffect.update({ where: { id: request.id }, data: { status } }));
     const secretStore = new EncryptedSecretStore("test-only-encryption-key");
     const scope = { userId, spaceId, botId };
+    const answer = { note: "The code from the email the site sent was entered." };
     const hold = (over: { scope?: typeof scope } = {}) =>
-      system(() => holdEmailedCode(prisma, secretStore, { ...lookup(runId), scope, ...over }));
+      system(() =>
+        holdEmailedCode(prisma, secretStore, {
+          ...lookup(runId),
+          scope,
+          request: { id: request.id, from: "intended", result: answer },
+          ...over,
+        }),
+      );
 
     // The code could not be sealed.
     vi.spyOn(secretStore, "put").mockRejectedValueOnce(new Error("store unavailable"));
@@ -304,12 +336,24 @@ postgres("emailed code claims (PostgreSQL)", () => {
     // Sealed, but its row could not be saved.
     await expect(hold({ scope: { ...scope, userId: `${id}-nobody` } })).rejects.toThrow();
     expect(await takers(email.id)).toEqual([]);
+    // The request is settled (the run was cancelled) after the lookup, while the code is sealed:
+    // nothing is kept or claimed.
+    const put = secretStore.put.bind(secretStore);
+    vi.spyOn(secretStore, "put").mockImplementationOnce(async (...args) => {
+      await settle("denied");
+      return put(...args);
+    });
+    await expect(hold()).rejects.toThrow(SecretRequestNotOpen);
+    expect(await takers(email.id)).toEqual([]);
     expect(await heldCodes(runId)).toBe(0);
+    expect(await requestNow()).toMatchObject({ status: "denied", result: null });
+    await settle("intended");
 
-    // The next try takes it, once.
+    // The next try takes it, once, and answers the request with it in the same transaction.
     expect(await hold()).toMatchObject({ code: "605118", fromEmail: email.id });
     expect(await takers(email.id)).toEqual([runId]);
     expect(await heldCodes(runId)).toBe(1);
+    expect(await requestNow()).toEqual({ status: "completed", result: answer });
     expect(await hold()).toBeUndefined();
   });
 

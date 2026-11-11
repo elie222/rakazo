@@ -235,7 +235,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ]);
   });
 
-  it("gives the choice to read one's connected email only to a bot's creator, on that bot", async () => {
+  it("gives the choice to read one's connected email only to the bot's creator", async () => {
     // The rule: the choice is made on a bot by its creator, and reported to them alone. A bot
     // that comes to exist any other way starts with it off (an imported one too:
     // account-import.postgres.test.ts, as import has no endpoint). Each state of the table is

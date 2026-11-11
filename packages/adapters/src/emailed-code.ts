@@ -95,8 +95,10 @@ const pageSeenKey = (requestId: string) => `emailed-code:page:${requestId}`;
  * The claim on a message in a connected mailbox: on the provider's id for it in that mailbox, so
  * two connections to one mailbox share it.
  */
-const connectedClaimKey = (mailbox: string, messageId: string) =>
-  `emailed-code:connected:${createHash("sha256").update(`${mailbox}:${messageId}`).digest("base64url")}`;
+const connectedClaimKey = (mailbox: string, messageId: string) => {
+  const digest = createHash("sha256").update(`${mailbox}:${messageId}`).digest("base64url");
+  return `emailed-code:connected:${digest}`;
+};
 /**
  * The most messages from the site read from a connected mailbox for one lookup (past it there is
  * no code), and how long the read may take. As for the inbox, the limit is on the site's mail: the
@@ -596,7 +598,7 @@ export async function findCodeForRequest(
   };
 }
 
-/** Whether the run took a code from its inbox: its claim is made with the kept code, at once. */
+/** Whether the run took a code from mail: its claim is made with the kept code, at once. */
 export async function runTookEmailedCode(
   prisma: Pick<PrismaClient, "externalEffect">,
   runId: string,
@@ -820,8 +822,11 @@ export async function answerCodeCardsFromInbox(
       }
     }
   } catch (error) {
-    // The email is saved either way; the card stays open for the owner.
-    getLogger().error("emailed code lookup", error);
+    // The email is saved either way; the card stays open for the owner. Only what failed is
+    // logged, as for every look: never what the mail or the lookup held.
+    getLogger().error("emailed code lookup failed", {
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
   }
   return count;
 }

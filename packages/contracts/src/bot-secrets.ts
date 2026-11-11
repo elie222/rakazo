@@ -325,13 +325,15 @@ const SPACELESS = String.raw`\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangu
 // A code stands as its own word: not part of a link, an amount, a phone number or a date, so not
 // next to a letter, digit, currency sign or link punctuation, nor a digit group a space away.
 const CODE_LEAD = String.raw`(?<!(?![${SPACELESS}])[\p{L}\p{N}_+#$€£¥@/\\.,=&?%-])(?<![0-9][ .-])`;
-const CODE_TRAIL = String.raw`(?!(?![${SPACELESS}])[\p{L}\p{N}_@/\\%€$£¥]|[.,:/-][\p{L}\p{N}]| [0-9])`;
+// Punctuation joining it to a letter or digit after it, or a digit group a space after it.
+const JOINED_AFTER = String.raw`[.,:/-][\p{L}\p{N}]| [0-9]`;
+const CODE_TRAIL = String.raw`(?!(?![${SPACELESS}])[\p{L}\p{N}_@/\\%€$£¥]|${JOINED_AFTER})`;
 const CODE_SEPARATORS = `[${CODE_GROUP_SEPARATORS.join("")}]`;
 const CODE_FORMS = [
   // Two equal digit groups, as oneTimeCodeWritings writes them.
   ...CODE_GROUP_SIZES.map((size) => `[0-9]{${size}}${CODE_SEPARATORS}[0-9]{${size}}`),
   "[0-9]{4,8}",
-  // Capital letters and digits, both.
+  // Capital letters and digits, both; capitals only, as CODE_TOKEN has no `i` flag.
   "(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*[0-9])[A-Z0-9]{6,8}",
 ];
 const YEAR = /^(?:19|20)[0-9]{2}$/;
@@ -350,11 +352,11 @@ const stem = (cue: string) => String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})[\p{L}\p
  * the code, in one of the forms readUnit lists. `cue` names a sign-in code (code, passcode, OTP,
  * PIN); `qualifier` is a word a cue may carry (verification, security, one-time); `filler` is
  * the little words such a sentence has around them (your, is, enter); `stale` is a word that says
- * the code named is no longer good (old, previous, expired), so the unit names a code but never
- * yields it. Any other word, a number among them, or a noun that makes the cue name something
- * else (tracking code, code de suivi, ZIP code, promo code) keeps the unit from yielding
- * anything: the owner's card is the fallback. Each entry is a regex alternative for a whole word;
- * a `stem` takes any ending.
+ * the code named is no longer good (old, previous, expired), so a unit that names a code with one
+ * makes the whole email give none. Any other word, a number among them, or a noun that makes the
+ * cue name something else (tracking code, code de suivi, ZIP code, promo code) keeps the unit
+ * from yielding anything: the owner's card is the fallback. Each entry is a regex alternative for
+ * a whole word; a `stem` takes any ending.
  */
 const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?: string[] }[] = [
   {
@@ -416,7 +418,8 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
   {
     // German.
     cue: [
-      "(?:bestätigungs|sicherheits|anmelde|zugangs|verifizierungs|login|einmal|authentifizierungs|best[äa]tigungs)?codes?",
+      "(?:best[äa]tigungs|sicherheits|anmelde|zugangs|verifizierungs)?codes?",
+      "(?:login|einmal|authentifizierungs)?codes?",
       "einmalpasswort",
       "einmalkennwort",
     ].map(word),
@@ -659,16 +662,26 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
     // Hindi.
     cue: ["कोड", "ओटीपी"].map(word),
     qualifier: ["सत्यापन", "एक बार", "सुरक्षा", "लॉगिन", "पुष्टि"].map(word),
-    filler: ["आपका", "आपकी", "है", "यह", "के", "लिए", "कृपया", "दर्ज", "करें", "का", "में", "नीचे"].map(
-      word,
-    ),
+    filler: [
+      // Your, your, is, this, of, for, please, enter, do, of, in, below.
+      "आपका",
+      "आपकी",
+      "है",
+      "यह",
+      "के",
+      "लिए",
+      "कृपया",
+      "दर्ज",
+      "करें",
+      "का",
+      "में",
+      "नीचे",
+    ].map(word),
   },
   {
     // Hebrew joins "the", "of" and other one-letter words to the word itself.
-    cue: [String.raw`(?:[הבולמכש]|של)?(?:קוד(?:ים)?|סיסמה חד[- ]?פעמית)`].map(word),
-    qualifier: [String.raw`(?:[הבולמכש]|של)?(?:אימות|אבטחה|כניסה|התחברות|אישור|חד[- ]?פעמית?)`].map(
-      word,
-    ),
+    cue: ["(?:[הבולמכש]|של)?(?:קוד(?:ים)?|סיסמה חד[- ]?פעמית)"].map(word),
+    qualifier: ["(?:[הבולמכש]|של)?(?:אימות|אבטחה|כניסה|התחברות|אישור|חד[- ]?פעמית?)"].map(word),
     filler: [
       "שלך",
       "שלכם",
@@ -767,7 +780,14 @@ const SEPARATOR = String.raw`[:：=\p{Pd}]`;
 // backs up, so the order decides, not any backtracking.
 const longestFirst = (alternatives: string[]) =>
   [...new Set(alternatives)].sort((left, right) => right.length - left.length);
-const sticky = (alternatives: string[]) => new RegExp(`(?:${alternatives.join("|")})`, "yiu");
+/** Words in any case: "Code", "CODE" and "code" are one cue. Only words: never a code. */
+const anyCaseWords = (alternatives: string[]) => new RegExp(`(?:${alternatives.join("|")})`, "yiu");
+/**
+ * A code as written, matched case-sensitively: no `i` flag, unlike the words, so its letters are
+ * capitals only. Lowercase letters and digits ("Code abc123.") are a word the scanner cannot
+ * read, so their unit gives nothing.
+ */
+const CODE_TOKEN = new RegExp(`${CODE_LEAD}(?:${CODE_FORMS.join("|")})${CODE_TRAIL}`, "yu");
 /**
  * The kinds of token a unit may be made of, each as one regex that matches at a position: N a
  * code, C a cue, Q a qualifier, F a filler, S a separator. A unit holding anything else is not
@@ -776,11 +796,11 @@ const sticky = (alternatives: string[]) => new RegExp(`(?:${alternatives.join("|
  * regex executions per character, and a unit is at most ONE_TIME_CODE_UNIT_LIMIT long.
  */
 export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: RegExp])[] = [
-  ["N", new RegExp(`${CODE_LEAD}(?:${CODE_FORMS.join("|")})${CODE_TRAIL}`, "yu")],
-  ["C", sticky(longestFirst(LANGUAGES.flatMap((language) => language.cue)))],
-  ["Q", sticky(longestFirst(LANGUAGES.flatMap((language) => language.qualifier)))],
-  ["X", sticky(longestFirst(LANGUAGES.flatMap((language) => language.stale ?? [])))],
-  ["F", sticky(longestFirst(LANGUAGES.flatMap((language) => language.filler)))],
+  ["N", CODE_TOKEN],
+  ["C", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.cue)))],
+  ["Q", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.qualifier)))],
+  ["X", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.stale ?? [])))],
+  ["F", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.filler)))],
   ["S", new RegExp(SEPARATOR, "yu")],
 ];
 
@@ -891,22 +911,22 @@ function yieldsCode(kinds: string): boolean {
 
 /**
  * The code a unit writes in a form yieldsCode accepts, or, when the unit only names a code and
- * ends its line, the code the line below holds alone; and whether the unit says that code is no
- * longer good. Undefined when the unit takes no such form.
+ * ends its line, the code the line below holds alone; and whether the unit says a code is no
+ * longer good ("This code has expired" names one with no code, and says so all the same).
+ * Undefined when the unit neither writes nor names a code.
  */
 function readUnit(
   unit: Unit,
   below: Unit | undefined,
-): { written: string; stale: boolean } | undefined {
+): { written?: string; stale: boolean } | undefined {
   const scanned = scanUnit(unit.text);
   if (!scanned) return undefined;
   if (yieldsCode(scanned.kinds)) return { written: scanned.codes[0]!, stale: scanned.stale };
-  const cueOnly = namesCode(withoutSeparator(scanned.kinds, "end"));
-  if (!cueOnly || !unit.endsLine || !below?.wholeLine) return undefined;
-  const next = scanUnit(below.text);
+  if (!namesCode(withoutSeparator(scanned.kinds, "end"))) return undefined;
+  const next = unit.endsLine && below?.wholeLine ? scanUnit(below.text) : undefined;
   return next?.kinds === "N" && !next.stale
     ? { written: next.codes[0]!, stale: scanned.stale }
-    : undefined;
+    : { stale: scanned.stale };
 }
 
 /**
@@ -917,10 +937,10 @@ function readUnit(
  * on a line with the code alone on the next; the subject counts as the line above the text.
  * Anything else, an order or tracking number near a code word included, yields nothing. Nothing
  * unless the email holds exactly one such code, the same one wherever it appears, so an email
- * that also writes another number as a code gives none rather than a guess, and an email that
- * names a code as old or expired gives none, whether or not it also names a current one; and
- * nothing unless that code stands alone (oneTimeCodeStandsAlone), as a shorter one could not be
- * hidden.
+ * that also writes another number as a code gives none rather than a guess, and an email with a
+ * sentence of listed words that names a code with a `stale` word ("This code has expired") gives
+ * none, whether or not it also names a current one; and nothing unless that code stands alone
+ * (oneTimeCodeStandsAlone), as a shorter one could not be hidden.
  */
 export function extractOneTimeCode(email: { subject: string; text: string }): string | undefined {
   const codes = new Set<string>();
@@ -929,10 +949,11 @@ export function extractOneTimeCode(email: { subject: string; text: string }): st
   for (const [index, unit] of all.entries()) {
     const read = readUnit(unit, all[index + 1]);
     if (read === undefined) continue;
+    stale ||= read.stale;
+    if (read.written === undefined) continue;
     const code = normalizeOneTimeCode(read.written.replace(/[ -]/g, ""));
     if (!code || YEAR.test(code) || !oneTimeCodeWritings(code).includes(read.written)) continue;
     codes.add(code);
-    stale ||= read.stale;
   }
   const [code] = codes;
   return codes.size === 1 && !stale && code && oneTimeCodeStandsAlone(code) ? code : undefined;

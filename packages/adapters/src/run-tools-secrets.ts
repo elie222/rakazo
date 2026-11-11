@@ -26,6 +26,7 @@ import {
   forgetBotSecret,
   generateBotSecret,
   listBotSecrets,
+  loadRunCodeRedactions,
   normalizeSecretDestination,
   oneTimeCodeRedactions,
   readRunCode,
@@ -54,6 +55,18 @@ import {
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
+
+/** What request_secret returns for a code kept for the page: where it came from, never the code. */
+function codeKeptResult(fromEmail: boolean) {
+  const entered = fromEmail
+    ? "The code from the email the site sent was entered"
+    : "The user entered the code";
+  return {
+    ok: true,
+    submitted: true,
+    note: `${entered}. Type it with browser_act fill_code {ref}; it is not shown to you.`,
+  };
+}
 
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
@@ -225,19 +238,24 @@ export const secretTools: ToolHandlers = {
     }
     // The site may have emailed the code to the bot itself, or to the mail its owner connected:
     // that answers this request as the owner's typing it into the card would, without asking
-    // them. Only a request not yet answered. Only when the run's own browser reports the page on
-    // that exact origin: never on the bot's word for where the page is.
+    // them. Only a request not yet answered: the gate records one for every request_secret call.
+    // Only when the run's own browser reports the page on that exact origin: never on the bot's
+    // word for where the page is.
     const codeSources = {
       inbox: ctx.source.emailInbox,
       connected: ctx.source.connectedMail ? deps.connectedMail : undefined,
     };
+    const openRequest = applied?.effect.status === "intended" ? applied.effect : undefined;
     const pageOnOrigin =
       !storedSecret &&
       codeOrigin !== undefined &&
+      openRequest !== undefined &&
       (codeSources.inbox || codeSources.connected !== undefined) &&
-      (!applied || applied.effect.status === "intended") &&
       (await runPageOrigin(ctx)) === codeOrigin;
+    // What the call returns when a code from mail answered its request, as stored with it.
+    let answeredFromMail: ReturnType<typeof codeKeptResult> | undefined;
     if (pageOnOrigin) {
+      const answer = codeKeptResult(true);
       // Mail is a shortcut past the card, never a way to lose it: when looking fails for any
       // reason, the card is shown as if nothing had come, and only the error's name is logged.
       const emailed = await holdEmailedCode(deps.prisma, deps.secretStore, {
@@ -250,6 +268,11 @@ export const secretTools: ToolHandlers = {
         after: emailedCodeWindowStart(new Date(), run.createdAt),
         botEmailDomain: deps.inboundEmailDomain,
         sources: codeSources,
+        request: {
+          id: openRequest.id,
+          from: call.claimedEffect ? "executing" : "intended",
+          result: answer,
+        },
       }).catch((error: unknown) => {
         context.signal.throwIfAborted();
         getLogger().warn("emailed code could not be looked up for a request", {
@@ -258,8 +281,11 @@ export const secretTools: ToolHandlers = {
         return undefined;
       });
       if (emailed) {
+        // Kept with the request completed in one transaction: a retry of this call gets its
+        // result back, and no approval is left for a later attempt to replay.
         storedSecret = emailed.stored;
         heldCode = { origin: codeOrigin, code: emailed.code, fromEmail: emailed.fromEmail };
+        answeredFromMail = answer;
       }
     }
     if (storedSecret) {
@@ -274,6 +300,7 @@ export const secretTools: ToolHandlers = {
       // Keep the tail the old redactor still holds; a fresh instance drops it.
       reply.pendingProgress += reply.redactor.finish();
       reply.redactor = createStreamingRedactor(ctx.secrets);
+      if (answeredFromMail) return answeredFromMail;
       const purpose = String(args.purpose ?? "otp");
       if (applied && !call.claimedEffect) {
         if (applied.effect.status === "intended") {
@@ -293,13 +320,7 @@ export const secretTools: ToolHandlers = {
         }
       }
       // The code waits for browser_act fill_code, which deletes it once the page took it.
-      if (codeOrigin) {
-        return call.finish({
-          ok: true,
-          submitted: true,
-          note: `${heldCode?.fromEmail ? "The code from the email the site sent was entered" : "The user entered the code"}. Type it with browser_act fill_code {ref}; it is not shown to you.`,
-        });
-      }
+      if (codeOrigin) return call.finish(codeKeptResult(Boolean(heldCode?.fromEmail)));
       // Claim executing (above), take the secret, then connector complete().
       // Retries without a secret reconcile via connectionReady / settle_attempt.
       return commitConsumedRunSecret({
@@ -348,7 +369,13 @@ export const secretTools: ToolHandlers = {
     }
     const recordedForAsk = await recordEffect(deps, run, name, effectKey, args);
     const missingSecretAction = resolveMissingRunSecretAction(recordedForAsk.effect);
-    if (missingSecretAction.action === "return") return missingSecretAction.result;
+    if (missingSecretAction.action === "return") {
+      // A code from mail can be kept though the look failed as it saw it (its commit was never
+      // acknowledged): the request was answered, so hide what the run holds before answering.
+      if (codeOrigin && (await runTookEmailedCode(deps.prisma, runId)))
+        addRunSecrets(ctx, await loadRunCodeRedactions(deps.prisma, deps.secretStore, run, runId));
+      return missingSecretAction.result;
+    }
     if (connectionId) {
       const connectionStatus = await reconcileManagedConnection(
         deps.prisma,

@@ -118,7 +118,7 @@ describe("createRunSecretWriter", () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
-  it("keeps a code card's answer for the card's site, naming the email it was read from", async () => {
+  it("keeps a code card's answer for its site, naming the email it was read from", async () => {
     const secretStore = new EncryptedSecretStore("fake-key");
     const origin = "https://login.example.test";
     const prisma = {

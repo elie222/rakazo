@@ -54,6 +54,8 @@ function fakeRun(
   options: {
     runUserId?: string;
     arriving?: Row;
+    /** When `arriving` shows up, in ms from the first look: on the second look unless given. */
+    arrivesAfterMs?: number;
     secrets?: string[];
     /** A code the run took from an email, held as request_secret keeps it. */
     emailedCode?: string;
@@ -65,10 +67,14 @@ function fakeRun(
 ) {
   const inbox = [...rows];
   let listed = 0;
+  let firstLook: number | undefined;
+  /** Every email the inbox handed out, decrypted, across all looks. */
+  const read: string[] = [];
   const copyEarlierFiles = vi.fn();
   const matches = (email: Row, where: Record<string, unknown>) => {
     const since = (where.receivedAt as { gt?: Date } | undefined)?.gt;
     const before = (where.receivedAt as { lt?: Date } | undefined)?.lt;
+    const left = (where.id as { notIn?: string[] } | undefined)?.notIn;
     const or = where.OR as
       | Array<Record<string, { contains?: string; hasEvery?: number[] }>>
       | undefined;
@@ -81,6 +87,7 @@ function fakeRun(
             .includes(test.contains!.toLowerCase());
     return (
       email.botId === where.botId &&
+      !left?.includes(email.id) &&
       (!since || email.receivedAt > since) &&
       (!before || email.receivedAt < before) &&
       (!or || or.some((clause) => Object.entries(clause).some(matchesClause)))
@@ -118,9 +125,15 @@ function fakeRun(
             orderBy: { receivedAt: "asc" | "desc" };
           }) => {
             listed += 1;
-            // Mail that arrives while the bot waits shows up on the second look.
-            if (listed === 2 && options.arriving) inbox.push(options.arriving);
-            return inbox
+            firstLook ??= Date.now();
+            // Mail that arrives while the bot waits shows up on the second look, or once due.
+            const due =
+              options.arrivesAfterMs === undefined
+                ? listed === 2
+                : Date.now() - firstLook >= options.arrivesAfterMs;
+            if (due && options.arriving && !inbox.includes(options.arriving))
+              inbox.push(options.arriving);
+            const page = inbox
               .filter((email) => matches(email, where))
               .sort(
                 (a, b) =>
@@ -128,6 +141,8 @@ function fakeRun(
                   (a.receivedAt.getTime() - b.receivedAt.getTime()),
               )
               .slice(skip, take === undefined ? undefined : skip + take);
+            read.push(...page.map((email) => email.id));
+            return page;
           },
           deleteMany: async ({
             where,
@@ -176,7 +191,7 @@ function fakeRun(
     ) as Promise<Record<string, unknown>>;
   const call = (args: Record<string, unknown>) => invoke("read_email", args);
   const remove = (args: Record<string, unknown>) => invoke("delete_email", args);
-  return { call, remove, inbox, copyEarlierFiles };
+  return { call, remove, inbox, copyEarlierFiles, read };
 }
 
 describe("read_email", () => {
@@ -253,7 +268,7 @@ describe("read_email", () => {
       row({ id: `filler-${n}`, text: "Nothing here", receivedAt: hour(n + 2) }),
     );
 
-  it("searches all the mail in a run that hides values but took no code from an email", async () => {
+  it("searches all the mail in a run that hides values but took no emailed code", async () => {
     const rows = [row({ id: "old-hit", text: "Pelican sighting", receivedAt: hour(0) })];
     const { call } = fakeRun([...rows, ...fillers(1_050)], { secrets: ["hunter22"] });
 
@@ -262,7 +277,7 @@ describe("read_email", () => {
     expect(found.map((email) => email.id)).toEqual(["old-hit"]);
   });
 
-  it("searches past the newest hundred emails in a run holding a code from an email, on what it may read", async () => {
+  it("searches past the newest hundred emails, on what it may read, holding a code", async () => {
     const rows = [
       row({ id: "old-hit", text: "Pelican sighting", receivedAt: hour(0) }),
       row({ id: "old-hidden", text: "Your code is 4.8.2.9.1.3", receivedAt: hour(1) }),
@@ -281,6 +296,53 @@ describe("read_email", () => {
     expect(JSON.stringify(hiddenNewest)).toBe(JSON.stringify(nothingNewest));
     expect(nothing.nextSince).toBe(hour(251).toISOString());
   });
+
+  it("reads each email once in a wait with an emailed code, and still finds new mail", async () => {
+    const arriving = row({ id: "late", text: "Pelican sighting", receivedAt: new Date() });
+    const { call, read } = fakeRun(fillers(250), {
+      emailedCode: "482913",
+      arriving,
+      // After the second look: the third finds it.
+      arrivesAfterMs: 4_500,
+    });
+
+    const result = await call({ query: "pelican", waitSeconds: 7 });
+
+    expect(result.emails).toEqual([expect.objectContaining({ id: "late" })]);
+    expect(new Set(read).size).toBe(read.length);
+    expect(read).toHaveLength(251);
+  }, 15_000);
+
+  // A row is stamped when the transaction saving it starts and shows up when it commits, so mail
+  // can show up after a look read mail stamped later than it, or in the same millisecond.
+  it.each<[order: string, stamped: string, since: boolean, earlier: number]>([
+    ["newest first", "a second earlier", false, 1_000],
+    ["newest first", "in the same millisecond", false, 0],
+    ["after since", "a second earlier", true, 1_000],
+    ["after since", "in the same millisecond", true, 0],
+  ])(
+    "finds mail saved late in a wait holding a code, %s, stamped %s",
+    async (_order, _stamped, since, earlier) => {
+      const now = Date.now();
+      const checked = row({ id: "checked", text: "Nothing here", receivedAt: new Date(now) });
+      const late = row({
+        id: "late",
+        text: "Pelican sighting",
+        receivedAt: new Date(now - earlier),
+      });
+      const { call, read } = fakeRun([checked], { emailedCode: "482913", arriving: late });
+
+      const result = await call({
+        query: "pelican",
+        waitSeconds: 1,
+        ...(since ? { since: new Date(now - 60_000).toISOString() } : {}),
+      });
+
+      expect(result.emails).toEqual([expect.objectContaining({ id: "late" })]);
+      // Each read once: the later look leaves out what the first one read.
+      expect(read).toEqual(["checked", "late"]);
+    },
+  );
 
   it("starts the next look after the newest email it returned, or where it was asked to", async () => {
     const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
@@ -371,7 +433,7 @@ describe("read_email", () => {
     expect(read).toContain('"id":"email-1"');
   });
 
-  it("gives no email while a code it took from one cannot be read, and hides it once it can", async () => {
+  it("gives no email while its emailed code is unreadable, and hides it after", async () => {
     const { call } = fakeRun(
       [
         row({ id: "email-0", subject: "Code 4.8.2.9.1.3", text: "Your code: 48 29 13" }),

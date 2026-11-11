@@ -46,7 +46,12 @@ class ComposioMailReader implements ConnectedMailReader {
       ...(query.page ? { page_token: query.page } : {}),
     });
     const messages: ConnectedMailMessage[] = [];
-    for (const id of messageIds(listed).slice(0, query.limit)) {
+    const ids = messageIds(listed);
+    // The page past the limit would be left unread, and the next page starts after it.
+    if (ids.length > query.limit) throw new Error("The mail listing has more messages than asked");
+    for (const id of ids) {
+      // Between raw reads too: once the look gave up or timed out, no further message is read.
+      context.signal.throwIfAborted();
       const read = await this.call(context, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", {
         message_id: id,
         format: "raw",

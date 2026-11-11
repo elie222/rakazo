@@ -664,7 +664,7 @@ describeIntegration("reusable credential lifecycle", () => {
     type Call = { name: string; args: Record<string, unknown> };
     const describeRuntime = ScriptedAgentRuntime.prototype.describe;
 
-    it("fills it from the bot's own inbox once, never showing it, then asks the owner", async () => {
+    it("fills it from the bot's inbox once, never showing it, then asks the owner", async () => {
       const run = await codeRun("emailed-code", (results) => [
         { name: "browser_navigate", args: { url: `${site}/verify` } },
         requestCode,
@@ -762,7 +762,7 @@ describeIntegration("reusable credential lifecycle", () => {
       }
     });
 
-    it("fills it from the mail the owner connected only once they allow that, once, never showing it", async () => {
+    it("fills it from the owner's connected mail once allowed, once, never shown", async () => {
       const ownerCode = "20240601";
       /** The site's mail arrives in the owner's own mailbox. */
       const receive = (from: string) =>
@@ -969,7 +969,8 @@ describeIntegration("reusable credential lifecycle", () => {
             .get(pageBrowserSessionKey(computer, context))
             .load(
               request.url,
-              '<!doctype html><html><head><title>Verify</title></head><body><input aria-label="Code" /></body></html>',
+              "<!doctype html><html><head><title>Verify</title></head>" +
+                '<body><input aria-label="Code" /></body></html>',
             );
         }),
         vi.spyOn(FakeBrowserProvider.prototype, "act").mockImplementation(async function (
@@ -1094,7 +1095,8 @@ describeIntegration("reusable credential lifecycle", () => {
       const body = `${text}\r\n`;
       const hash = createHash("sha256").update(body).digest("base64");
       const names = headers.map(([name]) => name.toLowerCase()).join(":");
-      const fields = `v=1; a=rsa-sha256; c=relaxed/relaxed; d=${domain}; s=s1; h=${names}; bh=${hash}; b=`;
+      const tags = `v=1; a=rsa-sha256; c=relaxed/relaxed; d=${domain}; s=s1`;
+      const fields = `${tags}; h=${names}; bh=${hash}; b=`;
       const canonical = [...headers, ["DKIM-Signature", fields]]
         .map(([name, value]) => `${name!.toLowerCase()}:${value!.replace(/\s+/g, " ").trim()}`)
         .join("\r\n");

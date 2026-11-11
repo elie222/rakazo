@@ -847,6 +847,15 @@ describe("one-time code contracts", () => {
       ["a cue line and a code two lines down", "Your code:\nHi\n482913"],
       ["two codes", "Your code is 482913. Your old code 731905 expired."],
       ["an expired code alone", "Your old code 731905 has expired."],
+      [
+        "a code and then a sentence saying the code expired",
+        "Your verification code is 482913. This code has expired.",
+      ],
+      [
+        "a code and then a line saying the code is invalid",
+        "Your code is 482913.\nThe code is invalid.",
+      ],
+      ["a code under a subject saying the code expired", "Code: 482913", "Your code has expired"],
       ["a previous code alone", "Your previous code: 731905 expired. Request a new one."],
       ["an expired code alone, in German", "Ihr alter Code 731905 ist abgelaufen."],
       ["an expired code alone, in Spanish", "Su código anterior 731905 ha caducado."],
@@ -920,6 +929,24 @@ describe("one-time code contracts", () => {
     ])("reads %s written after a code word as the code %s", (written, code) => {
       expect(read(`Your verification code is ${written}`)).toBe(code);
       expect(read(`${written} is your verification code`)).toBe(code);
+    });
+
+    // Words are read in any case, a code only in capitals: the code's pattern alone has no `i`.
+    it.each<[text: string, subject?: string]>([
+      ["Code abc123."],
+      ["CODE abc123."],
+      ["Your verification code is abc123"],
+      ["abc123 is your sign-in code"],
+      ["Your code:\nabc123"],
+      ["Hello", "Your code: abc123"],
+      ["Code aBC123."],
+    ])("never makes lowercase strings sign-in codes: %s", (text, subject) => {
+      expect(read(text, subject)).toBeUndefined();
+      // The same in capitals is a code, whatever case its words are in.
+      const capitals = (value: string) => value.replace(/abc123/i, "ABC123");
+      expect(read(capitals(text), subject && capitals(subject))).toBe("ABC123");
+      const [, codePattern] = ONE_TIME_CODE_TOKENS.find(([kind]) => kind === "N")!;
+      expect(codePattern.ignoreCase).toBe(false);
     });
 
     it.each([

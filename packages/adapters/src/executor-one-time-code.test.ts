@@ -10,6 +10,7 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import type * as RunNotificationsModule from "./run-notifications.js";
+import type * as SecretPersistenceModule from "./secret-persistence.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const COMPUTER: ComputerRef = {
@@ -25,6 +26,23 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => COMPUTER,
 }));
+
+/** Whether cleaning up after the next kept secret fails, once its transaction is in. */
+const cleanupFails = vi.hoisted(() => ({ value: false }));
+vi.mock("./secret-persistence.js", async (importOriginal) => {
+  const original = await importOriginal<typeof SecretPersistenceModule>();
+  return {
+    ...original,
+    persistPreparedSecret: async (...args: Parameters<typeof original.persistPreparedSecret>) => {
+      const kept = await original.persistPreparedSecret(...args);
+      if (cleanupFails.value) {
+        cleanupFails.value = false;
+        throw new Error("Secret cleanup failed");
+      }
+      return kept;
+    },
+  };
+});
 
 const notified = vi.hoisted(() => [] as unknown[]);
 vi.mock("./run-notifications.js", async (importOriginal) => ({
@@ -42,7 +60,12 @@ type ExecuteTool = (
 ) => Promise<unknown>;
 
 const ORIGIN = "https://login.example.test";
+const OTHER = "https://other.example.test";
 const CODE = "482913";
+/** What the bot is told when the code came from the site's email. */
+const EMAILED_NOTE =
+  "The code from the email the site sent was entered. " +
+  "Type it with browser_act fill_code {ref}; it is not shown to you.";
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
 const requestCode = (extra: Record<string, unknown> = {}) => ({
@@ -50,7 +73,12 @@ const requestCode = (extra: Record<string, unknown> = {}) => ({
   args: { label: "Code", purpose: "otp", oneTimeCode: { origin: ORIGIN }, ...extra },
 });
 
-function recordingPrisma(models: Record<string, Record<string, unknown>>, calls: unknown[]) {
+function recordingPrisma(
+  models: Record<string, Record<string, unknown>>,
+  calls: unknown[],
+  /** Runs once a transaction's writes are in, and may fail it as its caller sees it. */
+  afterCommit: () => void = () => undefined,
+) {
   const fallback: Record<string, (...args: unknown[]) => unknown> = {
     findMany: async () => [],
     findFirst: async () => null,
@@ -63,7 +91,11 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
     {
       get: (_target, model: string) => {
         if (model === "$transaction") {
-          return async (fn: (tx: unknown) => unknown) => fn(prisma);
+          return async (fn: (tx: unknown) => unknown) => {
+            const result = await fn(prisma);
+            afterCommit();
+            return result;
+          };
         }
         if (model === "$queryRaw") return async () => [{ locked: 1 }];
         const methods =
@@ -121,6 +153,13 @@ function world(printed = "") {
   const emails: Row[] = [];
   /** Whether reading the inbox fails, as when its database is unreachable. */
   const inboxDown = { value: false };
+  /**
+   * Whether the transaction that keeps a code from mail fails as its caller sees it once its
+   * writes are in, as when the attempt stops right after it: the connection drops, the lease ends.
+   */
+  const stopAfterKeep = { value: false };
+  /** How each attempt ended, as the executor finalized the run. */
+  const finalized: Row[] = [];
   /** The bot's switches the owner sets. */
   const bot = { connectedMailCodes: false };
   /** The mail the owner connected: its messages from the site, and the reads made of it. */
@@ -137,6 +176,8 @@ function world(printed = "") {
 
   async function attempt(
     steps: Array<{ name: string; args: Record<string, unknown> } | (() => void)>,
+    /** What the bot writes once its calls are done. */
+    reply = "",
   ) {
     const results: unknown[] = [];
     const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
@@ -154,6 +195,7 @@ function world(printed = "") {
             .catch((error: unknown) => ({ thrown: (error as Error).message })),
         );
       }
+      if (reply) yield { type: "text" as const, text: reply };
       yield { type: "done" as const, text: "" };
     });
     const prisma = recordingPrisma(
@@ -370,6 +412,12 @@ function world(printed = "") {
         },
       },
       calls,
+      () => {
+        if (!stopAfterKeep.value) return;
+        if (!effects.some((row) => row.kind === "emailed_code" && row.status === "taken")) return;
+        stopAfterKeep.value = false;
+        throw new Error("The connection dropped after the commit");
+      },
     );
     const executor = createRunExecutor({
       prisma,
@@ -417,7 +465,10 @@ function world(printed = "") {
         append: vi.fn(async (event: unknown) => {
           appended.push(event);
         }),
-        finalizeRun: vi.fn(async () => ({ continuationRunId: null })),
+        finalizeRun: vi.fn(async (input: Row) => {
+          finalized.push(input);
+          return { continuationRunId: null };
+        }),
         pauseRunForTakeover: vi.fn(async () => false),
         pauseRunForInput: vi.fn(async (input: { blocks: Array<Record<string, unknown>> }) => {
           asked.push(input);
@@ -488,6 +539,8 @@ function world(printed = "") {
     run,
     bot,
     inboxDown,
+    stopAfterKeep,
+    finalized,
     connectedInbox,
     connectedReads,
     thread,
@@ -695,7 +748,80 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.requests()).toMatchObject([{ status: "completed" }]);
   });
 
-  it("takes the one code in the inbox for that site, as the owner's answer would be taken", async () => {
+  it("never leaves a code filled from email with its request looking unanswered", async () => {
+    const run = world();
+    run.receives(CODE_EMAIL);
+    run.stopAfterKeep.value = true;
+    const [first] = await run.attempt([requestCode()]);
+    // The code was kept and its request answered with the call's result in one transaction.
+    expect(run.secrets).toMatchObject([{ kind: runCodeKind("run-1") }]);
+    expect(run.requests()).toMatchObject([{ status: "completed", result: { note: EMAILED_NOTE } }]);
+    expect(first).toMatchObject({ note: EMAILED_NOTE });
+    // A retry of the call gets that answer back: no card, no second look in the inbox.
+    const [again] = await run.attempt([requestCode()]);
+    expect(again).toMatchObject({ note: EMAILED_NOTE });
+    expect(run.asked).toEqual([]);
+    expect(await decoded(run.secrets[0]!)).toMatchObject({ code: CODE, fromEmail: "email-1" });
+  });
+
+  it("hides a code kept without an acknowledged commit, in the rest of the attempt", async () => {
+    const run = world();
+    run.receives(CODE_EMAIL);
+    run.stopAfterKeep.value = true;
+    const results = await run.attempt(
+      [
+        requestCode(),
+        { name: "read_email", args: { id: "email-1" } },
+        { name: "read_email", args: { query: CODE } },
+        { name: "read_email", args: {} },
+      ],
+      `Signed in with ${CODE}.`,
+    );
+    expect(results[0]).toMatchObject({ note: EMAILED_NOTE });
+    expect(results[1]).toMatchObject({ email: { id: "email-1" } });
+    expect(results[2]).toMatchObject({ emails: [] });
+    expect(results[3]).toMatchObject({ emails: [{ id: "email-1" }] });
+    expect(JSON.stringify(results)).not.toContain(CODE);
+    expect(run.everythingWritten()).not.toContain(CODE);
+  });
+
+  // An attempt that stops right after the code is kept resumes an earlier pause's saved turn, or
+  // the bot never asks again: its next call, whatever it is, runs as itself, and the run ends.
+  it.each<[string, { name: string; args: Record<string, unknown> }, string]>([
+    ["another tool", { name: "read_email", args: {} }, "emails"],
+    ["a code request for another site", requestCode({ oneTimeCode: { origin: OTHER } }), "card"],
+  ])(
+    "resumes with %s after stopping right after an emailed code was kept",
+    async (_name, next, expected) => {
+      const run = world();
+      run.receives(CODE_EMAIL);
+      run.stopAfterKeep.value = true;
+      await run.attempt([requestCode()]);
+      const [result] = await run.attempt([next]);
+      if (expected === "emails") expect(result).toMatchObject({ emails: [{ id: "email-1" }] });
+      else
+        expect(run.asked.at(-1)?.blocks).toMatchObject([{ text: "Code for other.example.test" }]);
+      expect(run.finalized.filter((input) => input.outcome === "failed")).toEqual([]);
+      expect(JSON.stringify(result)).not.toContain(EMAILED_NOTE);
+    },
+  );
+
+  it("fills a code it kept from email when cleaning up after keeping it fails", async () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    const run = world();
+    run.receives(CODE_EMAIL);
+    cleanupFails.value = true;
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ note: EMAILED_NOTE });
+    expect(run.asked).toEqual([]);
+    expect(run.requests()).toMatchObject([{ status: "completed" }]);
+    expect(warn).toHaveBeenCalledWith("emailed code was kept, but cleaning up after it failed", {
+      errorName: "Error",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("Secret cleanup failed");
+  });
+
+  it("takes the one code in the inbox for that site, as the owner's answer is", async () => {
     const expected = await ownerAnsweredResult();
     notified.length = 0;
     const run = world();
@@ -704,7 +830,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     // Told where it came from, as the owner's answer is, and never the code.
     expect(result).toEqual({
       ...(expected as object),
-      note: "The code from the email the site sent was entered. Type it with browser_act fill_code {ref}; it is not shown to you.",
+      note: EMAILED_NOTE,
     });
     // No card, no push for one, no pause: the only notice is that the run finished.
     expect(run.asked).toEqual([]);
@@ -933,7 +1059,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect((results[2] as { emails: unknown[] }).emails).toHaveLength(1);
   });
 
-  it("returns the same for a search matching only the hidden code as for one matching nothing", async () => {
+  it("returns the same for a search for only the hidden code as for nothing", async () => {
     const run = world();
     const since = minutesAgo(5).toISOString();
     run.receives({ text: "Welcome to Example.", receivedAt: minutesAgo(4) });
@@ -975,7 +1101,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     },
   );
 
-  it("shows the card for a sign-in page on a public mailbox domain, whatever mail came", async () => {
+  it("shows the card for a sign-in page on a public mailbox domain, whatever came", async () => {
     const run = world();
     run.page.url = "https://login.yahoo.com/verify";
     run.receives({ ...CODE_EMAIL, fromAddress: "no-reply@yahoo.com" });
@@ -1091,7 +1217,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.secrets).toEqual([]);
   });
 
-  it("keeps an unused emailed code hidden, and its email used, when the bot asks again", async () => {
+  it("keeps an unused emailed code hidden, its email used, when the bot asks again", async () => {
     const run = world();
     run.receives(CODE_EMAIL);
     const results = await run.attempt([requestCode(), requestCode()]);
@@ -1116,7 +1242,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(JSON.stringify(read)).not.toContain(CODE);
   });
 
-  it("starts no attempt while its emailed code cannot be read, and hides it once it can", async () => {
+  it("starts no attempt while its emailed code is unreadable, and hides it after", async () => {
     const run = world();
     run.receives(CODE_EMAIL);
     await run.attempt([requestCode()]);
@@ -1150,7 +1276,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.secrets.find((row) => row.kind === runCodeKind("run-1"))).toBeUndefined();
   });
 
-  it("gives a background helper of the run neither the code's email nor a fill of its own", async () => {
+  it("gives a background helper neither the code's email nor a fill of its own", async () => {
     const run = world();
     run.receives(CODE_EMAIL);
     await run.attempt([requestCode()]);
@@ -1175,13 +1301,15 @@ describe("request_secret for a code the site emailed to the bot", () => {
 describe("request_secret for a code the site emailed to the mail the owner connected", () => {
   const dkim = (() => {
     const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const der = publicKey.export({ type: "spki", format: "der" }).toString("base64");
     return {
       privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-      record: `v=DKIM1; k=rsa; p=${publicKey.export({ type: "spki", format: "der" }).toString("base64")}`,
+      record: `v=DKIM1; k=rsa; p=${der}`,
     };
   })();
   /** The claim on message m1 in the owner's mailbox. */
-  const CONNECTED_CLAIM = `emailed-code:connected:${createHash("sha256").update("owner@example.net:m1").digest("base64url")}`;
+  const CONNECTED_DIGEST = createHash("sha256").update("owner@example.net:m1").digest("base64url");
+  const CONNECTED_CLAIM = `emailed-code:connected:${CONNECTED_DIGEST}`;
   const decoded = async (row: Row) =>
     JSON.parse(await secretStore.load(String(row.ciphertext), String(row.id)));
 
@@ -1229,7 +1357,7 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     const [result] = await run.attempt([requestCode()]);
     expect(result).toMatchObject({
       submitted: true,
-      note: "The code from the email the site sent was entered. Type it with browser_act fill_code {ref}; it is not shown to you.",
+      note: EMAILED_NOTE,
     });
     expect(run.asked).toEqual([]);
     expect(notified).toMatchObject([{ kind: "completion" }]);
@@ -1253,6 +1381,18 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     expect(run.everythingWritten()).not.toContain(CODE);
   });
 
+  it("never leaves a code filled from there with its request looking unanswered", async () => {
+    const run = await connectedWorld();
+    run.connectedInbox.push(await connectedMail());
+    run.stopAfterKeep.value = true;
+    await run.attempt([requestCode()]);
+    expect(run.requests()).toMatchObject([{ status: "completed", result: { note: EMAILED_NOTE } }]);
+    const [again] = await run.attempt([requestCode()]);
+    expect(again).toMatchObject({ note: EMAILED_NOTE });
+    expect(run.asked).toEqual([]);
+    expect(run.connectedReads).toHaveLength(1);
+  });
+
   it("never reads it unless the owner turned that on", async () => {
     const run = await connectedWorld();
     run.bot.connectedMailCodes = false;
@@ -1263,7 +1403,7 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     expect(run.connectedReads).toEqual([]);
   });
 
-  it("takes the bot's own inbox first and never reads the connected mail for that request", async () => {
+  it("takes the bot's inbox first, and reads no connected mail for that request", async () => {
     const run = await connectedWorld();
     run.receives({ text: `Your verification code is ${CODE}.` });
     run.connectedInbox.push(await connectedMail({ code: "731905" }));

@@ -10,6 +10,7 @@ import {
 import { isSecretAskBlock } from "@rakazo/core";
 import type { Prisma, PrismaClient, RunSecretWriter } from "@rakazo/db";
 import { runCodeKind, runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ApprovalPausedToolResult } from "./approval-effect.js";
 import { internalTerminatingResult, resolveDuplicateEffectGate } from "./approval-effect.js";
 import { encodeRunCode, encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
@@ -277,15 +278,29 @@ async function holdRunCode(
   });
 }
 
+/** The request a code from mail was to answer was settled meanwhile: nothing was kept. */
+export class SecretRequestNotOpen extends Error {
+  constructor() {
+    super("The secret request was settled before its code was kept");
+    this.name = "SecretRequestNotOpen";
+  }
+}
+
 /**
  * Take the code for a request from the bot's own inbox or the owner's connected mail
  * (takeEmailedCode) and keep it for this run's page, sealed and stored as the answer to a code
- * card is: nothing when there is none.
+ * card is. The same transaction completes the request with `request.result`, what the call
+ * returns, from the status the call holds it in: a call cut off right after is answered with that
+ * result when retried, and leaves nothing approved for an attempt to replay. A request settled
+ * meanwhile (SecretRequestNotOpen) rolls it all back. Nothing when there is no code.
  */
 export async function holdEmailedCode(
   prisma: PrismaClient,
   secretStore: SecretStore,
-  input: Parameters<typeof takeEmailedCode>[1] & { scope: RunScope },
+  input: Parameters<typeof takeEmailedCode>[1] & {
+    scope: RunScope;
+    request: { id: string; from: "intended" | "executing"; result: Prisma.InputJsonValue };
+  },
 ) {
   return takeEmailedCode(prisma, input, async (found, claim) => {
     const sealed = await sealRunCode(secretStore, input.scope, input.runId, {
@@ -293,11 +308,31 @@ export async function holdEmailedCode(
       code: found.code,
       fromEmail: found.fromEmail,
     });
-    const stored = await persistPreparedSecret(prisma, secretStore, sealed, () =>
-      prisma.$transaction(async (tx) => {
+    let kept: Awaited<ReturnType<typeof holdRunCode>> | undefined;
+    const commit = async () => {
+      kept = await prisma.$transaction(async (tx) => {
         await claim(tx);
-        return holdRunCode(tx, input.scope, input.runId, sealed);
-      }),
+        const row = await holdRunCode(tx, input.scope, input.runId, sealed);
+        const { id, from, result } = input.request;
+        const answered = await tx.externalEffect.updateMany({
+          where: { id, runId: input.runId, kind: "request_secret", status: from },
+          data: { status: "completed", result },
+        });
+        if (answered.count !== 1) throw new SecretRequestNotOpen();
+        return row;
+      });
+      return kept;
+    };
+    const stored = await persistPreparedSecret(prisma, secretStore, sealed, commit).catch(
+      (error: unknown) => {
+        // The code is kept and its request answered: cleaning up after that failed, which must
+        // not turn the fill into a card for a request already answered.
+        if (!kept) throw error;
+        getLogger().warn("emailed code was kept, but cleaning up after it failed", {
+          errorName: error instanceof Error ? error.name : typeof error,
+        });
+        return kept;
+      },
     );
     return { ...found, stored };
   });
