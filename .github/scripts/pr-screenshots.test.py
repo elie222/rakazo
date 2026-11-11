@@ -144,6 +144,10 @@ class PromptTest(unittest.TestCase):
         self.assertNotIn('"f300"', text)
 
 
+    def test_an_emoji_body_alone_cannot_overflow(self):
+        text = shots.prompt("Do it.", {**self.PR, "body": "\U0001f600" * 8_000}, "")
+        self.assertLessEqual(len(json.dumps(text)), shots.MAX_PROMPT_JSON)
+
 class CliTest(unittest.TestCase):
     def test_prepare_writes_uploads_and_section(self):
         with tempfile.TemporaryDirectory() as directory:

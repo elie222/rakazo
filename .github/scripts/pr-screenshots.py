@@ -27,7 +27,7 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # The action passes the prompt, and all its inputs as JSON, in environment variables; Linux
 # refuses to start a process when one is over 128 KiB.
 MAX_PROMPT_JSON = 100_000
-MAX_BODY = 8_000
+MAX_BODY_JSON = 16_000
 MAX_FILES = 300
 
 
@@ -35,23 +35,27 @@ def json_size(text: str) -> int:
     return len(json.dumps(text))
 
 
+def fit(text: str, budget: int) -> str:
+    """The longest start of text whose JSON form fits in budget bytes."""
+    if json_size(text) <= budget:
+        return text
+    low, high = 0, len(text)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if json_size(text[:mid]) <= budget:
+            low = mid
+        else:
+            high = mid - 1
+    return text[:low]
+
+
 def prompt(instructions: str, pr: dict, diff: str) -> str:
     pr = dict(pr)
-    pr["body"] = str(pr.get("body") or "")[:MAX_BODY]
+    pr["body"] = fit(str(pr.get("body") or ""), MAX_BODY_JSON)
     pr["changed_files"] = list(pr.get("changed_files") or [])[:MAX_FILES]
     head = f"{instructions.rstrip()}\n\n<pull_request>\n{json.dumps(pr, indent=2)}\n</pull_request>\n\n<diff>\n"
     tail = "\n</diff>\n"
-    budget = MAX_PROMPT_JSON - json_size(head + tail)
-    if json_size(diff) > budget:
-        low, high = 0, len(diff)
-        while low < high:
-            mid = (low + high + 1) // 2
-            if json_size(diff[:mid]) <= budget:
-                low = mid
-            else:
-                high = mid - 1
-        diff = diff[:low]
-    return head + diff + tail
+    return head + fit(diff, MAX_PROMPT_JSON - json_size(head + tail)) + tail
 
 
 def clean_caption(value: object) -> str:
@@ -119,7 +123,10 @@ def splice(body: str, new_section: str) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) == 5 and argv[1] == "prompt":
-        instructions, pr, diff = (Path(path).read_text(errors="replace") for path in argv[2:])
+        instructions, pr = (Path(path).read_text(errors="replace") for path in argv[2:4])
+        # Only the start of a huge diff can fit, so the rest is never read.
+        with open(argv[4], "rb") as file:
+            diff = file.read(MAX_PROMPT_JSON).decode(errors="replace")
         sys.stdout.write(prompt(instructions, json.loads(pr), diff))
         return 0
     if len(argv) == 6 and argv[1] == "prepare":
