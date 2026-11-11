@@ -43,6 +43,7 @@ Before starting, confirm:
   be enabled. A YAML policy alone does not prove packets are blocked.
 - Enough free disk for images, database, saved homes and two running computers.
   Each computer is limited to 2 CPUs / 4 GiB; allow room for the app and the node too.
+  See [resource sizing and diagnosis](#size-resources-and-investigate-slow-tasks) before choosing limits.
   Local-path PVC sizes are requests, **not disk quotas**. Monitor actual filesystem space.
 
 The app and computer digests in the example are a matching published pair from
@@ -257,6 +258,98 @@ logout does not revoke this independent device credential.
 External webhooks and other integrations require their own authentication design;
 do not add broad unauthenticated API exceptions. App-native SSO is a separate
 option in [sign-in and accounts](./self-host-accounts.md).
+
+## Size resources and investigate slow tasks
+
+A task stops even though the server still has free memory. The API, worker and
+each computer run in separate containers, each with its own ceiling. Free host
+memory does not allow a container to exceed its limit. A memory limit can lead to
+an out-of-memory (OOM) kill; a CPU limit can instead make a busy container wait
+for more CPU time. Neither symptom alone explains every slow task.
+
+In one existing deployment, the API and worker were each limited to 2 GiB and
+were killed during large bot/file jobs despite spare host memory. Kernel records
+matched the kills to their container memory limits. The cause of the memory growth
+is unknown. Raising the limits and checking readiness and sign-in did not measure
+long-term stability or prove faster tasks.
+
+The files in this example start smaller. For a memory-heavy workload with enough
+capacity, the following **observed larger profile** is a starting point to evaluate,
+not a minimum or a performance guarantee:
+
+| Setting | Example default | Larger profile used in that deployment |
+| --- | --- | --- |
+| API and worker, each (`workloads.yaml`) | requests 100m CPU / 128 MiB; limits 2 CPU / 2 GiB | requests 1 CPU / 1 GiB; limits 4 CPU / 8 GiB |
+| Each computer (`config.env`) | limits 2 CPU / 4 GiB | limits 4 CPU / 8 GiB |
+| Computer namespace (`limits.yaml`) | 2 Pods; limits total 4 CPU / 8 GiB | 2 Pods; limits total 8 CPU / 16 GiB |
+
+A **request** is what the scheduler uses to place a Pod; a **limit** is its
+runtime ceiling. The computer provider supplies CPU and memory limits without
+separate requests, so Kubernetes normally copies each limit into its request when
+no admission policy supplies another request. Two larger computers plus API and
+worker therefore request 10 CPUs and 18 GiB, before the web server, database,
+Jobs, Kubernetes and other workloads. A node can have free memory now and still
+lack allocatable capacity for the requests; the Pod then remains Pending. Check
+node allocatable resources and other Pods' requests as well as current use;
+`kubectl describe node <NODE>` shows both. The namespace quota is a total, not a
+per-computer setting: increasing a computer limit without increasing the quota
+can prevent a second computer from starting.
+The per-user computer limit is separate from that namespace-wide quota.
+
+To use the larger profile, edit both API and worker resources in `workloads.yaml`,
+set `KUBERNETES_SANDBOX_CPU_LIMIT=4` and `KUBERNETES_SANDBOX_MEMORY_LIMIT=8Gi`
+in your local `config.env`, and change `limits.cpu` to `'8'` and `limits.memory`
+to `16Gi` in `limits.yaml`. Keep the Pod and ephemeral-storage quota values unless
+you intend to change them. Review node capacity and capacity for other services
+first. Apply the foundation phase before the app phase as shown above. The changed
+Deployment templates roll out new API and worker Pods; allow running work to finish
+before replacing a worker. A ConfigMap update alone does not refresh their process
+environment: restart both Deployments if only `config.env` changed. Existing
+computers keep their creation-time settings; stop them cleanly to save their homes,
+then create them again for the new limits. A supported in-place resize is a separate
+operator action and may be deferred or require a restart.
+
+For rollback, save computer work. Restore the old `config.env` and API/worker
+resources while temporarily keeping the larger quota, then apply foundation and
+app after worker tasks finish. Recreate the stopped computers with the old limits;
+do not shrink their memory limits while they run. Once quota usage fits the old
+values, restore `limits.yaml` and apply foundation again. Verify the rollouts and
+continue monitoring: a higher ceiling can delay another OOM without fixing the
+underlying growth.
+
+Start diagnosis with the part that stopped. These read-only commands use the
+example's namespaces and names; use your own deployment names where they differ.
+
+```sh
+kubectl -n rakazo get pods
+kubectl -n rakazo-sandboxes get pods
+kubectl -n rakazo-sandboxes describe quota rakazo-computers
+kubectl top nodes
+kubectl -n rakazo top pods
+kubectl -n rakazo-sandboxes top pods
+```
+
+`kubectl top` needs a working metrics-server and shows a recent sample, not a
+history or peak. For a Pod with a restart or Pending status, use `kubectl -n
+<NAMESPACE> describe pod <POD>` to inspect events, resource settings and its last
+terminated reason. `OOMKilled` is evidence of an OOM; exit code 137 by itself is
+not. To distinguish a container limit from node-wide pressure, correlate the time
+and container with node/kernel OOM records where available (for example, a matching
+`CONSTRAINT_MEMCG` record). Events and previous container logs may have expired;
+`kubectl -n <NAMESPACE> logs <POD> -c <CONTAINER> --previous` can help when they
+remain. Substitute actual names; these angle-bracket placeholders are not literal
+shell arguments. Logs, events and screen URLs can contain private data: inspect and
+redact them before sharing.
+
+If the Pod has not started, check image pulls, admission, quota, node scheduling
+and disk. If it runs but a task is slow, separate queue wait, time to first response,
+tool execution and screen/network delays. Check the database, disk and external
+model or network waits too. In the incident above, one first response took about
+100 seconds while recorded queue wait was under a second; that does not assign
+the remaining time to the model service. Compare repeated observations and
+resource history before changing limits or concluding CPU throttling is the cause.
+If available, compare the container's CPU throttling counters over the same time
+interval; a cumulative counter alone does not establish current throttling.
 
 ## Find the failing boundary before changing a setting
 
