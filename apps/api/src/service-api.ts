@@ -36,12 +36,11 @@ import {
   requestHash,
 } from "./service-idempotency.js";
 import { SERVICE_MCP_PATH, serviceMcpHandler } from "./service-mcp.js";
+import { claimStream } from "./service-streams.js";
 
 export { projectBlocks } from "./service-api-routes.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{1,128}$/;
-/** Per server process, which is enough to stop one key holding every connection. */
-const MAX_STREAMS_PER_KEY = 5;
 
 function json(status: number, body: unknown, headers: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -136,22 +135,6 @@ export function serviceApiHandler(deps: {
   memberActor: (userId: string, spaceId: string) => Promise<Actor | null>;
 }) {
   const { prisma, router, memberActor } = deps;
-  const streams = new Map<string, number>();
-
-  const openStream = (credentialId: string) => {
-    const open = streams.get(credentialId) ?? 0;
-    if (open >= MAX_STREAMS_PER_KEY) throw new ServiceRejection("too_many_streams");
-    streams.set(credentialId, open + 1);
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      const left = (streams.get(credentialId) ?? 1) - 1;
-      if (left > 0) streams.set(credentialId, left);
-      else streams.delete(credentialId);
-    };
-  };
-
   return async (request: Request): Promise<Response> => {
     const requestId = randomUUID();
     const headers: Record<string, string> = { "x-request-id": requestId };
@@ -275,7 +258,11 @@ export function serviceApiHandler(deps: {
             body,
             idempotencyKey: suppliedKey ?? "",
             bot,
-            openStream,
+            openStream: async () => {
+              const release = await claimStream(prisma, actor, credential.id);
+              if (!release) throw new ServiceRejection("too_many_streams");
+              return release;
+            },
           } as ServiceContext<ServiceRouteId>;
           const handler = SERVICE_HANDLERS[matched.id] as (
             context: ServiceContext<ServiceRouteId>,

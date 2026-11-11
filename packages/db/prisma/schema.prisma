@@ -923,9 +923,25 @@ model ServiceCredential {
   createdAt       DateTime  @default(now())
 
   idempotencyKeys ServiceIdempotencyKey[]
+  eventStreams    ServiceEventStream[]
 
   @@index([userId, spaceId])
   @@map("service_credentials")
+}
+
+/// One open event stream, held by whichever server serves it. Counting live rows caps a key's
+/// streams across every instance; a server that dies stops renewing, and its rows lapse.
+model ServiceEventStream {
+  id           String            @id @default(cuid())
+  userId       String
+  spaceId      String
+  credentialId String
+  credential   ServiceCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime          @default(now())
+
+  @@index([credentialId])
+  @@map("service_event_streams")
 }
 
 /// A write an API key made under an Idempotency-Key, so a retry returns the first answer.
