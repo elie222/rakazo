@@ -14,6 +14,7 @@ import {
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
 import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
+import { normalizeSerenityEndpoint } from "./serenity-client.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
@@ -72,6 +73,49 @@ interface MemoryProviderAdapter {
     connectionVersion?: string,
   ): SemanticMemoryProvider;
   decodeLegacyCredentials?(plaintext: string): Record<string, string> | null;
+  /**
+   * Everything the stored credentials can reach with these settings, normalized as prepare
+   * saves it. When this changes, the stored credentials must not follow.
+   */
+  credentialTarget(settings: Record<string, string>): string;
+}
+
+/** Cloud, or the self-hosted server's base URL. */
+function serviceTarget(settings: Record<string, string>, defaultMode?: "cloud"): string {
+  const mode = settings.mode ?? defaultMode;
+  if (mode === "cloud") return "cloud";
+  return `${mode ?? ""} ${settings.baseUrl?.trim() ?? ""}`;
+}
+
+function serenityTarget(settings: Record<string, string>): string {
+  const endpoint = settings.endpoint?.trim() ?? "";
+  try {
+    return normalizeSerenityEndpoint(endpoint);
+  } catch {
+    return endpoint;
+  }
+}
+
+function honchoTarget(settings: Record<string, string>): string {
+  // The key can reach other workspaces and peers, so those are part of what it reaches.
+  return JSON.stringify([
+    serviceTarget(settings, "cloud"),
+    settings.workspaceId?.trim() ?? "",
+    settings.userPeerId?.trim() ?? "",
+  ]);
+}
+
+function hindsightTarget(settings: Record<string, string>): string {
+  // The key can read other banks, so the banks recalled are part of what it reaches.
+  const recallBanks = [
+    ...new Set(
+      (settings.recallBanks ?? "")
+        .split(",")
+        .map((bank) => bank.trim())
+        .filter(Boolean),
+    ),
+  ].sort();
+  return JSON.stringify([serviceTarget(settings, "cloud"), recallBanks]);
 }
 
 const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new Map([
@@ -83,6 +127,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       prepare: prepareSupermemoryConnection,
       create: createSupermemoryProvider,
       decodeLegacyCredentials: decodeLegacySupermemoryCredentials,
+      credentialTarget: (settings: Record<string, string>) => serviceTarget(settings),
     },
   ],
   [
@@ -96,6 +141,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
         options?: { allowPrivateEndpoint?: boolean },
       ) => prepareSerenityConnection(settings, credentials, undefined, options),
       create: createSerenityProvider,
+      credentialTarget: serenityTarget,
     },
   ],
   [
@@ -105,6 +151,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHonchoConnection,
       create: createHonchoProvider,
+      credentialTarget: honchoTarget,
     },
   ],
   [
@@ -114,6 +161,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHindsightConnection,
       create: createHindsightProvider,
+      credentialTarget: hindsightTarget,
     },
   ],
 ]);
@@ -130,6 +178,14 @@ export function memoryProviderRequiresPrivateEndpoint(
   settings: Record<string, string>,
 ): boolean {
   return memoryProviderAdapter(provider).requiresPrivateEndpoint(settings);
+}
+
+/** Where a provider's stored credentials would be sent and what they could read there. */
+export function memoryProviderCredentialTarget(
+  provider: string,
+  settings: Record<string, string>,
+): string {
+  return memoryProviderAdapter(provider).credentialTarget(settings);
 }
 
 /**
@@ -185,6 +241,15 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
   throw new Error(`Stored credentials for memory provider "${provider}" are invalid.`);
 }
 
+/** Decrypts a Space's stored provider credentials. */
+export async function loadMemoryProviderCredentials(
+  secrets: Pick<SecretStore, "load">,
+  provider: string,
+  secret: { id: string; ciphertext: string },
+): Promise<Record<string, string>> {
+  return decodeCredentials(provider, await secrets.load(secret.ciphertext, secret.id));
+}
+
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   constructor(
     private readonly prisma: Pick<PrismaClient, "spaceMemoryConfig">,
@@ -209,9 +274,10 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       getLogger().warn("Semantic memory disabled: endpoint revalidation failed");
       return null;
     }
-    const credentials = decodeCredentials(
+    const credentials = await loadMemoryProviderCredentials(
+      this.secrets,
       config.provider,
-      await this.secrets.load(config.secret.ciphertext, config.secret.id),
+      config.secret,
     );
     return {
       provider: createMemoryProvider(

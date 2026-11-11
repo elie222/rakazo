@@ -62,6 +62,9 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
   Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
+To change a connected provider's settings, choose **Edit**. You only need to enter the key again
+when you change where it connects or what it can read.
+
 Once connected, **Default scope** decides what bots share in the provider:
 
 - **Isolated**: each bot recalls only what it saved. This is the default.

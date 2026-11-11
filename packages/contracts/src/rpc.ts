@@ -915,6 +915,15 @@ export const appContract = {
     setDefaultScope: oc
       .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
       .output(SpaceMemoryConfigSchema),
+    /** Change a connected provider's settings; credentials left out keep the stored ones. */
+    updateProvider: oc
+      .input(
+        z.object({
+          settings: z.record(z.string(), z.string()),
+          credentials: z.record(z.string(), z.string()).default({}),
+        }),
+      )
+      .output(SpaceMemoryConfigSchema),
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {

@@ -385,6 +385,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/remove"],
       ["memory/providerConfig"],
       ["memory/connectProvider"],
+      ["memory/updateProvider"],
       ["memory/setDefaultScope"],
       ["memory/disconnectProvider"],
       ["routines/list", { botId: "missing-bot" }],
