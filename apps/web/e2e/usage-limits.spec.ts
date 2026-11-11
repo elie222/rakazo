@@ -72,7 +72,7 @@ const creditStatus: BillingStatus = {
   balanceUsd: 12.5,
 };
 
-test("account menu and Usage show allowances and credits only when present", async ({
+test("account menu shows the usage hint and Usage shows allowances and credits only when present", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
