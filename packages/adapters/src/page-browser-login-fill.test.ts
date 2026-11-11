@@ -333,8 +333,8 @@ describe("live page helper one-time code fill", () => {
     });
 
     it("draws them as dots when the widget draws its slots a moment later", () => {
-      // Fake timers fix the order: the widget draws at 10 ms, the helper masks again at 50 ms.
-      // With real timers a loaded runner can run the re-mask first, and it never comes back.
+      // Fake timers make the order explicit: the widget draws at 10 ms, then the helper masks
+      // again at 50 ms. The test no longer depends on how a loaded runner schedules them.
       vi.useFakeTimers();
       try {
         const { fill, set } = widget(10);
