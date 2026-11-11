@@ -536,7 +536,12 @@ export function computerRoutes(ctx: RouterContext) {
           if (waiting?.id !== input.runId) {
             throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
           }
-          if (waiting.userId !== context.actor.userId) {
+          // The person it asked, or whoever already holds the screen bound to this run.
+          const drivesThisRun =
+            bot.computer?.controlHolder === "user" &&
+            bot.computer.controlUserId === context.actor.userId &&
+            bot.computer.controlRunId === waiting.id;
+          if (waiting.userId !== context.actor.userId && !drivesThisRun) {
             throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
           }
         }
