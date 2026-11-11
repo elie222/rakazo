@@ -36,6 +36,10 @@ model User {
   botAvatarSet                String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  /// Daily quiet hours, as whole hours 0-23 in `timezone`: news doesn't notify from the start
+  /// hour until the end hour, which may come the next morning. Both null while they are off.
+  quietHoursStart             Int?
+  quietHoursEnd               Int?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?

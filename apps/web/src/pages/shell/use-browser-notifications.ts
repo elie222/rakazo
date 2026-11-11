@@ -1,5 +1,5 @@
-import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
+import type { Bot, ChatAlert, Me, ProductEvent } from "@rakazo/contracts";
+import { chatSnoozed, inQuietHours, isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -27,9 +27,13 @@ type ChatAlertOptions = {
   meId: string | undefined;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
   groupsRef?: RefObject<readonly SnoozableChat[]>;
+  /** The signed-in person's quiet hours and timezone, read when a reply would notify. */
+  quietHoursRef?: RefObject<Pick<Me, "quietHours" | "timezone"> | null | undefined>;
 };
 
-/** A question still arrives while a chat is snoozed; an ordinary reply waits. */
+type QuietHoursRef = ChatAlertOptions["quietHoursRef"];
+
+/** A question still arrives while a chat is snoozed or in quiet hours; an ordinary reply waits. */
 function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
   if (event.type !== "thread.message.created") return false;
   const blocks = event.payload.blocks;
@@ -41,15 +45,17 @@ function messageAsks(event: { type: string; payload: { blocks?: unknown } }): bo
   );
 }
 
-function snoozedOrdinaryReply(
+function heldOrdinaryReply(
   event: { type: string; payload: { blocks?: unknown } },
   chat: SnoozableChat | undefined,
+  quietHoursRef: QuietHoursRef,
 ): boolean {
+  const me = quietHoursRef?.current;
   return (
     event.type === "thread.message.created" &&
     !messageAsks(event) &&
-    !!chat &&
-    chatSnoozed(chat, Date.now())
+    ((!!chat && chatSnoozed(chat, Date.now())) ||
+      inQuietHours(me?.quietHours, me?.timezone, new Date()))
   );
 }
 
@@ -75,7 +81,7 @@ function openChatOnClick(
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef }: ChatAlertOptions,
+  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef, quietHoursRef }: ChatAlertOptions,
 ) {
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
@@ -166,8 +172,8 @@ export function useBrowserNotifications(
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
-    // A reply queued while permission was pending can be snoozed before it is shown.
-    if (snoozedOrdinaryReply(pending.event, chatFor(pending))) return true;
+    // A reply queued while permission was pending can be held before it is shown.
+    if (heldOrdinaryReply(pending.event, chatFor(pending), quietHoursRef)) return true;
     const result = deliverNativeBrowserNotification(
       pending.event,
       currentBot.name || pending.botName,
@@ -225,9 +231,9 @@ export function useBrowserNotifications(
         botName,
         groupId,
       } satisfies PendingBrowserNotification;
-      // Ordinary replies wait out a snooze. A question still comes through, and a reply that was
-      // queued before the snooze is checked again when it is actually shown.
-      if (snoozedOrdinaryReply(event, chatFor(pending))) return;
+      // Ordinary replies wait out a snooze or quiet hours. A question still comes through, and a
+      // reply that was queued before either is checked again when it is actually shown.
+      if (heldOrdinaryReply(event, chatFor(pending), quietHoursRef)) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
         pendingBrowserNotifications.current.set(event.threadId, pending);

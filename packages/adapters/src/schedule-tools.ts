@@ -319,6 +319,8 @@ export async function changeUserTimezone(
     locale?: string;
     botAvatarSet?: string;
     marketingEmailOptOutAt?: Date | null;
+    quietHoursStart?: number | null;
+    quietHoursEnd?: number | null;
   },
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];

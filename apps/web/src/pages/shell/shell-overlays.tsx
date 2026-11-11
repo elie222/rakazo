@@ -197,6 +197,13 @@ export function SettingsOverlays({
             const nextMe = await rpc.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
           }}
+          quietHours={bootstrapMe?.quietHours}
+          onQuietHoursChange={async (quietHours) => {
+            const nextMe = await rpc.preferences.update({ quietHours });
+            setBootstrapMe((prev) =>
+              prev ? { ...prev, quietHours: nextMe.quietHours ?? null } : nextMe,
+            );
+          }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
             const nextMe = await rpc.preferences.update({ botAvatarSet });

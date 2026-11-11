@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
-import type { Bot, ChatAlert } from "@rakazo/contracts";
+import type { Bot, ChatAlert, Me } from "@rakazo/contracts";
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -78,6 +78,7 @@ const rpc = {
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
 const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
+const me: Pick<Me, "quietHours" | "timezone"> = { quietHours: null, timezone: "UTC" };
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   hook = useBrowserNotifications(
@@ -90,6 +91,7 @@ function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
       openChat,
       meId: "user-1",
       groupsRef: { current: groups },
+      quietHoursRef: { current: me },
     },
   );
   return null;
@@ -400,6 +402,37 @@ describe("useBrowserNotifications chat alerts", () => {
       ),
     );
     expect(shown().map((row) => row[1])).toContain("Awake again.");
+  });
+
+  it("stays quiet for an ordinary reply in quiet hours, and still announces a question", async () => {
+    // From the hour before now until two hours later, in UTC.
+    const hour = new Date().getUTCHours();
+    me.quietHours = { start: (hour + 23) % 24, end: (hour + 2) % 24 };
+    try {
+      visible = false;
+      await open({ botId: "bot-b" });
+      const notify = (id: string, blocks: Array<Record<string, unknown>>) =>
+        act(() =>
+          hook.notifyBrowserForEvent(
+            reply(id, blocks),
+            "thread-b",
+            4,
+            true,
+            "Scout",
+            true,
+            undefined,
+          ),
+        );
+      notify("quiet-plain", [{ kind: "text", text: "The report is ready." }]);
+      expect(shown()).toEqual([]);
+      notify("quiet-ask", [{ kind: "ask", text: "Which repo?", status: "pending" }]);
+      expect(shown().map((row) => row[1])).toEqual(["Which repo?"]);
+      me.quietHours = null;
+      notify("loud-plain", [{ kind: "text", text: "Done for the day." }]);
+      expect(shown().map((row) => row[1])).toContain("Done for the day.");
+    } finally {
+      me.quietHours = null;
+    }
   });
 
   it("drops a reply queued for permission when the chat is snoozed before permission arrives", async () => {

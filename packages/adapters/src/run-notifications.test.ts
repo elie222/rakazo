@@ -6,11 +6,16 @@ import { notifyMemberMessage, notifyRun } from "./run-notifications.js";
 vi.mock("./notification-identity.js", () => ({ notificationIdentity: async () => undefined }));
 // Each person's own unread count: Ada has 2 unread chats, Bea 5.
 const snoozing = vi.hoisted(() => new Set<string>());
+const quiet = vi.hoisted(() => ({ members: new Set<string>(), fails: false }));
 vi.mock("@rakazo/db", () => ({
   countUnreadInboxChats: async (_: unknown, { userId }: { userId: string }) =>
     userId === "user-1" ? 2 : 5,
   membersSnoozing: async (_: unknown, _threadId: string, userIds: string[]) =>
     new Set(userIds.filter((userId) => snoozing.has(userId))),
+  membersInQuietHours: async (_: unknown, userIds: string[]) => {
+    if (quiet.fails) throw new Error("database unavailable");
+    return new Set(userIds.filter((userId) => quiet.members.has(userId)));
+  },
 }));
 
 const run = {
@@ -169,6 +174,41 @@ describe("notifications in a shared Space", () => {
       expect(recipients(help.send)).toEqual(["user-1"]);
     } finally {
       snoozing.clear();
+    }
+  });
+
+  it("holds news for whoever is in their quiet hours, but still asks its owner to answer", async () => {
+    quiet.members.add("user-1");
+    try {
+      const { value, publish, send } = deps({ members: shared });
+      await notifyRun(value, run, message);
+      expect(recipients(send)).toEqual(["user-2"]);
+      expect(publish.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["user-2"]);
+
+      for (const kind of ["help", "takeover", "failure"] as const) {
+        const needed = deps({ members: shared });
+        await notifyRun(needed.value, run, { ...message, kind });
+        expect(recipients(needed.send)).toEqual(["user-1"]);
+      }
+    } finally {
+      quiet.members.clear();
+    }
+  });
+
+  it("tells everyone when quiet hours can't be read, and lets a retried delivery wait", async () => {
+    quiet.fails = true;
+    try {
+      const { value, send } = deps({ members: shared });
+      await notifyRun(value, run, message);
+      expect(recipients(send)).toEqual(["user-1", "user-2"]);
+
+      const retried = deps({ members: shared });
+      await expect(
+        notifyRun(retried.value, run, message, { retryOnFailure: true }),
+      ).rejects.toThrow("database unavailable");
+      expect(retried.send).not.toHaveBeenCalled();
+    } finally {
+      quiet.fails = false;
     }
   });
 

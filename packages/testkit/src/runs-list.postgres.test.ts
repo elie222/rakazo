@@ -79,6 +79,49 @@ describeRunsList("runs.list activity tracker", () => {
     expect(recent.runs.some((run) => run.botName === "Beta")).toBe(false);
   });
 
+  it("holds news in quiet hours, but still lets the person's own failure through", async () => {
+    const cookie = await signup(app, `runs-quiet-${stamp}@rakazo.test`, "Quiet User");
+    const done = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Done",
+      title: "Done",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const broken = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Broken",
+      title: "Broken",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await seedRun(prisma, done.id, "completed", "done run");
+    await seedRun(prisma, broken.id, "failed", "broken run");
+    const notified = async () =>
+      Object.fromEntries(
+        (
+          await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", { filter: "recent" })
+        ).runs.map((run) => [run.botName, run.notificationsEnabled]),
+      );
+    expect(await notified()).toEqual({ Done: true, Broken: true });
+
+    // From the hour before now until two hours later, in UTC, so the test can't cross the end.
+    const hour = new Date().getUTCHours();
+    const quietHours = { start: (hour + 23) % 24, end: (hour + 2) % 24 };
+    const me = await rpc<{ quietHours: unknown }>(app, cookie, "preferences/update", {
+      timezone: "UTC",
+      quietHours,
+    });
+    expect(me.quietHours).toEqual(quietHours);
+    expect(await notified()).toEqual({ Done: false, Broken: true });
+
+    await rpc(app, cookie, "preferences/update", { quietHours: null });
+    expect(await notified()).toEqual({ Done: true, Broken: true });
+    expect(
+      (await raw(app, cookie, "preferences/update", { quietHours: { start: 8, end: 8 } })).status,
+    ).toBe(400);
+  });
+
   it("never returns runs from another workspace", async () => {
     const ownerCookie = await signup(app, `runs-owner-${stamp}@rakazo.test`, "Owner");
     const ownerBot = await rpc<{ id: string }>(app, ownerCookie, "bots/create", {
@@ -288,7 +331,7 @@ describeRunsList("runs.list activity tracker", () => {
 async function seedRun(
   prisma: PrismaClient,
   botId: string,
-  status: "queued" | "running" | "completed",
+  status: "queued" | "running" | "completed" | "failed",
   prompt: string,
   completedAt?: Date | null,
   threadId?: string,
@@ -315,7 +358,8 @@ async function seedRun(
       taskId: task.id,
       status,
       trigger: "user",
-      completedAt: status === "completed" ? (completedAt ?? new Date()) : null,
+      completedAt:
+        status === "completed" || status === "failed" ? (completedAt ?? new Date()) : null,
     },
   });
 }

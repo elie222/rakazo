@@ -1,9 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
+import type { AccountSecurity, BotAvatarSet, QuietHours, UsageSummary } from "@rakazo/contracts";
 import {
   APP_LOCALE_LABELS,
   accountDisplay,
+  DEFAULT_QUIET_HOURS,
   displayName,
+  localizedClock,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
 } from "@rakazo/core";
@@ -67,6 +69,9 @@ export type SettingsGeneralProps = {
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
+  /** Daily quiet hours, null when off; absent from servers that predate them. */
+  quietHours?: QuietHours | null;
+  onQuietHoursChange?: (quietHours: QuietHours | null) => Promise<void>;
   /** The icon set new and unpinned bots wear; absent from servers that predate it. */
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
@@ -80,6 +85,8 @@ export function GeneralSettingsPanels({
   onNameSaved,
   timezone = null,
   onTimezoneChange,
+  quietHours,
+  onQuietHoursChange,
   botAvatarSet,
   onBotAvatarSetChange,
   onAccountImported,
@@ -152,6 +159,11 @@ export function GeneralSettingsPanels({
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
   const deviceTimezone = localTimezone();
+  const quietHoursId = useId();
+  // The choice being saved, shown until the server answers; undefined while none is.
+  const [quietHoursDraft, setQuietHoursDraft] = useState<QuietHours | null>();
+  const [quietHoursError, setQuietHoursError] = useState<string | null>(null);
+  const shownQuietHours = quietHoursDraft === undefined ? quietHours : quietHoursDraft;
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -161,6 +173,19 @@ export function GeneralSettingsPanels({
       if (requestId !== localeRequestRef.current) return;
       setLocale(activated);
     });
+  }
+
+  async function chooseQuietHours(next: QuietHours | null) {
+    if (!onQuietHoursChange || quietHoursDraft !== undefined) return;
+    setQuietHoursDraft(next);
+    setQuietHoursError(null);
+    try {
+      await onQuietHoursChange(next);
+    } catch {
+      setQuietHoursError(t`Couldn't update quiet hours`);
+    } finally {
+      setQuietHoursDraft(undefined);
+    }
   }
 
   async function chooseTimezone(next: string) {
@@ -401,6 +426,58 @@ export function GeneralSettingsPanels({
               ) : null}
             </SettingsRow>
           </div>
+        ) : null}
+        {onQuietHoursChange && shownQuietHours !== undefined ? (
+          <SettingsRow
+            label={
+              <Label htmlFor={quietHoursId} className="text-body font-normal text-foreground">
+                <Trans>Quiet hours</Trans>
+              </Label>
+            }
+            control={
+              <Switch
+                id={quietHoursId}
+                data-testid="quiet-hours-toggle"
+                checked={shownQuietHours !== null}
+                disabled={quietHoursDraft !== undefined}
+                onCheckedChange={(on) => void chooseQuietHours(on ? DEFAULT_QUIET_HOURS : null)}
+              />
+            }
+          >
+            {shownQuietHours ? (
+              <div className="mt-2 space-y-1 text-right" data-testid="quiet-hours-range">
+                <div className="flex items-center justify-end gap-2">
+                  <QuietHourSelect
+                    label={t`Quiet hours start`}
+                    value={shownQuietHours.start}
+                    other={shownQuietHours.end}
+                    locale={locale}
+                    disabled={quietHoursDraft !== undefined}
+                    onChange={(start) => void chooseQuietHours({ ...shownQuietHours, start })}
+                  />
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    –
+                  </span>
+                  <QuietHourSelect
+                    label={t`Quiet hours end`}
+                    value={shownQuietHours.end}
+                    other={shownQuietHours.start}
+                    locale={locale}
+                    disabled={quietHoursDraft !== undefined}
+                    onChange={(end) => void chooseQuietHours({ ...shownQuietHours, end })}
+                  />
+                </div>
+                <p className="text-body-sm text-muted-foreground">
+                  <Trans>Only what needs you comes through.</Trans>
+                </p>
+              </div>
+            ) : null}
+            {quietHoursError ? (
+              <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
+                {quietHoursError}
+              </p>
+            ) : null}
+          </SettingsRow>
         ) : null}
       </SettingsGroup>
 
@@ -784,6 +861,41 @@ function SettingsPasswordInput({
         onChange={(event) => onChange(event.target.value)}
       />
     </Field>
+  );
+}
+
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+
+/** One end of the quiet hours, on the hour; the other end's hour isn't offered. */
+function QuietHourSelect({
+  label,
+  value,
+  other,
+  locale,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  other: number;
+  locale: string;
+  disabled: boolean;
+  onChange: (hour: number) => void;
+}) {
+  return (
+    <NativeSelect
+      aria-label={label}
+      value={String(value)}
+      disabled={disabled}
+      onChange={(event) => onChange(Number(event.target.value))}
+      className="w-28"
+    >
+      {HOURS.filter((hour) => hour !== other).map((hour) => (
+        <NativeSelectOption key={hour} value={String(hour)}>
+          {localizedClock(`${hour}:00`, locale)}
+        </NativeSelectOption>
+      ))}
+    </NativeSelect>
   );
 }
 

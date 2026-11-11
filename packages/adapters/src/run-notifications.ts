@@ -10,7 +10,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { countUnreadInboxChats, membersSnoozing } from "@rakazo/db";
+import { countUnreadInboxChats, membersInQuietHours, membersSnoozing } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
@@ -181,18 +181,26 @@ async function deliverChatNotice(
   },
 ) {
   const { spaceId, message, groupId, bot } = input;
-  // News in a chat waits for whoever snoozed it. Questions, takeovers and failures still reach
-  // the person whose run it is: the chat is hidden, so this is how they would hear of it.
-  const snoozing =
+  // News in a chat waits for whoever snoozed it or is in their quiet hours. Questions, takeovers
+  // and failures still reach the person whose run it is: only they can act on them.
+  const holding = (label: string, lookup: () => Promise<Set<string>>) =>
     message.kind === "completion"
-      ? await membersSnoozing(deps.prisma, message.threadId, input.recipients).catch((error) => {
+      ? lookup().catch((error) => {
           // A retried delivery waits for the answer; otherwise everyone hears, rather than no one.
           if (input.retryOnFailure) throw error;
-          getLogger().error("snoozed chat lookup", error);
+          getLogger().error(label, error);
           return new Set<string>();
         })
-      : new Set<string>();
-  const recipients = input.recipients.filter((userId) => !snoozing.has(userId));
+      : Promise.resolve(new Set<string>());
+  const [snoozing, quiet] = await Promise.all([
+    holding("snoozed chat lookup", () =>
+      membersSnoozing(deps.prisma, message.threadId, input.recipients),
+    ),
+    holding("quiet hours lookup", () => membersInQuietHours(deps.prisma, input.recipients)),
+  ]);
+  const recipients = input.recipients.filter(
+    (userId) => !snoozing.has(userId) && !quiet.has(userId),
+  );
   for (const userId of recipients) {
     publishChatAlert(deps.events, { spaceId, userId }, message, groupId);
   }

@@ -37,6 +37,17 @@ export const TimeZoneSchema = z
   .max(64)
   .refine(isValidTimeZone, { message: "Unknown timezone" });
 
+const QuietHourSchema = z.number().int().min(0).max(23);
+
+/**
+ * Every day from `start` to `end`, whole hours in the person's timezone, news in their chats
+ * doesn't notify them; what needs them still does. An `end` before `start` runs past midnight.
+ */
+export const QuietHoursSchema = z
+  .object({ start: QuietHourSchema, end: QuietHourSchema })
+  .refine((hours) => hours.start !== hours.end, { message: "Quiet hours need an end" });
+export type QuietHours = z.infer<typeof QuietHoursSchema>;
+
 /** An app language code, such as "es", "pt-BR" or "zh-TW". */
 export const AppLocaleSchema = z.enum([
   "en",
@@ -1489,6 +1500,8 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
+  /** Daily quiet hours, or null when off. Absent from servers that predate them. */
+  quietHours: QuietHoursSchema.nullable().optional(),
   /**
    * The app language last reported for the user, or null until an app reports it.
    * Absent from servers that predate it.

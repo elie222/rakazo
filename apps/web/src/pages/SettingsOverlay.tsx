@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { BotAvatarSet, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
+import type { BotAvatarSet, QuietHours, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -51,6 +51,8 @@ export function SettingsOverlay({
   onNameSaved,
   timezone,
   onTimezoneChange,
+  quietHours,
+  onQuietHoursChange,
   botAvatarSet,
   onBotAvatarSetChange,
   onAccountImported,
@@ -84,6 +86,9 @@ export function SettingsOverlay({
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
   onTimezoneChange: (timezone: string) => Promise<void>;
+  /** Absent from servers that predate quiet hours, which then offer none. */
+  quietHours?: QuietHours | null;
+  onQuietHoursChange?: (quietHours: QuietHours | null) => Promise<void>;
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
@@ -388,6 +393,8 @@ export function SettingsOverlay({
                         onNameSaved={onNameSaved}
                         timezone={timezone}
                         onTimezoneChange={onTimezoneChange}
+                        quietHours={quietHours}
+                        onQuietHoursChange={onQuietHoursChange}
                         botAvatarSet={botAvatarSet}
                         onBotAvatarSetChange={onBotAvatarSetChange}
                         onAccountImported={onAccountImported}
