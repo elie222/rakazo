@@ -214,6 +214,8 @@ export function serviceApiHandler(deps: {
         // if the bot has been archived since.
         const hash = requestHash(request.method, url.pathname, raw);
         const storedKey = definition.idempotency === "stored" ? suppliedKey : null;
+        // The row this request owns; renewing, finishing and freeing touch only it.
+        let claimId: string | null = null;
         if (storedKey) {
           const claim = await claimIdempotencyKey(prisma, actor, credential.id, storedKey, hash);
           if (claim.kind === "conflict") throw new ServiceRejection("idempotency_conflict");
@@ -224,18 +226,19 @@ export function serviceApiHandler(deps: {
           if (claim.kind === "replay") {
             return json(claim.status, claim.body, { ...headers, "idempotent-replayed": "true" });
           }
+          claimId = claim.claimId;
         }
         // A native write's message or run deduplicates a retry, but only for the same target.
-        let boundKey: string | null = null;
         if (definition.idempotency === "native" && suppliedKey) {
           const bound = await bindIdempotencyKey(prisma, actor, credential.id, suppliedKey, hash);
-          if (bound === "conflict") throw new ServiceRejection("idempotency_conflict");
-          if (bound === "bound") boundKey = suppliedKey;
+          if (bound.kind === "conflict") throw new ServiceRejection("idempotency_conflict");
+          if (bound.kind === "bound") claimId = bound.claimId;
         }
         // A long write keeps its claim, so a retry cannot run it a second time meanwhile.
-        const hold = storedKey
+        const held = storedKey ? claimId : null;
+        const hold = held
           ? setInterval(() => {
-              void holdIdempotencyKey(prisma, credential.id, storedKey).catch((error) =>
+              void holdIdempotencyKey(prisma, held).catch((error) =>
                 getLogger().warn("service_api.idempotency_hold_failed", error),
               );
             }, IDEMPOTENCY_RENEW_MS)
@@ -304,15 +307,16 @@ export function serviceApiHandler(deps: {
               },
             });
           }
-          if (storedKey) {
-            await finishIdempotencyKey(prisma, credential.id, storedKey, 200, projected);
+          if (held && !(await finishIdempotencyKey(prisma, held, 200, projected))) {
+            getLogger().warn("service_api.idempotency_claim_lost", {
+              "service_api.route": matched.id,
+            });
           }
           return json(200, projected, headers);
         } catch (error) {
           // A refused write did nothing, so its key is free. An unknown outcome keeps its hold.
-          const freed = storedKey ?? boundKey;
-          if (freed && rejectionOf(error).code !== "service_unavailable") {
-            await releaseIdempotencyKey(prisma, credential.id, freed);
+          if (claimId && rejectionOf(error).code !== "service_unavailable") {
+            await releaseIdempotencyKey(prisma, claimId);
           }
           throw error;
         } finally {

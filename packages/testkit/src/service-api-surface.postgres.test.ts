@@ -449,7 +449,7 @@ describeWithDatabase("service API surface", () => {
       const { credential } = await newKey(cookie);
       const { holdIdempotencyKey } = await import("../../../apps/api/src/service-idempotency.ts");
       const soon = new Date(Date.now() + 1000);
-      await db.serviceIdempotencyKey.create({
+      const claim = await db.serviceIdempotencyKey.create({
         data: {
           userId: actor.userId,
           spaceId: actor.spaceId,
@@ -459,9 +459,34 @@ describeWithDatabase("service API surface", () => {
           expiresAt: soon,
         },
       });
-      await holdIdempotencyKey(db, credential.id, "slow");
+      await holdIdempotencyKey(db, claim.id);
       const row = await db.serviceIdempotencyKey.findFirstOrThrow({ where: { key: "slow" } });
       expect(row.expiresAt.getTime()).toBeGreaterThan(Date.now() + 200_000);
+    });
+
+    it("leaves a retry's claim alone when the first request's claim lapsed", async () => {
+      const { cookie, actor } = await person();
+      const { credential } = await newKey(cookie);
+      const store = await import("../../../apps/api/src/service-idempotency.ts");
+      const claim = (key: string) => store.claimIdempotencyKey(db, actor, credential.id, key, "h");
+      const first = await claim("lapsed");
+      if (first.kind !== "claimed") throw new Error("expected a claim");
+      await db.serviceIdempotencyKey.updateMany({
+        where: { id: first.claimId },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      const retry = await claim("lapsed");
+      if (retry.kind !== "claimed") throw new Error("expected the retry to claim");
+
+      expect(await store.finishIdempotencyKey(db, first.claimId, 200, { from: "first" })).toBe(
+        false,
+      );
+      await store.releaseIdempotencyKey(db, first.claimId);
+      const row = await db.serviceIdempotencyKey.findFirstOrThrow({ where: { key: "lapsed" } });
+      expect([row.id, row.responseStatus]).toEqual([retry.claimId, null]);
+      expect(await store.finishIdempotencyKey(db, retry.claimId, 200, { from: "retry" })).toBe(
+        true,
+      );
     });
 
     it("runs a routine's whole life and keeps it on its own bot", async () => {
