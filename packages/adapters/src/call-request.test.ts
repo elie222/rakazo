@@ -8,6 +8,13 @@ import {
   requestUserCall,
   settleCallRequest,
 } from "./call-request.js";
+import type * as VoiceFactory from "./voice-factory.js";
+import { createVoiceProvider } from "./voice-factory.js";
+
+vi.mock("./voice-factory.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof VoiceFactory>()),
+  createVoiceProvider: vi.fn(),
+}));
 
 function prismaWith(options: {
   voice?: boolean;
@@ -422,6 +429,31 @@ describe("requestUserCall security", () => {
       error: expect.stringMatching(/voice provider/),
     });
     expect(secretStore.load).toHaveBeenCalledWith("fixture-cipher", "deployment-voice");
+    expect(deps.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a call on a deployment voice that names none when its provider lists none", async () => {
+    const { deps, tx } = fixture();
+    (tx.userVoiceCredential.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const prisma = Object.assign(deps.prisma, {
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({
+          defaultVoiceProvider: "elevenlabs",
+          defaultVoiceId: null,
+          defaultVoiceCredentialCipher: "fixture-cipher",
+        })),
+      },
+    });
+    const listVoices = vi.fn(async () => []);
+    vi.mocked(createVoiceProvider).mockReturnValue({ listVoices } as never);
+    const secretStore = { load: vi.fn(async () => "voice-key-without-voices") };
+    expect(await requestUserCall({ ...deps, prisma, secretStore }, run, input)).toEqual({
+      error: expect.stringMatching(/voice provider/),
+    });
+    expect(listVoices).toHaveBeenCalledWith(
+      "voice-key-without-voices",
+      expect.objectContaining({ runId: run.id }),
+    );
     expect(deps.prisma.$transaction).not.toHaveBeenCalled();
   });
 

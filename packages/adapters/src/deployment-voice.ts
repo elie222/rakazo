@@ -4,7 +4,12 @@ import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
-import { isSpeechModelId, VOICE_CATALOG, voiceCatalogEntry } from "./voice-factory.js";
+import {
+  createVoiceProvider,
+  isSpeechModelId,
+  VOICE_CATALOG,
+  voiceCatalogEntry,
+} from "./voice-factory.js";
 
 /** Record id binding the deployment's encrypted voice key to its settings row. */
 export const DEPLOYMENT_VOICE_RECORD = "deployment-voice";
@@ -113,18 +118,28 @@ export async function hasDeploymentVoice(
 }
 
 /**
- * Whether the deployment's voice can speak: there is one and its key can be read. A saved key
- * whose secret is gone or unreadable cannot.
+ * Whether the deployment's voice can speak: there is one, its key can be read, and it names a
+ * voice or its provider lists one. A saved key whose secret is gone or unreadable cannot.
  */
 export async function deploymentVoiceSpeaks(
   prisma: Pick<PrismaClient, "deploymentSettings">,
   secrets: Pick<SecretStore, "load">,
+  context: AdapterContext,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   const voice = await findDeploymentVoice(prisma, secrets, env);
   if (!voice) return false;
   const key = await voice.loadKey().catch(() => "");
-  return key.trim().length > 0;
+  if (!key.trim()) return false;
+  if (voice.voiceId) return true;
+  // Without a chosen voice it speaks with the provider's first, so the provider must list one.
+  const voiceId = await deploymentVoiceId(
+    voice,
+    key,
+    createVoiceProvider(voice.provider),
+    context,
+  ).catch(() => "");
+  return voiceId.length > 0;
 }
 
 /** The last provider and key whose first voice was listed, kept as a digest. */

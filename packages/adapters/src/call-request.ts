@@ -31,6 +31,8 @@ const REASON_MAX = 120;
 const NO_VOICE_REFUSAL =
   "The user has not connected a voice provider, so they cannot take a call. Send a message instead.";
 const OPENING_MAX = 240;
+/** How long a call waits to learn which voice the deployment would speak with. */
+const DEPLOYMENT_VOICE_CHECK_MS = 15_000;
 
 type CallRequestStatus = CallRequestBlock["status"];
 
@@ -214,7 +216,15 @@ export async function requestUserCall(
       select: { id: true },
     })) &&
     (await hasDeploymentVoice(deps.prisma)) &&
-    !(await deploymentVoiceSpeaks(deps.prisma, deps.secretStore))
+    !(await deploymentVoiceSpeaks(deps.prisma, deps.secretStore, {
+      operationId: run.id,
+      traceId: run.id,
+      spaceId: run.spaceId,
+      userId: run.userId,
+      botId: run.botId,
+      runId: run.id,
+      signal: AbortSignal.timeout(DEPLOYMENT_VOICE_CHECK_MS),
+    }))
   )
     return { error: NO_VOICE_REFUSAL };
   // The call cooldown is per person across all their Spaces; every other read and

@@ -4,6 +4,7 @@ import {
   DEPLOYMENT_VOICE_RECORD,
   deploymentVoiceId,
   deploymentVoiceProviders,
+  deploymentVoiceSpeaks,
   findDeploymentVoice,
   hasDeploymentVoice,
   resolveDeploymentVoiceEnv,
@@ -196,6 +197,53 @@ describe("deploymentVoiceId", () => {
     expect(listVoices).toHaveBeenCalledOnce();
     await deploymentVoiceId({ provider: "openai", voiceId: "" }, "key-b", { listVoices }, context);
     expect(listVoices).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("deploymentVoiceSpeaks", () => {
+  const unnamed = { VOICE_DEFAULT_PROVIDER: "cartesia", VOICE_DEFAULT_API_KEY: "speaks-key-a" };
+
+  it("speaks with a chosen voice without listing the provider's", async () => {
+    await expect(
+      deploymentVoiceSpeaks(
+        prismaWith({ provider: "elevenlabs", voiceId: "saved-voice", cipher: "cipher-1" }),
+        secrets,
+        context,
+        {},
+      ),
+    ).resolves.toBe(true);
+    expect(createVoiceProvider).not.toHaveBeenCalled();
+  });
+
+  it("without a chosen voice, speaks only if the provider lists one", async () => {
+    const listVoices = vi.fn(async () => [] as Array<{ id: string; label: string }>);
+    vi.mocked(createVoiceProvider).mockReturnValue({ listVoices } as never);
+    await expect(deploymentVoiceSpeaks(prismaWith(null), secrets, context, unnamed)).resolves.toBe(
+      false,
+    );
+    listVoices.mockRejectedValueOnce(new Error("listing unavailable"));
+    await expect(deploymentVoiceSpeaks(prismaWith(null), secrets, context, unnamed)).resolves.toBe(
+      false,
+    );
+    listVoices.mockResolvedValueOnce([{ id: "first", label: "First" }]);
+    await expect(deploymentVoiceSpeaks(prismaWith(null), secrets, context, unnamed)).resolves.toBe(
+      true,
+    );
+    expect(createVoiceProvider).toHaveBeenCalledWith("cartesia");
+    expect(listVoices).toHaveBeenCalledWith("speaks-key-a", context);
+  });
+
+  it("can't speak on a saved key it can't read", async () => {
+    const unreadable = { ...secrets, load: vi.fn(async () => Promise.reject(new Error("gone"))) };
+    await expect(
+      deploymentVoiceSpeaks(
+        prismaWith({ provider: "elevenlabs", voiceId: "saved-voice", cipher: "cipher-1" }),
+        unreadable,
+        context,
+        {},
+      ),
+    ).resolves.toBe(false);
+    expect(createVoiceProvider).not.toHaveBeenCalled();
   });
 });
 
