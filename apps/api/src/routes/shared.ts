@@ -230,3 +230,31 @@ export async function* withHeartbeats<T>(
     void source.return(undefined).catch(() => {});
   }
 }
+
+/** Interleaves streams in arrival order; one that fails ends the rest, and stopping ends them all. */
+export async function* mergeStreams<T extends unknown[]>(
+  ...sources: { [K in keyof T]: AsyncGenerator<T[K]> }
+): AsyncGenerator<T[number]> {
+  const streams: AsyncGenerator<T[number]>[] = sources;
+  const reads = new Map<number, Promise<{ index: number; result: IteratorResult<T[number]> }>>();
+  const read = (index: number, stream: AsyncGenerator<T[number]>) =>
+    reads.set(
+      index,
+      stream.next().then((result) => ({ index, result })),
+    );
+  for (const [index, stream] of streams.entries()) read(index, stream);
+  try {
+    while (reads.size > 0) {
+      const { index, result } = await Promise.race(reads.values());
+      if (result.done) {
+        reads.delete(index);
+        continue;
+      }
+      read(index, streams[index]!);
+      yield result.value;
+    }
+  } finally {
+    for (const pending of reads.values()) pending.catch(() => {});
+    for (const stream of streams) void stream.return(undefined).catch(() => {});
+  }
+}

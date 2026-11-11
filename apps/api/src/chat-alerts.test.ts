@@ -44,6 +44,41 @@ describe("notifications.subscribe", () => {
     }
   });
 
+  it("interleaves roster signals with alerts on the same stream", async () => {
+    const controller = new AbortController();
+    let signalRoster!: () => void;
+    const followChatAlerts = vi.fn(async function* (
+      _userId: string,
+      _spaceId: string,
+      signal: AbortSignal,
+    ) {
+      await new Promise<void>((resolve) => {
+        signalRoster = resolve;
+      });
+      yield alert;
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    });
+    const followRosterChanges = vi.fn(async function* () {
+      yield;
+      signalRoster();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      yield;
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "roster" });
+      expect((await iterator.next()).value).toEqual({ type: "alert", alert });
+      expect((await iterator.next()).value).toEqual({ type: "roster" });
+      expect(followRosterChanges).toHaveBeenCalledWith(actor.userId, expect.any(AbortSignal));
+    } finally {
+      controller.abort();
+    }
+  });
+
   it("requires a signed-in user", async () => {
     const client = createRouterClient(createRouter({} as unknown as RouterDeps), {
       context: { actor: null },

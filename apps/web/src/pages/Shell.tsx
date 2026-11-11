@@ -428,7 +428,7 @@ function SpaceShell() {
     return true;
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
-  useSpaceBootstrap({
+  const rosterSignals = useSpaceBootstrap({
     rpc,
     roster,
     thread,
@@ -457,6 +457,7 @@ function SpaceShell() {
       },
       meId: userId,
       groupsRef,
+      roster: rosterSignals,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
