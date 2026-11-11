@@ -4,6 +4,8 @@
 The agent browsed a preview built from the pull request, so its JSON and images are
 untrusted. Only PNG files it saved, and plain-text captions, get through.
 
+  pr-screenshots.py prompt PROMPT_FILE PR_JSON_FILE DIFF_FILE
+      prints the agent's prompt, cut to fit in one environment variable
   pr-screenshots.py prepare RESULT_JSON SHOTS_DIR BASE_URL OUT_DIR
       writes OUT_DIR/uploads.txt (one file name per line) and OUT_DIR/section.md
   pr-screenshots.py splice BODY_FILE SECTION_FILE
@@ -22,6 +24,34 @@ MAX_CAPTION = 200
 MAX_BYTES = 5 * 1024 * 1024
 FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.png$")
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# The action passes the prompt, and all its inputs as JSON, in environment variables; Linux
+# refuses to start a process when one is over 128 KiB.
+MAX_PROMPT_JSON = 100_000
+MAX_BODY = 8_000
+MAX_FILES = 300
+
+
+def json_size(text: str) -> int:
+    return len(json.dumps(text))
+
+
+def prompt(instructions: str, pr: dict, diff: str) -> str:
+    pr = dict(pr)
+    pr["body"] = str(pr.get("body") or "")[:MAX_BODY]
+    pr["changed_files"] = list(pr.get("changed_files") or [])[:MAX_FILES]
+    head = f"{instructions.rstrip()}\n\n<pull_request>\n{json.dumps(pr, indent=2)}\n</pull_request>\n\n<diff>\n"
+    tail = "\n</diff>\n"
+    budget = MAX_PROMPT_JSON - json_size(head + tail)
+    if json_size(diff) > budget:
+        low, high = 0, len(diff)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if json_size(diff[:mid]) <= budget:
+                low = mid
+            else:
+                high = mid - 1
+        diff = diff[:low]
+    return head + diff + tail
 
 
 def clean_caption(value: object) -> str:
@@ -88,6 +118,10 @@ def splice(body: str, new_section: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) == 5 and argv[1] == "prompt":
+        instructions, pr, diff = (Path(path).read_text(errors="replace") for path in argv[2:])
+        sys.stdout.write(prompt(instructions, json.loads(pr), diff))
+        return 0
     if len(argv) == 6 and argv[1] == "prepare":
         _, _, result_json, shots_dir, base_url, out_dir = argv
         try:
