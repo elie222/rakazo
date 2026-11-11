@@ -218,12 +218,16 @@ function useComputerPreview(botId: string | undefined, runId: string | undefined
     setImage(null);
     if (!botId) return;
     let live = true;
-    const load = () =>
-      rpc("computer/preview", { botId, runId })
+    // Only the latest read may draw, so a slow earlier capture never covers a newer one.
+    let latest = 0;
+    const load = () => {
+      const request = ++latest;
+      return rpc("computer/preview", { botId, runId })
         .then((result) => {
-          if (live) setImage(result.image);
+          if (live && request === latest) setImage(result.image);
         })
         .catch(() => undefined);
+    };
     void load();
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void load();
