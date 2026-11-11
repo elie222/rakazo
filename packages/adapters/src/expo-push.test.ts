@@ -933,6 +933,7 @@ it("uses data-only delivery only for Android builds that registered sender suppo
   );
   expect(request).not.toHaveProperty("title");
   expect(request).not.toHaveProperty("body");
+  expect(request).not.toHaveProperty("tag");
   expect(request.data).toMatchObject({
     notificationTitle: "Marketing",
     notificationBody: "Draft ready",
