@@ -133,8 +133,8 @@ export async function updateDeploymentVoiceSettings(
   // A provider that cannot list its voices keeps the one asked for.
   const asked = input.voiceId?.trim() || "";
   const listed = await voices.listVoices(apiKey, context).catch(() => undefined);
-  // An account with no voices yet could not speak for anyone.
-  if (listed?.length === 0 && !asked)
+  // An account with no voices yet could not speak for anyone, whatever voice was asked for.
+  if (listed?.length === 0)
     throw new ORPCError("BAD_REQUEST", {
       message: "That account has no voices yet. Add one with the provider, then save again.",
     });

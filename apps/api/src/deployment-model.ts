@@ -253,9 +253,9 @@ async function checkedConnection(
       return { plaintext, models: enabledModelIds };
     }
     if (!deploymentConnectableProviders().some((provider) => provider.id === input.provider))
-      throw new Error("Unknown model provider");
+      throw new Error("Unknown model provider.");
     const apiKey = input.apiKey.trim();
-    if (!apiKey) throw new Error("Enter an API key");
+    if (!apiKey) throw new Error("Enter an API key.");
     // Checked and stored the way a member's key is. It must read back as a key: one that parses
     // as a stored endpoint would bring its own URL and headers to every run.
     const plaintext = buildModelConnectPlaintext({
@@ -263,7 +263,7 @@ async function checkedConnection(
       credentialId: null,
       apiKey,
     });
-    if (parseModelSecret(plaintext).kind !== "api_key") throw new Error("Enter an API key");
+    if (parseModelSecret(plaintext).kind !== "api_key") throw new Error("Enter an API key.");
     await verifyCatalogProviderApiKey(
       { provider: input.provider, apiKey },
       deps.modelConnectionFetch,

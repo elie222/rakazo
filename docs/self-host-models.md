@@ -30,8 +30,8 @@ application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD
 
 ### Models members can use
 
-By default, only the deployment model runs on the deployment's keys. To let people choose other
-models without connecting their own, list them in `PI_DEPLOYMENT_MODELS`, comma-separated:
+By default, people can choose only the deployment model without a connection of their own. To let
+them choose other models without connecting their own, list them in `PI_DEPLOYMENT_MODELS`, comma-separated:
 `provider:model` for one catalog model, `provider:*` for every catalog model of a provider, or `*`
 for every model of every provider the deployment has a key for. For example,
 `PI_DEPLOYMENT_MODELS=deepseek:*,anthropic:claude-haiku-5-5` lets a bot run a cheap model and
@@ -60,7 +60,10 @@ Admins (`RAKAZO_ADMIN_EMAILS`, with a verified email) can do the same at the end
 
 What applies, first to last: a person's own connection, then the admin's settings, then the
 environment. Removing a provider's saved key, or choosing **Default**, brings the environment's back.
-The API and worker read these settings at use time, so every instance follows a change.
+The API and worker read these settings at use time, so every instance follows a change. The one
+exception is chat apps with `MESSAGING_OPEN_SIGNUP=true` and no model in the environment: whether
+they accept messages is decided at startup, so a default an admin sets takes effect for them after
+a restart.
 
 The Compose files also pass the standard provider key variables the agent runtime reads itself
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to

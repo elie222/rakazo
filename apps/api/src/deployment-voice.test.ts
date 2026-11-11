@@ -178,6 +178,16 @@ describe("deployment voice settings", () => {
       }),
     ).rejects.toThrow("no voices yet");
     expect(state.settings?.defaultVoiceProvider ?? null).toBeNull();
+    // A voice kept from another account is refused too, so it can't stay with the new key.
+    provider.listVoices.mockResolvedValueOnce([]);
+    await expect(
+      updateDeploymentVoiceSettings(deps, actor, {
+        provider: "elevenlabs",
+        apiKey: "test-voice-key",
+        voiceId: "old-account-voice",
+      }),
+    ).rejects.toThrow("no voices yet");
+    expect(state.settings?.defaultVoiceProvider ?? null).toBeNull();
   });
 
   it("needs a new key for another provider", async () => {
