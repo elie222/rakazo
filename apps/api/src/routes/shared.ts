@@ -5,6 +5,7 @@ import {
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
+  modelFunding,
   resolveMemberMainModel,
   selectConfiguredModel,
 } from "@rakazo/adapters";
@@ -113,7 +114,8 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
     member &&
     (member.credential ||
       (deps.billing?.modelCreditsEnabled &&
-        (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
+        (await hasHostedModelCredits(deps.prisma, actor, member.provider)) &&
+        modelFunding(member.provider, member.modelId, true, false) === "credits"))
       ? member
       : null;
   const funding = deps.billing ? await deps.billing.status(actor) : null;

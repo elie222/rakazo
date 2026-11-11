@@ -5,6 +5,7 @@ import {
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
   loadUserIncomingCalls,
+  modelFunding,
   PushSessionEndedError,
   settleCallRequest,
 } from "@rakazo/adapters";
@@ -618,8 +619,14 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     (deploymentChecker !== null && environmentAvailable) ||
     (
       await Promise.all(
-        [...new Set(memberChoices.map((choice) => choice.provider))].map((provider) =>
-          hasHostedModelCredits(deps.prisma, actor, provider),
+        memberChoices.map(
+          async (choice) =>
+            modelFunding(
+              choice.provider,
+              choice.modelId,
+              await hasHostedModelCredits(deps.prisma, actor, choice.provider),
+              false,
+            ) === "credits",
         ),
       )
     ).some(Boolean);

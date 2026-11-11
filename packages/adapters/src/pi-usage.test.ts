@@ -60,6 +60,36 @@ async function run(usage?: object) {
 }
 
 describe("Pi usage accounting", () => {
+  it("records zero cost for an unpriced call on a member key", async () => {
+    const sink = vi.fn();
+    const stream = observedPiStream(
+      builtinModels(),
+      { ...model, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      { messages: [] },
+      {
+        apiKey: "fixture-personal-key",
+        fetch: async () =>
+          new Response(sse({ prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }), {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      },
+      vi.fn(),
+      undefined,
+      undefined,
+      { recordUsage: sink },
+    );
+    for await (const _event of stream) {
+    }
+    expect((await stream.result()).stopReason).toBe("stop");
+    expect(sink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "usage",
+        inputTokens: 10,
+        outputTokens: 2,
+        costUsd: 0,
+      }),
+    );
+  });
   it.each([false, true])(
     "acknowledges a producer sink only after successful accounting (fails=%s)",
     async (fails) => {
@@ -826,7 +856,7 @@ describe("Pi usage accounting", () => {
         outputTokens: 2,
         cacheReadTokens: 0,
         reasoningTokens: 0,
-        costUsd: null,
+        costUsd: 0,
       });
     } finally {
       server.close();

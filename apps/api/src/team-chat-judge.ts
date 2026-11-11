@@ -5,6 +5,7 @@ import {
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
+  modelFunding,
   parseModelSecret,
   refreshStoredModelCredential,
   resolveMemberMainModel,
@@ -248,7 +249,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       settings,
       deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
     }).primary;
-    const credential = useOverride ? overrideCredential : (main?.credential ?? null);
+    let credential = useOverride ? overrideCredential : (main?.credential ?? null);
     const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
     const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
@@ -256,7 +257,15 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const hosted =
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
-    if (!credential || hosted) {
+    if (
+      settings?.modelCreditsEnabled &&
+      !credential &&
+      modelFunding(provider, modelId, true, false) === "unavailable"
+    )
+      credential = await findModelCredential(this.deps.prisma, scope, provider, modelId);
+    const funding = modelFunding(provider, modelId, Boolean(hosted), Boolean(credential));
+    if (settings?.modelCreditsEnabled && funding === "unavailable") return null;
+    if (!credential || funding === "credits") {
       const apiKey =
         provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined;
       const callObserver = settings?.modelCreditsEnabled

@@ -36,6 +36,15 @@ afterEach(() => {
 });
 
 describe("live catalog merge and execution", () => {
+  it("does not inherit a sibling's price for a live model", () => {
+    expect(resolveRuntimeModel({ provider: "openai", id: added }).model?.cost).toEqual({
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+  });
+
   it("recomputes recommendations for live IDs instead of inheriting a sibling's flag", () => {
     expect(liveCatalogEntry("openai-codex", "gpt-6-luna")?.recommended).toBe(true);
     expect(liveCatalogEntry("openai-codex", "gpt-future-chat")?.recommended).toBe(false);

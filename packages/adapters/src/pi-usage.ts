@@ -348,6 +348,12 @@ export function observedPiStream(
 ) {
   const stream = createAssistantMessageEventStream();
   const reported: ReportedUsageFields = new Set();
+  const normalizeUsage = (usage?: Usage) => {
+    const normalized = normalizePiUsage(usage, model, reported);
+    return !observer && maximumModelCallCost(model.cost, 1, 1) === undefined
+      ? { ...normalized, costUsd: 0, costSource: null, pricingVersion: null }
+      : normalized;
+  };
   const callId = randomUUID();
   const emitUsage = async (usage: AgentUsage, operationKind = attribution.operationKind) => {
     const event = {
@@ -515,7 +521,7 @@ export function observedPiStream(
                 : event.partial;
           if (event.type === "done" || event.type === "error") {
             const message = event.type === "done" ? event.message : event.error;
-            normalized = normalizePiUsage(message.usage, model, reported);
+            normalized = normalizeUsage(message.usage);
             span?.setAttributes({
               "pi.ai.response.stop_reason": message.stopReason,
               "pi.ai.usage.input_tokens": normalized.inputTokens ?? undefined,
@@ -559,7 +565,7 @@ export function observedPiStream(
         let terminalError = error;
         if (started && normalized === null) {
           try {
-            await emitUsage(normalizePiUsage(undefined, model, reported));
+            await emitUsage(normalizeUsage());
           } catch (accountingError) {
             terminalError = accountingError;
           }
@@ -571,11 +577,8 @@ export function observedPiStream(
             await observer.afterCall(
               reservation,
               started
-                ? receipt(
-                    normalized ?? normalizePiUsage(undefined, model, reported),
-                    partialMessage,
-                  )
-                : { ...normalizePiUsage(undefined, model), costUsd: 0, usageSource: "not-started" },
+                ? receipt(normalized ?? normalizeUsage(), partialMessage)
+                : { ...normalizeUsage(), costUsd: 0, usageSource: "not-started" },
             );
           } catch {
             /* Already failing. */

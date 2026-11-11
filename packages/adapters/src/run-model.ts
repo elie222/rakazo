@@ -28,6 +28,7 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "./model-credit-observer.js";
+import { modelFunding, UNPRICED_MODEL_MESSAGE } from "./model-funding.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
@@ -152,10 +153,26 @@ export async function modelCreditBillingEnabled(
 }
 
 export async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
-  const [deps, userId, spaceId, , provider] = args;
+  const [deps, userId, spaceId, , provider, modelId] = args;
   const billingEnabled = await modelCreditBillingEnabled(deps);
   const scope = { userId, spaceId };
-  if (billingEnabled && (await hasHostedModelCredits(deps.prisma, scope, provider))) {
+  const hosted = billingEnabled && (await hasHostedModelCredits(deps.prisma, scope, provider));
+  if (billingEnabled && !args[3] && modelFunding(provider, modelId, true, false) === "unavailable")
+    args[3] = await findConnectedModelCredential(
+      deps.prisma,
+      deps.secretStore,
+      scope,
+      provider,
+      modelId,
+    );
+  const funding = modelFunding(provider, modelId, hosted, Boolean(args[3]));
+  if (
+    billingEnabled &&
+    funding === "unavailable" &&
+    modelFunding(provider, modelId, true, false) === "unavailable"
+  )
+    throw new UnavailableModelForAuthError(UNPRICED_MODEL_MESSAGE);
+  if (funding === "credits") {
     args[3] = null;
     // Funded managed backups use deployment credentials just like the primary.
     args[7] = { ...args[7], requireStoredSecret: false };

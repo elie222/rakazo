@@ -16,6 +16,7 @@ import {
 } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
+import { modelFunding, UNPRICED_MODEL_MESSAGE } from "./model-funding.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { compatibleModelSeesImages, modelAcceptsImageInput } from "./model-vision.js";
@@ -208,6 +209,7 @@ export async function modelCredentialAuthKindsForSpace(
   }> = [];
   const slots = [
     ...listPiCatalog(),
+    ...(hosted && hostedProvider ? [{ provider: hostedProvider, id: "" }] : []),
     ...preferences.flatMap((preference) =>
       preference.modelId
         ? [
@@ -220,7 +222,15 @@ export async function modelCredentialAuthKindsForSpace(
     ),
   ];
   for (const entry of slots) {
-    if (!connectedProviders.has(entry.provider) || (hosted && entry.provider === hostedProvider))
+    if (
+      !connectedProviders.has(entry.provider) ||
+      modelFunding(
+        entry.provider,
+        entry.id,
+        Boolean(hosted && entry.provider === hostedProvider),
+        true,
+      ) === "credits"
+    )
       continue;
     const choice = chooseModelCredential({
       provider: entry.provider,
@@ -295,8 +305,19 @@ export async function modelCredentialAuthKindsForSpace(
     if (kind) auth.byProvider[selection.provider] = kind;
     auth.secretIdByProvider[selection.provider] = selection.secretId;
   }
-  if (hosted && hostedProvider && !auth.byProvider[hostedProvider])
-    auth.byProvider[hostedProvider] = "api_key";
+  if (hosted && hostedProvider) {
+    auth.byProvider[hostedProvider] ??= "api_key";
+    for (const entry of slots) {
+      if (
+        entry.provider !== hostedProvider ||
+        modelFunding(entry.provider, entry.id, true, false) !== "credits"
+      )
+        continue;
+      const kinds = auth.byModel[hostedProvider] ?? {};
+      kinds[entry.id] = "api_key";
+      auth.byModel[hostedProvider] = kinds;
+    }
+  }
   return auth;
 }
 
@@ -616,13 +637,20 @@ export async function validateBotModelChange(
   const scope = { userId: input.userId, spaceId: input.spaceId };
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
-  if (changing && provider && model) {
+  if ((changing || deps.hostedProvider === provider) && provider && model) {
     const hosted =
       deps.hostedProvider === provider &&
       (await hasHostedModelCredits(deps.prisma, scope, provider));
-    const credential = hosted
-      ? null
-      : await findConnectedModelCredential(deps.prisma, deps.secretStore, scope, provider, model);
+    const connected = await findConnectedModelCredential(
+      deps.prisma,
+      deps.secretStore,
+      scope,
+      provider,
+      model,
+    );
+    const funding = modelFunding(provider, model, hosted, Boolean(connected));
+    if (hosted && funding === "unavailable") return { ok: false, error: UNPRICED_MODEL_MESSAGE };
+    const credential = funding === "credits" ? null : connected;
     if (!credential) {
       if (hosted && isCatalogModelChoice(provider, model)) {
         const allowed = listPiCatalog().find(
@@ -789,12 +817,9 @@ export async function validateConnectedModelChoice(
   modelId: string,
   resolution: ConnectedModelResolution = {},
 ) {
-  if (
+  const hosted =
     resolution.hostedProvider === provider &&
-    (await hasHostedModelCredits(prisma, actor, provider))
-  ) {
-    return isCatalogModelChoice(provider, modelId) ? undefined : "Unknown model for that provider";
-  }
+    (await hasHostedModelCredits(prisma, actor, provider));
   const credential = await findConnectedModelCredential(
     prisma,
     secretStore,
@@ -803,6 +828,10 @@ export async function validateConnectedModelChoice(
     modelId,
     resolution,
   );
+  const funding = modelFunding(provider, modelId, hosted, Boolean(credential));
+  if (funding === "credits")
+    return isCatalogModelChoice(provider, modelId) ? undefined : "Unknown model for that provider";
+  if (hosted && funding === "unavailable") return UNPRICED_MODEL_MESSAGE;
   if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this
@@ -958,4 +987,14 @@ export async function hasHostedModelCredits(
     where: { userId: scope.userId, provider },
     select: { id: true },
   }));
+}
+
+/** Apply the same funding decision after merging bundled and live catalog entries. */
+export function catalogModelFunding(auth: SpaceCatalogAuth, provider: string, modelId: string) {
+  const kind = auth.byModel[provider]?.[modelId] ?? auth.byProvider[provider];
+  const own =
+    Boolean(auth.secretIdByModel[provider]?.[modelId] || auth.secretIdByProvider[provider]) &&
+    kind !== undefined &&
+    kind !== "disconnected";
+  return modelFunding(provider, modelId, provider === auth.managedProvider, own);
 }
