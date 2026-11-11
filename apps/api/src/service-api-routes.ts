@@ -379,7 +379,7 @@ function eventFrame(event: {
 }
 
 async function streamBotEvents(context: ServiceContext<"botEvents">): Promise<Response> {
-  const { client, abort, credential, request } = context;
+  const { client, abort, request } = context;
   const botId = botOf(context);
   const resumed = request.headers.get("last-event-id");
   const cursor =
