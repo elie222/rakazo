@@ -4,14 +4,26 @@ import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transac
 
 /**
  * Each member of a Space has their own state for each chat there (`thread_reads`): how far they
- * have read, and any snooze. A chat with no row for someone is caught up and not snoozed.
+ * have read, and any snooze, mute or hide. A chat with no row for someone is caught up, not
+ * snoozed or hidden, and muted only when it is a bot's chat with its notifications off.
  */
 
 type Reader = { threadId: string; spaceId: string; userId: string };
 
-/** Selects one person's read state on a thread, for `unreadFor` and `snoozedUntilFor`. */
+/** One person's own state on a thread, as `readStateFor` selects it. */
+export type ThreadReadState = {
+  unread: boolean;
+  snoozedUntil: Date | null;
+  muted: boolean | null;
+  hidden: boolean;
+};
+
+/** Selects one person's own state on a thread, for `unreadFor`, `snoozedUntilFor` and `mutedFor`. */
 export function readStateFor(userId: string) {
-  return { where: { userId }, select: { unread: true, snoozedUntil: true } } as const;
+  return {
+    where: { userId },
+    select: { unread: true, snoozedUntil: true, muted: true, hidden: true },
+  } as const;
 }
 
 export function unreadFor(thread: { reads: Array<{ unread: boolean }> }): boolean {
@@ -22,6 +34,39 @@ export function snoozedUntilFor(thread: {
   reads: Array<{ snoozedUntil: Date | null }>;
 }): string | null {
   return thread.reads[0]?.snoozedUntil?.toISOString() ?? null;
+}
+
+/**
+ * Muted for anyone who never muted or unmuted the chat: a bot's own chat follows the bot's own
+ * notification setting, so a chat that was silent stays silent. Pass no bot for a group, which is
+ * never muted until someone chooses.
+ */
+export function chatMutedByDefault(bot?: { notifyOnFinish: boolean } | null): boolean {
+  return bot ? !bot.notifyOnFinish : false;
+}
+
+/**
+ * Whether the person whose run it is hears its question, takeover or failure: even in a chat they
+ * muted or hid, since only they can answer. Until they mute or unmute the chat themselves, a chat
+ * muted by default stays as silent as it always was.
+ */
+export function ownerHearsChat(
+  muted: boolean | null | undefined,
+  mutedByDefault: boolean,
+): boolean {
+  return (muted ?? null) !== null || !mutedByDefault;
+}
+
+/** Whether this person muted the chat, its default deciding until they choose. */
+export function mutedFor(
+  thread: { reads: Array<{ muted: boolean | null }> },
+  bot?: { notifyOnFinish: boolean } | null,
+): boolean {
+  return thread.reads[0]?.muted ?? chatMutedByDefault(bot);
+}
+
+export function hiddenFor(thread: { reads: Array<{ hidden: boolean }> }): boolean {
+  return thread.reads[0]?.hidden ?? false;
 }
 
 /**
@@ -45,13 +90,15 @@ export async function markThreadUnreadForMembers(
   );
 }
 
-/** A cleared chat has nothing left to read, for anyone. Snoozes stay. */
+/** A cleared chat has nothing left to read, for anyone. Snoozes, mutes and hides stay. */
 export async function clearThreadReads(tx: Prisma.TransactionClient, threadId: string) {
   await runAsSystemInTransaction(
     tx,
     "clear every member's read state for a cleared chat",
     async () => {
-      await tx.threadRead.deleteMany({ where: { threadId, snoozedUntil: null } });
+      await tx.threadRead.deleteMany({
+        where: { threadId, snoozedUntil: null, muted: null, hidden: false },
+      });
       await tx.threadRead.updateMany({ where: { threadId }, data: { unread: false } });
     },
   );
@@ -176,18 +223,125 @@ export async function setThreadSnoozeFor(prisma: PrismaClient, reader: Reader, u
   );
 }
 
-/** Who among `userIds` has the chat snoozed right now, so its news can wait for them. */
-export async function membersSnoozing(
+/** Mutes the chat for one person, or unmutes it, whatever its bot's own setting says. */
+export async function setThreadMuteFor(prisma: PrismaClient, reader: Reader, muted: boolean) {
+  await upsertOwnState(prisma, reader, { muted });
+}
+
+/** Hides the chat from one person's list, or brings it back. */
+export async function setThreadHiddenFor(prisma: PrismaClient, reader: Reader, hidden: boolean) {
+  if (!hidden) {
+    await unhide(prisma, reader.threadId, reader.userId);
+    return;
+  }
+  await upsertOwnState(prisma, reader, { hidden });
+}
+
+/** In whatever database context the caller runs. */
+function unhide(prisma: PrismaClient, threadId: string, userId: string) {
+  return prisma.threadRead.updateMany({
+    where: { threadId, userId, hidden: true },
+    data: { hidden: false },
+  });
+}
+
+async function upsertOwnState(
+  prisma: PrismaClient,
+  reader: Reader,
+  state: { muted?: boolean; hidden?: boolean },
+) {
+  await withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const thread = await lockThread(tx, reader);
+      if (!thread) return;
+      await tx.threadRead.upsert({
+        where: { threadId_userId: { threadId: reader.threadId, userId: reader.userId } },
+        // Someone with no read state had read it all.
+        create: { ...reader, lastReadSeq: thread.nextMessageSeq - 1, ...state },
+        update: state,
+      });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
+}
+
+/** What each of `userIds` set for a chat that holds its news back from them. */
+export type ChatHold = { snoozed: boolean; hidden: boolean; muted: boolean | null };
+
+/**
+ * Each of `userIds` who snoozed, hid, muted or unmuted the chat; anyone missing never chose any
+ * of it. Snoozes count only while they last.
+ */
+export async function chatHoldsFor(
   prisma: PrismaClient,
   threadId: string,
   userIds: readonly string[],
-): Promise<Set<string>> {
-  if (userIds.length === 0) return new Set();
-  const rows = await runAsSystem("find which members have a chat snoozed", () =>
+): Promise<Map<string, ChatHold>> {
+  if (userIds.length === 0) return new Map();
+  const now = new Date();
+  const rows = await runAsSystem("find who snoozed, hid or muted a chat", () =>
     prisma.threadRead.findMany({
-      where: { threadId, userId: { in: [...userIds] }, snoozedUntil: { gt: new Date() } },
-      select: { userId: true },
+      where: {
+        threadId,
+        userId: { in: [...userIds] },
+        OR: [{ snoozedUntil: { gt: now } }, { hidden: true }, { muted: { not: null } }],
+      },
+      select: { userId: true, snoozedUntil: true, hidden: true, muted: true },
     }),
   );
-  return new Set(rows.map((row) => row.userId));
+  return new Map(
+    rows.map((row) => [
+      row.userId,
+      {
+        snoozed: row.snoozedUntil !== null && row.snoozedUntil > now,
+        hidden: row.hidden,
+        muted: row.muted,
+      },
+    ]),
+  );
+}
+
+/** Brings a chat one person hid back to their list when it needs them, from a job or a run. */
+export async function unhideChatFor(prisma: PrismaClient, threadId: string, userId: string) {
+  await runAsSystem("bring a hidden chat back for a member", () =>
+    unhide(prisma, threadId, userId),
+  );
+}
+
+/** Whether this person muted a bot's own chat, its own setting deciding until they choose. */
+export async function botChatMutedFor(
+  prisma: PrismaClient,
+  input: { botId: string; userId: string },
+  bot: { notifyOnFinish: boolean },
+): Promise<boolean> {
+  const read = await prisma.threadRead.findFirst({
+    where: { userId: input.userId, thread: { botId: input.botId } },
+    select: { muted: true },
+  });
+  return mutedFor({ reads: read ? [read] : [] }, bot);
+}
+
+/**
+ * A bot's `notifyOnFinish` as API callers and agents still set it: the caller's own mute of the
+ * bot's chat. Saving the value already in effect records no choice, so a bot whose own switch is
+ * off stays exactly as silent as before for whoever never chose.
+ */
+export async function setBotNotifyFor(
+  prisma: PrismaClient,
+  input: { botId: string; spaceId: string; userId: string },
+  notify: boolean,
+) {
+  const thread = await prisma.thread.findUnique({
+    where: { botId: input.botId },
+    select: {
+      id: true,
+      bot: { select: { notifyOnFinish: true } },
+      reads: { where: { userId: input.userId }, select: { muted: true } },
+    },
+  });
+  if (!thread || mutedFor(thread, thread.bot) === !notify) return;
+  await setThreadMuteFor(
+    prisma,
+    { threadId: thread.id, spaceId: input.spaceId, userId: input.userId },
+    !notify,
+  );
 }

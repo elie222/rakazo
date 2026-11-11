@@ -17,6 +17,7 @@ import {
 import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  botChatMutedFor,
   commitBotUpdate,
   createGroupRepos,
   createRepos,
@@ -24,6 +25,7 @@ import {
   IsolationError,
   isRecordNotFound,
   SpaceDeletionInProgressError,
+  setBotNotifyFor,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
@@ -849,15 +851,28 @@ export async function updateChildBot(
       error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
-  await commitBotUpdate({
-    prisma: deps.prisma,
-    notify: (threadId, seq) => deps.events.notify(threadId, seq),
-    spaceId: run.spaceId,
-    threadId: child.thread.id,
-    botId: child.id,
-    emitBotUpdated: true,
-    data: patch,
-  });
+  const { notifyOnFinish, ...profileData } = patch;
+  // A mute alone is the asker's own: the shared bot, its updatedAt and everyone's clients stay as
+  // they are.
+  if (Object.values(profileData).some((value) => value !== undefined))
+    await commitBotUpdate({
+      prisma: deps.prisma,
+      notify: (threadId, seq) => deps.events.notify(threadId, seq),
+      spaceId: run.spaceId,
+      threadId: child.thread.id,
+      botId: child.id,
+      emitBotUpdated: true,
+      data: profileData,
+    });
+  // After the profile, which is what can refuse: a refused update leaves notifications alone.
+  // They are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: child.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   return { ok: true };
 }
 
@@ -1349,31 +1364,43 @@ export async function updateOwnBotFromTool(
         "Provide at least one of name, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
     };
   }
-  const updated = await deps.prisma.bot.update({
-    where: { id: bot.id },
-    data: patch,
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      color: true,
-      notifyOnFinish: true,
-      dailyCheckIns: true,
-    },
-  });
+  const { notifyOnFinish, ...profile } = patch;
+  const select = {
+    id: true,
+    name: true,
+    description: true,
+    color: true,
+    notifyOnFinish: true,
+    dailyCheckIns: true,
+  } as const;
+  // A mute alone is the asker's own: the shared bot and its updatedAt stay as they are.
+  const profileChanged = Object.values(profile).some((value) => value !== undefined);
+  const updated = profileChanged
+    ? await deps.prisma.bot.update({ where: { id: bot.id }, data: profile, select })
+    : await deps.prisma.bot.findUniqueOrThrow({ where: { id: bot.id }, select });
+  // After the profile, which is what can refuse: a refused update leaves notifications alone.
+  // They are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: bot.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   try {
-    await deps.events.append({
-      spaceId: run.spaceId,
-      threadId: threadId,
-      botId: bot.id,
-      runId: run.id,
-      type: "bot.updated",
-      payload: {
-        botId: updated.id,
-        name: updated.name,
-        description: updated.description,
-      },
-    });
+    if (profileChanged)
+      await deps.events.append({
+        spaceId: run.spaceId,
+        threadId: threadId,
+        botId: bot.id,
+        runId: run.id,
+        type: "bot.updated",
+        payload: {
+          botId: updated.id,
+          name: updated.name,
+          description: updated.description,
+        },
+      });
   } catch (error) {
     getLogger().error("bot.updated notification", error);
   }
@@ -1383,7 +1410,11 @@ export async function updateOwnBotFromTool(
     name: updated.name,
     description: updated.description,
     avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
-    notifyOnFinish: updated.notifyOnFinish,
+    notifyOnFinish: !(await botChatMutedFor(
+      deps.prisma,
+      { botId: bot.id, userId: run.userId },
+      updated,
+    )),
     dailyCheckIns: updated.dailyCheckIns,
   };
 }

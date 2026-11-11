@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
-import type { Bot, ChatAlert } from "@rakazo/contracts";
+import type { Bot, ChatAlert, Group } from "@rakazo/contracts";
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -77,7 +77,7 @@ const rpc = {
 
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
-const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
+const groups = [{ id: "group-g", name: "Crew" } as Group];
 
 function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
   hook = useBrowserNotifications(
@@ -143,7 +143,7 @@ beforeEach(() => {
   FakeNotification.permission = "granted";
   FakeNotification.shown = [];
   bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
-  groups[0] = { id: "group-g" };
+  groups[0] = { id: "group-g", name: "Crew" } as Group;
   streams = [];
   signals = [];
   focused = true;
@@ -200,6 +200,25 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([]);
   });
 
+  it("lets a muted or hidden open chat's own failures and questions through from the server", async () => {
+    focused = false;
+    for (const change of [{ muted: true }, { hidden: true }]) {
+      Object.assign(bots[0]!, change);
+      try {
+        await open({ botId: "bot-b" });
+        await send({ kind: "failure" });
+        await send({ kind: "help" });
+      } finally {
+        Object.assign(bots[0]!, { muted: false, hidden: false });
+      }
+    }
+    expect(shown()).toHaveLength(4);
+    // An unmuted open chat's stream speaks for these instead.
+    await open({ botId: "bot-b" });
+    await send({ kind: "failure" });
+    expect(shown()).toHaveLength(4);
+  });
+
   it("treats a bot's alert from a group as another chat", async () => {
     await open({ botId: "bot-b" });
     await send({ groupId: "group-g", threadId: "thread-g" });
@@ -252,7 +271,7 @@ describe("useBrowserNotifications chat alerts", () => {
       botId: "bot-b",
       payload: { role: "bot", blocks: [{ type: "text", text: "The report is ready." }] },
     } as const;
-    act(() => hook.notifyBrowserForEvent(event, "thread-g", 4, true, "Scout", true, "group-g"));
+    act(() => hook.notifyBrowserForEvent(event, "thread-g", 4, true, "Scout", "group-g"));
     const [notification] = FakeNotification.shown;
     expect(shown()).toEqual([["Scout", "The report is ready.", "thread-g"]]);
     notification!.onclick!();
@@ -281,7 +300,7 @@ describe("useBrowserNotifications chat alerts", () => {
         ],
       },
     };
-    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", undefined));
     await send({
       kind: "takeover",
       title: "Scout needs you on the screen",
@@ -307,7 +326,7 @@ describe("useBrowserNotifications chat alerts", () => {
       botId: "bot-b",
       payload: {},
     } as const;
-    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", undefined));
     act(() => root.unmount());
     expect(FakeNotification.shown[0]!.closed).toBe(true);
     root = createRoot(document.createElement("div"));
@@ -325,7 +344,7 @@ describe("useBrowserNotifications chat alerts", () => {
       botId: "bot-b",
       payload: {},
     } as const;
-    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", undefined));
     act(() => root.unmount());
     FakeNotification.permission = "granted";
     hook.flushPendingBrowserNotifications();
@@ -333,12 +352,75 @@ describe("useBrowserNotifications chat alerts", () => {
     root = createRoot(document.createElement("div"));
   });
 
+  it("stays silent for a message one bot wrote for another, however much of the chat loaded", async () => {
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-1",
+      type: "thread.message.created",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: { role: "bot", blocks: [{ kind: "text", text: "For Chief." }], forBot: true },
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", undefined));
+    expect(shown()).toEqual([]);
+  });
+
+  it("drops a notification held for permission once its chat is muted", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-1",
+      type: "run.failed",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {},
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", undefined));
+    bots[0]!.muted = true;
+    FakeNotification.permission = "granted";
+    try {
+      hook.flushPendingBrowserNotifications();
+      expect(shown()).toEqual([]);
+    } finally {
+      bots[0]!.muted = false;
+    }
+  });
+
+  it("drops a group's notification held for permission once the group is muted or hidden", async () => {
+    visible = false;
+    await open({ groupId: "group-g" });
+    for (const change of [{ muted: true }, { hidden: true }]) {
+      FakeNotification.permission = "default";
+      const event = {
+        id: `event-${Object.keys(change)[0]}`,
+        type: "run.failed",
+        threadId: "thread-g",
+        seq: 5,
+        botId: "bot-b",
+        payload: {},
+      } as const;
+      act(() => hook.notifyBrowserForEvent(event, "thread-g", 4, true, "Scout", "group-g"));
+      Object.assign(groups[0]!, change);
+      FakeNotification.permission = "granted";
+      try {
+        hook.flushPendingBrowserNotifications();
+        expect(shown()).toEqual([]);
+      } finally {
+        Object.assign(groups[0]!, { muted: false, hidden: false });
+      }
+    }
+  });
+
   it("stays quiet for an ordinary reply in a snoozed open chat, and still announces a question", async () => {
     const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const earlier = new Date(Date.now() - 60 * 1000).toISOString();
     visible = false;
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
-    groups[0] = { id: "group-g", snoozedUntil: later };
+    groups[0] = { id: "group-g", name: "Crew", snoozedUntil: later } as Group;
     await open({ botId: "bot-b" });
     act(() =>
       hook.notifyBrowserForEvent(
@@ -347,7 +429,6 @@ describe("useBrowserNotifications chat alerts", () => {
         4,
         true,
         "Scout",
-        true,
         undefined,
       ),
     );
@@ -358,7 +439,6 @@ describe("useBrowserNotifications chat alerts", () => {
         4,
         true,
         "Scout",
-        true,
         "group-g",
       ),
     );
@@ -370,7 +450,6 @@ describe("useBrowserNotifications chat alerts", () => {
         4,
         true,
         "Scout",
-        true,
         undefined,
       ),
     );
@@ -381,13 +460,12 @@ describe("useBrowserNotifications chat alerts", () => {
         4,
         true,
         "Scout",
-        true,
         "group-g",
       ),
     );
     expect(shown().map((row) => row[2])).toEqual(["thread-b", "thread-g"]);
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: earlier } as Bot;
-    groups[0] = { id: "group-g", snoozedUntil: earlier };
+    groups[0] = { id: "group-g", name: "Crew", snoozedUntil: earlier } as Group;
     act(() =>
       hook.notifyBrowserForEvent(
         reply("woke-bot", [{ kind: "text", text: "Awake again." }]),
@@ -395,7 +473,6 @@ describe("useBrowserNotifications chat alerts", () => {
         4,
         true,
         "Scout",
-        true,
         undefined,
       ),
     );
@@ -414,7 +491,6 @@ describe("useBrowserNotifications chat alerts", () => {
         4,
         true,
         "Scout",
-        true,
         undefined,
       ),
     );

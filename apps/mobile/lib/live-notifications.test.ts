@@ -148,6 +148,35 @@ describe("after a chat's notifications change", () => {
     });
     expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["a"]]);
   });
+
+  it("clears a bot's own chat by the bot when its thread isn't known", async () => {
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      { request: { identifier: "own", content: { data: { botId: "bot-1" } } } },
+      { request: { identifier: "native", content: { data: { "rakazo.botId": "bot-1" } } } },
+      {
+        request: { identifier: "group", content: { data: { botId: "bot-1", groupId: "group-1" } } },
+      },
+      { request: { identifier: "other", content: { data: { botId: "bot-2" } } } },
+    ] as never);
+    await afterChatNotifyChange("", "", "", { botId: "bot-1", notify: false });
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([
+      ["own"],
+      ["native"],
+    ]);
+  });
+
+  it("clears a muted group's notifications, pushed or posted on the device", async () => {
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      { request: { identifier: "push", content: { data: { groupId: "group-1" } } } },
+      { request: { identifier: "native", content: { data: { "rakazo.groupId": "group-1" } } } },
+      { request: { identifier: "other", content: { data: { groupId: "group-2" } } } },
+    ] as never);
+    await afterChatNotifyChange("", "", "", { groupId: "group-1", notify: false });
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([
+      ["push"],
+      ["native"],
+    ]);
+  });
 });
 
 describe("when the session ends", () => {

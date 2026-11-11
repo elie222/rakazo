@@ -14,6 +14,7 @@ function ownBotUpdateCall() {
           }),
           findUniqueOrThrow: async () => ({ instructions: "" }),
         },
+        threadRead: { findFirst: async (): Promise<{ muted: boolean | null } | null> => null },
       },
     },
     run: { trigger: "user", threadId: "thread-1" },
@@ -76,6 +77,30 @@ describe("prepareToolRequest: update_bot owner settings after outside content", 
     for (let index = 0; index < 3; index += 1) {
       await expect(prepareToolRequest(ctx as never, request())).resolves.toBeUndefined();
     }
+  });
+});
+
+describe("prepareToolRequest: update_bot notifications", () => {
+  // The bot's own switch says notify; what counts is the member's mute of its chat.
+  function notifyCall(muted: boolean | null) {
+    const { ctx, request } = ownBotUpdateCall();
+    ctx.state.tainted = false;
+    ctx.deps.prisma.bot.findUnique = async () => ({ notifyOnFinish: true }) as never;
+    ctx.deps.prisma.threadRead.findFirst = async () => (muted === null ? null : { muted });
+    const req = { ...request(), args: { notifyOnFinish: true } };
+    return { ctx, req };
+  }
+
+  it("keeps turning notifications back on for a member who muted the chat", async () => {
+    const { ctx, req } = notifyCall(true);
+    await prepareToolRequest(ctx as never, req);
+    expect(req.args).toEqual({ notifyOnFinish: true });
+  });
+
+  it("drops the value the member already has", async () => {
+    const { ctx, req } = notifyCall(null);
+    await prepareToolRequest(ctx as never, req);
+    expect(req.args).toEqual({});
   });
 });
 

@@ -7223,6 +7223,9 @@ describe("bot model auth on save", () => {
       credential: ReturnType<typeof credentialRow>;
       modelId: string;
     } | null;
+    /** The member's own mute of the bot's chat; null when they never chose. */
+    memberMuted?: boolean | null;
+    analytics?: { capture: ReturnType<typeof vi.fn> };
   }) {
     const bot = storedBot(options.modelId);
     const preferenceFindFirst = vi.fn(options.preferences);
@@ -7257,6 +7260,18 @@ describe("bot model auth on save", () => {
       userModelPreference: { findFirst: preferenceFindFirst },
       userModelCredential: { findFirst: vi.fn(async () => null) },
       secret: { findFirst: secretFindFirst },
+      thread: {
+        findUnique: vi.fn(async () => ({
+          id: "thread-1",
+          bot: { notifyOnFinish: bot.notifyOnFinish },
+          reads: options.memberMuted == null ? [] : [{ muted: options.memberMuted }],
+        })),
+      },
+      threadRead: {
+        findFirst: vi.fn(async () =>
+          options.memberMuted == null ? null : { muted: options.memberMuted },
+        ),
+      },
       $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
     };
     const deps = {
@@ -7265,6 +7280,7 @@ describe("bot model auth on save", () => {
         load: (ciphertext: string) => (ciphertext === "cipher-oauth" ? oauth : apiKey),
       },
       events: { notify: vi.fn().mockResolvedValue(undefined) },
+      ...(options.analytics ? { analytics: options.analytics } : {}),
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -7280,6 +7296,36 @@ describe("bot model auth on save", () => {
       handler: new RPCHandler(createRouter(deps)),
     };
   }
+
+  it("mutes for the member alone, without writing the shared bot, and counts only a real change", async () => {
+    const analytics = { capture: vi.fn() };
+    // The bot notifies by default; this member already muted it.
+    const muted = saveDeps({
+      modelId: spark,
+      preferences: () => null,
+      memberMuted: true,
+      analytics,
+    });
+    const again = await call(muted.handler, "bots/update", {
+      botId: "bot-1",
+      notifyOnFinish: false,
+    });
+    expect(again.status).toBe(200);
+    expect(muted.botUpdate).not.toHaveBeenCalled();
+    expect(analytics.capture).not.toHaveBeenCalled();
+
+    const fresh = saveDeps({ modelId: spark, preferences: () => null, analytics });
+    const mute = await call(fresh.handler, "bots/update", {
+      botId: "bot-1",
+      notifyOnFinish: false,
+    });
+    expect(mute.status).toBe(200);
+    expect(fresh.botUpdate).not.toHaveBeenCalled();
+    expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(actor.userId, {
+      name: "bot_setting_changed",
+      setting: "notifications",
+    });
+  });
 
   it("persists the daily check-in preference through the bot update route", async () => {
     const { botUpdate, handler } = saveDeps({ modelId: spark, preferences: () => null });

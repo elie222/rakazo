@@ -15,6 +15,7 @@ import {
   GroupAvatar,
 } from "@rakazo/ui-web";
 import {
+  BellOff,
   ChevronDown,
   CircleAlert,
   Lock,
@@ -35,6 +36,9 @@ import {
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
 import { useRedrawAtMidnight } from "./use-redraw-at-midnight";
+
+/** The chat whose menu is open; `anchor` is its row's "⋯" button when opened from there. */
+export type RosterMenu = { kind: "bot" | "group"; id: string; anchor?: HTMLElement | null };
 
 export function SidebarRoster({
   sidebarGroups,
@@ -92,8 +96,8 @@ export function SidebarRoster({
   displayedRunError: string | null;
   draggedBotId: string | null;
   setDraggedBotId: (id: string | null) => void;
-  botMenu: { kind: "bot" | "group"; id: string } | null;
-  setBotMenu: Dispatch<SetStateAction<{ kind: "bot" | "group"; id: string } | null>>;
+  botMenu: RosterMenu | null;
+  setBotMenu: Dispatch<SetStateAction<RosterMenu | null>>;
   reorderRosterBot: (sourceId: string, targetId: string, groupBotIds: string[]) => void;
   activeSnapshot: ThreadSnapshot | null;
   botMenuContent: ReactNode;
@@ -311,6 +315,10 @@ export function SidebarRoster({
                 const rowSameList =
                   Boolean(draggedBotId) && groupBotIds.includes(draggedBotId ?? "");
                 const rowDropKey = `row:${item.kind}:${item.chat.id}`;
+                const menuOpen = botMenu?.kind === item.kind && botMenu.id === item.chat.id;
+                // Only the open space's chats have a menu; the mini rail has no room for "⋯".
+                const hasMenu = item.chat.spaceId === bootstrapMe?.spaceId;
+                const actionsButton = hasMenu && !mini;
                 const avatar =
                   item.kind === "bot" ? (
                     <BotAvatar
@@ -452,7 +460,15 @@ export function SidebarRoster({
                       avatar
                     )}
                     {!mini ? (
-                      <div className="min-w-0 flex-1">
+                      <div
+                        className={`min-w-0 flex-1 ${
+                          actionsButton
+                            ? menuOpen
+                              ? "pe-7"
+                              : "group-focus-within/row:pe-7 group-hover/row:pe-7"
+                            : ""
+                        }`}
+                      >
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                             <span
@@ -471,6 +487,15 @@ export function SidebarRoster({
                             ) : null}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
+                            {item.chat.muted ? (
+                              <BellOff
+                                size={12}
+                                role="img"
+                                aria-label={t`Muted`}
+                                data-roster-muted
+                                className="shrink-0 text-faint-foreground"
+                              />
+                            ) : null}
                             {item.woke ? (
                               <span
                                 data-roster-woke
@@ -546,8 +571,8 @@ export function SidebarRoster({
                     }}
                   >
                     <ContextMenu
-                      disabled={item.chat.spaceId !== bootstrapMe?.spaceId}
-                      open={botMenu?.kind === item.kind && botMenu.id === item.chat.id}
+                      disabled={!hasMenu}
+                      open={menuOpen}
                       // A sibling row's menu may already own the state; only clear our own.
                       onOpenChange={(open) =>
                         setBotMenu((current) =>
@@ -573,10 +598,34 @@ export function SidebarRoster({
                       ) : (
                         chatTrigger
                       )}
-                      {botMenu?.kind === item.kind && botMenu.id === item.chat.id ? (
-                        <Suspense fallback={null}>{botMenuContent}</Suspense>
-                      ) : null}
+                      {menuOpen ? <Suspense fallback={null}>{botMenuContent}</Suspense> : null}
                     </ContextMenu>
+                    {actionsButton ? (
+                      // The same menu without a right-click, so it can be found and reached by
+                      // keyboard. It shows on hover or focus, or while its menu is open; until
+                      // then a tap on that end of the row still opens the chat.
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        data-roster-actions
+                        aria-label={t`Actions for ${item.chat.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        className={`absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground ${
+                          menuOpen
+                            ? "opacity-100"
+                            : "pointer-events-none opacity-0 focus-visible:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100"
+                        }`}
+                        onClick={(event) => {
+                          const anchor = event.currentTarget;
+                          setBotMenu(
+                            menuOpen ? null : { kind: item.kind, id: item.chat.id, anchor },
+                          );
+                        }}
+                      >
+                        <MoreHorizontal size={16} aria-hidden="true" />
+                      </Button>
+                    ) : null}
                   </div>
                 );
               })}

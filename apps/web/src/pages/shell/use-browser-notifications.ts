@@ -1,4 +1,4 @@
-import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
+import type { Bot, ChatAlert, Group, ProductEvent } from "@rakazo/contracts";
 import { chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
@@ -25,8 +25,8 @@ type ChatAlertOptions = {
   openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
   /** The signed-in person, whose own messages never notify them. */
   meId: string | undefined;
-  /** Current groups, so a snooze that lands after a reply was queued is still honored. */
-  groupsRef?: RefObject<readonly SnoozableChat[]>;
+  /** The open space's groups as they are now, so a mute or hide holds back their notifications. */
+  groupsRef: RefObject<Group[]>;
 };
 
 /** A question still arrives while a chat is snoozed; an ordinary reply waits. */
@@ -93,9 +93,17 @@ export function useBrowserNotifications(
         ? alert.groupId === activeGroupId.current
         : !activeGroupId.current && alert.botId === activeBotId.current;
       // The open chat's own stream alerts for its replies and failures; only a takeover is missed.
+      // A muted or hidden chat's stream stays quiet, so the server's alerts, which for such a chat
+      // are only the viewer's own questions, takeovers and failures, speak for it.
+      const shownChat = !isOpen
+        ? undefined
+        : alert.groupId
+          ? groupsRef.current.find((group) => group.id === alert.groupId)
+          : botsRef.current.find((bot) => bot.id === alert.botId);
+      const streamSpeaks = !shownChat?.muted && !shownChat?.hidden;
       if (
         isOpen &&
-        (alert.kind !== "takeover" ||
+        ((alert.kind !== "takeover" && streamSpeaks) ||
           (document.visibilityState === "visible" && document.hasFocus()))
       )
         return;
@@ -159,20 +167,22 @@ export function useBrowserNotifications(
       pendingBrowserNotifications.current.clear();
     };
   }, []);
-  const chatFor = (pending: PendingBrowserNotification): SnoozableChat | undefined =>
-    pending.groupId
-      ? groupsRef?.current.find((group) => group.id === pending.groupId)
-      : botsRef.current.find((bot) => bot.id === pending.botId);
+  const chatFor = (pending: PendingBrowserNotification): Bot | Group | undefined =>
+    pending.groupId === undefined
+      ? botsRef.current.find((bot) => bot.id === pending.botId)
+      : groupsRef.current.find((group) => group.id === pending.groupId);
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
-    // A reply queued while permission was pending can be snoozed before it is shown.
-    if (snoozedOrdinaryReply(pending.event, chatFor(pending))) return true;
+    // Read when it is shown, so a chat muted, hidden or snoozed while permission was pending
+    // stays quiet.
+    const chat = chatFor(pending);
+    if (snoozedOrdinaryReply(pending.event, chat)) return true;
     const result = deliverNativeBrowserNotification(
       pending.event,
       currentBot.name || pending.botName,
       {
-        enabled: pending.groupId !== undefined || currentBot.notifyOnFinish,
+        enabled: Boolean(chat && !chat.muted && !chat.hidden),
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
@@ -203,7 +213,6 @@ export function useBrowserNotifications(
       initialCursor: number,
       streamReady: boolean,
       botName: string,
-      enabled: boolean,
       groupId: string | undefined,
     ) => {
       const botId = event.botId;
@@ -218,7 +227,7 @@ export function useBrowserNotifications(
         notifiedEventIds: notifiedBrowserEvents.current,
         meId: meIdRef.current,
       });
-      if (!eligible || !enabled) return;
+      if (!eligible) return;
       const pending = {
         event,
         botId,

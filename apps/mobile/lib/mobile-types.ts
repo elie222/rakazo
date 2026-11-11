@@ -39,7 +39,9 @@ export type MobileBot = Pick<
   | "crossSpaceCommunication"
   | "dailyCheckIns"
 > &
-  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "snoozedUntil">>;
+  Partial<
+    Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "snoozedUntil" | "muted" | "hidden">
+  >;
 export type MobileBotSection = BotSection;
 export type MobileMe = Pick<
   Me,
@@ -76,7 +78,7 @@ export type MobileGroup = Pick<
   | "updatedAt"
   | "members"
 > &
-  Partial<Pick<Group, "spaceId" | "snoozedUntil">>;
+  Partial<Pick<Group, "spaceId" | "snoozedUntil" | "muted" | "hidden">>;
 export type MobileSpace = Space;
 export type MobileSpaceNavigation = SpaceNavigation;
 /**

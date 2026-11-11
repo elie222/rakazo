@@ -75,6 +75,10 @@ class RakazoNotificationsModule : Module() {
       resume(endpoint, token, spaceId, locale, headers, mutedBotId = botId)
     }
 
+    AsyncFunction("resumeAfterGroupMute") { endpoint: String, token: String, spaceId: String, locale: String, headers: String, groupId: String ->
+      resume(endpoint, token, spaceId, locale, headers, mutedGroupId = groupId)
+    }
+
     AsyncFunction("stop") { clearSession: Boolean ->
       val context = context()
       if (clearSession) {
@@ -147,6 +151,7 @@ class RakazoNotificationsModule : Module() {
     locale: String,
     headers: String,
     mutedBotId: String? = null,
+    mutedGroupId: String? = null,
   ) {
     val context = context()
     if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
@@ -159,7 +164,7 @@ class RakazoNotificationsModule : Module() {
       storage.spaceId = spaceId
       storage.locale = locale
       if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
-        RakazoNotificationService.start(context, mutedBotId = mutedBotId)
+        RakazoNotificationService.start(context, mutedBotId = mutedBotId, mutedGroupId = mutedGroupId)
       }
     }
   }

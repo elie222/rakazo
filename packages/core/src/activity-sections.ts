@@ -1,11 +1,16 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { chatSnoozed } from "./chat-snooze.js";
+import { chatListed } from "./chat-snooze.js";
 import { isRunWaitingOnUser, isRunWorking } from "./run-state.js";
 import { isAgedStuckWork } from "./stuck-work.js";
 
 type ActivityRun = Pick<RunActivityRow, "botId" | "groupId" | "status" | "updatedAt">;
-type ActivityBot = { id: string; unread: boolean; snoozedUntil?: string | null };
-type ActivityGroup = { id: string; unread: boolean; snoozedUntil?: string | null };
+type ActivityBot = { id: string; unread: boolean; snoozedUntil?: string | null; hidden?: boolean };
+type ActivityGroup = {
+  id: string;
+  unread: boolean;
+  snoozedUntil?: string | null;
+  hidden?: boolean;
+};
 
 /** A question or forgotten queue wins over work, and an unread failure is something to look at. */
 export function activityAttention(
@@ -23,7 +28,7 @@ const chatKey = (run: ActivityRun) => (run.groupId ? `group:${run.groupId}` : `b
 
 /**
  * Splits activity into what needs the user, what is running, unread chats, and the rest. A snoozed
- * chat stays out of all of them until it wakes, as it does in the chat list.
+ * or hidden chat stays out of all of them until it wakes or comes back, as it does in the chat list.
  */
 export function activitySections<
   Run extends ActivityRun,
@@ -42,13 +47,13 @@ export function activitySections<
   groups: readonly Group[];
   now?: number;
 }) {
-  const bots = allBots.filter((bot) => !chatSnoozed(bot, now));
-  const groups = allGroups.filter((group) => !chatSnoozed(group, now));
-  const snoozed = new Set([
-    ...allBots.filter((bot) => chatSnoozed(bot, now)).map((bot) => `bot:${bot.id}`),
-    ...allGroups.filter((group) => chatSnoozed(group, now)).map((group) => `group:${group.id}`),
+  const bots = allBots.filter((bot) => chatListed(bot, now));
+  const groups = allGroups.filter((group) => chatListed(group, now));
+  const setAside = new Set([
+    ...allBots.filter((bot) => !chatListed(bot, now)).map((bot) => `bot:${bot.id}`),
+    ...allGroups.filter((group) => !chatListed(group, now)).map((group) => `group:${group.id}`),
   ]);
-  const listed = (run: Run) => !snoozed.has(chatKey(run));
+  const listed = (run: Run) => !setAside.has(chatKey(run));
   active = active.filter(listed);
   recent = recent.filter(listed);
   const unreadChats = new Set([

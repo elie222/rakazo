@@ -152,6 +152,8 @@ export type FinalizeRunInput = FinalizeRunBase &
         outcome: "completed";
         blocks: MessageBlock[];
         markUnread?: boolean;
+        /** The reply answers another bot, not the people in the chat, so it alerts nobody. */
+        forBot?: boolean;
       }
     | {
         outcome: "failed";
@@ -829,7 +831,12 @@ async function finalizeRunOnce(
         botId: input.botId,
         type: "thread.message.created",
         runId: input.runId,
-        payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
+        payload: {
+          messageId: message.id,
+          role: "bot",
+          blocks: replyBlocks,
+          ...(input.outcome === "completed" && input.forBot ? { forBot: true } : {}),
+        },
       });
       firstResponse = response.firstResponse;
     }

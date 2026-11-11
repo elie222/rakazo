@@ -171,6 +171,8 @@ async function runWithModel(
     $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
+    // Nobody muted, hid or snoozed the chat, so its finish notice goes out.
+    threadRead: { findMany: vi.fn(async () => []) },
     spaceMember: {
       findUnique: vi.fn(async () => ({ id: "member-1" })),
       findMany: vi.fn(async () => [{ userId: "user-1" }]),

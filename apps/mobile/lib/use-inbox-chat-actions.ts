@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { createSnoozeQueue } from "@rakazo/core";
+import { createChatChoiceQueue } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
@@ -61,24 +61,40 @@ export function useInboxChatActions({
   const [archiving, setArchiving] = useState<ReadonlySet<string>>(() => new Set());
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
-  const [snoozeQueue] = useState(createSnoozeQueue);
+  const [snoozeQueue] = useState(createChatChoiceQueue<string | null>);
   const updateChat = useCallback(
     async (
       kind: InboxChatKind,
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       update: BotOrganizationUpdate,
     ) => {
-      await chatRpc(chat.spaceId, `${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
-      if (kind === "bot" && update.notifyOnFinish !== undefined) {
+      const target = chatTarget(kind, chat.id);
+      // One request per change. A bot's notification switch is the viewer's own mute, which
+      // servers from before chat mutes know too.
+      if ("muted" in update && kind === "bot") {
+        await chatRpc(chat.spaceId, "bots/update", {
+          botId: chat.id,
+          notifyOnFinish: !update.muted,
+        });
+      } else if ("muted" in update) {
+        await chatRpc(chat.spaceId, "threads/mute", { ...target, ...update });
+      } else if ("hidden" in update) {
+        await chatRpc(chat.spaceId, "threads/hide", { ...target, ...update });
+      } else await chatRpc(chat.spaceId, `${kind}s/update`, { ...target, ...update });
+      // A hidden chat holds its news as a muted one does, so either brings the device in line.
+      const quiet = "muted" in update ? update.muted : "hidden" in update ? update.hidden : null;
+      if (quiet !== null) {
         await afterChatNotifyChange(
           currentApiBase(),
           await loadSessionToken(),
           selectedSpaceId() ?? "",
-          {
-            botId: chat.id,
-            threadId: "threadId" in chat ? chat.threadId : undefined,
-            notify: update.notifyOnFinish,
-          },
+          kind === "bot"
+            ? {
+                botId: chat.id,
+                threadId: "threadId" in chat ? chat.threadId : undefined,
+                notify: !quiet,
+              }
+            : { groupId: chat.id, notify: !quiet },
         );
       }
       await loadBots();

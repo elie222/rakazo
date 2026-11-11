@@ -27,8 +27,10 @@ export function countUnreadInboxChats(
       JOIN member_spaces m ON m."spaceId" = t."spaceId"
       JOIN thread_reads r ON r."threadId" = t.id AND r."userId" = ${userId}
       WHERE r.unread
-        -- A snoozed chat leaves the inbox until it wakes, so it doesn't count either.
+        -- A snoozed chat leaves the inbox until it wakes, and a hidden one until it is brought
+        -- back, so neither counts. A muted chat is still listed with its unread dot, so it does.
         AND (r."snoozedUntil" IS NULL OR r."snoozedUntil" <= now())
+        AND NOT r.hidden
         AND t."externalConversationId" IS NULL
         AND (
           EXISTS (SELECT 1 FROM bots b WHERE b.id = t."botId"

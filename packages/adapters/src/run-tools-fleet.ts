@@ -1,6 +1,7 @@
 import { BotSettingsValuesSchema } from "@rakazo/contracts";
 import {
   appendEventInTransaction,
+  botChatMutedFor,
   commitBotUpdate,
   createSpaceForMember,
   InstructionConflictError,
@@ -278,7 +279,7 @@ export const fleetTools: ToolHandlers = {
     }
     const { instructions, model, thinkingLevel, readAloud, voice, ...profile } = args;
     const modelDeps = await fleetPrepareDeps(deps, run);
-    const live = await deps.prisma.bot.findUniqueOrThrow({
+    const stored = await deps.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
       select: {
         name: true,
@@ -294,6 +295,15 @@ export const fleetTools: ToolHandlers = {
         voiceId: true,
       },
     });
+    // Notifications are each member's own: these are the ones of the person whose run this is.
+    const live = {
+      ...stored,
+      notifyOnFinish: !(await botChatMutedFor(
+        deps.prisma,
+        { botId: bot.id, userId: run.userId },
+        stored,
+      )),
+    };
     // `instructions_offset` pages through long instructions on a read; it is not a write field.
     const instructionsOffsetArg = args.instructions_offset ?? args.instructionsOffset;
     const writeArgs = { ...args, instructions_offset: undefined, instructionsOffset: undefined };

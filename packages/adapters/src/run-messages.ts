@@ -103,6 +103,9 @@ export async function publishMessage(
         clientNonce,
         Boolean(stoppedHelper),
         lease,
+        // A bot working on another bot's request writes for that bot unless it marks the chat
+        // unread, as a failure or a reply meant for the person does.
+        role === "bot" && run.trigger === "bot_message" && markUnread === false,
       );
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
@@ -123,6 +126,8 @@ export async function persistMessageInTransaction(
   clientNonce?: string,
   allowCancelledRun = false,
   lease?: RunLease,
+  /** Progress on another bot's request, not news for the people in the chat. */
+  forBot = false,
 ) {
   const message = await createThreadMessageInTransaction(tx, {
     threadId: run.threadId,
@@ -148,6 +153,7 @@ export async function persistMessageInTransaction(
       role,
       blocks,
       callId: callIdFromClientNonce(clientNonce),
+      ...(forBot ? { forBot: true } : {}),
     },
   });
   return {

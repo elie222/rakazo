@@ -25,7 +25,7 @@ import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-typ
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
-import { BotAvatar } from "./bot-avatar";
+import { BotAvatar, MutedBadge } from "./bot-avatar";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
 import { DragSafePressable } from "./drag-safe-pressable";
 import { GroupAvatar } from "./group-avatar";
@@ -233,7 +233,7 @@ export const PinnedTiles = memo(function PinnedTiles({
   onBotAction: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
   onGroupAction: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 }) {
-  const { i18n } = useLingui();
+  const { i18n, t } = useLingui();
   const styles = useThemedStyles(createHomeStyles);
   const selectedId = useContext(SelectedChatContext);
   // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
@@ -247,6 +247,7 @@ export const PinnedTiles = memo(function PinnedTiles({
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
+        const muted = chatMuted(chat.kind === "bot" ? chat.bot : chat.group) === true;
         const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
         const runAction = (action: InboxRowAction) =>
           chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
@@ -256,7 +257,7 @@ export const PinnedTiles = memo(function PinnedTiles({
           <Pressable
             key={`${chat.kind}-${id}`}
             accessibilityRole="button"
-            accessibilityLabel={name}
+            accessibilityLabel={muted ? `${name}, ${t`notifications silenced`}` : name}
             accessibilityState={{ selected: selectedId === id }}
             accessibilityActions={actions.map((action) => ({
               name: action,
@@ -281,11 +282,11 @@ export const PinnedTiles = memo(function PinnedTiles({
                 identity={chat.bot.id}
                 size={avatarSize}
                 status={chat.bot.status}
-                muted={chat.bot.notifyOnFinish === false}
+                muted={muted}
                 motion="lazy"
               />
             ) : (
-              <GroupAvatar members={chat.group.members} size={avatarSize} />
+              <MutableGroupAvatar group={chat.group} size={avatarSize} />
             )}
             <PinnedName chat={chat} name={name} />
           </Pressable>
@@ -343,6 +344,30 @@ function chatTime(
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
 }
 
+/**
+ * Whether the viewer muted the chat, as the server says. A server from before chat mutes sends a
+ * bot's own notification setting instead, which is that viewer's mute there, and cannot mute a
+ * group: unknown.
+ */
+export function chatMuted(
+  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+): boolean | undefined {
+  if (typeof chat.muted === "boolean") return chat.muted;
+  return "notifyOnFinish" in chat && typeof chat.notifyOnFinish === "boolean"
+    ? !chat.notifyOnFinish
+    : undefined;
+}
+
+/** A group's avatar, with the bell while the viewer has it muted. */
+function MutableGroupAvatar({ group, size }: { group: MobileGroup | SpaceGroup; size: number }) {
+  return (
+    <View>
+      <GroupAvatar members={group.members} size={size} />
+      {group.muted ? <MutedBadge size={size} /> : null}
+    </View>
+  );
+}
+
 /** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
 export function ChatSwipe({
   target,
@@ -372,7 +397,8 @@ export function ChatSwipe({
       rowKey={rowKey}
       unread={chat.unread}
       pinned={chat.pinned}
-      notifyOnFinish={target.kind === "bot" ? target.chat.notifyOnFinish : undefined}
+      muted={chatMuted(chat)}
+      hidden={chat.hidden}
       sectionId={chat.sectionId}
       sections={sections}
       preview={{
@@ -431,7 +457,7 @@ export const BotRow = memo(function BotRow({
     bot.name,
     working ? t`Working…` : null,
     waiting ? t`Needs attention` : null,
-    bot.notifyOnFinish === false ? t`notifications silenced` : null,
+    chatMuted(bot) ? t`notifications silenced` : null,
     bot.unread ? t`unread` : null,
     time,
     preview,
@@ -462,7 +488,7 @@ export const BotRow = memo(function BotRow({
             identity={bot.id}
             size={INBOX_ROW.avatarSize}
             status={bot.status}
-            muted={bot.notifyOnFinish === false}
+            muted={chatMuted(bot) === true}
             motion="lazy"
           />
         </AvatarRow>
@@ -518,7 +544,13 @@ export const GroupRow = memo(function GroupRow({
       preview={preview}
       time={time}
       unread={group.unread}
-      accessibilityLabel={[group.name, group.unread ? t`unread` : null, time, preview]
+      accessibilityLabel={[
+        group.name,
+        group.muted ? t`notifications silenced` : null,
+        group.unread ? t`unread` : null,
+        time,
+        preview,
+      ]
         .filter(Boolean)
         .join(", ")}
       accessibilityHint={
@@ -528,7 +560,7 @@ export const GroupRow = memo(function GroupRow({
       onLongPress={onLongPress ? () => onLongPress(group) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
-      avatar={<GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />}
+      avatar={<MutableGroupAvatar group={group} size={INBOX_ROW.avatarSize} />}
     />
   );
   return onAction ? (

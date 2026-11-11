@@ -6,6 +6,7 @@ import {
   channelMessageSender,
   isPageOriginReply,
   memberMessageAlerts,
+  messageForAnotherBot,
   messageUnreadFor,
   otherAuthor,
   payloadAuthor,
@@ -248,5 +249,26 @@ describe("page card replies", () => {
     const text = messageReplyPreview([{ kind: "text", text: "hi" }], "bot");
     expect(text.page).toBeUndefined();
     expect(isPageOriginReply({ replyPreview: text })).toBe(false);
+  });
+});
+
+describe("messages for another bot", () => {
+  it("knows one from its own event, with nothing else loaded", () => {
+    const sent = [{ kind: "bot_message_sent", toBotId: "b", toBotName: "B", text: "Check this." }];
+    const received = [
+      { kind: "bot_message_received", fromBotId: "a", fromBotName: "A", text: "Check this." },
+    ];
+    const handoff = [{ kind: "handoff", fromBotId: "a", toBotId: "b", text: "Draft it.", hop: 1 }];
+    for (const blocks of [sent, received, handoff]) {
+      expect(messageForAnotherBot({ blocks })).toBe(true);
+    }
+    // An answer to another bot's request, which the server marks however the chat was loaded.
+    const answer = [{ kind: "text", text: "Here are the endpoints." }];
+    expect(messageForAnotherBot({ blocks: answer, forBot: true })).toBe(true);
+  });
+
+  it("leaves a reply meant for the person", () => {
+    expect(messageForAnotherBot({ blocks: [{ kind: "text", text: "Done." }] })).toBe(false);
+    expect(messageForAnotherBot({})).toBe(false);
   });
 });

@@ -50,7 +50,7 @@ import { persistTurnCheckpoint } from "./run-context.js";
 import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
-  completionMarksUnread,
+  completionMarks,
   completionNotificationBody,
   completionNotificationPreview,
   notifyRun,
@@ -648,6 +648,8 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     leaseFence: fence,
     outcome: "completed",
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
+    // Marked as a finished reply would be, so a stopped errand for another bot alerts nobody.
+    ...completionMarks(run.trigger, stuckText, ctx.source.peerMessage?.repliesToRequest === true),
   });
   if (!stopped) return;
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
@@ -911,7 +913,7 @@ export async function completeRun(ctx: RunContext) {
     run.trigger === "bot_message"
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
-  const marksUnread = completionMarksUnread(
+  const { markUnread: marksUnread, forBot } = completionMarks(
     run.trigger,
     text,
     ctx.source.peerMessage?.repliesToRequest === true,
@@ -929,6 +931,8 @@ export async function completeRun(ctx: RunContext) {
     outcome: "completed",
     blocks,
     markUnread: !groupSilentEnd && marksUnread,
+    // An answer to another bot's request goes back to that bot; the person hears its reply.
+    forBot,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();

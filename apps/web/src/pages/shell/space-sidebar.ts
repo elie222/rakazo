@@ -1,4 +1,4 @@
-import { chatSnoozed, chatWoke, groupBotsForSidebar } from "@rakazo/core";
+import { chatListed, chatWoke, groupBotsForSidebar } from "@rakazo/core";
 
 type SidebarChat = {
   id: string;
@@ -7,6 +7,7 @@ type SidebarChat = {
   pinned: boolean;
   sectionId: string | null;
   snoozedUntil?: string | null;
+  hidden?: boolean;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -47,11 +48,12 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
 ) {
   const needle = query.toLowerCase();
   const showSpaceNames = spaces.length > 1;
-  // Search still finds a snoozed chat; the list itself leaves it out until it wakes.
+  // Search still finds a snoozed or hidden chat; the list itself leaves it out until it wakes or
+  // comes back.
   const listed = (chat: SidebarChat) =>
     needle
       ? `${chat.name} ${chat.preview ?? ""}`.toLowerCase().includes(needle)
-      : !chatSnoozed(chat, now);
+      : chatListed(chat, now);
   return spaces.flatMap((space) => {
     const visibleBots = space.bots.filter(listed);
     const visibleGroups = space.groups.filter(listed);

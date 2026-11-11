@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  chatListed,
   chatSnoozed,
   chatWoke,
-  createSnoozeQueue,
+  createChatChoiceQueue,
   nextChatWake,
   snoozePresetTime,
   snoozeWakeDay,
@@ -20,6 +21,13 @@ describe("chat snooze", () => {
     expect(chatWoke({ snoozedUntil: earlier }, now)).toBe(true);
     expect(chatSnoozed({ snoozedUntil: null }, now)).toBe(false);
     expect(chatWoke({ snoozedUntil: "not a date" }, now)).toBe(false);
+  });
+
+  it("lists a chat that is neither snoozed nor hidden", () => {
+    expect(chatListed({ snoozedUntil: earlier }, now)).toBe(true);
+    expect(chatListed({ snoozedUntil: later }, now)).toBe(false);
+    expect(chatListed({ hidden: true }, now)).toBe(false);
+    expect(chatListed({ hidden: false, snoozedUntil: null }, now)).toBe(true);
   });
 
   it("finds the next wake among future snoozes", () => {
@@ -63,13 +71,13 @@ describe("chat snooze", () => {
   });
 });
 
-describe("snooze queue", () => {
+describe("chat choice queue", () => {
   const tomorrow = "2026-11-08T09:00:00.000Z";
   function setup() {
     const requests: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
     const shown: Array<string | null> = [];
     const settled: Array<boolean> = [];
-    const queue = createSnoozeQueue();
+    const queue = createChatChoiceQueue<string | null>();
     const change = {
       send: () =>
         new Promise<void>((resolve, reject) => {
@@ -137,6 +145,21 @@ describe("snooze queue", () => {
     requests[2]!.resolve();
     await flush();
     expect(settled).toEqual([false]);
+  });
+
+  it("rolls a failed mute back to the saved one", async () => {
+    const queue = createChatChoiceQueue<boolean>();
+    const shown: boolean[] = [];
+    let reject: (error: Error) => void = () => undefined;
+    queue("group:a", true, false, {
+      send: () => new Promise<void>((_, fail) => (reject = fail)),
+      apply: (muted) => shown.push(muted),
+      settled: () => undefined,
+    });
+    await flush();
+    reject(new Error("offline"));
+    await flush();
+    expect(shown).toEqual([true, false]);
   });
 
   it("never starts a save before the one ahead of it finishes", async () => {

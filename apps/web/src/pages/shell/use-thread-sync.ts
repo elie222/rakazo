@@ -424,7 +424,6 @@ export function useThreadSync({
           initial.cursor,
           true,
           currentBot?.name ?? active.name,
-          currentBot?.notifyOnFinish ?? false,
           undefined,
         );
         if (event.type === "thread.cleared") resetHistory();
@@ -524,7 +523,6 @@ export function useThreadSync({
           initial.cursor,
           true,
           eventBot?.name ?? activeGroup.name,
-          true,
           groupId,
         );
         if (event.type === "thread.message.created" && messageUnreadFor(event.payload, meId)) {

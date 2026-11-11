@@ -1,6 +1,7 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { botChatMutedFor } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import type { TerminatingToolResult } from "./approval-effect.js";
@@ -562,10 +563,19 @@ async function prepareOwnBotUpdate(
       voiceId: true,
     },
   });
-  const args = current
+  // Notifications are each member's own: compare with what the person whose run this is has.
+  const effective = current && {
+    ...current,
+    notifyOnFinish: !(await botChatMutedFor(
+      ctx.deps.prisma,
+      { botId: run.botId, userId: run.userId },
+      current,
+    )),
+  };
+  const args = effective
     ? dropUnchangedOwnBotArgs(
         given,
-        current,
+        effective,
         argumentGiven(given.model) ? await currentModelNames(ctx, current) : [],
         current.thinkingLevel ? undefined : run.thinkingLevel,
       )

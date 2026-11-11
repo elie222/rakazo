@@ -965,6 +965,8 @@ model Bot {
   avatarSet         String            @default("organic")
   /// True once the owner picks this bot a set other than their default; the default no longer moves it.
   avatarSetPinned   Boolean           @default(false)
+  /// Whether members who never muted or unmuted this chat hear from it; each member's own
+  /// choice lives on their thread_reads row.
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)
@@ -1130,8 +1132,9 @@ model Thread {
   @@map("threads")
 }
 
-/// One member's personal state for a chat: how far they've read, and whether they've snoozed
-/// it. Named for its first use (reads). No row means caught up and not snoozed.
+/// One member's personal state for a chat: how far they've read, and whether they've snoozed,
+/// muted or hidden it. Named for its first use (reads). No row means caught up, not snoozed or
+/// hidden, and muted only if a bot's own notification setting is off.
 /// Leaving the Space deletes it with the membership.
 model ThreadRead {
   threadId    String
@@ -1144,6 +1147,11 @@ model ThreadRead {
   lastReadSeq Int         @default(-1)
   /// Hidden from this member's chat list until then; once past, the chat shows as woken until opened.
   snoozedUntil DateTime?
+  /// No pushes or alerts for news here. Null until the member chooses: then a bot's chat follows
+  /// its `notifyOnFinish`, and a group is not muted.
+  muted        Boolean?
+  /// Out of this member's chat list, still working; it comes back when it needs them.
+  hidden       Boolean     @default(false)
 
   @@id([threadId, userId])
   @@index([spaceId, userId])

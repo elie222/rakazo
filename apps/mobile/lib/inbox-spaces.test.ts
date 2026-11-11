@@ -6,6 +6,7 @@ import type { InboxSpace } from "./inbox-spaces";
 import {
   canDeleteInboxSpace,
   deleteSpaceTitle,
+  hiddenHeadingKey,
   inboxHasNoChats,
   inboxNeedsCreateHint,
   inboxSignal,
@@ -141,6 +142,34 @@ describe("spaceInboxItems", () => {
       "#Snoozed",
       "asleep",
       "asking",
+    ]);
+  });
+  it("moves hidden chats under a folded Hidden heading, after Snoozed", () => {
+    const now = Date.parse("2026-11-07T12:00:00.000Z");
+    const input = space({
+      isDefault: true,
+      bots: [
+        { ...bot, id: "shown" },
+        { ...bot, id: "away", pinned: true, hidden: true },
+        // Hidden wins over a snooze, so the chat is under one heading.
+        { ...bot, id: "both", hidden: true, snoozedUntil: "2026-11-08T09:00:00.000Z" },
+        { ...bot, id: "asleep", snoozedUntil: "2026-11-08T09:00:00.000Z" },
+      ],
+    });
+    const ids = (items: ReturnType<typeof spaceInboxItems>) =>
+      items.map((item) =>
+        item.type === "bot" ? item.bot.id : item.type === "heading" ? `#${item.title}` : "?",
+      );
+    expect(ids(spaceInboxItems([input], new Set(), undefined, now))).toEqual([
+      "shown",
+      "#Snoozed",
+      "#Hidden",
+    ]);
+    const open = new Set([hiddenHeadingKey(input.id)]);
+    expect(ids(spaceInboxItems([input], open, undefined, now)).slice(-3)).toEqual([
+      "#Hidden",
+      "away",
+      "both",
     ]);
   });
   it("keeps an empty space visible and selectable by its own id", () => {

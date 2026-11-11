@@ -809,6 +809,17 @@ export const appContract = {
     snooze: oc
       .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))
       .output(z.object({ ok: z.literal(true) })),
+    /**
+     * Mutes the chat for the caller: no pushes or alerts, except their own run's questions,
+     * takeovers and failures.
+     */
+    mute: oc
+      .input(threadTarget.and(z.object({ muted: z.boolean() })))
+      .output(z.object({ ok: z.literal(true) })),
+    /** Hides the chat from the caller's list, or brings it back; it keeps working either way. */
+    hide: oc
+      .input(threadTarget.and(z.object({ hidden: z.boolean() })))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),

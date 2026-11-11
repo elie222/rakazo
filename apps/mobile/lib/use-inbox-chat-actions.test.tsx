@@ -3,6 +3,7 @@
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
 import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
@@ -109,17 +110,18 @@ async function handlers(
       current().runRowAction(kind, chat as MobileBot, action),
     editSectionFromMenu: (...args: Parameters<Actions["editSectionFromMenu"]>) =>
       current().editSectionFromMenu(...args),
-    updateChat: (
-      kind: "bot" | "group",
-      chat: Chat,
-      change: { pinned?: boolean; notifyOnFinish?: boolean },
-    ) => current().updateChat(kind, chat as MobileBot, change),
+    updateChat: (kind: "bot" | "group", chat: Chat, change: BotOrganizationUpdate) =>
+      current().updateChat(kind, chat as MobileBot, change),
   };
 }
 
 it("reports a saved bot mute even when its inbox row has no thread id", async () => {
   const actions = await handlers(async () => undefined);
-  await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { notifyOnFinish: false });
+  await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { muted: true });
+  expect(vi.mocked(rpc).mock.calls.map(sent)).toEqual([
+    // Through the bot's own setting, which older servers know too.
+    ["bots/update", { botId: "b1", notifyOnFinish: false }],
+  ]);
   expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith("", null, "space-a", {
     botId: "b1",
     threadId: undefined,
@@ -127,12 +129,26 @@ it("reports a saved bot mute even when its inbox row has no thread id", async ()
   });
 });
 
+it("mutes and unhides a group in one request each, telling the device each time", async () => {
+  const actions = await handlers(async () => undefined);
+  await actions.updateChat("group", { id: "g1", spaceId: "space-a" }, { muted: true });
+  await actions.updateChat("group", { id: "g1", spaceId: "space-a" }, { hidden: false });
+  expect(vi.mocked(rpc).mock.calls.map(sent)).toEqual([
+    ["threads/mute", { groupId: "g1", muted: true }],
+    ["threads/hide", { groupId: "g1", hidden: false }],
+  ]);
+  expect(vi.mocked(afterChatNotifyChange).mock.calls.map((call) => call[3])).toEqual([
+    { groupId: "g1", notify: false },
+    { groupId: "g1", notify: true },
+  ]);
+});
+
 it("does not report a bot mute when the server save fails", async () => {
   const actions = await handlers(async () => {
     throw new Error("offline");
   });
   await expect(
-    actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { notifyOnFinish: false }),
+    actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { muted: true }),
   ).rejects.toThrow("offline");
   expect(afterChatNotifyChange).not.toHaveBeenCalled();
 });

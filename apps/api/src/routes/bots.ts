@@ -34,6 +34,7 @@ import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/c
 import type { Prisma } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
+  botChatMutedFor,
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
@@ -45,6 +46,7 @@ import {
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
+  setBotNotifyFor,
   settingsTarget,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
@@ -357,6 +359,7 @@ export function botsRoutes(ctx: RouterContext) {
         }
       }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
+        // The bot's own row: its notifyOnFinish is the bot's setting, not the viewer's mute.
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos
           .createBot(context.actor, {
@@ -437,61 +440,88 @@ export function botsRoutes(ctx: RouterContext) {
                   select: { botAvatarSet: true },
                 })
                 .then((user) => input.avatarSet !== resolveBotAvatarSet(user.botAvatarSet));
-        await commitBotUpdate({
-          prisma: deps.prisma,
-          notify: (threadId, seq) => deps.events.notify(threadId, seq),
-          spaceId: context.actor.spaceId,
-          threadId: existing.thread.id,
-          botId: input.botId,
-          emitBotUpdated:
-            botProfileLabelsChanged(input) ||
-            input.expectedSettings !== undefined ||
-            input.dailyCheckIns !== undefined ||
-            input.replyMode !== undefined,
-          expectedInstructions: input.expectedInstructions,
-          expectedSettings: input.expectedSettings,
-          data: {
-            name: input.name,
-            description: input.description,
-            instructions: input.instructions,
-            notifyOnFinish: input.notifyOnFinish,
-            color: input.color,
-            avatarSet: input.avatarSet,
-            avatarSetPinned,
-            pinned: input.pinned,
-            memoryScope: input.memoryScope,
-            sectionId: input.sectionId,
-            voiceId: input.voiceId,
-            autoSpeak: input.autoSpeak,
-            ...(input.modelProvider !== undefined
-              ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
-              : {}),
-            ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
-            ...(input.teamChatAmbientEnabled !== undefined
-              ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
-              : {}),
-            ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
-            ...(input.crossSpaceCommunication !== undefined
-              ? { crossSpaceCommunication: input.crossSpaceCommunication }
-              : {}),
-            ...(input.dailyCheckIns !== undefined ? { dailyCheckIns: input.dailyCheckIns } : {}),
-            ...(input.fleetManagement !== undefined
-              ? { fleetManagement: input.fleetManagement }
-              : {}),
-            ...(input.replyMode !== undefined ? { replyMode: input.replyMode } : {}),
-            ...(input.disabledBuiltinTools !== undefined
-              ? { disabledBuiltinTools: input.disabledBuiltinTools }
-              : {}),
-          },
-        }).catch((error) => {
-          if (input.expectedSettings && isRecordNotFound(error))
-            throw new ORPCError("CONFLICT", {
-              message: "Settings changed; review the current settings first.",
-            });
-          if (!(error instanceof InstructionConflictError)) throw error;
-          throw new ORPCError("CONFLICT", { message: error.message });
-        });
-        for (const setting of changedBotSettings(existing, input)) {
+        const data = {
+          name: input.name,
+          description: input.description,
+          instructions: input.instructions,
+          color: input.color,
+          avatarSet: input.avatarSet,
+          avatarSetPinned,
+          pinned: input.pinned,
+          memoryScope: input.memoryScope,
+          sectionId: input.sectionId,
+          voiceId: input.voiceId,
+          autoSpeak: input.autoSpeak,
+          ...(input.modelProvider !== undefined
+            ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
+            : {}),
+          ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
+          ...(input.teamChatAmbientEnabled !== undefined
+            ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
+            : {}),
+          ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
+          ...(input.crossSpaceCommunication !== undefined
+            ? { crossSpaceCommunication: input.crossSpaceCommunication }
+            : {}),
+          ...(input.dailyCheckIns !== undefined ? { dailyCheckIns: input.dailyCheckIns } : {}),
+          ...(input.fleetManagement !== undefined
+            ? { fleetManagement: input.fleetManagement }
+            : {}),
+          ...(input.replyMode !== undefined ? { replyMode: input.replyMode } : {}),
+          ...(input.disabledBuiltinTools !== undefined
+            ? { disabledBuiltinTools: input.disabledBuiltinTools }
+            : {}),
+        };
+        // The member's notifications are theirs alone, so the change below compares with their own.
+        const notifyBefore =
+          input.notifyOnFinish === undefined
+            ? undefined
+            : !(await botChatMutedFor(
+                deps.prisma,
+                { botId: input.botId, userId: context.actor.userId },
+                existing,
+              ));
+        // A mute alone is the member's own: the shared bot and its updatedAt stay as they are.
+        if (
+          Object.values(data).some((value) => value !== undefined) ||
+          input.expectedInstructions !== undefined ||
+          input.expectedSettings !== undefined
+        )
+          await commitBotUpdate({
+            prisma: deps.prisma,
+            notify: (threadId, seq) => deps.events.notify(threadId, seq),
+            spaceId: context.actor.spaceId,
+            threadId: existing.thread.id,
+            botId: input.botId,
+            emitBotUpdated:
+              botProfileLabelsChanged(input) ||
+              input.expectedSettings !== undefined ||
+              input.dailyCheckIns !== undefined ||
+              input.replyMode !== undefined,
+            expectedInstructions: input.expectedInstructions,
+            expectedSettings: input.expectedSettings,
+            data,
+          }).catch((error) => {
+            if (input.expectedSettings && isRecordNotFound(error))
+              throw new ORPCError("CONFLICT", {
+                message: "Settings changed; review the current settings first.",
+              });
+            if (!(error instanceof InstructionConflictError)) throw error;
+            throw new ORPCError("CONFLICT", { message: error.message });
+          });
+        // Each member mutes a bot for themselves; this field is how settings and installed apps
+        // do it.
+        if (input.notifyOnFinish !== undefined) {
+          await setBotNotifyFor(
+            deps.prisma,
+            { botId: input.botId, spaceId: context.actor.spaceId, userId: context.actor.userId },
+            input.notifyOnFinish,
+          );
+        }
+        for (const setting of changedBotSettings(
+          notifyBefore === undefined ? existing : { ...existing, notifyOnFinish: notifyBefore },
+          input,
+        )) {
           deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
         }
         const bots = await repos.listBots(context.actor);

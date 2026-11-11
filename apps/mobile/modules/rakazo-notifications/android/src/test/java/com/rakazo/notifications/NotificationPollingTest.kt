@@ -159,6 +159,25 @@ class NotificationPollingTest {
   }
 
   @Test
+  fun `muting a group drops its pending replies missing from recent but keeps other chats`() {
+    val completions = PollCompletions(mutableSetOf())
+    val group = run("group").copy(groupId = "group-1")
+    val otherGroup = run("other-group").copy(groupId = "group-2")
+    val direct = run("direct")
+    completions.page(listOf(group, otherGroup, direct))
+    val recent = (1..20).map { run("new-$it").copy(botId = "other-bot") }
+    assertTrue(group in completions.page(recent))
+
+    var writes = 0
+    completions.muteGroup("group-1") { writes++ }
+    val afterMute = completions.page(recent)
+    assertFalse("the muted group's reply must be discarded", group in afterMute)
+    assertTrue(otherGroup in afterMute)
+    assertTrue(direct in afterMute)
+    assertEquals(1, writes)
+  }
+
+  @Test
   fun `muting with no discarded direct reply writes no history`() {
     val completions = PollCompletions(mutableSetOf())
     completions.page(listOf(run("group").copy(groupId = "group-1")))
