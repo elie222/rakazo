@@ -44,7 +44,11 @@ function WindowUsage({ window }: { window: PlanLimitWindow }) {
         <span className="truncate text-muted-foreground">{label}</span>
         <span className="tabular-nums text-foreground">{used}%</span>
       </div>
-      <Progress value={used} aria-label={label} className="mt-1.5" />
+      <Progress
+        value={used}
+        aria-label={label}
+        className="mt-1.5 [&_[data-slot=progress-indicator]]:bg-link"
+      />
       {reset ? (
         <p className="mt-1.5 truncate text-label text-muted-foreground">{t`Resets in ${reset}`}</p>
       ) : null}
