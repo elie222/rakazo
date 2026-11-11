@@ -217,6 +217,7 @@ x-app-environment: &app-environment # Runtime
   BOAT_API_URL:
   BOXD_API_KEY:
   BOXD_ORG:
+  INSTABOX_API_KEY:
   RAILWAY_API_TOKEN:
   RAILWAY_ENVIRONMENT_ID:
   RAILWAY_SANDBOX_REGION:

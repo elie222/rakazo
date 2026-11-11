@@ -33,7 +33,7 @@ const DISPLAY_START = 20;
 const REMOTE_WORKSPACE = "/home/user/rakazo-home";
 const REMOTE_BROWSER_PROFILES = `${REMOTE_WORKSPACE}/.browser-profiles`;
 
-/** Common boundary used by the E2B and Novita desktop SDKs. */
+/** Common boundary used by the E2B, Novita and instabox desktop SDKs. */
 export interface CommandResult {
   exitCode: number;
   stdout: string;
@@ -162,7 +162,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
 
   constructor(
     private readonly config: {
-      id: "e2b" | "novita";
+      id: "e2b" | "novita" | "instabox";
       label: string;
       apiKey: string;
       sdk: RemoteDesktopSdk;

@@ -5,6 +5,7 @@ import type { SettingsComputerProvider } from "./computer-provider-descriptor.js
 import { createosComputerSettings } from "./createos-settings.js";
 import { daytonaComputerSettings } from "./daytona-settings.js";
 import { e2bComputerSettings } from "./e2b-settings.js";
+import { instaboxComputerSettings } from "./instabox-settings.js";
 import { novitaComputerSettings } from "./novita-settings.js";
 import { railwayComputerSettings } from "./railway-settings.js";
 import { wuyingComputerSettings } from "./wuying-settings.js";
@@ -17,6 +18,7 @@ export const computerProviderRegistry: readonly SettingsComputerProvider[] = [
   createosComputerSettings,
   boatComputerSettings,
   boxdComputerSettings,
+  instaboxComputerSettings,
   railwayComputerSettings,
 ];
 export function computerProviderDescriptor(id: string) {
