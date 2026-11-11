@@ -2,6 +2,7 @@ import type { RunErrorKind } from "@rakazo/contracts";
 import {
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
   isComputerAllowanceUsed,
   providerQuotaResetAt,
 } from "@rakazo/contracts";
@@ -125,6 +126,7 @@ const APP_RUN_ERRORS = new Set([
   MODEL_CREDIT_CAP_REACHED_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
 
