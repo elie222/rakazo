@@ -261,7 +261,9 @@ function referencedSkillResources(body: string, siblings: readonly string[]): st
 
 function bodyReferencesSkillPath(body: string, path: string): boolean {
   const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const exactPath = new RegExp(`(?:^|[^\\w./-])${escaped}(?=$|[^\\w./-])`);
+  const exactPath = new RegExp(
+    `(?:^|[^\\w./-])${escaped}(?=$|[^\\w./-]|\\.(?=$|\\s|[,;:!?)}\\]]))`,
+  );
   if (path.includes("/")) return exactPath.test(body) || body.includes(`./${path}`);
   if (/\.[^./]+$/.test(path)) return exactPath.test(body);
   return body.includes(`\`${path}\``) || body.includes(`./${path}`) || body.includes(`${path}/`);
@@ -316,13 +318,22 @@ export async function fetchGitHubRepo(
     }))
     .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   if (entries.length > MAX_TREE_ENTRIES) throw new Error("Plugin directory has too many files");
-  const skillDocuments = entries.filter((entry) => isSkillDocumentPath(entry.path));
+  const listedSkillDocuments = entries.filter((entry) => isSkillDocumentPath(entry.path));
   const hasManifest = entries.some((entry) => MANIFESTS.includes(entry.path));
-  const catalogMode = !hasManifest && skillDocuments.some((entry) => entry.path !== "SKILL.md");
-  const singleSkillMode =
+  const rootSkill = listedSkillDocuments.find((entry) => entry.path === "SKILL.md");
+  const singleSkillMode = !hasManifest && rootSkill !== undefined;
+  const catalogMode =
     !hasManifest &&
-    skillDocuments.length === 1 &&
-    (Boolean(ref.subdir) || skillDocuments[0]?.path === "SKILL.md");
+    !singleSkillMode &&
+    listedSkillDocuments.some((entry) => entry.path !== "SKILL.md");
+  const skillDocuments = singleSkillMode ? [rootSkill] : listedSkillDocuments;
+  const nestedSkillFolders = singleSkillMode
+    ? listedSkillDocuments
+        .filter((entry) => entry !== rootSkill)
+        .map((entry) => skillFolder(entry.path))
+    : [];
+  const isInsideNestedSkill = (path: string) =>
+    nestedSkillFolders.some((folder) => path.startsWith(folder));
   if (catalogMode && skillDocuments.length > MAX_CATALOG_SKILLS)
     throw new Error("Skill catalog has too many skills");
   const contentDeadline = catalogMode
@@ -333,6 +344,7 @@ export async function fetchGitHubRepo(
   const entryByPath = new Map(entries.map((entry) => [entry.path, entry]));
   for (const entry of selected) {
     const path = entry.path.slice(prefix.length);
+    if (singleSkillMode && isInsideNestedSkill(path)) continue;
     if (entry.mode === "120000" || entry.type === "commit") {
       contents.set(entry.path, UNREADABLE_FILE);
       continue;
@@ -372,9 +384,11 @@ export async function fetchGitHubRepo(
 
   for (const entry of entries) {
     const path = entry.path;
-    const standardComponent = isFetchedComponent(path);
+    if (singleSkillMode && isInsideNestedSkill(path)) continue;
+    const standardComponent = hasManifest && isFetchedComponent(path);
     const skillDocument =
-      isSkillDocumentPath(path) && (!hasManifest || /^skills\/[^/]+\/SKILL\.md$/.test(path));
+      (hasManifest && /^skills\/[^/]+\/SKILL\.md$/.test(path)) ||
+      (!hasManifest && (singleSkillMode ? path === "SKILL.md" : isSkillDocumentPath(path)));
     const standaloneResource =
       singleSkillMode &&
       skillDocuments.some((skill) => {
@@ -439,19 +453,22 @@ export async function fetchGitHubRepo(
         .map((path) => entryByPath.get(folder ? `${folder}${path}` : path))
         .filter((entry): entry is (typeof entries)[number] => {
           if (!entry) return false;
-          return isAgentSkillResourcePath(folder ? entry.path.slice(folder.length) : entry.path);
+          return (
+            contents.get(entry.absolutePath) === UNFETCHED_FILE &&
+            isAgentSkillResourcePath(folder ? entry.path.slice(folder.length) : entry.path)
+          );
         });
-      const candidateBytes = candidates.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
+      const fetchableCandidates = candidates.filter((entry) => (entry.size ?? 0) <= MAX_FILE_BYTES);
+      const candidateBytes = fetchableCandidates.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
       if (
         candidates.length > MAX_AGENT_SKILL_FILES ||
         candidateBytes > MAX_AGENT_SKILL_FILES_BYTES ||
-        fetched + candidates.length > MAX_CATALOG_FILES ||
+        fetched + fetchableCandidates.length > MAX_CATALOG_FILES ||
         catalogBytes + candidateBytes > MAX_CATALOG_BYTES
       ) {
         continue;
       }
-      for (const entry of candidates) {
-        if ((entry.size ?? 0) > MAX_FILE_BYTES) continue;
+      for (const entry of fetchableCandidates) {
         fetched++;
         resourceWanted.push(entry.absolutePath);
       }
@@ -510,8 +527,15 @@ function collectSkills(
       skipped.push({ kind: "skill_invalid", name: path, reason: parsed.error });
       continue;
     }
-    if (names.has(parsed.name.toLowerCase()))
-      throw new Error("Plugin contains duplicate skill names");
+    if (names.has(parsed.name.toLowerCase())) {
+      if (!agentSkillBundle) throw new Error("Plugin contains duplicate skill names");
+      skipped.push({
+        kind: "skill_invalid",
+        name: parsed.name,
+        reason: "Another skill in this catalog has the same name",
+      });
+      continue;
+    }
     const folder = skillFolder(path);
     const companions = [...files]
       .filter(([p]) => isWithinSkillFolder(p, folder) && p !== path)
@@ -881,9 +905,9 @@ function unsupportedParts(paths: string[]): string[] {
 
 export type PluginCompleteness = { hasConnector: boolean; skillCount: number };
 
-/** Decide from a plugin directory's file list (and its MCP config, when it has one)
- * whether every part installs. Null means it cannot be told without the file. */
-/** `sizes` (bytes by path, when known) applies the same reference-file limits an install does. */
+/** Classify manifest-backed plugin directories and manifestless Agent Skills catalogs. */
+/** Null means a plugin's MCP config is needed before its servers can be classified. */
+/** `sizes` (bytes by path, when known) applies the import byte limits. */
 /** The files a preview downloads; everything else is only listed. */
 function isFetchedComponent(path: string): boolean {
   return (
@@ -901,6 +925,20 @@ export function classifyPluginFiles(
   mcpConfig?: string,
   sizes?: ReadonlyMap<string, number>,
 ): PluginCompleteness | "incomplete" | null {
+  const hasManifest = paths.some((path) => MANIFESTS.includes(path));
+  const skillPaths = paths.filter(isSkillDocumentPath);
+  const hasMcpConfig = paths.some((path) => path === "mcp.json" || path === ".mcp.json");
+  if (!hasManifest && !hasMcpConfig && skillPaths.length > 0) {
+    const validSkills = skillPaths.filter((path) => (sizes?.get(path) ?? 0) <= MAX_FILE_BYTES);
+    if (
+      paths.length > MAX_TREE_ENTRIES ||
+      skillPaths.length > MAX_CATALOG_SKILLS ||
+      !validSkills.length ||
+      validSkills.reduce((sum, path) => sum + (sizes?.get(path) ?? 0), 0) > MAX_CATALOG_BYTES
+    )
+      return "incomplete";
+    return { hasConnector: false, skillCount: validSkills.length };
+  }
   if (unsupportedParts(paths).length) return "incomplete";
   // The same totals a preview enforces, so browse never offers a plugin it would refuse.
   const fetched = paths.filter(isFetchedComponent);
