@@ -1653,6 +1653,38 @@ describe("mobile API server and Space selection", () => {
     expect(resumeLiveNotifications).toHaveBeenCalledWith(currentApiBase(), "fake-token", "space-b");
   });
 
+  it("does not resume a deleted-space fallback after a newer Space is selected", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseToken!: () => void;
+    let tokenReadHeld = false;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token" && !tokenReadHeld) {
+        tokenReadHeld = true;
+        await new Promise<void>((resolve) => {
+          releaseToken = resolve;
+        });
+      }
+      return storage.get(key) ?? null;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    await loadApiBase();
+    vi.mocked(resumeLiveNotifications).mockClear();
+
+    const pending = adoptDeletedSpaceFallback("space-fallback");
+    await vi.waitFor(() => expect(tokenReadHeld).toBe(true));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    releaseToken();
+    await expect(pending).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-b");
+    expect(resumeLiveNotifications).toHaveBeenCalledOnce();
+    expect(resumeLiveNotifications).toHaveBeenCalledWith(currentApiBase(), "fake-token", "space-b");
+  });
+
   it("restores notifications for the previous selection when a newer persist fails", async () => {
     const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
     let releaseA!: () => void;
