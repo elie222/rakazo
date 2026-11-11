@@ -653,6 +653,7 @@ export const SERVICE_ROUTES = {
     path: "/boards",
     scope: "tickets:read",
     summary: "List ticket boards",
+    spaceWide: true,
     response: z.object({ boards: z.array(BoardSchema) }),
   }),
   listTickets: route({

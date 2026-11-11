@@ -499,6 +499,8 @@ describeWithDatabase("service API surface", () => {
       const seen = await ok<{ tickets: Array<{ id: string }> }>(limited.token, "GET", "/tickets");
       expect(seen.tickets.map((ticket) => ticket.id)).toEqual([mine.id]);
       expect((await api(limited.token, "GET", `/tickets/${theirs.id}`)).status).toBe(404);
+      // Boards belong to the whole space, so a key limited to chosen bots cannot list them.
+      expect((await api(limited.token, "GET", "/boards")).status).toBe(403);
       expect(
         (
           await api(limited.token, "POST", "/tickets", {
