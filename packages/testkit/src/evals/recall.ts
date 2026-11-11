@@ -263,6 +263,12 @@ const HOME = [
   // The home's other folders are empty.
   { match: /^\s*ls\b[^;&|]*~\/(?:Downloads|Desktop)\b/, output: "" },
   {
+    // `-a` shows the hidden folders too.
+    match:
+      /^\s*ls\b(?:\s+-\w+)*\s+-\w*a\w*(?:\s+-\w+)*(?:\s+(?:~|\$HOME|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
+    output: ".\n..\n.cache\n.config\nDesktop\nDownloads\nattachments",
+  },
+  {
     match: /^\s*ls\b(?:\s+-\w+)*(?:\s+(?:~|\$HOME|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
     output: "Desktop\nDownloads\nattachments",
   },
@@ -1115,12 +1121,15 @@ const ASK_UPTIME =
   "How long has your computer been running since it last restarted? Please check it now.";
 const UPTIME_COMPUTER: ComputerScript = {
   shell: [
+    // Seconds since boot, matching the 3 days 4:17 that `uptime` reports.
+    { match: /\/proc\/uptime/, output: "274620.31 1081234.55" },
     {
-      match: /\buptime\b|\/proc\/uptime/,
+      match: /\buptime\b/,
       output: " 14:02:11 up 3 days,  4:17,  0 users,  load average: 0.21, 0.18, 0.12",
     },
     { match: /\bwho\s+-b\b|last\s+reboot/, output: "         system boot  2026-11-08 09:45" },
     { match: /\bdate\b/, output: "Wed Nov 11 14:02:11 UTC 2026" },
+    ...HOME,
     ...CHROMIUM,
   ],
   screen: { title: "Python Releases - Chromium", dark: false },
@@ -1152,7 +1161,6 @@ function toolHeavyFixture(): HistoryFixture {
     forbidden: [],
   };
 }
-/** Made a check on the computer in the graded reply, rather than describing one. */
 /** Checked the asked fact on the computer in the graded reply: a command matching `command`. */
 const checkedNow = (e: Evidence, command: RegExp) =>
   check(
@@ -1354,7 +1362,20 @@ const RecallFileCaseSchema = z.object({
    * one of the suite's calibrated judge rubrics to grade the reply's meaning instead.
    */
   expect: z.union([
-    z.object({ kind: z.literal("needs-tool"), command: z.string().min(1) }),
+    z.object({
+      kind: z.literal("needs-tool"),
+      command: z
+        .string()
+        .min(1)
+        .refine((source) => {
+          try {
+            new RegExp(source, "i");
+            return true;
+          } catch {
+            return false;
+          }
+        }, "command must be a valid regular expression"),
+    }),
     z.object({ kind: z.literal("rubric"), rubric: z.enum(Object.keys(rubrics) as [RecallRubric]) }),
   ]),
   /** Scripted shell checks, as regular expression sources, tried before the shared ones. */

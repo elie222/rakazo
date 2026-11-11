@@ -265,6 +265,8 @@ describe("recall outcome grading", () => {
       expect(failed("tool-heavy-new-check", evidence(calls, "Up a while."))).toEqual([
         "checked-now",
       ]);
+    expect(scriptedShell(c.computer!, "cat /proc/uptime")?.stdout).toBe("274620.31 1081234.55");
+    expect(scriptedShell(c.computer!, "pwd; ls -la ~; uptime")?.stdout).toContain(".config");
     // A probe for several browsers still finds the Chromium the computer has.
     expect(
       scriptedShell(
@@ -356,6 +358,15 @@ describe("recall outcome grading", () => {
     expect(uptime!.grade(evidence([ran], "Up 3 days.")).map((c) => c.pass)).toEqual([true]);
     expect(uptime!.judge).toBeUndefined();
     expect(signOff!.judge!(evidence([], "Bye")).rubric).toContain(RECALL_JUDGE_VERSION);
+    const badPattern = {
+      id: "recall-file-bad",
+      purpose: "x",
+      messages: [{ role: "user", text: "x" }],
+      ask: "x",
+      expect: { kind: "needs-tool", command: "(" },
+    };
+    writeFileSync(file, JSON.stringify([badPattern]));
+    expect(() => loadRecallCases(file)).toThrow(/valid regular expression/);
     writeFileSync(file, JSON.stringify([{ id: "bad", purpose: "x", messages: [], ask: "x" }]));
     expect(() => loadRecallCases(file)).toThrow();
   });

@@ -60,6 +60,10 @@ describe("scripted eval shell", () => {
     expect(scriptedShell(script, "df -h | head -1")?.stdout).toBe("18G free");
     expect(scriptedShell(script, "df -h | tail -n 5")?.stdout).toBe("18G free");
     expect(scriptedShell(script, "df -h | head -c 3")?.stdout).toBe("18G");
+    const lines = { shell: [{ match: /\bls\b/, output: "a\nb\n" }], screen: script.screen };
+    expect(scriptedShell(lines, "ls | tail -n 1")?.stdout).toBe("b\n");
+    expect(scriptedShell(lines, "ls | tail -n 0")?.stdout).toBe("");
+    expect(scriptedShell(lines, "ls | tail -c 0")?.stdout).toBe("");
     // A `|` inside quotes, or escaped as basic-regex alternation, is not a pipe.
     expect(scriptedShell(script, 'df -h | grep -iE "nothing|free" | head -5')?.stdout).toBe(
       "18G free",

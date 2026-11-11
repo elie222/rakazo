@@ -154,9 +154,18 @@ function pipeFilter(command: string, text: string): { text: string; code: number
   if (!cut) return grepFilter(command, text);
   const [, which, , bytes, count] = cut;
   const n = count === undefined ? 10 : Number(count);
-  if (bytes) return { text: which === "head" ? text.slice(0, n) : text.slice(-n), code: 0 };
-  const lines = text.split("\n");
-  return { text: (which === "head" ? lines.slice(0, n) : lines.slice(-n)).join("\n"), code: 0 };
+  // slice(-0) would keep everything.
+  const tail = <T>(items: T[]) => (n === 0 ? [] : items.slice(-n));
+  if (bytes)
+    return {
+      text: which === "head" ? text.slice(0, n) : tail([...text]).join(""),
+      code: 0,
+    };
+  // A final newline ends the last line rather than starting another.
+  const ended = text.endsWith("\n");
+  const lines = (ended ? text.slice(0, -1) : text).split("\n");
+  const kept = which === "head" ? lines.slice(0, n) : tail(lines);
+  return { text: kept.length ? `${kept.join("\n")}${ended ? "\n" : ""}` : "", code: 0 };
 }
 
 /** `grep` over piped text with the flags checks commonly use; anything else is undefined. */
