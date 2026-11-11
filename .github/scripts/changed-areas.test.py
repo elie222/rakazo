@@ -76,6 +76,8 @@ class ChangedAreasTests(unittest.TestCase):
     def test_classifies_what_the_pull_request_changed(self):
         cases = [
             ("apps/mobile/app/screen.tsx", expect()),
+            ("apps/mobile/eas.json", expect()),
+            ("packages/i18n/locales/pl/messages.po", expect("web", "e2e", "server")),
             (".agents/skills/x/SKILL.md", expect()),
             ("CHANGELOG.md", expect()),
             ("docs/getting-started.md", expect("web")),
@@ -86,6 +88,7 @@ class ChangedAreasTests(unittest.TestCase):
             ("packages/adapters/src/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
             ("packages/adapters/src/computer-workspace.ts", expect("web", "e2e", "server", "native")),
             ("packages/adapters/src/file-handle-path.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",
