@@ -44,15 +44,15 @@ const hotQueries = [
   {
     name: "a bot thread's latest run",
     index: "runs_threadId_createdAt_id_idx",
-    sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets')
+    sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets', 'silent_routine')
       ORDER BY "createdAt" DESC, id DESC LIMIT 1`,
   },
   {
     name: "a user's latest finished run in a Space",
-    index: "runs_recent_activity_idx",
+    index: "runs_recent_user_activity_idx",
     sql: `SELECT "completedAt" FROM runs WHERE "spaceId" = $1 AND "userId" = $1
       AND status IN ('completed', 'failed', 'cancelled')
-      AND trigger NOT IN ('tickets', 'helper', 'helper_result')
+      AND trigger NOT IN ('tickets', 'silent_routine', 'helper', 'helper_result')
       AND "completedAt" IS NOT NULL ORDER BY "completedAt" DESC LIMIT 1`,
   },
   {

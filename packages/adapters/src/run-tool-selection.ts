@@ -3,7 +3,12 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isOwnerStartedRun,
+  isTicketRunTrigger,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -80,6 +85,18 @@ export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "cloud_agent_status",
 ]);
 
+/**
+ * Tools a silent routine never gets, as each would post in a chat: messaging or calling the
+ * person, handing a group's conversation to a bot that answers there, or a video, which arrives
+ * after the run with a turn of its own.
+ */
+export const SILENT_ROUTINE_WITHHELD_TOOLS: ReadonlySet<string> = new Set([
+  "message_user",
+  "call_user",
+  "handoff_to_bot",
+  "generate_video",
+]);
+
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
 export function offersAgentConnectionTools(options: {
   hasMessagingIdentity: boolean;
@@ -89,7 +106,7 @@ export function offersAgentConnectionTools(options: {
   return (
     options.hasMessagingIdentity &&
     options.crossSpaceCommunication &&
-    !isBackgroundRunTrigger(options.trigger) &&
+    !isTicketRunTrigger(options.trigger) &&
     options.trigger !== "created" &&
     options.trigger !== BACKGROUND_HELPER_TRIGGER
   );
@@ -174,7 +191,7 @@ export function selectBuiltinToolsForRun(options: {
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
-      (!isBackgroundRunTrigger(options.trigger) ||
+      (!isTicketRunTrigger(options.trigger) ||
         ![
           "message_user",
           "message_bot",
@@ -183,6 +200,8 @@ export function selectBuiltinToolsForRun(options: {
           "generate_image",
           "generate_video",
         ].includes(tool.name)) &&
+      (options.trigger !== SILENT_ROUTINE_TRIGGER ||
+        !SILENT_ROUTINE_WITHHELD_TOOLS.has(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
@@ -194,7 +213,7 @@ export function selectBuiltinToolsForRun(options: {
         !options.groupId &&
         !options.voiceCall &&
         !options.messagingChannelRun &&
-        !isBackgroundRunTrigger(options.trigger)) ||
+        !isTicketRunTrigger(options.trigger)) ||
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&

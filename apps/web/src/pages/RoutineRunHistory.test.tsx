@@ -2,6 +2,7 @@
 import { i18n } from "@lingui/core";
 import type { ProductEvent, RoutineHistory, RoutineRun, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import type * as CollapsibleModule from "@rakazo/ui-web/components/ui/collapsible";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -30,8 +31,15 @@ vi.mock("@lingui/react/macro", () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw({ raw: parts }, ...values),
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
+  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+    (value === 1 ? one : other).replace("#", String(value)),
 }));
-vi.mock("@rakazo/ui-web", () => ({
+// The chat's file card, as the history shows a file a silent run kept.
+vi.mock("../components/ArtifactFileCard", () => ({
+  ArtifactFileCard: ({ name }: { name: string }) => <span data-testid="file-card">{name}</span>,
+}));
+vi.mock("@rakazo/ui-web", async () => ({
+  ...(await vi.importActual<typeof CollapsibleModule>("@rakazo/ui-web/components/ui/collapsible")),
   Button: ({
     size: _size,
     variant: _variant,
@@ -235,6 +243,60 @@ it("says when a scheduled run started late, and only then", async () => {
       "Started 3d late",
       undefined,
     ]);
+  } finally {
+    await view.close();
+  }
+});
+
+it("opens a silent run's steps and reply in place instead of linking to the chat", async () => {
+  routines.history.mockResolvedValue(
+    page([
+      {
+        ...run,
+        // The run asked something on the way; its reply still lives in the history.
+        messageId: "ask-1",
+        reply: [
+          { kind: "steps", steps: [{ label: "Read the board", count: 2 }], durationMs: 4_000 },
+          // A file it made on the way is kept with the reply, as the chat would have shown it.
+          {
+            kind: "file",
+            artifactId: "artifact-1",
+            name: "board.csv",
+            mimeType: "text/csv",
+            size: 10,
+          },
+          {
+            kind: "subagent",
+            agentId: "helper-1",
+            name: "Researcher",
+            task: "Check the board",
+            status: "completed",
+            result: "Three tickets are done.",
+          },
+          { kind: "text", text: "Archived **3** done tickets. See [Plan](page:page-1)." },
+        ],
+      },
+    ]),
+  );
+  const view = await mounted();
+  try {
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
+    expect(view.container.querySelector("a")).toBeNull();
+    expect(view.rows()[0]?.textContent).not.toContain("No reply");
+    const toggle = view.rows()[0]!.querySelector("button")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(view.container.querySelector('[data-testid="routine-run-reply"]')).toBeNull();
+    await act(async () => toggle.click());
+    await view.settled(() => expect(toggle.getAttribute("aria-expanded")).toBe("true"));
+    const reply = view.container.querySelector('[data-testid="routine-run-reply"]');
+    expect(reply?.textContent).toContain("Archived 3 done tickets.");
+    expect(reply?.textContent).toContain("2 tools");
+    expect(reply?.textContent).toContain("board.csv");
+    // A helper's result shows as the chat shows it, and a page link opens the page.
+    expect(reply?.textContent).toContain("Researcher");
+    expect(
+      [...(reply?.querySelectorAll("button") ?? [])].some((node) => node.textContent === "Plan"),
+    ).toBe(true);
   } finally {
     await view.close();
   }

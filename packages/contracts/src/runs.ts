@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { MessageBlock } from "./events.js";
 import { Id, IsoDate, RunStatus } from "./ids.js";
 
 /** The computer provider refused a request at its own rate limit; the run tells the user to wait. */
@@ -36,6 +37,7 @@ export const RUN_TRIGGERS = [
   "media",
   "created",
   "tickets",
+  "silent_routine",
   "helper",
   "helper_result",
 ] as const;
@@ -90,6 +92,8 @@ export const RoutineRunSchema = z.object({
   lateSince: IsoDate.nullable(),
   completedAt: IsoDate.nullable(),
   messageId: Id.nullable(),
+  /** A silent run's reply, which it kept out of the chat. Absent otherwise and on older servers. */
+  reply: z.array(MessageBlock).optional(),
 });
 export type RoutineRun = z.infer<typeof RoutineRunSchema>;
 

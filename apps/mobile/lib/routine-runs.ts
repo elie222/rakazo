@@ -1,5 +1,5 @@
-import type { RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
-import { mergeRoutineRunPages, routineHistoryPage } from "@rakazo/core";
+import type { MessageBlock, RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
+import { mergeRoutineRunPages, plainTextFromMarkdown, routineHistoryPage } from "@rakazo/core";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import { useCallback } from "react";
@@ -43,9 +43,40 @@ export function useRoutineRuns(routineId: string) {
   };
 }
 
-/** Where a run's reply lives, opened at that message; null when it finished silently. */
+/** A silent run's reply as plain text: what it wrote and the steps it took, in the run's order. */
+export function routineRunReplyText(blocks: readonly MessageBlock[] | undefined): string {
+  return (blocks ?? [])
+    .flatMap((block) => {
+      if (block.kind === "text")
+        return [plainTextFromMarkdown(block.text, { maxSource: Infinity })];
+      if (block.kind === "steps")
+        return [
+          block.steps
+            .map((step) => `✓ ${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
+            .join("\n"),
+        ];
+      // A helper's work goes by its name and what it found.
+      if (block.kind === "subagent")
+        return [
+          `${block.name}: ${plainTextFromMarkdown(block.result ?? block.task, { maxSource: Infinity })}`,
+        ];
+      // What it made goes by its name.
+      if (block.kind === "page") return [block.title];
+      if (block.kind === "file" || block.kind === "image" || block.kind === "chart")
+        return [block.name];
+      return [];
+    })
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * Where a run's reply lives, opened at that message; null when it finished without one in the
+ * chat, or kept it in the history because it is silent.
+ */
 export function routineRunDestination(run: RoutineRun, botName: string | undefined) {
-  if (!run.messageId) return null;
+  if (!run.messageId || run.reply?.length) return null;
   return run.groupId
     ? {
         pathname: "/group-thread" as const,

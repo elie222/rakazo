@@ -118,6 +118,22 @@ describe("notifyRun chat alerts", () => {
 });
 
 // Ada (user-1) and Bea (user-2) share space-1; nobody else is in it.
+describe("background runs", () => {
+  it.each([
+    ["tickets", "completion", false],
+    ["tickets", "failure", false],
+    ["tickets", "help", true],
+    ["silent_routine", "completion", false],
+    ["silent_routine", "failure", true],
+    ["silent_routine", "help", true],
+    ["silent_routine", "takeover", true],
+  ] as const)("a %s run sends a %s notice: %s", async (trigger, kind, sent) => {
+    const { value, send } = deps();
+    await notifyRun(value, { ...run, trigger }, { ...message, kind });
+    expect(send).toHaveBeenCalledTimes(sent ? 1 : 0);
+  });
+});
+
 describe("notifications in a shared Space", () => {
   const shared = ["user-1", "user-2"];
   const recipients = (send: ReturnType<typeof deps>["send"]) =>

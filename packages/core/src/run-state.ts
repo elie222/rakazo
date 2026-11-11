@@ -21,6 +21,31 @@ export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
 );
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
+ * A routine run that posts nothing to the chat. It is background work: its reply is kept for the
+ * routine's run history, and only what needs the person (asks, takeovers, failures) reaches them.
+ */
+export const SILENT_ROUTINE_TRIGGER = "silent_routine";
+/** The event that keeps a silent routine run's reply, for its run history. */
+export const RUN_REPLY_EVENT = "run.reply";
+
+/** Whether a run is a routine's own run, silent or not. */
+export function isRoutineRunTrigger(trigger: string | null | undefined): boolean {
+  return trigger === "routine" || trigger === SILENT_ROUTINE_TRIGGER;
+}
+
+/** The trigger a routine's own run carries. */
+export function routineRunTrigger(routine: { silent: boolean }): string {
+  return routine.silent ? SILENT_ROUTINE_TRIGGER : "routine";
+}
+
+/** Marks the nonce of a routine run someone asked for by naming the routine in a chat message. */
+export const ROUTINE_MENTION_NONCE = "routine-mention:";
+
+/** Whether a routine run answers a chat message, so it stays in the chat whatever Silent says. */
+export function routineRunAnswersChat(clientNonce: string | null | undefined): boolean {
+  return clientNonce?.includes(`:${ROUTINE_MENTION_NONCE}`) ?? false;
+}
+/**
  * These turns carry their own prompt and must not take a user message as steering.
  * Routine and webhook runs are not the conversation, and neither is a wake from another bot:
  * its reply goes back to that bot. The creation intro can only ask what it is for; a message
@@ -28,6 +53,7 @@ const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
  */
 const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
   "routine",
+  SILENT_ROUTINE_TRIGGER,
   "webhook",
   "created",
   "tickets",
@@ -37,14 +63,24 @@ const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
 /**
  * Background triggers do internal work that must not leak into the chat: the
  * sidebar must not show them as activity and the bot transcript must not render
- * their steps/text. Ticket work reports through board comments and its status.
- * Existing ask and approval cards can still request user input.
+ * their steps/text. Ticket work reports through board comments and its status;
+ * a silent routine through its run history. Existing ask and approval cards can
+ * still request user input.
  */
-export const BACKGROUND_RUN_TRIGGERS = ["tickets"] as const;
+export const BACKGROUND_RUN_TRIGGERS = ["tickets", SILENT_ROUTINE_TRIGGER] as const;
 const BACKGROUND_RUN_TRIGGER_SET = new Set<string>(BACKGROUND_RUN_TRIGGERS);
 
 export function isBackgroundRunTrigger(trigger: string | null | undefined): boolean {
   return BACKGROUND_RUN_TRIGGER_SET.has(trigger ?? "");
+}
+
+/**
+ * Ticket work runs off any chat, so it gets no tools that message, call or show media to anyone.
+ * A silent routine still runs in its bot's chat and keeps a routine's tools, apart from the few
+ * that would post there (`SILENT_ROUTINE_WITHHELD_TOOLS`); what it makes goes to its run history.
+ */
+export function isTicketRunTrigger(trigger: string | null | undefined): boolean {
+  return trigger === "tickets";
 }
 
 const allowed: Record<RunStatus, RunStatus[]> = {
@@ -135,7 +171,7 @@ export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering cont
 
 /** Routine runs and the creation intro stay isolated from thread history. */
 export function runReadsThreadHistory(trigger: string | null | undefined): boolean {
-  return trigger !== "created" && trigger !== "routine";
+  return trigger !== "created" && !isRoutineRunTrigger(trigger);
 }
 
 /** Whether a run's turn is part of the thread's conversation and may take user steering. */

@@ -1,9 +1,16 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { callIdFromClientNonce, isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
+import {
+  callIdFromClientNonce,
+  isBackgroundRunTrigger,
+  RUN_REPLY_EVENT,
+  redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import type { Prisma, RunLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  runReplyEvent,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -27,6 +34,16 @@ export function runLeaseFor(
   runId: string,
 ): RunLease | undefined {
   return deps.runLease?.runId === runId ? deps.runLease : undefined;
+}
+
+/** Keeps blocks a silent routine would have posted for its run history, in the given transaction. */
+export function holdRunReplyInTransaction(
+  tx: Prisma.TransactionClient,
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  blocks: MessageBlock[],
+  lease?: RunLease,
+) {
+  return appendEventInTransaction(tx, runReplyEvent(run, blocks, lease));
 }
 
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
@@ -67,11 +84,32 @@ export async function publishMessage(
     result: "stopped";
   },
 ) {
+  const lease = runLeaseFor(deps, run.id);
   if (isBackgroundRunTrigger(run.trigger)) {
-    blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
+    const reachesChat = (block: MessageBlock) => block.kind === "ask" || block.kind === "computer";
+    // What a silent routine would have posted, its files, charts and pages included, goes to its
+    // run history instead; ticket work reports on the board.
+    const held = blocks.filter((block) => !reachesChat(block));
+    if (run.trigger === SILENT_ROUTINE_TRIGGER && role === "bot" && held.length) {
+      // A turn replayed after a restart publishes its interim texts again under the same nonce.
+      // The chat keeps such a message once, and so does the history.
+      const kept =
+        clientNonce !== undefined &&
+        (await deps.prisma.event.findFirst({
+          where: {
+            runId: run.id,
+            type: RUN_REPLY_EVENT,
+            payload: { path: ["clientNonce"], equals: clientNonce },
+          },
+          select: { id: true },
+        }));
+      // Under the attempt's lease like the chat's own writes, so a superseded attempt can't
+      // add to the history twice.
+      if (!kept) await deps.events.append(runReplyEvent(run, held, lease, clientNonce));
+    }
+    blocks = blocks.filter(reachesChat);
     if (blocks.length === 0 && !stoppedHelper) return null;
   }
-  const lease = runLeaseFor(deps, run.id);
   // Concurrent runs in one thread contend for its sequence counters; Postgres aborts a
   // deadlock victim, which commits nothing, so retry instead of failing the run.
   const committed = await withTransactionRetry(() =>

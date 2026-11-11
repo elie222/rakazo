@@ -515,6 +515,54 @@ it("keeps background ticket runs silent", async () => {
   expect(finalizeRun.mock.calls[0]![0].blocks).toEqual([]);
 });
 
+describe("silent routine runs", () => {
+  const held = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    (finalizeRun.mock.calls[0]![0] as { heldReply?: MessageBlock[] }).heldReply;
+
+  it("keep their steps and reply for the run history and post nothing to the chat", async () => {
+    const { finalizeRun, messages, savedEvents } = await runTurn(
+      "Updated the board.",
+      true,
+      "Checking the board.",
+      [],
+      "fyi",
+      { trigger: "silent_routine" },
+    );
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "completed", blocks: [], markUnread: false }),
+    );
+    expect(held(finalizeRun)).toEqual([
+      expect.objectContaining({ kind: "steps" }),
+      { kind: "text", text: "Updated the board." },
+    ]);
+    expect(messages).toEqual([]);
+    expect(savedEvents.map((event) => event.type)).not.toContain("thread.progress");
+  });
+
+  it("keep the narration as the reply when the run wrote nothing after its last step", async () => {
+    const { finalizeRun } = await runTurn("", true, ["Checking.", "Nothing changed."], [], "fyi", {
+      trigger: "silent_routine",
+    });
+    expect(held(finalizeRun)?.filter((block) => block.kind === "text")).toEqual([
+      { kind: "text", text: "Nothing changed." },
+    ]);
+  });
+
+  it("redact secrets in the reply they keep", async () => {
+    const { finalizeRun } = await runTurn(
+      "The fake-secret-value is configured.",
+      true,
+      undefined,
+      ["fake-secret-value"],
+      "fyi",
+      { trigger: "silent_routine" },
+    );
+    expect(held(finalizeRun)?.filter((block) => block.kind === "text")).toEqual([
+      { kind: "text", text: "The [redacted] is configured." },
+    ]);
+  });
+});
+
 describe("held-back narration on peer requests", () => {
   it.each(["request", "question"] as const)(
     "saves the last non-empty narration as the final result for an empty %s reply",

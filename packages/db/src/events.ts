@@ -14,6 +14,7 @@ import {
   messagingChannelId,
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
+  RUN_REPLY_EVENT,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -152,6 +153,8 @@ export type FinalizeRunInput = FinalizeRunBase &
         outcome: "completed";
         blocks: MessageBlock[];
         markUnread?: boolean;
+        /** A reply kept out of the chat, saved for the run's history instead of as a message. */
+        heldReply?: MessageBlock[];
       }
     | {
         outcome: "failed";
@@ -833,6 +836,15 @@ async function finalizeRunOnce(
       });
       firstResponse = response.firstResponse;
     }
+    if (input.outcome === "completed" && input.heldReply?.length) {
+      await appendEventInTransaction(
+        tx,
+        runReplyEvent(
+          { ...input, id: input.runId },
+          completedRunBlocks(input.heldReply, writableRun?.startedAt ?? null, now),
+        ),
+      );
+    }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
@@ -862,6 +874,27 @@ async function finalizeRunOnce(
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId, firstResponse };
   }, FINALIZE_TRANSACTION_OPTIONS);
+}
+
+/**
+ * A silent routine's reply, kept as a run event for its run history instead of the chat. A
+ * clientNonce names a publication a replayed turn makes again, so it is kept once.
+ */
+export function runReplyEvent(
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  blocks: unknown[],
+  lease?: RunLease,
+  clientNonce?: string,
+): AppendEventInput {
+  return {
+    spaceId: run.spaceId,
+    threadId: run.threadId,
+    botId: run.botId,
+    runId: run.id,
+    type: RUN_REPLY_EVENT,
+    payload: clientNonce ? { blocks, clientNonce } : { blocks },
+    ...(lease ? { lease } : {}),
+  };
 }
 
 export async function appendEventInTransaction(

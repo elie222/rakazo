@@ -16,12 +16,14 @@ function fixture() {
   const routine = vi.fn().mockResolvedValue({ botId: "bot-1" });
   const runs = vi.fn().mockResolvedValue([]);
   const messages = vi.fn().mockResolvedValue([]);
+  const replies = vi.fn().mockResolvedValue([]);
   const prisma = {
     routine: { findFirst: routine },
     run: { findMany: runs },
+    event: { findMany: replies },
     $queryRaw: messages,
   } as unknown as PrismaClient;
-  return { prisma, routine, runs, messages };
+  return { prisma, routine, runs, messages, replies };
 }
 describe("routine history", () => {
   it("refuses missing, foreign or archived routines before reading runs", async () => {
@@ -81,6 +83,50 @@ describe("routine history", () => {
     expect(sql.sql).toContain('DISTINCT ON (m."runId")');
     expect(sql.sql).toContain('r."threadId" = m."threadId"');
     expect(sql.values).toEqual(["run-0", "run-1", "run-2", actor.spaceId, actor.spaceId]);
+  });
+  it("shows a silent run's held reply, read only within the actor's Space", async () => {
+    const { prisma, runs, replies } = fixture();
+    runs.mockResolvedValue(
+      ["silent", "loud"].map((id) => ({
+        id,
+        botId: "bot-1",
+        threadId: "thread-1",
+        thread: { groupId: null },
+        status: "completed",
+        error: null,
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      })),
+    );
+    // What it made during the turn comes first, then its reply, in the order they were kept.
+    const made = [
+      {
+        kind: "file",
+        artifactId: "artifact-1",
+        name: "board.csv",
+        mimeType: "text/csv",
+        size: 10,
+      },
+    ];
+    const reply = [
+      { kind: "steps", steps: [{ label: "Read the board", count: 1 }] },
+      { kind: "text", text: "Archived 3 done tickets." },
+    ];
+    replies.mockResolvedValue([
+      { runId: "silent", payload: { blocks: made } },
+      { runId: "silent", payload: { blocks: reply } },
+      // A reply that no longer parses is left out rather than failing the page.
+      { runId: "loud", payload: { blocks: [{ kind: "nonsense" }] } },
+    ]);
+    const history = await listRoutineRuns(prisma, actor, "routine-1");
+    expect(RoutineHistorySchema.parse(history)).toEqual(history);
+    expect(history.runs.map((row) => row.reply)).toEqual([[...made, ...reply], undefined]);
+    expect(replies).toHaveBeenCalledWith({
+      where: { spaceId: actor.spaceId, type: "run.reply", runId: { in: ["silent", "loud"] } },
+      select: { runId: true, payload: true },
+      orderBy: { seq: "asc" },
+    });
   });
   it("returns a shorter page with a cursor when asked for fewer runs", async () => {
     const { prisma, runs } = fixture();

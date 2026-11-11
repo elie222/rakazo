@@ -7,6 +7,7 @@ import {
   formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
+  isRoutineRunTrigger,
   nextCronDate,
   nextCronDateAcross,
   ONCE_ROUTINE_CRON,
@@ -38,7 +39,7 @@ export function filterBuiltinToolsForRun<T extends { name: string }>(
   tools: T[],
   runTrigger: string,
 ): T[] {
-  return runTrigger === "routine"
+  return isRoutineRunTrigger(runTrigger)
     ? tools.filter((tool) => !ROUTINE_RUN_HIDDEN_TOOLS.has(tool.name))
     : tools;
 }
@@ -490,6 +491,7 @@ export async function createScheduleFromTool(
     name: string;
     prompt: string;
     timezone?: string;
+    silent?: boolean;
     schedule: Record<string, unknown>;
   },
 ) {
@@ -535,6 +537,7 @@ export async function createScheduleFromTool(
         crons: [resolved.cron],
         timezone,
         notify: true,
+        silent: input.silent ?? false,
         active: true,
         nextRunAt: resolved.nextRunAt,
       },
@@ -583,6 +586,7 @@ export async function createScheduleFromTool(
     cron: row.crons[0],
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(row.crons),
+    ...(row.silent ? { silent: true } : {}),
     ...describeRoutineTiming(row),
   };
 }
@@ -593,6 +597,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
     name: String(args.name ?? ""),
     prompt: String(args.prompt ?? ""),
     timezone: args.timezone ? String(args.timezone) : undefined,
+    silent: args.silent === true,
     schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
   };
 }
@@ -673,6 +678,7 @@ async function createWatchFromTool(
     name: string;
     prompt: string;
     timezone?: string;
+    silent?: boolean;
     schedule: Record<string, unknown>;
   },
 ) {
@@ -704,6 +710,7 @@ async function createWatchFromTool(
         crons: [],
         timezone,
         notify: true,
+        silent: input.silent ?? false,
         active: true,
         watch: parsed.data as Prisma.InputJsonValue,
         nextRunAt,
@@ -740,6 +747,7 @@ async function createWatchFromTool(
     routineId: row.id,
     name: row.name,
     watch: parsed.data,
+    ...(row.silent ? { silent: true } : {}),
     note: `Takes a first reading now, then checks every ${parsed.data.everyMinutes} minutes and runs only when it changes.`,
   };
 }
@@ -764,6 +772,7 @@ export async function listSchedulesFromTool(
       prompt: row.prompt,
       crons: row.crons,
       active: row.active,
+      ...(row.silent ? { silent: true } : {}),
       nextRunAt: row.nextRunAt?.toISOString() ?? null,
       oneShot: isOneShotRoutineCrons(row.crons),
       ...describeRoutineTiming(row),
@@ -816,10 +825,10 @@ function carriedRunAtForTimezone(
 
 /** Steers away from cancel and recreate: a new command watch asks the user again. */
 const WATCH_RETIME_ERROR =
-  "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
+  "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt, active or silent. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
 
 /**
- * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
+ * Edit one of this bot's routines in place: name, prompt, timing (with startAt), active or silent.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
  */
 export async function updateScheduleFromTool(
@@ -836,6 +845,7 @@ export async function updateScheduleFromTool(
     name?: string;
     prompt?: string;
     active?: boolean;
+    silent?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
   },
@@ -879,7 +889,13 @@ export async function updateScheduleFromTool(
   );
   const retime =
     hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
-  if (!retime && name === undefined && prompt === undefined && input.active === undefined) {
+  if (
+    !retime &&
+    name === undefined &&
+    prompt === undefined &&
+    input.active === undefined &&
+    input.silent === undefined
+  ) {
     return { error: "Nothing to update." };
   }
   if (retime && existing.watch != null) {
@@ -947,6 +963,7 @@ export async function updateScheduleFromTool(
         : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
+      ...(input.silent === undefined ? {} : { silent: input.silent }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     },
   });
@@ -988,6 +1005,7 @@ export async function updateScheduleFromTool(
     name: name ?? existing.name,
     prompt: prompt ?? existing.prompt,
     active,
+    silent: input.silent ?? existing.silent,
     crons,
     nextRunAt: nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(crons),

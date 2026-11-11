@@ -3,7 +3,7 @@ import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
-  isBackgroundRunTrigger,
+  isTicketRunTrigger,
   redactSecrets,
   resolveBotAddress,
 } from "@rakazo/core";
@@ -205,7 +205,7 @@ export const messagingTools: ToolHandlers = {
       ctx.source.messagingChannelRun ||
       thread.groupId ||
       ctx.source.voiceCall ||
-      isBackgroundRunTrigger(run.trigger)
+      isTicketRunTrigger(run.trigger)
     ) {
       return call.finish({ error: "Calls require a one-to-one chat." });
     }

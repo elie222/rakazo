@@ -129,4 +129,57 @@ describePostgres("finalizing a run (PostgreSQL)", () => {
     },
     THREAD_LOCK_HOLD_MS * 4,
   );
+
+  it("keeps a held reply for the run's history without posting it to the chat", async () => {
+    const task = await system.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "tidy the board", status: "running" },
+    });
+    const startedAt = new Date(Date.now() - 5_000);
+    const run = await system.run.create({
+      data: {
+        spaceId,
+        botId,
+        threadId,
+        taskId: task.id,
+        userId,
+        status: "running",
+        trigger: "silent_routine",
+        startedAt,
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+      },
+    });
+    const attempt = await system.attempt.create({
+      data: { runId: run.id, fence: 1, status: "running" },
+    });
+    const messagesBefore = await system.message.count({ where: { threadId } });
+    await runAsTenant({ spaceId, userId }, () =>
+      finalizeRun(prisma, {
+        spaceId,
+        threadId,
+        botId,
+        runId: run.id,
+        taskId: task.id,
+        attemptId: attempt.id,
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        outcome: "completed",
+        blocks: [],
+        heldReply: [
+          { kind: "steps", steps: [{ label: "Read the board", count: 1 }] },
+          { kind: "text", text: "Archived 3 done tickets." },
+        ],
+        markUnread: false,
+      }),
+    );
+    expect(await system.message.count({ where: { threadId } })).toBe(messagesBefore);
+    expect(await system.message.count({ where: { runId: run.id } })).toBe(0);
+    const held = await system.event.findFirstOrThrow({
+      where: { runId: run.id, type: "run.reply" },
+    });
+    const { blocks } = held.payload as { blocks: Array<{ kind: string; durationMs?: number }> };
+    expect(blocks.map((block) => block.kind)).toEqual(["steps", "text"]);
+    // The steps carry the turn's duration, as a reply in the chat does.
+    expect(blocks[0]?.durationMs).toBeGreaterThanOrEqual(5_000);
+  });
 });

@@ -23,6 +23,7 @@ import {
   runPromotesMidTurnNarration,
   runReplyGuidance,
   runReplyMode,
+  SILENT_ROUTINE_REPLY_GUIDANCE,
   TICKET_SILENT_REPLY_GUIDANCE,
 } from "./run-replies.js";
 import { handoffEndedTurn } from "./run-turn.js";
@@ -301,6 +302,23 @@ describe("background ticket runs", () => {
     const steps = [{ kind: "steps" as const, steps: [{ label: "Ticket comment", count: 1 }] }];
     const blocks = finalBlocksAfterMidTurnProgress(steps, runAllowsSilentEmpty("tickets"));
     expect(blocks).toEqual([]);
+  });
+});
+
+describe("silent routine runs", () => {
+  it("never mark the chat unread, notify on finish, or narrate, and may end in silence", () => {
+    expect(runAllowsSilentEmpty("silent_routine")).toBe(true);
+    expect(runPromotesMidTurnNarration("silent_routine")).toBe(false);
+    expect(completionMarksUnread("silent_routine", "Updated the board.")).toBe(false);
+    expect(subagentMarksUnread("silent_routine", "failed")).toBe(false);
+    expect(runSendsFinishNotification("silent_routine")).toBe(false);
+    expect(runReplyMode("silent_routine", "messages")).toBe("chat");
+  });
+
+  it("are told their reply goes to the run history, not the board or the chat", () => {
+    expect(runReplyGuidance("silent_routine")).toBe(SILENT_ROUTINE_REPLY_GUIDANCE);
+    expect(SILENT_ROUTINE_REPLY_GUIDANCE).toContain("run history");
+    expect(SILENT_ROUTINE_REPLY_GUIDANCE).not.toContain("ticket");
   });
 });
 

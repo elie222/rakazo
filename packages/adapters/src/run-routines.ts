@@ -11,7 +11,11 @@ import {
   displayName,
   expandSkillReferencesInPrompt,
   isOneShotRoutineCrons,
+  isRoutineRunTrigger,
   nextRoutineRunDateAcross,
+  routineRunAnswersChat,
+  routineRunTrigger,
+  SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
 import {
   accountDeactivated,
@@ -25,7 +29,12 @@ import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
-import { nextRoutineWatchAt, parseRoutineWatch, tickRoutineWatch } from "./routine-watch.js";
+import {
+  nextRoutineWatchAt,
+  parseRoutineWatch,
+  postRoutineMessage,
+  tickRoutineWatch,
+} from "./routine-watch.js";
 import { notifyRun } from "./run-notifications.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
 
@@ -66,7 +75,7 @@ export async function scheduleRoutineRetry(
   error: unknown,
 ): Promise<boolean> {
   if (
-    run.trigger !== "routine" ||
+    !isRoutineRunTrigger(run.trigger) ||
     !run.routineId ||
     run.retryOfRunId ||
     !(error instanceof TransientModelError)
@@ -95,15 +104,49 @@ export async function scheduleRoutineRetry(
   }
 }
 
-async function notifyFailedRoutineRun(
+/**
+ * Tells the person a routine run failed for good. A silent routine shows nothing in its chat
+ * until then, so its failure also says so there: the notice opens that chat, and without one
+ * (notify off, no push) the chat is the only place they would see it.
+ */
+export async function notifyFailedRoutineRun(
   deps: ExecutorDeps,
-  failed: Parameters<typeof notifyRun>[1] & { error: string | null },
-  options: { retryOnFailure?: boolean } = {},
+  failed: Parameters<typeof notifyRun>[1] & { id: string; error: string | null },
+  options: {
+    retryOnFailure?: boolean;
+    /** The person sent a message the run left for a follow-up, so they are in the chat. */
+    inChat?: boolean;
+  } = {},
 ) {
   const bot = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: failed.botId },
     select: { name: true },
   });
+  if (failed.trigger === SILENT_ROUTINE_TRIGGER && failed.routineId) {
+    const routine = await deps.prisma.routine.findUnique({
+      where: { id: failed.routineId },
+      select: { name: true },
+    });
+    if (routine) {
+      await postRoutineMessage(deps, {
+        spaceId: failed.spaceId,
+        threadId: failed.threadId,
+        botId: failed.botId,
+        // A status line like a watch's, not the bot speaking: the raw error stays in the run's
+        // details and its notice, which shorten and translate it.
+        role: "system",
+        text: `${routine.name} routine: failed`,
+        // One line per failed run, however often a notice that did not reach anyone is retried.
+        clientNonce: `routine-failed:${failed.id}`,
+        // With the routine's notifications off, the unread chat is how the person finds out.
+        markUnread: true,
+        // A retried notice writes the line again before any push, so neither is lost.
+        ...(options.retryOnFailure ? { required: true } : {}),
+      });
+    }
+  }
+  // Someone already in the chat sees the line there, as with any run's failure, so no push.
+  if (options.inChat) return;
   await notifyRun(
     deps,
     failed,
@@ -114,7 +157,7 @@ async function notifyFailedRoutineRun(
       botId: failed.botId,
       threadId: failed.threadId,
     },
-    options,
+    { retryOnFailure: options.retryOnFailure },
   );
 }
 
@@ -240,7 +283,13 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     // the already-loaded list.
     const current = await tx.routine.findUnique({
       where: { id: routine.id },
-      select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
+      select: {
+        prompt: true,
+        silent: true,
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
+      },
     });
     if (!current) return null;
     const routinePrompt =
@@ -248,8 +297,10 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
       (watchTick?.run ? watchTick.note : "");
     const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
     const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
+    const trigger = routineRunTrigger(current);
     if (timerNonce) {
       const pending = await findPendingRoutineTick(tx, {
+        trigger,
         routineId: routine.id,
         spaceId: routine.spaceId,
         botId: bot.id,
@@ -284,7 +335,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         taskId: task.id,
         userId: routine.userId,
         status: "queued",
-        trigger: "routine",
+        trigger,
         routineId: routine.id,
         clientNonce: timerNonce,
         ...routineRunModelPin(current),
@@ -352,7 +403,7 @@ export async function notifyRoutineRetryAttemptsExhausted(deps: ExecutorDeps, ru
   const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
   if (
     !failed?.routineId ||
-    failed.trigger !== "routine" ||
+    !isRoutineRunTrigger(failed.trigger) ||
     failed.status !== "failed" ||
     failed.retryOfRunId
   ) {
@@ -375,7 +426,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
   if (
     !failed?.routineId ||
-    failed.trigger !== "routine" ||
+    !isRoutineRunTrigger(failed.trigger) ||
     failed.status !== "failed" ||
     failed.retryOfRunId
   ) {
@@ -385,6 +436,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     where: { id: failed.routineId },
     select: {
       active: true,
+      silent: true,
       crons: true,
       nextRunAt: true,
       userId: true,
@@ -480,7 +532,12 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
           taskId: retryTask.id,
           userId: failed.userId,
           status: "queued",
-          trigger: "routine",
+          // Silent as the routine is now, as a fresh tick would be. A run someone asked for in a
+          // chat message answers there, so its retry does too.
+          trigger:
+            routine && !routineRunAnswersChat(failed.clientNonce)
+              ? routineRunTrigger(routine)
+              : failed.trigger,
           routineId: failed.routineId,
           retryOfRunId: failed.id,
           ...(failed.modelPinned

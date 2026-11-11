@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
+import { ChatMarkdown } from "@rakazo/chat-ui/web";
+import type { MessageBlock, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
 import {
   formatRoutineRunAt,
   isRetryableError,
@@ -10,12 +11,27 @@ import {
   routineRunLateness,
 } from "@rakazo/core";
 import { translateRunError } from "@rakazo/i18n/run-error";
-import { Button, SectionHeading, Spinner } from "@rakazo/ui-web";
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  SectionHeading,
+  Spinner,
+} from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ArtifactFileCard } from "../components/ArtifactFileCard";
+import { PageBlockCard } from "../components/pages/PageBlockCard";
+import { SubagentCard } from "../components/SubagentCard";
+import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
+import type { ArtifactTarget } from "../lib/artifact-open";
+import { useOpenPage } from "../lib/pages";
 import { useSpaceQueries } from "../lib/query";
+import { toolStepCount } from "../lib/tool-activity-view";
 import { statusLabel, statusTone } from "./ActivityList";
+import { ArtifactImage, ChartBlockView } from "./shell/message-cards";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const { t } = useLingui();
@@ -84,11 +100,14 @@ function RunRow({ run }: { run: RoutineRun }) {
       : late.unit === "hours"
         ? t`Started ${count}h late`
         : t`Started ${count}d late`;
-  const chatTo = run.messageId
-    ? run.groupId
-      ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
-      : `/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`
-    : null;
+  // A silent run kept its reply out of the chat, so the row opens it here instead.
+  const reply = run.reply?.length ? run.reply : null;
+  const chatTo =
+    !reply && run.messageId
+      ? run.groupId
+        ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
+        : `/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`
+      : null;
   const line = (
     <>
       <time dateTime={at} title={new Date(at).toLocaleString(locale)} className="text-foreground">
@@ -97,13 +116,13 @@ function RunRow({ run }: { run: RoutineRun }) {
       {lateLabel ? <span>{lateLabel}</span> : null}
       {run.status !== "completed" ? (
         <span className={`ml-auto ${statusTone(run.status)}`}>{statusLabel(run.status)}</span>
-      ) : chatTo ? null : (
+      ) : chatTo || reply ? null : (
         <span className="ml-auto">{t`No reply`}</span>
       )}
-      {chatTo ? (
+      {chatTo || reply ? (
         <ChevronRight
           aria-hidden
-          className={`size-4 shrink-0 ${run.status === "completed" ? "ml-auto" : ""}`}
+          className={`size-4 shrink-0 transition-transform duration-150 group-data-panel-open/run:rotate-90 motion-reduce:transition-none ${run.status === "completed" ? "ml-auto" : ""}`}
         />
       ) : null}
     </>
@@ -111,7 +130,21 @@ function RunRow({ run }: { run: RoutineRun }) {
   const lineClass = "-mx-2 flex items-center gap-3 rounded-md px-2 py-2";
   return (
     <li data-testid="routine-run-row" className="text-body-sm">
-      {chatTo ? (
+      {reply ? (
+        <Collapsible>
+          <CollapsibleTrigger
+            className={`group/run ${lineClass} box-content w-full cursor-pointer text-start outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring`}
+          >
+            {line}
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <RunReply
+              blocks={reply}
+              target={run.groupId ? { groupId: run.groupId } : { botId: run.botId }}
+            />
+          </CollapsibleContent>
+        </Collapsible>
+      ) : chatTo ? (
         <Link to={chatTo} className={`${lineClass} hover:bg-accent`}>
           {line}
         </Link>
@@ -128,5 +161,59 @@ function RunRow({ run }: { run: RoutineRun }) {
         </div>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * What a silent run would have posted: its steps, helpers, files, charts, pages and reply, as the
+ * chat shows them.
+ */
+function RunReply({ blocks, target }: { blocks: readonly MessageBlock[]; target: ArtifactTarget }) {
+  const openPage = useOpenPage();
+  return (
+    <div
+      data-testid="routine-run-reply"
+      className="space-y-2 pt-1 pb-3 text-body text-foreground"
+      dir="auto"
+    >
+      {blocks.map((block, index) =>
+        block.kind === "steps" ? (
+          <ToolActivityDisclosure
+            key={index}
+            live={false}
+            stepCount={toolStepCount(block.steps)}
+            durationMs={block.durationMs}
+          >
+            <ToolSteps steps={block.steps} />
+          </ToolActivityDisclosure>
+        ) : block.kind === "text" ? (
+          <ChatMarkdown key={index} onOpenPage={openPage}>
+            {block.text}
+          </ChatMarkdown>
+        ) : block.kind === "subagent" ? (
+          <SubagentCard key={index} block={block} />
+        ) : block.kind === "page" ? (
+          <PageBlockCard key={index} block={block} updated={false} />
+        ) : block.kind === "chart" ? (
+          <ChartBlockView key={index} name={block.name} spec={block.spec} data={block.data} />
+        ) : block.kind === "image" ? (
+          <ArtifactImage
+            key={index}
+            target={target}
+            artifactId={block.artifactId}
+            name={block.name}
+          />
+        ) : block.kind === "file" ? (
+          <ArtifactFileCard
+            key={index}
+            target={target}
+            artifactId={block.artifactId}
+            name={block.name}
+            mimeType={block.mimeType}
+            size={block.size}
+          />
+        ) : null,
+      )}
+    </div>
   );
 }

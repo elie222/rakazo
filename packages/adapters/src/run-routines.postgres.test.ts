@@ -14,6 +14,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { postRoutineMessage } from "./routine-watch.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -101,6 +102,60 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     const task = await system.task.findUniqueOrThrow({ where: { id: run.taskId } });
     expect(task.prompt).toContain("CORRECTED");
     expect(run).toMatchObject({ modelProvider: "prov-b", modelId: "model-B", modelPinned: true });
+  });
+
+  it("starts a silent routine's tick as a silent run", async () => {
+    const dueAt = new Date(Date.now() - 60_000);
+    const routine = await system.routine.create({
+      data: {
+        ...identity,
+        name: "board tidy",
+        prompt: "Archive done tickets",
+        crons: ["* * * * *"],
+        active: true,
+        silent: true,
+        nextRunAt: dueAt,
+      },
+    });
+    const executor = createRunExecutor({
+      prisma: system,
+      jobs: {
+        enqueue: async () => undefined,
+        cancel: async () => undefined,
+        close: async () => undefined,
+      },
+      events: {
+        append: (input: Parameters<typeof appendEvent>[1]) => appendEvent(system, input),
+        notify: async () => undefined,
+      },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.wakeRoutine(routine.id, dueAt.toISOString());
+
+    const run = await system.run.findFirstOrThrow({ where: { routineId: routine.id } });
+    expect(run.trigger).toBe("silent_routine");
+  });
+
+  it("posts a failed silent run's chat line once, however often its notice is retried", async () => {
+    const deps = {
+      prisma: system,
+      events: { notify: async () => undefined },
+    } as unknown as Parameters<typeof postRoutineMessage>[0];
+    const line = {
+      spaceId: identity.spaceId,
+      threadId: identity.threadId,
+      botId: identity.botId,
+      role: "system" as const,
+      text: "board tidy routine: failed",
+      clientNonce: `routine-failed:${randomUUID()}`,
+    };
+    await postRoutineMessage(deps, line);
+    await postRoutineMessage(deps, line);
+    await expect(
+      system.message.count({
+        where: { threadId: identity.threadId, clientNonce: line.clientNonce },
+      }),
+    ).resolves.toBe(1);
   });
 
   it("runs no routine in a Space that is being deleted", async () => {

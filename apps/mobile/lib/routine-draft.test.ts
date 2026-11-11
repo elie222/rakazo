@@ -71,6 +71,34 @@ describe("routineSaveRequest", () => {
     });
   });
 
+  it("turns a routine silent, and back, without resending what did not change", () => {
+    const draft = { ...draftFromRoutine(routine), silent: true };
+    expect(routineSaveRequest(draft, routine, "bot-1", "UTC")).toEqual({
+      update: { routineId: "routine-1", silent: true },
+    });
+    const silent = { ...routine, silent: true };
+    expect(draftFromRoutine(silent).silent).toBe(true);
+    expect(routineSaveRequest(draftFromRoutine(silent), silent, "bot-1", "UTC")).toEqual({
+      unchanged: true,
+    });
+    expect(
+      routineSaveRequest({ ...draftFromRoutine(silent), silent: false }, silent, "bot-1", "UTC"),
+    ).toEqual({ update: { routineId: "routine-1", silent: false } });
+  });
+
+  it("creates a silent routine only when asked", () => {
+    const draft = {
+      ...emptyRoutineDraft(),
+      name: "Tidy",
+      prompt: "Archive done tickets.",
+      schedules: [defaultCronPreset()],
+      silent: true,
+    };
+    expect(routineSaveRequest(draft, null, "bot-1", "UTC")).toMatchObject({
+      create: { silent: true },
+    });
+  });
+
   it("keeps a webhook as the only trigger once the last schedule goes", () => {
     const hooked = { ...routine, webhookEnabled: true };
     const draft = { ...draftFromRoutine(hooked), schedules: [] };

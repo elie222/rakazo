@@ -9,6 +9,7 @@ import type { Actor, MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
+  isRoutineRunTrigger,
   parseMessagingCommand,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -153,7 +154,9 @@ export function cancelThreadRuns(
       eventSeq = event.seq;
     }
     const named = (run: (typeof cancelled)[number]) =>
-      run.trigger === "routine" && run.routine && run.routineId ? run.routine.name : undefined;
+      isRoutineRunTrigger(run.trigger) && run.routine && run.routineId
+        ? run.routine.name
+        : undefined;
     const routineNotes = [
       ...new Map(
         cancelled.flatMap((run) => {

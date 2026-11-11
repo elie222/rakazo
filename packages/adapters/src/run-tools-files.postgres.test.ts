@@ -85,6 +85,7 @@ postgres("attach_file (PostgreSQL)", () => {
     filePath: string,
     lease: { owner: string; fence: number },
     client: typeof prisma = prisma,
+    trigger = "user_message",
   ) => {
     const deps = withRunLease(
       {
@@ -98,7 +99,7 @@ postgres("attach_file (PostgreSQL)", () => {
     );
     const ctx = {
       deps,
-      run: { ...run, trigger: "user_message" },
+      run: { ...run, trigger },
       runId: run.id,
       bot: { id: run.botId },
       thread: { id: run.threadId, groupId: null },
@@ -261,4 +262,36 @@ postgres("attach_file (PostgreSQL)", () => {
       [expect.objectContaining({ kind: "image", artifactId: posted.artifactId })],
     ]);
   }, 30_000);
+  it("keeps a silent routine's file in its run history, not the chat", async () => {
+    bytes = new TextEncoder().encode("silent report");
+    const replies = () =>
+      fixture(() =>
+        prisma.event.findMany({
+          where: { runId: run.id, type: "run.reply" },
+          select: { payload: true },
+        }),
+      );
+    const stale = await attach(
+      "reports/silent.csv",
+      { owner: "worker-0", fence: 0 },
+      prisma,
+      "silent_routine",
+    );
+    expect(stale).toMatchObject({ error: expect.stringContaining("history") });
+    expect(await replies()).toEqual([]);
+
+    const before = await state();
+    const held = (await attach(
+      "reports/silent.csv",
+      { owner: "worker-1", fence: 1 },
+      prisma,
+      "silent_routine",
+    )) as { artifactId: string };
+    const after = await state();
+    expect(after.artifacts).toHaveLength(before.artifacts.length + 1);
+    expect(after.messages).toEqual(before.messages);
+    expect(await replies()).toEqual([
+      { payload: { blocks: [expect.objectContaining({ artifactId: held.artifactId })] } },
+    ]);
+  });
 });

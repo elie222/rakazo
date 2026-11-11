@@ -4611,6 +4611,27 @@ describe("ticket board tool capability", () => {
     for (const name of ["message_bot", "handoff_to_bot", "message_agent"])
       expect(backgroundNames).not.toContain(name);
   });
+  it("gives a silent routine a routine's tools, except those that would post in its chat", () => {
+    const names = (trigger: string) =>
+      selectBuiltinToolsForRun({
+        ...options,
+        trigger,
+        phoneCallsEnabled: true,
+        mediaImagesEnabled: true,
+        mediaVideoEnabled: true,
+      }).map((tool) => tool.name);
+    const routine = names("routine");
+    const silent = names("silent_routine");
+    // Agent connections are offered on their own; offersAgentConnectionTools covers them.
+    for (const name of ["message_bot", "generate_image"]) {
+      expect(routine).toContain(name);
+      expect(silent).toContain(name);
+    }
+    for (const name of ["message_user", "call_user", "handoff_to_bot", "generate_video"]) {
+      expect(routine).toContain(name);
+      expect(silent).not.toContain(name);
+    }
+  });
 });
 
 describe("call_user availability", () => {
@@ -4631,6 +4652,7 @@ describe("call_user availability", () => {
     expect(offered({ groupId: "group-1" })).toBe(false);
     expect(offered({ messagingChannelRun: true })).toBe(false);
     expect(offered({ trigger: "tickets" })).toBe(false);
+    expect(offered({ trigger: "silent_routine" })).toBe(false);
     expect(offered({ voiceCall: true })).toBe(false);
   });
 });

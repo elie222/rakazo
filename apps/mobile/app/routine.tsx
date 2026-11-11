@@ -1,7 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
+import {
+  defaultCronPreset,
+  draftFromRoutine,
+  emptyRoutineDraft,
+  routineOffersSilent,
+} from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
@@ -551,6 +556,16 @@ function RoutineEditor({
           onChange={(emailSenders) => update({ emailSenders })}
           onRemove={() => update({ emailSenders: null })}
         />
+      ) : null}
+      {routineOffersSilent({ ...draft, watch: kept?.watch }) ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="silent"
+            label={t`Silent`}
+            value={draft.silent}
+            onChange={(silent) => update({ silent })}
+          />
+        </SettingsGroup>
       ) : null}
       {base ? (
         <SettingsGroup>

@@ -8,11 +8,15 @@ import {
   isActive,
   isBackgroundRunTrigger,
   isConversationalRun,
+  isRoutineRunTrigger,
   isRunWaitingOnUser,
   isRunWorking,
   messageBypassesTakeoverWait,
   messageSteersRun,
   QUEUE_HOLDING_RUN_STATUSES,
+  routineRunTrigger,
+  runReadsThreadHistory,
+  SILENT_ROUTINE_TRIGGER,
   STOPPED_HELPER_RESULT,
   WAITING_ON_USER_RUN_STATUSES,
   WORKING_RUN_STATUSES,
@@ -106,6 +110,7 @@ describe("run state machine", () => {
     expect(isConversationalRun("webhook")).toBe(false);
     expect(isConversationalRun("created")).toBe(false);
     expect(isConversationalRun("tickets")).toBe(false);
+    expect(isConversationalRun("silent_routine")).toBe(false);
     expect(isConversationalRun("bot_message")).toBe(false);
   });
 
@@ -115,6 +120,19 @@ describe("run state machine", () => {
     expect(isBackgroundRunTrigger("user")).toBe(false);
     expect(isBackgroundRunTrigger("routine")).toBe(false);
     expect(isBackgroundRunTrigger(null)).toBe(false);
+  });
+
+  it("runs a silent routine as background routine work, isolated from the chat's history", () => {
+    expect(routineRunTrigger({ silent: true })).toBe(SILENT_ROUTINE_TRIGGER);
+    expect(routineRunTrigger({ silent: false })).toBe("routine");
+    expect(isBackgroundRunTrigger(SILENT_ROUTINE_TRIGGER)).toBe(true);
+    expect(isRoutineRunTrigger(SILENT_ROUTINE_TRIGGER)).toBe(true);
+    expect(isRoutineRunTrigger("routine")).toBe(true);
+    expect(isRoutineRunTrigger("tickets")).toBe(false);
+    expect(isRoutineRunTrigger("webhook")).toBe(false);
+    expect(runReadsThreadHistory(SILENT_ROUTINE_TRIGGER)).toBe(false);
+    expect(runReadsThreadHistory("routine")).toBe(false);
+    expect(runReadsThreadHistory("user")).toBe(true);
   });
 
   it("rejects rewriting a completed run", () => {

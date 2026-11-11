@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
 
 const config = {
+  trigger: "routine",
   routineId: "routine-1",
   spaceId: "space-1",
   botId: "bot-1",
@@ -34,6 +35,7 @@ describe("pending routine timer coalescing", () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          trigger: "routine",
           status: "queued",
           retryOfRunId: null,
           firstResponseAt: null,

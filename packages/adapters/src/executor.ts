@@ -11,6 +11,7 @@ import {
   isCallClientNonce,
   isMessagingChannelRun,
   isOwnerStartedRun,
+  isRoutineRunTrigger,
   isTerminal,
   messagingChannelId,
   messagingChannelPrivacyBlock,
@@ -407,7 +408,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       const executionStartedAt = current.startedAt ?? new Date();
       // Classified with the first start, so a retry, resume or later schedule edit keeps it.
       let firstLateSince: Date | undefined;
-      if (!current.startedAt && run.trigger === "routine" && run.routineId && run.clientNonce) {
+      if (
+        !current.startedAt &&
+        isRoutineRunTrigger(run.trigger) &&
+        run.routineId &&
+        run.clientNonce
+      ) {
         try {
           const routine = await deps.prisma.routine.findUnique({
             where: { id: run.routineId },
@@ -930,7 +936,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             { attemptId: attempt.id, workerId, fence },
             message,
           );
-          if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
+          if (failed && accountFailure && isRoutineRunTrigger(run.trigger) && run.routineId) {
             await backOffRoutineAfterAccountError(deps, {
               routineId: run.routineId,
               userId: run.userId,

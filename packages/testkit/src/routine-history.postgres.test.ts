@@ -115,6 +115,62 @@ describeHistory("routines.history late starts", () => {
     });
     expect(await history()).toEqual(expected);
   });
+
+  it("saves silent, runs Run now silently, and shows the reply only in the history", async () => {
+    const cookie = await signup(app, `routine-silent-${stamp}@rakazo.test`, "Silent User");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Tidy",
+      title: "Tidy",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const created = await rpc<{ id: string; silent?: boolean }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Board tidy",
+      prompt: "write silent-routine-ok into the durable task result",
+      crons: ["0 7 * * *"],
+      timezone: "UTC",
+      active: false,
+    });
+    // Existing inputs leave a routine as loud as before.
+    expect(created.silent).toBe(false);
+    const updated = await rpc<{ silent?: boolean }>(app, cookie, "routines/update", {
+      routineId: created.id,
+      silent: true,
+    });
+    expect(updated.silent).toBe(true);
+    const renamed = await rpc<{ silent?: boolean }>(app, cookie, "routines/update", {
+      routineId: created.id,
+      name: "Board tidy (weekly)",
+    });
+    expect(renamed.silent).toBe(true);
+
+    const { runId } = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
+      routineId: created.id,
+    });
+    const run = await prisma.run.findUniqueOrThrow({ where: { id: runId } });
+    expect(run.trigger).toBe("silent_routine");
+    const finished = async () => {
+      const { runs } = await rpc<RoutineHistory>(app, cookie, "routines/history", {
+        routineId: created.id,
+      });
+      return runs.find((item) => item.id === runId);
+    };
+    await expect
+      .poll(async () => (await finished())?.status, { timeout: 30_000 })
+      .toBe("completed");
+    const shown = await finished();
+    expect(shown?.messageId).toBeNull();
+    expect(
+      shown?.reply?.some((block) => block.kind === "text" && /silent-routine-ok/i.test(block.text)),
+    ).toBe(true);
+    // Nothing of the run reached the chat, and the chat was not marked unread for it.
+    expect(await prisma.message.count({ where: { runId } })).toBe(0);
+    expect(await prisma.threadRead.count({ where: { threadId: run.threadId, unread: true } })).toBe(
+      0,
+    );
+  });
 });
 
 async function signup(app: App, email: string, name: string) {

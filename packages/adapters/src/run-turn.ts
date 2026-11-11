@@ -16,10 +16,12 @@ import {
   displayName,
   humanizeToolName,
   isBackgroundRunTrigger,
+  isRoutineRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   normalizeRunError,
   redactSecrets,
   redactSecretsAfter,
+  SILENT_ROUTINE_TRIGGER,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
   withoutLastToolStepNotes,
@@ -79,7 +81,7 @@ import {
   runPromotesMidTurnNarration,
   TOOL_STEPS_WITHOUT_RESPONSE,
 } from "./run-replies.js";
-import { scheduleRoutineRetry } from "./run-routines.js";
+import { notifyFailedRoutineRun, scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
@@ -648,6 +650,9 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     leaseFence: fence,
     outcome: "completed",
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
+    ...(run.trigger === SILENT_ROUTINE_TRIGGER
+      ? { heldReply: [{ kind: "text" as const, text: stuckText }] }
+      : {}),
   });
   if (!stopped) return;
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
@@ -669,7 +674,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     ctx.secrets,
   );
   ctx.stopHeartbeatAfterCompletion();
-  if (run.trigger === "routine" && run.routineId) {
+  if (isRoutineRunTrigger(run.trigger) && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   await enqueueSteeringContinuation(deps, stopped.continuationRunId);
@@ -816,12 +821,14 @@ export async function completeRun(ctx: RunContext) {
   // model supplies none, unless it chose silence or already delivered that text.
   // Persisting peer results here also lets outcome delivery retry after completion.
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
+  // Ticket work drops its reply; a silent routine keeps it for its run history, not the chat.
+  const dropsReply = isBackgroundRunTrigger(run.trigger) && run.trigger !== SILENT_ROUTINE_TRIGGER;
   // When nothing follows the last step, the notes since the last interim message are the reply.
   // Messages mode keeps only the latest one; the earlier ones were private working.
   const fallbackNotes =
     ctx.replyMode === "messages" ? reply.workingNotes.slice(-1) : reply.workingNotes;
   if (
-    !isBackgroundRunTrigger(run.trigger) &&
+    !dropsReply &&
     !ctx.state.handedOff &&
     !reply.explicitNoResponse &&
     reply.workingNotes.length > 0 &&
@@ -836,7 +843,7 @@ export async function completeRun(ctx: RunContext) {
   }
   // Runs that hold their narration back keep only the last held-back preview.
   if (
-    !isBackgroundRunTrigger(run.trigger) &&
+    !dropsReply &&
     !ctx.state.handedOff &&
     !reply.explicitNoResponse &&
     !reply.assembled.trim() &&
@@ -873,14 +880,14 @@ export async function completeRun(ctx: RunContext) {
         ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
         : stripStrayNoResponse(reply.assembled, reply.messageSegments);
   let completionBlocks = silentReply.blocks;
-  if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
+  if (!silentReply.assembled || dropsReply) {
     // Mid-turn progress already posted durable chat messages; skip the empty
     // "…" fallback so we do not add a junk final bubble.
     completionBlocks = completionMessageSegments(completionBlocks, {
       allowSilentEmpty:
         ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage || groupSilentEnd,
       emptyResponseText: ctx.emptyResponseText,
-      suppressOutput: ctx.state.handedOff || isBackgroundRunTrigger(run.trigger),
+      suppressOutput: ctx.state.handedOff || dropsReply,
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }
@@ -927,12 +934,12 @@ export async function completeRun(ctx: RunContext) {
     leaseOwner: ctx.workerId,
     leaseFence: ctx.fence,
     outcome: "completed",
-    blocks,
+    ...(run.trigger === SILENT_ROUTINE_TRIGGER ? { blocks: [], heldReply: blocks } : { blocks }),
     markUnread: !groupSilentEnd && marksUnread,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
-  if (run.trigger === "routine" && run.routineId) {
+  if (isRoutineRunTrigger(run.trigger) && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   const { screenRelease } = ctx.state.computerUse;
@@ -1125,11 +1132,13 @@ export async function failRun(
   }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =
-    run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
+    isRoutineRunTrigger(run.trigger) && model.ownCredential
+      ? modelAccountRefusal(error)
+      : undefined;
   // A spent computer allowance or an unusable provider account refuses every run that needs the
   // computer until someone fixes it.
   if (
-    run.trigger === "routine" &&
+    isRoutineRunTrigger(run.trigger) &&
     run.routineId &&
     (refusal ||
       error instanceof SandboxAllowanceUsedError ||
@@ -1143,12 +1152,20 @@ export async function failRun(
     );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+  if (retrying) return;
+  if (run.trigger === SILENT_ROUTINE_TRIGGER) {
+    await notifyFailedRoutineRun(
+      deps,
+      { ...run, error: message },
+      { inChat: Boolean(failed.continuationRunId) },
+    ).catch((noticeError) => getLogger().error("silent routine failure notice", noticeError));
+    return;
+  }
   // Nobody asked for a check-in, so its failure is not news to the user.
   if (
     runSendsFinishNotification(run.trigger) &&
     !isStrategicInitiativeRun(run) &&
-    !failed.continuationRunId &&
-    !retrying
+    !failed.continuationRunId
   ) {
     await notifyRun(deps, run, {
       kind: "failure",
