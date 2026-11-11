@@ -13,6 +13,7 @@ import {
   voiceProvidersHubMarkdown,
 } from "./voice-providers";
 import { BRAND_COLORS, BRAND_LOGOS } from "./brand";
+import { ENTERPRISE_MARKDOWN } from "./enterprise";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
 import {
@@ -101,6 +102,7 @@ ${home.cta.copy}
 - [Blog](https://rakazo.com/blog/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
+- [Enterprise](https://rakazo.com/enterprise/): SSO, SCIM, audit log, encryption at rest, and approval rules on your own infrastructure.
 - [Download](https://rakazo.com/download/): desktop, mobile, and web apps.
 - [About](https://rakazo.com/about/)
 - [Brand](https://rakazo.com/brand/)
@@ -206,6 +208,7 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Alternatives](https://rakazo.com/alternatives/)
 - [Grok Bot alternatives](https://rakazo.com/grok-bot-alternative/)
 - [Pricing](https://rakazo.com/pricing/): free to self-host, or hosted with your own model or Rakazo credits.
+- [Enterprise](https://rakazo.com/enterprise/): SSO, SCIM, audit log, encryption at rest, and approval rules on your own infrastructure.
 - [Download](https://rakazo.com/download/): desktop, mobile, and web apps.
 - [About](https://rakazo.com/about/)
 - [Brand](https://rakazo.com/brand/)
@@ -294,6 +297,7 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/about", ABOUT_MARKDOWN],
   ["/brand", BRAND_MARKDOWN],
   ["/download", DOWNLOAD_MARKDOWN],
+  ["/enterprise", ENTERPRISE_MARKDOWN],
   ["/openclaw-alternative", OPENCLAW_MARKDOWN],
   ["/grok-bot-alternative", GROK_ALTERNATIVE_MARKDOWN],
   ["/privacy", PRIVACY_MARKDOWN],
