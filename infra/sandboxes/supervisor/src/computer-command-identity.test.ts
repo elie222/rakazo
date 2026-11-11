@@ -78,6 +78,46 @@ describe("computer command identity", () => {
     expectContainerUser();
   });
 
+  it("keeps a silent command's response alive until it exits", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish = (_code: number) => {};
+      const exited = new Promise<number>((resolve) => {
+        finish = resolve;
+      });
+      mock.exec.mockImplementation(async () => ({
+        start: async () => {
+          const output = new Readable({ read() {} });
+          void exited.then(() => output.push(null));
+          return Duplex.from({
+            readable: output,
+            writable: new Writable({
+              write(_chunk, _encoding, callback) {
+                callback();
+              },
+            }),
+          });
+        },
+        inspect: async () => ({ ExitCode: await exited }),
+      }));
+      const response = await post("/computers/computer-exec/exec", { argv: ["sleep", "600"] });
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(decoder.decode((await reader?.read())?.value)).toBe("\n");
+      finish(0);
+      let rest = "";
+      for (;;) {
+        const chunk = await reader?.read();
+        if (!chunk || chunk.done) break;
+        rest += decoder.decode(chunk.value);
+      }
+      expect(rest.trim().split("\n").at(-1)).toBe(JSON.stringify({ type: "exit", code: 0 }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("starts the user's terminal with the same environment and user as the bot's shell", async () => {
     mock.failWhen = (options) => options.Cmd.join(" ").includes("terminal-fixture-token");
     const response = await post("/computers/computer-terminal/terminal", {
