@@ -245,6 +245,17 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       );
       return response!;
     };
+    const release = async (reason: "done" | "skipped", as: Actor = actor) => {
+      const { response } = await handler.handle(
+        new Request("http://127.0.0.1/rpc/computer/release", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: bot.id, reason } }),
+        }),
+        { prefix: "/rpc", context: { actor: as } },
+      );
+      return response!;
+    };
     return {
       actor,
       bot,
@@ -258,6 +269,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       enqueue,
       queuedStates,
       send,
+      release,
       takeover,
       control,
       leaseId,
@@ -579,6 +591,59 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     });
     expect(requests).toHaveLength(1);
     expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+  });
+
+  it("lets the person the run waits on skip an unopened takeover from the chat card", async () => {
+    const fixture = await setup("unopened");
+    expect((await fixture.release("skipped")).status).toBe(200);
+    expect(await fixture.control()).toMatchObject({ controlHolder: "bot", controlRunId: null });
+    expect(
+      await system.event.findMany({
+        where: { runId: fixture.run.id, type: "computer.takeover.released" },
+      }),
+    ).toMatchObject([{ payload: { holder: "bot", reason: "skipped", leaseId: null } }]);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "queued",
+      checkpoint: "takeover-skipped",
+    });
+  });
+
+  it("does not let another member answer a takeover that waits on someone else", async () => {
+    const fixture = await setup("unopened");
+    const otherId = randomUUID();
+    await system.user.create({
+      data: { id: otherId, name: "Other", email: `${otherId}@example.test`, emailVerified: true },
+    });
+    organizations.push(otherId);
+    await system.member.create({
+      data: {
+        id: otherId,
+        organizationId: fixture.actor.spaceId,
+        userId: otherId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: otherId,
+        spaceId: fixture.actor.spaceId,
+        organizationId: fixture.actor.spaceId,
+        userId: otherId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const before = await fixture.control();
+    await fixture.release("done", {
+      ...fixture.actor,
+      userId: otherId,
+      email: `${otherId}@example.test`,
+    });
+    expect(await fixture.control()).toEqual(before);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "waiting_takeover",
+    });
   });
 
   it.each(["none", "other-run", "other-bot", "idle"])(

@@ -801,12 +801,12 @@ export function useComputerControls({
   }
   const openComputerRef = useRef(openComputer);
   openComputerRef.current = openComputer;
-  const onOpenComputer = useCallback((botId?: string) => {
-    void openComputerRef.current(botId);
+  const onOpenComputer = useCallback((botId?: string, takeControl?: boolean) => {
+    void openComputerRef.current(botId, takeControl);
   }, []);
 
-  async function releaseComputer(reason?: ComputerReleaseReason) {
-    const botId = computerBotIdRef.current ?? activeBotId.current;
+  async function releaseComputer(reason?: ComputerReleaseReason, forBotId?: string) {
+    const botId = forBotId ?? computerBotIdRef.current ?? activeBotId.current;
     if (!botId) return;
     // The read-only screen is safe to show at once; the release itself takes a while.
     const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
@@ -833,6 +833,14 @@ export function useComputerControls({
       setComputerErrorFromScreen(false);
     }
   }
+
+  const releaseComputerRef = useRef(releaseComputer);
+  releaseComputerRef.current = releaseComputer;
+  const onReleaseComputer = useCallback(
+    (botId: string | undefined, reason: ComputerReleaseReason) =>
+      releaseComputerRef.current(reason, botId),
+    [],
+  );
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
@@ -935,6 +943,7 @@ export function useComputerControls({
     computerBot,
     openComputer,
     onOpenComputer,
+    onReleaseComputer,
     releaseComputer,
     refreshComputerFor,
     holdComputerRecovery,

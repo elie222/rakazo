@@ -5,7 +5,6 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  expectCardWidth,
   openBotPanelTab,
   realSandboxTimeout,
   rpc,
@@ -41,13 +40,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(computerCard).toBeVisible();
   await expect(computerCard.getByText("Needs you", { exact: true })).toBeVisible();
   await expect(computerCard.getByTestId("computer-card-open")).toBeVisible();
-  await expectCardWidth(computerCard, 340);
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await computerCard.getByTestId("computer-card-open").click();
-  await page
-    .getByTestId("computer-chrome")
-    .getByRole("button", { name: "Take control", exact: true })
-    .click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
   await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();

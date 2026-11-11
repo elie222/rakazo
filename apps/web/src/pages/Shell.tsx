@@ -1136,6 +1136,7 @@ function SpaceShell() {
               callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
+              onReleaseComputer={computerControls.onReleaseComputer}
               onOpenImportSetup={openImportSetup}
               rpc={rpc}
             />

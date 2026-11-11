@@ -439,8 +439,17 @@ const working: Scenario = {
         prUrl: "https://example.test/pull/42",
       },
     ]),
-    bot([{ kind: "computer", state: "Needs you", text: "The site wants a captcha solved." }]),
+    bot([
+      {
+        kind: "computer",
+        state: "Needs you",
+        text: "Sign in to Harbor Bookings, then hand it back.",
+      },
+    ]),
     bot([{ kind: "computer", state: "Working", text: "Filling in the booking form." }]),
+    bot([
+      { kind: "computer", state: "Done", text: "Sign in to the booking site, then hand it back." },
+    ]),
     bot([{ kind: "progress", text: "Checking Sam's calendar…" }]),
   ],
 };
@@ -673,6 +682,9 @@ const SCENARIOS: Scenario[] = [
 
 const IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320"><rect width="480" height="320" fill="#d4d4d4"/><circle cx="160" cy="150" r="70" fill="#a3a3a3"/><rect x="250" y="90" width="150" height="120" rx="12" fill="#737373"/></svg>`;
 
+/** A browser on a sign-in page, as a computer card's still of the screen. */
+const SCREEN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" font-family="Helvetica,Arial,sans-serif"><rect width="1280" height="800" fill="#f5f5f7"/><rect width="1280" height="40" fill="#dfe1e5"/><rect x="12" y="8" width="240" height="32" rx="8" fill="#fff"/><text x="28" y="29" font-size="14" fill="#333">Sign in - Harbor Bookings</text><rect y="40" width="1280" height="48" fill="#fff"/><rect x="96" y="50" width="1088" height="28" rx="14" fill="#f1f3f4"/><text x="116" y="69" font-size="14" fill="#444">bookings.example.test/login</text><rect x="450" y="210" width="380" height="380" rx="16" fill="#fff" stroke="#e3e3e8"/><text x="482" y="262" font-size="26" font-weight="700" fill="#111">Welcome back</text><text x="482" y="290" font-size="15" fill="#666">Sign in to manage your reservations.</text><text x="482" y="334" font-size="13" fill="#444">Email</text><rect x="482" y="344" width="316" height="40" rx="8" fill="#fff" stroke="#ccc"/><text x="482" y="414" font-size="13" fill="#444">Password</text><rect x="482" y="424" width="316" height="40" rx="8" fill="#fff" stroke="#ccc"/><rect x="482" y="500" width="316" height="44" rx="8" fill="#2457f5"/><text x="640" y="528" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">Sign in</text><rect y="764" width="1280" height="36" fill="#1f2023"/><text x="1250" y="787" font-size="13" fill="#ccc" text-anchor="end">4:19 PM</text></svg>`;
+
 // The page has no API; answer the few reads cards make on mount with fake data.
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
@@ -681,6 +693,8 @@ window.fetch = async (input, init) => {
     return Response.json({
       json: { contentBase64: btoa(IMAGE_SVG), mimeType: "image/svg+xml" },
     });
+  if (url.pathname === "/rpc/computer/preview")
+    return Response.json({ json: { image: `data:image/svg+xml;base64,${btoa(SCREEN_SVG)}` } });
   if (url.pathname.startsWith("/rpc/"))
     return Response.json({ json: { message: "Not available in the gallery" } }, { status: 503 });
   return realFetch(input, init);
