@@ -136,8 +136,17 @@ export function deliverBrowserNotification(
   }
   if (context.permission === "default") return "pending";
   const message = browserNotificationMessage(event, botName);
+  const blocks = event.type === "thread.message.created" ? event.payload.blocks : undefined;
+  // An ask card keeps its own tag, so a later reply in the thread does not replace the question.
+  const tag =
+    Array.isArray(blocks) &&
+    blocks.some(
+      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
+    )
+      ? `${event.threadId}:ask`
+      : event.threadId;
   try {
-    context.show(message.title, message.body, event.threadId);
+    context.show(message.title, message.body, tag);
     context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {
