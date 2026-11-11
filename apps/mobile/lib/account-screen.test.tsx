@@ -10,6 +10,7 @@ import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
 import type * as Api from "./api";
+import { rpc } from "./api";
 import type * as ApiAuth from "./api-auth";
 import {
   deleteAccount,
@@ -161,8 +162,33 @@ vi.mock("../components/native-action-button", () => ({
   }) => createElement("button", { type: "button", disabled, onClick: onPress }, label),
 }));
 vi.mock("../components/native-segmented-control", () => ({
-  NativeSegmentedControl: ({ accessibilityLabel }: { accessibilityLabel: string }) =>
-    createElement("div", { "aria-label": accessibilityLabel }),
+  NativeSegmentedControl: ({
+    accessibilityLabel,
+    value,
+    options,
+    onChange,
+  }: {
+    accessibilityLabel: string;
+    value: string;
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "div",
+      { "aria-label": accessibilityLabel },
+      options.map((option) =>
+        createElement(
+          "button",
+          {
+            type: "button",
+            key: option.value,
+            "aria-pressed": value === option.value,
+            onClick: () => onChange(option.value),
+          },
+          option.label,
+        ),
+      ),
+    ),
 }));
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: element("div"),
@@ -388,7 +414,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("offers no avatar style choice in account settings", async () => {
+it("keeps bot style visible when the account has no saved style", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -397,10 +423,23 @@ it("offers no avatar style choice in account settings", async () => {
 
   expect(container.querySelector('[aria-label="Appearance"]')).not.toBeNull();
   expect(container.textContent).toContain("Language");
-  expect(container.querySelector('[aria-label="Avatar style"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Bot style"]')).not.toBeNull();
   expect(container.textContent).not.toContain("Avatars");
   expect(container.textContent).not.toContain("Robot");
   expect(container.textContent).not.toContain("Organic");
+});
+
+it("saves an Original choice even when the saved style is absent", async () => {
+  const { screen } = await renderAccount();
+  const picker = screen.querySelector('[aria-label="Bot style"]')!;
+  const original = Array.from(picker.querySelectorAll("button")).find(
+    (node) => node.textContent === "Original",
+  )!;
+  expect(original.getAttribute("aria-pressed")).toBe("false");
+  vi.mocked(rpc).mockResolvedValueOnce({ ...account.me, botAvatarSet: "organic" } as never);
+  await act(async () => original.click());
+  expect(original.getAttribute("aria-pressed")).toBe("true");
+  expect(rpc).toHaveBeenCalledWith("preferences/update", { botAvatarSet: "organic" });
 });
 
 async function renderAccount() {
