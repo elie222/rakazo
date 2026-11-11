@@ -7,7 +7,6 @@ import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
   formatWebhookPrompt,
-  inboundEventName,
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
@@ -101,12 +100,6 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       c,
       deliverWebhookEvent(deps, target, {
         prompt: eventPrompt,
-        // A saved routine name can be blank; the line still needs something to name it.
-        title:
-          webhookRoutines
-            .map((routine) => routine.name.trim())
-            .filter(Boolean)
-            .join(", ") || inboundEventName(payload.event),
         routines: webhookRoutines,
         source: "webhook",
         idempotencyKey,

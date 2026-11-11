@@ -280,23 +280,11 @@ export async function webhookDeliveryResponse(
   }
 }
 
-const DELIVERY_TITLE_MAX_CHARS = 300;
-
-/** One line, short enough for the block contract, never ending in half a surrogate pair. */
-export function deliveryTitle(title: string): string {
-  const line = title.replace(/\s+/g, " ").trim();
-  if (line.length <= DELIVERY_TITLE_MAX_CHARS) return line;
-  const cut = line.slice(0, DELIVERY_TITLE_MAX_CHARS - 1);
-  return `${/[\uD800-\uDBFF]$/u.test(cut) ? cut.slice(0, -1) : cut}…`;
-}
-
 export async function deliverWebhookEvent(
   deps: Pick<WebhookDeps, "events" | "jobs">,
   target: InboundTarget,
   input: {
     prompt: string;
-    /** What the chat shows for the delivery; the prompt stays folded under it. */
-    title: string;
     artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
     routines: Array<{
       name: string;
@@ -338,11 +326,7 @@ export async function deliverWebhookEvent(
     botId: target.bot.id,
     userId: target.bot.userId,
     blocks: [
-      {
-        kind: "delivery",
-        source: input.source === "github" ? "webhook" : input.source,
-        title: deliveryTitle(input.title),
-      },
+      { kind: "delivery" },
       { kind: "text", text: promptText },
       ...(input.artifacts ?? []).map(messageBlockForArtifact),
     ],

@@ -163,12 +163,6 @@ export function formatGithubEventPrompt(event: string, payload: Record<string, u
   ].join("\n");
 }
 
-/** The chat line for an event, from the same metadata the bot gets: "pull_request opened". */
-function githubEventTitle(event: string, payload: Record<string, unknown>): string {
-  const { action } = githubDeliveryMetadata(event, payload);
-  return action ? `${event} ${action}` : event;
-}
-
 export function githubWebhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/github`;
 }
@@ -240,7 +234,6 @@ export function mountGithubWebhookRoute(
       c,
       deliverWebhookEvent(deps, target, {
         prompt: eventPrompt,
-        title: githubEventTitle(githubEvent, payload),
         routines: githubRoutines,
         source: "github",
         // The signature covers only the body, so key on it: a replay with a fresh delivery id still dedupes.

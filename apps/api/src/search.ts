@@ -5,6 +5,7 @@ import {
   escapeJsonSearchWildcards,
   escapeSearchWildcards,
   extractLinksFromText,
+  isDeliveryMessage,
   matchesSearchQuery,
   snippetAroundMatch,
 } from "@rakazo/core";
@@ -392,7 +393,7 @@ function pushMessageHits(
     ? { groupId: ctx.groupId, groupName: ctx.groupName ?? "" }
     : { botId: ctx.botId!, botName: ctx.botName! };
   // A delivery is hidden in chat, so a hit on it would lead nowhere.
-  if (blocks.some((block) => block.kind === "delivery")) return;
+  if (isDeliveryMessage(blocks)) return;
   const title = ctx.groupId ? (ctx.groupName ?? "") : (ctx.botName ?? "");
   let messageHit = false;
   for (const block of blocks) {

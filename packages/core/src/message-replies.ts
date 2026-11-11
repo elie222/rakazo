@@ -139,9 +139,6 @@ export function previewMessageText(
   message: { role: string; blocks: MessageBlock[] },
   labels: { photo: string; attachment: string; message: string },
 ): string {
-  // A delivery's text block is the whole prompt it woke the bot with; its title names it.
-  const delivery = message.blocks.find((block) => block.kind === "delivery");
-  if (delivery) return delivery.title;
   const text = message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return block.text;

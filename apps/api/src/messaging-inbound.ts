@@ -430,7 +430,6 @@ export async function wakeMessageRoutines(
     },
     {
       prompt,
-      title: [event.fromLabel || event.from, event.content].filter(Boolean).join(": "),
       artifacts: options?.artifacts,
       routines,
       source: "messaging",

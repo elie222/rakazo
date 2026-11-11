@@ -236,16 +236,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     durationSeconds: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
-  z.object({
-    /**
-     * Marks a user message as an event that woke the bot (a webhook, an email, a chat message).
-     * Its text block is the bot's full prompt; chats hide the message, and a reply line names it
-     * by `title`.
-     */
-    kind: z.literal("delivery"),
-    source: z.enum(["webhook", "email", "messaging"]),
-    title: z.string().max(300),
-  }),
+  /**
+   * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text
+   * block is the bot's full prompt, so chats, previews and search leave the message out.
+   */
+  z.object({ kind: z.literal("delivery") }),
   z.object({
     kind: z.literal("progress"),
     text: z.string(),

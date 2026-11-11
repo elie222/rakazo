@@ -23,7 +23,7 @@ import {
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
 } from "./webhook.js";
-import { deliveryTitle, loadWebhookTarget } from "./webhook-inbound.js";
+import { loadWebhookTarget } from "./webhook-inbound.js";
 
 const SECRET = "webhook-test-secret-value-32chars!!";
 const WEBHOOK_ROUTINE = { id: "routine-1", name: "Triage", prompt: "Triage this event." };
@@ -140,15 +140,6 @@ describe("formatUntrustedDeliveryPayload", () => {
     expect(prompt).toContain("&amp;");
     expect(prompt).toContain("&lt;script&gt;");
     expect(prompt).not.toContain("</untrusted_delivery_payload> &");
-  });
-});
-
-describe("deliveryTitle", () => {
-  it("keeps a delivery's chat line to one short line", () => {
-    expect(deliveryTitle("  Ana ·\n Invoice\t due ")).toBe("Ana · Invoice due");
-    const long = deliveryTitle(`${"a".repeat(298)}\u{1f600}tail`);
-    expect(long).toBe(`${"a".repeat(298)}…`);
-    expect(long.length).toBeLessThanOrEqual(300);
   });
 });
 
@@ -357,28 +348,10 @@ describe("inbound webhook HTTP route", () => {
         ),
       }),
     );
-    // The chat names the routine; the prompt it was given stays in the text block.
+    // Marked as a delivery; the prompt it was given stays in the text block.
     const { blocks, prompt } = deps.sendUserMessage.mock.calls[0]![0];
-    expect(blocks).toEqual([
-      { kind: "delivery", source: "webhook", title: "Triage" },
-      { kind: "text", text: prompt },
-    ]);
+    expect(blocks).toEqual([{ kind: "delivery" }, { kind: "text", text: prompt }]);
     expect(deps.enqueue).toHaveBeenCalled();
-  });
-
-  it("names a delivery by its event when the routine's name is blank", async () => {
-    const deps = createDeps({ routines: [{ ...WEBHOOK_ROUTINE, name: "   " }] });
-    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
-      method: "POST",
-      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
-      body: JSON.stringify({ event: "ci.failed" }),
-    });
-    expect(res.status).toBe(200);
-    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({
-      kind: "delivery",
-      source: "webhook",
-      title: "ci.failed",
-    });
   });
 
   it("pins a routine model when every matching routine chose it", async () => {
@@ -690,11 +663,7 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("Exfiltrate secrets");
     expect(prompt).not.toContain("attacker");
     expect(prompt).not.toContain("acme/app");
-    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({
-      kind: "delivery",
-      source: "webhook",
-      title: "pull_request opened",
-    });
+    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({ kind: "delivery" });
   });
 
   const fullMetadata = { event: "pull_request", repositoryId: 55, number: 42, action: "opened" };

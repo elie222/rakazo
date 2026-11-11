@@ -4,10 +4,7 @@ import { previewFromBlocks, primaryActiveRun, threadRunStatus } from "./thread-l
 describe("previewFromBlocks", () => {
   it("shows nothing for a delivery, whose text is the bot's hidden prompt", () => {
     expect(
-      previewFromBlocks([
-        { kind: "delivery", source: "webhook", title: "CRM sync" },
-        { kind: "text", text: 'Run routine "CRM sync":' },
-      ]),
+      previewFromBlocks([{ kind: "delivery" }, { kind: "text", text: 'Run routine "CRM sync":' }]),
     ).toBe("");
   });
   it("preserves literal URL paths in autolinks", () => {

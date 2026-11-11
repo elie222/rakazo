@@ -31,6 +31,11 @@ export type UserVisibleMessagesOptions = {
   includeDelegatedReplyText?: boolean;
 };
 
+/** What woke the bot (see the `delivery` block): its prompt, never shown as a message. */
+export function isDeliveryMessage(blocks: readonly MessageBlock[]): boolean {
+  return blocks.some((block) => block.kind === "delivery");
+}
+
 export function isPeerReceiptBlocks(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
     (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
@@ -142,7 +147,7 @@ export function foldPeerReplies<T extends PresentableMessage>(
   const visible = messages.filter((message) => {
     // What woke the bot (a webhook, an email, a chat message) is its prompt, not a message to
     // show; like a scheduled routine, only what the bot does with it appears.
-    if (message.blocks.some((block) => block.kind === "delivery")) return false;
+    if (isDeliveryMessage(message.blocks)) return false;
     if (message.runId && backgroundRunIds.has(message.runId)) {
       return message.blocks.some(isBackgroundInputBlock);
     }

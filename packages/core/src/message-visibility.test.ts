@@ -44,7 +44,7 @@ describe("user-visible messages", () => {
   it("hides a delivery that woke the bot but keeps the bot's reply", () => {
     const delivery = {
       ...message("delivery", "run-1", [
-        { kind: "delivery", source: "webhook", title: "CRM sync" },
+        { kind: "delivery" },
         { kind: "text", text: 'Run routine "CRM sync":\nAdd the contact.' },
       ]),
       role: "user",
