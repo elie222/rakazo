@@ -121,6 +121,7 @@ function renderTranscript(messages: ThreadMessage[], roster: Roster) {
     speakingMessageId: null,
     onSpeak: vi.fn(),
     onOpenComputer: vi.fn(),
+    onReleaseComputer: vi.fn(),
     rpc,
   };
   act(() => root.render(<Transcript {...props} />));
