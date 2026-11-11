@@ -99,7 +99,7 @@ async function readBody(
   return { raw, value: parsed.data };
 }
 
-function rejectionOf(error: unknown): ServiceRejection {
+export function rejectionOf(error: unknown): ServiceRejection {
   if (error instanceof ServiceRejection) return error;
   if (error instanceof IsolationError) return new ServiceRejection("not_found");
   if (error instanceof SpaceDeletionInProgressError) return new ServiceRejection("conflict");
@@ -110,14 +110,15 @@ function rejectionOf(error: unknown): ServiceRejection {
     const byCode: Record<string, ServiceErrorCode> = {
       NOT_FOUND: "not_found",
       BAD_REQUEST: "invalid_request",
-      FORBIDDEN: "forbidden",
+      // The app refused the person, not the key: a scope cannot fix it.
+      FORBIDDEN: "not_permitted",
       UNAUTHORIZED: "unauthenticated",
       TOO_MANY_REQUESTS: "rate_limited",
       CONFLICT: "conflict",
       PRECONDITION_FAILED: "conflict",
     };
     const code = byCode[String(error.code)];
-    if (code === "invalid_request" || code === "conflict") {
+    if (code === "invalid_request" || code === "conflict" || code === "not_permitted") {
       return new ServiceRejection(code, undefined, error.message);
     }
     if (code) return new ServiceRejection(code);

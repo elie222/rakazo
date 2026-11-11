@@ -111,6 +111,7 @@ Errors look like `{"error": {"code": "...", "message": "..."}}`. A body that fai
 | 401    | `unauthenticated`          | Missing, unknown, revoked or expired key, or you left the space |
 | 403    | `forbidden`                | The key lacks that scope                                        |
 | 403    | `bot_limited_key`          | A key limited to certain bots cannot make this call             |
+| 403    | `not_permitted`            | The key's creator cannot do that, whatever the key's scopes     |
 | 404    | `not_found`                | No such resource, or one this key cannot reach                  |
 | 405    | `method_not_allowed`       | See the `Allow` header                                          |
 | 409    | `idempotency_conflict`     | Idempotency key already used for another request                |
