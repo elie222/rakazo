@@ -11,6 +11,7 @@ import {
   ArtifactSchema,
   BotSchema,
   CreateBotInput,
+  CreateGroupInput,
   CreateRoutineInput,
   CreateScratchpadItemInput,
   GroupSchema,
@@ -20,6 +21,7 @@ import {
   ScratchpadItemStatusSchema,
   TaughtSkillSchema,
   UpdateBotInput,
+  UpdateGroupInput,
   UsageSummarySchema,
 } from "./domain.js";
 import { PageSummarySchema } from "./pages.js";
@@ -588,7 +590,10 @@ export const SERVICE_ROUTES = {
     summary: "Create a group chat",
     spaceWide: true,
     idempotency: "stored",
-    body: z.strictObject({ name: z.string().min(1).max(80), botIds: z.array(z.string()).max(32) }),
+    body: z.strictObject({
+      name: CreateGroupInput.shape.name,
+      botIds: CreateGroupInput.shape.botIds,
+    }),
     response: ServiceGroup,
   }),
   getGroup: route({
@@ -606,8 +611,8 @@ export const SERVICE_ROUTES = {
     summary: "Rename a group or change who is in it",
     spaceWide: true,
     body: z.strictObject({
-      name: z.string().min(1).max(80).optional(),
-      botIds: z.array(z.string()).max(32).optional(),
+      name: UpdateGroupInput.shape.name,
+      botIds: UpdateGroupInput.shape.botIds,
     }),
     response: ServiceGroup,
   }),

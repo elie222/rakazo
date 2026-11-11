@@ -1335,6 +1335,10 @@ describeWithDatabase("service API surface", () => {
       false,
       false,
     ]);
+    // A group's bot count is published as the app enforces it.
+    const groupBody = JSON.stringify(document.paths["/groups"]?.post);
+    expect(groupBody).toContain('"minItems":2');
+    expect(groupBody).toContain('"maxItems":10');
     for (const [id, definition] of ROUTES) {
       const path = definition.path.replace(/:([A-Za-z]+)/g, "{$1}");
       expect([
