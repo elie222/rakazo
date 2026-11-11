@@ -28,7 +28,7 @@ export interface ClaimedSteeringMessage {
    * Who sent it: the run's own person (in the app or a connected chat), another member of the
    * chat, someone else in a connected chat, or a webhook.
    */
-  origin: "user" | "member" | "messaging" | "webhook";
+  origin: "user" | "member" | "messaging" | "webhook" | "service";
 }
 
 export async function claimSteering(
@@ -154,11 +154,14 @@ async function claimSteeringOnce(
       origin:
         item.originTrigger === "webhook"
           ? ("webhook" as const)
-          : sentByRunPerson(item)
-            ? ("user" as const)
-            : item.originTrigger === "messaging"
-              ? ("messaging" as const)
-              : ("member" as const),
+          : // Sent with one of the person's keys: their row, but not their words.
+            item.originTrigger === "service"
+            ? ("service" as const)
+            : sentByRunPerson(item)
+              ? ("user" as const)
+              : item.originTrigger === "messaging"
+                ? ("messaging" as const)
+                : ("member" as const),
     }));
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
 }
