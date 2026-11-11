@@ -70,6 +70,7 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notic
 import { createThreadHeaderStyles } from "../thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerDock } from "./thread-composer-dock";
+import { ThreadEdgeFade } from "./thread-edge-fade";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
@@ -602,6 +603,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               showLatest={showLatest}
             />
           </NewestPageCards.Provider>
+          <ThreadEdgeFade edge="top" height={headerClearance.padding + 28} />
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
             hidden={readOnly}

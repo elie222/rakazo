@@ -7,7 +7,6 @@ import { Image, Platform, Pressable, Text, View } from "react-native";
 import { KeyboardController, useKeyboardHandler } from "react-native-keyboard-controller";
 import Animated, { interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import type { MobileMessage } from "../../lib/mobile-types";
@@ -18,6 +17,7 @@ import { ComposerReplyPreview } from "../composer-reply-preview";
 import { GlassSurface } from "../glass-surface";
 import { NativeSymbol } from "../native-symbol";
 import { ReplyDismissButton } from "../reply-dismiss-button";
+import { ThreadEdgeFade } from "./thread-edge-fade";
 
 /**
  * Holds the composer above the keyboard, with the reply being written and the draft's
@@ -85,7 +85,7 @@ export function ThreadComposerDock({
   }));
 
   // Reaches from the bottom edge to about the middle of the input.
-  const fadeHeight = composerRestingPadding + 40;
+  const fadeHeight = composerRestingPadding + 48;
 
   const noticeHeight = useRef(0);
   const controlsHeight = useRef(0);
@@ -102,25 +102,7 @@ export function ThreadComposerDock({
         columnPadding,
       ]}
     >
-      {hidden ? null : (
-        // Messages scrolling under the composer fade into the background instead of showing
-        // through below it.
-        <Svg
-          pointerEvents="none"
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
-          width="100%"
-          height={fadeHeight}
-        >
-          <Defs>
-            <LinearGradient id="composer-fade" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={tokens.background} stopOpacity={0} />
-              <Stop offset="0.5" stopColor={tokens.background} stopOpacity={0.85} />
-              <Stop offset="1" stopColor={tokens.background} stopOpacity={1} />
-            </LinearGradient>
-          </Defs>
-          <Rect width="100%" height={fadeHeight} fill="url(#composer-fade)" />
-        </Svg>
-      )}
+      {hidden ? null : <ThreadEdgeFade edge="bottom" height={fadeHeight} />}
       <View
         pointerEvents="box-none"
         onLayout={(event) => {
