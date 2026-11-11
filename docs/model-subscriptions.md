@@ -25,7 +25,7 @@ Rakazo's model connection. See Anthropic's [authentication and credential rules]
 
 ## OpenCode
 
-**Yes, OpenCode Go can connect with an API key.** In **Settings → Models**, find **OpenCode Go**
+**Yes, for coding-agent workloads, through an OpenCode Go API key.** In **Settings → Models**, find **OpenCode Go**
 under **Add provider**, choose **Connect API key**, and paste your OpenCode key.
 
 Go is intended for coding-agent traffic, including compatible third-party coding agents. Check
