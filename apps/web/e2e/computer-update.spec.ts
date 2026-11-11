@@ -8,7 +8,7 @@ import {
   signup,
 } from "./helpers";
 
-test("computer maintenance shows durable background progress and failure recovery", async ({
+test("restarting the computer shows durable background progress and failure retry", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("rakazo.uiAppearance", "dark"));
@@ -16,95 +16,67 @@ test("computer maintenance shows durable background progress and failure recover
   await completeOnboarding(page);
   const botId = activeBotId(page);
   let updates: ComputerUpdate[] = [];
-  const updating: ComputerUpdate = {
-    id: "update-example",
+  const restarting: ComputerUpdate = {
+    id: "restart-example",
     botId,
     name: "Chief",
     mode: "team",
-    action: "update",
     status: "running",
     stage: "restoring",
   };
+  let finishRestart: (() => void) | undefined;
+  let holdRestart = false;
   await page.route("**/rpc/computer/updates", (route) =>
     route.fulfill({ json: { json: updates } }),
   );
-  await page.route("**/rpc/computer/update", (route) => {
-    updates = [updating];
-    return route.fulfill({ json: { json: updating } });
-  });
-  let finishRecovery: (() => void) | undefined;
-  let holdRecovery = false;
-  await page.route("**/rpc/computer/recover", async (route) => {
-    if (holdRecovery) {
+  await page.route("**/rpc/computer/restart", async (route) => {
+    if (holdRestart) {
       await new Promise<void>((resolve) => {
-        finishRecovery = resolve;
+        finishRestart = resolve;
       });
     }
-    updates = [{ ...updating, id: "recovery-example", action: "recover", stage: "preparing" }];
-    return route.fulfill({ json: { json: updates[0] } });
+    updates = [restarting];
+    return route.fulfill({ json: { json: restarting } });
   });
   await openBotPanelTab(page, "Computer");
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
-  await page.getByTestId("computer-more-button").click();
-  await expect(page.getByText("Recreate a computer that is not working.")).toBeVisible();
-  await expect(page.getByText("Restore the last saved workspace.", { exact: true })).toBeVisible();
-  await expect(page.getByText("Save the workspace and install current software.")).toBeVisible();
-  await captureScreenshot(page, testInfo, "computer-maintenance-menu");
-  await page.getByRole("menuitem", { name: "Recover computer", exact: true }).click();
-  const recoveryConfirmation = page.getByRole("alertdialog");
-  await expect(recoveryConfirmation.getByRole("heading")).toHaveText("Recover computer?");
-  await captureScreenshot(page, testInfo, "computer-maintenance-recover-confirmation");
-  await recoveryConfirmation.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByTestId("computer-more-button").click();
-  await page.getByRole("menuitem", { name: "Reset computer", exact: true }).click();
-  const resetConfirmation = page.getByRole("alertdialog");
-  await captureScreenshot(page, testInfo, "computer-maintenance-reset-confirmation");
-  await resetConfirmation.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByTestId("computer-more-button").click();
-  await page.getByRole("menuitem", { name: "Recover computer", exact: true }).click();
-  holdRecovery = true;
-  await recoveryConfirmation.getByRole("button", { name: "Recover computer", exact: true }).click();
-  await expect(recoveryConfirmation.getByRole("button", { name: "Recovering…" })).toBeDisabled();
-  await expect.poll(() => finishRecovery).toBeDefined();
-  finishRecovery!();
-  holdRecovery = false;
-  await expect(recoveryConfirmation).not.toBeVisible();
-  const recoveryProgress = page.getByTestId("computer-update-dialog");
-  await recoveryProgress.getByRole("button", { name: "Continue in Background" }).click();
-  updates = [];
-  await expect(page.getByRole("button", { name: /Recovering Team Computer/ })).toHaveCount(0);
-  await page.getByTestId("computer-more-button").click();
-  await page.getByRole("menuitem", { name: "Update computer", exact: true }).click();
+  const restart = page.getByRole("button", { name: "Restart computer", exact: true });
+  await restart.hover();
+  await captureScreenshot(page, testInfo, "computer-restart-button");
+  holdRestart = true;
+  await restart.click();
+  await expect(restart).toBeDisabled();
+  await expect.poll(() => finishRestart).toBeDefined();
+  finishRestart!();
+  holdRestart = false;
   const dialog = page.getByTestId("computer-update-dialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("heading")).toHaveText("Updating Team Computer");
+  await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
   await expect(dialog.locator('[aria-current="step"]')).toHaveText("Restoring your workspace");
   await captureScreenshot(page, testInfo, "computer-update-progress");
   await dialog.getByRole("button", { name: "Continue in Background" }).click();
   await expect(dialog).not.toBeVisible();
   await captureScreenshot(page, testInfo, "computer-update-background");
   await page.reload();
-  await page.getByRole("button", { name: /Updating Team Computer/ }).click();
+  await page.getByRole("button", { name: /Restarting Team Computer/ }).click();
   await expect(dialog).toBeVisible();
-  updates = [{ ...updating, status: "interrupted" }];
+  updates = [{ ...restarting, status: "interrupted" }];
   await expect(
-    dialog.getByText("Recovery is unavailable until the previous operation has stopped."),
+    dialog.getByText("Restart is unavailable until the previous operation has stopped."),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-update-interrupted");
   // Older wire flags cannot expose a server lock-release control in the app.
-  updates = [{ ...updating, status: "interrupted", canReleaseReservation: true }];
+  updates = [{ ...restarting, status: "interrupted", canReleaseReservation: true }];
   await expect(dialog.getByRole("button", { name: "Release computer", exact: true })).toBeHidden();
-  updates = [{ ...updating, status: "failed" }];
-  await expect(dialog.getByRole("button", { name: "Recover computer", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("heading")).toHaveText("Update failed");
+  updates = [{ ...restarting, status: "failed" }];
+  await expect(dialog.getByRole("heading")).toHaveText("Restart failed");
   await captureScreenshot(page, testInfo, "computer-update-failed");
-  await dialog.getByRole("button", { name: "Recover computer" }).click();
-  await expect(dialog.getByRole("heading")).toHaveText("Recovering Team Computer");
-  await captureScreenshot(page, testInfo, "computer-recovery-progress");
+  await dialog.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
   updates = [];
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByRole("button", { name: /Recovering Team Computer/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Restarting Team Computer/ })).toHaveCount(0);
 });

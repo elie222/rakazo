@@ -1639,7 +1639,6 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
     screenHeight: 800,
     homeRevision: null,
     busyBotName: null,
-    canUpdate: true,
     terminalAvailable: true,
     ...overrides,
   };

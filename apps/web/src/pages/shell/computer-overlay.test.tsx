@@ -54,7 +54,6 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
     screenHeight: 800,
     homeRevision: null,
     busyBotName: null,
-    canUpdate: false,
     terminalAvailable: false,
   };
 }

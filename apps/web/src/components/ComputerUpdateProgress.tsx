@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
-import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
+import { computerUpdateNeedsAttention } from "@rakazo/core";
 import { Button, cn, Dialog, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { CheckCircle2, Circle, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -18,7 +18,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
   const completed = useRef(onCompleted);
   completed.current = onCompleted;
   const [error, setError] = useState(false);
-  const [recovering, setRecovering] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   useEffect(() => computerUpdates.watch(), []);
   useEffect(() => {
     if (
@@ -41,16 +41,10 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
   ];
   const title = (update: ComputerUpdate) =>
     computerUpdateNeedsAttention(update)
-      ? update.action === "recover"
-        ? t`Recovery failed`
-        : t`Update failed`
-      : update.action === "recover"
-        ? update.mode === "team"
-          ? t`Recovering Team Computer`
-          : t`Recovering ${update.name}’s Computer`
-        : update.mode === "team"
-          ? t`Updating Team Computer`
-          : t`Updating ${update.name}’s Computer`;
+      ? t`Restart failed`
+      : update.mode === "team"
+        ? t`Restarting Team Computer`
+        : t`Restarting ${update.name}’s Computer`;
   const selected = updates.find((update) => update.id === openId);
   return (
     <>
@@ -99,9 +93,9 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               <DialogTitle className="text-heading3 font-semibold">{title(selected)}</DialogTitle>
             </div>
             {!computerUpdateNeedsAttention(selected) ? (
-              <ol className="space-y-4 px-6 py-6" aria-label={t`Update progress`}>
-                {computerUpdateStages(selected.action).map((stage, index) => {
-                  const current = computerUpdateStages(selected.action).indexOf(selected.stage);
+              <ol className="space-y-4 px-6 py-6" aria-label={t`Restart progress`}>
+                {COMPUTER_UPDATE_STAGES.map((stage, index) => {
+                  const current = COMPUTER_UPDATE_STAGES.indexOf(selected.stage);
                   const Icon = index < current ? CheckCircle2 : Circle;
                   return (
                     <li
@@ -127,20 +121,14 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 })}
               </ol>
             ) : null}
-            {computerUpdateNeedsAttention(selected) ? (
+            {selected.status === "interrupted" ? (
               <p
                 role="alert"
                 className="mx-6 my-6 rounded-xl bg-muted px-4 py-4 text-body text-muted-foreground"
               >
-                {selected.status === "interrupted" ? (
-                  <Trans>Recovery is unavailable until the previous operation has stopped.</Trans>
-                ) : (
-                  <Trans>
-                    Recovery restores the last saved workspace. Unsaved work may be lost.
-                  </Trans>
-                )}
+                <Trans>Restart is unavailable until the previous operation has stopped.</Trans>
               </p>
-            ) : (
+            ) : selected.status === "failed" ? null : (
               <span role="status" className="sr-only">
                 {labels[COMPUTER_UPDATE_STAGES.indexOf(selected.stage)]}
               </span>
@@ -167,17 +155,17 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               )}
               {selected.status === "failed" ? (
                 <Button
-                  disabled={recovering}
+                  disabled={retrying}
                   onClick={() => {
-                    setRecovering(true);
+                    setRetrying(true);
                     setError(false);
                     void computerUpdates
-                      .start(selected.botId, "recover")
+                      .start(selected.botId)
                       .catch(() => setError(true))
-                      .finally(() => setRecovering(false));
+                      .finally(() => setRetrying(false));
                   }}
                 >
-                  <Trans>Recover computer</Trans>
+                  <Trans>Try again</Trans>
                 </Button>
               ) : null}
             </div>

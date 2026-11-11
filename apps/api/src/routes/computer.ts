@@ -1,15 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   applyTeachingDesktopInput,
   COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
-  checkpointAndStopComputer,
   computerSupportsTerminal,
-  computerSupportsUpdate,
   computerUpdateView,
   diskUsedPercent,
   displayBotWorkspacePath,
@@ -17,10 +14,8 @@ import {
   expireComputerControl,
   hasActiveComputerControl,
   isComputerScreenUnavailable,
-  isSandboxGoneError,
   provisionComputer,
   queueComputerUpdate,
-  rateLimitEnds,
   releaseComputerExecutionLease,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
@@ -28,7 +23,6 @@ import {
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
-  sleepDeferReason,
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
@@ -39,16 +33,9 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, scrollDirection } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, scrollDirection } from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
-import type { ComputerRunEnd } from "@rakazo/db";
-import {
-  expireComputerExecutionLeases,
-  IsolationError,
-  isRecordNotFound,
-  parseComputerMode,
-  recordComputerRunEnd,
-} from "@rakazo/db";
+import { IsolationError, isRecordNotFound, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   acquireBootLease,
@@ -61,7 +48,6 @@ import {
   holdsComputerControl,
   keepComputerAwake,
   releaseComputerControl,
-  runComputerReplace,
   withViewOnly,
 } from "../computer-control.js";
 import { scrollPoint } from "../computer-input.js";
@@ -137,151 +123,10 @@ export function computerRoutes(ctx: RouterContext) {
         }
         return computerStatus(deps, context.actor, input.botId);
       }),
-      stop: authed.computer.stop.handler(async ({ context, input }) => {
+      restart: authed.computer.restart.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         assertNotAnotherPersonsControl(bot.computer, context.actor);
-        // A repeated Stop must not turn an unsafe guest back into an auto-startable one.
-        if (bot.computer.state === "quarantined") {
-          if (bot.computer.providerRef)
-            await deps.sandbox.stop(
-              toComputerRef(bot.computer),
-              computerContext(context.actor, bot.id, "stop"),
-            );
-          return computerStatus(deps, context.actor, input.botId);
-        }
-        const controlLeaseId = bot.computer.controlLeaseId;
-        const now = new Date();
-        const claimed = await deps.prisma.computer.updateMany({
-          where: {
-            id: bot.computer.id,
-            // Provision may resume the sandbox after Stop returns; let the boot finish first. Stop
-            // acts on the state it read, so one that changed since is busy too.
-            state: { equals: bot.computer.state, notIn: ["booting", "suspending", "quarantined"] },
-            providerRef: bot.computer.providerRef,
-            kind: bot.computer.kind,
-            maintenanceId: null,
-            executionLeases: {
-              none: { botId: { not: bot.id }, expiresAt: { gt: now } },
-            },
-          },
-          data: { state: "suspending" },
-        });
-        if (claimed.count !== 1) {
-          throw new ORPCError("CONFLICT", {
-            message: "Computer is busy",
-          });
-        }
-        const otherRun = await deps.prisma.run.findFirst({
-          where: {
-            botId: { not: bot.id },
-            status: { in: [...ACTIVE_RUN_STATUSES] },
-            bot: { computerId: bot.computer.id },
-            ...COMPUTER_USING_RUNS,
-          },
-          select: { id: true },
-        });
-        if (otherRun) {
-          await deps.prisma.computer.updateMany({
-            where: { id: bot.computer.id, state: "suspending" },
-            data: { state: bot.computer.state },
-          });
-          throw new ORPCError("CONFLICT", {
-            message: "Other Team bots are still using this computer",
-          });
-        }
-        await expireComputerExecutionLeases(deps.prisma, {
-          computerId: bot.computer.id,
-          botId: bot.id,
-        });
-        let stopping = false;
-        try {
-          let end: ComputerRunEnd = "stopped";
-          if (bot.computer.providerRef) {
-            const ctx = computerContext(context.actor, bot.id, "stop");
-            const ref = toComputerRef(bot.computer);
-            try {
-              if (bot.computer.state === "stopped" || bot.computer.state === "suspended") {
-                // It was saved when it went down and its provider keeps the disk, so a save would
-                // only wake it.
-                stopping = true;
-                await deps.sandbox.stop(ref, ctx);
-              } else {
-                await checkpointAndStopComputer(deps, bot.computer, ref, ctx, () => {
-                  stopping = true;
-                });
-              }
-            } catch (error) {
-              // The sandbox is already gone: nothing left to checkpoint or stop.
-              if (!isSandboxGoneError(error)) throw error;
-              end = "gone";
-            }
-          }
-          const stopped = await deps.prisma.computer.updateMany({
-            where: {
-              id: bot.computer.id,
-              state: "suspending",
-              providerRef: bot.computer.providerRef,
-              kind: bot.computer.kind,
-            },
-            data: {
-              state: "stopped",
-              controlHolder: "none",
-              controlLeaseId: null,
-              controlUserId: null,
-              controlLeaseExpiresAt: null,
-              controlBotId: null,
-              controlRunId: null,
-            },
-          });
-          if (stopped.count !== 1) return computerStatus(deps, context.actor, input.botId);
-          await recordComputerRunEnd(deps.prisma, bot.computer, end);
-        } catch (error) {
-          // A failed save, or a stop the provider put off, leaves the computer up: hand it back
-          // to idle sleep and metering instead of hiding it as an error.
-          const stillUp = !stopping || sleepDeferReason(error) !== undefined;
-          await deps.prisma.computer
-            .updateMany({
-              where: { id: bot.computer.id, state: "suspending" },
-              data: { state: stillUp ? bot.computer.state : "error" },
-            })
-            .catch(() => undefined);
-          if (stillUp)
-            scheduleComputerSleep(deps.jobs, bot.computer.id, undefined, rateLimitEnds(error));
-          throw error;
-        }
-        await deps.jobs.cancel(
-          computerControlExpireJobKey(bot.computer.id, controlLeaseId ?? undefined),
-        );
-        return computerStatus(deps, context.actor, input.botId);
-      }),
-      recover: authed.computer.recover.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer) throw new IsolationError();
-        assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Computer recovery is not available on this device",
-          });
-        try {
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
-        } catch (error) {
-          if (error instanceof ComputerBusyError)
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          throw error;
-        }
-      }),
-      reset: authed.computer.reset.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "reset", "reset"),
-      ),
-      update: authed.computer.update.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer) throw new IsolationError();
-        assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsUpdate(bot.computer.kind))
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Computer update is not available on this device",
-          });
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id);
         } catch (error) {

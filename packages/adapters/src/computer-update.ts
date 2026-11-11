@@ -19,7 +19,7 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
-  computerSupportsUpdate,
+  isAbandonedLifecycleClaim,
   replaceComputer,
 } from "./computer-lifecycle.js";
 
@@ -38,7 +38,6 @@ const UNCONFIRMED_HANDBACK_STATUSES = ["reserving", "revoking"] as const;
 const PENDING_HANDBACK_STATUSES = ["reserving", "revoking", "revoked"] as const;
 
 export function computerUpdateView(row: {
-  action: string;
   id: string;
   botId: string;
   status: string;
@@ -47,7 +46,6 @@ export function computerUpdateView(row: {
 }): ComputerUpdate {
   return ComputerUpdateSchema.parse({
     canReleaseReservation: false,
-    action: row.action,
     id: row.id,
     botId: row.computer.bots.some((bot) => bot.id === row.botId)
       ? row.botId
@@ -59,19 +57,12 @@ export function computerUpdateView(row: {
   });
 }
 
-export async function queueComputerUpdate(
-  deps: QueueDeps,
-  computerId: string,
-  botId: string,
-  action: "update" | "recover" = "update",
-) {
+export async function queueComputerUpdate(deps: QueueDeps, computerId: string, botId: string) {
   const prepared = await deps.prisma.$transaction(async (tx) => {
     // Mode switches lock this same row before marking a bot as switching.
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
-    if (action === "update" && !computerSupportsUpdate(computer.kind))
-      throw new Error("Computer update is not available on this device");
     // A run bound to this takeover must keep it. Maintenance does not resume that run.
     if (
       computer.controlHolder === "user" &&
@@ -122,7 +113,6 @@ export async function queueComputerUpdate(
       data: {
         computerId,
         botId,
-        action,
         // Stay reserving until the provider release is attempted. Reconciliation gives that
         // takeover back. revoking is written before the call and is not proof of release.
         // revoked is written after the provider returns; reconciliation then clears the lease.
@@ -133,7 +123,10 @@ export async function queueComputerUpdate(
       where: {
         id: computerId,
         maintenanceId: null,
-        state: { notIn: ["booting", "suspending"] },
+        // A boot or suspend a dead worker left behind is only cleared by a restart.
+        ...(isAbandonedLifecycleClaim(computer.updatedAt)
+          ? {}
+          : { state: { notIn: ["booting", "suspending"] } }),
         controlHolder: { not: "user" },
         controlLeaseId: revokeLeaseId,
         executionLeases: { none: { expiresAt: { gt: new Date() } } },
@@ -571,7 +564,6 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
     await replaceComputer(
       deps,
       update.computerId,
-      update.action === "recover" ? "recover" : "update",
       {
         operationId: updateId,
         traceId: updateId,
@@ -585,7 +577,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         controller.signal.throwIfAborted();
         const result = await deps.prisma.computerUpdate.updateMany({
           where: { id: updateId, status: "running" },
-          data: { stage: update.action === "recover" && stage === "saving" ? "preparing" : stage },
+          data: { stage },
         });
         if (result.count !== 1) throw new Error("Computer update interrupted");
       },
@@ -708,11 +700,11 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (abandoned.count !== 1) return false;
-        // Only this update can hold a booting or suspending claim under its reservation, and
-        // Recover refuses both. Unlike its worker, this cannot tell what the claim started
-        // from, so a machine still attached may be running or half destroyed: quarantine it,
-        // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
-        // claim ends as an error, as provisionComputer's failure write leaves a boot.
+        // A booting or suspending claim under this reservation is this update's own or an
+        // abandoned one it took over. This cannot tell what the claim started from, so a
+        // machine still attached may be running or half destroyed: quarantine it, as after an
+        // unconfirmed stop, so no bot uses it until it is replaced. Any other claim ends as an
+        // error, as provisionComputer's failure write leaves a boot.
         const reserved = { id: update.computerId, maintenanceId: update.id };
         await tx.computer.updateMany({
           where: { ...reserved, state: "suspending", providerRef: { not: null } },

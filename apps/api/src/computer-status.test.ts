@@ -72,7 +72,6 @@ describe("toComputerStatus", () => {
     expect(ComputerStatusSchema.parse(stopped)).toMatchObject({
       kind: "none",
       state: "stopped",
-      canUpdate: false,
       terminalAvailable: false,
       screenAvailable: false,
     });
@@ -86,31 +85,9 @@ describe("toComputerStatus", () => {
     });
     expect(ComputerStatusSchema.parse(running)).toMatchObject({
       state: "stopped",
-      canUpdate: false,
       terminalAvailable: false,
       screenAvailable: false,
     });
-  });
-
-  it("hides update on desktop computers", () => {
-    expect(
-      toComputerStatus("bot-1", {
-        kind: "desktop",
-        state: "running",
-        scope: "team",
-        controlHolder: "none",
-        homeRevision: "r1",
-      }).canUpdate,
-    ).toBe(false);
-    expect(
-      toComputerStatus("bot-1", {
-        kind: "e2b",
-        state: "running",
-        scope: "team",
-        controlHolder: "none",
-        homeRevision: "r1",
-      }).canUpdate,
-    ).toBe(true);
   });
 });
 

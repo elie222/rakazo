@@ -1,11 +1,10 @@
 import type { ComputerUpdate } from "@rakazo/contracts";
-import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 /** Shared polling and local presentation state; the server owns operation lifetime. */
 export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
-  start: (botId: string, action: "update" | "recover") => Promise<ComputerUpdate>;
+  start: (botId: string) => Promise<ComputerUpdate>;
   dismiss: (id: string) => Promise<unknown>;
 }) {
   let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
@@ -63,9 +62,9 @@ export function createComputerUpdates(client: {
       state = { ...state, openId: id };
       emit();
     },
-    async start(botId: string, action: "update" | "recover" = "update") {
+    async start(botId: string) {
       const epoch = generation;
-      const update = await client.start(botId, action);
+      const update = await client.start(botId);
       if (epoch !== generation) return;
       revision++;
       state = {
@@ -88,14 +87,6 @@ export function createComputerUpdates(client: {
       emit();
     },
   };
-}
-
-export function computerUpdateStages(
-  action: ComputerUpdate["action"],
-): readonly ComputerUpdate["stage"][] {
-  return action === "recover"
-    ? COMPUTER_UPDATE_STAGES.filter((stage) => stage !== "saving")
-    : COMPUTER_UPDATE_STAGES;
 }
 
 export function computerUpdateNeedsAttention(update: ComputerUpdate): boolean {

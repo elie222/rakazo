@@ -2932,7 +2932,6 @@ describe("computer replacement", () => {
           dataDir,
         },
         "computer-1",
-        "recover",
         context,
       );
       expect(exportWorkspace).toHaveBeenCalledOnce();
@@ -2985,49 +2984,9 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
-  it("refuses Recover and Update on a stale suspending computer", async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "team",
-          state: "suspending",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany,
-      },
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
-
-    for (const mode of ["recover", "update"] as const) {
-      await expect(
-        replaceComputer(
-          {
-            prisma,
-            sandbox: new FakeSandboxProvider(),
-            home: {} as AgentHomeStore,
-            jobs: {} as JobPublisher,
-            events: {} as ThreadEvents,
-          },
-          "computer-1",
-          mode,
-          context,
-        ),
-      ).rejects.toBeInstanceOf(ComputerBusyError);
-    }
-    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it("resets a computer a crashed worker left suspending", async () => {
@@ -3066,7 +3025,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3110,7 +3068,6 @@ describe("computer replacement", () => {
             events: {} as ThreadEvents,
           },
           "computer-1",
-          "reset",
           context,
         ),
       ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3150,7 +3107,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3192,7 +3148,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3233,7 +3188,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3275,7 +3229,6 @@ describe("computer replacement", () => {
             events: {} as ThreadEvents,
           },
           "computer-1",
-          "reset",
           context,
         ),
       ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3317,7 +3270,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3356,7 +3308,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "recover",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3389,7 +3340,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "recover",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3422,7 +3372,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3482,7 +3431,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3496,155 +3444,6 @@ describe("computer replacement", () => {
     );
     expect(updateMany).toHaveBeenCalledTimes(2);
     expect(prisma.run.findFirst).not.toHaveBeenCalled();
-  });
-
-  it("hands an idle takeover back only as part of the reset claim", async () => {
-    const setScreenControl = vi.fn().mockRejectedValue(new Error("provider unavailable"));
-    const destroy = vi.fn();
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue(idleTakeoverComputer()),
-        updateMany,
-      },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
-
-    await expect(
-      replaceComputer(
-        replaceDeps(prisma, { setScreenControl, destroy }),
-        "computer-1",
-        "reset",
-        context,
-        "none",
-        undefined,
-        { handBackIdleTakeover: true },
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-
-    expect(destroy).not.toHaveBeenCalled();
-    expect(updateMany).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        where: expect.objectContaining({
-          controlHolder: "user",
-          controlBotId: "bot-1",
-          controlRunId: null,
-          controlLeaseId: "lease-1",
-        }),
-        data: expect.objectContaining({
-          state: "suspending",
-          controlHolder: "none",
-          controlLeaseId: null,
-        }),
-      }),
-    );
-    expect(updateMany).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        data: expect.objectContaining({
-          state: "running",
-          controlHolder: "user",
-          controlLeaseId: "lease-1",
-          controlBotId: "bot-1",
-          controlRunId: null,
-        }),
-      }),
-    );
-  });
-
-  it("does not revoke the screen when the reset claim loses", async () => {
-    const setScreenControl = vi.fn();
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue(idleTakeoverComputer()),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-      },
-      run: { findFirst: vi.fn() },
-    } as unknown as PrismaClient;
-
-    await expect(
-      replaceComputer(
-        replaceDeps(prisma, { setScreenControl }),
-        "computer-1",
-        "reset",
-        context,
-        "none",
-        undefined,
-        { handBackIdleTakeover: true },
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-
-    expect(setScreenControl).not.toHaveBeenCalled();
-    expect(prisma.run.findFirst).not.toHaveBeenCalled();
-  });
-
-  it("does not resume a run waiting on the takeover during reset", async () => {
-    const setScreenControl = vi.fn();
-    const updateMany = vi.fn();
-    const prisma = {
-      computer: {
-        findUniqueOrThrow: vi
-          .fn()
-          .mockResolvedValue(idleTakeoverComputer({ controlRunId: "run-waiting" })),
-        updateMany,
-      },
-      run: { findFirst: vi.fn() },
-    } as unknown as PrismaClient;
-
-    await expect(
-      replaceComputer(
-        replaceDeps(prisma, { setScreenControl }),
-        "computer-1",
-        "reset",
-        context,
-        "none",
-        undefined,
-        { handBackIdleTakeover: true },
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-
-    expect(updateMany).not.toHaveBeenCalled();
-    expect(setScreenControl).not.toHaveBeenCalled();
-  });
-
-  it("blocks reset while a failed revoke still holds a lease and a waiting run", async () => {
-    const setScreenControl = vi.fn();
-    const updateMany = vi.fn();
-    const prisma = {
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue(
-          idleTakeoverComputer({
-            controlHolder: "none",
-            controlBotId: "bot-1",
-            controlRunId: "run-waiting",
-          }),
-        ),
-        updateMany,
-      },
-      run: { findFirst: vi.fn() },
-    } as unknown as PrismaClient;
-
-    await expect(
-      replaceComputer(
-        replaceDeps(prisma, { setScreenControl }),
-        "computer-1",
-        "reset",
-        context,
-        "none",
-        undefined,
-        { handBackIdleTakeover: true },
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-
-    expect(updateMany).not.toHaveBeenCalled();
-    expect(setScreenControl).not.toHaveBeenCalled();
   });
 
   it("blocks reset while expired control revocation is still in progress", async () => {
@@ -3684,7 +3483,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toThrow("computer control revocation is still in progress");
@@ -3724,7 +3522,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "recover",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3779,7 +3576,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "recover",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3835,7 +3631,6 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "update",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -3905,7 +3700,6 @@ describe("computer replacement", () => {
           dataDir,
         },
         "computer-1",
-        "recover",
         context,
       );
       expect(updateMany).toHaveBeenNthCalledWith(
@@ -3950,14 +3744,13 @@ describe("computer replacement", () => {
           events: {} as ThreadEvents,
         },
         "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
     expect(prisma.run.findFirst).not.toHaveBeenCalled();
   });
 
-  it("continues recover when checkpoint fails with an ordinary provider error", async () => {
+  it("restarts a computer in error when its save fails with an ordinary provider error", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
     const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
     const home = new LocalAgentHomeStore(homeRoot);
@@ -3973,7 +3766,7 @@ describe("computer replacement", () => {
       providerRef: first.providerRef,
       kind: "fake",
       scope: "dedicated",
-      state: "running",
+      state: "error",
       controlLeaseId: null,
       updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       homeRevision: null,
@@ -4015,7 +3808,6 @@ describe("computer replacement", () => {
           dataDir,
         },
         "computer-1",
-        "recover",
         context,
       );
       expect(exportWorkspace).toHaveBeenCalledOnce();
@@ -4080,7 +3872,6 @@ describe("computer replacement", () => {
             dataDir,
           },
           "computer-1",
-          "update",
           context,
         ),
       ).rejects.toThrow("ECONNRESET");
@@ -4096,28 +3887,7 @@ describe("computer replacement", () => {
   });
 });
 
-function idleTakeoverComputer(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "computer-1",
-    homeKey: "bot-1",
-    providerRef: "provider-1",
-    kind: "fake",
-    scope: "dedicated",
-    state: "running",
-    controlHolder: "user",
-    controlLeaseId: "lease-1",
-    controlLeaseExpiresAt: new Date("2026-01-01T00:00:00.000Z"),
-    controlBotId: "bot-1",
-    controlRunId: null,
-    updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-    maintenanceId: null,
-    spaceId: "workspace-1",
-    userId: "user-1",
-    ...overrides,
-  };
-}
-
-function replaceDeps(
+function _replaceDeps(
   prisma: PrismaClient,
   sandbox: { setScreenControl?: ReturnType<typeof vi.fn>; destroy?: ReturnType<typeof vi.fn> },
 ) {

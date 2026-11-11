@@ -151,21 +151,21 @@ Build the computer image, then run `VERIFY_DOCKER_TEAM_SCREENS=1 pnpm exec vites
 
 ## Computer maintenance
 
-Update and recovery run as durable background jobs. A computer-wide reservation
-excludes new execution leases, stop, takeover, idle suspension, and computer-mode
+Restart runs as a durable background job. A computer-wide reservation
+excludes new execution leases, takeover, idle suspension, and computer-mode
 changes while the operation saves and replaces the workspace. Progress is stored
 separately from the computer's provisioning fence. Web and Electron show a dialog
 or compact background pill; mobile uses a native sheet. Reopening the app restores
 active operations and failures from the API.
 
-Update explicitly rebuilds with the configured provider/image; `canUpdate` means
-the computer supports that action, not that a newer image was detected. Provider
-migration and image-version discovery are not part of this UI. Updates checkpoint
-live work before teardown; an update that fails before teardown leaves a
-running computer running, so Recover can still save that work first. Recover
-stops rather than rebuild when it exported the work but cannot store or record
-it. Recovery can fall back to the last saved workspace, so its failure action
-warns that unsaved work may be lost.
+Restart rebuilds with the configured provider/image; it does not detect whether a
+newer image exists, and nothing restarts a computer on its own for new software.
+A running or errored computer is saved before teardown. When that save fails on a
+computer that is in error, gone, damaged or unresponsive, the restart falls back to
+the last saved workspace, or a fresh one when nothing was saved. A save that fails
+on a working computer, or an export that cannot be stored or recorded, stops the
+restart and leaves the computer running with its live work. A stuck boot or
+suspend claim older than an execution-lease TTL can be restarted too.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
@@ -175,8 +175,8 @@ settled an hour after it was marked interrupted, the reconciler records the oper
 as failed and frees the computer, assuming by then that the provider calls have ended.
 The reconciler cannot know which state an unfinished save or teardown started from,
 so a computer with its machine still attached is quarantined, as after a stop the
-provider could not confirm, and bots cannot use it until Recover, Update or Reset
-replaces it. Any other computer left mid-save, mid-teardown or mid-boot becomes an
-error. Recover is then available. Progress reports
+provider could not confirm, and bots cannot use it until a restart replaces it.
+Any other computer left mid-save, mid-teardown or mid-boot becomes an error, which
+a restart also replaces. Progress reports
 actual lifecycle stages rather than estimated percentages; workspace files and
 browser profiles are portable, while system packages outside the workspace are not.

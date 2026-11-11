@@ -17,11 +17,8 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);
   await expect(sidePanel.getByTestId("teach-start-button")).toHaveCount(0);
-  await expect(sidePanel.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
-  await expect(sidePanel.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
-  await expect(sidePanel.getByRole("button", { name: "Update computer" })).toHaveCount(0);
+  await expect(sidePanel.getByRole("button", { name: "Restart computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Take control" })).toHaveCount(0);
-  await expect(sidePanel.getByTestId("computer-more-button")).toHaveCount(0);
   await expect(sidePanel.getByTestId("computer-preview")).toBeVisible();
   await captureScreenshot(page, testInfo, "teach-sidepanel-simple");
 
@@ -35,14 +32,7 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await expect(chrome.getByText("You have control", { exact: true })).toBeVisible();
   await expect(chrome.getByRole("button", { name: "Release control", exact: true })).toBeVisible();
   await expect(chrome.getByTestId("teach-start-button")).toBeVisible();
-  const more = chrome.getByTestId("computer-more-button");
-  if (await more.isVisible().catch(() => false)) {
-    await more.click();
-    await expect(page.getByTestId("computer-more-menu")).toBeVisible();
-    // Close via the More control again (Escape must not close the computer overlay).
-    await more.click();
-    await expect(page.getByTestId("computer-more-menu")).toHaveCount(0);
-  }
+  await expect(chrome.getByRole("button", { name: "Restart computer" })).toBeVisible();
   await captureScreenshot(page, testInfo, "teach-computer-chrome");
 
   const teachStart = chrome.getByTestId("teach-start-button");

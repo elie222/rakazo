@@ -811,10 +811,7 @@ export const appContract = {
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),
-    stop: oc.input(botId).output(ComputerStatusSchema),
-    recover: oc.input(botId).output(ComputerUpdateSchema),
-    reset: oc.input(botId).output(ComputerStatusSchema),
-    update: oc.input(botId).output(ComputerUpdateSchema),
+    restart: oc.input(botId).output(ComputerUpdateSchema),
     updates: oc.output(z.array(ComputerUpdateSchema)),
     releaseInterrupted: oc
       .input(z.object({ id: Id, workersStopped: z.literal(true) }))

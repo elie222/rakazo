@@ -43,12 +43,9 @@ To have a bot react to files changing, use a [routine](./routines.md) that watch
 
 ## Fix a computer
 
-Open the computer and choose **More computer actions**:
-
-- **Stop computer**: shut it down now. It starts again when needed.
-- **Update computer**: save the workspace and install current software.
-- **Recover computer**: recreate a computer that is not working.
-- **Reset computer**: go back to the last saved workspace. Unsaved work on the computer is lost.
+Open the computer and choose **Restart computer**. It saves the workspace and starts the computer
+again on current software. A computer that is not working comes back with its last saved
+workspace. Computers stop by themselves when idle.
 
 ## Use your own computer
 

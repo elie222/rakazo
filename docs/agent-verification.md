@@ -140,7 +140,7 @@ test requires `OPENROUTER_API_KEY` and the selected sandbox's credential
 (`BOAT_API_KEY` or `E2B_API_KEY`) and incurs inference and sandbox usage.
 It checks visual observation, a real browser click,
 terminal access and exact file contents. It then destroys the sandbox outside
-the app and calls `computer/recover`, requiring a new sandbox with the saved
+the app and calls `computer/restart`, requiring a new sandbox with the saved
 file restored. `computer/boot` returns the stored running state and does not
 request recovery from an externally deleted sandbox.
 

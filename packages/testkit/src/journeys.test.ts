@@ -206,25 +206,19 @@ describeJourneys("required product journeys", () => {
         yield* exportWorkspace(ref, context);
       });
     try {
-      const update = await rpc<{ id: string }>(app, cookie, "computer/update", { botId: bot.id });
+      const update = await rpc<{ id: string }>(app, cookie, "computer/restart", { botId: bot.id });
       await waitForDatabase(
         async () =>
           (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).stage ===
           "saving",
       );
       expect(await rpc(app, outsider, "computer/updates")).toEqual([]);
-      const duplicate = await app.request("/rpc/computer/update", {
+      const duplicate = await app.request("/rpc/computer/restart", {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
         body: JSON.stringify({ json: { botId: bot.id } }),
       });
       expect(duplicate.status).toBe(409);
-      const stopped = await app.request("/rpc/computer/stop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ json: { botId: bot.id } }),
-      });
-      expect(stopped.status).toBe(409);
       const switched = await app.request("/rpc/bots/setComputer", {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -257,7 +251,7 @@ describeJourneys("required product journeys", () => {
     }
   });
 
-  it("updating a computer the user has taken over hands control back first", async () => {
+  it("restarting a computer the user has taken over hands control back first", async () => {
     const cookie = await signup(app, `maintenance-control-${stamp}@rakazo.test`, "Maintenance");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Shell user",
@@ -274,65 +268,12 @@ describeJourneys("required product journeys", () => {
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     // Opening the Shell tab holds a user takeover with no run waiting on it.
     await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-    const update = await rpc<{ id: string }>(app, cookie, "computer/update", { botId: bot.id });
+    const update = await rpc<{ id: string }>(app, cookie, "computer/restart", { botId: bot.id });
     await waitForDatabase(
       async () =>
         (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
         "completed",
     );
-    const computer = await prisma.computer.findFirstOrThrow({
-      where: { bots: { some: { id: bot.id } } },
-    });
-    expect(computer.controlHolder).not.toBe("user");
-    expect(computer.controlLeaseId).toBeNull();
-  });
-
-  it("recovering a computer the user has taken over hands control back first", async () => {
-    const cookie = await signup(app, `maintenance-recover-${stamp}@rakazo.test`, "Maintenance");
-    const bot = await rpc<Bot>(app, cookie, "bots/create", {
-      name: "Shell user",
-      title: "Shell user",
-      description: "Uses the shell",
-      instructions: "Help.",
-    });
-    await waitForDatabase(
-      async () =>
-        (await prisma.run.count({
-          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
-        })) === 0,
-    );
-    await rpc(app, cookie, "computer/boot", { botId: bot.id });
-    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-    const update = await rpc<{ id: string }>(app, cookie, "computer/recover", { botId: bot.id });
-    await waitForDatabase(
-      async () =>
-        (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
-        "completed",
-    );
-    const computer = await prisma.computer.findFirstOrThrow({
-      where: { bots: { some: { id: bot.id } } },
-    });
-    expect(computer.controlHolder).not.toBe("user");
-    expect(computer.controlLeaseId).toBeNull();
-  });
-
-  it("resetting a computer the user has taken over hands control back first", async () => {
-    const cookie = await signup(app, `maintenance-reset-${stamp}@rakazo.test`, "Maintenance");
-    const bot = await rpc<Bot>(app, cookie, "bots/create", {
-      name: "Shell user",
-      title: "Shell user",
-      description: "Uses the shell",
-      instructions: "Help.",
-    });
-    await waitForDatabase(
-      async () =>
-        (await prisma.run.count({
-          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
-        })) === 0,
-    );
-    await rpc(app, cookie, "computer/boot", { botId: bot.id });
-    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-    await rpc(app, cookie, "computer/reset", { botId: bot.id });
     const computer = await prisma.computer.findFirstOrThrow({
       where: { bots: { some: { id: bot.id } } },
     });
@@ -370,10 +311,8 @@ describeJourneys("required product journeys", () => {
       return computer.controlHolder === "user" && computer.controlRunId === runId;
     });
 
-    for (const proc of ["computer/update", "computer/recover", "computer/reset"] as const) {
-      const response = await raw(app, cookie, proc, { botId: bot.id });
-      expect(response.status).toBe(409);
-    }
+    const response = await raw(app, cookie, "computer/restart", { botId: bot.id });
+    expect(response.status).toBe(409);
 
     const run = await prisma.run.findUniqueOrThrow({ where: { id: runId } });
     expect(run.status).toBe("waiting_takeover");
@@ -542,7 +481,12 @@ describeJourneys("required product journeys", () => {
     expect(chiefFile.content).toContain("isolation-ok");
     const computer = await rpc<{ state: string }>(app, ada, "computer/status", { botId: chief.id });
     expect(computer.state).toBe("running");
-    await rpc(app, ada, "computer/stop", { botId: chief.id });
+    const restart = await rpc<{ id: string }>(app, ada, "computer/restart", { botId: chief.id });
+    await waitForDatabase(
+      async () =>
+        (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: restart.id } })).status ===
+        "completed",
+    );
     const persisted = await rpc<{ content: string }>(app, ada, "computer/readFile", {
       botId: chief.id,
       path: "notes/result.txt",
@@ -2160,7 +2104,7 @@ describeJourneys("required product journeys", () => {
     const listed = await rpc<Array<{ id: string; status: string }>>(app, cookie, "bots/list");
     expect(listed.find((row) => row.id === bot.id)?.status).toBe("idle");
 
-    // The helper never uses the computer, so it holds neither the shared one, an update nor a switch.
+    // The helper never uses the computer, so it holds neither a restart nor a switch.
     const peer = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Peer",
       title: "",
@@ -2168,8 +2112,7 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: false,
     });
-    await rpc(app, cookie, "computer/stop", { botId: peer.id });
-    const update = await rpc<{ id: string }>(app, cookie, "computer/update", { botId: bot.id });
+    const update = await rpc<{ id: string }>(app, cookie, "computer/restart", { botId: bot.id });
     await waitForDatabase(
       async () =>
         (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===

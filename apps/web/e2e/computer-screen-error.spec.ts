@@ -57,10 +57,9 @@ test(
     await captureScreenshot(page, testInfo, "computer-screen-connection-error");
 
     await expect(preview.getByRole("alert")).toContainText("Screen not connected");
-    await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
-    await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
-    await captureScreenshot(page, testInfo, "computer-screen-recover-confirm");
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(
+      preview.getByRole("button", { name: "Restart computer", exact: true }),
+    ).toBeVisible();
     failScreen = false;
     await preview.getByRole("button", { name: "Retry screen" }).click();
     await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
@@ -74,13 +73,9 @@ test(
     await expect(page.getByRole("alert")).toContainText("temporarily busy");
     await captureScreenshot(page, testInfo, "computer-full-screen-connection-error");
 
-    await page
-      .getByRole("alert")
-      .getByRole("button", { name: "Recover computer", exact: true })
-      .click();
-    await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
-    await captureScreenshot(page, testInfo, "computer-full-screen-recover-confirm");
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(
+      page.getByRole("alert").getByRole("button", { name: "Restart computer", exact: true }),
+    ).toBeVisible();
     failScreen = false;
     await page.getByRole("button", { name: "Retry screen" }).click();
     await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
@@ -89,7 +84,7 @@ test(
 );
 
 test(
-  "a running computer without a screen URL offers recovery",
+  "a running computer without a screen URL offers a restart",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     await signup(page, `screen-missing-${Date.now()}@rakazo.test`, "password12", "Screen Missing");
@@ -109,19 +104,33 @@ test(
     await expect(preview.getByRole("alert")).toContainText("Screen not connected");
     await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
     await expect(
-      preview.getByRole("button", { name: "Recover computer", exact: true }),
+      preview.getByRole("button", { name: "Restart computer", exact: true }),
     ).toBeVisible();
     await captureScreenshot(page, testInfo, "computer-screen-url-missing");
 
-    await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
-    const confirmation = page.getByRole("alertdialog");
-    await expect(confirmation).toContainText("Recover computer?");
-    // A control change re-reads the screen in the background; the open confirmation stays.
+    const restarting = {
+      id: "restart-example",
+      botId,
+      name: "Screen Missing",
+      mode: "team",
+      status: "running",
+      stage: "preparing",
+    };
+    await page.route("**/rpc/computer/updates", (route) =>
+      route.fulfill({ json: { json: [restarting] } }),
+    );
+    await page.route("**/rpc/computer/restart", (route) =>
+      route.fulfill({ json: { json: restarting } }),
+    );
+    await preview.getByRole("button", { name: "Restart computer", exact: true }).click();
+    const progress = page.getByTestId("computer-update-dialog");
+    await expect(progress.getByRole("heading")).toContainText("Restarting");
+    // A control change re-reads the screen in the background; the open progress stays.
     const readsBefore = screenReads;
     await rpc(page, "computer/takeover", { botId });
     await expect.poll(() => screenReads).toBeGreaterThan(readsBefore);
     await page.waitForTimeout(500);
-    await expect(confirmation).toContainText("Recover computer?");
+    await expect(progress.getByRole("heading")).toContainText("Restarting");
   },
 );
 
@@ -202,7 +211,7 @@ test("a takeover failure does not diagnose a screen connection failure", async (
   await expect(page.getByRole("alert")).toContainText("Could not take control");
   await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("alert").getByRole("button", { name: "Recover computer", exact: true }),
+    page.getByRole("alert").getByRole("button", { name: "Restart computer", exact: true }),
   ).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-takeover-error");
 });

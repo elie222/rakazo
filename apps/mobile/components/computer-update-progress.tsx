@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
-import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
+import { computerUpdateNeedsAttention } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -35,16 +35,10 @@ export function ComputerUpdateProgress() {
   ];
   const title = (update: ComputerUpdate) =>
     computerUpdateNeedsAttention(update)
-      ? update.action === "recover"
-        ? t`Recovery failed`
-        : t`Update failed`
-      : update.action === "recover"
-        ? update.mode === "team"
-          ? t`Recovering Team Computer`
-          : t`Recovering ${ph({ name: update.name })}’s Computer`
-        : update.mode === "team"
-          ? t`Updating Team Computer`
-          : t`Updating ${ph({ name: update.name })}’s Computer`;
+      ? t`Restart failed`
+      : update.mode === "team"
+        ? t`Restarting Team Computer`
+        : t`Restarting ${ph({ name: update.name })}’s Computer`;
   const selected = updates.find((item) => item.id === openId);
   if (!authenticated) return null;
   return (
@@ -90,15 +84,13 @@ export function ComputerUpdateProgress() {
             <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
               {title(selected)}
             </Text>
-            {computerUpdateNeedsAttention(selected) ? (
+            {selected.status === "interrupted" ? (
               <Text style={{ color: tokens.mutedForeground }}>
-                {selected.status === "interrupted"
-                  ? t`Recovery is unavailable until the previous operation has stopped.`
-                  : t`Recovery restores the last saved workspace. Unsaved work may be lost.`}
+                {t`Restart is unavailable until the previous operation has stopped.`}
               </Text>
-            ) : (
-              computerUpdateStages(selected.action).map((stage, index) => {
-                const current = computerUpdateStages(selected.action).indexOf(selected.stage);
+            ) : selected.status === "failed" ? null : (
+              COMPUTER_UPDATE_STAGES.map((stage, index) => {
+                const current = COMPUTER_UPDATE_STAGES.indexOf(selected.stage);
                 return (
                   <View key={stage} style={styles.step}>
                     {index === current ? (
@@ -130,13 +122,13 @@ export function ComputerUpdateProgress() {
             ) : null}
             {selected.status === "failed" ? (
               <NativeActionButton
-                label={t`Recover computer`}
+                label={t`Try again`}
                 busy={busy}
                 onPress={() => {
                   setBusy(true);
                   setError(false);
                   void computerUpdates
-                    .start(selected.botId, "recover")
+                    .start(selected.botId)
                     .catch(() => setError(true))
                     .finally(() => setBusy(false));
                 }}

@@ -7,7 +7,6 @@ const update: ComputerUpdate = {
   botId: "bot-1",
   name: "Writer",
   mode: "team",
-  action: "update",
   status: "running",
   stage: "saving",
 };

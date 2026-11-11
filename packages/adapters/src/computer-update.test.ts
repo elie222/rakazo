@@ -32,7 +32,6 @@ function fixture(status = "queued") {
     id: "update-1",
     computerId: "computer-1",
     botId: "bot-1",
-    action: "update",
     status,
     stage: "preparing",
     updatedAt: new Date(0),
@@ -98,7 +97,7 @@ function fixture(status = "queued") {
 describe("background computer maintenance", () => {
   it("persists stages and releases its reservation only after completion; redelivery is harmless", async () => {
     const { row, computer, deps, jobs } = fixture();
-    replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
+    replacement.mockImplementationOnce(async (_deps, _id, _ctx, _holder, progress) => {
       for (const stage of ["saving", "recreating", "restoring", "reconnecting"] as const)
         await progress?.(stage);
       return {} as Awaited<ReturnType<typeof replaceComputer>>;
@@ -170,7 +169,7 @@ describe("background computer maintenance", () => {
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
-    replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
+    replacement.mockImplementationOnce(async (_deps, _id, _ctx, _holder, progress) => {
       await pending;
       await progress?.("recreating");
       return {} as Awaited<ReturnType<typeof replaceComputer>>;
@@ -794,7 +793,6 @@ function takeoverQueue(
     id: "update-1",
     computerId: computerRow.id,
     botId: "bot-1",
-    action: "update",
     status: "queued",
     stage: "preparing",
     computer: { ...computerRow, bots: [{ id: "bot-1", name: "Writer" }] },

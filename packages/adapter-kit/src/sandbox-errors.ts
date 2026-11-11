@@ -103,7 +103,7 @@ export class WorkspaceTooLargeError extends Error {
 export class SandboxDamagedError extends Error {
   readonly code = "SANDBOX_DAMAGED";
   constructor(options?: { cause?: unknown }) {
-    super("This computer's system is damaged. Recover the computer to rebuild it.", options);
+    super("This computer's system is damaged. Restart the computer to rebuild it.", options);
     this.name = "SandboxDamagedError";
   }
 }

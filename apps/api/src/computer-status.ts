@@ -1,7 +1,6 @@
 import {
   computerScreenSize,
   computerSupportsTerminal,
-  computerSupportsUpdate,
   DISK_WARNING_PERCENT,
   diskUsedPercent,
   holdsUserControl,
@@ -118,7 +117,6 @@ export function toComputerStatus(
     screenHeight: screen.height,
     homeRevision: computer?.homeRevision ?? null,
     busyBotName,
-    canUpdate: computerSupportsUpdate(kind),
     terminalAvailable: computerSupportsTerminal(kind),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };

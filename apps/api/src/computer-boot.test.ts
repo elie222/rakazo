@@ -199,7 +199,7 @@ describe("computer boot", () => {
     expect(lifecycle.releaseComputerExecutionLease).toHaveBeenCalledOnce();
   });
 
-  it("tells the user to recover a computer that stays damaged after its automatic recovery", async () => {
+  it("tells the user to restart a computer that stays damaged after its automatic recovery", async () => {
     lifecycle.provisionComputer.mockRejectedValue(new SandboxDamagedError());
     const prisma = {
       spaceMember: { count: vi.fn(async () => 1) },
@@ -209,96 +209,7 @@ describe("computer boot", () => {
     const response = await boot(prisma);
 
     expect(response?.status).toBe(409);
-    expect(await response?.text()).toContain("Recover the computer to rebuild it.");
+    expect(await response?.text()).toContain("Restart the computer to rebuild it.");
     expect(lifecycle.releaseComputerExecutionLease).toHaveBeenCalledOnce();
-  });
-});
-
-describe("computer stop", () => {
-  async function stopDamaged(stop: ReturnType<typeof vi.fn>) {
-    const computer = {
-      id: "computer-1",
-      state: "running",
-      providerRef: "boat-1",
-      kind: "boat",
-      homeKey: "home-1",
-      scope: "dedicated",
-      controlLeaseId: null,
-    };
-    const prisma = {
-      spaceMember: { count: vi.fn(async () => 1) },
-      bot: { findFirst: vi.fn().mockResolvedValue({ ...stoppedBot, computer }) },
-      computer: {
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        update: vi.fn().mockResolvedValue(computer),
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
-      },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-      computerExecutionLease: {
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        deleteMany: vi.fn(),
-        findUnique: vi.fn().mockResolvedValue(null),
-      },
-      computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    } as unknown as PrismaClient;
-    const sandbox = {
-      // biome-ignore lint/correctness/useYield: the damaged computer fails before its first file
-      exportWorkspace: async function* () {
-        throw new SandboxDamagedError();
-      },
-      stop,
-    };
-    const deps = {
-      ...routerDeps(prisma),
-      sandbox,
-      home: {},
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
-    } as unknown as RouterDeps;
-    const { response } = await new RPCHandler(createRouter(deps)).handle(
-      new Request("https://api.example.test/rpc/computer/stop", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: { botId: "bot-1" } }),
-      }),
-      { prefix: "/rpc", context: { actor } },
-    );
-    return { response, prisma };
-  }
-
-  it("stops a damaged computer and records it stopped", async () => {
-    const stop = vi.fn().mockResolvedValue(undefined);
-    const { response, prisma } = await stopDamaged(stop);
-
-    expect(response?.status).toBe(200);
-    expect(stop).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-      discardUnsaved: true,
-    });
-    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-1", state: "suspending", providerRef: "boat-1", kind: "boat" },
-      data: expect.objectContaining({ state: "stopped" }),
-    });
-    expect(prisma.computerRun.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ endReason: "stopped" }) }),
-    );
-    expect(prisma.computerExecutionLease.updateMany).toHaveBeenCalledWith({
-      where: { computerId: "computer-1", botId: "bot-1" },
-      data: { expiresAt: new Date(0) },
-    });
-    expect(prisma.computerExecutionLease.deleteMany).not.toHaveBeenCalled();
-  });
-
-  it("marks a damaged computer whose stop fails as errored", async () => {
-    const stop = vi.fn().mockRejectedValue(new Error("Boat refused the stop"));
-    const { response, prisma } = await stopDamaged(stop);
-
-    expect(response?.status).toBe(500);
-    expect(stop).toHaveBeenCalledOnce();
-    expect(prisma.computer.updateMany).toHaveBeenLastCalledWith({
-      where: { id: "computer-1", state: "suspending" },
-      data: { state: "error" },
-    });
-    expect(prisma.computer.update).not.toHaveBeenCalled();
   });
 });

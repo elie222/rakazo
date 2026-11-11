@@ -1783,7 +1783,6 @@ model BrowserProfile {
 }
 
 model ComputerUpdate {
-  action     String   @default("update")
   id         String   @id @default(cuid())
   computerId String
   computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)

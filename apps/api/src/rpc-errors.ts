@@ -81,7 +81,7 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} computer allowance used up`);
     throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
-  // A retry cannot fix a damaged computer; its message tells the user to Recover it.
+  // A retry cannot fix a damaged computer; its message tells the user to restart it.
   if (error instanceof SandboxDamagedError) {
     getLogger().warn(`rpc ${path.join("/")} computer damaged`);
     throw new ORPCError("CONFLICT", { message: error.message, cause: error });

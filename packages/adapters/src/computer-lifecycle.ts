@@ -7,7 +7,6 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
-  computerControlExpireJobKey,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -38,9 +37,6 @@ import {
   clearInactiveUserComputerControl,
   expireComputerControl,
   hasActiveComputerControl,
-  holdsUserControl,
-  isIdleOwnComputerTakeover,
-  revokeScreenControl,
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
 import {
@@ -79,7 +75,10 @@ const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
  * Older ones are abandoned: the worker died mid-transition, and Reset or a later
  * provision may reclaim them. Missing stamps fail closed (treated as live).
  */
-function isAbandonedLifecycleClaim(updatedAt: Date | null | undefined, now = Date.now()): boolean {
+export function isAbandonedLifecycleClaim(
+  updatedAt: Date | null | undefined,
+  now = Date.now(),
+): boolean {
   return updatedAt instanceof Date && now - updatedAt.getTime() >= BOOT_CLAIM_STALE_MS;
 }
 
@@ -1009,8 +1008,6 @@ export async function releaseComputerExecutionLease(
   });
 }
 
-export type ComputerReplaceMode = "recover" | "reset" | "update";
-
 export function computerSupportsUpdate(kind: string): boolean {
   return kind !== "desktop" && kind !== "wuying" && kind !== "none";
 }
@@ -1030,6 +1027,10 @@ export function computerSupportsTerminal(kind: string): boolean {
   );
 }
 
+/**
+ * Recreates the computer on current software. The workspace is saved first when the computer can
+ * still be reached; otherwise the replacement restores the last saved workspace, or starts fresh.
+ */
 export async function replaceComputer(
   deps: {
     prisma: PrismaClient;
@@ -1040,44 +1041,25 @@ export async function replaceComputer(
     dataDir?: string;
   },
   computerId: string,
-  mode: ComputerReplaceMode,
   context: AdapterContext,
   controlHolder: "bot" | "none" = "none",
   onProgress?: ComputerUpdateProgress,
-  options?: { handBackIdleTakeover?: boolean },
 ): Promise<ComputerRef> {
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
     throw new ComputerBusyError();
   const botId = context.botId;
   if (!botId) throw new Error("computer replacement requires a bot id");
-  // Leave a takeover a run is waiting on. Expiry would resume that run.
-  if (
-    options?.handBackIdleTakeover &&
-    existing.controlHolder === "user" &&
-    existing.controlBotId === botId &&
-    existing.controlRunId
-  ) {
-    throw new ComputerBusyError();
-  }
-  // Only the person holding the screen can hand it back by resetting; another member's
-  // session is never claimed out from under them.
-  const handBackIdleTakeover =
-    options?.handBackIdleTakeover === true &&
-    isIdleOwnComputerTakeover(existing, botId) &&
-    holdsUserControl(existing, context.userId);
-  if (!handBackIdleTakeover && existing.controlLeaseId && !hasActiveComputerControl(existing)) {
-    if (options?.handBackIdleTakeover && existing.controlRunId) throw new ComputerBusyError();
+  if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
     const expired = await expireComputerControl(deps, existing.id, existing.controlLeaseId);
     existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
-    // Failed provider revoke keeps the lease for retry; do not wipe it and continue reset.
+    // Failed provider revoke keeps the lease for retry; do not wipe it and continue.
     if (!expired && existing.controlLeaseId && !hasActiveComputerControl(existing)) {
       throw new Error("computer control revocation is still in progress");
     }
   }
-  // Orphaned controlHolder=user with no lease id can be cleared for reset/recover.
+  // Orphaned controlHolder=user with no lease id can be cleared.
   if (
-    !handBackIdleTakeover &&
     existing.controlHolder === "user" &&
     !hasActiveComputerControl(existing) &&
     !existing.controlLeaseId
@@ -1088,20 +1070,12 @@ export async function replaceComputer(
       throw new Error("computer control revocation is still in progress");
     }
   }
-  if (hasActiveComputerControl(existing) && !handBackIdleTakeover) {
-    throw new ComputerBusyError();
-  }
-  // Reset is the in-product recovery for a hung suspend. Recover and update still refuse
-  // so they cannot destroy a computer that is only stuck, not requested as a Reset.
-  if (existing.state === "suspending" && mode !== "reset") {
-    throw new ComputerBusyError();
-  }
-  // Allow Reset on a stale "booting" or "suspending" row unless another bot still holds a live
-  // lease. Dedicated computers never create an execution-lease row, so the foreign-lease check
-  // alone cannot see an in-flight dedicated boot or idle stop. Refuse claim stamps younger than
-  // an execution-lease TTL (not merely the boot-wait poll) so a slow dedicated provision or
-  // suspend is not destroyed mid-flight. Also refuse while a run still uses the computer —
-  // before claiming suspending — so rollback cannot bump @updatedAt under an in-flight boot.
+  if (hasActiveComputerControl(existing)) throw new ComputerBusyError();
+  // A "booting" or "suspending" claim may be one a dead worker left behind, which only a restart
+  // clears. Dedicated computers never create an execution-lease row, so the foreign-lease check
+  // alone cannot see an in-flight dedicated boot or idle stop. Refuse claim stamps younger than an
+  // execution-lease TTL so a slow provision or suspend is not destroyed mid-flight, and refuse
+  // while a run still uses the computer.
   if (existing.state === "booting" || existing.state === "suspending") {
     if (await hasForeignExecutionLease(deps.prisma, computerId, botId)) {
       throw new ComputerBusyError();
@@ -1121,16 +1095,6 @@ export async function replaceComputer(
   }
 
   const previousState = existing.state;
-  const previousControl = handBackIdleTakeover
-    ? {
-        controlHolder: "user" as const,
-        controlLeaseId: existing.controlLeaseId,
-        controlLeaseExpiresAt: existing.controlLeaseExpiresAt,
-        controlBotId: existing.controlBotId,
-        controlUserId: existing.controlUserId,
-        controlRunId: null,
-      }
-    : null;
   const now = new Date();
   const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
   // Nothing is torn down or provisioned in a Space being deleted except by the deletion. Its lock
@@ -1147,44 +1111,17 @@ export async function replaceComputer(
           ? { updatedAt: existing.updatedAt }
           : {}),
         executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
-        ...(handBackIdleTakeover
-          ? {
-              controlHolder: "user" as const,
-              controlBotId: botId,
-              controlRunId: null,
-              controlLeaseId: existing.controlLeaseId,
-            }
-          : {
-              OR: [
-                { controlHolder: { not: "user" } },
-                { controlLeaseId: null },
-                { controlLeaseExpiresAt: null },
-                { controlLeaseExpiresAt: { lte: now } },
-              ],
-            }),
+        OR: [
+          { controlHolder: { not: "user" } },
+          { controlLeaseId: null },
+          { controlLeaseExpiresAt: null },
+          { controlLeaseExpiresAt: { lte: now } },
+        ],
       },
-      data: {
-        state: "suspending",
-        updatedAt: claimStamp,
-        ...(handBackIdleTakeover
-          ? {
-              controlHolder: "none" as const,
-              controlLeaseId: null,
-              controlUserId: null,
-              controlLeaseExpiresAt: null,
-              controlBotId: null,
-              controlRunId: null,
-            }
-          : {}),
-      },
+      data: { state: "suspending", updatedAt: claimStamp },
     });
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
-  const releaseClaim = () =>
-    deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending", updatedAt: claimStamp },
-      data: { state: previousState, ...previousControl },
-    });
   // Re-check after the claim in case a run started between the pre-check and CAS. Under this
   // operation's maintenance reservation, runs that arrived later wait for it without touching
   // the computer, so only a live lease means one is still using it.
@@ -1203,67 +1140,28 @@ export async function replaceComputer(
           select: { id: true },
         });
   if (inUse) {
-    await releaseClaim();
+    await deps.prisma.computer.updateMany({
+      where: { id: computerId, state: "suspending", updatedAt: claimStamp },
+      data: { state: previousState },
+    });
     throw new ComputerBusyError();
-  }
-
-  if (previousControl?.controlLeaseId && existing.providerRef) {
-    try {
-      await revokeScreenControl(
-        deps,
-        existing,
-        context,
-        previousControl.controlLeaseId,
-        // The activation compare still names this providerRef; the replacement
-        // overwrites it. Clearing it here would strand the in-flight claim.
-        { clearGoneRef: false },
-      );
-    } catch (error) {
-      getLogger().error("release own takeover before maintenance", error);
-      await releaseClaim();
-      throw new ComputerBusyError();
-    }
-    await deps.jobs
-      .cancel(computerControlExpireJobKey(computerId, previousControl.controlLeaseId))
-      .catch((error) => {
-        getLogger().error("computer control expiry cancellation", error);
-      });
-  }
-  if (previousControl) {
-    try {
-      const bot = await deps.prisma.bot.findFirst({
-        where: { id: botId },
-        select: { thread: { select: { id: true } } },
-      });
-      if (bot?.thread) {
-        await deps.events.append({
-          spaceId: context.spaceId,
-          threadId: bot.thread.id,
-          botId,
-          type: "computer.takeover.released",
-          payload: {
-            holder: "none",
-            leaseId: previousControl.controlLeaseId,
-            reason: "released",
-          },
-        });
-      }
-    } catch (error) {
-      getLogger().error("maintenance takeover release event", error);
-    }
   }
 
   const oldRef = existing.providerRef ? toComputerRef(existing) : null;
   // Until teardown starts the old computer is still running, so a failure before then leaves it
-  // running, and a later Recover tries to save its work first.
+  // running.
   let tornDown = false;
   try {
-    // Retry the checkpoint even after an earlier update left the row in error.
-    if (oldRef && (mode === "update" || (existing.state === "running" && mode === "recover"))) {
-      // Recover may skip a save that fails while exporting, whether the computer or the staging
-      // disk fails it, and a mounted home's save, whose files stay on the server. Once an export
-      // is done, failing to store or record it stops Recover instead: the computer still holds
-      // the work.
+    // A stopped or suspended computer was saved when it went down, and a quarantined one is not
+    // trusted. Kinds without software of their own to replace keep their workspace in place.
+    if (
+      oldRef &&
+      (previousState === "running" || previousState === "error") &&
+      computerSupportsUpdate(existing.kind)
+    ) {
+      // A computer that is broken or out of reach falls back to the last saved workspace. A
+      // working one keeps its live work through a failed save, and so does one whose export
+      // finished but could not be stored: the restart stops and leaves it running.
       await onProgress?.("saving");
       const checkpointedAt = new Date();
       let revision: string | undefined;
@@ -1284,9 +1182,16 @@ export async function replaceComputer(
           },
         );
       } catch (error) {
-        // A gone sandbox has nothing left to checkpoint; the replacement restores
-        // the last recorded revision instead of failing the whole replacement.
-        if (exported || (!isSandboxGoneError(error) && mode !== "recover")) throw error;
+        const unreachable =
+          previousState === "error" ||
+          isSandboxGoneError(error) ||
+          isSandboxDamagedError(error) ||
+          error instanceof SandboxUnresponsiveError;
+        if (exported || !unreachable) throw error;
+        getLogger().warn("computer.restart_save_skipped", {
+          "computer.id": computerId,
+          reason: error instanceof Error ? error.name : "unknown",
+        });
       }
       if (revision !== undefined) {
         const recorded = await deps.prisma.computer.updateMany({
@@ -1303,7 +1208,7 @@ export async function replaceComputer(
       try {
         await deps.sandbox.destroy(oldRef, context);
       } catch (error) {
-        // Recover too: dropping the reference would orphan a sandbox that may still run.
+        // Dropping the reference would orphan a sandbox that may still run.
         if (!isSandboxGoneError(error)) throw error;
       }
     }

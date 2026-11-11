@@ -180,8 +180,8 @@ describeLive("real model and sandbox computer journey", () => {
     const originalRef = computer.providerRef;
     await handles.sandbox.destroy(computer, testContext(bot.id));
     // Simulate loss outside the app: the stored state still says running, so use
-    // recovery to replace the missing sandbox and restore its checkpoint.
-    const recovery = await rpc<{ id: string }>(handles.app, cookie, "computer/recover", {
+    // a restart to replace the missing sandbox and restore its checkpoint.
+    const recovery = await rpc<{ id: string }>(handles.app, cookie, "computer/restart", {
       botId: bot.id,
     });
     await expect

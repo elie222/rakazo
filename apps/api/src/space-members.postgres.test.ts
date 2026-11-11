@@ -884,12 +884,10 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(call(asInvitee, "computer/release", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });
-    // Nor can stopping or resetting the computer under them.
-    for (const procedure of ["computer/stop", "computer/reset"]) {
-      await expect(call(asInvitee, procedure, { botId: bot.id })).resolves.toMatchObject({
-        status: 409,
-      });
-    }
+    // Nor can restarting the computer under them.
+    await expect(call(asInvitee, "computer/restart", { botId: bot.id })).resolves.toMatchObject({
+      status: 409,
+    });
     // Teaching cannot take the owner's screen either.
     await expect(
       call(asInvitee, "skills/start", { botId: bot.id, goal: "Book a table" }),
