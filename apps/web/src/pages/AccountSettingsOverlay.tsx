@@ -271,7 +271,7 @@ export function GeneralSettingsPanels({
             />
           }
         />
-        {botAvatarSet && onBotAvatarSetChange ? (
+        {onBotAvatarSetChange ? (
           <SettingsRow
             label={
               <span id={botStyleLabelId}>
@@ -283,7 +283,7 @@ export function GeneralSettingsPanels({
                 <ToggleGroup
                   aria-labelledby={botStyleLabelId}
                   data-testid="bot-style-select"
-                  value={[botAvatarSet]}
+                  value={botAvatarSet ? [botAvatarSet] : []}
                   onValueChange={([next]) => {
                     if (!next || next === botAvatarSet) return;
                     setBotStyleError(null);
