@@ -93,6 +93,8 @@ export function offersAgentConnectionTools(options: {
     options.crossSpaceCommunication &&
     !isBackgroundRunTrigger(options.trigger) &&
     options.trigger !== "created" &&
+    // A key's prompt is not the person's word, so it cannot accept or open a connection for them.
+    options.trigger !== "service" &&
     options.trigger !== BACKGROUND_HELPER_TRIGGER
   );
 }
