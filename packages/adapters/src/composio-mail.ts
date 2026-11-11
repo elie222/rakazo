@@ -87,7 +87,10 @@ class ComposioMailReader implements ConnectedMailReader {
         connectionId: this.connection.id,
       },
     };
+    // The look gave up or timed out: no further call goes out, and leaving the loop ends this one.
+    context.signal.throwIfAborted();
     for await (const event of this.connector.execute(call, context)) {
+      context.signal.throwIfAborted();
       if (event.type === "result") data = event.data;
       else if (event.type === "error") failure = event.message;
     }

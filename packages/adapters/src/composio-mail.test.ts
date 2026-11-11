@@ -169,6 +169,29 @@ describe("composioMailSource", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("makes no more calls once the look gave up, though the provider answers after it", async () => {
+    const { client, registry, reader, context } = setup();
+    for (const subject of ["One", "Two", "Three"])
+      client.receiveMail(USER, rawMail("a@example.com", subject, new Date()));
+    const look = new AbortController();
+    const execute = registry.execute.bind(registry);
+    const tools: string[] = [];
+    vi.spyOn(registry, "execute").mockImplementation((call, callContext) => {
+      tools.push(call.tool);
+      const events = execute(call, callContext);
+      // The look times out while the first message is read; the provider still answers.
+      if (call.tool === "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID") look.abort(new Error("timed out"));
+      return events;
+    });
+    await expect(
+      reader.recent(
+        { ...context, signal: look.signal },
+        { fromDomain: "example.com", after: new Date(0), limit: 5 },
+      ),
+    ).rejects.toThrow("timed out");
+    expect(tools).toEqual(["GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"]);
+  });
+
   // The rule: a listing that says there is no mail gives none; one in any other shape, or any
   // message in it that cannot be read, fails the read, so the card opens rather than another
   // message answering for what was not read.

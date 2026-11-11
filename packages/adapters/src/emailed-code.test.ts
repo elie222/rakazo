@@ -7,6 +7,7 @@ import type {
   ConnectedMailReader,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { installAuditEventStore } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { dkimSign } from "mailauth";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +19,7 @@ import {
   EMAIL_SEARCH_LIMIT,
   EMAILED_CODE_WINDOW_MS,
   emailMayAnswer,
+  takeEmailedCode,
 } from "./emailed-code.js";
 
 const ORIGIN = "https://login.example.test";
@@ -408,6 +410,41 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     await deliver();
     expect(answerRunInput).not.toHaveBeenCalled();
   });
+
+  it.each<[string, Row[]]>([
+    [
+      "two other runs' waiting cards",
+      [waitingRun(), waitingRun({ id: "run-2", threadId: "thread-2" })],
+    ],
+    ["another run's waiting card", [waitingRun()]],
+  ])(
+    "gives a run asking for a code none from an email that would answer %s",
+    async (_name, runs) => {
+      const { deliver, answerRunInput, prisma } = inbox({
+        runs,
+        cards: Object.fromEntries(runs.map((run) => [String(run.id), codeCard()])),
+      });
+      if (runs.length > 1) expect(await deliver()).toBe(0);
+      const keep = vi.fn(async () => "kept");
+      const taken = await takeEmailedCode(
+        prisma as unknown as PrismaClient,
+        {
+          botId: bot.id,
+          spaceId: "space-1",
+          runId: "run-3",
+          userId: bot.userId,
+          origin: ORIGIN,
+          after: ago(60 * 1000),
+          botEmailDomain: "bots.test",
+          sources: { inbox: true, connected: undefined },
+        },
+        keep,
+      );
+      expect(taken).toBeUndefined();
+      expect(keep).not.toHaveBeenCalled();
+      expect(answerRunInput).not.toHaveBeenCalled();
+    },
+  );
 
   it("answers neither card when one email would answer two, also when one run looks again", async () => {
     const { deliver, answerRunInput } = inbox({
@@ -1216,6 +1253,54 @@ describe("a code the site emailed to the mail the owner connected", () => {
     });
     expect(await deliver("run-1")).toBe(0);
   });
+
+  it.each<
+    [outcome: "success" | "failure", connected: () => Promise<Partial<ConnectedMailReader> | Error>]
+  >([
+    [
+      "success",
+      async () => {
+        const message = await connectedMail();
+        return { recent: async () => ({ messages: [message] }) };
+      },
+    ],
+    ["failure", async () => new Error("secret-looking message text 482913")],
+  ])(
+    "records in the audit log each mailbox it read for a code, with its %s",
+    async (outcome, connected) => {
+      publishKeys();
+      const rows: Row[] = [];
+      installAuditEventStore({
+        auditEvent: { createMany: async ({ data }: { data: Row[] }) => rows.push(...data) },
+        space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+        user: { findUnique: async () => null },
+        member: { findMany: async () => [] },
+      } as never);
+      try {
+        const { deliver } = inbox({
+          emails: [],
+          connectedMailCodes: true,
+          connected: await connected(),
+        });
+        await deliver("run-1");
+      } finally {
+        installAuditEventStore(undefined);
+      }
+      expect(rows).toEqual([
+        expect.objectContaining({
+          action: "connected_mail.read_for_code",
+          actorType: "bot",
+          actorId: "bot-1",
+          targetType: "connection",
+          targetId: "connection-1",
+          runId: "run-1",
+          spaceId: "space-1",
+          outcome,
+        }),
+      ]);
+      expect(JSON.stringify(rows)).not.toContain(CODE);
+    },
+  );
 
   it("leaves the card, logging only the error's name, when the mail cannot be read", async () => {
     const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);

@@ -103,8 +103,11 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   }
   const hide = (value: string) =>
     emailedCodes.reduce(hideOneTimeCodeInEmail, redactSecrets(value, ctx.secrets));
-  /** For matching a search: what is hidden is left out, so the word standing in for it never matches. */
-  const searchable = (value: string) => hide(value).replaceAll(REDACTED_MARK, "");
+  /**
+   * For matching a search: the pieces between what is hidden, each on its own, so neither the word
+   * standing in for it nor the text either side of it joined up ever matches.
+   */
+  const searchable = (value: string) => hide(value).split(REDACTED_MARK);
   /** An email as the tool returns it, hidden as a whole, so no field of it can be missed. */
   const shown = (email: Record<string, unknown>) =>
     redactConnectorPayload(
@@ -237,7 +240,9 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         // Mail arriving between pages shifts them, so one may come twice.
         if (seen.has(email.id)) continue;
         seen.add(email.id);
-        if (matchesSearchQuery(query, ...SEARCHED_FIELDS.map((field) => searchable(email[field]))))
+        if (
+          matchesSearchQuery(query, ...SEARCHED_FIELDS.flatMap((field) => searchable(email[field])))
+        )
           matches.push(email);
       }
       if (page.length < SEARCH_CANDIDATES) break;

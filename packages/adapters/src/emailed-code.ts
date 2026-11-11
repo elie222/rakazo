@@ -12,7 +12,7 @@ import { extractOneTimeCode } from "@rakazo/contracts";
 import { isMessagingChannelRun, PUBLIC_MAILBOX_DOMAINS } from "@rakazo/core";
 import { hostSite } from "@rakazo/core/egress";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { findPendingAsk, teamChatRunFromOwner } from "@rakazo/db";
+import { findPendingAsk, recordAuditEvent, teamChatRunFromOwner } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { readInboundEmail } from "./inbound-email.js";
@@ -327,7 +327,7 @@ export async function findConnectedMailCode(
   // The owner may have turned it off since the attempt began.
   const bot = await prisma.bot.findUnique({
     where: { id: input.botId },
-    select: { connectedMailCodes: true },
+    select: { connectedMailCodes: true, name: true },
   });
   if (!bot?.connectedMailCodes) return undefined;
   const rows = await prisma.connection.findMany({
@@ -354,9 +354,14 @@ export async function findConnectedMailCode(
   const since = answered && answered > input.after ? answered : input.after;
   const candidates: { code: string; mailbox: string; messageId: string }[] = [];
   const signal = AbortSignal.timeout(CONNECTED_MAIL_TIMEOUT_MS);
+  // The connections whose mailbox the look began to read, and how many of them it read through.
+  const opened: (typeof rows)[number][] = [];
+  let readThrough = 0;
+  let failed = false;
   try {
     await bounded(signal, async () => {
       for (const { row, context: connected, reader } of readers) {
+        opened.push(row);
         const context: AdapterContext = {
           operationId: `emailed-code:${input.runId}:${row.id}`,
           traceId: input.runId,
@@ -407,14 +412,30 @@ export async function findConnectedMailCode(
           }
           page = read.next;
         } while (page);
+        readThrough += 1;
       }
     });
   } catch (error) {
+    failed = true;
     getLogger().warn("connected mail could not be read for a code", {
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    return undefined;
   }
+  // The owner's mail was read for this run: who read which mailbox and how it went, never what.
+  await Promise.all(
+    opened.map((row, index) =>
+      recordAuditEvent({
+        action: "connected_mail.read_for_code",
+        actor: { type: "bot", id: input.botId, label: bot.name },
+        spaceId: input.spaceId,
+        target: { type: "connection", id: row.id, label: row.displayName },
+        outcome: index < readThrough ? "success" : "failure",
+        runId: input.runId,
+        metadata: { site },
+      }),
+    ),
+  );
+  if (failed) return undefined;
   if (candidates.length === 0) return undefined;
   const claimOf = (found: { mailbox: string; messageId: string }) =>
     connectedClaimKey(found.mailbox, found.messageId);
@@ -602,6 +623,20 @@ export async function takeEmailedCode<T>(
 ): Promise<T | undefined> {
   const found = await findCodeForRequest(prisma, input);
   if (!found) return undefined;
+  // As on mail arriving: an email that another run's waiting card would also take answers neither.
+  const waiting = await waitingCardCodes(
+    { prisma, botEmailDomain: input.botEmailDomain },
+    {
+      id: input.botId,
+      userId: input.userId,
+    },
+  );
+  if (
+    waiting.some(
+      (other) => other.run.id !== input.runId && other.found.fromEmail === found.fromEmail,
+    )
+  )
+    return undefined;
   try {
     return await keep({ code: found.code, fromEmail: found.fromEmail }, found.claim);
   } catch (error) {
@@ -658,6 +693,77 @@ export async function runPageOrigin(ctx: {
 }
 
 /**
+ * The code each of the bot's runs waiting on a code card would take now: the owner's own run, on
+ * a card for a code (not a login), whose browser was on the card's origin when it asked. With
+ * `runId`, that run's look also reads the owner's connected mail.
+ */
+async function waitingCardCodes(
+  deps: {
+    prisma: PrismaClient;
+    botEmailDomain: string | undefined;
+    connectedMail?: ConnectedMailSource;
+  },
+  bot: { id: string; userId: string },
+  runId?: string,
+) {
+  const runs = await deps.prisma.run.findMany({
+    where: {
+      botId: bot.id,
+      userId: bot.userId,
+      status: "waiting_input",
+    },
+    select: {
+      id: true,
+      spaceId: true,
+      threadId: true,
+      userId: true,
+      trigger: true,
+      createdAt: true,
+      sourceMessage: { select: { blocks: true, clientNonce: true } },
+      thread: { select: { groupId: true, externalConversationId: true } },
+    },
+  });
+  const answers: Array<{ run: (typeof runs)[number]; messageId: string; found: FoundCode }> = [];
+  for (const run of runs) {
+    const nonOwnerChatRun = await isNonOwnerChatRun(deps.prisma, {
+      trigger: run.trigger,
+      sourceBlocks: run.sourceMessage?.blocks as MessageBlock[] | undefined,
+      sourceClientNonce: run.sourceMessage?.clientNonce,
+      externalConversationId: run.thread.externalConversationId,
+    });
+    if (!readsBotInbox({ run, bot, thread: run.thread, nonOwnerChatRun })) continue;
+    const pending = await findPendingAsk(deps.prisma, { threadId: run.threadId, runId: run.id });
+    const origin = pending?.pendingAsk.oneTimeCode?.origin;
+    if (!pending || !origin || pending.pendingAsk.credential) continue;
+    const request = await deps.prisma.externalEffect.findFirst({
+      where: { runId: run.id, spaceId: run.spaceId, kind: "request_secret", status: "intended" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, createdAt: true },
+    });
+    if (!request) continue;
+    const page = await deps.prisma.externalEffect.findUnique({
+      where: { idempotencyKey: pageSeenKey(request.id) },
+      select: { runId: true, request: true },
+    });
+    if (page?.runId !== run.id || (page.request as { origin?: unknown }).origin !== origin)
+      continue;
+    const found = await findCodeForRequest(deps.prisma, {
+      botId: bot.id,
+      spaceId: run.spaceId,
+      runId: run.id,
+      userId: bot.userId,
+      origin,
+      after: emailedCodeWindowStart(request.createdAt, run.createdAt),
+      botEmailDomain: deps.botEmailDomain,
+      // Connected mail is read only for the one run that asks, never on mail arriving.
+      sources: { inbox: true, connected: run.id === runId ? deps.connectedMail : undefined },
+    });
+    if (found) answers.push({ run, messageId: pending.messageId, found });
+  }
+  return answers;
+}
+
+/**
  * New mail in a bot's inbox answers the code card its owner's run is waiting on, when the mail
  * holds the one code for the card's site, as the owner would by typing it in; the run then goes
  * on. Only a card whose run's browser was on the card's origin when it asked, and an email
@@ -683,60 +789,7 @@ export async function answerCodeCardsFromInbox(
 ): Promise<number> {
   let count = 0;
   try {
-    const runs = await deps.prisma.run.findMany({
-      where: {
-        botId: bot.id,
-        userId: bot.userId,
-        status: "waiting_input",
-      },
-      select: {
-        id: true,
-        spaceId: true,
-        threadId: true,
-        userId: true,
-        trigger: true,
-        createdAt: true,
-        sourceMessage: { select: { blocks: true, clientNonce: true } },
-        thread: { select: { groupId: true, externalConversationId: true } },
-      },
-    });
-    const answers: Array<{ run: (typeof runs)[number]; messageId: string; found: FoundCode }> = [];
-    for (const run of runs) {
-      const nonOwnerChatRun = await isNonOwnerChatRun(deps.prisma, {
-        trigger: run.trigger,
-        sourceBlocks: run.sourceMessage?.blocks as MessageBlock[] | undefined,
-        sourceClientNonce: run.sourceMessage?.clientNonce,
-        externalConversationId: run.thread.externalConversationId,
-      });
-      if (!readsBotInbox({ run, bot, thread: run.thread, nonOwnerChatRun })) continue;
-      const pending = await findPendingAsk(deps.prisma, { threadId: run.threadId, runId: run.id });
-      const origin = pending?.pendingAsk.oneTimeCode?.origin;
-      if (!pending || !origin || pending.pendingAsk.credential) continue;
-      const request = await deps.prisma.externalEffect.findFirst({
-        where: { runId: run.id, spaceId: run.spaceId, kind: "request_secret", status: "intended" },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, createdAt: true },
-      });
-      if (!request) continue;
-      const page = await deps.prisma.externalEffect.findUnique({
-        where: { idempotencyKey: pageSeenKey(request.id) },
-        select: { runId: true, request: true },
-      });
-      if (page?.runId !== run.id || (page.request as { origin?: unknown }).origin !== origin)
-        continue;
-      const found = await findCodeForRequest(deps.prisma, {
-        botId: bot.id,
-        spaceId: run.spaceId,
-        runId: run.id,
-        userId: bot.userId,
-        origin,
-        after: emailedCodeWindowStart(request.createdAt, run.createdAt),
-        botEmailDomain: deps.botEmailDomain,
-        // Connected mail is read only for the one run that asks, never on mail arriving.
-        sources: { inbox: true, connected: run.id === runId ? deps.connectedMail : undefined },
-      });
-      if (found) answers.push({ run, messageId: pending.messageId, found });
-    }
+    const answers = await waitingCardCodes(deps, bot, runId);
     for (const { run, messageId, found } of answers) {
       if (runId && run.id !== runId) continue;
       if (answers.filter((other) => other.found.fromEmail === found.fromEmail).length > 1) continue;

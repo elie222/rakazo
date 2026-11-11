@@ -888,6 +888,40 @@ describe("one-time code contracts", () => {
       if (!text.includes("\n") && subject === "Hello") expect(read("Hello", text)).toBeUndefined();
     });
 
+    // What a code may look like: 6 to 8 digits, two equal digit groups split by a space or a dash,
+    // or 6 to 8 capital letters and digits with both. Nothing else is one, in any case.
+    it.each<[written: string, code: string | undefined]>([
+      ["482913", "482913"],
+      ["48291357", "48291357"],
+      ["482 913", "482913"],
+      ["482-913", "482913"],
+      ["4829-1357", "48291357"],
+      ["ABC123", "ABC123"],
+      ["7Q2M9K4", "7Q2M9K4"],
+      ["abc123", undefined],
+      ["AbC123", undefined],
+      ["deadbeef", undefined],
+      ["deadbeef12", undefined],
+      ["a1b2c3", undefined],
+      ["ABCDEFG", undefined],
+      ["HELLOWORLD", undefined],
+      ["ABC1234567", undefined],
+      ["482913755", undefined],
+      ["48.29.13", undefined],
+      ["4829 13", undefined],
+      ["48 29 13", undefined],
+      ["482913kg", undefined],
+      ["482913 kg", undefined],
+      ["2026", undefined],
+      ["$482913", undefined],
+      ["482913€", undefined],
+      ["+1 555 123 4567", undefined],
+      ["555-123-4567", undefined],
+    ])("reads %s written after a code word as the code %s", (written, code) => {
+      expect(read(`Your verification code is ${written}`)).toBe(code);
+      expect(read(`${written} is your verification code`)).toBe(code);
+    });
+
     it.each([
       ["four digits", "Your code: 4829"],
       ["five digits", "Code 48291, valid for 10 minutes."],

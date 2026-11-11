@@ -681,6 +681,20 @@ describe("request_secret for a code the site emailed to the bot", () => {
     return (await run.attempt([requestCode()]))[0];
   }
 
+  it("records the request the inbox answered as answered, as the owner's answer does", async () => {
+    const owner = world();
+    await owner.attempt([requestCode()]);
+    await owner.userAnswers();
+    await owner.attempt([requestCode()]);
+    const run = world();
+    run.receives(CODE_EMAIL);
+    const [result] = await run.attempt([requestCode()]);
+    expect(run.requests().map((request) => [request.status, request.result])).toEqual(
+      owner.requests().map((request) => [request.status, result]),
+    );
+    expect(run.requests()).toMatchObject([{ status: "completed" }]);
+  });
+
   it("takes the one code in the inbox for that site, as the owner's answer would be taken", async () => {
     const expected = await ownerAnsweredResult();
     notified.length = 0;
@@ -903,6 +917,20 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(results[0]).toMatchObject({ submitted: true });
     expect(results[1]).toMatchObject({ emails: [] });
     expect(results[2]).toMatchObject({ emails: [] });
+  });
+
+  it("never matches a search on the text either side of the hidden code joined up", async () => {
+    const run = world();
+    run.receives(CODE_EMAIL);
+    run.receives({ text: "Ref foo482913bar", fromAddress: "shop@store.test" });
+    const results = await run.attempt([
+      requestCode(),
+      { name: "read_email", args: { query: "foobar" } },
+      { name: "read_email", args: { query: "foo" } },
+    ]);
+    expect(results[0]).toMatchObject({ submitted: true });
+    expect(results[1]).toMatchObject({ emails: [] });
+    expect((results[2] as { emails: unknown[] }).emails).toHaveLength(1);
   });
 
   it("returns the same for a search matching only the hidden code as for one matching nothing", async () => {
