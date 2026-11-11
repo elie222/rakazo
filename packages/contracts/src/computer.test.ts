@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ComputerStatus } from "./computer.js";
-import { computerControlUser } from "./computer.js";
+import { computerControlUser, computerFreeFor, takeoverHandsBackOnClose } from "./computer.js";
 
 function running(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
   return {
@@ -58,5 +58,23 @@ describe("computerControlUser", () => {
         null,
       ),
     ).toEqual({ by: "youWithBot", name: "Basil" });
+  });
+});
+
+describe("computerFreeFor", () => {
+  it("is free only for this bot's running computer that no one is using", () => {
+    expect(computerFreeFor(running(), "bot-1", null)).toBe(true);
+    expect(computerFreeFor(running(), "bot-2", null)).toBe(false);
+    expect(computerFreeFor(running({ state: "stopped" }), "bot-1", null)).toBe(false);
+    expect(computerFreeFor(running({ kind: "desktop" }), "bot-1", null)).toBe(false);
+    expect(computerFreeFor(running(), "bot-1", "Ada")).toBe(false);
+    expect(computerFreeFor(running({ otherBotName: "Basil" }), "bot-1", null)).toBe(false);
+  });
+});
+
+describe("takeoverHandsBackOnClose", () => {
+  it("keeps control taken to answer a bot's request for help", () => {
+    expect(takeoverHandsBackOnClose(running())).toBe(true);
+    expect(takeoverHandsBackOnClose(running({ takeoverRequested: true }))).toBe(false);
   });
 });

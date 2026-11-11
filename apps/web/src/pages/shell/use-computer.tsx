@@ -8,8 +8,9 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
-  computerControlUser,
+  computerFreeFor,
   isComputerAllowanceUsed,
+  takeoverHandsBackOnClose,
   userHoldsComputerControl,
 } from "@rakazo/contracts";
 import {
@@ -662,10 +663,10 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        // A bot waiting on the user keeps its request until I'm done or Skip.
-        const answersBot = computerRef.current?.takeoverRequested === true;
+        const handsBack = takeoverHandsBackOnClose(computerRef.current);
         const granted = await rpc.computer.takeover({ botId: targetBotId, ifAvailable: true });
-        if (granted && !answersBot) {
+        // Only control this window took is handed back when it closes.
+        if (granted && handsBack) {
           heldControl.current = targetBotId;
           // The window may have closed while the grant was on its way.
           if (!computerOpenRef.current) handBackControl();
@@ -906,13 +907,10 @@ export function useComputerControls({
     !handingBack &&
     !booting &&
     !computerError &&
-    computer?.botId === computerBot?.id &&
-    computer?.state === "running" &&
-    computer.kind !== "desktop" &&
-    !computerControlUser(
+    computerFreeFor(
       computer,
       computerBot?.id,
-      computerTakeoverBlocked(computer, runStatus) ? computer.busyBotName : null,
+      computerTakeoverBlocked(computer, runStatus) ? computer?.busyBotName : null,
     );
   useEffect(() => {
     const botId = computerBot?.id;
@@ -931,8 +929,8 @@ export function useComputerControls({
     return () => document.removeEventListener("visibilitychange", ask);
   }, [computerFree, computer, computerBot?.id]);
 
-  // Closing the window, switching bots or leaving hands back control this window holds.
-  // A bot waiting on the user keeps waiting for I'm done.
+  // Closing the window, switching bots or leaving hands back control this window took. A bot
+  // that asks for help meanwhile keeps waiting for I'm done.
   useEffect(() => {
     if (!computerOpen) {
       if (windowWasOpen.current) handBackControl();
@@ -941,11 +939,11 @@ export function useComputerControls({
     }
     windowWasOpen.current = true;
     if (heldControl.current && heldControl.current !== computerBot?.id) handBackControl();
-    if (computer?.botId !== computerBot?.id) return;
     // Teaching keeps its own control until it stops.
-    if (recording || computer?.takeoverRequested) heldControl.current = null;
-    else if (hasControl) heldControl.current = computerBot?.id ?? null;
-  }, [computerOpen, hasControl, recording, computer?.takeoverRequested, computerBot?.id]);
+    if (recording || (computer?.botId === computerBot?.id && computer?.takeoverRequested)) {
+      heldControl.current = null;
+    }
+  }, [computerOpen, recording, computer?.takeoverRequested, computerBot?.id]);
   useEffect(() => () => handBackControl(), []);
 
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);

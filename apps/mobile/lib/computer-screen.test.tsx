@@ -707,6 +707,19 @@ describe("computer screen", () => {
     expect(view.querySelector("[data-keyboard-bar]")).not.toBeNull();
   });
 
+  it("leaves control it did not take when the window closes", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    await act(async () =>
+      view.querySelector<HTMLButtonElement>('section [aria-label="Close computer"]')?.click(),
+    );
+    await settle();
+    expect(calls("computer/takeover")).toEqual([]);
+    expect(calls("computer/release")).toEqual([]);
+  });
+
   it("keeps a bot's request for help open when the window closes without I’m done", async () => {
     respond({
       ...botWorking,

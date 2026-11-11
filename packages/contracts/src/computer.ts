@@ -102,6 +102,34 @@ export function computerControlUser(
   return bot ? { by: "bot", name: bot } : null;
 }
 
+/**
+ * Whether the status says this bot's computer is free, so its open window should ask for control.
+ * The server still decides; this only keeps a window from asking while someone is using it.
+ */
+export function computerFreeFor(
+  computer: ComputerStatus | null | undefined,
+  botId: string | undefined,
+  busyBotName: string | null | undefined,
+): boolean {
+  return Boolean(
+    botId &&
+      computer?.botId === botId &&
+      computer.state === "running" &&
+      computer.kind !== "desktop" &&
+      !computerControlUser(computer, botId, busyBotName),
+  );
+}
+
+/**
+ * Whether control a window takes is handed back when it closes. Taking it to answer a bot's request
+ * for help keeps that request open until I'm done or Skip.
+ */
+export function takeoverHandsBackOnClose(
+  computerBefore: ComputerStatus | null | undefined,
+): boolean {
+  return !computerBefore?.takeoverRequested;
+}
+
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 

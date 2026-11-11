@@ -627,7 +627,7 @@ it("asks whenever the status says the computer is free, and hands control back o
   expect(release).toHaveBeenCalledWith({ botId: "bot-1" });
 });
 
-it("hands control back on close after a failed I’m done", async () => {
+it("hands back on close only control this window took, even after a failed I’m done", async () => {
   const release = vi
     .fn()
     .mockRejectedValueOnce(new Error("offline"))
@@ -669,33 +669,43 @@ it("hands control back on close after a failed I’m done", async () => {
     });
     return null;
   }
+  const free = {
+    botId: "bot-1",
+    mode: "team",
+    kind: "boat",
+    state: "running",
+    controlHolder: "none",
+    controlBotId: null,
+    takeoverRequested: false,
+    screenAvailable: true,
+    screenWidth: 1280,
+    screenHeight: 800,
+    homeRevision: null,
+    busyBotName: null,
+    canUpdate: false,
+    terminalAvailable: false,
+  } as const;
+  const held = { ...free, controlHolder: "user", controlBotId: "bot-1" } as const;
   await act(async () => root.render(<Controls />));
-  await act(async () =>
-    state.commitComputer({
-      botId: "bot-1",
-      mode: "team",
-      kind: "boat",
-      state: "running",
-      controlHolder: "user",
-      controlBotId: "bot-1",
-      takeoverRequested: false,
-      screenAvailable: true,
-      screenWidth: 1280,
-      screenHeight: 800,
-      homeRevision: null,
-      busyBotName: null,
-      canUpdate: false,
-      terminalAvailable: false,
-    }),
-  );
+
+  // Control taken for the bot elsewhere, from another tab or a phone, stays.
+  await act(async () => state.commitComputer(held));
   await act(async () => state.setComputerOpen(true));
+  await act(async () => state.setComputerOpen(false));
+  expect(takeover).not.toHaveBeenCalled();
+  expect(release).not.toHaveBeenCalled();
+
+  // Control this window took is handed back on close, even after a failed I'm done.
+  await act(async () => state.commitComputer(free));
+  await act(async () => state.setComputerOpen(true));
+  expect(takeover).toHaveBeenCalledOnce();
+  await act(async () => state.commitComputer(held));
   await act(async () => controls.finishControl());
   expect(state.computerOpen).toBe(true);
   expect(state.computerError).toBe("Could not continue");
   await act(async () => state.setComputerOpen(false));
   expect(release).toHaveBeenCalledTimes(2);
   expect(release).toHaveBeenLastCalledWith({ botId: "bot-1" });
-  expect(takeover).not.toHaveBeenCalled();
 });
 
 it("asks for the bot switched to while another bot's answer is still on its way", async () => {

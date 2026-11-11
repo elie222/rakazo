@@ -44,8 +44,9 @@ function syncInput({
   commitSnapshot: (next: ThreadSnapshot | null) => void;
   bot?: { status: string; threadStatus?: string };
 }) {
+  const computerStatus = vi.fn(async ({ botId }: { botId: string }) => ({ botId }));
   return {
-    rpc: { threads: { get } },
+    rpc: { threads: { get }, computer: { status: computerStatus } },
     queries: {
       threads: { get: { queryKey: vi.fn(() => ["thread"]) } },
       routines: { list: { queryOptions: vi.fn() }, history: { key: vi.fn(() => ["history"]) } },
@@ -143,7 +144,7 @@ it.each([false, true])(
   },
 );
 
-it("refreshes a group's computer screen when control changes for that computer", async () => {
+it("refreshes a group's computer when control changes on it or another bot", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const snapshot = {
     threadId: "thread-1",
@@ -175,6 +176,8 @@ it("refreshes a group's computer screen when control changes for that computer",
   subscription.onEvent(released("bot-other"), snapshot);
   await flush();
   expect(input.computerState.refreshComputerScreen).toHaveBeenCalledTimes(1);
+  // Another bot of the group may share the computer, so its status is read again.
+  expect(input.computerState.commitComputer).toHaveBeenLastCalledWith({ botId: "bot-computer" });
   act(() => root.unmount());
 });
 

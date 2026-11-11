@@ -457,13 +457,9 @@ export function useThreadSync({
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
-          // In a shared Space the event does not say who took control or who the bot is
-          // waiting for; the snapshot does.
-          if (
-            (event.type === "computer.takeover.granted" ||
-              event.type === "computer.takeover.requested") &&
-            computerRef.current?.shared
-          ) {
+          // A control event does not say who took control, who a bot waits for or which other
+          // bot still uses the computer; the snapshot does.
+          if (event.type !== "computer.status") {
             void snapshotRefresh.invalidate().catch(() => undefined);
           }
           void refreshComputerScreen(active.id).catch(() => undefined);
@@ -558,6 +554,19 @@ export function useThreadSync({
         const computerBotId = computerBotIdRef.current;
         if (isComputerStatusEvent(event) && computerBotId && event.botId === computerBotId) {
           void refreshComputerScreen(computerBotId).catch(() => undefined);
+        }
+        // Another bot of the group may share the computer, so any control event can change who
+        // the open computer names.
+        if (isComputerStatusEvent(event) && event.type !== "computer.status" && computerBotId) {
+          const before = computerRef.current;
+          void rpc.computer
+            .status({ botId: computerBotId })
+            .then((status) => {
+              if (computerBotIdRef.current === computerBotId && computerRef.current === before) {
+                commitComputer(status);
+              }
+            })
+            .catch(() => undefined);
         }
         if (isRunTerminalEvent(event)) refreshRoutineHistory(event.runId);
       },
