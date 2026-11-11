@@ -332,14 +332,19 @@ describe("live page helper one-time code fill", () => {
       expect(outerSet).not.toHaveBeenCalled();
     });
 
-    it("draws them as dots when the widget draws its slots a moment later", async () => {
-      const { fill, set } = widget(10);
-      fill("123456");
-      expect(set).not.toHaveBeenCalled();
-      // The helper masks again after its own short delay; a loaded runner can stretch it.
-      await vi.waitFor(() =>
-        expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important"),
-      );
+    it("draws them as dots when the widget draws its slots a moment later", () => {
+      // Fake timers fix the order: the widget draws at 10 ms, the helper masks again at 50 ms.
+      // With real timers a loaded runner can run the re-mask first, and it never comes back.
+      vi.useFakeTimers();
+      try {
+        const { fill, set } = widget(10);
+        fill("123456");
+        expect(set).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(50);
+        expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("finds a code written with dashes shown without them, and gives the slots back when the box is refilled", () => {
