@@ -391,6 +391,8 @@ app.get("/computers/:id", async (c) => {
   }
 });
 
+const EXEC_KEEP_ALIVE_MS = 15_000;
+
 app.post("/computers/:id/exec", async (c) => {
   const headers = identityHeaders(c);
   const id = c.req.param("id");
@@ -433,6 +435,16 @@ app.post("/computers/:id/exec", async (c) => {
           closed = true;
         }
       };
+      // A silent command sends nothing for minutes, and the caller's HTTP client drops a
+      // response that stays quiet for 5 minutes. Readers skip blank lines.
+      const keepAlive = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode("\n"));
+        } catch {
+          closed = true;
+        }
+      }, EXEC_KEEP_ALIVE_MS);
       try {
         let streamedStderr = "";
         const result = await runContainerCommand(
@@ -465,6 +477,7 @@ app.post("/computers/:id/exec", async (c) => {
         send({ type: "stderr", data: message });
         send({ type: "exit", code: 1 });
       } finally {
+        clearInterval(keepAlive);
         closed = true;
         try {
           controller.close();
@@ -1108,26 +1121,47 @@ app.delete("/computers/:id/screen", async (c) => {
   }
 });
 
+const KILL_WAIT_ATTEMPTS = 30;
+const KILL_WAIT_MS = 1_000;
+
+/** A container too starved to exit when asked is killed, so a stop always ends it. */
+async function stopOrKill(container: Docker.Container): Promise<void> {
+  try {
+    await container.stop();
+  } catch (error) {
+    await container.kill().catch(() => undefined);
+    for (let attempt = 0; attempt < KILL_WAIT_ATTEMPTS; attempt += 1) {
+      if (!(await container.inspect()).State.Running) return;
+      await new Promise((resolve) => setTimeout(resolve, KILL_WAIT_MS));
+    }
+    throw error;
+  }
+}
+
 app.post("/computers/:id/stop", async (c) => {
   const id = c.req.param("id");
   const { botId, spaceId } = identityHeaders(c);
   try {
     const { container } = await managedContainer(id, botId, spaceId);
+    // The caller gave up on what is running: the computer may be unable to run the checkpoint.
+    const discardUnsaved = c.req.header("x-rakazo-discard-unsaved") === "1";
     await withComputerScreenLock(id, async () => {
       const info = await container.inspect();
       if (info.State.Running) {
         try {
-          // Every profile on the home volume, not only screens still held in memory.
-          const checkpoint = await runContainerCommand(container, [
-            "bash",
-            "-c",
-            quiesceBrowserProfilesCommand(),
-          ]);
-          if (checkpoint.code !== 0)
-            throw new Error(checkpoint.stderr || "bot browsers failed to stop");
+          if (!discardUnsaved) {
+            // Every profile on the home volume, not only screens still held in memory.
+            const checkpoint = await runContainerCommand(container, [
+              "bash",
+              "-c",
+              quiesceBrowserProfilesCommand(),
+            ]);
+            if (checkpoint.code !== 0)
+              throw new Error(checkpoint.stderr || "bot browsers failed to stop");
+          }
         } finally {
           // Failed profiles remain on the durable home for recovery after restart.
-          await container.stop();
+          await stopOrKill(container);
           clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
         }
       }
