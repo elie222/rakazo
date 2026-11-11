@@ -258,7 +258,7 @@ async function importVaultLogins(
       try {
         const plaintext = encodeLoginSecret(vaultImportLogin(row));
         const base = row.title || defaultVaultItemTitle(destination, plaintext);
-        const name = await createVaultItem(deps, scope, base, "login", (item) =>
+        await createVaultItem(deps, scope, base, "login", (item) =>
           storeBotSecret({
             prisma: deps.prisma,
             secretStore: deps.secrets,
@@ -275,7 +275,7 @@ async function importVaultLogins(
           type: "credential.created",
           userId: actor.userId,
           spaceId: actor.spaceId,
-          metadata: { procedure: "vault.import", kind: "vault_credential", scope: vault, name },
+          metadata: { procedure: "vault.import", kind: "vault_credential", scope: vault },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";

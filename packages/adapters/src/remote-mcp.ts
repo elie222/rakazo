@@ -691,6 +691,8 @@ export function createSafeRemoteFetch(
   baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
+  /** Called once the destination is checked, just before the request is sent; a throw stops it. */
+  beforeSend?: () => void,
 ): SafeRemoteFetch {
   const dispatcher = createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
     assertSafeRemoteAddresses(addresses, hostname, policy),
@@ -703,6 +705,7 @@ export function createSafeRemoteFetch(
       throw new Error("Connector fetch requires a URL, not a Request");
     }
     const { url, addresses } = await inspectSafeRemoteUrl(String(input), resolve, policy);
+    beforeSend?.();
     let response: Response;
     try {
       const requestInit = { ...init, redirect: "manual" as const };
@@ -752,6 +755,8 @@ function assertPrivateAddresses(addresses: ResolvedAddress[]): void {
 export function createPrivateNetworkFetch(
   baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
+  /** As for `createSafeRemoteFetch`. */
+  beforeSend?: () => void,
 ): SafeRemoteFetch {
   const dispatcher = new Agent({
     connect: { lookup: createAddressCheckedLookup(resolve, assertPrivateAddresses) },
@@ -767,6 +772,7 @@ export function createPrivateNetworkFetch(
     }
     const addresses = await resolve(url.hostname.replace(/^\[|\]$/g, ""));
     assertPrivateAddresses(addresses);
+    beforeSend?.();
     let response: Response;
     try {
       const requestInit = { ...init, redirect: "manual" as const };

@@ -345,7 +345,14 @@ export async function browserActFromTool(
       if (refused) return { ...refusedInput(refused), completed: 0 };
     }
     // Taken just before the page is asked, by one call only, so two fills never both type it.
-    const refusedCode = codeTyped && (await codeTyped.claim());
+    let refusedCode: string | undefined;
+    try {
+      refusedCode = await codeTyped?.claim();
+    } catch (error) {
+      // The page was never asked, so the purchase counted above did not go through.
+      if (approved) await options.releasePurchase?.();
+      throw error;
+    }
     if (refusedCode) {
       if (approved) await options.releasePurchase?.();
       return { ...refusedInput(refusedCode), completed: 0 };

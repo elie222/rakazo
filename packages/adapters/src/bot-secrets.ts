@@ -1499,9 +1499,20 @@ export async function requestWithBotSecret(input: {
     allowPrivateHttpSecretOrigins() &&
     url.protocol === "http:" &&
     isPrivateNetworkHost(url.hostname);
+  // Cancelled while the destination is still being checked, nothing is sent, then or after.
+  let sent = false;
+  const beforeSend = () => {
+    signal.throwIfAborted();
+    sent = true;
+  };
   const fetch = privateHttpDestination
-    ? createPrivateNetworkFetch(input.remote?.fetch, input.remote?.resolveHostname)
-    : createSafeRemoteFetch(input.remote?.fetch, input.remote?.resolveHostname);
+    ? createPrivateNetworkFetch(input.remote?.fetch, input.remote?.resolveHostname, beforeSend)
+    : createSafeRemoteFetch(
+        input.remote?.fetch,
+        input.remote?.resolveHostname,
+        undefined,
+        beforeSend,
+      );
   try {
     headers.set(headerName, headerValue);
     const response = await withAbort(
@@ -1536,7 +1547,7 @@ export async function requestWithBotSecret(input: {
     if (
       error instanceof RemoteRequestSentError ||
       error instanceof ConnectorRedirectError ||
-      signal.aborted
+      (sent && signal.aborted)
     )
       await recordUse();
     return { error: "Authenticated request failed. Check the destination and credential." };

@@ -620,11 +620,12 @@ describe("vault router", () => {
       ["shop-example-test-2", origin],
     ]);
     expect(rows[1]).toMatchObject({ title: "Shop", origin, auth: { type: "login" } });
+    // One event for each login saved, without its name: a guest's would reach the host's audit log.
     expect(events.record.mock.calls).toEqual(
-      ["shop", "shop-example-test-2"].map((name) => [
+      Array(2).fill([
         expect.objectContaining({
           type: "credential.created",
-          metadata: { procedure: "vault.import", kind: "vault_credential", scope: "account", name },
+          metadata: { procedure: "vault.import", kind: "vault_credential", scope: "account" },
         }),
       ]),
     );

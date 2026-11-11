@@ -134,7 +134,8 @@ export function parseVaultCsv(text: string): VaultCsv {
   if (text.length > VAULT_IMPORT_FILE_LIMIT) return { error: "too_large" };
   const records = csvRecords(text);
   if (!records) return { error: "unreadable" };
-  // Blank records are skipped but still counted, so a row's number is its place in the file.
+  // Blank records are skipped but still counted. A row's number counts the rows after the header,
+  // not the file's lines: a cell that spans several lines is one row.
   const start = records.findIndex((record) => !blank(record));
   const header = records[start] ?? [];
   const body = start < 0 ? [] : records.slice(start + 1);
@@ -151,7 +152,9 @@ export function parseVaultCsv(text: string): VaultCsv {
   const columns = Object.fromEntries(
     (Object.keys(COLUMNS) as Column[]).map((column) => [
       column,
-      COLUMNS[column].map((alias) => keys.indexOf(alias)).filter((index) => index >= 0),
+      COLUMNS[column].flatMap((alias) =>
+        keys.flatMap((key, index) => (key === alias ? [index] : [])),
+      ),
     ]),
   ) as Record<Column, number[]>;
   if (!columns.url.length || !columns.password.length) return { error: "no_logins" };

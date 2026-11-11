@@ -351,6 +351,25 @@ describe("authenticated secret requests", () => {
   it("records a key that may have left, once, and none refused before sending", async () => {
     const { input, fetch } = await fixture();
     const recordUse = vi.fn(async () => {});
+    // Cancelled while the destination is still being checked: nothing is sent, then or after.
+    const early = new AbortController();
+    let checked = (_addresses: { address: string; family: 4 }[]) => {};
+    const resolveHostname = vi.fn(
+      () => new Promise<{ address: string; family: 4 }[]>((resolve) => (checked = resolve)),
+    );
+    const checking = requestWithBotSecret({
+      ...input,
+      recordUse,
+      signal: early.signal,
+      remote: { ...input.remote, resolveHostname },
+    });
+    await vi.waitFor(() => expect(resolveHostname).toHaveBeenCalled());
+    early.abort();
+    expect(await checking).toHaveProperty("error");
+    checked([{ address: "203.0.113.10", family: 4 }]);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(recordUse).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
     // Cancelled while the request is out, with no answer yet.
     const controller = new AbortController();
     fetch.mockImplementationOnce(

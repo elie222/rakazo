@@ -568,8 +568,9 @@ describeIntegration("reusable credential lifecycle", () => {
     const events = await db.securityEvent.findMany({
       where: { userId: seeded.me.userId, type: "credential.created" },
     });
+    // Without the login's name, which a guest's import would put in the host's audit log.
     expect(events.map((event) => event.metadata)).toEqual([
-      expect.objectContaining({ procedure: "vault.import", kind: "vault_credential", name: "bob" }),
+      { procedure: "vault.import", kind: "vault_credential", scope: "account" },
     ]);
     expect(JSON.stringify(events)).not.toContain("fake-import-pass");
   });

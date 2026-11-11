@@ -23,7 +23,8 @@ export async function pickVaultCsv(): Promise<VaultCsv | null> {
   if (!asset) return null;
   const file = new File(asset.uri);
   try {
-    if ((asset.size ?? file.size) > VAULT_IMPORT_FILE_LIMIT) return { error: "too_large" };
+    // The copy's own size: the one a file provider reports may be missing or wrong.
+    if (file.size > VAULT_IMPORT_FILE_LIMIT) return { error: "too_large" };
     return parseVaultCsv(await file.text());
   } finally {
     try {

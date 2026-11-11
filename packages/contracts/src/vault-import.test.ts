@@ -68,6 +68,14 @@ describe("parseVaultCsv", () => {
     });
   });
 
+  it("reads every column of a name the file repeats, using the first cell that isn't empty", () => {
+    const csv = "url,password,password,url\n,,fake-pass,https://example.com";
+    expect(parseVaultCsv(csv)).toMatchObject({
+      rows: [{ origin: "https://example.com", password: "fake-pass" }],
+      skipped: noneSkipped(),
+    });
+  });
+
   it("imports the logins of a file with an authenticator column, never their keys", () => {
     const csv = [
       "name,url,username,password,totp,2fa",

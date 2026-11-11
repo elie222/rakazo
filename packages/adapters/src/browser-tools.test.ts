@@ -1463,6 +1463,46 @@ describe("browser_act fill_code", () => {
     expect(act).not.toHaveBeenCalled();
   });
 
+  it("releases an approved purchase when its code is refused or can't be taken", async () => {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act");
+    const releasePurchase = vi.fn(async () => {});
+    const claims = [
+      async () => "No code is waiting.",
+      async () => {
+        throw new Error("The login could not be read.");
+      },
+    ];
+    for (const claim of claims) {
+      const result = await browserActFromTool(
+        browser,
+        computer,
+        context,
+        {
+          actions: [
+            { kind: "fill_code", ref: "e1" },
+            { kind: "click", ref: "e2" },
+          ],
+        },
+        {
+          resolveCodeFill: async () => held({ claim }),
+          approvedPurchase: {
+            steps: [1],
+            site: "shop.example.test",
+            label: "Pay $5",
+            amount: "$5",
+            amountSource: "button",
+          },
+          countPurchase: async () => undefined,
+          releasePurchase,
+        },
+      );
+      expect(result).toMatchObject({ ok: false });
+    }
+    expect(releasePurchase).toHaveBeenCalledTimes(2);
+    expect(act).not.toHaveBeenCalled();
+  });
+
   it("settles a missing code before the page is touched, without echoing a lookup failure", async () => {
     const browser = new FakeBrowserProvider();
     const act = vi.spyOn(browser, "act");

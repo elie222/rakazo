@@ -6,6 +6,7 @@ const files = vi.hoisted(() => ({
   text: new Map<string, string>(),
   unreadable: new Set<string>(),
   deleted: [] as string[],
+  read: [] as string[],
 }));
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: vi.fn() }));
 vi.mock("expo-file-system", () => ({
@@ -15,6 +16,7 @@ vi.mock("expo-file-system", () => ({
       return files.text.get(this.uri)?.length ?? 0;
     }
     async text() {
+      files.read.push(this.uri);
       if (files.unreadable.has(this.uri)) throw new Error("The file is no longer there.");
       return files.text.get(this.uri) ?? "";
     }
@@ -35,6 +37,7 @@ beforeEach(() => {
   files.text.clear();
   files.unreadable.clear();
   files.deleted.length = 0;
+  files.read.length = 0;
 });
 
 describe("pickVaultCsv", () => {
@@ -55,8 +58,11 @@ describe("pickVaultCsv", () => {
   });
 
   it("refuses a file over the limit without reading it, and still deletes the copy", async () => {
-    pick("file:///cache/big.csv", 5_000_001);
+    // By the copy's own size: the one a file provider reports may be missing or wrong.
+    files.text.set("file:///cache/big.csv", "x".repeat(5_000_001));
+    pick("file:///cache/big.csv", 10);
     expect(await pickVaultCsv()).toEqual({ error: "too_large" });
+    expect(files.read).toEqual([]);
     expect(files.deleted).toEqual(["file:///cache/big.csv"]);
   });
 
