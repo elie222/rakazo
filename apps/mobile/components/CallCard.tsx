@@ -128,7 +128,7 @@ export function CallCard() {
   return (
     <GlassSurface
       shape="roundedRectangle"
-      style={[styles.card, { top: insets.top + 52 }]}
+      style={[styles.card, { marginBottom: insets.bottom + 8 }]}
       fallbackStyle={[
         styles.cardFallback,
         {
@@ -309,11 +309,11 @@ function Waveform({ phase }: { phase: CallPhase }) {
 
 const styles = StyleSheet.create({
   card: {
-    position: "absolute",
     alignSelf: "center",
     width: 320,
+    maxWidth: "100%",
+    marginTop: 8,
     padding: 12,
-    zIndex: 50,
   },
   cardFallback: {
     borderRadius: 18,

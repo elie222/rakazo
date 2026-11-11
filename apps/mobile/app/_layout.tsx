@@ -581,12 +581,12 @@ function LayoutContent() {
                     />
                   </Stack>
                 </SplitFrame>
+                <CallCard />
                 <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
               </View>
               <ComputerUpdateProgress />
               <MessageMenuHost />
               <MessageActionSheetHost />
-              <CallCard />
               <IncomingCall />
             </ThemeProvider>
           </ChatContentProviders>
