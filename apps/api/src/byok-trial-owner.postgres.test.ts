@@ -468,6 +468,8 @@ dbTests("own-key trial hold lifecycle", () => {
     // The older request runs on an API instance with a one-connection pool, and its own
     // checkout call fails, as an aborted one does.
     const stalled = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "stalled" });
+    // Its own name, so the wait below counts only this write and no other test's.
+    const expiry = createDb(process.env.DATABASE_URL!, { poolMax: 1, applicationName: "expiry" });
     const olderService = createBillingService({
       prisma: asSystem(stalled.prisma),
       provider: failingByokCheckout(provider),
@@ -501,12 +503,12 @@ dbTests("own-key trial hold lifecycle", () => {
         db.pool
           .query(
             `SELECT 1 FROM pg_stat_activity
-              WHERE datname = current_database() AND wait_event_type = 'Lock'
+              WHERE application_name = 'expiry' AND wait_event_type = 'Lock'
                 AND query LIKE 'UPDATE%billing_accounts%'`,
           )
           .then((result) => result.rowCount);
-      void prisma.billingAccount
-        .updateMany({
+      void asSystem(expiry.prisma)
+        .billingAccount.updateMany({
           where: { organizationId: owner.first.organizationId },
           data: { checkoutLeaseExpiresAt: new Date(0) },
         })
@@ -530,6 +532,8 @@ dbTests("own-key trial hold lifecycle", () => {
       blocker.release();
       await stalled.prisma.$disconnect();
       await stalled.pool.end();
+      await expiry.prisma.$disconnect();
+      await expiry.pool.end();
     }
   }, 20_000);
 
