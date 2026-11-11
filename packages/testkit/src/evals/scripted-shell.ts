@@ -84,13 +84,12 @@ export function scriptedShell(
       code = 0;
       continue;
     }
-    // The words before any pipe or redirect outside quotes: `echo "a|b"` prints a|b.
-    const words = splitOutsideQuotes(part, /^(?:[0-9&]?>|\|)/)[0]!.trim();
-    const echo = /^echo(?:\s+(?:-[en]+\s+)?(.*))?$/s.exec(words);
+    const echo = /^echo(?:\s+(?:-[en]+\s+)?(.*))?$/s.exec(
+      part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""),
+    );
     if (echo) {
       // `echo … > file` writes to the file, so nothing reaches stdout.
-      if (!STDOUT_REDIRECT.test(part.trim().slice(words.length)))
-        out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2"));
+      if (!STDOUT_REDIRECT.test(part)) out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2"));
       code = 0;
       continue;
     }
@@ -155,27 +154,9 @@ function pipeFilter(command: string, text: string): { text: string; code: number
   if (!cut) return grepFilter(command, text);
   const [, which, , bytes, count] = cut;
   const n = count === undefined ? 10 : Number(count);
-  // slice(-0) would keep everything.
-  const tail = <T>(items: T[]) => (n === 0 ? [] : items.slice(-n));
-  if (bytes)
-    return {
-      // Bytes, not characters: a cut can split a multibyte character, as on a real shell.
-      text:
-        which === "head"
-          ? Buffer.from(text).subarray(0, n).toString()
-          : Buffer.from(tail([...Buffer.from(text)])).toString(),
-      code: 0,
-    };
-  // A final newline ends the last line rather than starting another.
-  const ended = text.endsWith("\n");
-  const lines = (ended ? text.slice(0, -1) : text).split("\n");
-  const kept = which === "head" ? lines.slice(0, n) : tail(lines);
-  // Every kept line but the input's own last one ended in a newline.
-  const lastKept = which === "head" ? kept.length === lines.length : true;
-  return {
-    text: kept.length ? `${kept.join("\n")}${ended || !lastKept ? "\n" : ""}` : "",
-    code: 0,
-  };
+  if (bytes) return { text: which === "head" ? text.slice(0, n) : text.slice(-n), code: 0 };
+  const lines = text.split("\n");
+  return { text: (which === "head" ? lines.slice(0, n) : lines.slice(-n)).join("\n"), code: 0 };
 }
 
 /** `grep` over piped text with the flags checks commonly use; anything else is undefined. */
