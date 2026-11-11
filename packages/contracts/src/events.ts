@@ -239,7 +239,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     /**
      * Marks a user message as an event that woke the bot (a webhook, an email, a chat message).
-     * Chats show `title` and keep the message's text block, the full prompt, folded under it.
+     * Its text block is the bot's full prompt; chats hide the message, and a reply line names it
+     * by `title`.
      */
     kind: z.literal("delivery"),
     source: z.enum(["webhook", "email", "messaging"]),

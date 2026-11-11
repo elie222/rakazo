@@ -131,11 +131,6 @@ export function channelMessageSender(blocks: MessageBlock[]): string | undefined
     : undefined;
 }
 
-/** What a delivery woke the bot with: the text its chat line folds. */
-export function deliveryPromptText(blocks: readonly MessageBlock[]): string {
-  return blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n\n");
-}
-
 /**
  * A message's text for a reply line before the server's preview arrives. Channel
  * messages show their text alone, matching the server-owned preview.

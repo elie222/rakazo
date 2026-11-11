@@ -245,7 +245,7 @@ test("run history links runs that replied and marks silent ones", async ({ page 
   await captureScreenshot(page, testInfo, "routine-run-history-states");
 });
 
-test("a webhook delivery shows as one line that opens to what the bot got", async ({
+test("a webhook delivery stays out of the chat, like a scheduled run", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -282,19 +282,8 @@ test("a webhook delivery shows as one line that opens to what the bot got", asyn
     .toMatch(/^(completed|failed|cancelled|waiting_input)$/);
   await page.reload({ waitUntil: "domcontentloaded" });
 
+  // The run's own output shows; the prompt the delivery woke it with never does.
   const transcript = page.getByTestId("transcript");
-  const delivery = transcript.getByTestId("delivery-message");
-  await expect(delivery).toHaveCount(1);
-  const line = delivery.getByRole("button", { name: "CRM sync" });
-  await expect(line).toBeVisible();
   await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
-  const prompt = delivery.getByTestId("delivery-message-prompt");
-  await expect(prompt).toBeHidden();
   await captureScreenshot(page, testInfo, "routine-webhook-delivery");
-
-  await line.click();
-  await expect(prompt).toBeVisible();
-  await expect(prompt).toContainText('Run routine "CRM sync"');
-  await expect(prompt).toContainText('"email": "ada@example.test"');
-  await captureScreenshot(page, testInfo, "routine-webhook-delivery-open");
 });

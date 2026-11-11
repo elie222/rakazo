@@ -41,6 +41,18 @@ const peerExchange = [
 ];
 
 describe("user-visible messages", () => {
+  it("hides a delivery that woke the bot but keeps the bot's reply", () => {
+    const delivery = {
+      ...message("delivery", "run-1", [
+        { kind: "delivery", source: "webhook", title: "CRM sync" },
+        { kind: "text", text: 'Run routine "CRM sync":\nAdd the contact.' },
+      ]),
+      role: "user",
+    };
+    const reply = message("reply", "run-1", [{ kind: "text", text: "Added Ada." }]);
+    expect(userVisibleMessages([delivery, reply]).map((item) => item.id)).toEqual(["reply"]);
+  });
+
   it("keeps ordinary group replies inline when a member sends a peer message", () => {
     const messages: ThreadMessage[] = [
       { ...message("first", "group-run", [{ kind: "text", text: "Checking" }]), botId: "first" },

@@ -2,17 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
-/** A delivery shown as one expandable line: one without files. */
-export function isDeliveryLine(blocks: readonly MessageBlock[]): boolean {
-  return (
-    blocks.some((block) => block.kind === "delivery") &&
-    !blocks.some((block) => block.kind === "image" || block.kind === "file")
-  );
-}
-
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
-  // A delivery with files stays a bubble, so its file cards keep their place.
-  if (isDeliveryLine(blocks)) return true;
   return blocks.some(
     (block) =>
       block.kind === "handoff" ||
