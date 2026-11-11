@@ -618,6 +618,25 @@ describe("moving vault values to the envelope keys", () => {
     expect(await fillPassword(db)).toMatchObject({ text: "fake-password-2" });
   });
 
+  it("saves again under the newest version its process knows when reencrypt moves the item during a save", async () => {
+    const db = encryptedDatabase();
+    await save(db, login, loginValue());
+    await db.migrate();
+    // The save seals under version 1; another process rotates and moves the item to version 2,
+    // and the saving process has read version 2 by the time it commits.
+    const other = db.otherProcess();
+    const transaction = db.prisma.$transaction.bind(db.prisma);
+    vi.spyOn(db.prisma, "$transaction").mockImplementationOnce((async (run: never) => {
+      await other.ring.rotate("user:user-1");
+      await other.migrate("reencrypt");
+      await db.ring.allFresh("user:user-1");
+      return transaction(run);
+    }) as never);
+    await save(db, login, loginValue("fake-password-2"));
+    expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 0 });
+    expect(await fillPassword(db)).toMatchObject({ text: "fake-password-2" });
+  });
+
   it("lets a label edit made during migrate keep its date", async () => {
     const db = await mixedVault();
     const saved = row(db, "site").updatedAt!;

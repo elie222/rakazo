@@ -645,12 +645,10 @@ export async function prepareBotSecret(input: {
           `Invalid credential destination — name: ${conflict} is already exported as $${commandVariableName(destination.name)}`,
         );
       }
-      // `migrate` or `decrypt` moving the item since it was read changes which format to seal.
+      // A vault command moving the item since it was read changes which format or key to seal.
       if (
         current?.id !== existing?.id ||
-        (current &&
-          (ciphertextKeyId(current.ciphertext) === undefined) !==
-            (ciphertextKeyId(existing!.ciphertext) === undefined))
+        (current && ciphertextKeyId(current.ciphertext) !== ciphertextKeyId(existing!.ciphertext))
       )
         throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
       const labelled = {
