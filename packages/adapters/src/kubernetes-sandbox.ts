@@ -652,7 +652,20 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         if (!queue.length) await new Promise<void>((resolve) => (wake = resolve));
         while (queue.length) yield queue.shift()!;
       }
-      if (failure) throw failure;
+      if (failure) {
+        if (failure instanceof Error && /Unexpected server response: 404\b/.test(failure.message)) {
+          let pod: V1Pod | undefined;
+          try {
+            pod = await this.readPod(this.podId(computer), signal);
+          } catch {
+            throw failure;
+          }
+          if (!pod || isTerminalPod(pod) || pod.metadata?.deletionTimestamp) {
+            throw sandboxGone(this.podId(computer), failure);
+          }
+        }
+        throw failure;
+      }
     } finally {
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);
@@ -667,12 +680,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
 /** A socket reports failure with an event whose fields are not enumerable, so it logs as `{}`. */
 function execSocketError(event: unknown): unknown {
   const { error, message } = event as { error?: unknown; message?: string };
-  const reason =
-    event instanceof Error ? event : (error ?? new Error(message || "Kubernetes exec failed"));
-  // The handshake is refused with a 404 when the pod is gone, as it is once a computer has stopped.
-  return reason instanceof Error && /Unexpected server response: 404\b/.test(reason.message)
-    ? sandboxNotFoundError("Kubernetes pod not found", { cause: reason })
-    : reason;
+  return event instanceof Error ? event : (error ?? new Error(message || "Kubernetes exec failed"));
 }
 
 let kubernetesModule: Promise<typeof KubernetesClient> | undefined;
