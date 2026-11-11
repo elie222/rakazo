@@ -64,7 +64,7 @@ export function PlanUsageRows() {
   return (
     <div className="divide-y divide-border">
       {plans.map((plan) => (
-        <div key={plan.credentialId} data-testid="plan-limits" className="px-3.5 py-3">
+        <div key={plan.credentialId} data-testid="plan-limits" className="px-4 py-3">
           <div className="mb-2.5 flex items-baseline justify-between gap-3">
             <span className="text-body font-medium text-foreground">{plan.name}</span>
             {plan.label !== plan.name ? (
@@ -83,7 +83,7 @@ export function PlanUsageRows() {
       {creditsUsd !== null ? (
         <div
           data-testid="credit-balance"
-          className="flex items-baseline justify-between gap-3 px-3.5 py-3"
+          className="flex items-baseline justify-between gap-3 px-4 py-3"
         >
           <span className="text-body font-medium text-foreground">{t`Credits`}</span>
           <span className="text-body tabular-nums text-foreground">{t`${usd(creditsUsd)} left`}</span>
