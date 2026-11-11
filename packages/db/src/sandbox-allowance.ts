@@ -31,7 +31,7 @@ function byokTierOf(
  * The organization's computer allowance in cents and the moment its period began, or null when
  * it has no limit: a deployment without model-credit billing never limits computers. The period
  * is the subscription's billing period, or the calendar month in UTC without one. A cancelled
- * trial gets nothing more.
+ * trial gets nothing more. Credit an admin granted, without a monthly plan, brings its share once.
  */
 export async function sandboxAllowancePlan(
   prisma: PrismaClient,
@@ -73,6 +73,18 @@ export async function sandboxAllowancePlan(
         : periodStart
       : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const tier = byokTierOf(organization?.modelCredits?.mode, billing);
+  const creditShare = (cents: number) =>
+    Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
+  if (billing?.status !== "trialing" && !tier && !billing?.creditAmountCents) {
+    // Granted credit without a monthly plan: its share is one pool, spent since the first grant.
+    const granted = await prisma.accessGrant.aggregate({
+      where: { organizationId, appliedAt: { not: null }, creditCents: { gt: 0 } },
+      _sum: { creditCents: true },
+      _min: { appliedAt: true },
+    });
+    if (granted._sum.creditCents && granted._min.appliedAt)
+      return { limitCents: creditShare(granted._sum.creditCents), since: granted._min.appliedAt };
+  }
   const limitCents =
     billing?.status === "trialing"
       ? billing.cancelAtPeriodEnd
@@ -80,7 +92,7 @@ export async function sandboxAllowancePlan(
         : TRIAL_SANDBOX_ALLOWANCE_CENTS
       : tier
         ? BYOK_TIERS[tier].computerAllowanceCents
-        : Math.floor(((billing?.creditAmountCents ?? 0) * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
+        : creditShare(billing?.creditAmountCents ?? 0);
   return { limitCents, since };
 }
 
