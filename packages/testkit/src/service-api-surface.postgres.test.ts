@@ -172,6 +172,42 @@ describeWithDatabase("service API surface", () => {
     return { runId: run.id };
   };
 
+  it("shows a bot's status with only the creator's runs", async () => {
+    const { cookie } = await person();
+    const bot = await newBot(cookie, "Shared");
+    const { token } = await newKey(cookie, ["bots:read"]);
+    const own = await busyRun(bot.threadId);
+    const thread = await db.thread.findUniqueOrThrow({ where: { id: bot.threadId } });
+    const { actor: someoneElse } = await person();
+    const task = await db.task.create({
+      data: {
+        spaceId: thread.spaceId,
+        userId: someoneElse.userId,
+        botId: bot.id,
+        threadId: bot.threadId,
+        prompt: "another member's work",
+        status: "running",
+      },
+    });
+    await db.run.create({
+      data: {
+        spaceId: thread.spaceId,
+        userId: someoneElse.userId,
+        botId: bot.id,
+        threadId: bot.threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const status = await ok<{ runs: Array<{ id: string }> }>(
+      token,
+      "GET",
+      `/bots/${bot.id}/status`,
+    );
+    expect(status.runs.map((run) => run.id)).toEqual([own.runId]);
+  });
+
   describe("every route", () => {
     it("refuses a call with no key", async () => {
       for (const [id, definition] of ROUTES) {

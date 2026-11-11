@@ -509,7 +509,8 @@ export const SERVICE_HANDLERS: Handlers = {
       client.threads.head({ botId }),
       client.computer.status({ botId }),
       prisma.run.findMany({
-        where: { botId, spaceId: actor.spaceId },
+        // Only the creator's runs, as everywhere else a key reads runs.
+        where: { botId, spaceId: actor.spaceId, userId: actor.userId },
         select: { id: true, status: true },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: RECENT_RUNS,
