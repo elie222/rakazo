@@ -869,7 +869,15 @@ export const appContract = {
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
     /** A still of the screen as an image data URL, or null when the computer is not running. */
-    preview: oc.input(botId).output(z.object({ image: z.string().nullable() })),
+    preview: oc
+      .input(
+        z.object({
+          botId: Id,
+          /** The run a needs-you card shows; no image once that run stops waiting. */
+          runId: Id.optional(),
+        }),
+      )
+      .output(z.object({ image: z.string().nullable() })),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {

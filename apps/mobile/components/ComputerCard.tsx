@@ -65,7 +65,7 @@ export function ComputerCard({
   const pending = block.state === TAKEOVER_COMPUTER_PENDING_STATE;
   const [expanded, setExpanded] = useState(false);
   const [releasing, setReleasing] = useState(false);
-  const image = useComputerPreview(pending && !readOnly ? botId : undefined);
+  const image = useComputerPreview(pending && !readOnly ? botId : undefined, runId);
   const label =
     block.state === TAKEOVER_COMPUTER_PENDING_STATE
       ? t`Needs you`
@@ -193,12 +193,12 @@ export function ComputerCard({
 }
 
 /** A still of the bot's screen while the card waits. */
-function useComputerPreview(botId: string | undefined) {
+function useComputerPreview(botId: string | undefined, runId: string | undefined) {
   const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
     if (!botId) return;
     let live = true;
-    rpc("computer/preview", { botId })
+    rpc("computer/preview", { botId, runId })
       .then((result) => {
         if (live) setImage(result.image);
       })
@@ -206,6 +206,6 @@ function useComputerPreview(botId: string | undefined) {
     return () => {
       live = false;
     };
-  }, [botId]);
+  }, [botId, runId]);
   return image;
 }

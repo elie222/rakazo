@@ -94,7 +94,7 @@ function PendingComputerCard({
   const [releaseError, setReleaseError] = useState<string | null>(null);
   const queries = useSpaceQueries();
   const preview = useQuery({
-    ...queries.computer.preview.queryOptions({ input: { botId: botId ?? "" } }),
+    ...queries.computer.preview.queryOptions({ input: { botId: botId ?? "", runId } }),
     enabled: Boolean(botId),
     retry: false,
     // A later request must never paint an earlier screen, and a return to the tab redraws it.

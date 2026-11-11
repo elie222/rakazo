@@ -870,6 +870,15 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         const computer = bot.computer;
         if (!computer?.providerRef || computer.state !== "running") return { image: null };
+        if (input.runId) {
+          const waiting = await waitingTakeoverRun(
+            deps,
+            context.actor.spaceId,
+            computer.id,
+            bot.id,
+          );
+          if (waiting?.id !== input.runId) return { image: null };
+        }
         const observation = await deps.sandbox
           .observe(
             toComputerRef(computer),

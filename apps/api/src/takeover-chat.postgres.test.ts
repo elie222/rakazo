@@ -611,12 +611,12 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
   it("shows the screen preview to the Space and to no one outside it", async () => {
     const fixture = await setup("unopened");
     const outsider = await setup("unopened");
-    const preview = async (actor: Actor) => {
+    const preview = async (actor: Actor, runId?: string) => {
       const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
         new Request("http://127.0.0.1/rpc/computer/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ json: { botId: fixture.bot.id } }),
+          body: JSON.stringify({ json: { botId: fixture.bot.id, runId } }),
         }),
         { prefix: "/rpc", context: { actor } },
       );
@@ -629,6 +629,11 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     const other = await preview(outsider.actor);
     expect(other.status).not.toBe(200);
     expect(JSON.stringify(await other.json())).not.toContain("data:image");
+    // A card whose run no longer waits shows no screen.
+    const stale = await preview(fixture.actor, randomUUID());
+    expect((await stale.json()).json).toEqual({ image: null });
+    const current = await preview(fixture.actor, fixture.run.id);
+    expect((await current.json()).json.image).toMatch(/^data:image/);
   });
 
   it("does not let an older card answer the takeover a newer run is waiting on", async () => {
