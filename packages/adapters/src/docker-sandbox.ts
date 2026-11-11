@@ -214,6 +214,7 @@ export class DockerSandboxProvider implements SandboxProvider {
    */
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     if (!this.unresponsive.has(computer.id)) return;
+    if (context.signal?.aborted) return withAbort(Promise.resolve(), context.signal);
     let check = this.healthChecks.get(computer.id);
     if (!check) {
       const started = this.checkHealth(computer, context);
@@ -221,6 +222,8 @@ export class DockerSandboxProvider implements SandboxProvider {
         if (this.healthChecks.get(computer.id) === check) this.healthChecks.delete(computer.id);
       });
       this.healthChecks.set(computer.id, check);
+      // The check can fail after every caller has stopped waiting.
+      void check.catch(() => undefined);
     }
     await withAbort(check, context.signal);
   }

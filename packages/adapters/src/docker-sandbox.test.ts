@@ -276,6 +276,55 @@ describe("Docker sandbox", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it.each([new Error("stopped"), "stopped"])(
+      "does not start a check for an already stopped caller (%s)",
+      async (reason) => {
+        const fetchMock = vi.fn(async () => exit(0));
+        const provider = await unansweredProvider(fetchMock);
+        fetchMock.mockClear();
+        const stopped = new AbortController();
+        stopped.abort(reason);
+
+        await expect(
+          provider.prepare(computer, { ...context, signal: stopped.signal }),
+        ).rejects.toEqual(reason instanceof Error ? reason : new Error("Request timed out"));
+        expect(fetchMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it("observes a failed check after its only caller stops waiting", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const unhandled = vi.fn();
+      process.on("unhandledRejection", unhandled);
+      try {
+        const stopped = new AbortController();
+        const check = provider.prepare(computer, { ...context, signal: stopped.signal });
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        stopped.abort(new Error("stopped"));
+        await expect(check).rejects.toThrow("stopped");
+
+        answer(exit(1));
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(unhandled).not.toHaveBeenCalled();
+
+        fetchMock.mockResolvedValueOnce(exit(1));
+        await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(
+          SandboxDamagedError,
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+      } finally {
+        process.off("unhandledRejection", unhandled);
+      }
+    });
+
     it.each([
       ["answers nothing", () => Promise.reject(new TypeError("terminated"))],
       ["fails the command", async () => exit(1)],
