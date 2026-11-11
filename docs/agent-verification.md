@@ -573,12 +573,39 @@ These cases give the eval computer a script (`computer` on the case). Each
 command in a plain list (`;`, `&&`, `||`) gets the answer of the first scripted
 check it matches, with that check's exit code and stderr, and `echo` prints its
 words; one unscripted command makes the whole list unavailable, which is recorded
-as a harness issue. Loops and inline scripts get the answers to the checks they
-mention, in order. The install computer has a Chromium profile with the
-extension under a 32-letter id and a `10.7.1_0` version folder, enabled in
-`Preferences`; the control has none. Both run Chromium (`ps`, `--version`), keep
-no shell history, report 18 GB free, and show a browser window whose page is dark,
-or light in the controls.
+as a harness issue. Operators, pipes and `|` inside quotes or a basic-regex
+`\|` are told apart; output can pass through `grep`, `head` and `tail`; `cd` and
+subshell parentheses change nothing. Loops and inline scripts get the answers to
+the checks they mention, in order. The install computer has a Chromium profile
+with the extension under a 32-letter id and a `10.7.1_0` version folder, enabled
+in `Preferences`; the control has none. Both run Chromium (`ps`, `--version`),
+list a home and `~/.config` folder, have no other browser's profile, macOS
+paths, browser policies or shell history, report 18 GB free, and show a browser
+window whose page is dark, or light in the controls. Compaction cases run only
+under the `current` strategy, the only one that compacts.
+
+The `recall-tool-heavy-new-check` case reproduces a bot writing out its earlier
+steps instead of calling a tool. Its 48-message chat has twelve replies that
+did their work with tools (disk, files, processes, browser, search), each
+followed by small talk; the bot is then asked to check how long its computer has
+been up. A deterministic check requires a tool call other than a history lookup
+in the graded reply. Each trial records, without grading prose, whether the reply
+copies the replayed step list (`copied-marker`) or writes a tool call out as text
+(`tool-call-text`). In November 2026 a small model on the then-current product
+copied the list in 10 of 40 trials, and in 9 of them made no call and invented
+an uptime; larger models never did.
+
+More recall cases can come from a file: pass `--cases-file <file>` with
+`--suite recall`, a JSON array or one JSON object per line. Each case has an `id`
+starting `recall-file-`, a `purpose`, the chat as `messages` (`role` `user` or
+`bot`, `text`, and a bot reply's `steps` stored as the product stores them), the
+`ask`, and an `expect`: `{ "kind": "needs-tool" }` requires a tool call other than
+a history lookup, and `{ "kind": "rubric", "rubric": "<name>" }` grades the reply
+with one of this suite's calibrated rubrics. An optional `computer` adds scripted
+shell checks (`match` as a regular expression source, with `flags`, `output` and
+`exitCode`) ahead of the shared home and Chromium ones, and the browser `screen`.
+Every case records the copy observations above. Keep long fixture sets in a
+separate store and commit only synthetic content.
 
 A November 2026 run compared the change that first replayed steps with the
 change that added listing by kind and the empty-search note, with the same eval

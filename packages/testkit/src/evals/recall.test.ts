@@ -1,7 +1,11 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
 import { EMPTY_SETTINGS } from "./cases.js";
 import {
+  loadRecallCases,
   RECALL_EVAL_CASES,
   RECALL_FIXTURE_VERSION,
   RECALL_JUDGE_CALIBRATION,
@@ -247,6 +251,37 @@ describe("recall outcome grading", () => {
     ).toBe(false);
   });
 
+  it("in a tool-heavy chat, passes a real check and observes a step list or a call written out", () => {
+    const c = scenario("tool-heavy-new-check");
+    const history = c.history!;
+    expect(history.messages).toHaveLength(48);
+    expect(history.messages.filter((m) => m.steps).length).toBe(12);
+    const uptime = { step: 1, name: "shell", args: { command: "uptime" } };
+    expect(failed("tool-heavy-new-check", evidence([uptime], "Up 3 days."))).toEqual([]);
+    expect(scriptedShell(c.computer!, "uptime")?.stdout).toContain("up 3 days");
+    // Only a history lookup, or nothing at all, is not a check.
+    expect(failed("tool-heavy-new-check", evidence([search], "Up a while."))).toEqual([
+      "made-tool-call",
+    ]);
+    const observed = (text: string) => c.observe!(evidence([], text));
+    expect(observed("- Shell (succeeded): Checking uptime.\nUp 3 days.")["copied-marker"]).toBe(
+      true,
+    );
+    expect(observed("- Shell ×2 (1 succeeded, 1 failed)")["copied-marker"]).toBe(true);
+    for (const text of [
+      'shell({"command": "uptime"})',
+      '<tool_call>{"name": "shell", "arguments": {"command": "uptime"}}</tool_call>',
+      "Succeeded. Output not kept.",
+      '<function=shell>{"command": "uptime"}</function>',
+      '<|tool_call|>{"name": "shell"}',
+      '[TOOL_CALLS] [{"name": "shell"}]',
+    ])
+      expect(observed(text)["tool-call-text"]).toBe(true);
+    const plain = observed("It has been up for 3 days and 4 hours.\n- Restarted on Sunday");
+    expect(plain["copied-marker"]).toBe(false);
+    expect(plain["tool-call-text"]).toBe(false);
+  });
+
   it("fails a history lookup on everyday turns only when the turn cannot need one", () => {
     const egg = scenario("ordinary-visible").history!.messages.slice(-2);
     expect(egg.map((m) => [m.role, m.text])).toEqual([
@@ -264,12 +299,53 @@ describe("recall outcome grading", () => {
   });
 
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
-    for (const c of RECALL_EVAL_CASES) {
+    // The tool-heavy case grades only whether a call was made, so it has no judge.
+    expect(RECALL_EVAL_CASES.filter((c) => !c.judge).map((c) => c.id)).toEqual([
+      "recall-tool-heavy-new-check",
+    ]);
+    for (const c of RECALL_EVAL_CASES.filter((c) => c.judge)) {
       const input = c.judge?.(evidence([], "reply"));
       expect(input?.rubric.startsWith(`${RECALL_JUDGE_VERSION}:`)).toBe(true);
       expect(input?.evidence).toEqual({ reply: "reply" });
       const anchors = RECALL_JUDGE_CALIBRATION.filter((a) => a.input.rubric === input?.rubric);
       expect(new Set(anchors.map((a) => a.pass))).toEqual(new Set([true, false]));
     }
+  });
+  it("loads extra cases from a file, checked and graded like the built-in ones", () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "recall-cases-")), "cases.jsonl");
+    const steps = [{ label: "Shell", count: 1, note: "Checking free space." }];
+    writeFileSync(
+      file,
+      [
+        {
+          id: "recall-file-uptime",
+          purpose: "needs a fresh check",
+          messages: [
+            { role: "user", text: "Disk?" },
+            { role: "bot", text: "18 GB.", steps },
+          ],
+          ask: "Uptime now?",
+          expect: { kind: "needs-tool" },
+          computer: { shell: [{ match: "\\buptime\\b", output: "up 3 days" }] },
+        },
+        {
+          id: "recall-file-sign-off",
+          purpose: "an everyday turn",
+          messages: [{ role: "user", text: "Hi" }],
+          ask: "Bye!",
+          expect: { kind: "rubric", rubric: "sign-off" },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n"),
+    );
+    const [uptime, signOff] = loadRecallCases(file);
+    expect(uptime!.history!.messages[1]!.steps).toEqual(steps);
+    expect(scriptedShell(uptime!.computer!, "uptime")?.stdout).toBe("up 3 days");
+    expect(uptime!.grade(evidence([], "Up a while.")).map((c) => c.pass)).toEqual([false]);
+    expect(uptime!.judge).toBeUndefined();
+    expect(signOff!.judge!(evidence([], "Bye")).rubric).toContain(RECALL_JUDGE_VERSION);
+    writeFileSync(file, JSON.stringify([{ id: "bad", purpose: "x", messages: [], ask: "x" }]));
+    expect(() => loadRecallCases(file)).toThrow();
   });
 });

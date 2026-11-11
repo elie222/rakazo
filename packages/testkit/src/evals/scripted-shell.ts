@@ -66,21 +66,37 @@ export function scriptedShell(
     );
     return { stdout: out.join("\n"), stderr: err.join("\n"), code: codes.at(-1)! };
   }
-  const parts = command.split(/\s*(&&|\|\||;|\n)\s*/);
+  // Subshell parentheses only group a list here; `cd` changes nothing the checks answer.
+  const parts = splitOutsideQuotes(command, /^(?:&&|\|\||;|\n)/).map((part, index) =>
+    index % 2
+      ? part
+      : part
+          .trim()
+          .replace(/^\(\s*/, "")
+          .replace(/\s*\)((?:\s*[0-9&]?>&?\s*\S+)*)\s*$/, "$1"),
+  );
   let code = 0;
   for (let index = 0; index < parts.length; index += 2) {
     const part = parts[index]!.trim();
     const operator = parts[index - 1];
+    if (/^cd(?:\s+\S+)?(?:\s+[0-9&]?>\S*)*$/.test(part)) {
+      code = 0;
+      continue;
+    }
     if (!part || (operator === "&&" && code !== 0) || (operator === "||" && code === 0)) continue;
-    const echo = /^echo\s+(?:-[en]+\s+)?(.*)$/s.exec(part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""));
+    const echo = /^echo(?:\s+(?:-[en]+\s+)?(.*))?$/s.exec(
+      part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""),
+    );
     if (echo) {
       // `echo … > file` writes to the file, so nothing reaches stdout.
-      if (!STDOUT_REDIRECT.test(part)) out.push(echo[1]!.replace(/^(["'])(.*)\1$/s, "$2"));
+      if (!STDOUT_REDIRECT.test(part)) out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2"));
       code = 0;
       continue;
     }
     // `a | grep b` filters a's output; any other pipe is a program the script cannot run.
-    const [head, ...pipes] = part.split(/\s*(?<!\|)\|(?!\|)\s*/);
+    const [head, ...pipes] = splitOutsideQuotes(part, /^\|(?!\|)/)
+      .filter((_, at) => at % 2 === 0)
+      .map((piece) => piece.trim());
     const check = script.shell.find((entry) => entry.match.test(head!));
     if (!check) return undefined;
     if (!pipes.length) {
@@ -91,13 +107,56 @@ export function scriptedShell(
     if (failed && check.output && !SILENCED.test(head!)) err.push(check.output);
     let text = failed ? "" : (check.output ?? "");
     for (const pipe of pipes) {
-      const filtered = grepFilter(pipe.replace(/\s*(?:[0-9&]?>).*$/s, ""), text);
+      const filtered = pipeFilter(pipe.replace(/\s*(?:[0-9&]?>).*$/s, ""), text);
       if (!filtered) return undefined;
       ({ text, code } = filtered);
     }
     if (text && !STDOUT_REDIRECT.test(pipes.at(-1)!)) out.push(text);
   }
   return { stdout: out.join("\n"), stderr: err.join("\n"), code };
+}
+
+/**
+ * Splits at operators that are not inside quotes or escaped, keeping each operator between the
+ * pieces: `grep -E "a|b" f | head` has one pipe, not two.
+ */
+function splitOutsideQuotes(command: string, operator: RegExp): string[] {
+  const pieces: string[] = [];
+  let quote = "";
+  let start = 0;
+  for (let at = 0; at < command.length; at++) {
+    const char = command[at]!;
+    if (char === "\\" && quote !== "'") {
+      at++;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    const found = operator.exec(command.slice(at))?.[0];
+    if (!found) continue;
+    pieces.push(command.slice(start, at), found);
+    at += found.length - 1;
+    start = at + 1;
+  }
+  pieces.push(command.slice(start));
+  return pieces;
+}
+
+/** `head`, `tail` or `grep` over piped text; anything else is undefined. */
+function pipeFilter(command: string, text: string): { text: string; code: number } | undefined {
+  const cut = /^(head|tail)(?:\s+-(?:(n)\s*|(c)\s*)?(\d+))?$/.exec(command.trim());
+  if (!cut) return grepFilter(command, text);
+  const [, which, , bytes, count] = cut;
+  const n = count === undefined ? 10 : Number(count);
+  if (bytes) return { text: which === "head" ? text.slice(0, n) : text.slice(-n), code: 0 };
+  const lines = text.split("\n");
+  return { text: (which === "head" ? lines.slice(0, n) : lines.slice(-n)).join("\n"), code: 0 };
 }
 
 /** `grep` over piped text with the flags checks commonly use; anything else is undefined. */
@@ -108,7 +167,12 @@ function grepFilter(command: string, text: string): { text: string; code: number
   const pattern = parsed[3] ?? parsed[4]!;
   let regex: RegExp;
   try {
-    const source = flags.includes("F") ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : pattern;
+    const source = flags.includes("F")
+      ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      : flags.includes("E")
+        ? pattern
+        : // Basic regular expressions spell alternation `\|`.
+          pattern.replace(/\\\|/g, "|");
     regex = new RegExp(source, flags.includes("i") ? "i" : "");
   } catch {
     return undefined;

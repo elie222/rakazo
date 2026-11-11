@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { MessageBlock } from "@rakazo/contracts";
 import { toolStepsHistoryText } from "@rakazo/core";
+import { z } from "zod";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { HistoryFixture, HistoryMessage } from "./history-fixtures.js";
 import { historyFixture } from "./history-fixtures.js";
@@ -139,7 +142,7 @@ const overclaimInput = (
 });
 
 /** A reply that did its work with tools, followed by unrelated chat; see issue #3683. */
-export const TOOL_STEPS_FIXTURE_VERSION = "recall-tool-steps-v4";
+export const TOOL_STEPS_FIXTURE_VERSION = "recall-tool-steps-v6";
 type Earlier = Pick<HistoryMessage, "text" | "steps">[];
 const OPENING = [
   { text: "Hi! You'll be reading docs for me this week and sending me screenshots of them." },
@@ -152,16 +155,15 @@ const INSTALL_STEPS: NonNullable<HistoryMessage["steps"]> = [
   {
     label: "Shell",
     count: 2,
-    note: "I'll install the Midnight Lizard extension into Chromium from the command line.",
+    note: "I'll install the Midnight Lizard extension into Chromium from the command line, then open a page in it.",
     outcomes: { succeeded: 2 },
   },
   {
-    label: "Browser navigate",
+    label: "Computer observe",
     count: 1,
-    note: "Opening a page to check it renders dark.",
+    note: "Checking the page renders dark.",
     outcomes: done,
   },
-  { label: "Computer screenshot", count: 1, outcomes: done },
 ];
 /** Stored as the product now records it, with a reply that says what the work changed. */
 const INSTALL: Earlier = [
@@ -192,7 +194,7 @@ const INSTALL_PARAPHRASED: Earlier = [
         outcomes: { succeeded: 2 },
       },
       {
-        label: "Computer screenshot",
+        label: "Computer observe",
         count: 1,
         note: "Checking a site renders dark.",
         outcomes: done,
@@ -244,6 +246,29 @@ const DISK = {
   output:
     "Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1        40G   22G   18G  55% /",
 };
+/**
+ * Places a Linux Chromium computer does not have: other browsers' profiles, macOS paths, system
+ * policies and other shells' history. A command that also reads the Chromium profile is answered
+ * by the more specific checks instead.
+ */
+const ELSEWHERE = {
+  match:
+    /^(?![^;&|]*\.config\/chromium\b)(?=[^;&|]*(?:google-chrome|chromium-browser|Library\/Application|\/etc\/(?:opt\/)?chrom|\/opt\/chrom|\.var\b|\.zsh_history|\.local\/share|\.cache\b))/,
+  output: "No such file or directory",
+  exitCode: 2,
+};
+/** The home folder and config folder a bot lists while looking around. */
+const HOME = [
+  { match: /^\s*pwd\s*$/, output: "/home/rakazo" },
+  // The home's other folders are empty.
+  { match: /^\s*ls\b[^;&|]*~\/(?:Downloads|Desktop)\b/, output: "" },
+  {
+    match: /^\s*ls\b(?:\s+-\w+)*(?:\s+(?:~|\$HOME|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
+    output: "Desktop\nDownloads\nattachments",
+  },
+  { match: /\bls\b[^;&|]*\.config\/?(?:\s|$)/, output: "chromium" },
+  { match: /\bls\b[^;&|]*\.config\/chromium\/?(?:\s|$)/, output: "Default\nLocal State" },
+];
 /** What any Chromium computer answers, extension or not: the running browser and its version. */
 const CHROMIUM = [
   {
@@ -270,13 +295,18 @@ const CHROMIUM = [
 /** The computer as the earlier install left it: the extension enabled in Chromium, pages dark. */
 const INSTALLED_COMPUTER: ComputerScript = {
   shell: [
+    ELSEWHERE,
+    ...HOME,
     { match: /\bls\b[^;&|]*Extensions\/[a-p]{32}/, output: "10.7.1_0" },
     { match: /\bls\b[^;&|]*Extensions/, output: EXTENSION_ID },
     { match: FIND, output: MANIFEST },
     { match: GREP_TREE, output: MANIFEST },
     {
-      // Only the installed extension's own manifest (or a glob over the folder) shows it.
-      match: new RegExp(`Extensions/(?:${EXTENSION_ID}|\\*)[^\\s;&|]*manifest\\.json`),
+      // Only the installed extension's own manifest (or a glob over the folder) shows it, or a
+      // bare manifest.json read after changing into that folder.
+      match: new RegExp(
+        `Extensions/(?:${EXTENSION_ID}|\\*)[^\\s;&|]*manifest\\.json|\\s(?:\\./)?manifest\\.json\\b`,
+      ),
       output:
         '{\n  "name": "Midnight Lizard",\n  "version": "10.7.1",\n  "manifest_version": 3,\n  "description": "Color schemes and dark mode for web pages."\n}',
     },
@@ -291,6 +321,8 @@ const INSTALLED_COMPUTER: ComputerScript = {
 /** No extension was ever installed. */
 const PLAIN_COMPUTER: ComputerScript = {
   shell: [
+    ELSEWHERE,
+    ...HOME,
     {
       match: /\bls\b[^;&|]*Extensions/,
       output: `ls: cannot access '${EXTENSIONS}': No such file or directory`,
@@ -925,7 +957,24 @@ function toolStepsFixture(size: 24 | 100, earlier: Earlier, ask = ASK_INSTALL): 
 }
 /** Observed, not graded: the judge rubrics decide whether a reply reads as a step log. */
 const copiedMarker = (e: Evidence) =>
-  (e.replies ?? [e.text]).some((reply) => reply.includes("[tool calls this reply made"));
+  (e.replies ?? [e.text]).some(
+    (reply) =>
+      reply.includes("[tool calls this reply made") ||
+      // The replayed list's own line shape: "- Shell ×2 (succeeded): …".
+      /^\s*[-*•]\s*[A-Z][\w ]{1,40}?(?: ×\d+)?\s*\((?:\d+ )?(?:succeeded|failed|stopped)\b/m.test(
+        reply,
+      ),
+  );
+/**
+ * Observed, not graded: a reply that writes a tool call out as text instead of making it, or
+ * repeats what a replayed call's result says, the structured replay's equivalent of the list.
+ */
+const toolCallText = (e: Evidence) =>
+  (e.replies ?? [e.text]).some((reply) =>
+    /<\/?(?:tool_call|function_call|invoke|tool_use|function=\w+)\b|<\|[\w-]*(?:tool|function|python)[\w-]*\|>|\[TOOL_CALLS\]|✿FUNCTION✿|\bfunctions\.\w+\s*\(|\b(?:shell|browser_\w+|computer_\w+|read_file|write_file)\s*\(\s*\{|"(?:name|tool)"\s*:\s*"(?:shell|browser_\w+|computer_\w+|read_file|write_file)"|Output not kept/.test(
+      reply,
+    ),
+  );
 const noLookup = (e: Evidence) => check("no-history-lookup", !lookedBack(e).pass);
 const HISTORY_TOOLS = new Set(["search_history", "read_history"]);
 /** The bot used a tool other than history lookups to answer, such as re-checking its computer. */
@@ -951,6 +1000,164 @@ const observeToolWork =
       overclaim: overclaimInput(earlier, ask, e.text, record, checksText(e, computer)),
     };
   };
+/** A longer chat where most replies did their work with tools, as production chats that copied did. */
+export const TOOL_HEAVY_FIXTURE_VERSION = "recall-tool-heavy-v3";
+const ok = (count = 1) => ({ succeeded: count });
+const TOOL_HEAVY_WORK: Array<{
+  ask: string;
+  steps: NonNullable<HistoryMessage["steps"]>;
+  text: string;
+}> = [
+  {
+    ask: "How much disk space is left on your computer?",
+    steps: [
+      { label: "Shell", count: 1, note: "Checking free disk space with df.", outcomes: ok() },
+    ],
+    text: "About 18 GB free of 40 GB.",
+  },
+  {
+    ask: "Open the Python docs and tell me the latest stable version.",
+    steps: [
+      {
+        label: "Browser navigate",
+        count: 1,
+        note: "Opening python.org downloads.",
+        outcomes: ok(),
+      },
+      { label: "Browser snapshot", count: 1, outcomes: ok() },
+    ],
+    text: "The downloads page lists Python 3.13.1 as the latest stable release.",
+  },
+  {
+    ask: "Make a folder called reports in your home directory.",
+    steps: [
+      {
+        label: "Shell",
+        count: 2,
+        note: "Creating ~/reports and checking it exists.",
+        outcomes: ok(2),
+      },
+    ],
+    text: "Done: ~/reports exists and is empty.",
+  },
+  {
+    ask: "Write a short note in reports/monday.md saying the build passed.",
+    steps: [
+      { label: "Write file", count: 1, note: "Writing the note.", outcomes: ok() },
+      { label: "Read file", count: 1, note: "Reading it back to check.", outcomes: ok() },
+    ],
+    text: 'Saved reports/monday.md with one line: "The build passed."',
+  },
+  {
+    ask: "Which processes are using the most memory?",
+    steps: [
+      {
+        label: "Shell",
+        count: 1,
+        note: "Listing the top processes by memory with ps.",
+        outcomes: ok(),
+      },
+    ],
+    text: "Chromium is at the top with about 900 MB, then the language server at about 300 MB.",
+  },
+  {
+    ask: "Take a screenshot of what your browser is showing.",
+    steps: [{ label: "Computer observe", count: 1, outcomes: ok() }],
+    text: "It shows the Python downloads page, still open from earlier.",
+  },
+  {
+    ask: "Is git installed on your computer?",
+    steps: [{ label: "Shell", count: 1, note: "Checking git --version.", outcomes: ok() }],
+    text: "Yes, git 2.39.5.",
+  },
+  {
+    ask: "Look up today's weather in Lisbon.",
+    steps: [
+      { label: "Web search", count: 1, note: "Searching for the Lisbon forecast.", outcomes: ok() },
+      { label: "Browser navigate", count: 1, outcomes: ok() },
+    ],
+    text: "Sunny, 19 °C in the afternoon, with a light wind from the north.",
+  },
+  {
+    ask: "Count the lines in reports/monday.md.",
+    steps: [{ label: "Shell", count: 1, note: "Counting with wc -l.", outcomes: ok() }],
+    text: "One line.",
+  },
+  {
+    ask: "Which Node version do you have?",
+    steps: [
+      {
+        label: "Shell",
+        count: 2,
+        note: "Checking node and npm versions.",
+        outcomes: { succeeded: 1, failed: 1 },
+      },
+    ],
+    text: "Node 20.18.1. npm isn't on the path.",
+  },
+  {
+    ask: "Download the Python release notes into reports/.",
+    steps: [
+      {
+        label: "Shell",
+        count: 3,
+        note: "Fetching the notes with curl and checking the file.",
+        outcomes: ok(3),
+      },
+    ],
+    text: "Saved reports/python-3.13.1-notes.html (about 120 KB).",
+  },
+  {
+    ask: "List what's in reports now.",
+    steps: [{ label: "Shell", count: 1, note: "Listing the folder.", outcomes: ok() }],
+    text: "Two files: monday.md and python-3.13.1-notes.html.",
+  },
+];
+/** A fresh check none of the earlier replies made, so the answer needs a tool call. */
+const ASK_UPTIME =
+  "How long has your computer been running since it last restarted? Please check it now.";
+const UPTIME_COMPUTER: ComputerScript = {
+  shell: [
+    {
+      match: /\buptime\b|\/proc\/uptime/,
+      output: " 14:02:11 up 3 days,  4:17,  0 users,  load average: 0.21, 0.18, 0.12",
+    },
+    { match: /\bwho\s+-b\b|last\s+reboot/, output: "         system boot  2026-11-08 09:45" },
+    { match: /\bdate\b/, output: "Wed Nov 11 14:02:11 UTC 2026" },
+    ...CHROMIUM,
+  ],
+  screen: { title: "Python Releases - Chromium", dark: false },
+};
+function toolHeavyFixture(): HistoryFixture {
+  // Each tool exchange is followed by one small-talk exchange: 48 messages in all.
+  const pairs = TOOL_HEAVY_WORK.flatMap((work, index) => {
+    const [question, answer] = SMALL_TALK[index]!;
+    return [
+      { text: work.ask },
+      { steps: work.steps, text: work.text },
+      { text: question },
+      { text: answer },
+    ];
+  });
+  const start = Date.now() - (pairs.length + 30) * 60_000;
+  return {
+    version: TOOL_HEAVY_FIXTURE_VERSION,
+    messages: pairs.map(
+      (m, seq): HistoryMessage => ({
+        seq,
+        role: seq % 2 ? "bot" : "user",
+        ...m,
+        createdAt: new Date(start + seq * 60_000),
+      }),
+    ),
+    ask: ASK_UPTIME,
+    required: [],
+    forbidden: [],
+  };
+}
+/** Made a check on the computer in the graded reply, rather than describing one. */
+const checkedNow = (e: Evidence) => check("made-tool-call", reverified(e));
+
 /** The last exchange (seq 22-23) is the egg answer, so "visible" stays in every strategy's view. */
 const ORDINARY_TURNS: {
   id: string;
@@ -1078,6 +1285,21 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
         : []),
     ];
   }),
+  {
+    id: "recall-tool-heavy-new-check",
+    purpose:
+      "48 messages, most replies used tools: a new request needs a fresh check, made with a tool call rather than written out",
+    history: toolHeavyFixture(),
+    computer: UPTIME_COMPUTER,
+    connections: [],
+    steps: [{ ask: ASK_UPTIME }],
+    grade: (e) => [checkedNow(e)],
+    observe: (e) => ({
+      "copied-marker": copiedMarker(e),
+      "tool-call-text": toolCallText(e),
+      "made-tool-call": reverified(e),
+    }),
+  },
   // Everyday turns in the same chat. Its install reply is out of view under retrieval, but
   // none of these needs it, so a history lookup is wasted work. The eye-tips turn is near
   // that reply's topic, and the never-told turn may check, so a lookup there is measured.
@@ -1097,3 +1319,113 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
     };
   }),
 ];
+
+const StepsSchema = z.array(z.unknown()).transform((steps, ctx) => {
+  const parsed = MessageBlock.safeParse({ kind: "steps", steps });
+  if (parsed.success && parsed.data.kind === "steps") return parsed.data.steps;
+  ctx.addIssue({ code: "custom", message: "steps must be stored tool steps" });
+  return z.NEVER;
+});
+const RecallFileCaseSchema = z.object({
+  id: z.string().regex(/^recall-file-[a-z0-9-]+$/),
+  purpose: z.string().min(1),
+  /** The chat in order, a minute apart, ending just before the ask. */
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "bot"]),
+        text: z.string().default(""),
+        steps: StepsSchema.optional(),
+      }),
+    )
+    .min(1),
+  ask: z.string().min(1),
+  /**
+   * `needs-tool`: the reply must make a tool call other than a history lookup. A `rubric` names
+   * one of the suite's calibrated judge rubrics to grade the reply's meaning instead.
+   */
+  expect: z.union([
+    z.object({ kind: z.literal("needs-tool") }),
+    z.object({ kind: z.literal("rubric"), rubric: z.enum(Object.keys(rubrics) as [RecallRubric]) }),
+  ]),
+  /** Scripted shell checks, as regular expression sources, tried before the shared ones. */
+  computer: z
+    .object({
+      shell: z
+        .array(
+          z.object({
+            match: z.string(),
+            flags: z
+              .string()
+              .regex(/^[imsu]*$/)
+              .default(""),
+            output: z.string(),
+            exitCode: z.number().int().optional(),
+          }),
+        )
+        .default([]),
+      screen: z.object({ title: z.string(), dark: z.boolean() }).optional(),
+    })
+    .optional(),
+});
+type RecallFileCase = z.infer<typeof RecallFileCaseSchema>;
+
+function recallCaseFromFile(entry: RecallFileCase): EvalCase {
+  const start = Date.now() - (entry.messages.length + 30) * 60_000;
+  const history: HistoryFixture = {
+    version: `recall-file:${entry.id}`,
+    messages: entry.messages.map((m, seq) => ({
+      seq,
+      role: m.role,
+      text: m.text,
+      ...(m.steps ? { steps: m.steps } : {}),
+      createdAt: new Date(start + seq * 60_000),
+    })),
+    ask: entry.ask,
+    required: [],
+    forbidden: [],
+  };
+  const computer: ComputerScript = {
+    shell: [
+      ...(entry.computer?.shell ?? []).map(({ match, flags, output, exitCode }) => ({
+        match: new RegExp(match, flags),
+        output,
+        ...(exitCode === undefined ? {} : { exitCode }),
+      })),
+      ...HOME,
+      ...CHROMIUM,
+    ],
+    screen: entry.computer?.screen ?? { title: "New Tab - Chromium", dark: false },
+  };
+  const { expect } = entry;
+  return {
+    id: entry.id,
+    purpose: entry.purpose,
+    history,
+    computer,
+    connections: [],
+    steps: [{ ask: entry.ask }],
+    grade: (e) => (expect.kind === "needs-tool" ? [checkedNow(e)] : []),
+    ...(expect.kind === "rubric"
+      ? { judge: (e: Evidence) => judgeInput(expect.rubric, e.text) }
+      : {}),
+    observe: (e) => ({
+      "copied-marker": copiedMarker(e),
+      "tool-call-text": toolCallText(e),
+      "made-tool-call": reverified(e),
+    }),
+    ...(expect.kind === "rubric" ? { shellUnneeded: true as const } : {}),
+  };
+}
+
+/** Extra recall cases from a JSON array or JSON-lines file, for private or local fixtures. */
+export function loadRecallCases(file: string): EvalCase[] {
+  const text = readFileSync(file, "utf8").trim();
+  const raw: unknown[] = text.startsWith("[")
+    ? (JSON.parse(text) as unknown[])
+    : text
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line) as unknown);
+  return raw.map((entry) => recallCaseFromFile(RecallFileCaseSchema.parse(entry)));
+}

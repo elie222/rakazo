@@ -56,6 +56,19 @@ describe("scripted eval shell", () => {
     expect(scriptedShell(script, "df -h | sort")).toBeUndefined();
   });
 
+  it("follows head and tail pipes, quoted alternations, subshells and cd", () => {
+    expect(scriptedShell(script, "df -h | head -1")?.stdout).toBe("18G free");
+    expect(scriptedShell(script, "df -h | tail -n 5")?.stdout).toBe("18G free");
+    expect(scriptedShell(script, "df -h | head -c 3")?.stdout).toBe("18G");
+    // A `|` inside quotes, or escaped as basic-regex alternation, is not a pipe.
+    expect(scriptedShell(script, 'df -h | grep -iE "nothing|free" | head -5')?.stdout).toBe(
+      "18G free",
+    );
+    expect(scriptedShell(script, 'df -h | grep -i "nothing\\|free"')?.stdout).toBe("18G free");
+    expect(scriptedShell(script, "cd ~ 2>/dev/null; (df -h | head -3)")?.stdout).toBe("18G free");
+    expect(scriptedShell(script, "echo; (df -h | head -3) 2>/dev/null")?.stdout).toBe("\n18G free");
+  });
+
   it("covers no command list with an unscripted command in it", () => {
     expect(scriptedShell(script, "uptime")).toBeUndefined();
     expect(scriptedShell(script, "cat /etc/os-release; df -h")).toBeUndefined();
