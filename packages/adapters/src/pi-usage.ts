@@ -15,7 +15,7 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
-import { Agent } from "undici";
+import { Dispatcher } from "undici";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
@@ -223,9 +223,10 @@ export function usageReportingFetch(
 ): typeof fetch {
   return async (input, init) => {
     // The wrapper hides the default fetch identity from the SSRF guard. Pair
-    // its transport when the guard attaches a package Agent; keep injected fetches.
+    // its transport when the guard attaches a package dispatcher (a plain or proxy-aware
+    // agent); keep injected fetches.
     const transport =
-      init && "dispatcher" in init && init.dispatcher instanceof Agent
+      init && "dispatcher" in init && init.dispatcher instanceof Dispatcher
         ? fetchPairedWithDispatcher(fetcher)
         : fetcher;
     rejectedRequests.delete(reported);

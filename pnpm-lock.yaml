@@ -902,6 +902,9 @@ importers:
       '@earendil-works/pi-telemetry':
         specifier: 1.5.0
         version: 1.5.0
+      '@insforge/instabox-sdk':
+        specifier: 0.8.0
+        version: 0.8.0
       '@kubernetes/client-node':
         specifier: 2.0.2
         version: 2.0.2(supports-color@8.1.1)
@@ -3621,6 +3624,10 @@ packages:
     engines: {node: '>=20.9.0'}
     cpu: [x64]
     os: [win32]
+
+  '@insforge/instabox-sdk@0.8.0':
+    resolution: {integrity: sha512-doGu9feH4nfi4/qU1ToXqZ9fNEwUMqMDzjMcGBO5i1XOh0R64XdayN7FNHjSOQs9/uNzwRKTJn6QfjZCFl4aHQ==}
+    engines: {node: '>=18'}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -16341,6 +16348,8 @@ snapshots:
 
   '@img/sharp-win32-x64@0.35.5':
     optional: true
+
+  '@insforge/instabox-sdk@0.8.0': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:

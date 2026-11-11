@@ -23,6 +23,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("../../lib/call-session", () => ({
   isLeavingSession: vi.fn(() => false),
+  prepareCallAudio: vi.fn(),
   startCall: vi.fn(),
   useCallSession: () => null,
 }));

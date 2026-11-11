@@ -68,6 +68,7 @@ const SANDBOX_NAMES: Record<Exclude<SandboxKind, "none" | "desktop" | "fake">, s
   createos: "CreateOS",
   daytona: "Daytona",
   e2b: "E2B",
+  instabox: "InstaBox",
   novita: "Novita",
   railway: "Railway",
   wuying: "Wuying",

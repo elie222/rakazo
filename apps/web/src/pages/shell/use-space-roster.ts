@@ -46,6 +46,8 @@ export function useSpaceRoster({
   redirectKeepingOverlay: Navigation["redirectKeepingOverlay"];
 }) {
   const [groups, setGroups] = useState<Group[]>(seed?.groups ?? []);
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
   const [bots, setBots] = useState<Bot[]>(seed?.bots ?? []);
   const botsRef = useRef(bots);
   botsRef.current = bots;
@@ -197,6 +199,7 @@ export function useSpaceRoster({
   return {
     groups,
     setGroups,
+    groupsRef,
     bots,
     setBots,
     botsRef,

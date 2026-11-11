@@ -160,6 +160,7 @@ function SpaceShell() {
   const {
     groups,
     setGroups,
+    groupsRef,
     bots,
     setBots,
     botsRef,
@@ -449,8 +450,6 @@ function SpaceShell() {
     redirectKeepingOverlay,
     openSpaceChat: openSpaceChatRef,
   });
-  const groupsRef = useRef(groups);
-  groupsRef.current = groups;
   const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
     bots,
     botsRef,

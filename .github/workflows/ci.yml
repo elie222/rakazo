@@ -201,10 +201,12 @@ jobs:
           mapfile -t packages < <(printf "%s" "$affected")
           # These read other packages' files without importing them, so the package graph misses them.
           targets=("${packages[@]}" \
+            .agents/skills/translate/catalog-gaps.test.ts \
             infra/updater/src/compose-env.test.ts \
             packages/adapters/src/builtin-skills.test.ts \
             packages/adapters/src/lark-lazy-loading.test.ts \
             packages/page-kit/src/kit/labels.test.tsx \
+            packages/testkit/src/eas-pnpm-version.test.ts \
             packages/testkit/src/ios-screenshot-catalog.test.ts)
           # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
           files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"

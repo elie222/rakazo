@@ -1,5 +1,5 @@
 import type { Bot, ChatAlert, Group, ProductEvent } from "@rakazo/contracts";
-import { isRetryableError, retryDelayMs } from "@rakazo/core";
+import { chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -16,6 +16,8 @@ type PendingBrowserNotification = {
   groupId: string | undefined;
 };
 
+type SnoozableChat = { id: string; snoozedUntil?: string | null };
+
 type ChatAlertOptions = {
   rpc: Pick<RpcClient, "notifications">;
   activeBotId: RefObject<string | undefined>;
@@ -26,6 +28,30 @@ type ChatAlertOptions = {
   /** The open space's groups as they are now, so a mute or hide holds back their notifications. */
   groupsRef: RefObject<Group[]>;
 };
+
+/** A question still arrives while a chat is snoozed; an ordinary reply waits. */
+function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
+  if (event.type !== "thread.message.created") return false;
+  const blocks = event.payload.blocks;
+  return (
+    Array.isArray(blocks) &&
+    blocks.some(
+      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
+    )
+  );
+}
+
+function snoozedOrdinaryReply(
+  event: { type: string; payload: { blocks?: unknown } },
+  chat: SnoozableChat | undefined,
+): boolean {
+  return (
+    event.type === "thread.message.created" &&
+    !messageAsks(event) &&
+    !!chat &&
+    chatSnoozed(chat, Date.now())
+  );
+}
 
 // A click must not reach a shell that has gone, so the shell closes what it showed.
 function openChatOnClick(
@@ -141,14 +167,17 @@ export function useBrowserNotifications(
       pendingBrowserNotifications.current.clear();
     };
   }, []);
+  const chatFor = (pending: PendingBrowserNotification): Bot | Group | undefined =>
+    pending.groupId === undefined
+      ? botsRef.current.find((bot) => bot.id === pending.botId)
+      : groupsRef.current.find((group) => group.id === pending.groupId);
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
-    // Read when it is shown, so a chat muted or hidden while permission was pending stays quiet.
-    const chat =
-      pending.groupId === undefined
-        ? currentBot
-        : groupsRef.current.find((group) => group.id === pending.groupId);
+    // Read when it is shown, so a chat muted, hidden or snoozed while permission was pending
+    // stays quiet.
+    const chat = chatFor(pending);
+    if (snoozedOrdinaryReply(pending.event, chat)) return true;
     const result = deliverNativeBrowserNotification(
       pending.event,
       currentBot.name || pending.botName,
@@ -205,6 +234,9 @@ export function useBrowserNotifications(
         botName,
         groupId,
       } satisfies PendingBrowserNotification;
+      // Ordinary replies wait out a snooze. A question still comes through, and a reply that was
+      // queued before the snooze is checked again when it is actually shown.
+      if (snoozedOrdinaryReply(event, chatFor(pending))) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
         pendingBrowserNotifications.current.set(event.threadId, pending);

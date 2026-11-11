@@ -200,6 +200,65 @@ describe("computer loopback provision lifecycle", () => {
     expect(container.stop).toHaveBeenCalledOnce();
   });
 
+  it("stops a computer whose work is discarded without running a checkpoint in it", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: true },
+      })),
+      exec: vi.fn(),
+      stop: vi.fn(async () => {}),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/wedged/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+        "x-rakazo-discard-unsaved": "1",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(container.exec).not.toHaveBeenCalled();
+    expect(container.stop).toHaveBeenCalledOnce();
+  });
+
+  it("kills a computer that does not stop when asked", async () => {
+    const { supervisorApp } = await import("./index.js");
+    let running = true;
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: running },
+      })),
+      exec: vi.fn(),
+      stop: vi.fn(async () => {
+        throw new Error("did not receive an exit event");
+      }),
+      kill: vi.fn(async () => {
+        running = false;
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/wedged/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+        "x-rakazo-discard-unsaved": "1",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(container.kill).toHaveBeenCalledOnce();
+  });
+
   it("quiesces browser profiles with Browser.close before stopping the container", async () => {
     const { supervisorApp } = await import("./index.js");
     const container = {

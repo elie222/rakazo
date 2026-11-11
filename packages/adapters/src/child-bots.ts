@@ -708,6 +708,7 @@ async function sharedTeamComputer(
 const REMOTE_TEAM_SANDBOX_KINDS = new Set([
   "e2b",
   "novita",
+  "instabox",
   "daytona",
   "boat",
   "createos",

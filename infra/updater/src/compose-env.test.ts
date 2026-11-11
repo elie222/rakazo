@@ -48,6 +48,9 @@ const NOT_PASSED: Record<string, string> = {
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
+  NODE_USE_ENV_PROXY:
+    "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
+  NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
   SHELL: "host shell for the desktop computer, which only the Electron app runs",

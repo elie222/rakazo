@@ -17,6 +17,11 @@ Keep implementation gaps explicit when adding a capability, and keep technical p
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
 
+## Activity
+
+The chat list has a regular view and an Activity view and shows one at a time on every surface, because listing the same chats in both only repeats them.
+Activity replaces the whole regular list, including pinned chats and the archived and snoozed shelves, which return when the user leaves Activity.
+
 ## Subagents
 
 Status: intended behavior; implementation remains to be aligned.
