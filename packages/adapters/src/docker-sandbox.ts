@@ -108,8 +108,14 @@ function sandboxGoneError(computer: ComputerRef): Error {
 
 export class DockerSandboxProvider implements SandboxProvider {
   private readonly supervisorToken: string;
-  /** Computers that left a command unanswered and are checked before their next use. */
-  private readonly unresponsive = new Set<string>();
+  /**
+   * Computers that left a command unanswered, checked before their next use. The value counts
+   * stalls, so a check that started before a newer stall does not clear it.
+   */
+  private readonly unresponsive = new Map<string, number>();
+  private stalls = 0;
+  /** One check per computer, shared by every caller that needs it meanwhile. */
+  private readonly healthChecks = new Map<string, Promise<void>>();
 
   constructor(
     private readonly supervisorUrl: string,
@@ -192,7 +198,8 @@ export class DockerSandboxProvider implements SandboxProvider {
   /** A command the computer never finished answering, unless the caller stopped waiting itself. */
   private unansweredCommand(computer: ComputerRef, error: unknown, callerSignal: AbortSignal) {
     if (callerSignal.aborted) return error;
-    this.unresponsive.add(computer.id);
+    this.stalls += 1;
+    this.unresponsive.set(computer.id, this.stalls);
     return new SandboxUnresponsiveError(COMPUTER_UNRESPONSIVE_ERROR, { cause: error });
   }
 
@@ -207,7 +214,21 @@ export class DockerSandboxProvider implements SandboxProvider {
    */
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     if (!this.unresponsive.has(computer.id)) return;
-    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS)]);
+    let check = this.healthChecks.get(computer.id);
+    if (!check) {
+      const started = this.checkHealth(computer, context);
+      check = started.finally(() => {
+        if (this.healthChecks.get(computer.id) === check) this.healthChecks.delete(computer.id);
+      });
+      this.healthChecks.set(computer.id, check);
+    }
+    await withAbort(check, context.signal);
+  }
+
+  /** Runs on its own deadline, so one caller stopping does not decide the others' check. */
+  private async checkHealth(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    const stall = this.unresponsive.get(computer.id);
+    const signal = AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
     let healthy = false;
     try {
       for await (const event of this.execute(
@@ -218,11 +239,11 @@ export class DockerSandboxProvider implements SandboxProvider {
         if (event.type === "exit") healthy = event.code === 0;
       }
     } catch (error) {
-      if (context.signal.aborted || isSandboxGoneError(error)) throw error;
+      if (isSandboxGoneError(error)) throw error;
       throw new SandboxDamagedError({ cause: error });
     }
     if (!healthy) throw new SandboxDamagedError();
-    this.unresponsive.delete(computer.id);
+    if (this.unresponsive.get(computer.id) === stall) this.unresponsive.delete(computer.id);
   }
 
   async *execute(

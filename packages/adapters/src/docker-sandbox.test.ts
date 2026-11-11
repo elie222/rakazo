@@ -297,6 +297,68 @@ describe("Docker sandbox", () => {
       await provider.prepare(computer, context);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
+
+    it("runs one check for callers that need it at the same time", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const first = provider.prepare(computer, context);
+      const second = provider.prepare(computer, context);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      answer(exit(0));
+      await Promise.all([first, second]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("lets the other callers' check finish when one caller stops waiting", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const stopped = new AbortController();
+      const first = provider.prepare(computer, { ...context, signal: stopped.signal });
+      const second = provider.prepare(computer, context);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      stopped.abort(new Error("stopped"));
+      await expect(first).rejects.toThrow("stopped");
+      answer(exit(0));
+      await expect(second).resolves.toBeUndefined();
+    });
+
+    it("checks again after a stall that happened during a passing check", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const provider = await unansweredProvider(fetchMock);
+      const check = provider.prepare(computer, context);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const passing = answer;
+      fetchMock.mockRejectedValueOnce(new TypeError("terminated"));
+      await expect(
+        provider
+          .execute(computer, { argv: ["true"] }, context)
+          [Symbol.asyncIterator]()
+          .next(),
+      ).rejects.toBeInstanceOf(SandboxUnresponsiveError);
+      passing(exit(0));
+      await check;
+      fetchMock.mockResolvedValueOnce(exit(0));
+      await provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
   });
 
   it("leaves a command the caller stopped as the caller's own abort", async () => {
