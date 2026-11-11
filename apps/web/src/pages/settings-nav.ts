@@ -56,7 +56,7 @@ export function useSettingsNavItems(available: {
       id: "serviceKeys",
       label: t`API keys`,
       icon: Terminal,
-      description: t`Let your own programs talk to your bots.`,
+      description: t`Let your programs prompt your bots as you.`,
     },
     ...(available.wallet
       ? [

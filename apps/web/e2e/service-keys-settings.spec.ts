@@ -23,9 +23,21 @@ test("creates an API key, shows it once, and revokes it", async ({ page }, testI
   await expect(settings.locator("code")).toHaveText(/^rks_/);
   const key = settings.getByRole("listitem").filter({ hasText: "Nightly report" });
   await expect(key).toContainText("bots:read, prompts:write");
+  await expect(key).toContainText("Never used");
   await captureScreenshot(page, testInfo, "service-key-created");
 
+  // A second key replaces the notice; revoking the first leaves the second to copy.
+  await settings.getByLabel("Name", { exact: true }).fill("Backup");
+  await settings.getByRole("button", { name: "Create key", exact: true }).click();
+  const backup = settings.getByRole("listitem").filter({ hasText: "Backup" });
+  await expect(backup).toBeVisible();
+  const second = await settings.locator("code").textContent();
   await key.getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(key).toContainText("Revoked");
+  await expect(notice).toBeVisible();
+  await expect(settings.locator("code")).toHaveText(second ?? "");
+
+  await backup.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(backup).toContainText("Revoked");
   await expect(notice).toBeHidden();
 });
