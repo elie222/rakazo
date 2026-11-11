@@ -60,30 +60,34 @@ describeBackup("compose backup and restore", () => {
     expect(existsSync(path.join(repoRoot, "scripts/backup.sh"))).toBe(true);
     expect(existsSync(path.join(repoRoot, "scripts/restore.sh"))).toBe(true);
     const stamp = `verify-${Date.now()}`;
-    execSync(`${path.join(repoRoot, "scripts/backup.sh")} ${stamp}`, {
-      stdio: "pipe",
-      timeout: 60_000,
-      env: { ...process.env, RAKAZO_BACKUP_SKIP_HOMES: "1" },
-    });
-    const dump = path.join(repoRoot, "backups", stamp, "rakazo.sql");
-    expect(existsSync(dump)).toBe(true);
-    const sql = readFileSync(dump, "utf8");
-    expect(sql).toMatch(/CREATE TABLE|CREATE TABLE IF NOT EXISTS/i);
-    expect(sql.toLowerCase()).toContain("bots");
-    expect(sql).not.toMatch(/OPENROUTER_API_KEY|sk-or-v1-/);
-
-    createSideDatabase();
+    // The dump holds the whole database, so it goes even when an assertion fails.
     try {
-      importDump(sql);
-      const tables = compose(psql(["-d", SIDE_DATABASE, "-c", "\\dt"]), {
-        encoding: "utf8",
-        timeout: 20_000,
+      execSync(`${path.join(repoRoot, "scripts/backup.sh")} ${stamp}`, {
+        stdio: "pipe",
+        timeout: 60_000,
+        env: { ...process.env, RAKAZO_BACKUP_SKIP_HOMES: "1" },
       });
-      expect(tables).toMatch(/bots/);
+      const dump = path.join(repoRoot, "backups", stamp, "rakazo.sql");
+      expect(existsSync(dump)).toBe(true);
+      const sql = readFileSync(dump, "utf8");
+      expect(sql).toMatch(/CREATE TABLE|CREATE TABLE IF NOT EXISTS/i);
+      expect(sql.toLowerCase()).toContain("bots");
+      expect(sql).not.toMatch(/OPENROUTER_API_KEY|sk-or-v1-/);
+
+      createSideDatabase();
+      try {
+        importDump(sql);
+        const tables = compose(psql(["-d", SIDE_DATABASE, "-c", "\\dt"]), {
+          encoding: "utf8",
+          timeout: 20_000,
+        });
+        expect(tables).toMatch(/bots/);
+      } finally {
+        dropSideDatabase();
+      }
     } finally {
-      dropSideDatabase();
+      rmSync(path.join(repoRoot, "backups", stamp), { recursive: true, force: true });
     }
-    rmSync(path.join(repoRoot, "backups", stamp), { recursive: true, force: true });
   }, 90_000);
 
   it("fails a dump whose data does not import completely", () => {
