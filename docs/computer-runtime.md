@@ -166,7 +166,8 @@ suspended or stopped. When that save fails on a computer that is in error, gone,
 damaged or unresponsive, the restart falls back to the last saved workspace, or a
 fresh one when nothing was saved. Any other failed save, or an export that cannot
 be stored or recorded, stops the restart and leaves the computer as it was with
-its live work. Restart refuses a computer that is booting or suspending;
+its live work. After a restart fails while saving, the person can choose to
+restart without saving, which restores the last saved workspace. Restart refuses a computer that is booting or suspending;
 provisioning and the idle sweep take over a claim a dead worker left behind.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already

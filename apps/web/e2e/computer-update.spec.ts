@@ -25,11 +25,13 @@ test("restarting the computer shows durable background progress and failure retr
     stage: "restoring",
   };
   let finishRestart: (() => void) | undefined;
+  let discardUnsaved: unknown;
   let holdRestart = false;
   await page.route("**/rpc/computer/updates", (route) =>
     route.fulfill({ json: { json: updates } }),
   );
   await page.route("**/rpc/computer/restart", async (route) => {
+    discardUnsaved = route.request().postDataJSON()?.json?.discardUnsaved;
     if (holdRestart) {
       await new Promise<void>((resolve) => {
         finishRestart = resolve;
@@ -74,8 +76,16 @@ test("restarting the computer shows durable background progress and failure retr
   updates = [{ ...restarting, status: "failed" }];
   await expect(dialog.getByRole("heading")).toHaveText("Restart failed");
   await captureScreenshot(page, testInfo, "computer-update-failed");
+  await expect(dialog.getByRole("button", { name: "Restart without saving" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
+  expect(discardUnsaved).toBe(false);
+  updates = [{ ...restarting, status: "failed", stage: "saving" }];
+  await expect(dialog.getByRole("heading")).toHaveText("Restart failed");
+  await captureScreenshot(page, testInfo, "computer-restart-save-failed");
+  await dialog.getByRole("button", { name: "Restart without saving", exact: true }).click();
+  await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
+  expect(discardUnsaved).toBe(true);
   updates = [];
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole("button", { name: /Restarting Team Computer/ })).toHaveCount(0);

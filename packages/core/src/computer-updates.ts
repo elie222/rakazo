@@ -1,10 +1,13 @@
-import type { ComputerUpdate } from "@rakazo/contracts";
+import type { ComputerStatus, ComputerUpdate } from "@rakazo/contracts";
+
+export type ComputerRestartOptions = { discardUnsaved?: boolean };
+
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 /** Shared polling and local presentation state; the server owns operation lifetime. */
 export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
-  start: (botId: string) => Promise<ComputerUpdate>;
+  start: (botId: string, options: ComputerRestartOptions) => Promise<ComputerUpdate>;
   dismiss: (id: string) => Promise<unknown>;
 }) {
   let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
@@ -62,9 +65,9 @@ export function createComputerUpdates(client: {
       state = { ...state, openId: id };
       emit();
     },
-    async start(botId: string) {
+    async start(botId: string, options: ComputerRestartOptions = {}) {
       const epoch = generation;
-      const update = await client.start(botId);
+      const update = await client.start(botId, options);
       if (epoch !== generation) return;
       revision++;
       state = {
@@ -87,6 +90,16 @@ export function createComputerUpdates(client: {
       emit();
     },
   };
+}
+
+/** Whether to offer Restart; a restart in progress reports the computer as booting. */
+export function canOfferComputerRestart(computer: Pick<ComputerStatus, "canRestart" | "state">) {
+  return computer.canRestart && computer.state !== "booting";
+}
+
+/** A restart that failed while saving can only go ahead by giving up the unsaved work. */
+export function computerRestartFailedSaving(update: ComputerUpdate): boolean {
+  return update.status === "failed" && update.stage === "saving";
 }
 
 export function computerUpdateNeedsAttention(update: ComputerUpdate): boolean {

@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
+import { canOfferComputerRestart } from "@rakazo/core";
 import { Button, toast } from "@rakazo/ui-web";
 import { RotateCw } from "lucide-react";
 import { useState } from "react";
@@ -21,7 +22,7 @@ export function ComputerMaintenanceActions({
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
 
-  if (!computer?.canRestart || computer.state === "booting") return null;
+  if (!computer || !canOfferComputerRestart(computer)) return null;
   const disabled = pending || Boolean(computer.busyBotName);
 
   async function restart() {

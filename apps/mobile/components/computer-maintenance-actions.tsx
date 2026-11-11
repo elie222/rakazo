@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
+import { canOfferComputerRestart } from "@rakazo/core";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useNavigation } from "expo-router";
 import { useLayoutEffect, useState } from "react";
@@ -24,7 +25,7 @@ export function ComputerMaintenanceActions({
   const navigation = useNavigation();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const available = Boolean(computer?.canRestart) && computer?.state !== "booting";
+  const available = Boolean(computer && canOfferComputerRestart(computer));
   const busy = Boolean(computer?.busyBotName) || pending;
 
   async function restart() {

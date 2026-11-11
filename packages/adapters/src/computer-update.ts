@@ -61,6 +61,7 @@ export async function queueComputerUpdate(
   computerId: string,
   botId: string,
   userId: string,
+  options: { discardUnsaved?: boolean } = {},
 ) {
   const prepared = await deps.prisma.$transaction(async (tx) => {
     // Mode switches lock this same row before marking a bot as switching.
@@ -120,6 +121,7 @@ export async function queueComputerUpdate(
       data: {
         computerId,
         botId,
+        discardUnsaved: options.discardUnsaved === true,
         // Stay reserving until the provider release is attempted. Reconciliation gives that
         // takeover back. revoking is written before the call and is not proof of release.
         // revoked is written after the provider returns; reconciliation then clears the lease.
@@ -585,6 +587,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         });
         if (result.count !== 1) throw new Error("Computer update interrupted");
       },
+      { discardUnsaved: update.discardUnsaved },
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
   } catch (error) {

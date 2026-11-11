@@ -811,7 +811,9 @@ export const appContract = {
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),
-    restart: oc.input(botId).output(ComputerUpdateSchema),
+    restart: oc
+      .input(botId.extend({ discardUnsaved: z.boolean().optional() }))
+      .output(ComputerUpdateSchema),
     updates: oc.output(z.array(ComputerUpdateSchema)),
     releaseInterrupted: oc
       .input(z.object({ id: Id, workersStopped: z.literal(true) }))

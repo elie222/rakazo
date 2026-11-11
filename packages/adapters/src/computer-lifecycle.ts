@@ -1024,6 +1024,7 @@ export async function replaceComputer(
   context: AdapterContext,
   controlHolder: "bot" | "none" = "none",
   onProgress?: ComputerUpdateProgress,
+  options: { discardUnsaved?: boolean } = {},
 ): Promise<ComputerRef> {
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
@@ -1112,7 +1113,7 @@ export async function replaceComputer(
   // running.
   let tornDown = false;
   try {
-    if (oldRef) {
+    if (oldRef && !options.discardUnsaved) {
       // A computer that is broken or out of reach falls back to the last saved workspace. Any
       // other keeps its live work through a failed save, and so does one whose export finished
       // but could not be stored: the restart stops and leaves the computer as it was.

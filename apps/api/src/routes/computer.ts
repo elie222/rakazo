@@ -133,7 +133,9 @@ export function computerRoutes(ctx: RouterContext) {
             message: "Computer restart is not available on this device",
           });
         try {
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id, context.actor.userId);
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id, context.actor.userId, {
+            discardUnsaved: input.discardUnsaved,
+          });
         } catch (error) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });

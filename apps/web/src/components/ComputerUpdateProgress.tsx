@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
-import { computerUpdateNeedsAttention } from "@rakazo/core";
+import { computerRestartFailedSaving, computerUpdateNeedsAttention } from "@rakazo/core";
 import { Button, cn, Dialog, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { CheckCircle2, Circle, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -46,6 +46,14 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
         ? t`Restarting Team Computer`
         : t`Restarting ${update.name}’s Computer`;
   const selected = updates.find((update) => update.id === openId);
+  const restart = (botId: string, discardUnsaved: boolean) => {
+    setRetrying(true);
+    setError(false);
+    void computerUpdates
+      .start(botId, { discardUnsaved })
+      .catch(() => setError(true))
+      .finally(() => setRetrying(false));
+  };
   return (
     <>
       <div className="fixed top-3 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2">
@@ -153,18 +161,17 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                   <Trans>Continue in Background</Trans>
                 </Button>
               )}
-              {selected.status === "failed" ? (
+              {computerRestartFailedSaving(selected) ? (
                 <Button
+                  variant="destructive"
                   disabled={retrying}
-                  onClick={() => {
-                    setRetrying(true);
-                    setError(false);
-                    void computerUpdates
-                      .start(selected.botId)
-                      .catch(() => setError(true))
-                      .finally(() => setRetrying(false));
-                  }}
+                  onClick={() => restart(selected.botId, true)}
                 >
+                  <Trans>Restart without saving</Trans>
+                </Button>
+              ) : null}
+              {selected.status === "failed" ? (
+                <Button disabled={retrying} onClick={() => restart(selected.botId, false)}>
                   <Trans>Try again</Trans>
                 </Button>
               ) : null}

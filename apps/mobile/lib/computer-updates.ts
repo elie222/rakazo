@@ -14,6 +14,6 @@ export const computerUpdates = createComputerUpdates({
       throw error;
     }
   },
-  start: (botId) => rpc("computer/restart", { botId }),
+  start: (botId, options) => rpc("computer/restart", { botId, ...options }),
   dismiss: (id) => rpc("computer/dismissUpdate", { id }),
 });

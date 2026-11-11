@@ -1789,6 +1789,8 @@ model ComputerUpdate {
   botId      String
   status     String   @default("queued")
   stage      String   @default("preparing")
+  /// Set when the person chose to restart without saving after a failed save.
+  discardUnsaved Boolean @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

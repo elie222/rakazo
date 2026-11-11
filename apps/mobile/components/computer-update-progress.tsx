@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
-import { computerUpdateNeedsAttention } from "@rakazo/core";
+import { computerRestartFailedSaving, computerUpdateNeedsAttention } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -40,6 +40,14 @@ export function ComputerUpdateProgress() {
         ? t`Restarting Team Computer`
         : t`Restarting ${ph({ name: update.name })}’s Computer`;
   const selected = updates.find((item) => item.id === openId);
+  const restart = (botId: string, discardUnsaved: boolean) => {
+    setBusy(true);
+    setError(false);
+    void computerUpdates
+      .start(botId, { discardUnsaved })
+      .catch(() => setError(true))
+      .finally(() => setBusy(false));
+  };
   if (!authenticated) return null;
   return (
     <>
@@ -124,14 +132,15 @@ export function ComputerUpdateProgress() {
               <NativeActionButton
                 label={t`Try again`}
                 busy={busy}
-                onPress={() => {
-                  setBusy(true);
-                  setError(false);
-                  void computerUpdates
-                    .start(selected.botId)
-                    .catch(() => setError(true))
-                    .finally(() => setBusy(false));
-                }}
+                onPress={() => restart(selected.botId, false)}
+              />
+            ) : null}
+            {computerRestartFailedSaving(selected) ? (
+              <NativeActionButton
+                label={t`Restart without saving`}
+                prominence="destructive"
+                busy={busy}
+                onPress={() => restart(selected.botId, true)}
               />
             ) : null}
             <NativeActionButton

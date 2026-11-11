@@ -663,6 +663,19 @@ describe("computer recovery preserves live work", () => {
     },
   );
 
+  it("restarts without saving only when the person chose to discard unsaved work", async () => {
+    const { deps, row } = await fixture();
+    const exportWorkspace = vi.spyOn(deps.sandbox, "exportWorkspace");
+    const updated = await replaceComputer(deps, row.id, context, "none", undefined, {
+      discardUnsaved: true,
+    });
+    expect(exportWorkspace).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(updated, "notes.txt", context)),
+    ).toBe("checkpoint");
+  });
+
   it("leaves a suspended computer and its live work alone when its save fails", async () => {
     const { deps, row, first } = await fixture();
     row.state = "suspended";
