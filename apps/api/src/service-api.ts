@@ -275,14 +275,33 @@ export function serviceApiHandler(deps: {
           // An allowlist as well as a type: a field added upstream never reaches a key by accident.
           const projected = definition.response.parse(output);
           if (definition.method !== "GET" && !definition.selfAudited) {
+            // Name what changed: the bot, else the group or ticket in the path, else what was made.
+            const { botId: _bot, ...pathIds } = matched.params;
+            const [pathName, pathId] = Object.entries(pathIds)[0] ?? [];
+            const createdId =
+              projected && typeof projected === "object" && "id" in projected
+                ? String(projected.id)
+                : undefined;
             await recordAuditEvent({
               action: `service_api.${matched.id}`,
               actor: { type: "service", id: credential.id, label: credential.name },
               spaceId: actor.spaceId,
               target: botId
                 ? { type: "bot", id: botId, label: bot?.name ?? botId }
-                : { type: "service_api", id: matched.id, label: definition.path },
-              metadata: { onBehalfOf: actor.userId },
+                : pathName
+                  ? { type: pathName.replace(/Id$/, ""), id: pathId, label: definition.path }
+                  : createdId && matched.id.startsWith("create")
+                    ? {
+                        type: matched.id.slice(6).toLowerCase(),
+                        id: createdId,
+                        label: definition.path,
+                      }
+                    : { type: "service_api", id: matched.id, label: definition.path },
+              metadata: {
+                onBehalfOf: actor.userId,
+                ...pathIds,
+                ...(createdId && createdId !== (botId ?? pathId) ? { createdId } : {}),
+              },
             });
           }
           if (storedKey) {
