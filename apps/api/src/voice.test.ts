@@ -956,6 +956,16 @@ describe("deployment voice", () => {
     });
   });
 
+  it("is not ready with an admin's voice that names none", async () => {
+    speaker();
+    const deps = voiceDeps({ saved: { provider: "elevenlabs", voiceId: "" } });
+    await expect(loadVoiceStatus(deps, actor)).resolves.toMatchObject({
+      configured: true,
+      ready: false,
+      deployment: true,
+    });
+  });
+
   it("falls back to the environment's voice and its provider's first voice", async () => {
     useEnvironmentVoice();
     const { synthesize, listVoices, create } = speaker();

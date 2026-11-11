@@ -60,19 +60,26 @@ export function DeploymentModelSettings() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
+  // Counts saves, so a load still in flight never replaces what a save returned.
+  const saves = useRef(0);
 
   useEffect(() => {
     alive.current = true;
+    // Each load answers only its own run of the effect: one started before a locale switch is
+    // dropped, as is one that a save overtook.
+    let current = true;
+    const savesAtStart = saves.current;
     // The RPC client hands out a new object on every property read, so never hold it.
     rpc.models.deployment.get().then(
       (next) => {
-        if (alive.current) setSettings(next);
+        if (current && saves.current === savesAtStart) setSettings(next);
       },
       (caught: unknown) => {
-        if (alive.current) setError(errorText(caught, t`Could not load model settings`));
+        if (current) setError(errorText(caught, t`Could not load model settings`));
       },
     );
     return () => {
+      current = false;
       alive.current = false;
     };
   }, [t]);
@@ -92,6 +99,7 @@ export function DeploymentModelSettings() {
     try {
       const next = await action();
       if (!alive.current) return;
+      saves.current += 1;
       setSettings(next);
       done?.();
     } catch (caught) {

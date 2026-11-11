@@ -167,6 +167,19 @@ describe("deployment voice settings", () => {
     expect(unlisted.voiceId).toBe("asked-voice");
   });
 
+  it("refuses a key whose account has no voices to speak with", async () => {
+    const { deps, state } = makeDeps();
+    const { provider } = voiceProvider();
+    provider.listVoices.mockResolvedValueOnce([]);
+    await expect(
+      updateDeploymentVoiceSettings(deps, actor, {
+        provider: "elevenlabs",
+        apiKey: "test-voice-key",
+      }),
+    ).rejects.toThrow("no voices yet");
+    expect(state.settings?.defaultVoiceProvider ?? null).toBeNull();
+  });
+
   it("needs a new key for another provider", async () => {
     const { deps, state } = makeDeps();
     const { provider } = voiceProvider();

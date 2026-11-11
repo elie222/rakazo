@@ -132,9 +132,14 @@ export async function updateDeploymentVoiceSettings(
   // among the key's voices: a voice kept from another key or provider gives way to its first one.
   // A provider that cannot list its voices keeps the one asked for.
   const asked = input.voiceId?.trim() || "";
-  const listed = await voices.listVoices(apiKey, context).catch(() => []);
+  const listed = await voices.listVoices(apiKey, context).catch(() => undefined);
+  // An account with no voices yet could not speak for anyone.
+  if (listed?.length === 0 && !asked)
+    throw new ORPCError("BAD_REQUEST", {
+      message: "That account has no voices yet. Add one with the provider, then save again.",
+    });
   const voiceId =
-    listed.length && !listed.some((voice) => voice.id === asked) ? listed[0]!.id : asked;
+    listed?.length && !listed.some((voice) => voice.id === asked) ? listed[0]!.id : asked;
   // Owned by the deployment row, not a user or space, so no account deletion removes it.
   const stored = await deps.secrets.put(apiKey, context, { recordId: DEPLOYMENT_VOICE_RECORD });
   let replaced: string | null;

@@ -129,8 +129,13 @@ export async function loadVoiceStatus(
   if (own) return toVoiceStatus(own);
   const deployment = await findDeploymentVoice(deps.prisma, deps.secrets);
   if (!deployment) return toVoiceStatus(null);
-  // Without a chosen voice, speaking uses the provider's first one.
-  return { ...toVoiceStatus(deployment), ready: true, deployment: true };
+  // An admin's saved voice names one whenever the key could list its voices. The environment's
+  // may leave it to the provider's first, which speaking looks up.
+  return {
+    ...toVoiceStatus(deployment),
+    ready: Boolean(deployment.voiceId) || deployment.source === "environment",
+    deployment: true,
+  };
 }
 
 export function toVoiceCredential(row: {
