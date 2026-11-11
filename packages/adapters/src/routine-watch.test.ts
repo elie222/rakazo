@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeLoginSecret, RoutineWatchSchema } from "@rakazo/contracts";
+import * as Logging from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
@@ -936,6 +937,110 @@ describe("tickRoutineWatch on a computer", () => {
     if (!gone.run) throw new Error("expected a run");
     expect(gone.note).toContain("New: Order 8\nGone: Reset [redacted]");
     expect(gone.note).not.toContain(password);
+  });
+
+  it("retries a command check, not pauses it, while the key manager is down", async () => {
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "site-login",
+        ...accountVault,
+        name: "site_login",
+        origin: "https://login.example.test",
+        auth: { type: "login" },
+        ciphertext: "rkz1:vault-key:sealed",
+      },
+    });
+    vi.mocked(provisionComputer).mockClear();
+    const { deps, routine, updateMany, messages, execute } = setupComputer(
+      { kind: "command", command: "check-order" },
+      { stdout: "ok" },
+      undefined,
+      { vault, secretStore: { load: async () => "unused" } },
+    );
+    // The login is under a vault key the key manager can't unwrap right now.
+    const outage = () => Promise.reject(new Error("fake key manager outage"));
+    Object.assign(deps.prisma, {
+      $contentEncryption: () => ({ ring: { byId: outage, all: outage, allFresh: outage } }),
+    });
+    const warn = vi.spyOn(Logging.getLogger(), "warn");
+    try {
+      expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
+      // Said in the log each time, naming the routine and the key manager's reason, but no value.
+      expect(warn).toHaveBeenCalledWith("routine.watch_deferred", {
+        "routine.id": "routine-1",
+        error: expect.any(Error),
+      });
+      expect(Logging.serializeError(warn.mock.calls[0]![1]!.error)).toMatchObject({
+        name: "VaultKeyUnavailableError",
+        cause: { name: "Error", message: "fake key manager outage" },
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(execute).not.toHaveBeenCalled();
+    // Deferred before the computer is woken for it.
+    expect(provisionComputer).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "routine-1", userId: "user-1", active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt: expect.any(Date) },
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalled();
+  });
+
+  it("retries a command check whose command variable can't be loaded while the key manager is down", async () => {
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh_token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "rkz1:vault-key:sealed",
+      },
+    });
+    vi.mocked(provisionComputer).mockClear();
+    const { deps, routine, updateMany, messages, execute } = setupComputer(
+      { kind: "command", command: "check-order" },
+      { stdout: "ok" },
+      undefined,
+      { vault, secretStore: { load: async () => "unused" } },
+    );
+    // The variable is under a vault key the key manager can't unwrap right now.
+    const outage = () => Promise.reject(new Error("fake key manager outage"));
+    Object.assign(deps.prisma, {
+      $contentEncryption: () => ({ ring: { byId: outage, all: outage, allFresh: outage } }),
+    });
+    const warn = vi.spyOn(Logging.getLogger(), "warn");
+    try {
+      expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
+      // Deferred for the outage itself, not for some other error on the way.
+      expect(warn).toHaveBeenCalledWith("routine.watch_deferred", {
+        "routine.id": "routine-1",
+        error: expect.any(Error),
+      });
+      expect(
+        Logging.serializeError(
+          warn.mock.calls.find(([event]) => event === "routine.watch_deferred")![1]!.error,
+        ),
+      ).toMatchObject({
+        name: "VaultKeyUnavailableError",
+        cause: { name: "Error", message: "fake key manager outage" },
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(execute).not.toHaveBeenCalled();
+    // Deferred before the computer is woken for it.
+    expect(provisionComputer).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "routine-1", userId: "user-1", active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt: expect.any(Date) },
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalled();
   });
 
   it("scrubs a quote and backslash inside tracked command JSON", async () => {

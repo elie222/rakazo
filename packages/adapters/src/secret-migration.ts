@@ -1,4 +1,5 @@
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import { isCiphertext } from "@rakazo/db";
 import { INFISICAL_REF_PREFIX } from "./infisical-secret-store.js";
 import { deleteSecretBestEffort } from "./secret-store-factory.js";
 
@@ -8,6 +9,10 @@ export interface SecretMigrationRow {
   ref: string;
   recordId: string;
   ephemeral?: boolean;
+  /** A vault item's date, kept when its value moves, since a card approval checks it. */
+  updatedAt?: Date;
+  /** Reads a vault value kept under its vault's data key, which no secret store can. */
+  open?: () => Promise<string>;
 }
 export interface SecretMigrationRepository {
   rows(): AsyncIterable<SecretMigrationRow>;
@@ -38,7 +43,11 @@ export async function upgradeLegacySecrets(
   const counts = { migrated: 0, verified: 0, planned: 0, concurrent: 0, failed: 0 };
   for await (const row of repository.rows()) {
     if (context.signal.aborted) break;
-    if (row.ref.startsWith("v2:") || row.ref.startsWith(INFISICAL_REF_PREFIX)) {
+    if (
+      row.ref.startsWith("v2:") ||
+      row.ref.startsWith(INFISICAL_REF_PREFIX) ||
+      isCiphertext(row.ref)
+    ) {
       counts.verified++;
       continue;
     }
@@ -86,10 +95,9 @@ export async function migrateSecrets(
       context.signal.throwIfAborted();
       const remote = row.ref.startsWith(INFISICAL_REF_PREFIX);
       const source = remote ? infisical : encrypted;
-      const plaintext = await source.load(row.ref, {
-        recordId: row.recordId,
-        signal: context.signal,
-      });
+      const plaintext = row.open
+        ? await row.open()
+        : await source.load(row.ref, { recordId: row.recordId, signal: context.signal });
       const targetRemote = options.direction === "forward" && !row.ephemeral;
       if (remote === targetRemote) {
         counts.verified++;

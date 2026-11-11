@@ -321,7 +321,10 @@ export interface ContentEncryptionStatus {
   plaintext: number;
 }
 
-/** Row counts still waiting for `migrate`, per table. */
+/**
+ * Row counts still waiting for `migrate`, per table. For vault items, "plaintext" counts values
+ * still in the secret store's own format (values in Infisical are not counted).
+ */
 export async function contentEncryptionStatus(
   prisma: PrismaClient,
 ): Promise<{ tables: ContentEncryptionStatus[]; masterKeys: Record<string, number> }> {
@@ -344,6 +347,9 @@ export async function contentEncryptionStatus(
     SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE NOT (text LIKE 'rkz1:%'
       AND subject LIKE 'rkz1:%' AND "fromAddress" LIKE 'rkz1:%' AND "fromName" LIKE 'rkz1:%'))
       FROM bot_email_messages
+    UNION ALL
+    SELECT 'vault_credentials', count(*), count(*) FILTER (WHERE ciphertext NOT LIKE 'rkz1:%'
+      AND ciphertext NOT LIKE 'infisical:%') FROM vault_credentials
   `;
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {

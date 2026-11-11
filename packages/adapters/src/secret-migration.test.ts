@@ -155,6 +155,31 @@ function legacyCiphertext(encryptionKey: string, plaintext: string): string {
   return Buffer.concat([iv, cipher.getAuthTag(), enc]).toString("base64");
 }
 
+describe("vault values under the envelope keys", () => {
+  it("move to Infisical and back through the vault's own reader", async () => {
+    const f = await fixture();
+    try {
+      f.rows.push({ id: "vault", recordId: "vault", label: "vaultCredential", ref: "rkz1:k:x" });
+      const open = async () => "fake vault value";
+      const repository: SecretMigrationRepository = {
+        ...f.repository,
+        async *rows() {
+          for (const row of f.rows)
+            yield { ...row, ...(row.ref.startsWith("rkz1:") ? { open } : {}) };
+        },
+      };
+      const run = (direction: "forward" | "reverse") =>
+        migrateSecrets(repository, f.encrypted, f.remote, context, { direction });
+      expect(await run("forward")).toMatchObject({ migrated: 2, failed: 0 });
+      expect(f.rows[1]!.ref).toMatch(/^infisical:/);
+      expect(await run("reverse")).toMatchObject({ migrated: 2, failed: 0 });
+      expect(await f.encrypted.load(f.rows[1]!.ref, "vault")).toBe("fake vault value");
+    } finally {
+      await f.close();
+    }
+  });
+});
+
 describe("legacy credential upgrade", () => {
   it("rewrites pre-v2 ciphertext as v2 bound to the record id, once", async () => {
     const encrypted = new EncryptedSecretStore("key");
@@ -168,6 +193,7 @@ describe("legacy credential upgrade", () => {
       },
       { id: "new", recordId: "new", label: "secret", ref: current.ref },
       { id: "broken", recordId: "broken", label: "secret", ref: legacyCiphertext("other", "x") },
+      { id: "sealed", recordId: "sealed", label: "vaultCredential", ref: "rkz1:key:sealed" },
     ];
     const repository: SecretMigrationRepository = {
       async *rows() {
@@ -184,11 +210,11 @@ describe("legacy credential upgrade", () => {
       upgradeLegacySecrets(repository, encrypted, context, { dryRun });
     expect(await upgrade(true)).toMatchObject({ planned: 1, failed: 1 });
     expect(rows[0]!.ref.startsWith("v2:")).toBe(false);
-    expect(await upgrade()).toMatchObject({ migrated: 1, verified: 1, failed: 1 });
+    expect(await upgrade()).toMatchObject({ migrated: 1, verified: 2, failed: 1 });
     expect(rows[0]!.ref.startsWith("v2:")).toBe(true);
     expect(await encrypted.load(rows[0]!.ref, "integration-provider:old")).toBe("legacy value");
     await expect(encrypted.load(rows[0]!.ref, "old")).rejects.toThrow();
     expect(rows[2]!.ref.startsWith("v2:")).toBe(false);
-    expect(await upgrade()).toMatchObject({ migrated: 0, verified: 2, failed: 1 });
+    expect(await upgrade()).toMatchObject({ migrated: 0, verified: 3, failed: 1 });
   });
 });
