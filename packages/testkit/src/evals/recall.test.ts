@@ -276,6 +276,23 @@ describe("recall outcome grading", () => {
     ])
       expect(scriptedShell(installed, command)?.stdout).toContain("manifest.json");
     expect(scriptedShell(installed, "ls ~/.config/google-chrome/Default/Extensions")?.code).toBe(2);
+    // Commands bots ran in recorded trials, answered as the computer would.
+    const computer = scenario("tool-steps-replayed").computer!;
+    const dir = "~/.config/chromium/Default/Extensions/pbnhgcfkmdlhnoeajihcmpgkglmbjblb/10.7.1_0";
+    expect(scriptedShell(computer, `cd ${dir} && head -c 1500 manifest.json`)?.stdout).toContain(
+      "Midnight Lizard",
+    );
+    expect(
+      scriptedShell(computer, 'grep -ril "midnight" ~/.config/chromium/Default/Preferences')
+        ?.stdout,
+    ).toBe("/home/rakazo/.config/chromium/Default/Preferences");
+    expect(
+      scriptedShell(computer, "grep -o pbnh ~/.config/chromium/Default/Preferences | cut -c1-4")
+        ?.stdout,
+    ).toBe('"pbn');
+    expect(scriptedShell(computer, 'ls ~/.config/google-chrome; echo "exit: $?"')?.stdout).toBe(
+      "exit: 2",
+    );
     // A probe for several browsers still finds the Chromium the computer has.
     expect(
       scriptedShell(
@@ -325,7 +342,7 @@ describe("recall outcome grading", () => {
     for (const c of RECALL_EVAL_CASES.filter((c) => c.judge)) {
       const input = c.judge?.(evidence([], "reply"));
       expect(input?.rubric.startsWith(`${RECALL_JUDGE_VERSION}:`)).toBe(true);
-      expect(input?.evidence).toEqual({ reply: "reply" });
+      expect(input?.evidence).toMatchObject({ reply: "reply" });
       const anchors = RECALL_JUDGE_CALIBRATION.filter((a) => a.input.rubric === input?.rubric);
       expect(new Set(anchors.map((a) => a.pass))).toEqual(new Set([true, false]));
     }

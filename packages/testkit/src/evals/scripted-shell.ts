@@ -76,11 +76,21 @@ export function scriptedShell(
           .replace(/\s*\)((?:\s*[0-9&]?>&?\s*\S+)*)\s*$/, "$1"),
   );
   let code = 0;
+  // `cd` changes nothing a check answers, except what a bare file name after it means.
+  let directory = "";
   for (let index = 0; index < parts.length; index += 2) {
-    const part = parts[index]!.trim();
+    const typed = parts[index]!.trim();
+    const part = directory
+      ? typed.replace(
+          /(^|\s)(?![~/$-])(?:\.\/)?([\w@-][\w.@-]*\.(?:json|md|csv|txt|log))\b/g,
+          (_, space: string, file: string) => `${space}${directory}/${file}`,
+        )
+      : typed;
     const operator = parts[index - 1];
     if (!part || (operator === "&&" && code !== 0) || (operator === "||" && code === 0)) continue;
-    if (/^cd(?:\s+\S+)?(?:\s+[0-9&]?>\S*)*$/.test(part)) {
+    const cd = /^cd(?:\s+(\S+))?(?:\s+[0-9&]?>\S*)*$/.exec(part);
+    if (cd) {
+      directory = (cd[1] ?? "").replace(/\/$/, "");
       code = 0;
       continue;
     }
@@ -89,7 +99,8 @@ export function scriptedShell(
     );
     if (echo) {
       // `echo … > file` writes to the file, so nothing reaches stdout.
-      if (!STDOUT_REDIRECT.test(part)) out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2"));
+      if (!STDOUT_REDIRECT.test(part))
+        out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2").replaceAll("$?", String(code)));
       code = 0;
       continue;
     }
@@ -150,6 +161,20 @@ function splitOutsideQuotes(command: string, operator: RegExp): string[] {
 
 /** `head`, `tail` or `grep` over piped text; anything else is undefined. */
 function pipeFilter(command: string, text: string): { text: string; code: number } | undefined {
+  const columns = /^cut\s+(?:-c\s*(\d+)?-(\d+)?|-d\s*(["']?)(.)\3\s+-f\s*(\d+))$/.exec(
+    command.trim(),
+  );
+  if (columns) {
+    const [, from, to, , separator, field] = columns;
+    const lines = text
+      .split("\n")
+      .map((line) =>
+        separator
+          ? (line.split(separator)[Number(field) - 1] ?? "")
+          : line.slice(from ? Number(from) - 1 : 0, to ? Number(to) : undefined),
+      );
+    return { text: lines.join("\n"), code: 0 };
+  }
   const cut = /^(head|tail)(?:\s+-(?:(n)\s*|(c)\s*)?(\d+))?$/.exec(command.trim());
   if (!cut) return grepFilter(command, text);
   const [, which, , bytes, count] = cut;
