@@ -248,12 +248,12 @@ const DISK = {
 };
 /**
  * Places a Linux Chromium computer does not have: other browsers' profiles, macOS paths, system
- * policies and other shells' history. A command that also reads the Chromium profile is answered
- * by the more specific checks instead.
+ * policies and other shells' history. A command that also names Chromium (its profile, or the
+ * browser in a list of browsers to look for) is answered by the more specific checks instead.
  */
 const ELSEWHERE = {
   match:
-    /^(?![^;&|]*\.config\/chromium\b)(?=[^;&|]*(?:google-chrome|chromium-browser|Library\/Application|\/etc\/(?:opt\/)?chrom|\/opt\/chrom|\.var\b|\.zsh_history|\.local\/share|\.cache\b))/,
+    /^(?![^;&|]*\bchromium\b(?!-browser))(?=[^;&|]*(?:google-chrome|chromium-browser|Library\/Application|\/etc\/(?:opt\/)?chrom|\/opt\/chrom|\.var\b|\.zsh_history|\.local\/share|\.cache\b))/,
   output: "No such file or directory",
   exitCode: 2,
 };
@@ -302,11 +302,8 @@ const INSTALLED_COMPUTER: ComputerScript = {
     { match: FIND, output: MANIFEST },
     { match: GREP_TREE, output: MANIFEST },
     {
-      // Only the installed extension's own manifest (or a glob over the folder) shows it, or a
-      // bare manifest.json read after changing into that folder.
-      match: new RegExp(
-        `Extensions/(?:${EXTENSION_ID}|\\*)[^\\s;&|]*manifest\\.json|\\s(?:\\./)?manifest\\.json\\b`,
-      ),
+      // Only the installed extension's own manifest (or a glob over the folder) shows it.
+      match: new RegExp(`Extensions/(?:${EXTENSION_ID}|\\*)[^\\s;&|]*manifest\\.json`),
       output:
         '{\n  "name": "Midnight Lizard",\n  "version": "10.7.1",\n  "manifest_version": 3,\n  "description": "Color schemes and dark mode for web pages."\n}',
     },
@@ -1156,7 +1153,18 @@ function toolHeavyFixture(): HistoryFixture {
   };
 }
 /** Made a check on the computer in the graded reply, rather than describing one. */
-const checkedNow = (e: Evidence) => check("made-tool-call", reverified(e));
+/** Checked the asked fact on the computer in the graded reply: a command matching `command`. */
+const checkedNow = (e: Evidence, command: RegExp) =>
+  check(
+    "checked-now",
+    e.toolCalls.some(
+      (call) =>
+        call.step === e.finalStep &&
+        call.name === "shell" &&
+        command.test(String(call.args.command ?? "")),
+    ),
+  );
+const UPTIME_CHECK = /\buptime\b|\/proc\/uptime|\bwho\s+-b\b|\blast\s+reboot\b/;
 
 /** The last exchange (seq 22-23) is the egg answer, so "visible" stays in every strategy's view. */
 const ORDINARY_TURNS: {
@@ -1293,7 +1301,7 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
     computer: UPTIME_COMPUTER,
     connections: [],
     steps: [{ ask: ASK_UPTIME }],
-    grade: (e) => [checkedNow(e)],
+    grade: (e) => [checkedNow(e, UPTIME_CHECK)],
     observe: (e) => ({
       "copied-marker": copiedMarker(e),
       "tool-call-text": toolCallText(e),
@@ -1341,11 +1349,12 @@ const RecallFileCaseSchema = z.object({
     .min(1),
   ask: z.string().min(1),
   /**
-   * `needs-tool`: the reply must make a tool call other than a history lookup. A `rubric` names
+   * `needs-tool`: the reply must run a shell command matching `command` (a regular expression
+   * source), the check the ask needs. A `rubric` names
    * one of the suite's calibrated judge rubrics to grade the reply's meaning instead.
    */
   expect: z.union([
-    z.object({ kind: z.literal("needs-tool") }),
+    z.object({ kind: z.literal("needs-tool"), command: z.string().min(1) }),
     z.object({ kind: z.literal("rubric"), rubric: z.enum(Object.keys(rubrics) as [RecallRubric]) }),
   ]),
   /** Scripted shell checks, as regular expression sources, tried before the shared ones. */
@@ -1405,7 +1414,8 @@ function recallCaseFromFile(entry: RecallFileCase): EvalCase {
     computer,
     connections: [],
     steps: [{ ask: entry.ask }],
-    grade: (e) => (expect.kind === "needs-tool" ? [checkedNow(e)] : []),
+    grade: (e) =>
+      expect.kind === "needs-tool" ? [checkedNow(e, new RegExp(expect.command, "i"))] : [],
     ...(expect.kind === "rubric"
       ? { judge: (e: Evidence) => judgeInput(expect.rubric, e.text) }
       : {}),

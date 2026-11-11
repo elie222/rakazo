@@ -219,6 +219,8 @@ async function main() {
         trial.strategy === "current" ||
         !selected.find((c) => c.id === trial.caseId)?.history?.compact,
     );
+  if (!trials.length)
+    throw new Error("Compaction cases run only under the current strategy; add --strategy current");
   const output = path.resolve(values.output!);
   let budget: SpendBudget | undefined;
   let probeTotals: { costUsd: number | null; modelCalls: number } | undefined;

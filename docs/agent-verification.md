@@ -588,19 +588,19 @@ The `recall-tool-heavy-new-check` case reproduces a bot writing out its earlier
 steps instead of calling a tool. Its 48-message chat has twelve replies that
 did their work with tools (disk, files, processes, browser, search), each
 followed by small talk; the bot is then asked to check how long its computer has
-been up. A deterministic check requires a tool call other than a history lookup
-in the graded reply. Each trial records, without grading prose, whether the reply
+been up. A deterministic check requires a shell command in the graded reply that
+reads the uptime. Each trial records, without grading prose, whether the reply
 copies the replayed step list (`copied-marker`) or writes a tool call out as text
 (`tool-call-text`). In November 2026 a small model on the then-current product
-copied the list in 10 of 40 trials, and in 9 of them made no call and invented
-an uptime; larger models never did.
+copied the list in 9 of 40 trials, each time making no call; a larger model
+never did.
 
 More recall cases can come from a file: pass `--cases-file <file>` with
 `--suite recall`, a JSON array or one JSON object per line. Each case has an `id`
 starting `recall-file-`, a `purpose`, the chat as `messages` (`role` `user` or
 `bot`, `text`, and a bot reply's `steps` stored as the product stores them), the
-`ask`, and an `expect`: `{ "kind": "needs-tool" }` requires a tool call other than
-a history lookup, and `{ "kind": "rubric", "rubric": "<name>" }` grades the reply
+`ask`, and an `expect`: `{ "kind": "needs-tool", "command": "<regex>" }` requires
+a shell command matching it, the check the ask needs, and `{ "kind": "rubric", "rubric": "<name>" }` grades the reply
 with one of this suite's calibrated rubrics. An optional `computer` adds scripted
 shell checks (`match` as a regular expression source, with `flags`, `output` and
 `exitCode`) ahead of the shared home and Chromium ones, and the browser `screen`.

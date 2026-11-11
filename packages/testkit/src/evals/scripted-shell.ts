@@ -79,11 +79,11 @@ export function scriptedShell(
   for (let index = 0; index < parts.length; index += 2) {
     const part = parts[index]!.trim();
     const operator = parts[index - 1];
+    if (!part || (operator === "&&" && code !== 0) || (operator === "||" && code === 0)) continue;
     if (/^cd(?:\s+\S+)?(?:\s+[0-9&]?>\S*)*$/.test(part)) {
       code = 0;
       continue;
     }
-    if (!part || (operator === "&&" && code !== 0) || (operator === "||" && code === 0)) continue;
     const echo = /^echo(?:\s+(?:-[en]+\s+)?(.*))?$/s.exec(
       part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""),
     );

@@ -259,10 +259,19 @@ describe("recall outcome grading", () => {
     const uptime = { step: 1, name: "shell", args: { command: "uptime" } };
     expect(failed("tool-heavy-new-check", evidence([uptime], "Up 3 days."))).toEqual([]);
     expect(scriptedShell(c.computer!, "uptime")?.stdout).toContain("up 3 days");
-    // Only a history lookup, or nothing at all, is not a check.
-    expect(failed("tool-heavy-new-check", evidence([search], "Up a while."))).toEqual([
-      "made-tool-call",
-    ]);
+    // A history lookup, or a command that reads something else, is not a check of the uptime.
+    const listing = { step: 1, name: "shell", args: { command: "ls ~" } };
+    for (const calls of [[search], [listing]])
+      expect(failed("tool-heavy-new-check", evidence(calls, "Up a while."))).toEqual([
+        "checked-now",
+      ]);
+    // A probe for several browsers still finds the Chromium the computer has.
+    expect(
+      scriptedShell(
+        scenario("tool-steps-replayed").computer!,
+        "which chromium chromium-browser google-chrome",
+      )?.stdout,
+    ).toBe("/usr/bin/chromium");
     const observed = (text: string) => c.observe!(evidence([], text));
     expect(observed("- Shell (succeeded): Checking uptime.\nUp 3 days.")["copied-marker"]).toBe(
       true,
@@ -325,7 +334,7 @@ describe("recall outcome grading", () => {
             { role: "bot", text: "18 GB.", steps },
           ],
           ask: "Uptime now?",
-          expect: { kind: "needs-tool" },
+          expect: { kind: "needs-tool", command: "\\buptime\\b" },
           computer: { shell: [{ match: "\\buptime\\b", output: "up 3 days" }] },
         },
         {
@@ -343,6 +352,8 @@ describe("recall outcome grading", () => {
     expect(uptime!.history!.messages[1]!.steps).toEqual(steps);
     expect(scriptedShell(uptime!.computer!, "uptime")?.stdout).toBe("up 3 days");
     expect(uptime!.grade(evidence([], "Up a while.")).map((c) => c.pass)).toEqual([false]);
+    const ran = { step: 1, name: "shell", args: { command: "uptime -p" } };
+    expect(uptime!.grade(evidence([ran], "Up 3 days.")).map((c) => c.pass)).toEqual([true]);
     expect(uptime!.judge).toBeUndefined();
     expect(signOff!.judge!(evidence([], "Bye")).rubric).toContain(RECALL_JUDGE_VERSION);
     writeFileSync(file, JSON.stringify([{ id: "bad", purpose: "x", messages: [], ask: "x" }]));
