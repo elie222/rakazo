@@ -275,6 +275,44 @@ describe("Docker sandbox", () => {
       await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
     });
 
+    it("does not restart a computer on incomplete unwritable output", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ type: "stdout", data: "unwritable\n" }), {
+              headers: { "content-type": "application/x-ndjson" },
+            }),
+        ),
+      );
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).resolves.toBeUndefined();
+    });
+
+    it("bounds an unanswered preparation check without reporting damage", async () => {
+      const deadline = new AbortController();
+      vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+      try {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(
+            (_url: string, init: RequestInit) =>
+              new Promise<Response>((_resolve, reject) => {
+                init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+              }),
+          ),
+        );
+        const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+        const check = provider.prepare(computer, context);
+        expect(AbortSignal.timeout).toHaveBeenCalledWith(HEALTH_CHECK_TIMEOUT_MS);
+        const rejected = expect(check).rejects.not.toBeInstanceOf(SandboxDamagedError);
+        deadline.abort(new DOMException("Timed out", "TimeoutError"));
+        await rejected;
+      } finally {
+        vi.mocked(AbortSignal.timeout).mockRestore();
+      }
+    });
+
     it("does not blame the home folder when the check itself could not run", async () => {
       const fetchMock = vi.fn(async (url: string) =>
         url.endsWith("/exec")
@@ -311,16 +349,18 @@ describe("Docker sandbox", () => {
       return provider;
     }
 
-    const checkTimeout = (call: unknown[] | undefined) =>
-      JSON.parse((call?.[1] as RequestInit).body as string).timeoutMs;
+    const checkTimeout = (call: unknown[] | undefined) => {
+      if (!call) throw new Error("Expected an exec request");
+      return JSON.parse((call[1] as RequestInit).body as string).timeoutMs;
+    };
 
-    it("gives the check a short deadline only until the computer answers again", async () => {
+    it("gives every preparation check a short deadline", async () => {
       const fetchMock = vi.fn(async () => exit(0));
       const provider = await unansweredProvider(fetchMock);
       await provider.prepare(computer, context);
       expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
       await provider.prepare(computer, context);
-      expect(checkTimeout(fetchMock.mock.calls.at(-1))).not.toBe(HEALTH_CHECK_TIMEOUT_MS);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
     });
 
     it("reports the computer damaged when it answers that its home cannot be written", async () => {
@@ -396,7 +436,7 @@ describe("Docker sandbox", () => {
         }),
       ]);
       await provider.prepare(computer, context);
-      expect(checkTimeout(fetchMock.mock.calls.at(-1))).not.toBe(HEALTH_CHECK_TIMEOUT_MS);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
     });
 
     it("runs one check for callers that need it at the same time", async () => {
