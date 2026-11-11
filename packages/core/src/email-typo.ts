@@ -1,9 +1,4 @@
-/**
- * Domains that give mailboxes to the public, so mail signed by one can come from anyone with an
- * address there: a sign-in page on one of them never fills a code from mail. Also what a
- * mistyped address is corrected to.
- */
-export const PUBLIC_MAILBOX_DOMAINS: readonly string[] = [
+const KNOWN_DOMAINS = [
   "gmail.com",
   "icloud.com",
   "outlook.com",
@@ -24,6 +19,40 @@ export const PUBLIC_MAILBOX_DOMAINS: readonly string[] = [
   "gmx.com",
   "mail.com",
   "email.com",
+];
+
+/**
+ * Domains that give mailboxes to the public, so mail signed by one can come from anyone with an
+ * address there: a sign-in page on one of them never fills a code from mail. A mistyped address
+ * is corrected only to KNOWN_DOMAINS, so a lookalike real domain is never "corrected" to the rest.
+ */
+export const PUBLIC_MAILBOX_DOMAINS: readonly string[] = [
+  ...KNOWN_DOMAINS,
+  "gmx.de",
+  "gmx.net",
+  "web.de",
+  "t-online.de",
+  "yandex.ru",
+  "yandex.com",
+  "mail.ru",
+  "rambler.ru",
+  "yahoo.co.jp",
+  "hotmail.co.uk",
+  "hotmail.fr",
+  "outlook.fr",
+  "yahoo.fr",
+  "laposte.net",
+  "libero.it",
+  "seznam.cz",
+  "naver.com",
+  "daum.net",
+  "sina.com",
+  "yeah.net",
+  "zoho.com",
+  "fastmail.com",
+  "tuta.com",
+  "tutanota.com",
+  "hey.com",
 ];
 
 const COM_TYPOS = new Set([
@@ -66,10 +95,10 @@ function splitDomain(domain: string): [name: string, tld: string] {
 }
 
 function correctedDomain(domain: string): string | null {
-  if (domain.length > 253 || PUBLIC_MAILBOX_DOMAINS.includes(domain)) return null;
+  if (domain.length > 253 || KNOWN_DOMAINS.includes(domain)) return null;
   const [name, rawTld] = splitDomain(domain);
   const tld = COM_TYPOS.has(rawTld) ? "com" : rawTld;
-  for (const known of PUBLIC_MAILBOX_DOMAINS) {
+  for (const known of KNOWN_DOMAINS) {
     const [knownName, knownTld] = splitDomain(known);
     if (domain.replaceAll(".", "") === known.replaceAll(".", "")) return known;
     // Short names sit one edit from real domains (gm.com, ge.com), so only longer ones are fuzzy.

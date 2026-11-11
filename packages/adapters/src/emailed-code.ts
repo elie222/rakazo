@@ -26,8 +26,9 @@ export function emailedCodeWindowStart(requestedAt: Date, runStartedAt: Date): D
 /** Emails read from the inbox per query while looking for the site's: its sender is encrypted. */
 const EMAIL_BATCH = 50;
 /**
- * The most emails from the site in the window read for one lookup, the inbox's daily limit for
- * unsolicited mail. Mail from other senders is not counted, so it never hides the site's email.
+ * The most emails from the site in the window compared for one lookup, the inbox's daily limit for
+ * unsolicited mail; past it there is no code. Mail from other senders is not counted, so it never
+ * hides the site's email.
  */
 export const EMAIL_SEARCH_LIMIT = 500;
 /**
@@ -96,9 +97,10 @@ const pageSeenKey = (requestId: string) => `emailed-code:page:${requestId}`;
 const connectedClaimKey = (mailbox: string, messageId: string) =>
   `emailed-code:connected:${createHash("sha256").update(`${mailbox}:${messageId}`).digest("base64url")}`;
 /**
- * The most messages from the site read from a connected mailbox for one lookup, and how long the
- * read may take. As for the inbox, the limit is on the site's mail: the provider's search is loose,
- * so mail from other senders is read past, page after page, and never hides the site's email.
+ * The most messages from the site read from a connected mailbox for one lookup (past it there is
+ * no code), and how long the read may take. As for the inbox, the limit is on the site's mail: the
+ * provider's search is loose, so mail from other senders is read past, page after page, and never
+ * hides the site's email.
  */
 export const CONNECTED_MAIL_LIMIT = 5;
 export const CONNECTED_MAIL_TIMEOUT_MS = 3000;
@@ -116,42 +118,8 @@ function fillableSite(origin: string): string | undefined {
   return site && !publicMailboxDomain(site) ? site : undefined;
 }
 
-/**
- * Large mailbox providers beyond the ones typos are corrected to, kept apart so that a lookalike
- * real domain is never "corrected" to one of them.
- */
-const MORE_PUBLIC_MAILBOX_DOMAINS = [
-  "gmx.de",
-  "gmx.net",
-  "web.de",
-  "t-online.de",
-  "yandex.ru",
-  "yandex.com",
-  "mail.ru",
-  "rambler.ru",
-  "yahoo.co.jp",
-  "hotmail.co.uk",
-  "hotmail.fr",
-  "outlook.fr",
-  "yahoo.fr",
-  "laposte.net",
-  "libero.it",
-  "seznam.cz",
-  "naver.com",
-  "daum.net",
-  "sina.com",
-  "yeah.net",
-  "zoho.com",
-  "fastmail.com",
-  "tuta.com",
-  "tutanota.com",
-  "hey.com",
-];
-
 function publicMailboxDomain(site: string): boolean {
-  return [...PUBLIC_MAILBOX_DOMAINS, ...MORE_PUBLIC_MAILBOX_DOMAINS].some(
-    (domain) => hostSite(domain) === site,
-  );
+  return PUBLIC_MAILBOX_DOMAINS.some((domain) => hostSite(domain) === site);
 }
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).toLowerCase();
@@ -250,12 +218,12 @@ export async function findEmailedCode(
     after: input.after,
   });
   // The sender is encrypted, so the whole window (minutes long) is read newest first in batches,
-  // each filtered here, until EMAIL_SEARCH_LIMIT emails from the site: the limit is on the site's
-  // mail, so mail from other senders, however much, never hides the site's email.
-  const fromSite: { id: string; key: string; subject: string; text: string }[] = [];
+  // without subject or text, each filtered here: the limit is on the site's mail, so mail from
+  // other senders, however much, never hides the site's email.
+  const fromSite: { id: string; key: string }[] = [];
   let cursor: string | undefined;
   let read = 0;
-  while (fromSite.length < EMAIL_SEARCH_LIMIT) {
+  while (true) {
     const emails = await prisma.botEmailMessage.findMany({
       where: {
         botId: input.botId,
@@ -273,14 +241,14 @@ export async function findEmailedCode(
         fromAddress: true,
         verified: true,
         mailingList: true,
-        subject: true,
-        text: true,
       },
     });
     for (const email of emails) {
       if (emailMayAnswer(email, { site, botEmailDomain: input.botEmailDomain }))
         fromSite.push(email);
     }
+    // Older mail from the site left unread may hold another code: the card stays instead.
+    if (fromSite.length > EMAIL_SEARCH_LIMIT) return null;
     cursor = emails.at(-1)?.id;
     read += emails.length;
     if (emails.length < EMAIL_BATCH) break;
@@ -297,8 +265,23 @@ export async function findEmailedCode(
       })
     ).map((effect) => effect.idempotencyKey),
   );
-  const candidates = fromSite.flatMap((email) => {
-    const code = claimed.has(claimOf(email)) ? undefined : extractOneTimeCode(email);
+  const unclaimed = fromSite.filter((email) => !claimed.has(claimOf(email)));
+  // Only the mail that may answer is decrypted in full.
+  const bodies = new Map(
+    unclaimed.length === 0
+      ? []
+      : (
+          await prisma.botEmailMessage.findMany({
+            where: { botId: input.botId, id: { in: unclaimed.map((email) => email.id) } },
+            select: { id: true, subject: true, text: true },
+          })
+        ).map((email) => [email.id, email]),
+  );
+  // One was deleted meanwhile and might have held another code.
+  if (bodies.size !== unclaimed.length) return null;
+  const candidates = unclaimed.flatMap((email) => {
+    const body = bodies.get(email.id);
+    const code = body && extractOneTimeCode(body);
     return code ? [{ code, emailId: email.id, emailKey: email.key }] : [];
   });
   const newest = theOneCode(candidates);
@@ -398,7 +381,6 @@ export async function findConnectedMailCode(
             ...(page ? { page } : {}),
           });
           for (const message of read.messages) {
-            if (fromSite >= CONNECTED_MAIL_LIMIT) break;
             signal.throwIfAborted();
             // A message that cannot be judged may hold the newest code: the whole look fails, so
             // the card opens rather than an older message answering in its place.
@@ -416,12 +398,14 @@ export async function findConnectedMailCode(
               { site, botEmailDomain: deps.botEmailDomain, mailbox },
             );
             if (!mayAnswer) continue;
-            fromSite += 1;
+            // An older message from the site left unread may hold another code.
+            if (++fromSite > CONNECTED_MAIL_LIMIT)
+              throw new Error("The site sent too many messages");
             const code = extractOneTimeCode(email);
             if (code) candidates.push({ code, mailbox, messageId: message.id });
           }
           page = read.next;
-        } while (page && fromSite < CONNECTED_MAIL_LIMIT);
+        } while (page);
       }
     });
   } catch (error) {

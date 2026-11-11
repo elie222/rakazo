@@ -269,6 +269,7 @@ function world(printed = "") {
             take,
           }: {
             where: Row & {
+              id?: { in: string[] };
               receivedAt?: { gte?: Date; gt?: Date; lt?: Date };
               OR?: Array<Record<string, { contains: string }>>;
             };
@@ -286,6 +287,7 @@ function world(printed = "") {
                   ["botId", "sent", "verified"].every(
                     (key) => where[key] === undefined || email[key] === where[key],
                   ) &&
+                  (!where.id || where.id.in.includes(String(email.id))) &&
                   (!gte || at >= gte) &&
                   (!gt || at > gt) &&
                   (!lt || at < lt) &&

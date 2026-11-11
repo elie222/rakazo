@@ -237,25 +237,54 @@ describe("readInboundEmail", () => {
     expect(injected.authenticated).toBe(false);
   });
 
-  it("does not authenticate a copy of someone else's mail with the bot added as a Cc", async () => {
-    // A site's mail to someone else, signed over its To but with no Cc to sign.
-    const toOther = plain
-      .filter((line) => !line.startsWith("Cc:"))
-      .map((line) => (line.startsWith("To:") ? "To: eve@evil.test" : line));
-    const original = await signed(message(toOther), "example.test", "From:To:Subject:Date");
-    const addCc = (raw: string, where: "top" | "bottom") =>
-      where === "top"
-        ? `Cc: helper@bots.test\r\n${raw}`
-        : raw.replace("\r\n\r\n", "\r\nCc: helper@bots.test\r\n\r\n");
-
-    expect((await readInboundEmail(bytes(original), { resolver })).authenticated).toBe(true);
-    for (const where of ["top", "bottom"] as const) {
-      expect(await readInboundEmail(bytes(addCc(original, where)), { resolver })).toMatchObject({
-        authenticated: false,
-        cc: ["helper@bots.test"],
+  // The rule for a recipient header naming the bot: it counts only when every To and Cc the mail
+  // holds is covered by the sender's signature, or the signature leaves recipients out and the
+  // relay saw the recent mail come straight from a server the sender's domain allows. So a copy of
+  // a site's mail to someone else, with the bot added as a Cc, is never authenticated: the one who
+  // replays it has the site's signature but not the site's servers.
+  it.each([
+    ["signed by the site", "To:Cc", "signed", undefined, 0, true],
+    ["added on top, the signature covering no Cc", "To", "top", undefined, 0, false],
+    ["added at the bottom, the signature covering no Cc", "To", "bottom", undefined, 0, false],
+    ["added on top of the signed Cc", "To:Cc", "on top of signed", undefined, 0, false],
+    ["put in place of the signed Cc", "To:Cc", "replaced", undefined, 0, false],
+    ["added, recipients unsigned, relayed from the site's server", "", "top", "ada", 1, true],
+    ["added, recipients unsigned, replayed from another server", "", "top", "eve", 1, false],
+    ["added, recipients unsigned, from the site's server a day ago", "", "top", "ada", 25, false],
+    ["added, recipients unsigned, no relay seal", "", "top", undefined, 1, false],
+  ] as const)(
+    "a Cc naming the bot %s",
+    async (_state, signedRecipients, cc, sentBy, hoursLater, authenticated) => {
+      const toOther = plain.map((line) =>
+        line.startsWith("To:")
+          ? "To: eve@evil.test"
+          : line.startsWith("Cc:")
+            ? `Cc: ${cc === "signed" ? "helper@bots.test" : "carol@evil.test"}`
+            : line,
+      );
+      const headers =
+        cc === "signed" || cc.endsWith("signed") || cc === "replaced"
+          ? toOther
+          : toOther.filter((line) => !line.startsWith("Cc:"));
+      const list = `From:${signedRecipients ? `${signedRecipients}:` : ""}Subject:Date`;
+      let raw = await signed(message(headers), "example.test", list);
+      if (cc === "top" || cc === "on top of signed") raw = `Cc: helper@bots.test\r\n${raw}`;
+      if (cc === "bottom") raw = raw.replace("\r\n\r\n", "\r\nCc: helper@bots.test\r\n\r\n");
+      if (cc === "replaced") raw = raw.replace("Cc: carol@evil.test", "Cc: helper@bots.test");
+      if (sentBy)
+        raw = await sealed(
+          raw,
+          `spf=pass smtp.mailfrom=${sentBy}@${sentBy === "ada" ? "example" : "evil"}.test`,
+        );
+      const email = await readInboundEmail(bytes(raw), {
+        resolver,
+        now: new Date(SENT + hoursLater * 3_600_000),
+        ...(sentBy ? { relayArcDomain: "relay.test" } : {}),
       });
-    }
-  });
+      expect(email.cc).toContain("helper@bots.test");
+      expect(email.authenticated).toBe(authenticated);
+    },
+  );
 
   it("authenticates recipient-unsigned mail the relay saw come from the sender's own server", async () => {
     const raw = bytes(

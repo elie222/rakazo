@@ -146,11 +146,12 @@ function inbox(
         skip,
         take,
       }: {
-        where: { receivedAt: { gte: Date; gt?: Date } };
+        where: { id?: { in: string[] }; receivedAt: { gte: Date; gt?: Date } };
         cursor?: { id: string };
         skip?: number;
         take?: number;
       }) => {
+        if (where.id) return emails.filter((email) => where.id?.in.includes(String(email.id)));
         const inWindow = emails
           .filter(
             (email) =>
@@ -585,6 +586,120 @@ describe("a code emailed to the bot while its run waits on the card", () => {
       );
     },
   );
+
+  // The rule, for both sources: the code is the one the site's mail in the window gives when all
+  // of it is read, newest first, past other senders' mail. A read cut short by a limit gives none
+  // (the card opens), so neither an older message nor the next source answers for unread mail.
+  const FALLBACK = "650372";
+  it.each<
+    [name: string, inInbox: boolean, site: (string | null)[], others: number, answer?: string]
+  >([
+    ["one email under a page of newer mail from others", true, [CODE], 60, CODE],
+    ["two emails with the same code", true, [CODE, CODE], 0, CODE],
+    ["two emails with different codes", true, ["731905", CODE], 0],
+    [
+      "more of the site's emails than it compares, the oldest with another code",
+      true,
+      [...Array(EMAIL_SEARCH_LIMIT).fill(CODE), "731905"],
+      0,
+    ],
+    [
+      "more of the site's emails than it compares, only the oldest with a code",
+      true,
+      [...Array(EMAIL_SEARCH_LIMIT).fill(null), CODE],
+      0,
+    ],
+    [
+      "one message under pages of newer mail from others",
+      false,
+      [CODE],
+      CONNECTED_MAIL_LIMIT * 3 + 1,
+      CODE,
+    ],
+    ["two messages with the same code", false, [CODE, CODE], 0, CODE],
+    ["two messages with different codes", false, ["731905", CODE], 0],
+    [
+      "more of the site's messages than it reads, the oldest with another code",
+      false,
+      [...Array(CONNECTED_MAIL_LIMIT).fill(CODE), "731905"],
+      0,
+    ],
+    [
+      "more of the site's messages than it reads, only the oldest with a code",
+      false,
+      [...Array(CONNECTED_MAIL_LIMIT).fill(null), CODE],
+      0,
+    ],
+  ])("with %s, answers with the code it should", async (_name, inInbox, site, others, answer) => {
+    publishKeys();
+    const sent = (index: number, from: string, code: string | null) => ({
+      id: `${from.split("@")[0]}-${index}`,
+      from,
+      code: code ?? "on its way",
+      // Other senders' mail is the newest, then the site's, newest first.
+      receivedAt: ago(from.endsWith("@example.test") ? 20_000 + index : 10_000 - index),
+    });
+    const mail = [
+      ...Array.from({ length: others }, (_, index) =>
+        sent(index, `news-${index}@example.test.elsewhere.test`, String(100_000 + index)),
+      ),
+      ...site.map((code, index) => sent(index, "no-reply@example.test", code)),
+    ];
+    // The inbox's rows give way to a connected mailbox holding another code, which may answer only
+    // when the inbox has none of the site's mail.
+    const fallback = [await connectedMail({ id: "fallback", code: FALLBACK })];
+    const all = inInbox ? fallback : await Promise.all(mail.map((one) => connectedMail(one)));
+    const recent = vi.fn(async (_context: unknown, query: { limit: number; page?: string }) => {
+      const start = Number(query.page ?? 0);
+      const end = start + query.limit;
+      return {
+        messages: all.slice(start, end),
+        ...(end < all.length ? { next: String(end) } : {}),
+      };
+    });
+    const { deliver, answerRunInput } = inbox({
+      emails: inInbox
+        ? mail.map((one) =>
+            codeEmail({
+              id: one.id,
+              key: `dkim:${one.id}`,
+              fromAddress: one.from,
+              text: `Your verification code is ${one.code}.`,
+              receivedAt: one.receivedAt,
+            }),
+          )
+        : [],
+      connectedMailCodes: true,
+      connected: { recent },
+    });
+    await deliver("run-1");
+    if (answer)
+      expect(answerRunInput).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ answer }));
+    else expect(answerRunInput).not.toHaveBeenCalled();
+  });
+
+  it("reads the subject and text only of the site's mail no run took a code from", async () => {
+    const { deliver, answerRunInput, prisma } = inbox({
+      emails: [
+        codeEmail({ id: "news", key: "dkim:news", fromAddress: "news@elsewhere.test" }),
+        codeEmail({ id: "taken", key: "dkim:taken", receivedAt: ago(5_000) }),
+        codeEmail({ receivedAt: ago(10_000) }),
+      ],
+      effects: {
+        [`emailed-code:email:bot-1:${createHash("sha256").update("dkim:taken").digest("base64url")}`]:
+          { runId: "run-9" },
+      },
+    });
+    const findMany = vi.spyOn(prisma.botEmailMessage as { findMany: () => unknown }, "findMany");
+    await expect(deliver()).resolves.toBe(1);
+    expect(answerRunInput).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ fromEmail: "email-1" }),
+    );
+    const bodiesRead = (findMany.mock.calls as unknown as [{ where: Row; select: Row }][])
+      .filter(([query]) => query.select.text)
+      .map(([query]) => query.where.id);
+    expect(bodiesRead).toEqual([{ in: ["email-1"] }]);
+  });
 
   it("answers a run's card for a site from the inbox only once in that run", async () => {
     const { deliver, answerRunInput } = inbox({
