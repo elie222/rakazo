@@ -3,14 +3,13 @@ import { inQuietHours } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { runAsSystem } from "./row-security.js";
 
-/** A person's saved quiet hours, or null while they are off. */
+/** A person's saved quiet hours, or null while they are off or a read left them out. */
 export function quietHoursOf(user: {
-  quietHoursStart: number | null;
-  quietHoursEnd: number | null;
+  quietHoursStart?: number | null;
+  quietHoursEnd?: number | null;
 }): QuietHours | null {
-  return user.quietHoursStart === null || user.quietHoursEnd === null
-    ? null
-    : { start: user.quietHoursStart, end: user.quietHoursEnd };
+  const { quietHoursStart: start, quietHoursEnd: end } = user;
+  return typeof start === "number" && typeof end === "number" ? { start, end } : null;
 }
 
 /** Which of these people are in their quiet hours at `now`, each read in their own timezone. */
