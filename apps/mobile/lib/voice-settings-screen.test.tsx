@@ -264,6 +264,7 @@ it("offers a retry when the first load fails, then loads the providers again", a
 });
 
 it("clears a failed refresh's banner once a provider choice succeeds", async () => {
+  mocks.loadDevice.mockResolvedValue(true);
   await render();
   expect(container.textContent).toContain("ElevenLabs");
   mocks.focused = false;

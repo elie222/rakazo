@@ -200,7 +200,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("selects only This device and hides all provider controls until it is turned off", async () => {
+it("selects only This device and hides provider controls until a provider is chosen", async () => {
   await render();
   selected("This device");
   for (const entry of catalog) unselected(entry.name);
@@ -209,7 +209,7 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).not.toContain("Disconnect");
   expect(container.textContent).not.toContain("Speech model");
   expect(container.textContent).not.toContain("fish-audio voice");
-  await click("This device");
+  await click("Fish Audio");
   selected("Fish Audio");
   unselected("This device");
   expect(container.querySelector('input[aria-label="API key"]')).not.toBeNull();
@@ -219,6 +219,20 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).toContain("Replace key");
   expect(container.textContent).toContain("Disconnect");
   expect(container.textContent).toContain("fish-audio voice");
+});
+
+it.each([true, false])("ignores reselecting the current provider (device: %s)", async (device) => {
+  state.load.mockResolvedValue(device);
+  await render();
+  const label = device ? "This device" : "Fish Audio";
+  selected(label);
+  state.rpc.mockClear();
+
+  await click(label);
+
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.rpc).not.toHaveBeenCalled();
+  selected(label);
 });
 
 it("falls back to an available provider when the saved provider is hidden", async () => {
@@ -296,7 +310,7 @@ it("keeps the device selected if saving its preference fails", async () => {
   expect(container.querySelector("input")).toBeNull();
   expect(state.rpc).not.toHaveBeenCalledWith("voice/setVoice", expect.anything());
   expect(container.textContent).toContain("Could not save that preference");
-  await click("This device");
+  await click("Fish Audio");
   selected("Fish Audio");
 });
 
@@ -317,7 +331,7 @@ it.each([true, false])(
     if (device) {
       selected("This device");
       expect(state.save.mock.calls).toEqual([[false], [true]]);
-      await click("This device");
+      await click("Fish Audio");
     } else {
       expect(state.save.mock.calls).toEqual([[false]]);
     }

@@ -496,9 +496,10 @@ export default function VoiceSettings() {
               disabled={pending !== null || !deviceVoiceReady}
               choices={providerChoices}
               value={deviceVoice ? DEVICE_CHOICE : provider}
-              onChange={(key) =>
-                void (key === DEVICE_CHOICE ? toggleDeviceVoice() : chooseProvider(key))
-              }
+              onChange={(key) => {
+                if (key === (deviceVoice ? DEVICE_CHOICE : provider)) return;
+                void (key === DEVICE_CHOICE ? toggleDeviceVoice() : chooseProvider(key));
+              }}
             />
           </View>
         ) : null}
