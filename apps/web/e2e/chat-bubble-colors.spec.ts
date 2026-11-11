@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
-test("user bubbles wear the avatar color with readable text in both themes", async ({
+test("user bubbles wear the avatar color with white text in both themes", async ({
   page,
 }, testInfo) => {
   await signup(page, `bubble-colors-${Date.now()}@rakazo.test`, "password12", "Bubble Demo");
@@ -20,7 +20,7 @@ test("user bubbles wear the avatar color with readable text in both themes", asy
     await page.evaluate((theme) => localStorage.setItem("rakazo.uiAppearance", theme), theme);
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-    await expect(bubble).toHaveCSS("color", "rgb(0, 0, 0)");
+    await expect(bubble).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(bubble).toHaveCSS("background-color", "rgb(255, 120, 28)");
     // The send button stays quiet on an empty draft...
     const send = page.getByRole("button", { name: "Send", exact: true });
@@ -30,7 +30,7 @@ test("user bubbles wear the avatar color with readable text in both themes", asy
     // ...and wears the bubble's color once there is something to send.
     await composer.fill("And the week after.");
     await expect(send).toHaveCSS("background-color", "rgb(255, 120, 28)");
-    await expect(send).toHaveCSS("color", "rgb(0, 0, 0)");
+    await expect(send).toHaveCSS("color", "rgb(255, 255, 255)");
     await captureScreenshot(page, testInfo, `chat-send-button-bot-color-${theme}`);
     await composer.fill("");
   }

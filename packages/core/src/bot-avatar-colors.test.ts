@@ -1,6 +1,5 @@
-import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { botEyeInk, botEyeTone, chatUserBubbleColors, contrastRatio } from "./bot-avatar-colors.js";
+import { botEyeInk, botEyeTone, chatUserBubbleColors } from "./bot-avatar-colors.js";
 
 describe("botEyeTone", () => {
   it("cuts eyes in the page color unless the body is nearly white or black", () => {
@@ -13,25 +12,16 @@ describe("botEyeTone", () => {
 });
 
 describe("chatUserBubbleColors", () => {
-  it("wears the bot's exact avatar color", () => {
-    expect(chatUserBubbleColors("#FF781C", "bot-1")?.background).toBe("#FF781C");
+  it("wears the bot's exact avatar color under white text", () => {
+    expect(chatUserBubbleColors("#FF781C", "bot-1")).toEqual({
+      background: "#FF781C",
+      foreground: "#FFFFFF",
+    });
     expect(chatUserBubbleColors("#EF4444::shape_2", "bot-1")?.background).toBe("#FF3E51");
     // A bot saved with a color's earlier value wears that color's current bubble.
     expect(chatUserBubbleColors("#64748B", "bot-1")).toEqual(
       chatUserBubbleColors("#94A3B8", "bot-1"),
     );
-  });
-
-  it.each(BOT_COLOR_LIST.filter((color) => color.id !== "white"))(
-    "keeps $name body text at AA contrast",
-    ({ hex }) => {
-      const bubble = chatUserBubbleColors(hex, "bot-1")!;
-      expect(contrastRatio(bubble.background, bubble.foreground)).toBeGreaterThanOrEqual(4.5);
-    },
-  );
-
-  it("puts white text on a deep custom color", () => {
-    expect(chatUserBubbleColors("#1E3A8A", "bot-1")?.foreground).toBe("#FFFFFF");
   });
 
   it("keeps the neutral bubble for a photo or the white bot", () => {

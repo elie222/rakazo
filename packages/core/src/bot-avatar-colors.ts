@@ -48,12 +48,9 @@ export function resolvePersonaColorDef(
   return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
 }
 
-const LIGHT_TEXT = "#FFFFFF";
-const DARK_TEXT = "#000000";
-
 /**
- * Your messages in a bot's chat wear that bot's exact avatar color, under whichever of white or
- * black text reads better. Photo and white avatars keep the neutral bubble.
+ * Your messages in a bot's chat wear that bot's exact avatar color under white text. Photo and
+ * white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
   avatarValue: string,
@@ -63,12 +60,7 @@ export function chatUserBubbleColors(
   if (parsed.kind === "image") return undefined;
   const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
   if (def.id === "white") return undefined;
-  const background = `#${expandHex(def.hex)}`.toUpperCase();
-  const foreground =
-    contrastRatio(background, LIGHT_TEXT) >= contrastRatio(background, DARK_TEXT)
-      ? LIGHT_TEXT
-      : DARK_TEXT;
-  return { background, foreground };
+  return { background: `#${expandHex(def.hex)}`.toUpperCase(), foreground: "#FFFFFF" };
 }
 
 /**
