@@ -178,6 +178,16 @@ export const BillingStatusSchema = z.object({
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
+/**
+ * The hosted-model credit balance, or null for a member who only runs on their own keys and
+ * subscriptions. A balance left after switching to an own key still pays, so it still counts.
+ */
+export function modelCreditsUsd(status: BillingStatus | null | undefined): number | null {
+  if (!status) return null;
+  const balance = status.balanceUsd ?? 0;
+  return status.funding === "credits" || balance > 0 ? balance : null;
+}
+
 /** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;

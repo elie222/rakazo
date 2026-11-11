@@ -1627,6 +1627,28 @@ describe("shared Linux desktop lifecycle", () => {
   );
 
   it.skipIf(process.platform !== "linux")(
+    "waits for a file chooser that is slow to exec",
+    async () => {
+      const { runtime, bin, screenEnv, run, relocate, alive, extraDisplay, cleanup } =
+        await portalScreenFixture();
+      // Holds the forked pid on nohup's own executable before it execs the portal.
+      writeFileSync(path.join(bin, "nohup"), '#!/bin/bash\nsleep 0.3\nexec "$@"\n');
+      chmodSync(path.join(bin, "nohup"), 0o755);
+      try {
+        const result = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(result.status, result.stderr).toBe(0);
+        const gtk = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
+        expect(alive(recordedPid(gtk))).toBe(true);
+      } finally {
+        // Let both portals finish exec and log their pids so cleanup can stop them.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
     "restarts a dead screen bus without killing an unrelated pid",
     async () => {
       const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =
