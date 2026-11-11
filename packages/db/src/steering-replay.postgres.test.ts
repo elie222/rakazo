@@ -515,4 +515,49 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       ),
     ).toEqual([pending[1]!.id]);
   });
+
+  it("hands a run every waiting key message, as the key's and not the person's", async () => {
+    await system.run.updateMany({
+      where: { threadId, status: { in: ["queued", "running", "waiting_input"] } },
+      data: { status: "cancelled" },
+    });
+    await system.steeringMessage.deleteMany({ where: { botId, runId: null } });
+    const texts = [`first ${randomUUID()}`, `second ${randomUUID()}`];
+    for (const text of texts) {
+      const message = await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        authorUserId: userId,
+        blocks: [
+          { kind: "text", text },
+          { kind: "service_origin", credentialId: "credential-1", name: "Nightly" },
+        ],
+      });
+      await system.steeringMessage.create({
+        data: { messageId: message.id, botId, userId, originTrigger: "service" },
+      });
+    }
+
+    const runId = await asOwner(() =>
+      prisma.$transaction((tx) => createPendingSteeringRun(tx, { spaceId, threadId, botId })),
+    );
+    const run = await system.run.findUniqueOrThrow({ where: { id: runId! } });
+    expect(run.trigger).toBe("service");
+    await system.run.update({
+      where: { id: run.id },
+      data: { status: "running", startedAt: new Date(), leaseOwner: "worker-1", leaseFence: 1 },
+    });
+    const claimed = await asOwner(() =>
+      claimSteering(prisma, {
+        threadId,
+        botId,
+        runId: run.id,
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        seenIds: [],
+      }),
+    );
+    expect(claimed.map((item) => item.origin)).toEqual(["service", "service"]);
+    for (const [index, text] of texts.entries()) expect(claimed[index]?.text).toContain(text);
+  });
 });

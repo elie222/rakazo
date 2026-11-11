@@ -1897,8 +1897,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               },
               prompt,
               ...(speakers &&
+              // A key's prompt is not the person's words, so it carries no speaker label.
               (run.trigger === "user" ||
-                run.trigger === "service" ||
                 (run.trigger === "follow_up" && sourceMessage?.role === "user"))
                 ? { promptSpeaker: personSpeaker(people, run.userId) }
                 : {}),
