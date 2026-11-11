@@ -29,6 +29,8 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
+  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
+  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
@@ -119,6 +121,7 @@ import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
   composerEnterToSendPreference,
 } from "../lib/composer-enter-to-send-pref";
+import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
@@ -126,6 +129,44 @@ import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOver
 afterEach(() => {
   localStorage.clear();
 });
+
+it.each([undefined, null, "device", "different"])(
+  "only offers the device timezone when the selected timezone differs (%s)",
+  async (saved) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const deviceTimezone = localTimezone();
+    const timezone =
+      saved === "device"
+        ? deviceTimezone
+        : saved === "different"
+          ? deviceTimezone === "UTC"
+            ? "Europe/London"
+            : "UTC"
+          : saved;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <GeneralSettingsPanels
+            name="Test"
+            timezone={timezone}
+            onTimezoneChange={async () => {}}
+          />,
+        ),
+      );
+      expect(
+        container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')?.value,
+      ).toBe(timezone ?? deviceTimezone);
+      expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
+        saved === "different",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("flips the stored tool activity preference from the settings toggle", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
