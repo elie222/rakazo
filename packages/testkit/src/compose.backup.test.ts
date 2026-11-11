@@ -16,6 +16,46 @@ function compose(args: string[], options?: Parameters<typeof execFileSync>[2]) {
   return execFileSync("docker", [...composeBaseArgs(repoRoot), ...args], options);
 }
 
+const psql = (sqlArgs: string[]) => ["exec", "-T", "postgres", "psql", "-U", "rakazo", ...sqlArgs];
+
+const SIDE_DATABASE = "rakazo_restore_test";
+
+function createSideDatabase() {
+  compose(psql(["-d", "postgres", "-c", `DROP DATABASE IF EXISTS ${SIDE_DATABASE}`]), {
+    stdio: "pipe",
+    timeout: 20_000,
+  });
+  compose(psql(["-d", "postgres", "-c", `CREATE DATABASE ${SIDE_DATABASE}`]), {
+    stdio: "pipe",
+    timeout: 20_000,
+  });
+}
+
+function dropSideDatabase() {
+  compose(psql(["-d", "postgres", "-c", `DROP DATABASE ${SIDE_DATABASE}`]), {
+    stdio: "pipe",
+    timeout: 20_000,
+  });
+}
+
+/** Mirrors scripts/restore.sh: with ON_ERROR_STOP and a single transaction, any SQL
+ * error fails the whole import instead of leaving a partially imported restore. */
+function importDump(sql: string) {
+  return compose(
+    psql(["-d", SIDE_DATABASE, "-X", "--set=ON_ERROR_STOP=on", "--single-transaction", "--file=-"]),
+    { input: sql, stdio: ["pipe", "pipe", "pipe"], timeout: 60_000 },
+  );
+}
+
+function countBots(database: string) {
+  return String(
+    compose(psql(["-d", database, "-tA", "-c", "SELECT count(*) FROM bots"]), {
+      encoding: "utf8",
+      timeout: 20_000,
+    }),
+  ).trim();
+}
+
 describeBackup("compose backup and restore", () => {
   beforeAll(() => {
     if (!postgresUp(repoRoot)) {
@@ -41,37 +81,34 @@ describeBackup("compose backup and restore", () => {
     expect(sql.toLowerCase()).toContain("bots");
     expect(sql).not.toMatch(/OPENROUTER_API_KEY|sk-or-v1-/);
 
-    const psql = (sqlArgs: string[]) => [
-      "exec",
-      "-T",
-      "postgres",
-      "psql",
-      "-U",
-      "rakazo",
-      ...sqlArgs,
-    ];
-    compose(psql(["-d", "postgres", "-c", "DROP DATABASE IF EXISTS rakazo_restore_test"]), {
-      stdio: "pipe",
-      timeout: 20_000,
-    });
-    compose(psql(["-d", "postgres", "-c", "CREATE DATABASE rakazo_restore_test"]), {
-      stdio: "pipe",
-      timeout: 20_000,
-    });
-    compose(psql(["-d", "rakazo_restore_test"]), {
-      input: sql,
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 60_000,
-    });
-    const tables = compose(psql(["-d", "rakazo_restore_test", "-c", "\\dt"]), {
-      encoding: "utf8",
-      timeout: 20_000,
-    });
-    expect(tables).toMatch(/bots/);
-    compose(psql(["-d", "postgres", "-c", "DROP DATABASE rakazo_restore_test"]), {
-      stdio: "pipe",
-      timeout: 20_000,
-    });
+    createSideDatabase();
+    try {
+      importDump(sql);
+      const tables = compose(psql(["-d", SIDE_DATABASE, "-c", "\\dt"]), {
+        encoding: "utf8",
+        timeout: 20_000,
+      });
+      expect(tables).toMatch(/bots/);
+      expect(countBots(SIDE_DATABASE)).toBe(countBots("rakazo"));
+    } finally {
+      dropSideDatabase();
+    }
     rmSync(path.join(repoRoot, "backups", stamp), { recursive: true, force: true });
   }, 90_000);
+
+  it("fails a dump whose data does not import completely", () => {
+    createSideDatabase();
+    try {
+      const broken = [
+        "CREATE TABLE bots (id text PRIMARY KEY, name text);",
+        "COPY bots (id, name) FROM stdin;",
+        "only-one-column",
+        "\\.",
+        "",
+      ].join("\n");
+      expect(() => importDump(broken)).toThrow();
+    } finally {
+      dropSideDatabase();
+    }
+  }, 60_000);
 });
