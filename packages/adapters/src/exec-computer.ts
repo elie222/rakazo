@@ -415,6 +415,8 @@ function withTimeout(command: string[], timeoutMs: number): string[] {
 }
 
 const TAR_BLOCK = 512;
+// Exec transports frame each stdin chunk; a whole large file can close the connection.
+const TAR_BODY_CHUNK_BYTES = 256 * 1024;
 const TAR_END = Buffer.alloc(TAR_BLOCK * 2);
 
 function tarHeader(name: string, type: string, size: number, mode: number): Buffer {
@@ -436,8 +438,10 @@ function tarHeader(name: string, type: string, size: number, mode: number): Buff
 }
 
 function* tarBody(content: Uint8Array): Iterable<Buffer> {
-  if (content.byteLength > 0)
-    yield Buffer.from(content.buffer, content.byteOffset, content.byteLength);
+  for (let offset = 0; offset < content.byteLength; offset += TAR_BODY_CHUNK_BYTES) {
+    const length = Math.min(TAR_BODY_CHUNK_BYTES, content.byteLength - offset);
+    yield Buffer.from(content.buffer, content.byteOffset + offset, length);
+  }
   const padding = (TAR_BLOCK - (content.byteLength % TAR_BLOCK)) % TAR_BLOCK;
   if (padding) yield Buffer.alloc(padding);
 }
