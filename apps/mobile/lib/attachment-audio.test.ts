@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn() }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), activate: vi.fn(async () => undefined) }));
+vi.mock("./voice", () => ({ activateVoiceAudio: mocks.activate }));
 vi.mock("expo-audio", () => ({ createAudioPlayer: mocks.create }));
 
 import { createAttachmentAudioPlayer } from "./attachment-audio";
@@ -48,6 +49,7 @@ it("downloads only on play, pauses/resumes, and releases the native player", asy
   expect(load).not.toHaveBeenCalled();
   await control.toggle();
   expect(mocks.create).toHaveBeenCalledWith({ uri: "file:///clip.mp3" });
+  expect(mocks.activate).toHaveBeenCalledOnce();
   expect(player.play).toHaveBeenCalledTimes(1);
   listener?.({ playing: true, currentTime: 1, duration: 4, didJustFinish: false });
   expect(state).toHaveBeenLastCalledWith(

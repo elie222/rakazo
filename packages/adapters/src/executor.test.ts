@@ -1864,6 +1864,35 @@ describe("dockerComputerToolInstruction", () => {
     expect(dockerComputerToolInstruction("e2b")).toBeUndefined();
   });
 
+  it("adds the environment map only when the shell tool is offered", () => {
+    // Tool selection can drop shell (creation intro, background helpers)
+    // while bot settings leave it enabled; those runs get no map.
+    const noShellAtSelection = dockerComputerToolInstruction(
+      "docker",
+      undefined,
+      new Set(["browser_navigate", "browser_snapshot"]),
+    );
+    expect(noShellAtSelection).not.toContain("Debian bookworm");
+    expect(noShellAtSelection).not.toContain("`python3 -c`");
+    const shellOffered = dockerComputerToolInstruction(
+      "docker",
+      undefined,
+      new Set(["shell", "browser_navigate", "browser_snapshot"]),
+    );
+    expect(shellOffered).toContain("Debian bookworm");
+  });
+
+  it("keeps runs without shell byte-identical to the pre-map instruction", () => {
+    expect(
+      dockerComputerToolInstruction(
+        "docker",
+        new Set(["shell", "browser_navigate", "browser_act", "request_takeover"]),
+      ),
+    ).toBe(
+      "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets. Never use `--with-token` or inject a token through the environment.",
+    );
+  });
+
   it("documents gh CLI device-flow login without token injection", () => {
     const instruction = dockerComputerToolInstruction("docker");
     expect(instruction).toContain("gh auth login");

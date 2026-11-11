@@ -16,7 +16,6 @@ import type { CallPhase } from "../lib/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
-import { setVoiceBackgroundPlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -79,13 +78,6 @@ export function CallCard() {
       }),
     [],
   );
-
-  // A call keeps its replies playing while the screen is off.
-  useEffect(() => {
-    if (!onCall) return;
-    setVoiceBackgroundPlayback(true);
-    return () => setVoiceBackgroundPlayback(false);
-  }, [onCall]);
 
   // A microphone foreground service keeps the call alive when the display sleeps.
   // Start it only after the microphone permission is granted; retry when the call
