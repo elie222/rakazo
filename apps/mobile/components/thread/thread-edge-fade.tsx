@@ -31,8 +31,8 @@ export function ThreadEdgeFade({
             y2={edge === "top" ? "0" : "1"}
           >
             <Stop offset="0" stopColor={color} stopOpacity={0} />
-            <Stop offset="0.4" stopColor={color} stopOpacity={0.85} />
-            <Stop offset="0.6" stopColor={color} stopOpacity={1} />
+            {/* Never solid: messages stay faintly visible at the very edge. */}
+            <Stop offset="0.6" stopColor={color} stopOpacity={0.7} />
           </LinearGradient>
         </Defs>
         <Rect width="100%" height="100%" fill={`url(#${id})`} />
