@@ -8,8 +8,8 @@ metadata:
   namespace: rakazo-sandboxes
 spec:
   hard:
-    pods: '2'
-    limits.cpu: '4'
+    pods: "2"
+    limits.cpu: "4"
     limits.memory: 8Gi
     requests.ephemeral-storage: 4Gi
     limits.ephemeral-storage: 16Gi
@@ -23,8 +23,8 @@ metadata:
   namespace: rakazo-sandboxes
 spec:
   limits:
-  - type: Container
-    default:
-      ephemeral-storage: 8Gi
-    defaultRequest:
-      ephemeral-storage: 2Gi
+    - type: Container
+      default:
+        ephemeral-storage: 8Gi
+      defaultRequest:
+        ephemeral-storage: 2Gi

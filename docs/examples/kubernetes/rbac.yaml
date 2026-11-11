@@ -16,21 +16,21 @@ metadata:
     rakazo.example/phase: foundation
   namespace: rakazo-sandboxes
 rules:
-- apiGroups:
-  - ''
-  resources:
-  - pods
-  verbs:
-  - create
-  - get
-  - delete
-- apiGroups:
-  - ''
-  resources:
-  - pods/exec
-  verbs:
-  - create
-  - get
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - get
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -44,6 +44,6 @@ roleRef:
   kind: Role
   name: rakazo-computers
 subjects:
-- kind: ServiceAccount
-  name: rakazo-controller
-  namespace: rakazo
+  - kind: ServiceAccount
+    name: rakazo-controller
+    namespace: rakazo

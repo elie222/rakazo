@@ -260,15 +260,15 @@ option in [sign-in and accounts](./self-host-accounts.md).
 
 ## Find the failing boundary before changing a setting
 
-| What you observe | What to inspect | What to do next |
-| --- | --- | --- |
-| Computer Pod is Pending | `kubectl -n rakazo-sandboxes get pods` and Pod events | Check image pulls, quota, scheduling and disk. Wait while progress continues. |
-| No computer Pod appears | API/worker logs and admission events | Check scoped RBAC, API endpoint policy and image admission rule. Do not grant cluster-admin to the app. |
-| Pod runs, but no internal screen | Pod logs, ports 6080 and 6100–6199, web egress policy | Check gateway startup and cross-namespace reachability. Pod Running alone is insufficient. |
-| Internal screen works, public screen redirects to Google | Browser Network tab, without sharing the capability URL | Correct only the `/novnc/session/*` edge route. |
-| Public screen gets 403 | API/web secret agreement, token expiry, computer generation | Reopen Computer for a fresh URL. Keep authorization checks enabled. |
-| Page loads, screen freezes | WebSocket request and edge timeouts | Confirm upgrade forwarding and a 101 response for an authorized live session. |
-| Files vanish after abrupt Pod loss | Saved workspace/checkpoint and backups | Restore the last saved home; changes since it may be lost. |
+| What you observe                                         | What to inspect                                             | What to do next                                                                                         |
+| -------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Computer Pod is Pending                                  | `kubectl -n rakazo-sandboxes get pods` and Pod events       | Check image pulls, quota, scheduling and disk. Wait while progress continues.                           |
+| No computer Pod appears                                  | API/worker logs and admission events                        | Check scoped RBAC, API endpoint policy and image admission rule. Do not grant cluster-admin to the app. |
+| Pod runs, but no internal screen                         | Pod logs, ports 6080 and 6100–6199, web egress policy       | Check gateway startup and cross-namespace reachability. Pod Running alone is insufficient.              |
+| Internal screen works, public screen redirects to Google | Browser Network tab, without sharing the capability URL     | Correct only the `/novnc/session/*` edge route.                                                         |
+| Public screen gets 403                                   | API/web secret agreement, token expiry, computer generation | Reopen Computer for a fresh URL. Keep authorization checks enabled.                                     |
+| Page loads, screen freezes                               | WebSocket request and edge timeouts                         | Confirm upgrade forwarding and a 101 response for an authorized live session.                           |
+| Files vanish after abrupt Pod loss                       | Saved workspace/checkpoint and backups                      | Restore the last saved home; changes since it may be lost.                                              |
 
 Before calling the deployment ready, use a real browser signed into Rakazo at its
 public origin: open Computer, view the desktop, take control and type, then reconnect.

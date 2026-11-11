@@ -8,7 +8,7 @@ metadata:
   namespace: rakazo
 spec:
   accessModes:
-  - ReadWriteOnce
+    - ReadWriteOnce
   storageClassName: local-path
   resources:
     requests:
@@ -23,7 +23,7 @@ metadata:
   namespace: rakazo
 spec:
   accessModes:
-  - ReadWriteOnce
+    - ReadWriteOnce
   storageClassName: local-path
   resources:
     requests:

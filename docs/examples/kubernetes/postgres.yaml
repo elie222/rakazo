@@ -23,51 +23,51 @@ spec:
         fsGroup: 999
         fsGroupChangePolicy: OnRootMismatch
       containers:
-      - name: postgres
-        image: docker.io/library/postgres@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-          seccompProfile:
-            type: RuntimeDefault
-          runAsNonRoot: true
-          runAsUser: 999
-          runAsGroup: 999
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-            ephemeral-storage: 128Mi
-          limits:
-            cpu: '2'
-            memory: 2Gi
-            ephemeral-storage: 2Gi
-        env:
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: rakazo-secrets
-              key: POSTGRES_PASSWORD
-        - name: POSTGRES_USER
-          value: rakazo
-        - name: POSTGRES_DB
-          value: rakazo
-        ports:
-        - containerPort: 5432
-        readinessProbe:
-          tcpSocket:
-            port: 5432
-          periodSeconds: 5
-        volumeMounts:
-        - name: data
-          mountPath: /var/lib/postgresql
+        - name: postgres
+          image: docker.io/library/postgres@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              ephemeral-storage: 2Gi
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_USER
+              value: rakazo
+            - name: POSTGRES_DB
+              value: rakazo
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
       terminationGracePeriodSeconds: 60
       volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: rakazo-database
+        - name: data
+          persistentVolumeClaim:
+            claimName: rakazo-database
 ---
 apiVersion: v1
 kind: Service
@@ -80,5 +80,5 @@ spec:
   selector:
     app: rakazo-postgres
   ports:
-  - port: 5432
-    targetPort: 5432
+    - port: 5432
+      targetPort: 5432
