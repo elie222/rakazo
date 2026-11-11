@@ -182,4 +182,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Chat Details": "聊天詳細資料",
   Help: "說明",
   "Keyboard Shortcuts": "鍵盤快速鍵",
+  "Rakazo stopped unexpectedly.": "Rakazo 意外停止。",
+  Reload: "重新載入",
 };

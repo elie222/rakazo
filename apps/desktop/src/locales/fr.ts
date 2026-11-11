@@ -197,4 +197,6 @@ export const FR_MESSAGES: Record<string, string> = {
   "Chat Details": "Détails de la discussion",
   Help: "Aide",
   "Keyboard Shortcuts": "Raccourcis clavier",
+  "Rakazo stopped unexpectedly.": "Rakazo s’est arrêté de façon inattendue.",
+  Reload: "Recharger",
 };

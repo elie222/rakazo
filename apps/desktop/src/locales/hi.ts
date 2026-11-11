@@ -190,4 +190,6 @@ export const HI_MESSAGES: Record<string, string> = {
   "Chat Details": "चैट विवरण",
   Help: "सहायता",
   "Keyboard Shortcuts": "कीबोर्ड शॉर्टकट",
+  "Rakazo stopped unexpectedly.": "Rakazo अप्रत्याशित रूप से रुक गया।",
+  Reload: "फिर से लोड करें",
 };

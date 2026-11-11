@@ -191,4 +191,6 @@ export const HE_MESSAGES: Record<string, string> = {
   "Chat Details": "פרטי הצ׳אט",
   Help: "עזרה",
   "Keyboard Shortcuts": "קיצורי מקלדת",
+  "Rakazo stopped unexpectedly.": "Rakazo נעצר באופן בלתי צפוי.",
+  Reload: "טען מחדש",
 };

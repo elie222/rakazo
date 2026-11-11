@@ -210,4 +210,6 @@ export const PL_MESSAGES: Record<string, string> = {
   "Chat Details": "Szczegóły czatu",
   Help: "Pomoc",
   "Keyboard Shortcuts": "Skróty klawiszowe",
+  "Rakazo stopped unexpectedly.": "Rakazo zatrzymał się nieoczekiwanie.",
+  Reload: "Odśwież",
 };

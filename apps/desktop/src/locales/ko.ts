@@ -193,4 +193,6 @@ export const KO_MESSAGES: Record<string, string> = {
   "Chat Details": "채팅 세부정보",
   Help: "도움말",
   "Keyboard Shortcuts": "키보드 단축키",
+  "Rakazo stopped unexpectedly.": "Rakazo가 예기치 않게 중단되었습니다.",
+  Reload: "다시 로드",
 };
