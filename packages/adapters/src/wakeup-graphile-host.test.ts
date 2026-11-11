@@ -120,6 +120,7 @@ describe("GraphileJobPublisher.enqueue", () => {
     ["bot_message", "run.continue"],
     ["tickets", "run.continue"],
     ["webhook", "run.continue"],
+    ["service", "run.continue"],
     ["cloud_agent", "run.continue"],
   ])("routes %s from the persisted trigger to %s", async (trigger, task) => {
     const addJob = vi.fn(async () => undefined);
