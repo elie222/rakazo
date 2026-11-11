@@ -590,6 +590,28 @@ describe("account preferences", () => {
     },
   );
 
+  it.each([false, true])("checks work-card support before a token exists (%s)", async (enabled) => {
+    const { deps, actor } = preferencesDeps("robot");
+    const register = vi.fn().mockResolvedValue(false);
+    deps.workActivities = enabled ? { register, registerStarts: vi.fn() } : undefined;
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+
+    await expect(phone.notifications.followWorkActivity({})).resolves.toEqual({
+      following: enabled,
+    });
+    expect(register).not.toHaveBeenCalled();
+
+    // Token registration still reports whether there is work to follow.
+    const token = "ab".repeat(32);
+    await expect(phone.notifications.followWorkActivity({ token })).resolves.toEqual({
+      following: false,
+    });
+    if (enabled) expect(register).toHaveBeenCalledWith(actor.userId, "session-phone", token);
+    else expect(register).not.toHaveBeenCalled();
+  });
+
   it("ends only the calling session's push registration, keeping another session's", async () => {
     const { deps, actor } = preferencesDeps("robot");
     const calls: string[] = [];

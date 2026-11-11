@@ -432,6 +432,7 @@ export function accountRoutes(ctx: RouterContext) {
         async ({ context, input }) => {
           // The card ends with the session that registered it.
           if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          if (!input.token) return { following: Boolean(deps.workActivities) };
           const following = await deps.workActivities?.register(
             context.actor.userId,
             context.sessionId,
