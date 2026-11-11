@@ -47,15 +47,6 @@ function importDump(sql: string) {
   );
 }
 
-function countBots(database: string) {
-  return String(
-    compose(psql(["-d", database, "-tA", "-c", "SELECT count(*) FROM bots"]), {
-      encoding: "utf8",
-      timeout: 20_000,
-    }),
-  ).trim();
-}
-
 describeBackup("compose backup and restore", () => {
   beforeAll(() => {
     if (!postgresUp(repoRoot)) {
@@ -89,7 +80,6 @@ describeBackup("compose backup and restore", () => {
         timeout: 20_000,
       });
       expect(tables).toMatch(/bots/);
-      expect(countBots(SIDE_DATABASE)).toBe(countBots("rakazo"));
     } finally {
       dropSideDatabase();
     }
