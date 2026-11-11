@@ -335,8 +335,11 @@ it("keeps a disconnect when the read after it fails", async () => {
     if (proc === "voice/catalog") return Promise.reject({});
     return original(proc, args);
   });
+  expect(container.textContent).toContain("fish-audio voice");
   await click("Disconnect");
   expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "fish-audio" });
+  // Its voices go with the key: picking one would only fail on the server.
+  expect(container.textContent).not.toContain("fish-audio voice");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(container.textContent).not.toContain("Could not disconnect");
   expect(container.textContent).not.toContain("Disconnect");
