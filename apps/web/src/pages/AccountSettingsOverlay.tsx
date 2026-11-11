@@ -164,6 +164,9 @@ export function GeneralSettingsPanels({
   const [quietHoursDraft, setQuietHoursDraft] = useState<QuietHours | null>();
   const [quietHoursError, setQuietHoursError] = useState<string | null>(null);
   const shownQuietHours = quietHoursDraft === undefined ? quietHours : quietHoursDraft;
+  // A quiet hours save can also keep this device's timezone, so it and a timezone save wait for
+  // each other rather than racing.
+  const zoneSaving = timezonePending || quietHoursDraft !== undefined;
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -176,7 +179,7 @@ export function GeneralSettingsPanels({
   }
 
   async function chooseQuietHours(next: QuietHours | null) {
-    if (!onQuietHoursChange || quietHoursDraft !== undefined) return;
+    if (!onQuietHoursChange || zoneSaving) return;
     setQuietHoursDraft(next);
     setQuietHoursError(null);
     try {
@@ -189,7 +192,7 @@ export function GeneralSettingsPanels({
   }
 
   async function chooseTimezone(next: string) {
-    if (!onTimezoneChange || timezonePending || next === timezone) return;
+    if (!onTimezoneChange || zoneSaving || next === timezone) return;
     setTimezonePending(true);
     setTimezoneError(null);
     try {
@@ -391,7 +394,7 @@ export function GeneralSettingsPanels({
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
                   value={timezone ?? deviceTimezone}
-                  disabled={timezonePending}
+                  disabled={zoneSaving}
                   onChange={(event) => void chooseTimezone(event.target.value)}
                   className="w-56 max-w-full"
                 >
@@ -409,7 +412,7 @@ export function GeneralSettingsPanels({
                     variant="outline"
                     size="sm"
                     className="h-auto max-w-full py-1.5 text-left whitespace-normal"
-                    disabled={timezonePending}
+                    disabled={zoneSaving}
                     data-testid="timezone-use-device"
                     onClick={() => void chooseTimezone(deviceTimezone)}
                   >
@@ -439,7 +442,7 @@ export function GeneralSettingsPanels({
                 id={quietHoursId}
                 data-testid="quiet-hours-toggle"
                 checked={shownQuietHours !== null}
-                disabled={quietHoursDraft !== undefined}
+                disabled={zoneSaving}
                 onCheckedChange={(on) => void chooseQuietHours(on ? DEFAULT_QUIET_HOURS : null)}
               />
             }
@@ -452,7 +455,7 @@ export function GeneralSettingsPanels({
                     value={shownQuietHours.start}
                     other={shownQuietHours.end}
                     locale={locale}
-                    disabled={quietHoursDraft !== undefined}
+                    disabled={zoneSaving}
                     onChange={(start) => void chooseQuietHours({ ...shownQuietHours, start })}
                   />
                   <span aria-hidden="true" className="text-muted-foreground">
@@ -463,7 +466,7 @@ export function GeneralSettingsPanels({
                     value={shownQuietHours.end}
                     other={shownQuietHours.start}
                     locale={locale}
-                    disabled={quietHoursDraft !== undefined}
+                    disabled={zoneSaving}
                     onChange={(end) => void chooseQuietHours({ ...shownQuietHours, end })}
                   />
                 </div>

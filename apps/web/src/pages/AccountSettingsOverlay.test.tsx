@@ -668,3 +668,43 @@ it("keeps quiet hours as they were when a save fails, and offers none to an olde
     container.remove();
   }
 });
+
+it("lets a quiet hours save and a timezone save wait for each other", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let finishQuiet: () => void = () => undefined;
+  let finishZone: () => void = () => undefined;
+  const zone = () => container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')!;
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="quiet-hours-toggle"]')!;
+  try {
+    await act(async () => {
+      root.render(
+        <GeneralSettingsPanels
+          name="Jamie"
+          timezone="Europe/Berlin"
+          onTimezoneChange={() => new Promise<void>((resolve) => (finishZone = resolve))}
+          quietHours={null}
+          onQuietHoursChange={() => new Promise<void>((resolve) => (finishQuiet = resolve))}
+        />,
+      );
+    });
+    await act(async () => toggle().click());
+    expect(zone().disabled).toBe(true);
+    await act(async () => finishQuiet());
+    expect(zone().disabled).toBe(false);
+
+    await act(async () => {
+      zone().value = "UTC";
+      zone().dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(toggle().disabled).toBe(true);
+    await act(async () => finishZone());
+    expect(toggle().disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
