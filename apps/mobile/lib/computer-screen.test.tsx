@@ -46,10 +46,12 @@ vi.mock("react-native", () => {
       paddingTop?: number;
     };
     keyboardShouldPersistTaps?: string;
+    testID?: string;
   }) {
     return createElement(
       "div",
       {
+        "data-testid": props.testID,
         "data-color": props.style?.color,
         "data-direction": props.style?.flexDirection,
         "data-flex": props.style?.flex,
@@ -320,10 +322,38 @@ describe("computer screen", () => {
     return element;
   }
 
-  function takeControlButtons(view: HTMLElement) {
-    return Array.from(view.querySelectorAll("button")).filter(
-      (button) => button.textContent === "Take control",
+  function button(view: Element | null | undefined, label: string) {
+    return Array.from(view?.querySelectorAll("button") ?? []).find(
+      (element) => element.textContent === label,
     );
+  }
+
+  function pill(view: HTMLElement) {
+    return view.querySelector('section [data-testid="computer-control-pill"]');
+  }
+
+  /** Answers a takeover as the server would, with the status that follows it. */
+  function grantTakeover(status: ComputerStatus) {
+    let current = status;
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "computer/takeover") {
+        current = { ...current, controlHolder: "user", controlBotId: "bot-1", busyBotName: null };
+      }
+      if (method === "computer/release") current = { ...current, controlHolder: "none" };
+      if (method === "computer/status") return current;
+      if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+      return {};
+    });
+    return { set: (next: ComputerStatus) => (current = next) };
+  }
+
+  async function returnFromBackground() {
+    for (const state of ["background", "active"]) {
+      await act(async () => {
+        for (const listener of appState.listeners) listener(state);
+      });
+      await settle();
+    }
   }
 
   it("offers Retry screen when the full-window page fails to load", async () => {
@@ -449,9 +479,9 @@ describe("computer screen", () => {
       return original(method, ...args);
     });
     const view = await render();
-    const release = Array.from(view.querySelectorAll("button")).find(
-      (button) => button.textContent === "Release",
-    );
+    await act(async () => preview(view).click());
+    await settle();
+    const release = button(view.querySelector("section"), "I’m done");
     expect(release).toBeDefined();
     await act(async () => release?.click());
     await settle();
@@ -551,8 +581,8 @@ describe("computer screen", () => {
     vi.useRealTimers();
   });
 
-  it("opens the full window from the preview without taking control from the bot", async () => {
-    respond(botWorking);
+  it("watches a working bot's screen and takes control once its run ends", async () => {
+    const server = grantTakeover(botWorking);
     const view = await render();
     expect(view.querySelector("section")).toBeNull();
 
@@ -568,24 +598,21 @@ describe("computer screen", () => {
     expect(fullWindow?.contains(screens[0] ?? null)).toBe(true);
     expect(screens[0]?.getAttribute("data-elements-hidden")).toBe("true");
     expect(screens[0]?.getAttribute("data-important")).toBe("no-hide-descendants");
-    const buttons = takeControlButtons(view);
-    expect(buttons).toHaveLength(2);
-    for (const button of buttons) expect(button.dataset.prominence).toBe("secondary");
+    expect(pill(view)?.textContent).toBe("Basil is working");
+    expect(button(view, "Take control")).toBeUndefined();
 
-    const headerTakeControl = buttons.find((button) => fullWindow?.contains(button));
-    expect(headerTakeControl).toBeDefined();
-    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
-    await act(async () => headerTakeControl?.click());
-    await settle();
+    server.set({ ...botWorking, busyBotName: null });
+    await returnFromBackground();
 
     expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-elements-hidden")).toBe("false");
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-important")).toBe("auto");
     expect(fullWindow?.querySelector("[data-keyboard-bar]")).not.toBeNull();
+    expect(pill(view)?.textContent).toContain("You’re in control");
   });
 
-  it("wakes a sleeping computer from the preview without taking control", async () => {
-    respond({ ...botWorking, state: "suspended", busyBotName: null });
+  it("wakes a sleeping computer from the preview and takes control", async () => {
+    grantTakeover({ ...botWorking, state: "suspended", busyBotName: null });
     const view = await render();
     expect(calls("computer/boot")).toEqual([]);
 
@@ -593,49 +620,62 @@ describe("computer screen", () => {
     await settle();
 
     expect(calls("computer/boot")).toHaveLength(1);
+    expect(calls("computer/takeover")).toHaveLength(1);
+  });
+
+  it("takes control as the full window opens and hands it back when it closes", async () => {
+    grantTakeover({ ...botWorking, busyBotName: null });
+    const view = await render();
+
+    await act(async () => preview(view).click());
+    await settle();
+    expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
+    expect(view.querySelector("[data-keyboard-bar]")).not.toBeNull();
+
+    await act(async () =>
+      view.querySelector<HTMLButtonElement>('section [aria-label="Close computer"]')?.click(),
+    );
+    await settle();
+    expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
+  });
+
+  it("keeps a bot's request for help open when the window closes without I’m done", async () => {
+    respond({
+      ...botWorking,
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      busyBotName: null,
+      takeoverRequested: true,
+    });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(button(pill(view), "Skip")).toBeDefined();
+    expect(button(pill(view), "I’m done")).toBeDefined();
+
+    await act(async () =>
+      view.querySelector<HTMLButtonElement>('section [aria-label="Close computer"]')?.click(),
+    );
+    await settle();
+    expect(calls("computer/release")).toEqual([]);
+  });
+
+  it("shows who has a shared computer, read-only and with nothing to press", async () => {
+    respond({
+      ...botWorking,
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      busyBotName: null,
+      controlledByOther: true,
+      controlledByName: "Grace",
+    });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(pill(view)?.textContent).toBe("Grace is in control");
+    expect(pill(view)?.querySelector("button")).toBeNull();
     expect(calls("computer/takeover")).toEqual([]);
     expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
-  });
-
-  it("takes control only from the Take control button", async () => {
-    respond(botWorking);
-    const view = await render();
-
-    await act(async () => takeControlButtons(view)[0]?.click());
-    await settle();
-
-    expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
-  });
-
-  function statusLabel(view: HTMLElement) {
-    const label = Array.from(view.querySelectorAll("div")).find(
-      (element) => element.textContent === "Basil is using it" && !element.querySelector("div"),
-    );
-    if (!label) throw new Error("missing status label");
-    return label;
-  }
-
-  it("keeps the status beside Take control at standard text sizes", async () => {
-    respond(botWorking);
-    const view = await render();
-
-    expect(statusLabel(view).parentElement?.dataset.direction).toBe("row");
-    expect(statusLabel(view).dataset.flex).toBe("1");
-    expect(statusLabel(view).dataset.alignSelf).toBeUndefined();
-  });
-
-  it("puts Take control under the status once text reaches its largest size", async () => {
-    // Text stops growing at xxxLarge but the native button doesn't: at AX5 it took the row and
-    // the label wrapped one letter per line.
-    textScale.fontScale = 1.353;
-    respond(botWorking);
-    const view = await render();
-
-    const row = statusLabel(view).parentElement;
-    expect(row?.dataset.direction).toBe("column");
-    expect(statusLabel(view).dataset.flex).toBeUndefined();
-    expect(statusLabel(view).dataset.alignSelf).toBe("stretch");
-    expect(row?.lastElementChild?.textContent).toBe("Take control");
   });
 
   it("remounts the mode picker when the status row restacks, without side effects", async () => {
@@ -645,7 +685,7 @@ describe("computer screen", () => {
     rpc.mockImplementation((method: string, ...rest: unknown[]) =>
       method === "bots/setComputer" ? pendingSwitch : status(method, ...rest),
     );
-    const view = await render();
+    await render();
     expect(picker.mounts).toBe(1);
 
     await act(async () => picker.props?.onChange("dedicated"));
@@ -660,7 +700,6 @@ describe("computer screen", () => {
     });
     await settle();
 
-    expect(statusLabel(view).parentElement?.dataset.direction).toBe("column");
     expect(picker.mounts).toBe(2);
     expect(picker.props).toMatchObject({ value: "team", disabled: true });
     expect(rpc.mock.calls.length).toBe(callsBefore);
@@ -798,7 +837,7 @@ describe("computer screen", () => {
     expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
   });
 
-  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+  it("closes the keyboard as soon as I’m done is tapped, even if the release fails", async () => {
     const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
     respond({ ...held, busyBotName: null });
     let fail: (error: Error) => void = () => undefined;
@@ -817,9 +856,7 @@ describe("computer screen", () => {
     const fullWindow = view.querySelector("section");
     const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
     expect(bar()?.dataset.active).toBe("true");
-    const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
-      (button) => button.textContent === "Release",
-    );
+    const release = button(fullWindow, "I’m done");
     await act(async () => release?.click());
     expect(calls("computer/release")).toHaveLength(1);
     expect(bar()?.dataset.active).toBe("false");
@@ -1065,6 +1102,8 @@ describe("computer screen", () => {
           return { url: status.state === "running" ? "https://screen.example.test/embed" : null };
         if (method === "computer/boot")
           return new Promise<void>((resolve, reject) => boots.push({ resolve, reject }));
+        if (method === "computer/takeover")
+          status = { ...status, controlHolder: "user", controlBotId: "bot-1" };
         return {};
       });
     });
@@ -1097,7 +1136,6 @@ describe("computer screen", () => {
       expect(previewButton(view).disabled).toBe(true);
       expect(previewButton(view).getAttribute("aria-label")).toBe("Booting live desktop…");
       expect(previewButton(view).getAttribute("aria-busy")).toBe("true");
-      expect(takeControlButtons(view)[0]?.disabled).toBe(true);
       expect(picker.props?.disabled).toBe(true);
 
       await finishBoot(idle);
@@ -1106,7 +1144,6 @@ describe("computer screen", () => {
       expect(view.querySelector("progress")).toBeNull();
       expect(view.querySelector("iframe")).not.toBeNull();
       expect(preview(view).disabled).toBe(false);
-      expect(takeControlButtons(view)[0]?.disabled).toBe(false);
       expect(picker.props?.disabled).toBe(false);
     });
 
@@ -1123,7 +1160,7 @@ describe("computer screen", () => {
       await finishBoot(idle);
 
       expect(view.querySelector("section")).not.toBeNull();
-      expect(calls("computer/takeover")).toEqual([]);
+      expect(calls("computer/takeover")).toHaveLength(1);
     });
 
     it("leaves the boot to finish on the server when the screen closes", async () => {
@@ -1282,7 +1319,7 @@ describe("computer screen", () => {
       expect(view.querySelector("iframe")).not.toBeNull();
       const bootsBefore = calls("computer/boot").length;
 
-      await act(async () => takeControlButtons(view)[0]?.click());
+      await act(async () => preview(view).click());
       await settle();
 
       expect(calls("computer/takeover")).toHaveLength(1);

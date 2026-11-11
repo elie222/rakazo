@@ -39,6 +39,7 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import {
   computerPanelNeedsScreen,
   computerTakeoverBlocked,
+  mayTakeControl,
   screenMissing,
   screenReadLoaded,
   userHoldsComputerControl,
@@ -527,6 +528,7 @@ export function useComputerControls({
   activeBotId,
   activeGroupId,
   runStatus,
+  recording,
   sandboxProvider,
   refreshThread,
   refreshGroupThread,
@@ -541,6 +543,8 @@ export function useComputerControls({
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
   runStatus: Run["status"] | undefined;
+  /** Teaching holds control itself, so closing the window leaves it. */
+  recording: boolean;
   sandboxProvider: Me["sandboxProvider"] | undefined;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
@@ -549,6 +553,7 @@ export function useComputerControls({
   const { t } = useLingui();
   const {
     computer,
+    computerRef,
     commitComputer,
     computerCacheRef,
     cacheComputerFor,
@@ -604,6 +609,8 @@ export function useComputerControls({
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
   const autoBooted = useRef<string | null>(null);
+  const takeoverInFlight = useRef(false);
+  const [handingBack, setHandingBack] = useState(false);
 
   async function bootComputer({
     botId: targetBotId,
@@ -641,7 +648,12 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        await rpc.computer.takeover({ botId: targetBotId });
+        takeoverInFlight.current = true;
+        try {
+          await rpc.computer.takeover({ botId: targetBotId });
+        } finally {
+          takeoverInFlight.current = false;
+        }
         if (!stillThisBoot() || !stillThisBot()) return;
       }
       await refreshComputerFor(targetBotId);
@@ -759,8 +771,8 @@ export function useComputerControls({
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
 
-  /** Open the computer view. Only an explicit Take control asks for the lease. */
-  async function openComputer(botId?: string, takeControl = false) {
+  /** Open the computer window, which takes control whenever no one else is using it. */
+  async function openComputer(botId?: string) {
     const id = botId ?? active?.id;
     if (!id) return false;
     const bot = botsRef.current.find((candidate) => candidate.id === id);
@@ -779,18 +791,17 @@ export function useComputerControls({
     const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";
     setComputerOpen(true);
     computerVisible.current = true;
-    if (bootInFlight && !takeControl) {
+    if (bootInFlight) {
       // An external boot may have finished since this snapshot was cached.
       if (!bootsInFlight.current.has(id)) await refreshComputerFor(id).catch(() => undefined);
       return true;
     }
-    const needsTakeover = takeControl && !userHoldsComputerControl(targetComputer, id);
-    const blocked = computerTakeoverBlocked(targetComputer, runStatus);
+    const takeControl = !recording && mayTakeControl(targetComputer, id, runStatus);
     try {
       await bootComputer({
         botId: id,
-        takeControl: needsTakeover && !blocked,
-        showProgress: (needsTakeover && !blocked) || targetComputer?.state !== "running",
+        takeControl,
+        showProgress: takeControl || targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
       return true;
@@ -805,9 +816,10 @@ export function useComputerControls({
     void openComputerRef.current(botId);
   }, []);
 
-  async function releaseComputer(reason?: ComputerReleaseReason) {
+  async function releaseComputer(reason?: ComputerReleaseReason): Promise<boolean> {
     const botId = computerBotIdRef.current ?? activeBotId.current;
-    if (!botId) return;
+    if (!botId) return false;
+    releaseOnClose.current = null;
     // The read-only screen is safe to show at once; the release itself takes a while.
     const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
     let controlScreen: string | null = null;
@@ -819,23 +831,75 @@ export function useComputerControls({
     }
     try {
       await rpc.computer.release({ botId, reason });
-      if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
+      if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return true;
       await refreshComputerFor(botId).catch(() => undefined);
       const groupId = activeGroupId.current;
       if (groupId) {
         await refreshGroupThread(groupId).catch(() => undefined);
       }
+      return true;
     } catch {
       // Control stays with this person, so their screen goes back to it.
       if (view) setScreenUrl((current) => (current === view ? controlScreen : current));
-      if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
+      if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return false;
       setComputerError(t`Could not continue`);
       setComputerErrorFromScreen(false);
+      return false;
+    }
+  }
+
+  /** I'm done: hand control back and close the window, or stay open to try again. */
+  async function finishControl(reason?: ComputerReleaseReason) {
+    setHandingBack(true);
+    try {
+      if (await releaseComputer(reason)) setComputerOpen(false);
+    } finally {
+      setHandingBack(false);
     }
   }
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
+
+  // The open window takes control once nothing stands in the way: the run it waited for
+  // ended, the person holding it let go, or Retry cleared a failed attempt.
+  const shouldTakeControl =
+    computerOpen &&
+    !recording &&
+    !handingBack &&
+    !booting &&
+    !computerError &&
+    computer?.botId === computerBot?.id &&
+    computer?.state === "running" &&
+    mayTakeControl(computer, computerBot?.id, runStatus);
+  useEffect(() => {
+    const botId = computerBot?.id;
+    if (!shouldTakeControl || !botId) return;
+    // A hidden window would hold the computer past its idle expiry.
+    const take = () => {
+      if (document.visibilityState !== "visible" || takeoverInFlight.current) return;
+      void bootComputer({ botId, takeControl: true, showProgress: false }).catch(() => undefined);
+    };
+    take();
+    document.addEventListener("visibilitychange", take);
+    return () => document.removeEventListener("visibilitychange", take);
+  }, [shouldTakeControl, computerBot?.id]);
+
+  // Closing the window hands control back. A bot waiting on the user keeps waiting for I'm done.
+  const releaseOnClose = useRef<string | null>(null);
+  useEffect(() => {
+    if (computerOpen) {
+      releaseOnClose.current =
+        hasControl && !recording && !computerRef.current?.takeoverRequested
+          ? (computerBot?.id ?? null)
+          : null;
+      return;
+    }
+    const botId = releaseOnClose.current;
+    releaseOnClose.current = null;
+    if (botId) void rpc.computer.release({ botId }).catch(() => undefined);
+  }, [computerOpen, hasControl, recording, computer?.takeoverRequested, computerBot?.id]);
+
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
   const screenFailure =
     Boolean(screenLoadError) ||
@@ -936,6 +1000,7 @@ export function useComputerControls({
     openComputer,
     onOpenComputer,
     releaseComputer,
+    finishControl,
     refreshComputerFor,
     holdComputerRecovery,
     releaseComputerRecovery,

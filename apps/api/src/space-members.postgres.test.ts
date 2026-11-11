@@ -872,12 +872,22 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     // The invitee is told someone else has control; the holder is not.
     await expect(call(asInvitee, "computer/status", { botId: bot.id })).resolves.toMatchObject({
       status: 200,
-      json: { controlHolder: "user", controlledByOther: true },
+      json: { controlHolder: "user", controlledByOther: true, controlledByName: "owner" },
     });
     const ownerStatus = await call(inSpace(owner.actor, home), "computer/status", {
       botId: bot.id,
     });
     expect(ownerStatus.json).not.toHaveProperty("controlledByOther");
+    // An open screen keeps its holder in control; watching it does not.
+    const leaseEnd = async () =>
+      (
+        await system.computer.findUniqueOrThrow({ where: { id: computer.id } })
+      ).controlLeaseExpiresAt!.getTime();
+    const before = await leaseEnd();
+    await call(asInvitee, "computer/heartbeat", { botId: bot.id });
+    expect(await leaseEnd()).toBe(before);
+    await call(inSpace(owner.actor, home), "computer/heartbeat", { botId: bot.id });
+    expect(await leaseEnd()).toBeGreaterThan(before);
     await expect(call(asInvitee, "computer/takeover", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });

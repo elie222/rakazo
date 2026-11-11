@@ -48,6 +48,8 @@ export const ComputerStatusSchema = z.object({
   shared: z.boolean().optional(),
   /** True when another person in the Space has control, so this viewer only watches. */
   controlledByOther: z.boolean().optional(),
+  /** Who has control when it is someone else. */
+  controlledByName: z.string().optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

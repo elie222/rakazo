@@ -578,7 +578,7 @@ export function useComposerActions({
         return;
       }
       // Clear local run/busy immediately rather than waiting for run.cancelled so a
-      // superseded in-flight refresh (older cursor) cannot leave Stop enabled / Take control
+      // superseded in-flight refresh (older cursor) cannot leave Stop enabled / control
       // blocked while the API is already idle.
       if (activeBotId.current === botTarget) {
         updateSnapshot((prev) =>

@@ -418,6 +418,7 @@ it("shows the remembered view at once on release and returns to control if it fa
       activeBotId: { current: "bot-1" },
       activeGroupId: { current: undefined },
       runStatus: undefined,
+      recording: false,
       sandboxProvider: undefined,
       refreshThread: vi.fn(async () => ({}) as never),
       refreshGroupThread: vi.fn(),
@@ -437,7 +438,7 @@ it("shows the remembered view at once on release and returns to control if it fa
   await read();
   screenUrlFactory = () => proxied("control", "c1");
   await read();
-  let released!: Promise<void>;
+  let released!: Promise<boolean>;
   await act(async () => {
     released = controls.releaseComputer();
   });
@@ -468,6 +469,7 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       activeBotId: { current: undefined },
       activeGroupId: { current: undefined },
       runStatus: undefined,
+      recording: false,
       sandboxProvider: undefined,
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
@@ -509,6 +511,7 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
       activeBotId: { current: undefined },
       activeGroupId: { current: undefined },
       runStatus: undefined,
+      recording: false,
       sandboxProvider: undefined,
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
@@ -524,4 +527,76 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
   expect(onUpgrade).toHaveBeenCalledOnce();
   await act(async () => state.commitComputer({ state: "running", kind: "browser" } as never));
   expect(container.textContent).not.toContain("Upgrade");
+});
+
+it("takes control on open once no run is using the screen, and hands it back on close", async () => {
+  const takeover = vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" }));
+  const release = vi.fn(async () => ({ ok: true as const }));
+  const heartbeat = vi.fn(async () => ({ ok: true as const }));
+  const bot = { id: "bot-1", name: "Ada" } as never;
+  let runStatus: "running" | undefined = "running";
+  function Controls() {
+    state = useComputerState({
+      rpc: { computer: { screenUrl } } as never,
+      panel: null,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    useComputerControls({
+      rpc: {
+        computer: { boot: vi.fn(async () => null), takeover, release, screenUrl, heartbeat },
+      } as never,
+      state,
+      panel: null,
+      active: bot,
+      bots: [bot],
+      botsRef: { current: [bot] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus,
+      recording: false,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => ({}) as never),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  const status = {
+    botId: "bot-1",
+    mode: "team",
+    kind: "boat",
+    state: "running",
+    controlHolder: "bot",
+    controlBotId: null,
+    takeoverRequested: false,
+    screenAvailable: true,
+    screenWidth: 1280,
+    screenHeight: 800,
+    homeRevision: null,
+    busyBotName: "Ada",
+    canUpdate: false,
+    terminalAvailable: false,
+  } as const;
+  await act(async () => root.render(<Controls />));
+  await act(async () => state.commitComputer(status));
+  await act(async () => state.setComputerOpen(true));
+  // The bot's run keeps the screen; the window only watches.
+  expect(takeover).not.toHaveBeenCalled();
+  runStatus = undefined;
+  await act(async () =>
+    state.commitComputer({ ...status, controlHolder: "none", busyBotName: null }),
+  );
+  expect(takeover).toHaveBeenCalledWith({ botId: "bot-1" });
+  await act(async () =>
+    state.commitComputer({
+      ...status,
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      busyBotName: null,
+    }),
+  );
+  expect(takeover).toHaveBeenCalledOnce();
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenCalledWith({ botId: "bot-1" });
 });

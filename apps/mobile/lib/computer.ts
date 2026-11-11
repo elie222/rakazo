@@ -179,20 +179,47 @@ export function previewPlaceholder(
 ): string {
   if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return computerLabel(mode, name);
-  if (state === "suspended") return t`Computer is asleep. Take control to wake it.`;
+  if (state === "suspended") return t`Computer is asleep. Open it to wake.`;
   if (state === "error") return t`Computer failed to boot`;
   return t`Computer is stopped`;
 }
 
-export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
-  if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is using it`;
-  if (
-    computer?.controlHolder === "user" &&
-    computer.controlBotId === botId &&
-    !computer.controlledByOther
-  ) {
-    return t`You have control`;
+export function holdsControl(computer: ComputerStatus | null, botId?: string): boolean {
+  return Boolean(
+    botId &&
+      computer?.controlHolder === "user" &&
+      computer.controlBotId === botId &&
+      !computer.controlledByOther,
+  );
+}
+
+/** Whether opening the computer takes control: no one else and no run is using it. */
+export function mayTakeControl(computer: ComputerStatus | null, botId?: string): boolean {
+  return Boolean(
+    botId &&
+      computer &&
+      computer.kind !== "desktop" &&
+      !computer.controlledByOther &&
+      !computer.busyBotName &&
+      !holdsControl(computer, botId),
+  );
+}
+
+/** Who is using the screen, when it is not free. */
+export function controlPillLabel(computer: ComputerStatus | null, botId?: string): string | null {
+  if (holdsControl(computer, botId)) return t`You’re in control`;
+  if (computer?.controlledByOther) {
+    return computer.controlledByName
+      ? t`${ph({ name: computer.controlledByName })} is in control`
+      : t`Someone else is in control`;
   }
+  if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is working`;
+  return null;
+}
+
+export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
+  const control = controlPillLabel(computer, botId);
+  if (control) return control;
   if (computer?.state === "suspended") return t`Asleep`;
   return computerLabel(computer?.mode, name);
 }

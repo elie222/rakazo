@@ -56,6 +56,18 @@ export async function resolveBusyBotName(
     : null;
 }
 
+/** The name of the person in control, when it is not the viewer. */
+export async function resolveControllerName(
+  prisma: PrismaClient,
+  computer: { controlHolder: string; controlUserId?: string | null } | null | undefined,
+  viewerId: string | undefined,
+): Promise<string | null> {
+  const userId = computer?.controlHolder === "user" ? computer.controlUserId : null;
+  if (!viewerId || !userId || userId === viewerId) return null;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+  return user?.name || null;
+}
+
 export function toComputerStatus(
   botId: string,
   computer: {
@@ -76,6 +88,7 @@ export function toComputerStatus(
   busyBotName: string | null = null,
   shared = false,
   viewerId?: string,
+  controllerName: string | null = null,
 ): ComputerStatus {
   const controlledByOther = Boolean(
     viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
@@ -107,6 +120,7 @@ export function toComputerStatus(
     botId,
     ...(shared ? { shared } : {}),
     ...(controlledByOther ? { controlledByOther } : {}),
+    ...(controlledByOther && controllerName ? { controlledByName: controllerName } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,

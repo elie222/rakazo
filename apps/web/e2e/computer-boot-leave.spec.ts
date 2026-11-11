@@ -103,9 +103,6 @@ test("opening a computer refreshes a stale booting snapshot", async ({ page }, t
   stale = false;
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
-  await expect(
-    page.getByTestId("computer-chrome").getByRole("button", { name: "Take control", exact: true }),
-  ).toBeVisible();
   await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
   expect(boots).toHaveLength(0);
   await captureScreenshot(page, testInfo, "computer-open-refreshed-boot");
@@ -142,7 +139,9 @@ test("opening a computer the server reports as booting does not start a second b
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("Retry screen clears a failed takeover on a running computer", async ({ page }) => {
+test("Retry screen takes control again after a failed takeover on a running computer", async ({
+  page,
+}) => {
   await signup(page, `boot-takeover-${Date.now()}@rakazo.test`, "password12", "Boot Takeover");
   await completeOnboarding(page);
   const botId = activeBotId(page);
@@ -170,18 +169,21 @@ test("Retry screen clears a failed takeover on a running computer", async ({ pag
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await preview.hover();
+  let takeovers = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/rpc/computer/takeover")) takeovers += 1;
+  });
   await preview.getByTestId("computer-preview-open").click();
   const screen = page.locator('iframe[title="Bot screen"]');
-  await expect(screen).toHaveAttribute("src", screenUrl);
-  await page
-    .getByTestId("computer-chrome")
-    .getByRole("button", { name: "Take control", exact: true })
-    .click();
   const alert = page.getByRole("alert");
   await expect(alert).toContainText("Takeover failed");
   await expect(screen).toHaveCount(0);
 
+  expect(takeovers).toBe(1);
+
+  await page.unroute("**/rpc/computer/takeover");
   await alert.getByRole("button", { name: "Retry screen" }).click();
   await expect(screen).toHaveAttribute("src", screenUrl);
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect.poll(() => takeovers).toBe(2);
 });

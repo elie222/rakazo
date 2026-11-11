@@ -21,7 +21,7 @@ import {
   windowChromeKind,
 } from "../../lib/desktop";
 import { computerTakeoverBlocked } from "../../lib/thread-events";
-import { ComputerReleaseActions } from "./computer-release-actions";
+import { ComputerControlPill } from "./computer-control-pill";
 import { computerLabel, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerOverlayProps = {
@@ -33,7 +33,6 @@ type ComputerOverlayProps = {
   hasControl: boolean;
   composerRunning: boolean;
   sending: boolean;
-  booting: boolean;
   runStatus?: Run["status"];
   sendError: string | null;
   embeddedScreenUrl: string | null;
@@ -45,8 +44,7 @@ type ComputerOverlayProps = {
   computerBooting: ReactNode;
   onStopTeaching: () => void | Promise<void>;
   onStopRun: () => void;
-  onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
-  onTakeControl: () => void;
+  onFinish: (reason?: ComputerReleaseReason) => void;
   onStart: () => void;
   onRefreshTeaching: () => Promise<void>;
   onRefreshComputer: () => Promise<void>;
@@ -62,7 +60,6 @@ export function ComputerOverlay({
   hasControl,
   composerRunning,
   sending,
-  booting,
   runStatus,
   sendError,
   embeddedScreenUrl,
@@ -73,8 +70,7 @@ export function ComputerOverlay({
   computerBooting,
   onStopTeaching,
   onStopRun,
-  onRelease,
-  onTakeControl,
+  onFinish,
   onStart,
   onRefreshTeaching,
   onRefreshComputer,
@@ -120,17 +116,6 @@ export function ComputerOverlay({
                 {computerLabel(computer?.mode, bot.name)}
               </span>
             )}
-            {!recordingSkill && hasControl ? (
-              computer?.takeoverRequested ? (
-                <span className="rounded-full bg-warning/15 px-[11px] py-1 text-body-sm text-warning">
-                  <Trans>Needs you</Trans>
-                </span>
-              ) : (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-body-sm text-success">
-                  <Trans>You have control</Trans>
-                </span>
-              )
-            ) : null}
             {!recordingSkill && hasControl && computer?.shared ? (
               <span
                 data-testid="computer-shared-browser"
@@ -154,24 +139,7 @@ export function ComputerOverlay({
                 <Trans>Stop</Trans>
               </Button>
             ) : null}
-            {recordingSkill ? (
-              <TeachStopButton busy={teachBusy} onStop={onStopTeaching} />
-            ) : hasControl ? (
-              <ComputerReleaseActions
-                takeoverRequested={Boolean(computer?.takeoverRequested)}
-                onRelease={onRelease}
-              />
-            ) : computer?.state === "running" && !computerTakeoverBlocked(computer, runStatus) ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={booting}
-                onClick={() => void onTakeControl()}
-              >
-                <Trans>Take control</Trans>
-              </Button>
-            ) : null}
+            {recordingSkill ? <TeachStopButton busy={teachBusy} onStop={onStopTeaching} /> : null}
             {!recordingSkill ? (
               <TeachComputerOverlayControl
                 key={bot.id}
@@ -239,6 +207,16 @@ export function ComputerOverlay({
                   screenHeight={computer?.screenHeight}
                 />
               ) : null}
+              {recordingSkill ? null : (
+                <ComputerControlPill
+                  computer={computer}
+                  hasControl={hasControl}
+                  busyBotName={
+                    computerTakeoverBlocked(computer, runStatus) ? computer.busyBotName : null
+                  }
+                  onFinish={onFinish}
+                />
+              )}
             </>
           ) : (
             <div className="grid h-full place-items-center text-body text-muted-foreground/80">

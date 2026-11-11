@@ -70,7 +70,7 @@ describe("thread event reduction with web state", () => {
 
   it("keeps an optimistic stop clear when an older cursor refresh still looks busy", () => {
     // Stop has no terminal event, so progress can leave the local cursor ahead of threads.get.
-    // After the shell clears run/busy locally, that older get must not restore Stop / Take control block.
+    // After the shell clears run/busy locally, that older get must not restore Stop / the control block.
     const run = threadRun("run-1");
     const stoppedLocal: ThreadSnapshot = {
       ...snapshot([]),

@@ -422,7 +422,7 @@ function SpaceShell() {
     else if (inGroup) setPanel("group-settings");
     else if (active) {
       setPanel(lastBotTab.current);
-      // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
+      // Refresh run/computer so control isn't held back by a stale busyBotName.
       void refreshThread(active.id).catch(() => undefined);
     } else return false;
     return true;
@@ -706,6 +706,7 @@ function SpaceShell() {
     activeBotId,
     activeGroupId,
     runStatus: snapshot?.run?.status,
+    recording: Boolean(recordingSkill),
     sandboxProvider: bootstrapMe?.sandboxProvider,
     refreshThread,
     refreshGroupThread: (id) => refreshGroupThreadRef.current(id),
@@ -1389,7 +1390,6 @@ function SpaceShell() {
           hasControl={computerControls.hasControl}
           composerRunning={composerRunning}
           sending={sending}
-          booting={booting}
           runStatus={snapshot?.run?.status}
           sendError={sendError}
           embeddedScreenUrl={computerControls.embeddedScreenUrl}
@@ -1400,8 +1400,7 @@ function SpaceShell() {
           computerBooting={computerControls.computerBooting}
           onStopTeaching={stopTeaching}
           onStopRun={() => void stopRun()}
-          onRelease={computerControls.releaseComputer}
-          onTakeControl={() => void openComputer(computerBot.id, true)}
+          onFinish={(reason) => void computerControls.finishControl(reason)}
           onStart={() => void openComputer(computerBot.id)}
           onRefreshTeaching={refreshActiveTeaching}
           onRefreshComputer={async () => {

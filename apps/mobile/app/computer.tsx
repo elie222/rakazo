@@ -43,9 +43,12 @@ import {
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
   computerLabel,
   controlLabel,
+  controlPillLabel,
   embeddableScreenUrl,
   fromScreenPage,
+  holdsControl,
   isProxiedScreenPage,
+  mayTakeControl,
   nextLoadedScreenUrl,
   previewPlaceholder,
   retainScreenSource,
@@ -104,7 +107,7 @@ export default function Computer() {
   const [switchingCount, setSwitchingCount] = useState(0);
   const switching = switchingCount > 0;
   const [computerOpen, setComputerOpen] = useState(false);
-  // The keyboard closes on the Release tap, not when the server answers.
+  // The keyboard closes on the I'm done tap, not when the server answers.
   const [releasing, setReleasing] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const screenWebViewRef = useRef<WebView<object>>(null);
@@ -128,10 +131,7 @@ export default function Computer() {
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
-  const hasControl =
-    computer?.controlHolder === "user" &&
-    computer.controlBotId === botId &&
-    !computer.controlledByOther;
+  const hasControl = holdsControl(computer, botId);
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
   const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
@@ -327,14 +327,13 @@ export default function Computer() {
     return () => clearInterval(timer);
   }, [botId, computer?.state, foreground]);
 
-  /** Open the full window. Only an explicit Take control asks for the lease. */
-  async function openComputer({ takeControl }: { takeControl: boolean }) {
+  /** Open the full window, which takes control whenever no one else is using it. */
+  async function openComputer() {
     if (!botId) return;
-    const needsTakeover = takeControl && !hasControl;
     try {
       const opened = await bootComputer({
-        takeControl: needsTakeover,
-        showProgress: needsTakeover || computer?.state !== "running",
+        takeControl: mayTakeControl(computer, botId),
+        showProgress: computer?.state !== "running",
         force: computer?.state !== "running",
       });
       if (!opened || !refreshController.isActive()) return;
@@ -344,6 +343,39 @@ export default function Computer() {
       // error already set
     }
   }
+
+  // The open window takes control once nothing stands in the way: the run it waited for
+  // ended, or the person holding it let go.
+  const shouldTakeControl =
+    computerOpen &&
+    foreground &&
+    !releasing &&
+    !booting &&
+    !error &&
+    computer?.state === "running" &&
+    mayTakeControl(computer, botId);
+  const takingControl = useRef(false);
+  useEffect(() => {
+    if (!shouldTakeControl || takingControl.current) return;
+    takingControl.current = true;
+    void bootComputer({ takeControl: true, showProgress: false })
+      .catch(() => undefined)
+      .finally(() => {
+        takingControl.current = false;
+      });
+  }, [shouldTakeControl]);
+
+  // Closing the window hands control back. A bot waiting on the user keeps waiting for I'm done.
+  const releaseOnClose = useRef<string | null>(null);
+  useEffect(() => {
+    if (computerOpen) {
+      releaseOnClose.current = hasControl && !computer?.takeoverRequested ? (botId ?? null) : null;
+      return;
+    }
+    const held = releaseOnClose.current;
+    releaseOnClose.current = null;
+    if (held) void rpc("computer/release", { botId: held }).catch(() => undefined);
+  }, [computerOpen, hasControl, computer?.takeoverRequested, botId]);
 
   function dismissDiskWarning() {
     setComputer((current) => current && { ...current, diskFullPercent: undefined });
@@ -367,6 +399,7 @@ export default function Computer() {
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId || !refreshController.isActive()) return;
+    releaseOnClose.current = null;
     const action = refreshController.beginAction();
     setReleasing(true);
     try {
@@ -547,42 +580,13 @@ export default function Computer() {
           accessibilityLabel={bootPending ? placeholder : t`Open computer`}
           accessibilityState={{ disabled: bootPending, busy: bootPending }}
           disabled={bootPending}
-          onPress={() => void openComputer({ takeControl: false })}
+          onPress={() => void openComputer()}
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
         />
       </View>
-      <View
-        style={{
-          marginTop: 16,
-          flexDirection: stacked ? "column" : "row",
-          alignItems: stacked ? "flex-start" : "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <Text
-          style={{
-            color: tokens.mutedForeground,
-            ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }),
-          }}
-        >
-          {controlLabel(computer, name, botId)}
-        </Text>
-        {hasControl ? (
-          <ComputerReleaseActions
-            takeoverRequested={computer?.takeoverRequested ?? false}
-            onRelease={releaseComputer}
-          />
-        ) : (
-          <NativeActionButton
-            label={t`Take control`}
-            prominence="secondary"
-            disabled={bootPending}
-            style={{ alignSelf: "center" }}
-            onPress={() => void openComputer({ takeControl: true })}
-          />
-        )}
-      </View>
+      <Text style={{ marginTop: 16, color: tokens.mutedForeground }}>
+        {controlLabel(computer, name, botId)}
+      </Text>
       {computer?.diskFullPercent !== undefined ? (
         <View
           style={{
@@ -667,40 +671,8 @@ export default function Computer() {
                 >
                   {label}
                 </Text>
-                {hasControl ? (
-                  <View
-                    style={{
-                      borderRadius: 999,
-                      backgroundColor: tokens.muted,
-                      paddingHorizontal: 9,
-                      paddingVertical: 3,
-                    }}
-                  >
-                    <Text numberOfLines={1} style={{ color: tokens.success, fontSize: 12 }}>
-                      {t`You have control`}
-                    </Text>
-                  </View>
-                ) : null}
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                {hasControl ? (
-                  <ComputerReleaseActions
-                    takeoverRequested={computer?.takeoverRequested ?? false}
-                    onRelease={releaseComputer}
-                  />
-                ) : (
-                  <NativeActionButton
-                    label={t`Take control`}
-                    prominence="secondary"
-                    fill={false}
-                    style={{ alignSelf: "center" }}
-                    onPress={() =>
-                      void bootComputer({ takeControl: true, showProgress: false }).catch(
-                        () => undefined,
-                      )
-                    }
-                  />
-                )}
                 <GlassIconButton
                   accessibilityLabel={t`Close computer`}
                   onPress={() => setComputerOpen(false)}
@@ -754,6 +726,14 @@ export default function Computer() {
                   {retryScreenAction}
                 </View>
               )}
+              {foreground && loadedScreenUrl ? (
+                <ComputerControlPill
+                  label={controlPillLabel(computer, botId)}
+                  hasControl={hasControl}
+                  takeoverRequested={computer?.takeoverRequested ?? false}
+                  onFinish={releaseComputer}
+                />
+              ) : null}
             </View>
             {tabletop ? (
               // A fixed lower half, so the keyboard lifts the bar without pushing the desktop.
@@ -775,33 +755,51 @@ export default function Computer() {
   );
 }
 
-function ComputerReleaseActions({
+/** Who is using the screen, floating over it, with the hand-back when it is the viewer. */
+function ComputerControlPill({
+  label,
+  hasControl,
   takeoverRequested,
-  onRelease,
+  onFinish,
 }: {
+  label: string | null;
+  hasControl: boolean;
   takeoverRequested: boolean;
-  onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
+  onFinish: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
   const { t } = useLingui();
-  const actions: Array<{ label: string; reason?: ComputerReleaseReason; primary?: boolean }> =
-    takeoverRequested
-      ? [
-          { label: t`Skip`, reason: "skipped" },
-          { label: t`I’m done`, reason: "done", primary: true },
-        ]
-      : [{ label: t`Release` }];
+  const tokens = useMobileTokens();
+  if (!label) return null;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      {actions.map((action) => (
-        <NativeActionButton
-          key={action.label}
-          label={action.label}
-          prominence={action.primary ? "primary" : "secondary"}
-          fill={false}
-          style={{ alignSelf: "center" }}
-          onPress={() => void onRelease(action.reason)}
-        />
-      ))}
+    <View pointerEvents="box-none" style={styles.pillDock}>
+      <View
+        testID="computer-control-pill"
+        style={[
+          styles.pill,
+          { backgroundColor: tokens.card, borderColor: tokens.border },
+          hasControl ? styles.pillWithActions : null,
+        ]}
+      >
+        <Text numberOfLines={1} style={{ flexShrink: 1, color: tokens.foreground }}>
+          {label}
+        </Text>
+        {hasControl && takeoverRequested ? (
+          <NativeActionButton
+            label={t`Skip`}
+            prominence="plain"
+            fill={false}
+            onPress={() => void onFinish("skipped")}
+          />
+        ) : null}
+        {hasControl ? (
+          <NativeActionButton
+            label={t`I’m done`}
+            prominence="primary"
+            fill={false}
+            onPress={() => void onFinish(takeoverRequested ? "done" : undefined)}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -902,4 +900,16 @@ function ScreenWebView({
 
 const styles = StyleSheet.create({
   sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+  pillDock: { position: "absolute", left: 16, right: 16, bottom: 16, alignItems: "center" },
+  pill: {
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  pillWithActions: { paddingVertical: 6, paddingEnd: 6 },
 });

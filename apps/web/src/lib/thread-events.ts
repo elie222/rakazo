@@ -64,7 +64,7 @@ export function userHoldsComputerControl(
   );
 }
 
-/** True when a live bot run is blocking Take control (API would return 409). */
+/** True when a live bot run keeps the user from taking control (API would return 409). */
 export function computerTakeoverBlocked(
   computer: Pick<ComputerStatus, "busyBotName"> | null | undefined,
   runStatus?: string | null,
@@ -74,6 +74,22 @@ export function computerTakeoverBlocked(
   // busyBotName is briefly stale while the executor still holds the lease in finally.
   if (!runStatus || runStatus === "waiting_takeover") return false;
   return isActive(runStatus as RunStatus);
+}
+
+/** Whether opening this bot's computer takes control: no one else and no run is using it. */
+export function mayTakeControl(
+  computer: ComputerStatus | null | undefined,
+  botId: string | undefined,
+  runStatus?: string | null,
+): boolean {
+  return Boolean(
+    botId &&
+      computer &&
+      computer.kind !== "desktop" &&
+      !computer.controlledByOther &&
+      !userHoldsComputerControl(computer, botId) &&
+      !computerTakeoverBlocked(computer, runStatus),
+  );
 }
 
 /**

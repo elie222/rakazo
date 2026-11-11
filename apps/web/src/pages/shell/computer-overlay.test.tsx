@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
-import type { Bot, ComputerStatus } from "@rakazo/contracts";
+import type { Bot, ComputerReleaseReason, ComputerStatus, Run } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -62,29 +62,39 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
 async function render(
   state: ComputerStatus["state"],
   onStart = vi.fn(),
-  options: { hasControl?: boolean; shared?: boolean } = {},
+  options: {
+    hasControl?: boolean;
+    shared?: boolean;
+    status?: Partial<ComputerStatus>;
+    screenUrl?: string;
+    runStatus?: Run["status"];
+    onFinish?: (reason?: ComputerReleaseReason) => void;
+  } = {},
 ) {
   await act(async () => {
     root.render(
       <ComputerOverlay
         bot={bot}
-        computer={{ ...computer(state), ...(options.shared ? { shared: true } : {}) }}
+        computer={{
+          ...computer(state),
+          ...(options.shared ? { shared: true } : {}),
+          ...options.status,
+        }}
         computerViewport={null}
         recordingSkill={null}
         teachBusy={false}
         hasControl={options.hasControl ?? false}
         composerRunning={false}
         sending={false}
-        booting={false}
+        runStatus={options.runStatus}
         sendError={null}
-        embeddedScreenUrl={null}
+        embeddedScreenUrl={options.screenUrl ?? null}
         screenFrameRef={() => undefined}
         computerScreenError={null}
         computerBooting={null}
         onStopTeaching={() => undefined}
         onStopRun={() => undefined}
-        onRelease={async () => undefined}
-        onTakeControl={() => undefined}
+        onFinish={options.onFinish ?? (() => undefined)}
         onStart={onStart}
         onRefreshTeaching={async () => undefined}
         onRefreshComputer={async () => undefined}
@@ -137,4 +147,54 @@ it("says sign-ins are shared while someone in a shared space has control", async
   expect(note()).toBeNull();
   await render("running", vi.fn(), { shared: true });
   expect(note()).toBeNull();
+});
+
+describe("control pill", () => {
+  const screen = "https://screen.example.test/";
+  const pill = () => container.querySelector('[data-testid="computer-control-pill"]');
+  const button = (label: string) =>
+    [...(pill()?.querySelectorAll("button") ?? [])].find((b) => b.textContent === label);
+
+  it("hands control back with I’m done and never offers Take control", async () => {
+    const onFinish = vi.fn();
+    await render("running", vi.fn(), { hasControl: true, screenUrl: screen, onFinish });
+    expect(pill()?.textContent).toContain("You’re in control");
+    expect(button("Skip")).toBeUndefined();
+    await act(async () => button("I’m done")?.click());
+    expect(onFinish).toHaveBeenCalledWith(undefined);
+    expect(container.textContent).not.toContain("Take control");
+  });
+
+  it("lets a waiting bot continue with I’m done or Skip", async () => {
+    const onFinish = vi.fn();
+    await render("running", vi.fn(), {
+      hasControl: true,
+      screenUrl: screen,
+      status: { takeoverRequested: true, controlHolder: "user", controlBotId: "bot-1" },
+      onFinish,
+    });
+    await act(async () => button("Skip")?.click());
+    await act(async () => button("I’m done")?.click());
+    expect(onFinish.mock.calls).toEqual([["skipped"], ["done"]]);
+  });
+
+  it("names who has control of a shared computer, with nothing to press", async () => {
+    await render("running", vi.fn(), {
+      screenUrl: screen,
+      status: { controlHolder: "user", controlledByOther: true, controlledByName: "Grace" },
+    });
+    expect(pill()?.textContent).toBe("Grace is in control");
+    expect(pill()?.querySelector("button")).toBeNull();
+    expect(container.querySelector("iframe")?.style.pointerEvents).toBe("none");
+  });
+
+  it("shows a running bot at work while the screen stays read-only", async () => {
+    await render("running", vi.fn(), {
+      screenUrl: screen,
+      status: { busyBotName: "Ada" },
+      runStatus: "running",
+    });
+    expect(pill()?.textContent).toBe("Ada is working");
+    expect(pill()?.querySelector("button")).toBeNull();
+  });
 });

@@ -198,7 +198,6 @@ test("a takeover failure does not diagnose a screen connection failure", async (
   await expect(preview.locator("iframe")).toBeVisible();
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
-  await page.getByRole("button", { name: "Take control", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Could not take control");
   await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
   await expect(

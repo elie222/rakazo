@@ -15,6 +15,7 @@ import {
   displayBotWorkspacePath,
   ensureComputerWorkspaceLayout,
   expireComputerControl,
+  extendActiveComputerControl,
   hasActiveComputerControl,
   isComputerScreenUnavailable,
   isSandboxGoneError,
@@ -855,6 +856,16 @@ export function computerRoutes(ctx: RouterContext) {
               controlLeaseExpiresAt: bot.computer.controlLeaseExpiresAt,
             },
           ).catch(() => undefined);
+          // An open screen keeps its person in control; the lease runs out once it closes.
+          if (holdsComputerControl(bot.computer, bot.id, context.actor)) {
+            await extendActiveComputerControl(
+              deps.prisma,
+              deps.jobs,
+              bot.computer,
+              bot.id,
+              bot.computer.controlLeaseExpiresAt ?? new Date(),
+            );
+          }
         }
         return { ok: true as const };
       }),

@@ -202,7 +202,7 @@ describe("computer copy", () => {
   it("matches the web pane while booting, asleep, or in control", () => {
     expect(previewPlaceholder("stopped", false, "Chief")).toBe("Computer is stopped");
     expect(previewPlaceholder("suspended", false, "Chief")).toBe(
-      "Computer is asleep. Take control to wake it.",
+      "Computer is asleep. Open it to wake.",
     );
     expect(previewPlaceholder("running", true, "Chief")).toBe("Booting live desktop…");
     expect(
@@ -216,7 +216,7 @@ describe("computer copy", () => {
         "Chief",
         "bot-1",
       ),
-    ).toBe("You have control");
+    ).toBe("You’re in control");
     expect(
       controlLabel(
         computer({
