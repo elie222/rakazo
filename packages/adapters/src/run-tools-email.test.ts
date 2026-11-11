@@ -5,6 +5,7 @@ import {
   unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { encodeRunCode, oneTimeCodeRedactions } from "./bot-secrets.js";
 import { botEmailInstruction } from "./run-instructions.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import {
@@ -54,6 +55,10 @@ function fakeRun(
     runUserId?: string;
     arriving?: Row;
     secrets?: string[];
+    /** A code the run took from an email, held as request_secret keeps it. */
+    emailedCode?: string;
+    /** How many loads of the held code fail first, as when the secret store is down. */
+    unreadableLoads?: number;
     /** The Space's query tokens per key version, as content encryption returns them. */
     queryTokens?: number[][];
   } = {},
@@ -91,15 +96,24 @@ function fakeRun(
               }),
             }
           : {}),
+        secret: {
+          findMany: async () =>
+            options.emailedCode ? [{ id: "code-row", ciphertext: "sealed" }] : [],
+        },
+        externalEffect: {
+          findFirst: async () => (options.emailedCode ? { id: "claim" } : null),
+        },
         botEmailMessage: {
           findFirst: async ({ where }: { where: { id: string; botId: string } }) =>
             inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null,
           findMany: async ({
             where,
+            skip = 0,
             take,
             orderBy,
           }: {
             where: Record<string, unknown>;
+            skip?: number;
             take?: number;
             orderBy: { receivedAt: "asc" | "desc" };
           }) => {
@@ -113,7 +127,7 @@ function fakeRun(
                   (orderBy.receivedAt === "asc" ? 1 : -1) *
                   (a.receivedAt.getTime() - b.receivedAt.getTime()),
               )
-              .slice(0, take);
+              .slice(skip, take === undefined ? undefined : skip + take);
           },
           deleteMany: async ({
             where,
@@ -136,8 +150,20 @@ function fakeRun(
     run: { userId: options.runUserId ?? "owner-1" },
     computer: { copyEarlierFiles },
     context: { signal: new AbortController().signal },
-    secrets: options.secrets ?? [],
+    secrets: [
+      ...(options.secrets ?? []),
+      ...(options.emailedCode ? oneTimeCodeRedactions(options.emailedCode, { emailed: true }) : []),
+    ],
   };
+  let unreadable = options.unreadableLoads ?? 0;
+  Object.assign(ctx.deps, {
+    secretStore: {
+      load: async () => {
+        if (unreadable-- > 0) throw new Error("store unavailable");
+        return encodeRunCode("https://shop.test", options.emailedCode!, "email-0");
+      },
+    },
+  });
   const invoke = (name: "read_email" | "delete_email", args: Record<string, unknown>) =>
     emailTools[name]!(
       ctx as never,
@@ -221,6 +247,41 @@ describe("read_email", () => {
     expect(first.nextSince).toBe(checked.toISOString());
   });
 
+  const hour = (n: number) => new Date(Date.UTC(2026, 9, 1) + n * 3_600_000);
+  const fillers = (count: number) =>
+    Array.from({ length: count }, (_, n) =>
+      row({ id: `filler-${n}`, text: "Nothing here", receivedAt: hour(n + 2) }),
+    );
+
+  it("searches all the mail in a run that hides values but took no code from an email", async () => {
+    const rows = [row({ id: "old-hit", text: "Pelican sighting", receivedAt: hour(0) })];
+    const { call } = fakeRun([...rows, ...fillers(1_050)], { secrets: ["hunter22"] });
+
+    const found = (await call({ query: "pelican" })).emails as Array<{ id: string }>;
+
+    expect(found.map((email) => email.id)).toEqual(["old-hit"]);
+  });
+
+  it("searches past the newest hundred emails in a run holding a code from an email, on what it may read", async () => {
+    const rows = [
+      row({ id: "old-hit", text: "Pelican sighting", receivedAt: hour(0) }),
+      row({ id: "old-hidden", text: "Your code is 4.8.2.9.1.3", receivedAt: hour(1) }),
+    ];
+    const { call } = fakeRun([...rows, ...fillers(250)], { emailedCode: "482913" });
+
+    const found = (await call({ query: "pelican" })).emails as Array<{ id: string }>;
+    const after = hour(-1).toISOString();
+    const hidden = await call({ query: "4.8.2.9.1.3", since: after });
+    const nothing = await call({ query: "zzzzqq", since: after });
+    const hiddenNewest = await call({ query: "4.8.2.9.1.3" });
+    const nothingNewest = await call({ query: "zzzzqq" });
+
+    expect(found.map((email) => email.id)).toEqual(["old-hit"]);
+    expect(JSON.stringify(hidden)).toBe(JSON.stringify(nothing));
+    expect(JSON.stringify(hiddenNewest)).toBe(JSON.stringify(nothingNewest));
+    expect(nothing.nextSince).toBe(hour(251).toISOString());
+  });
+
   it("starts the next look after the newest email it returned, or where it was asked to", async () => {
     const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
 
@@ -274,6 +335,65 @@ describe("read_email", () => {
     expect(listed).not.toContain("hunter22");
     expect(read).not.toContain("hunter22");
     expect(read).toContain("Your password is");
+  });
+
+  it("hides a code taken from an email however written, in every field it returns", async () => {
+    const spellings = ["4.8.2.9.1.3", "48 29 13", "482\u00a0913", "4\n8\n2\n9\n1\n3"];
+    const [dots, pairs, spaced, lines] = spellings;
+    const { call } = fakeRun(
+      [
+        row({
+          id: "email-1",
+          fromName: `Code ${dots}`,
+          fromAddress: `${pairs}@shop.test`.replace(/ /g, "."),
+          to: [`Code ${dots} <scout@bots.test>`, `${spaced} <a@bots.test>`],
+          cc: [`${pairs} <b@shop.test>`, lines!],
+          subject: `Your code: ${pairs}`,
+          text: `Use ${spaced} to sign in.`,
+          attachments: [
+            { name: `code ${dots}.pdf`, artifactId: "artifact-1", mimeType: "application/pdf" },
+            { name: `${pairs}.exe` },
+          ],
+        }),
+      ],
+      { emailedCode: "482913" },
+    );
+
+    const read = JSON.stringify(await call({ id: "email-1" }));
+    const listed = JSON.stringify(await call({}));
+
+    for (const shown of [read, listed]) {
+      for (const written of spellings)
+        expect(shown).not.toContain(JSON.stringify(written).slice(1, -1));
+      expect(shown.replace(/\D/g, "")).not.toContain("482913");
+    }
+    expect(read).toContain("scout@bots.test");
+    expect(read).toContain('"id":"email-1"');
+  });
+
+  it("gives no email while a code it took from one cannot be read, and hides it once it can", async () => {
+    const { call } = fakeRun(
+      [
+        row({ id: "email-0", subject: "Code 4.8.2.9.1.3", text: "Your code: 48 29 13" }),
+        row({
+          id: "email-1",
+          text: "Pelican sighting",
+          receivedAt: new Date(Date.UTC(2026, 9, 2)),
+        }),
+      ],
+      { emailedCode: "482913", unreadableLoads: 3 },
+    );
+    const looks = [{ id: "email-0" }, {}, { query: "pelican" }];
+
+    for (const args of looks) {
+      const result = await call(args);
+      expect(result).toEqual({ error: expect.stringContaining("Try again") });
+    }
+    for (const args of looks) {
+      const shown = JSON.stringify(await call(args));
+      expect(shown).not.toContain("error");
+      expect(shown.replace(/\D/g, "")).not.toContain("482913");
+    }
   });
 
   it("masks a secret that a page break or the preview would cut in two", async () => {

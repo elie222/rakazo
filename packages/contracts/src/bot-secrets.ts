@@ -273,6 +273,656 @@ export function normalizeOneTimeCode(answer: string): string | undefined {
     : undefined;
 }
 
+/**
+ * Whether a code can be hidden wherever it appears on its own: 6 digits or more, or letters with
+ * digits. Hiding a bare 4- or 5-digit number would blank years, prices and counts too, so only
+ * these are taken from an email, and only these are hidden bare.
+ */
+export function oneTimeCodeStandsAlone(code: string): boolean {
+  const characters = code.replaceAll("-", "");
+  return characters.length >= 6 || /[A-Za-z]/.test(characters);
+}
+
+/** Digit groups a code may be split into as an email writes it: "482 913", "4829-1375". */
+const CODE_GROUP_SIZES = [4, 3];
+const CODE_GROUP_SEPARATORS = [" ", "-"];
+
+/**
+ * Every way an email may write `code` that extractOneTimeCode reads as this code: as is, and a
+ * code of two equal digit groups split by a space or a dash. A run that holds a code taken from
+ * an email hides each of these in everything it reads (oneTimeCodeRedactions), and its emails
+ * also hide any spelling of the code (hideOneTimeCodeInEmail).
+ */
+export function oneTimeCodeWritings(code: string): string[] {
+  const writings = [code];
+  if (!/^[0-9]+$/.test(code)) return writings;
+  for (const size of CODE_GROUP_SIZES) {
+    if (code.length !== size * 2) continue;
+    for (const separator of CODE_GROUP_SEPARATORS) {
+      writings.push(`${code.slice(0, size)}${separator}${code.slice(size)}`);
+    }
+  }
+  return writings;
+}
+
+// Whitespace (no-break and other Unicode spaces too), zero-width space, dots, dashes, middle dot.
+const SPELLING_SEPARATORS = String.raw`[\s\u200b.\p{Pd}\u00b7]*`;
+
+/**
+ * Email text with `code` hidden as its characters in order, in either case, with any run of
+ * separators between them ("482 913", "4.8.2.9.1.3", one digit per line). No separator can be a
+ * code character, so a separator is read only by match attempts that start within the code's
+ * length before it: the time is linear in the text. `code` is one normalizeOneTimeCode accepted.
+ */
+export function hideOneTimeCodeInEmail(text: string, code: string): string {
+  const characters = [...code.replaceAll("-", "")];
+  if (!characters.length) return text;
+  return text.replace(new RegExp(characters.join(SPELLING_SEPARATORS), "giu"), "[redacted]");
+}
+
+// Han, kana and Hangul text puts no space around a number, so those letters may touch a code.
+const SPACELESS = String.raw`\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangul}`;
+// A code stands as its own word: not part of a link, an amount, a phone number or a date, so not
+// next to a letter, digit, currency sign or link punctuation, nor a digit group a space away.
+const CODE_LEAD = String.raw`(?<!(?![${SPACELESS}])[\p{L}\p{N}_+#$€£¥@/\\.,=&?%-])(?<![0-9][ .-])`;
+const CODE_TRAIL = String.raw`(?!(?![${SPACELESS}])[\p{L}\p{N}_@/\\%€$£¥]|[.,:/-][\p{L}\p{N}]| [0-9])`;
+const CODE_SEPARATORS = `[${CODE_GROUP_SEPARATORS.join("")}]`;
+const CODE_FORMS = [
+  // Two equal digit groups, as oneTimeCodeWritings writes them.
+  ...CODE_GROUP_SIZES.map((size) => `[0-9]{${size}}${CODE_SEPARATORS}[0-9]{${size}}`),
+  "[0-9]{4,8}",
+  // Capital letters and digits, both.
+  "(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*[0-9])[A-Z0-9]{6,8}",
+];
+const YEAR = /^(?:19|20)[0-9]{2}$/;
+
+// Han, kana and Hangul text puts no space between words, so their letters end a word written in
+// another script: "您的code是" names a code. A word in those scripts has no word edges at all.
+const NOT_WORD_EDGE = String.raw`(?![${SPACELESS}])[\p{L}\p{M}\p{N}]`;
+const word = (cue: string) =>
+  String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})(?!(?![${SPACELESS}])[\p{L}\p{M}])`;
+/** A word by its distinctive start, with whatever ending it has. */
+const stem = (cue: string) => String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})[\p{L}\p{M}]*`;
+
+/**
+ * The words an email may use around a sign-in code, in each language the app ships. A unit of
+ * text (a sentence or a line) yields a code only when it is made of nothing but these words and
+ * the code, in one of the forms readUnit lists. `cue` names a sign-in code (code, passcode, OTP,
+ * PIN); `qualifier` is a word a cue may carry (verification, security, one-time); `filler` is
+ * the little words such a sentence has around them (your, is, enter). Any other word, a number
+ * among them, or a noun that makes the cue name something else (tracking code, code de suivi,
+ * ZIP code, promo code) keeps the unit from yielding anything: the owner's card is the fallback.
+ * Each entry is a regex alternative for a whole word; a `stem` takes any ending.
+ */
+const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[] }[] = [
+  {
+    // English, and the words every language's emails borrow.
+    cue: [
+      "codes?",
+      "passcodes?",
+      "otp",
+      "2fa",
+      "one[- ]time (?:password|passcode|pin)",
+      // A bare PIN is a postal code in some countries, so only a sign-in PIN is a cue.
+      "(?:verification|security|login|sign[- ]in|access|temporary) pin",
+      "security key",
+    ].map(word),
+    qualifier: [
+      "verification",
+      "verify",
+      "security",
+      "sign[- ]?in",
+      "log[- ]?in",
+      "one[- ]time",
+      "confirmation",
+      "authentication",
+      "two[- ]factor",
+      "access",
+      "temporary",
+      "[4-8][- ]digit",
+      "account",
+      "email",
+      "device",
+    ].map(word),
+    filler: [
+      "your",
+      "the",
+      "this",
+      "is",
+      "a",
+      "an",
+      "here",
+      "here s",
+      "below",
+      "use",
+      "enter",
+      "please",
+      "to",
+      "sign",
+      "log",
+      "in",
+      "for",
+      "continue",
+      "following",
+      "new",
+      "requested",
+      "you",
+      "old",
+      "previous",
+      "has",
+      "expired",
+    ].map(word),
+  },
+  {
+    // German.
+    cue: [
+      "(?:bestätigungs|sicherheits|anmelde|zugangs|verifizierungs|login|einmal|authentifizierungs|best[äa]tigungs)?codes?",
+      "einmalpasswort",
+      "einmalkennwort",
+    ].map(word),
+    qualifier: ["verifizierung", "bestätigung", "einmalig(?:e|er|es)?", "sicherheit"].map(word),
+    filler: [
+      "ihr",
+      "ihre",
+      "dein",
+      "deine",
+      "der",
+      "die",
+      "das",
+      "ist",
+      "lautet",
+      "hier",
+      "bitte",
+      "geben",
+      "sie",
+      "ein",
+      "zum",
+      "zur",
+      "anmelden",
+      "einloggen",
+      "unten",
+      "folgenden",
+      "nutzen",
+      "verwenden",
+    ].map(word),
+  },
+  {
+    // Spanish.
+    cue: ["c[óo]digos?", "contraseña de un solo uso"].map(word),
+    qualifier: [
+      "verificaci[óo]n",
+      "seguridad",
+      "acceso",
+      "inicio de sesi[óo]n",
+      "confirmaci[óo]n",
+      "un solo uso",
+      "autenticaci[óo]n",
+      "temporal",
+    ].map(word),
+    filler: [
+      "tu",
+      "su",
+      "el",
+      "la",
+      "es",
+      "de",
+      "este",
+      "esta",
+      "aqu[íi]",
+      "usa",
+      "use",
+      "utiliza",
+      "introduce",
+      "ingresa",
+      "para",
+      "iniciar",
+      "sesi[óo]n",
+      "continuaci[óo]n",
+    ].map(word),
+  },
+  {
+    // French.
+    cue: ["codes?", "mot de passe à usage unique"].map(word),
+    qualifier: [
+      "v[ée]rification",
+      "s[ée]curit[ée]",
+      "connexion",
+      "confirmation",
+      "usage unique",
+      "authentification",
+      "temporaire",
+      "validation",
+      "acc[èe]s",
+    ].map(word),
+    filler: [
+      "votre",
+      "vous",
+      "le",
+      "la",
+      "ce",
+      "est",
+      "de",
+      "d",
+      "voici",
+      "ci-dessous",
+      "utilisez",
+      "saisissez",
+      "entrez",
+      "pour",
+      "connecter",
+      "à",
+    ].map(word),
+  },
+  {
+    // Dutch.
+    cue: [
+      "(?:verificatie|beveiligings|inlog|toegangs|bevestigings|eenmalige)?codes?",
+      "pincodes?",
+      "eenmalig wachtwoord",
+    ].map(word),
+    qualifier: ["verificatie", "beveiliging", "eenmalig(?:e)?", "bevestiging"].map(word),
+    filler: [
+      "je",
+      "jouw",
+      "uw",
+      "de",
+      "het",
+      "is",
+      "dit",
+      "hier",
+      "hieronder",
+      "gebruik",
+      "voer",
+      "in",
+      "om",
+      "te",
+      "loggen",
+      "luidt",
+    ].map(word),
+  },
+  {
+    // Polish.
+    cue: ["kod(?:y|u|em|ów)?", "hasło jednorazowe"].map(word),
+    qualifier: [
+      stem("weryfikac"),
+      stem("jednorazow"),
+      stem("potwierdz"),
+      word("bezpieczeństwa"),
+      word("logowania"),
+      word("dostępu"),
+    ],
+    filler: [
+      "twój",
+      "twoja",
+      "to",
+      "jest",
+      "oto",
+      "poniżej",
+      "wpisz",
+      "użyj",
+      "aby",
+      "się",
+      "zalogować",
+      "zaloguj",
+      "ten",
+      "w",
+    ].map(word),
+  },
+  {
+    // Portuguese.
+    cue: ["c[óo]digos?", "senha de uso [úu]nico"].map(word),
+    qualifier: [
+      "verifica[çc][ãa]o",
+      "seguran[çc]a",
+      "acesso",
+      "confirma[çc][ãa]o",
+      "uso [úu]nico",
+      "autentica[çc][ãa]o",
+      "tempor[áa]rio",
+    ].map(word),
+    filler: [
+      "seu",
+      "sua",
+      "o",
+      "a",
+      "é",
+      "de",
+      "este",
+      "esta",
+      "aqui",
+      "está",
+      "abaixo",
+      "use",
+      "insira",
+      "digite",
+      "para",
+      "entrar",
+      "fazer",
+      "seguir",
+    ].map(word),
+  },
+  {
+    // Russian.
+    cue: ["код(?:а|у|ом|е|ы|ов)?", "пин-код", "одноразовый пароль"].map(word),
+    qualifier: [
+      stem("подтвержд"),
+      stem("верификац"),
+      stem("одноразов"),
+      stem("безопасност"),
+      stem("авторизац"),
+      word("входа"),
+      word("доступа"),
+    ],
+    filler: [
+      "ваш",
+      "ваша",
+      "ваше",
+      "твой",
+      "это",
+      "для",
+      "в",
+      "вход",
+      "введите",
+      "используйте",
+      "ниже",
+      "чтобы",
+      "войти",
+      "войдите",
+      "с",
+    ].map(word),
+  },
+  {
+    // Turkish.
+    cue: ["kod(?:u|unuz|lar)?", "tek kullanımlık şifre"].map(word),
+    qualifier: [
+      "doğrulama",
+      "dogrulama",
+      "güvenlik",
+      "giriş",
+      "tek kullanımlık",
+      "onay",
+      "erişim",
+    ].map(word),
+    filler: [
+      "sizin",
+      "bu",
+      "için",
+      "yapmak",
+      "aşağıdaki",
+      "girin",
+      "kullanın",
+      "lütfen",
+      "ile",
+    ].map(word),
+  },
+  {
+    // Hindi.
+    cue: ["कोड", "ओटीपी"].map(word),
+    qualifier: ["सत्यापन", "एक बार", "सुरक्षा", "लॉगिन", "पुष्टि"].map(word),
+    filler: ["आपका", "आपकी", "है", "यह", "के", "लिए", "कृपया", "दर्ज", "करें", "का", "में", "नीचे"].map(
+      word,
+    ),
+  },
+  {
+    // Hebrew joins "the", "of" and other one-letter words to the word itself.
+    cue: [String.raw`(?:[הבולמכש]|של)?(?:קוד(?:ים)?|סיסמה חד[- ]?פעמית)`].map(word),
+    qualifier: [String.raw`(?:[הבולמכש]|של)?(?:אימות|אבטחה|כניסה|התחברות|אישור|חד[- ]?פעמית?)`].map(
+      word,
+    ),
+    filler: [
+      "שלך",
+      "שלכם",
+      "הוא",
+      "הינו",
+      "זה",
+      "הזן",
+      "הזינו",
+      "הקלד",
+      "את",
+      "כדי",
+      "להתחבר",
+      "להיכנס",
+      "כאן",
+      "להלן",
+      "הבא",
+      "יש",
+      "להזין",
+    ].map(word),
+  },
+  {
+    // Japanese: words run together, so these are matched as written, longest first.
+    cue: ["コード", "認証番号", "暗証番号", "ワンタイムパスワード"],
+    qualifier: ["本人確認", "認証", "確認", "セキュリティ", "ログイン", "ワンタイム", "検証"],
+    filler: [
+      "あなたの",
+      "お客様の",
+      "こちらです",
+      "こちら",
+      "になります",
+      "してください",
+      "以下",
+      "入力",
+      "です",
+      "は",
+      "が",
+      "の",
+      "を",
+      "に",
+      "ご",
+    ],
+  },
+  {
+    // Korean.
+    cue: ["코드", "인증번호", "인증 번호", "일회용 비밀번호"],
+    qualifier: ["인증", "확인", "보안", "로그인", "일회용"],
+    filler: [
+      "귀하의",
+      "고객님의",
+      "회원님의",
+      "입니다",
+      "해주세요",
+      "하세요",
+      "입력",
+      "아래",
+      "다음",
+      "은",
+      "는",
+      "이",
+      "가",
+      "를",
+      "을",
+      "의",
+    ],
+  },
+  {
+    // Chinese, simplified and traditional.
+    cue: ["验证码", "校验码", "动态码", "动态密码", "驗證碼", "校驗碼", "動態密碼"],
+    qualifier: ["验证", "登录", "一次性", "安全", "短信", "驗證", "登入"],
+    filler: [
+      "您的",
+      "你的",
+      "本次",
+      "如下",
+      "下方",
+      "以下",
+      "输入",
+      "輸入",
+      "使用",
+      "是",
+      "为",
+      "為",
+      "请",
+      "請",
+      "的",
+      "此",
+    ],
+  },
+];
+
+/** What may stand between a cue and its code: a colon, equals sign or dash. */
+const SEPARATOR = String.raw`[:：=\p{Pd}]`;
+
+// The longest alternative first, so a word is read whole ("codes" before "code", "あなたの"
+// before "の"). The scanner takes the first alternative that matches at its position and never
+// backs up, so the order decides, not any backtracking.
+const longestFirst = (alternatives: string[]) =>
+  [...new Set(alternatives)].sort((left, right) => right.length - left.length);
+const sticky = (alternatives: string[]) => new RegExp(`(?:${alternatives.join("|")})`, "yiu");
+/**
+ * The kinds of token a unit may be made of, each as one regex that matches at a position: N a
+ * code, C a cue, Q a qualifier, F a filler, S a separator. A unit holding anything else is not
+ * read. No pattern quantifies a group, so none backtracks into a nested or overlapping loop, and
+ * the scanner runs each at most once per token: reading a unit costs at most a fixed number of
+ * regex executions per character, and a unit is at most ONE_TIME_CODE_UNIT_LIMIT long.
+ */
+export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: RegExp])[] = [
+  ["N", new RegExp(`${CODE_LEAD}(?:${CODE_FORMS.join("|")})${CODE_TRAIL}`, "yu")],
+  ["C", sticky(longestFirst(LANGUAGES.flatMap((language) => language.cue)))],
+  ["Q", sticky(longestFirst(LANGUAGES.flatMap((language) => language.qualifier)))],
+  ["F", sticky(longestFirst(LANGUAGES.flatMap((language) => language.filler)))],
+  ["S", new RegExp(SEPARATOR, "yu")],
+];
+
+/**
+ * A unit of text longer than this yields nothing. A real sentence naming a code is far shorter,
+ * and the cap bounds what reading one unit can cost.
+ */
+export const ONE_TIME_CODE_UNIT_LIMIT = 200;
+
+/**
+ * A character that ends a unit inside a line: sentence and clause punctuation (Chinese, Japanese
+ * and Hindi marks too), a bracket, a quote or a pipe. One character, so splitting never backs up;
+ * "1,234" or "4.8.2" splits into pieces, none of which is a code, as none was.
+ */
+const UNIT_BREAK = /[.!?;,()[\]{}"“”«»|。！？।；，、]/u;
+
+type Unit = {
+  text: string;
+  /** The unit is all its line holds, so a line of nothing but a code reads as one. */
+  wholeLine: boolean;
+  /** The unit ends its line (or is the subject), so the next unit is the line below it. */
+  endsLine: boolean;
+};
+
+/**
+ * The sentences and lines of `text` in order, each trimmed with its spaces collapsed, blank ones
+ * dropped. Apostrophes read as spaces ("here's", "d'accès") so the words around them stand whole.
+ */
+function units(text: string): Unit[] {
+  const result: Unit[] = [];
+  for (const line of text.split("\n")) {
+    const parts = line
+      .split(UNIT_BREAK)
+      .map((part) => part.replace(/['’]/gu, " ").replace(/\s+/gu, " ").trim())
+      .filter(Boolean);
+    for (const [index, part] of parts.entries()) {
+      result.push({
+        text: part,
+        wholeLine: parts.length === 1,
+        endsLine: index === parts.length - 1,
+      });
+    }
+  }
+  return result;
+}
+
+/**
+ * The token kinds of a unit as a string ("FCSN" for "Your code: 482913") and the code tokens as
+ * written, or undefined when the unit holds anything that is not a known word, a code or a
+ * separator, or is longer than ONE_TIME_CODE_UNIT_LIMIT.
+ */
+function scanUnit(unit: string): { kinds: string; codes: string[] } | undefined {
+  if (unit.length > ONE_TIME_CODE_UNIT_LIMIT) return undefined;
+  let kinds = "";
+  const codes: string[] = [];
+  let at = 0;
+  while (at < unit.length) {
+    if (unit[at] === " ") {
+      at++;
+      continue;
+    }
+    let token: [string, string] | undefined;
+    for (const [kind, pattern] of ONE_TIME_CODE_TOKENS) {
+      pattern.lastIndex = at;
+      const match = pattern.exec(unit);
+      if (match?.[0]) {
+        token = [kind, match[0]];
+        break;
+      }
+    }
+    if (!token) return undefined;
+    const [kind, written] = token;
+    kinds += kind;
+    if (kind === "N") codes.push(written);
+    at += written.length;
+  }
+  return { kinds, codes };
+}
+
+/** A phrase naming a code: cues, qualifiers and fillers in any order, with a cue among them. */
+const namesCode = (kinds: string) => /^[FQC]*$/.test(kinds) && kinds.includes("C");
+/** The words after a code in "<code> is your <cue>": one or more of the same, with a cue. */
+const trailsCue = (kinds: string) => kinds.length > 0 && namesCode(kinds);
+/** A code with nothing after it but fillers and qualifiers ("to sign in"). */
+const trailsNothing = (kinds: string) => /^[FQ]*$/.test(kinds);
+const withoutSeparator = (kinds: string, side: "start" | "end") =>
+  side === "end" ? kinds.replace(/S$/, "") : kinds.replace(/^S/, "");
+
+/**
+ * Whether a unit's token kinds take one of the forms that yield a code: "<cue>[ is| :| =| -]
+ * <code>" or "<code> is your [...] <cue>", with exactly one code. Any word may carry a qualifier
+ * or another cue ("one-time PIN code"); between cue and code only fillers, qualifiers and one
+ * separator may stand; after a code in the first form only fillers and qualifiers.
+ */
+function yieldsCode(kinds: string): boolean {
+  const at = kinds.indexOf("N");
+  if (at < 0 || at !== kinds.lastIndexOf("N")) return false;
+  const before = kinds.slice(0, at);
+  const after = kinds.slice(at + 1);
+  return (
+    (namesCode(withoutSeparator(before, "end")) && trailsNothing(after)) ||
+    (before === "" && trailsCue(withoutSeparator(after, "start")))
+  );
+}
+
+/**
+ * The code a unit writes in a form yieldsCode accepts, or, when the unit only names a code and
+ * ends its line, the code the line below holds alone. Undefined when the unit takes no such form.
+ */
+function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
+  const scanned = scanUnit(unit.text);
+  if (!scanned) return undefined;
+  if (yieldsCode(scanned.kinds)) return scanned.codes[0];
+  const cueOnly = namesCode(withoutSeparator(scanned.kinds, "end"));
+  if (!cueOnly || !unit.endsLine || !below?.wholeLine) return undefined;
+  const next = scanUnit(below.text);
+  return next?.kinds === "N" ? next.codes[0] : undefined;
+}
+
+/**
+ * The one-time code an email carries, as it would be typed: digit groups joined. The subject and
+ * each sentence or line of the text is read on its own (readUnit), and yields a code only when it
+ * is written in one of a few fixed forms with the words LANGUAGES lists and nothing else: "Your
+ * verification code is 482913", "Code: 482913", "482913 is your sign-in code", or "Your code:"
+ * on a line with the code alone on the next; the subject counts as the line above the text.
+ * Anything else, an order or tracking number near a code word included, yields nothing. Nothing
+ * unless the email holds exactly one such code, the same one wherever it appears, so an email
+ * that also writes another number as a code gives none rather than a guess; and nothing unless
+ * that code stands alone (oneTimeCodeStandsAlone), as a shorter one could not be hidden.
+ */
+export function extractOneTimeCode(email: { subject: string; text: string }): string | undefined {
+  const codes = new Set<string>();
+  const all = [...units(email.subject), ...units(email.text)];
+  for (const [index, unit] of all.entries()) {
+    const written = readUnit(unit, all[index + 1]);
+    if (written === undefined) continue;
+    const code = normalizeOneTimeCode(written.replace(/[ -]/g, ""));
+    if (code && !YEAR.test(code) && oneTimeCodeWritings(code).includes(written)) codes.add(code);
+  }
+  const [code] = codes;
+  return codes.size === 1 && code && oneTimeCodeStandsAlone(code) ? code : undefined;
+}
+
 export const LOGIN_FIELD_LIMIT = 8;
 export const LoginFieldLabel = z.string().trim().min(1).max(64);
 /** What a login asks for when no field labels are given, and what a saved username/password pair reads as. */

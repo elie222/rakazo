@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import type { MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
-import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
+import {
+  answerCodeCardsFromInbox,
+  INBOUND_EMAIL_MAX_BYTES,
+  readInboundEmail,
+} from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
@@ -26,7 +30,7 @@ import { deliverWebhookEvent, formatUntrustedDeliveryPayload } from "./webhook-i
 export const INBOUND_EMAIL_PATH = "/api/v1/email/inbound";
 
 export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
-  events: WebhookDeps["events"] & Pick<ThreadEvents, "notify">;
+  events: WebhookDeps["events"] & Pick<ThreadEvents, "notify" | "answerRunInput">;
   domain: string;
   secret: string;
   relayArcDomain?: string;
@@ -182,6 +186,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     standalone: !starts,
   });
   if (!saved) return ignored("inbox full");
+  // A sign-in code the bot's run is waiting for answers its card; never fails the delivery.
+  if (email.authenticated && addressed)
+    await answerCodeCardsFromInbox({ ...deps, botEmailDomain: deps.domain }, bot);
   if (!starts) {
     // BCC'd mail never starts anything whatever its signature, so it never earns a note either.
     if (!email.authenticated && sender === ownerEmail && addressed) {
@@ -290,6 +297,7 @@ async function saveToInbox(
         fromAddress: from.address,
         fromName: from.name.slice(0, HEADER_MAX_CHARS),
         verified: options.verified,
+        mailingList: email.mailingList,
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),

@@ -167,6 +167,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       date: null,
       text: "Hi",
       automated: false,
+      mailingList: false,
       attachments: [],
       messageId: `<${suffix}@example.test>`,
       references: [],
@@ -175,7 +176,11 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       receiveBotEmail(
         {
           prisma,
-          events: { sendUserMessage, notify: vi.fn(async () => undefined) },
+          events: {
+            sendUserMessage,
+            notify: vi.fn(async () => undefined),
+            answerRunInput: vi.fn(async () => false),
+          },
           jobs: { enqueue: vi.fn(async () => undefined) },
           domain: DOMAIN,
           secret: "unused",
@@ -227,6 +232,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
       date: null,
       text: "Your code is 123456",
       automated: false,
+      mailingList: false,
       attachments: [],
       messageId: null,
       references: [],
@@ -237,7 +243,7 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
         receiveBotEmail(
           {
             prisma,
-            events: { sendUserMessage: vi.fn(), notify },
+            events: { sendUserMessage: vi.fn(), notify, answerRunInput: vi.fn(async () => false) },
             jobs: { enqueue: vi.fn(async () => undefined) },
             domain: DOMAIN,
             secret: "unused",

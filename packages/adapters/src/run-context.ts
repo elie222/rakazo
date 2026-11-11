@@ -244,6 +244,8 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** The bot has an email address and this run may read its inbox (see readsBotInbox). */
+  emailInbox: boolean;
 }
 
 export interface RunTools {

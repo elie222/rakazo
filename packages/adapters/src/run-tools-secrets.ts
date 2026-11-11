@@ -1,6 +1,12 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
-import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
+import {
+  runCodeKind,
+  runCodeSpentKind,
+  runLoginKind,
+  runSecretKind,
+  spaceIsShared,
+} from "@rakazo/db";
 import {
   completeExternalEffect,
   replaceCompletedExternalEffectResult,
@@ -27,12 +33,20 @@ import {
   resolveRequestSecretDestination,
   sameSecretDestination,
 } from "./bot-secrets.js";
+import {
+  answerCodeCardsFromInbox,
+  emailedCodeWindowStart,
+  notePageForEmailedCode,
+  runPageOrigin,
+  runTookEmailedCode,
+} from "./emailed-code.js";
 import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "./run-notifications.js";
 import {
   commitConsumedRunSecret,
+  holdEmailedCode,
   normalizeSecretAskPurpose,
   reconcileManagedConnection,
   resolveMissingRunSecretAction,
@@ -189,22 +203,59 @@ export const secretTools: ToolHandlers = {
     });
     // A card not yet answered means a code left from an earlier one is stale, and one that cannot
     // be read is no code: ask again.
-    const heldCode =
+    let heldCode =
       storedSecret && codeOrigin ? await readRunCode(deps.secretStore, storedSecret) : undefined;
     if (storedSecret && codeOrigin && (!heldCode || applied?.effect.status === "intended")) {
-      await deps.prisma.secret.deleteMany({ where: { id: storedSecret.id } });
+      // An emailed code stays hidden, as if the page had taken it; its email stays claimed. One
+      // that cannot be read now may be emailed, so it is kept too, until it can be read and hidden.
+      if (heldCode?.fromEmail || (!heldCode && (await runTookEmailedCode(deps.prisma, runId))))
+        await deps.prisma.secret.updateMany({
+          where: { id: storedSecret.id, kind: secretKind },
+          data: { kind: runCodeSpentKind(runId) },
+        });
+      else await deps.prisma.secret.deleteMany({ where: { id: storedSecret.id } });
       if (!heldCode && applied?.effect.status !== "intended") {
         return call.finish({
           error: "The code could not be read. Ask for it again with request_secret oneTimeCode.",
         });
       }
       storedSecret = null;
+      heldCode = undefined;
+    }
+    // The site may have emailed the code to the bot itself: that answers this request as the
+    // owner's typing it into the card would, without asking them. Only a request not yet answered.
+    // Only when the run's own browser reports the page on that exact origin: never on the bot's
+    // word for where the page is.
+    const pageOnOrigin =
+      !storedSecret &&
+      codeOrigin !== undefined &&
+      ctx.source.emailInbox &&
+      (!applied || applied.effect.status === "intended") &&
+      (await runPageOrigin(ctx)) === codeOrigin;
+    if (pageOnOrigin) {
+      const emailed = await holdEmailedCode(deps.prisma, deps.secretStore, {
+        scope: run,
+        botId: bot.id,
+        spaceId: run.spaceId,
+        runId,
+        origin: codeOrigin,
+        after: emailedCodeWindowStart(new Date(), run.createdAt),
+        botEmailDomain: deps.inboundEmailDomain,
+      });
+      if (emailed) {
+        storedSecret = emailed.stored;
+        heldCode = { origin: codeOrigin, code: emailed.code, fromEmail: emailed.emailId };
+      }
     }
     if (storedSecret) {
       const plaintext = heldCode
         ? heldCode.code
         : await deps.secretStore.load(storedSecret.ciphertext, storedSecret.id);
-      ctx.secrets.push(...(heldCode ? oneTimeCodeRedactions(plaintext) : [plaintext]));
+      ctx.secrets.push(
+        ...(heldCode
+          ? oneTimeCodeRedactions(plaintext, { emailed: Boolean(heldCode.fromEmail) })
+          : [plaintext]),
+      );
       // Keep the tail the old redactor still holds; a fresh instance drops it.
       reply.pendingProgress += reply.redactor.finish();
       reply.redactor = createStreamingRedactor(ctx.secrets);
@@ -231,7 +282,7 @@ export const secretTools: ToolHandlers = {
         return call.finish({
           ok: true,
           submitted: true,
-          note: "The user entered the code. Type it with browser_act fill_code {ref}; you never see it.",
+          note: `${heldCode?.fromEmail ? "The code from the email the site sent was entered" : "The user entered the code"}. Type it with browser_act fill_code {ref}; it is not shown to you.`,
         });
       }
       // Claim executing (above), take the secret, then connector complete().
@@ -342,6 +393,14 @@ export const secretTools: ToolHandlers = {
     await ctx.computer.checkpoint.flush();
     await persistTurnCheckpoint(ctx, executionId);
     await ctx.settleRunningHelpers();
+    if (pageOnOrigin) {
+      await notePageForEmailedCode(deps.prisma, {
+        runId,
+        spaceId: run.spaceId,
+        requestId: recordedForAsk.effect.id,
+        origin: codeOrigin,
+      });
+    }
     const paused = await deps.events.pauseRunForInput({
       spaceId: run.spaceId,
       threadId: run.threadId,
@@ -375,12 +434,23 @@ export const secretTools: ToolHandlers = {
       throw new Error("Could not pause this run for protected input; try sending again.");
     }
     await enqueueSteeringContinuation(deps, paused.continuationRunId);
-    await notifyRun(deps, run, {
-      kind: "help",
-      ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),
-      botId: bot.id,
-      threadId: thread.id,
-    });
+    // The code may have come while the card was being saved, after the look above: look again now
+    // that mail arriving answers the card, through the same claim.
+    const answeredByEmail =
+      pageOnOrigin &&
+      (await answerCodeCardsFromInbox(
+        { ...deps, botEmailDomain: deps.inboundEmailDomain },
+        { id: bot.id, userId: bot.userId },
+        runId,
+      )) > 0;
+    if (!answeredByEmail) {
+      await notifyRun(deps, run, {
+        kind: "help",
+        ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),
+        botId: bot.id,
+        threadId: thread.id,
+      });
+    }
     return pauseForSecret(ctx);
   },
 };

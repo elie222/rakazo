@@ -8,11 +8,12 @@ import {
   SecretAskPurpose,
 } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
-import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
+import type { Prisma, PrismaClient, RunSecretWriter } from "@rakazo/db";
 import { runCodeKind, runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
 import type { ApprovalPausedToolResult } from "./approval-effect.js";
 import { internalTerminatingResult, resolveDuplicateEffectGate } from "./approval-effect.js";
 import { encodeRunCode, encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
+import { takeEmailedCode } from "./emailed-code.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
 export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
@@ -183,20 +184,22 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 plaintext,
                 replaces: ask.replaces?.id,
               })
-            : await secretStore.put(
-                ask.oneTimeCode
-                  ? encodeRunCode(ask.oneTimeCode.origin, plaintext)
-                  : runLogin
-                    ? encodeRunLogin(runLogin.origin, plaintext)
-                    : plaintext,
-                {
-                  operationId: input.runId,
-                  traceId: input.runId,
-                  ...scope,
-                  signal: new AbortController().signal,
-                },
-                { ephemeral: true },
-              );
+            : ask.oneTimeCode
+              ? await sealRunCode(secretStore, scope, input.runId, {
+                  origin: ask.oneTimeCode.origin,
+                  code: plaintext,
+                  fromEmail: input.fromEmail,
+                })
+              : await secretStore.put(
+                  runLogin ? encodeRunLogin(runLogin.origin, plaintext) : plaintext,
+                  {
+                    operationId: input.runId,
+                    traceId: input.runId,
+                    ...scope,
+                    signal: new AbortController().signal,
+                  },
+                  { ephemeral: true },
+                );
         return persistPreparedSecret(prisma, secretStore, prepared, () =>
           commit({
             async store(value) {
@@ -219,28 +222,17 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                   },
                 });
               }
-              // A newer answer replaces a code the page has not taken yet.
-              if (ask.oneTimeCode) {
-                await value.tx.secret.deleteMany({
-                  where: {
-                    userId: run.userId,
-                    spaceId: input.spaceId,
-                    kind: runCodeKind(input.runId),
-                  },
-                });
-              }
               if ("store" in prepared) await prepared.store(value.tx);
+              else if (ask.oneTimeCode) await holdRunCode(value.tx, scope, input.runId, prepared);
               else
                 await value.tx.secret.create({
                   data: {
                     id: prepared.id,
                     userId: run.userId,
                     spaceId: input.spaceId,
-                    kind: ask.oneTimeCode
-                      ? runCodeKind(input.runId)
-                      : runLogin
-                        ? runLoginKind(input.runId, runLogin.name)
-                        : runSecretKind(input.runId),
+                    kind: runLogin
+                      ? runLoginKind(input.runId, runLogin.name)
+                      : runSecretKind(input.runId),
                     ciphertext: prepared.ciphertext,
                   },
                 });
@@ -253,6 +245,61 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
       throw new Error("Prepare secret material before opening a transaction");
     },
   };
+}
+
+type RunScope = { userId: string; spaceId: string; botId: string };
+
+/** Seal a code for this run's page. */
+function sealRunCode(
+  secretStore: SecretStore,
+  scope: RunScope,
+  runId: string,
+  held: { origin: string; code: string; fromEmail?: string },
+) {
+  return secretStore.put(
+    encodeRunCode(held.origin, held.code, held.fromEmail),
+    { operationId: runId, traceId: runId, ...scope, signal: new AbortController().signal },
+    { ephemeral: true },
+  );
+}
+
+/** Keep a sealed code for the page; a newer one replaces a code the page has not taken yet. */
+async function holdRunCode(
+  tx: Prisma.TransactionClient,
+  scope: RunScope,
+  runId: string,
+  sealed: { id: string; ciphertext: string },
+) {
+  const where = { userId: scope.userId, spaceId: scope.spaceId };
+  await tx.secret.deleteMany({ where: { ...where, kind: runCodeKind(runId) } });
+  return tx.secret.create({
+    data: { id: sealed.id, ...where, kind: runCodeKind(runId), ciphertext: sealed.ciphertext },
+  });
+}
+
+/**
+ * Take the code for a request from the bot's own inbox (takeEmailedCode) and keep it for this
+ * run's page, sealed and stored as the answer to a code card is: nothing when there is none.
+ */
+export async function holdEmailedCode(
+  prisma: PrismaClient,
+  secretStore: SecretStore,
+  input: Parameters<typeof takeEmailedCode>[1] & { scope: RunScope },
+) {
+  return takeEmailedCode(prisma, input, async (found, claim) => {
+    const sealed = await sealRunCode(secretStore, input.scope, input.runId, {
+      origin: input.origin,
+      code: found.code,
+      fromEmail: found.emailId,
+    });
+    const stored = await persistPreparedSecret(prisma, secretStore, sealed, () =>
+      prisma.$transaction(async (tx) => {
+        await claim(tx);
+        return holdRunCode(tx, input.scope, input.runId, sealed);
+      }),
+    );
+    return { ...found, stored };
+  });
 }
 
 export async function tryCompleteConnectionWithCode(

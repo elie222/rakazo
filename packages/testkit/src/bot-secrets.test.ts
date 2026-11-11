@@ -1,11 +1,19 @@
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { promises as dnsPromises } from "node:dns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
-import { EncryptedSecretStore, ScriptedAgentRuntime } from "@rakazo/adapters";
+import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { createAdapterContext } from "@rakazo/adapter-kit";
+import {
+  EncryptedSecretStore,
+  FakeBrowserProvider,
+  pageBrowserSessionKey,
+  ScriptedAgentRuntime,
+} from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import { resolveEncryptionKey } from "@rakazo/core";
-import { answerRunInput, runAsSystem, runAsTenant } from "@rakazo/db";
+import { answerRunInput, findPendingAsk, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { asSystem } from "./system-db.js";
@@ -18,6 +26,7 @@ const destination = {
   auth: { type: "bearer" },
 };
 const key = "fake-reusable-api-key";
+const inboundEmail = { domain: "bots.rakazo.test", secret: "test-inbound-email-secret-0123456789" };
 
 describeIntegration("reusable credential lifecycle", () => {
   let handles: Awaited<ReturnType<typeof createApp>>;
@@ -42,6 +51,7 @@ describeIntegration("reusable credential lifecycle", () => {
       wakeupDriver: "memory",
       defaultProvider: "scripted",
       defaultModel: "scripted",
+      inboundEmail,
       remoteConnectors: {
         fetch,
         resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
@@ -633,6 +643,330 @@ describeIntegration("reusable credential lifecycle", () => {
       }
     } finally {
       runtime.mockRestore();
+    }
+  });
+
+  describe("a sign-in code the site emails to the bot", () => {
+    const site = "https://login.example.test";
+    const code = "73915864";
+    const mail = `Your sign-in code is ${code}.`;
+    /** The code as an email may write it apart, which only a code taken from email hides. */
+    const spellings = ["7391 5864", "7 3 9 1 5 8 6 4", "7.3.9.1.5.8.6.4", "7391\u00a05864"];
+    const requestCode = {
+      name: "request_secret",
+      args: { label: "Sign-in code", oneTimeCode: { origin: site } },
+    };
+    type Call = { name: string; args: Record<string, unknown> };
+    const describeRuntime = ScriptedAgentRuntime.prototype.describe;
+
+    it("fills it from the bot's own inbox once, never showing it, then asks the owner", async () => {
+      const run = await codeRun("emailed-code", (results) => [
+        { name: "browser_navigate", args: { url: `${site}/verify` } },
+        requestCode,
+        { name: "browser_snapshot", args: {} },
+        () => ({
+          name: "browser_act",
+          args: { actions: [{ kind: "fill_code", ref: refNamed(results.at(-1)?.result, "Code") }] },
+        }),
+        // Later mail writes the code apart; every email the run reads hides it however written.
+        async () => {
+          await run.deliver("news@example-login.test", `Written apart: ${spellings.join(" / ")}.`);
+          return { name: "read_email", args: {} };
+        },
+        async () => ({
+          name: "read_email",
+          args: {
+            id:
+              // The site's email came first.
+              (
+                await db.botEmailMessage.findFirstOrThrow({
+                  where: { botId: run.seeded.bot.id },
+                  orderBy: { receivedAt: "asc" },
+                })
+              ).id,
+          },
+        }),
+        // A run takes one emailed code per site: a new code is the owner's to give.
+        requestCode,
+      ]);
+      try {
+        const card = await run.pendingCard();
+        expect(card?.pendingAsk.oneTimeCode).toEqual({ origin: site });
+        expect(await run.deliver("no-reply@example.test")).toMatchObject({ ok: true, saved: true });
+        expect(
+          await db.botEmailMessage.findFirstOrThrow({ where: { botId: run.seeded.bot.id } }),
+        ).toMatchObject({ verified: true });
+        // The email answered the card, the run went on, and only the second request is waiting.
+        await vi.waitFor(
+          async () => {
+            const second = await run.pendingCard();
+            expect(second?.messageId).toBeDefined();
+            expect(second?.messageId).not.toBe(card!.messageId);
+            expect(run.results).toHaveLength(8);
+          },
+          { timeout: 15_000 },
+        );
+        expect(await db.run.findUniqueOrThrow({ where: { id: run.seeded.run.id } })).toMatchObject({
+          status: "waiting_input",
+          error: null,
+        });
+        // The model sees the run pause, then the request answered, and the result of every call.
+        expect(run.results.map((entry) => entry.name)).toEqual([
+          "browser_navigate",
+          "request_secret",
+          "request_secret",
+          "browser_snapshot",
+          "browser_act",
+          "read_email",
+          "read_email",
+          "request_secret",
+        ]);
+        expect(run.results[1]?.text).toContain("Waiting for protected input");
+        expect(run.results[2]?.text).toContain("The code from the email the site sent was entered");
+        expect(run.results.find((entry) => entry.name === "browser_act")?.text).toContain(
+          '"ok":true',
+        );
+        expect(run.results[5]?.text).toContain("Your sign-in code is [redacted].");
+        expect(run.results[5]?.text).toContain("Written apart: [redacted]");
+        for (const written of spellings) expect(run.results[5]?.text).not.toContain(written);
+        expect(run.results[6]?.text).toContain("Your sign-in code is [redacted].");
+        expect(run.results[7]?.text).toContain("Waiting for protected input");
+        // Typed into the field the snapshot named, and spent there.
+        const ref = refNamed(run.results[3]?.result, "Code");
+        expect(run.typed).toEqual([
+          [{ kind: "fill", ref, text: code, field: "code", origin: site }],
+        ]);
+        expect(
+          await db.secret.count({ where: { kind: `run-code-spent:${run.seeded.run.id}` } }),
+        ).toBe(1);
+        expect(
+          await db.externalEffect.count({
+            where: { runId: run.seeded.run.id, kind: "emailed_code", status: "taken" },
+          }),
+        ).toBe(2);
+        const [messages, events, effects] = await Promise.all([
+          db.message.findMany({ where: { threadId: run.seeded.thread.id } }),
+          db.event.findMany({ where: { threadId: run.seeded.thread.id } }),
+          db.externalEffect.findMany({ where: { spaceId: run.seeded.me.spaceId } }),
+        ]);
+        expect(
+          JSON.stringify({ results: run.results, seen: run.seen, messages, events, effects }),
+        ).not.toContain(code);
+      } finally {
+        run.restore();
+      }
+    });
+
+    it("leaves the card waiting when the code comes from another site's domain", async () => {
+      const run = await codeRun("emailed-code-other", () => [
+        { name: "browser_navigate", args: { url: `${site}/verify` } },
+        requestCode,
+      ]);
+      try {
+        const card = await run.pendingCard();
+        expect(card?.pendingAsk.oneTimeCode).toEqual({ origin: site });
+        expect(await run.deliver("no-reply@example-login.test")).toMatchObject({
+          ok: true,
+          saved: true,
+        });
+        // Properly signed: only its domain, not the site's, keeps it from answering the card.
+        expect(
+          await db.botEmailMessage.findFirstOrThrow({ where: { botId: run.seeded.bot.id } }),
+        ).toMatchObject({ verified: true });
+        expect(await run.pendingCard()).toMatchObject({ messageId: card!.messageId });
+        expect(await db.run.findUniqueOrThrow({ where: { id: run.seeded.run.id } })).toMatchObject({
+          status: "waiting_input",
+        });
+        expect(
+          await db.externalEffect.count({
+            where: { runId: run.seeded.run.id, kind: "emailed_code", status: "taken" },
+          }),
+        ).toBe(0);
+        expect(JSON.stringify(run.results)).not.toContain(code);
+      } finally {
+        run.restore();
+      }
+    });
+
+    /**
+     * A run of a bot with its own address, on a page of the site, that makes `calls` in order.
+     * Its model is handed each result, as a real one is, so the test sees what it would.
+     */
+    async function codeRun(
+      label: string,
+      calls: (
+        results: Array<{ name: string; result: unknown; text: string }>,
+      ) => Array<Call | (() => Call | Promise<Call>)>,
+    ) {
+      const seen: string[] = [];
+      const results: Array<{ name: string; result: unknown; text: string }> = [];
+      const typed: unknown[] = [];
+      const steps = calls(results);
+      let resumeAt = 0;
+      const spies = [
+        vi.spyOn(ScriptedAgentRuntime.prototype, "describe").mockImplementation(function (
+          this: ScriptedAgentRuntime,
+        ) {
+          const described = describeRuntime.call(this);
+          return { ...described, capabilities: { ...described.capabilities, scripted: false } };
+        }),
+        vi.spyOn(ScriptedAgentRuntime.prototype, "run").mockImplementation(async function* (
+          request: AgentRunRequest,
+        ): AsyncIterable<AgentRuntimeEvent> {
+          seen.push(JSON.stringify({ prompt: request.prompt, history: request.history }));
+          // A run that pauses is stopped at its next event; its resumed turn makes the paused
+          // call again first, as a model's saved turn does.
+          for (let index = resumeAt; index < steps.length; index++) {
+            const step = steps[index]!;
+            const call = typeof step === "function" ? await step() : step;
+            const executionId = `${request.runId}:${index}`;
+            yield { type: "tool", ...call, executionId };
+            const result = await request.executeTool!(call.name, call.args, executionId);
+            results.push({ name: call.name, result, text: JSON.stringify(result) });
+            if ((result as { terminate?: boolean } | undefined)?.terminate) resumeAt = index;
+          }
+          yield { type: "done", text: "Done" };
+        }),
+        vi.spyOn(FakeBrowserProvider.prototype, "navigate").mockImplementation(async function (
+          this: FakeBrowserProvider,
+          computer,
+          request,
+          context,
+        ) {
+          expect(request.url).toBe(`${site}/verify`);
+          return this.sessions
+            .get(pageBrowserSessionKey(computer, context))
+            .load(
+              request.url,
+              '<!doctype html><html><head><title>Verify</title></head><body><input aria-label="Code" /></body></html>',
+            );
+        }),
+        vi.spyOn(FakeBrowserProvider.prototype, "act").mockImplementation(async function (
+          this: FakeBrowserProvider,
+          computer,
+          request,
+          context,
+        ) {
+          typed.push(request.actions);
+          return this.sessions.get(pageBrowserSessionKey(computer, context)).act(request.actions);
+        }),
+        // The site's mail server publishes the key its mail is signed with.
+        vi.spyOn(dnsPromises, "resolve").mockImplementation((async (name: string, type: string) => {
+          if (type === "TXT" && name.startsWith("s1._domainkey.")) return [[dkim.record]];
+          throw Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), { code: "ENOTFOUND" });
+        }) as never),
+      ];
+      const restore = () => {
+        for (const spy of spies) spy.mockRestore();
+      };
+      try {
+        const seeded = await seedRun(label, "Sign in to the site");
+        const { address } = await rpc<{ address: string }>(
+          seeded.cookie,
+          "bots/claimEmailAddress",
+          { botId: seeded.bot.id, name: `${label}-${stamp}`.toLowerCase().slice(0, 60) },
+        );
+        // A real model calls its tools itself; this one is connected like any other. Its key is
+        // never used: the run's runtime is the one above.
+        const modelKey = await new EncryptedSecretStore(resolveEncryptionKey()).put(
+          "fake-model-key",
+          createAdapterContext(seeded.me, seeded.bot.id, `${label}-model-key`),
+        );
+        await db.secret.create({
+          data: {
+            id: modelKey.id,
+            userId: seeded.me.userId,
+            spaceId: null,
+            kind: "model",
+            ciphertext: modelKey.ciphertext,
+          },
+        });
+        const credential = await db.userModelCredential.create({
+          data: {
+            userId: seeded.me.userId,
+            provider: "scripted",
+            label: "Test model",
+            secretId: modelKey.id,
+          },
+        });
+        await db.bot.update({
+          where: { id: seeded.bot.id },
+          data: { modelProvider: credential.provider, modelId: "scripted" },
+        });
+        await runAsSystem("background job run.continue", () =>
+          handles.executor.continueRun(seeded.run.id, "test-worker"),
+        );
+        return {
+          seeded,
+          seen,
+          results,
+          typed,
+          restore,
+          pendingCard: () =>
+            findPendingAsk(db, { threadId: seeded.thread.id, runId: seeded.run.id }),
+          /** The site's mail, signed as `from`'s domain, through the relay's inbound route. */
+          deliver: async (from: string, text = mail) => {
+            const response = await handles.app.request(
+              `/api/v1/email/inbound?to=${encodeURIComponent(address)}`,
+              {
+                method: "POST",
+                headers: {
+                  authorization: `Bearer ${inboundEmail.secret}`,
+                  "content-type": "message/rfc822",
+                },
+                body: signedEmail(from, address, text),
+              },
+            );
+            expect(response.status).toBe(200);
+            return response.json();
+          },
+        };
+      } catch (error) {
+        restore();
+        throw error;
+      }
+    }
+
+    const dkim = (() => {
+      const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const der = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+      return { privateKey, record: `v=DKIM1; k=rsa; p=${der}` };
+    })();
+
+    /** Plain-text mail from `from`, DKIM-signed by its domain (relaxed/relaxed, rsa-sha256). */
+    function signedEmail(from: string, to: string, text: string): string {
+      const domain = from.slice(from.lastIndexOf("@") + 1);
+      const headers: Array<[string, string]> = [
+        ["From", `Sign-in <${from}>`],
+        ["To", to],
+        ["Subject", "Your sign-in code"],
+        ["Date", new Date().toUTCString()],
+        ["Message-ID", `<${randomUUID()}@${domain}>`],
+      ];
+      const body = `${text}\r\n`;
+      const hash = createHash("sha256").update(body).digest("base64");
+      const names = headers.map(([name]) => name.toLowerCase()).join(":");
+      const fields = `v=1; a=rsa-sha256; c=relaxed/relaxed; d=${domain}; s=s1; h=${names}; bh=${hash}; b=`;
+      const canonical = [...headers, ["DKIM-Signature", fields]]
+        .map(([name, value]) => `${name!.toLowerCase()}:${value!.replace(/\s+/g, " ").trim()}`)
+        .join("\r\n");
+      const signature = sign("sha256", Buffer.from(canonical), dkim.privateKey).toString("base64");
+      return [
+        `DKIM-Signature: ${fields}${signature}`,
+        ...headers.map(([name, value]) => `${name}: ${value}`),
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        body,
+      ].join("\r\n");
+    }
+
+    /** The ref of the page element named `name` in a snapshot result's page tree. */
+    function refNamed(value: unknown, name: string): string {
+      const tree = (value as { details?: { tree?: string } } | undefined)?.details?.tree;
+      const ref = tree?.match(new RegExp(`"${name}" \\[(e\\d+)\\]`))?.[1];
+      if (!ref) throw new Error(`No "${name}" in the snapshot: ${tree}`);
+      return ref;
     }
   });
 

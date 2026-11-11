@@ -48,6 +48,11 @@ export type InboundEmail = {
   text: string;
   /** Auto-replies, bulk and mailing-list mail, which nothing should act on (RFC 3834). */
   automated: boolean;
+  /**
+   * Sent on by a mailing list (RFC 2919), which may sign what anyone on it wrote as its own. A
+   * relay could add the header, but that only makes mail count for less.
+   */
+  mailingList: boolean;
   attachments: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
 };
 
@@ -166,10 +171,11 @@ export async function readInboundEmail(
               : "signature leaves out required headers";
 
   // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
+  const mailingList = values("precedence").includes("list") || fieldCount("list-id") > 0;
   const automated =
+    mailingList ||
     values("auto-submitted").some((value) => value !== "no") ||
-    values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
-    fieldCount("list-id") > 0;
+    values("precedence").some((value) => ["bulk", "junk"].includes(value));
 
   // A huge HTML part is cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS
   // of its text.
@@ -242,6 +248,7 @@ export async function readInboundEmail(
     date: email.date?.slice(0, 100) ?? null,
     text,
     automated,
+    mailingList,
     attachments,
   };
 }

@@ -34,6 +34,8 @@ import {
   loginCommandName,
   ONE_TIME_CODE_MIN_LENGTH,
   OneTimeCodeTarget,
+  oneTimeCodeStandsAlone,
+  oneTimeCodeWritings,
   SecretHttpRequest,
   sameLoginFieldLabel,
 } from "@rakazo/contracts";
@@ -49,6 +51,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
+import { runTookEmailedCode } from "./emailed-code.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
 import { generateSecretValue } from "./secret-generator.js";
@@ -1169,18 +1172,25 @@ export function encodeRunLogin(origin: string, login: string): string {
   return JSON.stringify({ origin, login });
 }
 
-const RunCodeValue = z.object({ origin: z.string(), code: z.string() });
+const RunCodeValue = z.object({
+  origin: z.string(),
+  code: z.string(),
+  fromEmail: z.string().optional(),
+});
 
-/** A code answered in chat, kept with the site it is for until it is typed there. */
-export function encodeRunCode(origin: string, code: string): string {
-  return JSON.stringify({ origin, code });
+/**
+ * A code answered in chat, kept with the site it is for until it is typed there. A code read from
+ * the bot's inbox names its email, so that email never answers another request.
+ */
+export function encodeRunCode(origin: string, code: string, fromEmail?: string): string {
+  return JSON.stringify({ origin, code, ...(fromEmail ? { fromEmail } : {}) });
 }
 
 /** The run's code row as stored, or nothing when it cannot be read; only the error name is logged. */
 export async function readRunCode(
   secretStore: Pick<SecretStore, "load">,
   row: { id: string; ciphertext: string },
-): Promise<{ origin: string; code: string } | undefined> {
+): Promise<z.infer<typeof RunCodeValue> | undefined> {
   try {
     return RunCodeValue.parse(JSON.parse(await secretStore.load(row.ciphertext, row.id)));
   } catch (error) {
@@ -1194,14 +1204,19 @@ export async function readRunCode(
 /**
  * Every form of a code the model could be handed: as is, without dashes, URL-encoded, in either
  * case, and as a page draws it per character or in two groups (input-otp widgets put each digit in
- * its own element, which a snapshot reads as one digit per line).
+ * its own element, which a snapshot reads as one digit per line). A code taken from an email also
+ * hides each way extractOneTimeCode read it as written (oneTimeCodeWritings). The bare code is
+ * hidden only when it stands alone, which every code taken from an email does.
  */
-export function oneTimeCodeRedactions(code: string): string[] {
-  const forms = new Set<string>();
-  const joins = ["\n", "\r\n", " ", "\t", "-", " - "];
-  const digits = code.replaceAll("-", "");
+export function oneTimeCodeRedactions(code: string, options: { emailed?: boolean } = {}): string[] {
   // A bare short number such as 2026 would blank years and prices for the rest of the run.
-  const bare = digits.length >= 6 || /[A-Za-z]/.test(digits);
+  const bare = oneTimeCodeStandsAlone(code);
+  const forms = new Set<string>(
+    options.emailed && bare
+      ? oneTimeCodeWritings(code).flatMap((written) => [written, encodeURIComponent(written)])
+      : [],
+  );
+  const joins = ["\n", "\r\n", " ", "\t", "-", " - "];
   for (const written of new Set([code, code.toUpperCase(), code.toLowerCase()])) {
     for (const base of new Set([written, written.replaceAll("-", "")])) {
       if (bare) forms.add(base).add(encodeURIComponent(base));
@@ -1355,15 +1370,26 @@ export async function resolveLoginFill(input: {
 }
 
 /**
- * Redaction forms of this run's codes, those waiting and those the page took, from the start of
- * every attempt: a filled code stays on its page and in what the run has read.
+ * A code row of a run that took a code from its inbox cannot be read now, so what to hide is not
+ * known: the run must show no email, and start no attempt, until it can be read.
  */
-export async function loadRunCodeRedactions(
+export class RunCodeUnreadableError extends Error {
+  constructor() {
+    super("A one-time code this run holds could not be read");
+    this.name = "RunCodeUnreadableError";
+  }
+}
+
+/**
+ * This run's codes, those waiting and those the page took. A row that cannot be read is skipped,
+ * unless the run took a code from its inbox: then it throws RunCodeUnreadableError.
+ */
+async function loadRunCodes(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
   scope: BotSecretScope,
   runId: string,
-): Promise<string[]> {
+) {
   const rows = await prisma.secret.findMany({
     where: {
       userId: scope.userId,
@@ -1372,12 +1398,39 @@ export async function loadRunCodeRedactions(
     },
     select: { id: true, ciphertext: true },
   });
+  const held = await Promise.all(rows.map((row) => readRunCode(secretStore, row)));
+  const read = held.filter((code) => code !== undefined);
+  if (read.length < held.length && (await runTookEmailedCode(prisma, runId)))
+    throw new RunCodeUnreadableError();
+  return read;
+}
+
+/**
+ * Redaction forms of this run's codes, from the start of every attempt: a filled code stays on
+ * its page and in what the run has read.
+ */
+export async function loadRunCodeRedactions(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+  runId: string,
+): Promise<string[]> {
   const forms = new Set<string>();
-  for (const row of rows) {
-    const held = await readRunCode(secretStore, row);
-    for (const form of held ? oneTimeCodeRedactions(held.code) : []) forms.add(form);
-  }
+  for (const held of await loadRunCodes(prisma, secretStore, scope, runId))
+    for (const form of oneTimeCodeRedactions(held.code, { emailed: Boolean(held.fromEmail) }))
+      forms.add(form);
   return [...forms];
+}
+
+/** The codes this run took from its inbox, which every email it reads hides however written. */
+export async function loadRunEmailedCodes(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+  runId: string,
+): Promise<string[]> {
+  const held = await loadRunCodes(prisma, secretStore, scope, runId);
+  return held.flatMap((code) => (code.fromEmail ? [code.code] : []));
 }
 
 const NO_CODE_WAITING =
@@ -1425,7 +1478,7 @@ export async function resolveCodeFill(input: {
   return {
     text: held.code,
     origin: held.origin,
-    redactions: oneTimeCodeRedactions(held.code),
+    redactions: oneTimeCodeRedactions(held.code, { emailed: Boolean(held.fromEmail) }),
     claim: () => move(runCodeKind(input.runId), runCodeSpentKind(input.runId)),
     restore: async () => {
       await move(runCodeSpentKind(input.runId), runCodeKind(input.runId));

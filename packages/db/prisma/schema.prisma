@@ -1556,6 +1556,8 @@ model BotEmailMessage {
   verified    Boolean
   /// The bot sent this one; its other messages are mail it received.
   sent        Boolean   @default(false)
+  /// Came through a mailing list, which sends on what anyone on it writes.
+  mailingList Boolean   @default(false)
   to          String[]
   cc          String[]
   subject     String

@@ -338,6 +338,18 @@ describe("readInboundEmail", () => {
     expect(human.automated).toBe(false);
   });
 
+  it("tells list mail apart from other automated mail", async () => {
+    for (const [extra, list] of [
+      ["List-Id: <news.example.test>", true],
+      ["Precedence: list", true],
+      ["Auto-Submitted: auto-generated", false],
+      ["Precedence: bulk", false],
+    ] as const) {
+      const email = await readInboundEmail(bytes(message([...plain, extra])), { resolver });
+      expect(email.mailingList, extra).toBe(list);
+    }
+  });
+
   it("never looks up keys for mail stuffed with signatures", async () => {
     const lookups: string[] = [];
     const counting: InboundEmailResolver = async (domain, rrtype) => {

@@ -117,6 +117,73 @@ describe("createRunSecretWriter", () => {
     await answer("bot");
     expect(create).toHaveBeenCalledOnce();
   });
+
+  it("keeps a code card's answer for the card's site, naming the email it was read from", async () => {
+    const secretStore = new EncryptedSecretStore("fake-key");
+    const origin = "https://login.example.test";
+    const prisma = {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      message: {
+        findFirst: async () => ({
+          blocks: [
+            {
+              kind: "ask",
+              text: "Code",
+              input: "secret",
+              oneTimeCode: { origin },
+              status: "pending",
+            },
+          ],
+        }),
+      },
+    } as unknown as PrismaClient;
+    const held = async (input: { by?: string; fromEmail?: string }) => {
+      const rows: Array<{ id: string; ciphertext: string; kind: string }> = [];
+      const tx = {
+        secret: {
+          deleteMany: async () => ({ count: 0 }),
+          create: async ({ data }: { data: (typeof rows)[number] }) => rows.push(data),
+        },
+      };
+      await createRunSecretWriter(secretStore).withPrepared!(
+        prisma,
+        {
+          spaceId: "space",
+          runId: "run",
+          threadId: "thread",
+          messageId: "message",
+          answeredByUserId: input.by ?? "user",
+          answer: "482 913",
+          ...(input.fromEmail ? { fromEmail: input.fromEmail } : {}),
+        },
+        (prepared) =>
+          prepared.store({
+            botId: "bot",
+            runId: "run",
+            userId: "user",
+            spaceId: "space",
+            plaintext: "482913",
+            oneTimeCode: { origin },
+            remember: true,
+            tx: tx as never,
+          }),
+      );
+      return Promise.all(
+        rows.map(async (row) => ({
+          kind: row.kind,
+          value: JSON.parse(await secretStore.load(row.ciphertext, row.id)),
+        })),
+      );
+    };
+
+    expect(await held({ fromEmail: "email-1" })).toEqual([
+      { kind: "run-code:run", value: { origin, code: "482913", fromEmail: "email-1" } },
+    ]);
+    expect(await held({})).toEqual([{ kind: "run-code:run", value: { origin, code: "482913" } }]);
+    await expect(held({ by: "member", fromEmail: "email-1" })).rejects.toThrow(
+      "Secret request changed",
+    );
+  });
 });
 
 describe("answering a login card that replaces a saved login's site", () => {
