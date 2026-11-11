@@ -7,7 +7,14 @@ const question = (extra: Record<string, unknown> = {}) => ({
   role: "bot",
   botId: "bot-1",
   blocks: [
-    { kind: "ask", text: "What next?", status: "answered", answer: "Build a plan", ...extra },
+    {
+      kind: "ask",
+      text: "What next?",
+      status: "answered",
+      answer: "Build a plan",
+      answerMessageId: "reply",
+      ...extra,
+    },
   ] as MessageBlock[],
 });
 const reply = (text = "Build a plan", botId = "bot-1") => ({
@@ -18,12 +25,14 @@ const reply = (text = "Build a plan", botId = "bot-1") => ({
 });
 
 describe("separateAskAnswers", () => {
-  it("suppresses only an answer also present in the following user message", () => {
+  it("suppresses only an answer also present in its linked visible user message", () => {
     expect([...separateAskAnswers([question(), reply()])]).toEqual([["question", "Build a plan"]]);
     expect(separateAskAnswers([question()]).size).toBe(0);
-    expect(separateAskAnswers([reply(), question()]).size).toBe(0);
+    expect(separateAskAnswers([question({ answerMessageId: undefined }), reply()]).size).toBe(0);
     expect(separateAskAnswers([question(), reply("Something else")]).size).toBe(0);
-    expect(separateAskAnswers([question(), reply("Build a plan", "other-bot")]).size).toBe(0);
+    expect(separateAskAnswers([question(), { ...reply(), id: "other-members-message" }]).size).toBe(
+      0,
+    );
   });
 
   it("keeps approvals, secrets and pending questions visible", () => {
@@ -39,13 +48,20 @@ describe("separateAskAnswers", () => {
 
   it("handles custom choice answers without treating an action id as reply text", () => {
     const actions = [{ id: "choice-1", label: "Build a plan" }];
-    expect(separateAskAnswers([question({ actions }), reply()]).size).toBe(1);
-    expect(separateAskAnswers([question({ actions, answer: "choice-1" }), reply()]).size).toBe(0);
+    expect(
+      separateAskAnswers([question({ actions, answer: "Custom plan" }), reply("Custom plan")]).size,
+    ).toBe(1);
+    expect(
+      separateAskAnswers([question({ actions, answer: "choice-1" }), reply("choice-1")]).size,
+    ).toBe(0);
+    expect(separateAskAnswers([question({ actions, answer: "Build a plan" }), reply()]).size).toBe(
+      0,
+    );
   });
 
-  it("keeps an answer when another message intervenes", () => {
+  it("follows the durable link even when another message intervenes", () => {
     expect(
       separateAskAnswers([question(), { id: "later", role: "bot", blocks: [] }, reply()]).size,
-    ).toBe(0);
+    ).toBe(1);
   });
 });

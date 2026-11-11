@@ -500,6 +500,12 @@ describe("thread cards", () => {
     );
   });
 
+  it("keeps a selected choice summary even when the user message repeats its id", () => {
+    expect(renderAsk({ status: "answered", answer: "yes" }, false, "yes")?.textContent).toContain(
+      "Answered: Yes",
+    );
+  });
+
   // The iOS message menu hosts each bubble without a definite width, so a percentage width
   // resolves against the card's own cap instead of the message column and overflows the screen.
   it.each([

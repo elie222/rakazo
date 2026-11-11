@@ -668,6 +668,7 @@ export async function sendThreadMessage(
               answeredByUserId: actor.userId,
               answer: input.text ?? "",
               beforeMessageSeq: message.seq,
+              answerMessageId: message.id,
             })
           )
             answered.push({ ...run, status: "queued" });
@@ -678,6 +679,7 @@ export async function sendThreadMessage(
               botId: target.botId,
               runId: run.id,
               answer: input.text ?? "",
+              answerMessageId: message.id,
             });
         }
         if (answered.length) {
@@ -952,6 +954,7 @@ export async function sendThreadMessage(
             answeredByUserId: actor.userId,
             answer: input.text ?? "",
             beforeMessageSeq: message.seq,
+            answerMessageId: message.id,
           });
           if (answered) {
             const queuedForBot = answeredByBotId.get(run.botId) ?? [];
@@ -964,6 +967,7 @@ export async function sendThreadMessage(
               botId: run.botId,
               runId: run.id,
               answer: input.text ?? "",
+              answerMessageId: message.id,
             });
           }
           continue;

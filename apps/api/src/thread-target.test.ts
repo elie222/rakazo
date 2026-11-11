@@ -1757,6 +1757,10 @@ describe("sendThreadMessage", () => {
         data: { status: "queued" },
       }),
     );
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "ask-1" },
+      data: { blocks: [expect.objectContaining({ answer: "Paris", answerMessageId: "msg-1" })] },
+    });
     expect(tx.steeringMessage.create).not.toHaveBeenCalled();
     expect(tx.task.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
@@ -2262,7 +2266,13 @@ describe("sendThreadMessage", () => {
           expect(tx.message.update).toHaveBeenCalledWith({
             where: { id: "ask-old" },
             data: {
-              blocks: [expect.objectContaining({ status: "answered", answer: "Keep working" })],
+              blocks: [
+                expect.objectContaining({
+                  status: "answered",
+                  answer: "Keep working",
+                  answerMessageId: "msg-new",
+                }),
+              ],
             },
           });
         }

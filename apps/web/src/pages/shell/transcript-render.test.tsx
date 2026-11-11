@@ -176,7 +176,15 @@ it("redraws a page card's reply only when a newer card supersedes it", () => {
 it("only marks a question's answer as repeated while its user message is visible", () => {
   const question: ThreadMessage = {
     ...message("question", ""),
-    blocks: [{ kind: "ask", text: "What next?", status: "answered", answer: "Build a plan" }],
+    blocks: [
+      {
+        kind: "ask",
+        text: "What next?",
+        status: "answered",
+        answer: "Build a plan",
+        answerMessageId: "reply",
+      },
+    ],
   };
   const reply: ThreadMessage = { ...message("reply", "Build a plan"), role: "user", seq: 2 };
   act(() => root.render(<Host messages={[question]} />));

@@ -9,6 +9,7 @@ import {
   isApprovalAskBlock,
   memberName,
   messagingProviderLabel,
+  resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
@@ -458,6 +459,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               {askBlock.status === "answered" &&
               !isApprovalAskBlock(askBlock) &&
               !askBlock.instructionUpdate &&
+              !resolveAskChoice(askBlock.answer ?? "", askBlock.actions) &&
               separateAnswer &&
               askBlock.answer?.trim() === separateAnswer ? null : askBlock.status === "answered" ? (
                 <Text
