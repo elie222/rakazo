@@ -238,6 +238,22 @@ describe("isToolError", () => {
   });
 });
 
+describe("silent routine dispatch restriction", () => {
+  it.each(["message_user", "call_user", "handoff_to_bot", "generate_video"])(
+    "refuses %s even though the runtime emitted it unoffered",
+    async (name) => {
+      const ctx = {
+        ...dispatchContext(false),
+        run: { userId: "user-1", trigger: "silent_routine" },
+      };
+      expect(await applyTool(ctx as never, name, {}, "call-1")).toEqual({
+        error: expect.stringContaining("not available to a silent routine"),
+      });
+      expect(audited).toEqual([]);
+    },
+  );
+});
+
 describe("daily check-in dispatch restriction", () => {
   it.each([
     "computer_shell",

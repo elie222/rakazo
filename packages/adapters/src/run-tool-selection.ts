@@ -85,6 +85,18 @@ export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "cloud_agent_status",
 ]);
 
+/**
+ * Tools a silent routine never gets, as each would post in a chat: messaging or calling the
+ * person, handing a group's conversation to a bot that answers there, or a video, which arrives
+ * after the run with a turn of its own.
+ */
+export const SILENT_ROUTINE_WITHHELD_TOOLS: ReadonlySet<string> = new Set([
+  "message_user",
+  "call_user",
+  "handoff_to_bot",
+  "generate_video",
+]);
+
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
 export function offersAgentConnectionTools(options: {
   hasMessagingIdentity: boolean;
@@ -188,11 +200,8 @@ export function selectBuiltinToolsForRun(options: {
           "generate_image",
           "generate_video",
         ].includes(tool.name)) &&
-      // A silent routine keeps the chats quiet: it can't message or call the person, hand a
-      // group's conversation to a bot that answers there, or make a video, which arrives after
-      // the run with a turn of its own.
       (options.trigger !== SILENT_ROUTINE_TRIGGER ||
-        !["message_user", "call_user", "handoff_to_bot", "generate_video"].includes(tool.name)) &&
+        !SILENT_ROUTINE_WITHHELD_TOOLS.has(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
