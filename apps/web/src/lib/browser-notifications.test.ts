@@ -140,6 +140,41 @@ describe("browser notifications", () => {
     });
   });
 
+  it("keeps an ask-card notification when a later message arrives", () => {
+    const show = vi.fn();
+    const notifiedEventIds = new Set<string>();
+    const deliver = (next: ReturnType<typeof event>) =>
+      deliverBrowserNotification(next, "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission: "granted",
+        notifiedEventIds,
+        show,
+      });
+    expect(
+      deliver(
+        event({
+          id: "ask-1",
+          payload: {
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Which repo?", status: "pending" }],
+          },
+        }),
+      ),
+    ).toBe("delivered");
+    expect(
+      deliver(
+        event({
+          id: "plain-2",
+          payload: { role: "bot", blocks: [{ kind: "text", text: "Saturday works." }] },
+        }),
+      ),
+    ).toBe("delivered");
+    expect(show).toHaveBeenNthCalledWith(1, "Chief", "Which repo?", "thread-1:ask");
+    expect(show).toHaveBeenNthCalledWith(2, "Chief", "Saturday works.", "thread-1");
+  });
+
   it("dedupes a replay but delivers another message from the same run", () => {
     const notifiedEventIds = new Set<string>();
     const show = vi.fn().mockImplementationOnce(() => {
