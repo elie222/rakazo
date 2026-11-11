@@ -671,7 +671,6 @@ export const MessageView = memo(function MessageView({
                 block={block}
                 botId={message.botId}
                 runId={message.runId}
-                rpc={rpc}
                 onOpen={onOpenComputer}
                 onRelease={onReleaseComputer}
               />

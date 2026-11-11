@@ -841,10 +841,14 @@ export function useComputerControls({
     reason: ComputerReleaseReason,
   ) {
     await rpc.computer.release({ botId, runId, reason });
-    if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
-    await refreshComputerFor(botId).catch(() => undefined);
     const groupId = activeGroupId.current;
-    if (groupId) await refreshGroupThread(groupId).catch(() => undefined);
+    await Promise.all([
+      computerBotIdRef.current === botId || activeBotId.current === botId
+        ? refreshComputerFor(botId).catch(() => undefined)
+        : undefined,
+      // A group card may belong to a bot that is neither open nor active.
+      groupId ? refreshGroupThread(groupId).catch(() => undefined) : undefined,
+    ]);
   }
   const answerTakeoverRef = useRef(answerTakeover);
   answerTakeoverRef.current = answerTakeover;

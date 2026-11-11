@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Laptop, Monitor } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import type { createSpaceRpc } from "../lib/rpc";
+import { useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
 
 type ComputerBlock = Extract<MessageBlock, { kind: "computer" }>;
@@ -46,14 +46,12 @@ export function ComputerCard({
   block,
   botId,
   runId,
-  rpc,
   onOpen,
   onRelease,
 }: {
   block: ComputerBlock;
   botId: string | undefined;
   runId?: string;
-  rpc: ReturnType<typeof createSpaceRpc>;
   onOpen: (botId: string | undefined, takeControl?: boolean) => void;
   onRelease: (
     botId: string,
@@ -67,7 +65,6 @@ export function ComputerCard({
         block={block}
         botId={botId}
         runId={runId}
-        rpc={rpc}
         onOpen={onOpen}
         onRelease={onRelease}
       />
@@ -80,14 +77,12 @@ function PendingComputerCard({
   block,
   botId,
   runId,
-  rpc,
   onOpen,
   onRelease,
 }: {
   block: ComputerBlock;
   botId: string | undefined;
   runId?: string;
-  rpc: ReturnType<typeof createSpaceRpc>;
   onOpen: (botId: string | undefined, takeControl?: boolean) => void;
   onRelease: (
     botId: string,
@@ -97,11 +92,14 @@ function PendingComputerCard({
 }) {
   const [releasing, setReleasing] = useState<ComputerReleaseReason | null>(null);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  const queries = useSpaceQueries();
   const preview = useQuery({
-    queryKey: ["computer-preview", botId],
-    queryFn: () => rpc.computer.preview({ botId: botId! }),
+    ...queries.computer.preview.queryOptions({ input: { botId: botId ?? "" } }),
     enabled: Boolean(botId),
     retry: false,
+    // A later request must never paint an earlier screen, and a return to the tab redraws it.
+    gcTime: 0,
+    refetchOnWindowFocus: true,
   });
   const image = preview.data?.image ?? null;
   const release = async (reason: ComputerReleaseReason) => {

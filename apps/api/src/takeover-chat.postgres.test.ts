@@ -608,6 +608,29 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     });
   });
 
+  it("shows the screen preview to the Space and to no one outside it", async () => {
+    const fixture = await setup("unopened");
+    const outsider = await setup("unopened");
+    const preview = async (actor: Actor) => {
+      const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+        new Request("http://127.0.0.1/rpc/computer/preview", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: fixture.bot.id } }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+      return response!;
+    };
+    const own = await preview(fixture.actor);
+    expect(own.status).toBe(200);
+    const { json } = await own.json();
+    expect(json.image).toMatch(/^data:image\/(png|jpeg);base64,/);
+    const other = await preview(outsider.actor);
+    expect(other.status).not.toBe(200);
+    expect(JSON.stringify(await other.json())).not.toContain("data:image");
+  });
+
   it("does not let an older card answer the takeover a newer run is waiting on", async () => {
     const fixture = await setup("unopened");
     const before = await fixture.control();
