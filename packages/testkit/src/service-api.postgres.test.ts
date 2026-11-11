@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { createApp } from "@rakazo/api/app";
 import type { Actor, Bot, ServiceCredential, ServiceScope } from "@rakazo/contracts";
+import { SERVICE_CREDENTIALS_PER_MEMBER } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
@@ -348,6 +349,38 @@ describeWithDatabase("service API", () => {
     });
     expect(refused.status).toBe(404);
     expect((await get(token)).status).toBe(200);
+  });
+
+  it("lets concurrent creations at the limit make only one more key", async () => {
+    const { cookie, actor } = await person();
+    const expiresAt = new Date(Date.now() + 86_400_000);
+    await db.serviceCredential.createMany({
+      data: Array.from({ length: SERVICE_CREDENTIALS_PER_MEMBER - 1 }, (_, index) => ({
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        name: `seed-${index}`,
+        tokenHash: `seed-${stamp}-${index}`,
+        tokenPrefix: "rks_seed",
+        scopes: ["bots:read"],
+        botIds: [],
+        expiresAt,
+      })),
+    });
+    const attempts = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        call(cookie, "serviceCredentials/create", {
+          name: "racing",
+          scopes: ["bots:read"],
+          expiresInDays: 30,
+        }),
+      ),
+    );
+    expect(attempts.map((attempt) => attempt.status).sort()).toEqual([200, 400, 400, 400, 400]);
+    expect(
+      await db.serviceCredential.count({
+        where: { userId: actor.userId, spaceId: actor.spaceId, revokedAt: null },
+      }),
+    ).toBe(SERVICE_CREDENTIALS_PER_MEMBER);
   });
 
   it("limits each key per minute and resets when the window passes", async () => {
