@@ -99,7 +99,10 @@ export const BotSchema = z.object({
   unread: z.boolean(),
   /** Hidden from the viewer's chat list until then; past, the chat has just woken. */
   snoozedUntil: z.string().nullable().optional(),
-  /** The viewer muted it: no pushes or alerts, except their own run's questions and failures. */
+  /**
+   * The viewer muted it: no pushes or alerts, except their own run's questions, takeovers and
+   * failures.
+   */
   muted: z.boolean().optional(),
   /** The viewer hid it from their chat list; it keeps working. */
   hidden: z.boolean().optional(),
@@ -222,7 +225,10 @@ export const GroupSchema = z.object({
   unread: z.boolean(),
   /** Hidden from the viewer's chat list until then; past, the chat has just woken. */
   snoozedUntil: z.string().nullable().optional(),
-  /** The viewer muted it: no pushes or alerts, except their own run's questions and failures. */
+  /**
+   * The viewer muted it: no pushes or alerts, except their own run's questions, takeovers and
+   * failures.
+   */
   muted: z.boolean().optional(),
   /** The viewer hid it from their chat list; it keeps working. */
   hidden: z.boolean().optional(),
@@ -488,7 +494,10 @@ export const UpdateBotInput = z
     expectedInstructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     /** Ignored; installed mobile apps may still send it. */
     selfUpdateInstructions: z.boolean().optional(),
-    /** Unmutes (true) or mutes (false) the bot's chat for the caller, as `threads.mute` does. */
+    /**
+     * Unmutes (true) or mutes (false) the bot's chat for the caller, like `threads.mute`. A value
+     * that matches the caller's current setting records nothing.
+     */
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
     avatarSet: BotAvatarSetSchema.optional(),

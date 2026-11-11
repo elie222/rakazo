@@ -252,13 +252,12 @@ export async function afterChatNotifyChange(
         : { groupId: change.groupId },
   ).catch(() => undefined);
   if (change.notify) return;
+  // A bot listed from another space has no thread id here, so its own chat is matched by bot.
   const target =
     "groupId" in change
       ? { groupId: change.groupId }
-      : change.threadId
-        ? { threadId: change.threadId }
-        : null;
-  if (target) await dismissThreadNotifications(target).catch(() => undefined);
+      : { botId: change.botId, threadId: change.threadId };
+  await dismissThreadNotifications(target).catch(() => undefined);
 }
 
 export async function openLiveNotificationSettings(): Promise<void> {

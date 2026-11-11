@@ -414,11 +414,11 @@ export function useSpaceBootstrap({
           }
           return;
         }
-        // The chat the bootstrap loaded opens unless it is hidden; otherwise the first one listed,
-        // and none when every chat is hidden.
+        // The chat the bootstrap loaded opens if the URL names it or it isn't hidden; otherwise the
+        // first one listed, and none when every chat is hidden.
         const loaded = bootstrap.bots.find((bot) => bot.id === bootstrap.thread?.botId);
         const route =
-          loaded && !loaded.hidden
+          loaded && (loaded.id === botId || !loaded.hidden)
             ? `/app/${loaded.id}`
             : firstThreadRoute(bootstrap.bots, groupList);
         if (route !== "/app" && route !== `/app/${botId}`) redirectKeepingOverlay(route);

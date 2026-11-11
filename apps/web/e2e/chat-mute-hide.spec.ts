@@ -55,11 +55,14 @@ test("a chat row's ⋯ menu mutes and hides a chat, by pointer or keyboard", asy
   await chiefMenu.getByRole("menuitem", { name: "Hide", exact: true }).focus();
   await page.keyboard.press("Enter");
 
-  // Out of the list, still one search away, and listed under Hidden until it is brought back.
+  // Out of the list, and listed under Hidden until it is brought back.
   await expect(chief).toHaveCount(0);
   const hidden = sidebar.getByRole("button", { name: /^Hidden/ });
   await expect(hidden).toContainText("1");
   await page.reload();
+  // The open chat stays open: its URL names it, so a reload or a link still reaches it.
+  await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
+  await expect(page).toHaveURL(new RegExp(`/app/${chiefId}$`));
   await expect(chief).toHaveCount(0);
   await hidden.click();
   await captureScreenshot(page, testInfo, "hidden-shelf");

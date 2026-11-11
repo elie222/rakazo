@@ -129,7 +129,7 @@ it("reports a saved bot mute even when its inbox row has no thread id", async ()
   });
 });
 
-it("mutes a group and hides a chat in one request each, then quiets the device", async () => {
+it("mutes and unhides a group in one request each, telling the device each time", async () => {
   const actions = await handlers(async () => undefined);
   await actions.updateChat("group", { id: "g1", spaceId: "space-a" }, { muted: true });
   await actions.updateChat("group", { id: "g1", spaceId: "space-a" }, { hidden: false });

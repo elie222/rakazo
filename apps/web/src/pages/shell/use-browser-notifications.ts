@@ -69,12 +69,12 @@ export function useBrowserNotifications(
       // The open chat's own stream alerts for its replies and failures; only a takeover is missed.
       // A muted or hidden chat's stream stays quiet, so the server's alerts, which for such a chat
       // are only the viewer's own questions, takeovers and failures, speak for it.
-      const openChat = !isOpen
+      const shownChat = !isOpen
         ? undefined
         : alert.groupId
           ? groupsRef.current.find((group) => group.id === alert.groupId)
           : botsRef.current.find((bot) => bot.id === alert.botId);
-      const streamSpeaks = !openChat?.muted && !openChat?.hidden;
+      const streamSpeaks = !shownChat?.muted && !shownChat?.hidden;
       if (
         isOpen &&
         ((alert.kind !== "takeover" && streamSpeaks) ||

@@ -68,7 +68,7 @@ async function runNotice(
  * notification switch is off stays as silent as it always was, questions included; its chat
  * still comes back.
  */
-export async function ownerHearsRun(
+async function ownerHearsRun(
   prisma: PrismaClient,
   run: { threadId: string; userId: string },
   mutedByDefault: boolean,
