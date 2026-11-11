@@ -664,12 +664,13 @@ export default function Account() {
           />
         </View>
 
-        {me?.botAvatarSet ? (
+        {me ? (
           <View accessibilityLabel={t`Bot style`} style={styles.section}>
             <SettingsLabel>{t`Bot style`}</SettingsLabel>
             <NativeSegmentedControl
               accessibilityLabel={t`Bot style`}
               onChange={(botAvatarSet) => {
+                if (!botAvatarSet) return;
                 const previous = me.botAvatarSet;
                 // Only the latest tap's reply may land, so a slower earlier save can't undo it.
                 const request = ++botStyleRequest.current;
@@ -694,7 +695,7 @@ export default function Account() {
                 { value: "organic", label: t`Original` },
                 { value: "rakazo", label: t`Rakazo` },
               ]}
-              value={me.botAvatarSet}
+              value={me.botAvatarSet ?? ""}
             />
           </View>
         ) : null}

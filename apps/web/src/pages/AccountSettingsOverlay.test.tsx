@@ -64,10 +64,8 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
       {children}
     </button>
   ),
-  ToggleGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children?: ReactNode }) => (
-    <button type="button">{children}</button>
-  ),
+  ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
+  ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
   OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
     <div data-testid={testId} />
   ),
@@ -575,5 +573,30 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await editor.cleanup();
+  }
+});
+
+it("keeps bot style available without a saved value and saves an explicit Original choice", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const onChange = vi.fn(async () => {});
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<GeneralSettingsPanels name="Tester" onBotAvatarSetChange={onChange} />);
+    });
+    const picker = container.querySelector('[data-testid="bot-style-select"]');
+    expect(picker).not.toBeNull();
+    const original = Array.from(picker!.querySelectorAll("button")).find(
+      (button) => button.textContent === "Original",
+    )!;
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => original.click());
+    expect(onChange).toHaveBeenCalledWith("organic");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
   }
 });
