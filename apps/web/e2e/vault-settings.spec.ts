@@ -347,13 +347,12 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     // A site no login may be saved for: not saved, and it takes no place.
     `Metadata,https://169.254.169.254,admin,fake-pass-meta-${stamp},`,
   ].join("\n");
-  // A file the import can't read says why, and offers nothing to import. A KeePass 1.x export
-  // with a doubled backslash, an escape CSV doesn't use, is one; a sheet without a site and
-  // password column another.
+  // A file the import can't read says why, and offers nothing to import. One with broken quotes
+  // is one; a sheet without a site and password column another.
   const refused = [
     {
-      name: "keepass.csv",
-      text: '"Account","Login Name","Password","Web Site","Comments"\n"Work","CORP\\\\bob","fake-pass","https://example.com",""',
+      name: "broken.csv",
+      text: 'url,username,password\nhttps://example.com,alice,"abc"def',
       says: "This file can't be read as CSV.",
       shot: "vault-import-unreadable",
     },
@@ -395,7 +394,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
   const full = page.getByTestId("vault-import-page");
   await expect(full.getByTestId("vault-import-count")).toHaveText(["To add100", "Vault full6"]);
   await expect(full.getByTestId("vault-import-problems")).toContainText(
-    "Row 101 · s100.example.test · Vault full",
+    "Row 102 · s100.example.test · Vault full",
   );
   await expect(full.getByTestId("vault-import-problems")).toContainText("And 1 more");
   await captureScreenshot(page, testInfo, "vault-import-full");
@@ -413,10 +412,10 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     "Not saved1",
   ]);
   await expect(review.getByTestId("vault-import-problems")).toContainText(
-    "Row 5 · Metadata · Not saved",
+    "Row 6 · Metadata · Not saved",
   );
   await expect(review.getByTestId("vault-import-problems")).toContainText(
-    "Row 3 · Router · Not on an HTTPS site",
+    "Row 4 · Router · Not on an HTTPS site",
   );
   await captureScreenshot(page, testInfo, "vault-import-review");
   await review.getByRole("button", { name: "Import", exact: true }).click();
@@ -440,7 +439,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
   const again = page.getByTestId("vault-import-page");
   await expect(again.getByTestId("vault-import-count").first()).toHaveText("To add0");
   await expect(again.getByTestId("vault-import-problems")).toContainText(
-    "Row 1 · Shop · Already saved",
+    "Row 2 · Shop · Already saved",
   );
   await captureScreenshot(page, testInfo, "vault-import-again");
   await page.getByTestId("vault-back").click();

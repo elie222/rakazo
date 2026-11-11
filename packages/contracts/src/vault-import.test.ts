@@ -32,7 +32,7 @@ describe("parseVaultCsv", () => {
     for (const csv of layouts) {
       expect(parseVaultCsv(csv), csv.split("\n")[0]).toEqual({
         rows: [login],
-        lines: [1],
+        lines: [2],
         skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
         problems: [],
       });
@@ -42,7 +42,7 @@ describe("parseVaultCsv", () => {
   it("reads a fully quoted CRLF export without a name column", () => {
     const csv =
       '"url","username","password","httpRealm","formActionOrigin","guid","timeCreated","timeLastUsed","timePasswordChanged"\r\n"https://example.com","alice@example.com","fake-pass-1",,"https://example.com","{0}","1","1","1"\r\n';
-    expect(parseVaultCsv(csv)).toMatchObject({ rows: [{ ...login, title: "" }], lines: [1] });
+    expect(parseVaultCsv(csv)).toMatchObject({ rows: [{ ...login, title: "" }], lines: [2] });
   });
 
   it("keeps quoted commas, quotes and line breaks, a BOM, CRLF and a password's spaces", () => {
@@ -113,8 +113,9 @@ describe("parseVaultCsv", () => {
         { origin: "https://a.example.com", password: "pa,ss\nword" },
         { origin: "https://c.example.com", password: "fake-c" },
       ],
-      lines: [1, 3],
-      problems: [{ line: 2, label: "", reason: "invalid" }],
+      // The first row's password spans two lines.
+      lines: [2, 5],
+      problems: [{ line: 4, label: "", reason: "invalid" }],
     });
   });
 
@@ -125,34 +126,15 @@ describe("parseVaultCsv", () => {
     expect(parseVaultCsv(csv)).toMatchObject({
       rows: [],
       skipped: { invalid: 1, notHttps: 0 },
-      problems: [{ line: 1, label: "", reason: "invalid" }],
+      problems: [{ line: 2, label: "", reason: "invalid" }],
     });
   });
 
-  it("refuses a KeePass 1.x export only where its backslash escapes would change a value", () => {
+  it("reads a backslash as written, as CSV has no escape for it", () => {
     const csv =
-      '"Account","Login Name","Password","Web Site","Comments"\n"Work","CORP\\\\bob","fake-pass","https://example.com",""';
-    expect(parseVaultCsv(csv)).toEqual({ error: "unreadable" });
-    // Also with its columns in another order, or another column such as a group.
-    const grouped =
-      '"Group","Web Site","Account","Password","Login Name"\n"Work","https://example.com","Work","fake-\\\\pass","bob"';
-    expect(parseVaultCsv(grouped)).toEqual({ error: "unreadable" });
-    // The same layout with no doubled backslash reads the same either way, so it is read.
-    const plain =
-      '"Account","Login Name","Password","Web Site","Comments"\n"Work","bob","fake-pass","https://example.com",""\n"Home","CORP\\ann","fake-pass-2","https://home.example.com",""';
-    expect(parseVaultCsv(plain)).toEqual({
-      rows: [
-        { title: "Work", origin: "https://example.com", username: "bob", password: "fake-pass" },
-        {
-          title: "Home",
-          origin: "https://home.example.com",
-          username: "CORP\\ann",
-          password: "fake-pass-2",
-        },
-      ],
-      lines: [1, 2],
-      skipped: noneSkipped(),
-      problems: [],
+      '"Account","Login Name","Password","Web Site"\n"Work","CORP\\\\bob","fake-\\pass","https://example.com"';
+    expect(parseVaultCsv(csv)).toMatchObject({
+      rows: [{ title: "Work", username: "CORP\\\\bob", password: "fake-\\pass" }],
     });
   });
 
@@ -177,24 +159,24 @@ describe("parseVaultCsv", () => {
     expect(parseVaultCsv(csv)).toEqual({
       // A site written without its scheme is taken as HTTPS; one that says http:// is not.
       rows: [expect.objectContaining({ title: "Bare", origin: "https://shop.example.com" })],
-      lines: [2],
+      lines: [3],
       skipped: { notHttps: 3, noPassword: 1, duplicate: 0, invalid: 0, limit: 0 },
       problems: [
-        { line: 1, label: "Plain", reason: "notHttps" },
-        { line: 3, label: "", reason: "notHttps" },
-        { line: 4, label: "Note", reason: "notHttps" },
-        { line: 5, label: "empty.example.com", reason: "noPassword" },
+        { line: 2, label: "Plain", reason: "notHttps" },
+        { line: 4, label: "", reason: "notHttps" },
+        { line: 5, label: "Note", reason: "notHttps" },
+        { line: 6, label: "empty.example.com", reason: "noPassword" },
       ],
     });
   });
 
-  it("numbers rows as the file does, counting the blank ones it skips", () => {
+  it("numbers rows by the file's line they start on, past blank lines and notes on several", () => {
     const parsed = parseVaultCsv(
-      "url,password\n\nhttp://plain.example.com,fake-a\n\nhttps://ok.example.com,fake-b",
+      'url,password,notes\r\n\r\nhttp://plain.example.com,fake-a,"two\r\nlines"\r\n\nhttps://ok.example.com,fake-b,',
     );
     expect(parsed).toMatchObject({
-      lines: [4],
-      problems: [{ line: 2, label: "", reason: "notHttps" }],
+      lines: [6],
+      problems: [{ line: 3, label: "", reason: "notHttps" }],
     });
     // A row the server turns down is named by the same number.
     const rows = "rows" in parsed ? parsed.rows : [];
@@ -205,7 +187,7 @@ describe("parseVaultCsv", () => {
       notSaved: [{ index: 0, reason: "limit" as const }],
     };
     expect(vaultImportProblems([], plan, result)).toEqual([
-      { line: 4, label: "ok.example.com", reason: "limit" },
+      { line: 6, label: "ok.example.com", reason: "limit" },
     ]);
   });
 
@@ -248,7 +230,7 @@ describe("parseVaultCsv", () => {
     const csv = "name,url,password\nBank,my bank.com,fake-pass";
     expect(parseVaultCsv(csv)).toMatchObject({
       rows: [],
-      problems: [{ line: 1, label: "Bank", reason: "notHttps" }],
+      problems: [{ line: 2, label: "Bank", reason: "notHttps" }],
     });
   });
 
@@ -286,7 +268,7 @@ describe("parseVaultCsv", () => {
         { origin: "https://f.example.com", password: "\tfake-f " },
       ],
       skipped: { noPassword: 1 },
-      problems: [{ line: 3, label: "C", reason: "noPassword" }],
+      problems: [{ line: 4, label: "C", reason: "noPassword" }],
     });
   });
 
@@ -391,11 +373,11 @@ describe("parseVaultCsv", () => {
     ].join("\n");
     expect(parseVaultCsv(csv)).toMatchObject({
       rows: [{ origin: "https://good.example.com" }],
-      lines: [3],
+      lines: [4],
       skipped: { invalid: 2 },
       problems: [
-        { line: 1, reason: "invalid" },
         { line: 2, reason: "invalid" },
+        { line: 3, reason: "invalid" },
       ],
     });
   });

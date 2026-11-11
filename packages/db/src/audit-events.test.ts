@@ -188,6 +188,105 @@ describe("security events in the audit log", () => {
     ]);
   });
 
+  // Each vault event as its route or tool builds it; scope is undefined where an app that predates
+  // Space overrides leaves it out of a save or a removal.
+  const vaultEvents = {
+    import: (scope?: "account" | "space") =>
+      recordSecurityEvent({
+        type: "credential.created",
+        userId: "person",
+        spaceId: "space-1",
+        metadata: { procedure: "vault.import", kind: "vault_credential", scope },
+      }),
+    save: (scope?: "account" | "space") =>
+      recordSecurityEvent({
+        type: "credential.changed",
+        userId: "person",
+        spaceId: "space-1",
+        metadata: {
+          procedure: "vault.put",
+          kind: "vault_credential",
+          scope,
+          name: "chase-personal",
+        },
+      }),
+    remove: (scope?: "account" | "space") =>
+      recordSecurityEvent({
+        type: "credential.deleted",
+        userId: "person",
+        spaceId: "space-1",
+        metadata: {
+          procedure: "vault.remove",
+          kind: "vault_credential",
+          scope,
+          name: "chase-personal",
+        },
+      }),
+    reveal: (scope?: "account" | "space") =>
+      recordSecurityEvent({
+        type: "credential.revealed",
+        userId: "person",
+        spaceId: "space-1",
+        metadata: {
+          procedure: "vault.reveal",
+          kind: "vault_credential",
+          scope,
+          name: "chase-personal",
+        },
+      }),
+    use: (scope?: "account" | "space") =>
+      recordAuditEvent({
+        action: "credential.used",
+        actor: { type: "bot", id: "bot-1", label: "Researcher" },
+        spaceId: "space-1",
+        userId: "person",
+        target: { type: "vault_credential", id: "item-1", label: "chase-personal" },
+        metadata: {
+          tool: "browser_act",
+          scope,
+          name: "chase-personal",
+          kind: "login",
+          site: "https://bank.example.test",
+        },
+      }),
+  };
+  // space-1 belongs to org-1. A person's own vault item may be named in their own organization,
+  // or in the space's where they are a member, but never in one where they are only a guest.
+  const situations = [
+    { who: "member", scope: "account", owns: true, lands: "org-1", named: true },
+    { who: "guest", scope: "account", owns: true, lands: "org-own", named: true },
+    { who: "guest", scope: "account", owns: false, lands: "org-1", named: false },
+    { who: "guest", scope: undefined, owns: true, lands: "org-1", named: false },
+    // A Space's item is the Space's, whoever acts on it.
+    { who: "guest", scope: "space", owns: true, lands: "org-1", named: true },
+  ] as const;
+  it.each(
+    Object.keys(vaultEvents).flatMap((kind) =>
+      situations
+        // Only a save or a removal can leave its vault out, and a use is recorded for its owner.
+        .filter(({ scope }) => scope || kind === "save" || kind === "remove")
+        .filter(({ scope }) => !(kind === "use" && scope === "space"))
+        .map((situation) => ({ kind: kind as keyof typeof vaultEvents, ...situation })),
+    ),
+  )(
+    "$kind by a $who of an item in the $scope vault lands in $lands, named: $named",
+    async ({ kind, who, scope, owns, lands, named }) => {
+      Object.assign(store.member, {
+        findUnique: vi.fn(async () => ({ role: who === "guest" ? "guest" : "member" })),
+        findMany: vi.fn(async () => (owns ? [{ organizationId: "org-own", role: "owner" }] : [])),
+      });
+      await vaultEvents[kind](scope);
+      expect(store.rows.map((row) => row.organizationId)).toEqual([lands]);
+      const stored = JSON.stringify(store.rows);
+      for (const text of ["chase-personal", "bank.example.test"]) {
+        if (named && (text === "chase-personal" ? kind !== "import" : kind === "use"))
+          expect(stored).toContain(text);
+        else expect(stored).not.toContain(text);
+      }
+      expect(store.rows[0]?.metadata).toMatchObject({ kind: expect.any(String) });
+    },
+  );
+
   it("leaves deployment-wide signals out", async () => {
     await recordSecurityEvent({ type: "auth.sign_in.failed", ip: "203.0.113.5" });
     await recordSecurityEvent({ type: "rate_limit.hit", userId: "user-1", ip: "203.0.113.5" });

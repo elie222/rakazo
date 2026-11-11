@@ -1374,7 +1374,7 @@ describe("VaultSettings item details", () => {
     expect(counts()).toEqual(["To add1", "Already saved1", "Not on an HTTPS site1"]);
     // Which rows, by row and title, never by username or password.
     expect(find("vault-import-problems")?.textContent).toBe(
-      "Row 1 · GitHub · Already savedRow 3 · Old · Not on an HTTPS site",
+      "Row 2 · GitHub · Already savedRow 4 · Old · Not on an HTTPS site",
     );
     vault.import.mockResolvedValue({
       added: 1,
@@ -1417,7 +1417,7 @@ describe("VaultSettings item details", () => {
     expect(
       [...find("vault-import-problems")!.querySelectorAll("li")].map((row) => row.textContent),
     ).toEqual([
-      ...[0, 1, 2, 3, 4].map((index) => `Zeile ${index + 1} · Old ${index} · Not on an HTTPS site`),
+      ...[0, 1, 2, 3, 4].map((index) => `Zeile ${index + 2} · Old ${index} · Not on an HTTPS site`),
       "Und 2 weitere",
     ]);
   });

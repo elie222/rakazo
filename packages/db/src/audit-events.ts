@@ -43,6 +43,16 @@ export interface AuditEventInput {
   metadata?: Record<string, string | number | boolean | null | undefined>;
 }
 
+/**
+ * What may be in an event about a vault item, the one place this is decided. An item is its
+ * person's own unless the event says it is a Space's (`scope: "space"`). An event about one may
+ * name it, its username or its site only in an organization of theirs: their own, or the space's
+ * where they are a member. Where it can only land in one they are a guest of, or have left, it
+ * keeps just these fields and no target label.
+ */
+const VAULT_TARGETS = new Set(["vault_credential", "bot_secret"]);
+const VAULT_FIELDS_FOR_OTHERS = new Set(["procedure", "kind", "scope", "tool"]);
+
 let store: AuditEventDb | undefined;
 
 /** Composition roots install the database once; until then events only reach the log on failure. */
@@ -107,25 +117,32 @@ async function auditRows(
         })
       : [],
   ]);
+  const owner = input.userId ?? personId;
+  const ownItem = VAULT_TARGETS.has(input.target?.type ?? "") && input.metadata?.scope !== "space";
+  // Whether that person is only a guest of the space's organization, or no longer in it.
+  const outsider =
+    space && owner && !input.organizationId && (input.userId || ownItem)
+      ? await db.member
+          .findUnique({
+            where: {
+              organizationId_userId: { organizationId: space.organizationId, userId: owner },
+            },
+            select: { role: true },
+          })
+          .then((member) => !member || member.role === GUEST_ROLE)
+      : false;
   // A person's own event goes to one organization: the space's for its members, else, as for a
   // guest or someone whose membership is gone mid-write, the oldest they own, so a shared space
-  // never sees it. Owning none, it stays with the space it happened in rather than being lost.
-  let personal: string | undefined;
-  if (space && input.spaceId && input.userId && !input.organizationId) {
-    const member = await db.member.findUnique({
-      where: {
-        organizationId_userId: { organizationId: space.organizationId, userId: input.userId },
-      },
-      select: { role: true },
-    });
-    personal =
-      member && member.role !== GUEST_ROLE
-        ? space.organizationId
-        : await ownedOrganizationId(db, input.userId).catch((error: unknown) => {
-            if (error instanceof IsolationError) return space.organizationId;
-            throw error;
-          });
-  }
+  // never sees it. Owning none, it stays with the space it happened in rather than being lost,
+  // without naming their vault item there.
+  const personal =
+    input.userId && outsider
+      ? await ownedOrganizationId(db, input.userId).catch((error: unknown) => {
+          if (error instanceof IsolationError) return undefined;
+          throw error;
+        })
+      : undefined;
+  const withheld = ownItem && outsider && !personal;
   const organizations = input.organizationId
     ? [input.organizationId]
     : personal
@@ -142,13 +159,23 @@ async function auditRows(
     action: input.action.slice(0, 128),
     targetType: bounded(input.target?.type, 64),
     targetId: bounded(input.target?.id, 200),
-    targetLabel: bounded(input.target?.label ?? (actor.type === "user" ? null : user?.email), 200),
+    targetLabel: withheld
+      ? null
+      : bounded(input.target?.label ?? (actor.type === "user" ? null : user?.email), 200),
     outcome: input.outcome ?? "success",
     runId: bounded(input.runId, 128),
     threadId: bounded(input.threadId, 128),
     ip: bounded(caller?.ip, 64),
     userAgent: bounded(caller?.userAgent, 512),
-    metadata: securityEventMetadata(input.metadata),
+    metadata: securityEventMetadata(
+      withheld
+        ? Object.fromEntries(
+            Object.entries(input.metadata ?? {}).filter(([key]) =>
+              VAULT_FIELDS_FOR_OTHERS.has(key),
+            ),
+          )
+        : input.metadata,
+    ),
   };
   return organizations.map((organizationId) => ({ ...row, organizationId }));
 }

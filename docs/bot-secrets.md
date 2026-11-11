@@ -187,15 +187,15 @@ decides which fit; its result lists any it had no room for. An import that stops
 may have been saved; importing the file again skips them.
 It leaves out rows whose site isn't HTTPS or is one no login may be saved for, rows without a password, rows
 with a value too long to save, rows with more cells than the header, and logins already saved for the same site and
-username, and lists the first few of those rows by row number and name or site, never by username
-or password. A long name is shortened to fit. Notes aren't imported, since bots see an item's note
+username, and lists the first few of those rows by the file's line each starts on and name or site,
+never by username or password. A long name is shortened to fit. Notes aren't imported, since bots see an item's note
 and an export's notes can hold private data such as security answers; add one by hand where it
 helps the bot. If a saved login can't be read for now, the import stops there; importing the file
 again later counts what was saved as already saved. Each login it adds is a new item that bots may use, like one
-you add yourself, and is audited as `credential.created`. Authenticator keys aren't imported; add
+you add yourself, and is audited as `credential.created`; as with every vault event, an organization
+you are only a guest of never sees which login. Authenticator keys aren't imported; add
 one in the login's editor where a bot must sign in on its own. A file whose quotes are broken is
-not read at all, and neither is a KeePass 1.x export with a doubled backslash in a value, an escape
-CSV doesn't use, so no password is read differently from the export. Delete the export file
+not read at all, so no password is read differently from the export. Delete the export file
 afterwards: it holds your passwords unencrypted.
 
 A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.

@@ -71,19 +71,25 @@ type Column = keyof typeof COLUMNS;
 
 /**
  * Rows and fields of a CSV text (RFC 4180): quoted fields may hold commas, quotes and line breaks.
- * Any other quote makes the text unreadable, as reading past it would change a value.
+ * Any other quote makes the text unreadable, as reading past it would change a value. Each record
+ * comes with the line of the text it starts on.
  */
-function csvRecords(text: string): string[][] | undefined {
+function csvRecords(text: string): { records: string[][]; starts: number[] } | undefined {
   const records: string[][] = [];
+  const starts: number[] = [];
   let record: string[] = [];
   let field = "";
   let quoted = false;
   let closed = false;
+  let line = 1;
+  let start = 1;
   for (let index = text.charCodeAt(0) === 0xfeff ? 1 : 0; index < text.length; index++) {
     const char = text[index];
     if (quoted) {
-      if (char !== '"') field += char;
-      else if (text[index + 1] === '"') {
+      if (char !== '"') {
+        field += char;
+        if (char === "\n" || (char === "\r" && text[index + 1] !== "\n")) line++;
+      } else if (text[index + 1] === '"') {
         field += '"';
         index++;
       } else [quoted, closed] = [false, true];
@@ -101,13 +107,18 @@ function csvRecords(text: string): string[][] | undefined {
       if (char === "\r" && text[index + 1] === "\n") index++;
       record.push(field);
       records.push(record);
+      starts.push(start);
+      start = ++line;
       record = [];
       field = "";
     } else field += char;
   }
   if (quoted) return undefined;
-  if (field !== "" || record.length) records.push([...record, field]);
-  return records;
+  if (field !== "" || record.length) {
+    records.push([...record, field]);
+    starts.push(start);
+  }
+  return { records, starts };
 }
 
 const blank = (record: string[]) => record.every((value) => value.trim() === "");
@@ -118,7 +129,7 @@ export type VaultImportProblem = { line: number; label: string; reason: VaultImp
 export type VaultCsv =
   | {
       rows: VaultImportRow[];
-      /** Each row's place in the file, counting from the first row after the header. */
+      /** The file's line each row starts on. */
       lines: number[];
       skipped: VaultImportSkipped;
       problems: VaultImportProblem[];
@@ -132,23 +143,15 @@ export type VaultCsv =
  */
 export function parseVaultCsv(text: string): VaultCsv {
   if (text.length > VAULT_IMPORT_FILE_LIMIT) return { error: "too_large" };
-  const records = csvRecords(text);
-  if (!records) return { error: "unreadable" };
-  // Blank records are skipped but still counted. A row's number counts the rows after the header,
-  // not the file's lines: a cell that spans several lines is one row.
+  const read = csvRecords(text);
+  if (!read) return { error: "unreadable" };
+  const { records, starts } = read;
+  // Blank records are skipped. A row is named by the file's line it starts on, the header's being
+  // 1, so a note on several lines never shifts the rows after it.
   const start = records.findIndex((record) => !blank(record));
   const header = records[start] ?? [];
   const body = start < 0 ? [] : records.slice(start + 1);
   const keys = header.map((name) => name.toLowerCase().replace(/[^a-z0-9]/g, ""));
-  // KeePass 1.x escapes a backslash with another, which CSV doesn't, so an exported CORP\\bob
-  // would be saved with both. Refused rather than read differently, but only where a value has
-  // the doubled backslash that reads two ways; an escaped quote is already a stray quote above,
-  // and a file of this layout without either reads the same from any tool.
-  if (
-    ["account", "loginname", "website"].every((name) => keys.includes(name)) &&
-    body.some((record) => record.some((cell) => cell.includes("\\\\")))
-  )
-    return { error: "unreadable" };
   const columns = Object.fromEntries(
     (Object.keys(COLUMNS) as Column[]).map((column) => [
       column,
@@ -167,11 +170,12 @@ export function parseVaultCsv(text: string): VaultCsv {
   const problems: VaultImportProblem[] = [];
   for (const [index, record] of body.entries()) {
     if (blank(record)) continue;
+    const line = starts[start + 1 + index] ?? 0;
     // More cells than the header: a comma in an unquoted value shifted them, so no cell can be
     // trusted, not even as the row's name.
     if (record.length > header.length) {
       skipped.invalid++;
-      problems.push({ line: index + 1, label: "", reason: "invalid" });
+      problems.push({ line, label: "", reason: "invalid" });
       continue;
     }
     const origin = vaultImportOrigin(value(record, "url"));
@@ -199,13 +203,13 @@ export function parseVaultCsv(text: string): VaultCsv {
       skipped[reason]++;
       const title = shortTitle(value(record, "title"));
       problems.push({
-        line: index + 1,
+        line,
         label: title || (origin ? new URL(origin).host : ""),
         reason,
       });
     } else if (row.success) {
       rows.push(row.data);
-      lines.push(index + 1);
+      lines.push(line);
     }
   }
   return { rows, lines, skipped, problems };

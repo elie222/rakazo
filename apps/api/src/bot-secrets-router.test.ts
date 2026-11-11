@@ -579,7 +579,7 @@ describe("vault router", () => {
   });
 
   it("imports new logins one by one and counts every row it skips", async () => {
-    const { rows, call } = botSecretDeps();
+    const { prisma, rows, call } = botSecretDeps();
     const origin = "https://shop.example.test";
     const row = { title: "", origin, username: "alice", password: FAKE_VALUE };
     await call("vault/put", {
@@ -652,21 +652,28 @@ describe("vault router", () => {
     // The trailing dot too, as the app's reading of an export drops it.
     expect(shouted.body.json).toMatchObject({ added: 0, skipped: { duplicate: 3 } });
     // Past the vault's limit a new login is counted as not fitting, and one already saved as
-    // already saved, as a retry after a lost reply sends it.
+    // already saved, as a retry after a lost reply sends it. Once one doesn't fit, the rest are
+    // counted without reading the vault again.
     for (let index = rows.length; index < 99; index++)
       rows.push({ ...rows[0], id: `filler-${index}`, name: `filler-${index}` });
+    prisma.vaultCredential.findMany.mockClear();
     const full = await call("vault/import", {
-      rows: ["frank", "grace", "heidi", "bob"].map((username) => ({ ...row, username })),
+      rows: ["bob", "frank", "grace", "heidi"].map((username) => ({ ...row, username })),
     });
     expect(full.body.json).toMatchObject({
       added: 1,
       skipped: { limit: 2, duplicate: 1 },
       notSaved: [
-        { index: 1, reason: "limit" },
+        { index: 0, reason: "duplicate" },
         { index: 2, reason: "limit" },
-        { index: 3, reason: "duplicate" },
+        { index: 3, reason: "limit" },
       ],
     });
+    // A new name is looked for once for each row up to the first that didn't fit.
+    const named = prisma.vaultCredential.findMany.mock.calls.filter(
+      ([args]) => (args.where.name as { startsWith?: string } | undefined)?.startsWith,
+    );
+    expect(named).toHaveLength(3);
     const tooMany = await call("vault/import", { rows: Array(101).fill(row) });
     expect(tooMany.status).toBe(400);
   });

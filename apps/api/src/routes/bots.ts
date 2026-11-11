@@ -243,6 +243,8 @@ async function importVaultLogins(
   const skipped = noneSkipped();
   let added = 0;
   const usernames = new Map<string, string>();
+  // Once a login doesn't fit, nor does any after it, so they are counted without asking again.
+  let full = false;
   const notSaved: VaultImportResult["notSaved"] = [];
   const skip = (index: number, reason: VaultImportReason) => {
     skipped[reason]++;
@@ -253,6 +255,7 @@ async function importVaultLogins(
     const origin = vaultImportOrigin(row.origin);
     if (!origin) skip(index, "notHttps");
     else if (!row.password) skip(index, "noPassword");
+    else if (full) skip(index, "limit");
     else {
       const destination = { origin, auth: { type: "login" as const } };
       try {
@@ -280,7 +283,10 @@ async function importVaultLogins(
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (message === LOGIN_ALREADY_SAVED) skip(index, "duplicate");
-        else if (message === "Credential limit reached") skip(index, "limit");
+        else if (message === "Credential limit reached") {
+          full = true;
+          skip(index, "limit");
+        }
         // A saved login that can't be read for now may be this one: stop, as a retry is safe.
         else if (message === SPACE_VAULT_NOT_IN_USE || message === SAVED_LOGIN_UNREADABLE)
           throw mapBotSecretStoreError(error);
