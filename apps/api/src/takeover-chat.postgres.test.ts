@@ -335,54 +335,104 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     },
   );
 
-  it("leaves the computer to another bot whose run claims it just before the grant", async () => {
-    const fixture = await setup("opened");
-    await system.computer.update({
-      where: { id: fixture.computer.id },
-      data: {
-        controlHolder: "none",
-        controlBotId: null,
-        controlRunId: null,
-        controlLeaseId: null,
-        controlLeaseExpiresAt: null,
-      },
-    });
-    const other = await system.bot.create({
-      data: {
-        spaceId: fixture.actor.spaceId,
-        userId: fixture.actor.userId,
-        name: "Other fixture",
-        color: "test",
-        computerId: fixture.computer.id,
-      },
-    });
-    // Every earlier check passed; the run's claim lands between them and the grant itself.
-    const claim = async () => {
-      await system.run.update({ where: { id: fixture.run.id }, data: { status: "running" } });
-      await system.computerExecutionLease.upsert({
-        where: { computerId_botId: { computerId: fixture.computer.id, botId: fixture.bot.id } },
-        create: {
-          computerId: fixture.computer.id,
-          botId: fixture.bot.id,
-          runId: fixture.run.id,
-          fence: 1,
-          expiresAt: new Date(Date.now() + 60_000),
+  it.each(["another bot", "this bot"] as const)(
+    "leaves the computer to a run of %s that claims it just before the grant",
+    async (whose) => {
+      const fixture = await setup("opened");
+      await system.computer.update({
+        where: { id: fixture.computer.id },
+        data: {
+          controlHolder: "none",
+          controlBotId: null,
+          controlRunId: null,
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
         },
-        update: { runId: fixture.run.id, expiresAt: new Date(Date.now() + 60_000) },
       });
-    };
-    const { response } = await new RPCHandler(
-      createRouter({ ...fixture.deps, prisma: beforeRawGrant(prisma, claim) }),
-    ).handle(
-      new Request("http://127.0.0.1/rpc/computer/takeover", {
+      const other = await system.bot.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Other fixture",
+          color: "test",
+          computerId: fixture.computer.id,
+        },
+      });
+      // Every earlier check passed: the run had finished and held no lease. Its claim lands between
+      // them and the grant itself.
+      await system.run.update({ where: { id: fixture.run.id }, data: { status: "completed" } });
+      await system.computerExecutionLease.deleteMany({
+        where: { computerId: fixture.computer.id },
+      });
+      const claim = async () => {
+        await system.run.update({ where: { id: fixture.run.id }, data: { status: "running" } });
+        await system.computerExecutionLease.upsert({
+          where: { computerId_botId: { computerId: fixture.computer.id, botId: fixture.bot.id } },
+          create: {
+            computerId: fixture.computer.id,
+            botId: fixture.bot.id,
+            runId: fixture.run.id,
+            fence: 1,
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+          update: { runId: fixture.run.id, expiresAt: new Date(Date.now() + 60_000) },
+        });
+      };
+      const { response } = await new RPCHandler(
+        createRouter({ ...fixture.deps, prisma: beforeRawGrant(prisma, claim) }),
+      ).handle(
+        new Request("http://127.0.0.1/rpc/computer/takeover", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            json: { botId: whose === "this bot" ? fixture.bot.id : other.id, ifAvailable: true },
+          }),
+        }),
+        { prefix: "/rpc", context: { actor: fixture.actor } },
+      );
+      expect(await response?.json()).toMatchObject({ json: null });
+      expect(await fixture.control()).toMatchObject({
+        controlHolder: "none",
+        controlLeaseId: null,
+      });
+    },
+  );
+
+  it("keeps a bot's request for help waiting when its window closes without an answer", async () => {
+    const fixture = await setup("opened");
+    const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+      new Request("http://127.0.0.1/rpc/computer/release", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: { botId: other.id, ifAvailable: true } }),
+        body: JSON.stringify({ json: { botId: fixture.bot.id } }),
       }),
       { prefix: "/rpc", context: { actor: fixture.actor } },
     );
-    expect(await response?.json()).toMatchObject({ json: null });
-    expect(await fixture.control()).toMatchObject({ controlHolder: "none", controlLeaseId: null });
+    expect(response?.status).toBe(200);
+    expect(await fixture.control()).toMatchObject({
+      controlHolder: "none",
+      controlBotId: null,
+      controlLeaseId: null,
+      controlRunId: fixture.run.id,
+    });
+    await expect(
+      system.run.findUniqueOrThrow({ where: { id: fixture.run.id } }),
+    ).resolves.toMatchObject({ status: "waiting_takeover" });
+    expect(fixture.queuedStates).toEqual([]);
+    // I'm done still answers it.
+    expect((await fixture.takeover()).status).toBe(200);
+    const done = await new RPCHandler(createRouter(fixture.deps)).handle(
+      new Request("http://127.0.0.1/rpc/computer/release", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: fixture.bot.id, reason: "done" } }),
+      }),
+      { prefix: "/rpc", context: { actor: fixture.actor } },
+    );
+    expect(done.response?.status).toBe(200);
+    expect(fixture.queuedStates).toEqual([
+      expect.objectContaining({ status: "queued", checkpoint: "takeover" }),
+    ]);
   });
 
   it.each(["waiting", "pause-during-revoke", "pause-after-handoff"] as const)(

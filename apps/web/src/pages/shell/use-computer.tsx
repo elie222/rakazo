@@ -10,7 +10,6 @@ import type {
 import {
   computerFreeFor,
   isComputerAllowanceUsed,
-  takeoverHandsBackOnClose,
   userHoldsComputerControl,
 } from "@rakazo/contracts";
 import {
@@ -663,10 +662,9 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        const handsBack = takeoverHandsBackOnClose(computerRef.current);
         const granted = await rpc.computer.takeover({ botId: targetBotId, ifAvailable: true });
         // Only control this window took is handed back when it closes.
-        if (granted && handsBack) {
+        if (granted) {
           heldControl.current = targetBotId;
           // The window may have closed while the grant was on its way.
           if (!computerOpenRef.current) handBackControl();
@@ -929,8 +927,8 @@ export function useComputerControls({
     return () => document.removeEventListener("visibilitychange", ask);
   }, [computerFree, computer, computerBot?.id]);
 
-  // Closing the window, switching bots or leaving hands back control this window took. A bot
-  // that asks for help meanwhile keeps waiting for I'm done.
+  // Closing the window, switching bots or leaving hands back control this window took; a bot's
+  // request for help stays open for I'm done or Skip, which the server keeps.
   useEffect(() => {
     if (!computerOpen) {
       if (windowWasOpen.current) handBackControl();
@@ -940,10 +938,8 @@ export function useComputerControls({
     windowWasOpen.current = true;
     if (heldControl.current && heldControl.current !== computerBot?.id) handBackControl();
     // Teaching keeps its own control until it stops.
-    if (recording || (computer?.botId === computerBot?.id && computer?.takeoverRequested)) {
-      heldControl.current = null;
-    }
-  }, [computerOpen, recording, computer?.takeoverRequested, computerBot?.id]);
+    if (recording) heldControl.current = null;
+  }, [computerOpen, recording, computerBot?.id]);
   useEffect(() => () => handBackControl(), []);
 
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);

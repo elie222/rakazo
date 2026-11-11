@@ -64,6 +64,7 @@ import {
   keepComputerAwake,
   releaseComputerControl,
   runComputerReplace,
+  setTakeoverAside,
   withViewOnly,
 } from "../computer-control.js";
 import { scrollPoint } from "../computer-input.js";
@@ -172,7 +173,7 @@ export function computerRoutes(ctx: RouterContext) {
               "controlLeaseId" = ${leaseId},
               "controlLeaseExpiresAt" = ${expiresAt},
               "controlBotId" = ${bot.id},
-              "controlRunId" = ${controlRunId},
+              "controlRunId" = ${controlRunId}::text,
               "controlUserId" = ${actor.userId},
               "updatedAt" = now()
             WHERE id = ${bot.computer.id}
@@ -180,12 +181,12 @@ export function computerRoutes(ctx: RouterContext) {
               AND "maintenanceId" IS NULL
               AND "controlHolder" <> 'user'
               AND "controlLeaseId" IS NULL
-              AND ("controlRunId" IS NULL OR "controlRunId" = ${controlRunId})
+              AND ("controlRunId" IS NULL OR "controlRunId" = ${controlRunId}::text)
               AND NOT EXISTS (
                 SELECT 1 FROM computer_execution_leases lease
                 JOIN runs run ON run.id = lease."runId"
                 WHERE lease."computerId" = computers.id
-                  AND run."botId" <> ${bot.id}
+                  AND run.id IS DISTINCT FROM ${controlRunId}::text
                   AND run.status IN (${Prisma.join([...ACTIVE_RUN_STATUSES])})
               )`,
         }
@@ -562,6 +563,10 @@ export function computerRoutes(ctx: RouterContext) {
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.computer) assertNotAnotherPersonsControl(bot.computer, context.actor);
+        // Only I'm done or Skip answers a bot's request for help; a closing window leaves it.
+        if (!input.reason && (await setTakeoverAside(deps, context.actor, input.botId))) {
+          return { ok: true as const };
+        }
         await releaseComputerControl(deps, context.actor, input.botId, input.reason);
         return { ok: true as const };
       }),

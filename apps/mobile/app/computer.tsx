@@ -10,7 +10,6 @@ import {
   computerControlUser,
   computerFreeFor,
   isComputerAllowanceUsed,
-  takeoverHandsBackOnClose,
   userHoldsComputerControl,
 } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
@@ -345,7 +344,9 @@ export default function Computer() {
       });
       // Another bot's run or another person's control changes elsewhere; the open window reads
       // its status now and then to notice.
-      if (computerOpenRef.current) void refresh().catch(() => undefined);
+      // A poll reads the screen link again only once it is stale.
+      if (computerOpenRef.current)
+        void refreshController.refresh({ poll: true }).catch(() => undefined);
     };
     const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
     ping();
@@ -390,13 +391,12 @@ export default function Computer() {
     if (!computerFree || !computer || askedForControlOn.current === computer) return;
     askedForControlOn.current = computer;
     const id = botId;
-    const handsBack = takeoverHandsBackOnClose(computer);
     void bootComputer({
       takeControl: true,
       showProgress: false,
       // Only control this window took is handed back when it closes.
       onControl: () => {
-        if (!handsBack || !id) return;
+        if (!id) return;
         heldControl.current = id;
         // The window may have closed while the grant was on its way.
         if (!computerOpenRef.current) handBackControl();
@@ -407,8 +407,8 @@ export default function Computer() {
     });
   }, [computerFree, computer]);
 
-  // Closing the window hands back control it took. A bot that asks for help meanwhile keeps
-  // waiting for I'm done.
+  // Closing the window hands back control it took; a bot's request for help stays open for I'm
+  // done or Skip, which the server keeps.
   useEffect(() => {
     if (!computerOpen) {
       if (windowWasOpen.current) handBackControl();
@@ -416,8 +416,7 @@ export default function Computer() {
       return;
     }
     windowWasOpen.current = true;
-    if (computer?.botId === botId && computer?.takeoverRequested) heldControl.current = null;
-  }, [computerOpen, computer?.botId, computer?.takeoverRequested, botId]);
+  }, [computerOpen]);
 
   function dismissDiskWarning() {
     setComputer((current) => current && { ...current, diskFullPercent: undefined });

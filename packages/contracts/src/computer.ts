@@ -120,16 +120,6 @@ export function computerFreeFor(
   );
 }
 
-/**
- * Whether control a window takes is handed back when it closes. Taking it to answer a bot's request
- * for help keeps that request open until I'm done or Skip.
- */
-export function takeoverHandsBackOnClose(
-  computerBefore: ComputerStatus | null | undefined,
-): boolean {
-  return !computerBefore?.takeoverRequested;
-}
-
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 

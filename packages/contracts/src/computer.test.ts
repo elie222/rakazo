@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ComputerStatus } from "./computer.js";
-import { computerControlUser, computerFreeFor, takeoverHandsBackOnClose } from "./computer.js";
+import { computerControlUser, computerFreeFor } from "./computer.js";
 
 function running(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
   return {
@@ -69,12 +69,5 @@ describe("computerFreeFor", () => {
     expect(computerFreeFor(running({ kind: "desktop" }), "bot-1", null)).toBe(false);
     expect(computerFreeFor(running(), "bot-1", "Ada")).toBe(false);
     expect(computerFreeFor(running({ otherBotName: "Basil" }), "bot-1", null)).toBe(false);
-  });
-});
-
-describe("takeoverHandsBackOnClose", () => {
-  it("keeps control taken to answer a bot's request for help", () => {
-    expect(takeoverHandsBackOnClose(running())).toBe(true);
-    expect(takeoverHandsBackOnClose(running({ takeoverRequested: true }))).toBe(false);
   });
 });

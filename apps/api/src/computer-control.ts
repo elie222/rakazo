@@ -122,6 +122,63 @@ export function assertNotAnotherPersonsControl(
   }
 }
 
+/**
+ * Closing the screen on a bot's request for help puts the request back as it was before it was
+ * opened: the screen and the user's lease end, but the run keeps waiting for I'm done or Skip.
+ * Returns whether the screen was such a request.
+ */
+export async function setTakeoverAside(
+  deps: RouterDeps,
+  actor: Actor,
+  botId: string,
+): Promise<boolean> {
+  const bot = await createRepos(deps.prisma).getBot(actor, botId);
+  const computer = bot.computer;
+  const runId = computer?.controlRunId;
+  const leaseId = computer?.controlLeaseId;
+  if (
+    !computer ||
+    !runId ||
+    !leaseId ||
+    computer.controlHolder !== "user" ||
+    computer.controlBotId !== bot.id ||
+    !holdsUserControl(computer, actor.userId)
+  ) {
+    return false;
+  }
+  await revokeScreenControl(
+    deps,
+    computer,
+    computerContext(actor, bot.id, "screen.release"),
+    leaseId,
+  );
+  const cleared = await deps.prisma.computer.updateMany({
+    where: { id: computer.id, controlLeaseId: leaseId, controlRunId: runId },
+    data: {
+      controlHolder: "none",
+      controlBotId: null,
+      controlLeaseId: null,
+      controlLeaseExpiresAt: null,
+      controlUserId: null,
+    },
+  });
+  if (cleared.count !== 1) return true;
+  await deps.jobs.cancel(computerControlExpireJobKey(computer.id, leaseId)).catch((error) => {
+    getLogger().error("computer control expiry cancellation", error);
+  });
+  if (bot.thread) {
+    await deps.events.append({
+      spaceId: actor.spaceId,
+      threadId: bot.thread.id,
+      botId: bot.id,
+      type: "computer.takeover.requested",
+      runId,
+      payload: { takeoverRequested: true, retainedControl: false },
+    });
+  }
+  return true;
+}
+
 /** Hand the user's screen control for this bot back, continuing any run waiting on it. */
 export async function releaseComputerControl(
   deps: RouterDeps,

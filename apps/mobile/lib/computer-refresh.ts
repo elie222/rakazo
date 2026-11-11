@@ -106,7 +106,7 @@ export function createComputerRefresh(options: {
   }
 
   return {
-    refresh: (input?: { screenAttempts?: number }) => refresh(input),
+    refresh: (input?: { screenAttempts?: number; poll?: boolean }) => refresh(input),
     /** The viewer could not use the current URL: read a fresh one on the next poll. */
     invalidateScreen() {
       screenLoaded = false;
