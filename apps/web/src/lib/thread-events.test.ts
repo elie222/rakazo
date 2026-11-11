@@ -11,6 +11,7 @@ import {
   computerPanelNeedsMaintenance,
   computerPanelNeedsScreen,
   computerTakeoverBlocked,
+  mayTakeControl,
   reduceComputerStatus,
   screenMissing,
   screenReadLoaded,
@@ -340,7 +341,7 @@ describe("computer event reduction", () => {
     ).toBe(prev);
   });
 
-  it("marks takeover requested and clears control unless the lease was retained", () => {
+  it("marks takeover requested for its bot and clears control unless the lease was retained", () => {
     const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "bot" });
     expect(
       reduceComputerStatus(busy, event({ type: "computer.takeover.requested", payload: {} })),
@@ -348,7 +349,7 @@ describe("computer event reduction", () => {
       busyBotName: null,
       takeoverRequested: true,
       controlHolder: "none",
-      controlBotId: null,
+      controlBotId: "bot-1",
     });
     expect(
       reduceComputerStatus(
@@ -503,6 +504,37 @@ function event(overrides: Partial<ProductEvent>): ProductEvent {
     ...overrides,
   };
 }
+
+describe("mayTakeControl", () => {
+  const running = (overrides: Partial<ComputerStatus>) =>
+    computer({ state: "running", ...overrides });
+
+  it("takes a free computer and answers this bot's own request", () => {
+    expect(mayTakeControl(running({}), "bot-1")).toBe(true);
+    expect(
+      mayTakeControl(running({ takeoverRequested: true, controlBotId: "bot-1" }), "bot-1"),
+    ).toBe(true);
+  });
+
+  it("never skips another bot's request for help on a shared computer", () => {
+    expect(
+      mayTakeControl(running({ takeoverRequested: true, controlBotId: "bot-2" }), "bot-1"),
+    ).toBe(false);
+    expect(
+      mayTakeControl(
+        running({ takeoverRequested: true, controlHolder: "user", controlBotId: "bot-2" }),
+        "bot-1",
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves a computer someone else or a working bot is using", () => {
+    expect(
+      mayTakeControl(running({ controlledByOther: true, controlHolder: "user" }), "bot-1"),
+    ).toBe(false);
+    expect(mayTakeControl(running({ busyBotName: "Ada" }), "bot-1", "running")).toBe(false);
+  });
+});
 
 describe("screen read ownership", () => {
   it("does not promote a booting read into a running-screen failure", () => {

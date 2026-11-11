@@ -25,7 +25,7 @@ import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, recordComputerRunEnd, spaceIsShared } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { resolveBusyBotName, resolveControllerName, toComputerStatus } from "./computer-status.js";
+import { resolveBusyBotName, resolveComputerControl, toComputerStatus } from "./computer-status.js";
 import type { RouterDeps } from "./router.js";
 import { computerContext } from "./routes/shared.js";
 
@@ -74,16 +74,16 @@ export async function computerStatus(
   if (await expireStaleComputerControl(deps, bot.computer)) {
     bot = await repos.getBot(actor, botId);
   }
-  const [busyBotName, shared, controllerName] = await Promise.all([
+  const [busyBotName, shared, control] = await Promise.all([
     resolveBusyBotName(deps.prisma, {
       computerId: bot.computer?.id,
       botId,
       botName: bot.name,
     }),
     spaceIsShared(deps.prisma, actor.spaceId),
-    resolveControllerName(deps.prisma, bot.computer, actor.userId),
+    resolveComputerControl(deps.prisma, bot.computer, actor.userId),
   ]);
-  return toComputerStatus(botId, bot.computer, busyBotName, shared, actor.userId, controllerName);
+  return toComputerStatus(botId, bot.computer, busyBotName, shared, actor.userId, control);
 }
 
 /** Whether this person holds this bot's user control, so they may drive its screen. */

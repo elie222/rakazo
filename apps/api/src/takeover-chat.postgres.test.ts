@@ -497,6 +497,30 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("names the bot an unopened request belongs to, so another bot's screen leaves it", async () => {
+    const fixture = await setup("unopened");
+    const other = await system.bot.create({
+      data: {
+        spaceId: fixture.actor.spaceId,
+        userId: fixture.actor.userId,
+        name: "Other fixture",
+        color: "test",
+        computerId: fixture.computer.id,
+      },
+    });
+    const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+      new Request("http://127.0.0.1/rpc/computer/status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: other.id } }),
+      }),
+      { prefix: "/rpc", context: { actor: fixture.actor } },
+    );
+    expect(await response?.json()).toMatchObject({
+      json: { takeoverRequested: true, controlHolder: "none", controlBotId: fixture.bot.id },
+    });
+  });
+
   it("releases an unopened takeover and restores tools for the steered continuation", async () => {
     const fixture = await setup("unopened");
     expect(await fixture.control()).toMatchObject({

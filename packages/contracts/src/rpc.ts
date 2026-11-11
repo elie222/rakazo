@@ -864,10 +864,7 @@ export const appContract = {
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
-    heartbeat: oc
-      // Set while the full screen is open and visible, which keeps the viewer's control.
-      .input(botId.extend({ holdingControl: z.boolean().optional() }))
-      .output(z.object({ ok: z.literal(true) })),
+    heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {
     list: oc

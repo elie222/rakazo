@@ -7,7 +7,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { spaceIsShared } from "@rakazo/db";
-import { resolveBusyBotName, resolveControllerName, toComputerStatus } from "./computer-status.js";
+import { resolveBusyBotName, resolveComputerControl, toComputerStatus } from "./computer-status.js";
 import { THREAD_MESSAGE_PAGE_SIZE } from "./routes/shared.js";
 import { loadMessagePage } from "./thread-message-pages.js";
 import type { ThreadTarget } from "./thread-target.js";
@@ -22,13 +22,13 @@ export async function threadSnapshot(
   // otherwise advance the client cursor past thread.message.created while the
   // ask message page still omits it — leaving waiting_input with no AskCard.
   if (target.kind === "bot") {
-    const [busyBotName, controllerName, core] = await Promise.all([
+    const [busyBotName, control, core] = await Promise.all([
       resolveBusyBotName(deps.prisma, {
         computerId: target.bot.computer?.id,
         botId: target.botId,
         botName: target.bot.name,
       }),
-      resolveControllerName(deps.prisma, target.bot.computer, viewerId),
+      resolveComputerControl(deps.prisma, target.bot.computer, viewerId),
       deps.prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
@@ -125,7 +125,7 @@ export async function threadSnapshot(
         busyBotName,
         core.shared,
         viewerId,
-        controllerName,
+        control,
       ),
     };
   }

@@ -180,31 +180,15 @@ export default function Computer() {
     await refresh();
   }, [refresh]);
 
-  // The bot whose control this screen took and hands back when its window closes.
+  // The bot whose control this screen holds and hands back when its window closes.
   const heldControl = useRef<string | null>(null);
   const windowWasOpen = useRef(false);
-  const mounted = useRef(true);
-  const computerOpenRef = useRef(computerOpen);
-  computerOpenRef.current = computerOpen;
   const handBackControl = useCallback(() => {
     const held = heldControl.current;
     heldControl.current = null;
     if (held) void rpc("computer/release", { botId: held }).catch(() => undefined);
   }, []);
-  /** Records a grant; one that lands after its window closed is handed straight back. */
-  function noteControl(id: string, answersBot: boolean, needsOpenWindow: boolean) {
-    // A bot waiting on the user keeps its takeover until I'm done or Skip.
-    if (answersBot) return;
-    heldControl.current = id;
-    if (!mounted.current || (needsOpenWindow && !computerOpenRef.current)) handBackControl();
-  }
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      handBackControl();
-    };
-  }, [handBackControl]);
+  useEffect(() => handBackControl, [handBackControl]);
 
   useEffect(() => {
     handBackControl();
@@ -346,24 +330,20 @@ export default function Computer() {
     if (!botId || !foreground || computer?.state !== "running") return;
     // A refused heartbeat (403, 404, 426...) stops until the computer's state changes.
     const ping = () =>
-      void rpc("computer/heartbeat", { botId, holdingControl: computerOpen }).catch(
-        (error: unknown) => {
-          if (!isRetryableError(error)) clearInterval(timer);
-        },
-      );
+      void rpc("computer/heartbeat", { botId }).catch((error: unknown) => {
+        if (!isRetryableError(error)) clearInterval(timer);
+      });
     const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
     ping();
     return () => clearInterval(timer);
-  }, [botId, computer?.state, foreground, computerOpen]);
+  }, [botId, computer?.state, foreground]);
 
   /** Open the full window, which takes control whenever no one else is using it. */
   async function openComputer() {
     if (!botId) return;
-    const answersBot = computer?.takeoverRequested === true;
     try {
       const opened = await bootComputer({
         takeControl: mayTakeControl(computer, botId),
-        onControl: () => noteControl(botId, answersBot, false),
         showProgress: computer?.state !== "running",
         force: computer?.state !== "running",
       });
@@ -388,14 +368,9 @@ export default function Computer() {
     mayTakeControl(computer, botId);
   const takingControl = useRef(false);
   useEffect(() => {
-    if (!shouldTakeControl || takingControl.current || !botId) return;
+    if (!shouldTakeControl || takingControl.current) return;
     takingControl.current = true;
-    const answersBot = computer?.takeoverRequested === true;
-    void bootComputer({
-      takeControl: true,
-      showProgress: false,
-      onControl: () => noteControl(botId, answersBot, true),
-    })
+    void bootComputer({ takeControl: true, showProgress: false })
       .catch(() => undefined)
       .finally(() => {
         takingControl.current = false;

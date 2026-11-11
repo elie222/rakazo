@@ -658,18 +658,11 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        // A bot waiting on the user keeps its takeover until I'm done or Skip.
-        const answersBot = computerRef.current?.takeoverRequested === true;
         takeoverInFlight.current = true;
         try {
           await rpc.computer.takeover({ botId: targetBotId });
         } finally {
           takeoverInFlight.current = false;
-        }
-        if (!answersBot) {
-          heldControl.current = targetBotId;
-          // The window may have closed while the grant was on its way.
-          if (!computerOpenRef.current) handBackControl();
         }
         if (!stillThisBoot() || !stillThisBot()) return;
       }
@@ -779,11 +772,9 @@ export function useComputerControls({
     // A computer panel left open in a hidden window must not keep the computer awake.
     const ping = () => {
       if (document.visibilityState !== "visible") return;
-      void rpc.computer
-        .heartbeat({ botId: heartbeatBotId, holdingControl: computerOpen })
-        .catch((error) => {
-          if (!isRetryableError(error)) window.clearInterval(timer);
-        });
+      void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch((error) => {
+        if (!isRetryableError(error)) window.clearInterval(timer);
+      });
     };
     const timer = window.setInterval(ping, 60_000);
     ping();

@@ -76,7 +76,7 @@ export function computerTakeoverBlocked(
   return isActive(runStatus as RunStatus);
 }
 
-/** Whether opening this bot's computer takes control: no one else and no run is using it. */
+/** Whether opening this bot's computer takes control: no one else, no run and no other bot's request is using it. */
 export function mayTakeControl(
   computer: ComputerStatus | null | undefined,
   botId: string | undefined,
@@ -88,6 +88,8 @@ export function mayTakeControl(
       computer.kind !== "desktop" &&
       !computer.controlledByOther &&
       !userHoldsComputerControl(computer, botId) &&
+      // Taking control would skip another bot's request for help.
+      !(computer.takeoverRequested && computer.controlBotId !== botId) &&
       !computerTakeoverBlocked(computer, runStatus),
   );
 }
@@ -124,7 +126,7 @@ export function reduceComputerStatus(
       ...prev,
       busyBotName: null,
       takeoverRequested: true,
-      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: event.botId }),
     };
     return prev.busyBotName === next.busyBotName &&
       prev.takeoverRequested === next.takeoverRequested &&

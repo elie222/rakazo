@@ -56,16 +56,39 @@ export async function resolveBusyBotName(
     : null;
 }
 
-/** The name of the person in control, when it is not the viewer. */
-export async function resolveControllerName(
+export type ComputerControlView = {
+  /** The person in control, when it is not the viewer. */
+  controllerName?: string | null;
+  /** The bot whose request for help the user has not opened yet. */
+  requestBotId?: string | null;
+};
+
+/** Who the computer's control belongs to, beyond what its row says. */
+export async function resolveComputerControl(
   prisma: PrismaClient,
-  computer: { controlHolder: string; controlUserId?: string | null } | null | undefined,
+  computer:
+    | {
+        controlHolder: string;
+        controlBotId?: string | null;
+        controlRunId?: string | null;
+        controlUserId?: string | null;
+        userId?: string | null;
+      }
+    | null
+    | undefined,
   viewerId: string | undefined,
-): Promise<string | null> {
-  const userId = computer?.controlHolder === "user" ? computer.controlUserId : null;
-  if (!viewerId || !userId || userId === viewerId) return null;
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-  return user?.name || null;
+): Promise<ComputerControlView> {
+  // A lease from before holders were recorded belongs to the person the computer is kept for.
+  const userId =
+    computer?.controlHolder === "user" ? computer.controlUserId || computer.userId : null;
+  const runId = computer?.controlBotId ? null : computer?.controlRunId;
+  const [user, run] = await Promise.all([
+    viewerId && userId && userId !== viewerId
+      ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
+      : null,
+    runId ? prisma.run.findUnique({ where: { id: runId }, select: { botId: true } }) : null,
+  ]);
+  return { controllerName: user?.name || null, requestBotId: run?.botId ?? null };
 }
 
 export function toComputerStatus(
@@ -88,7 +111,7 @@ export function toComputerStatus(
   busyBotName: string | null = null,
   shared = false,
   viewerId?: string,
-  controllerName: string | null = null,
+  control: ComputerControlView = {},
 ): ComputerStatus {
   const controlledByOther = Boolean(
     viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
@@ -120,12 +143,14 @@ export function toComputerStatus(
     botId,
     ...(shared ? { shared } : {}),
     ...(controlledByOther ? { controlledByOther } : {}),
-    ...(controlledByOther && controllerName ? { controlledByName: controllerName } : {}),
+    ...(controlledByOther && control.controllerName
+      ? { controlledByName: control.controllerName }
+      : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
-    controlBotId: computer?.controlBotId ?? null,
+    controlBotId: computer?.controlBotId ?? control.requestBotId ?? null,
     takeoverRequested: Boolean(computer?.controlRunId),
     screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
     screenWidth: screen.width,

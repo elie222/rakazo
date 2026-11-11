@@ -201,6 +201,8 @@ export function mayTakeControl(computer: ComputerStatus | null, botId?: string):
       computer.kind !== "desktop" &&
       !computer.controlledByOther &&
       !computer.busyBotName &&
+      // Taking control would skip another bot's request for help.
+      !(computer.takeoverRequested && computer.controlBotId !== botId) &&
       !holdsControl(computer, botId),
   );
 }

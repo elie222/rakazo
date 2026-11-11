@@ -878,22 +878,6 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       botId: bot.id,
     });
     expect(ownerStatus.json).not.toHaveProperty("controlledByOther");
-    // An open screen keeps its holder in control; watching it does not.
-    const leaseEnd = async () =>
-      (
-        await system.computer.findUniqueOrThrow({ where: { id: computer.id } })
-      ).controlLeaseExpiresAt!.getTime();
-    const before = await leaseEnd();
-    await call(asInvitee, "computer/heartbeat", { botId: bot.id, holdingControl: true });
-    expect(await leaseEnd()).toBe(before);
-    // A preview left on screen does not keep it either.
-    await call(inSpace(owner.actor, home), "computer/heartbeat", { botId: bot.id });
-    expect(await leaseEnd()).toBe(before);
-    await call(inSpace(owner.actor, home), "computer/heartbeat", {
-      botId: bot.id,
-      holdingControl: true,
-    });
-    expect(await leaseEnd()).toBeGreaterThan(before);
     await expect(call(asInvitee, "computer/takeover", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });
@@ -919,6 +903,9 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     ).resolves.toMatchObject({ controlHolder: "user", controlUserId: owner.id });
     // A lease from before holders were recorded belongs to the person the computer is kept for.
     await system.computer.update({ where: { id: computer.id }, data: { controlUserId: null } });
+    await expect(call(asInvitee, "computer/status", { botId: bot.id })).resolves.toMatchObject({
+      json: { controlledByOther: true, controlledByName: "owner" },
+    });
     await expect(
       call(asInvitee, "computer/input", { botId: bot.id, kind: "key", payload: { key: "a" } }),
     ).resolves.toMatchObject({ status: 403 });

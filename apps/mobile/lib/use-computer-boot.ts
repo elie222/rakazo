@@ -41,13 +41,10 @@ export function useComputerBoot(botId: string | undefined) {
     takeControl,
     showProgress,
     force = false,
-    onControl,
   }: {
     takeControl: boolean;
     showProgress: boolean;
     force?: boolean;
-    /** Called as soon as control is granted, even if this screen has gone since. */
-    onControl?: () => void;
   }) {
     if (!botId || !refreshController.isActive()) return false;
     const action = refreshController.beginAction();
@@ -77,10 +74,7 @@ export function useComputerBoot(botId: string | undefined) {
       }
       starting = false;
       if (!action.isActive()) return false;
-      if (takeControl) {
-        await rpc("computer/takeover", { botId });
-        onControl?.();
-      }
+      if (takeControl) await rpc("computer/takeover", { botId });
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
       if (!action.isActive()) return false;
