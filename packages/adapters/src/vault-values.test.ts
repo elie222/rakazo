@@ -1052,6 +1052,52 @@ describe("moving vault values to the envelope keys", () => {
     expect(versionOf("old")).toBe(2);
   });
 
+  /** Both items of a vault, in the previous format to encrypt or under an older version to reencrypt. */
+  async function twoItems(mode: "encrypt" | "reencrypt") {
+    const db = encryptedDatabase();
+    await save(db, login, loginValue());
+    await save(db, card, JSON.stringify(fakeCard));
+    if (mode === "reencrypt") {
+      await db.migrate();
+      await db.ring.rotate("user:user-1");
+    }
+    const versions = () =>
+      ["site", "visa"]
+        .map((name) => ciphertextKeyId(row(db, name).ciphertext))
+        .map((id) => db.keys.find((key) => key.id === id)?.version)
+        .sort();
+    return { db, versions };
+  }
+
+  it.each([
+    ["encrypt", [1, 2]],
+    ["reencrypt", [2, 3]],
+  ] as const)(
+    "%s moves a later item to a version another process rotated to during the run",
+    async (mode, expected) => {
+      const { db, versions } = await twoItems(mode);
+      const other = db.otherProcess();
+      const write = db.prisma.vaultCredential.updateMany as unknown as Mock;
+      const real = write.getMockImplementation()!;
+      write.mockImplementationOnce(async (args) => {
+        const result = await real(args);
+        await other.ring.rotate("user:user-1");
+        return result;
+      });
+      expect(await db.migrate(mode)).toMatchObject({ migrated: 2 });
+      expect(versions()).toEqual(expected);
+    },
+  );
+
+  it.each(["encrypt", "reencrypt"] as const)(
+    "%s fails only the item whose vault keys could not be read once",
+    async (mode) => {
+      const { db } = await twoItems(mode);
+      vi.spyOn(db.ring, "allFresh").mockRejectedValueOnce(new Error("database unavailable"));
+      expect(await db.migrate(mode)).toMatchObject({ migrated: 1, failed: 1 });
+    },
+  );
+
   it("reports a key manager outage, not a missing key, for a version another process created", async () => {
     const { db, other } = await cachedElsewhere();
     await rotateVaultKeys(db.prisma);

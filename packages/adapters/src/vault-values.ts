@@ -1,6 +1,6 @@
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { withAbort } from "@rakazo/core";
-import type { ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
+import type { ContentLocation, PrismaClient } from "@rakazo/db";
 import {
   CIPHERTEXT_PREFIX,
   ContentDecryptionError,
@@ -144,21 +144,12 @@ export async function migrateVaultValues(
     failed: 0,
     notMigrated: 0,
   };
-  // Each vault's keys, read from the store once per batch rather than from this process's cache:
-  // another process may have rotated a vault since, and items must move to its newest version.
-  const fresh = new Map<string, Promise<DataKey[]>>();
-  const keysOf = (scope: string) => {
-    let keys = fresh.get(scope);
-    if (!keys) {
-      keys = ringOf(prisma).allFresh(scope);
-      fresh.set(scope, keys);
-    }
-    return interruptible(keys, context.signal);
-  };
+  // A vault's keys, read from the store for each item rather than from this process's cache:
+  // another process may have rotated the vault since, and items must move to its newest version.
+  const keysOf = (scope: string) => interruptible(ringOf(prisma).allFresh(scope), context.signal);
   let cursor = "";
   while (true) {
     context.signal.throwIfAborted();
-    fresh.clear();
     const batch = await prisma.vaultCredential.findMany({
       where: { id: { gt: cursor } },
       orderBy: { id: "asc" },
@@ -192,12 +183,7 @@ export async function migrateVaultValues(
       let status: "migrated" | "concurrent" | "failed";
       try {
         const scope = keyScope(row);
-        let newest = options.mode === "reencrypt" ? (await keysOf(scope)).at(-1) : undefined;
-        if (keyId && keyId === newest?.id) {
-          // Read again before calling it current: a rotation since the batch began must move it.
-          fresh.delete(scope);
-          newest = (await keysOf(scope)).at(-1);
-        }
+        const newest = options.mode === "reencrypt" ? (await keysOf(scope)).at(-1) : undefined;
         if (keyId && (options.mode === "encrypt" || keyId === newest?.id)) {
           // Already under its vault's key (its newest, to re-encrypt): read, never rewritten, so
           // an unreadable item is reported.
