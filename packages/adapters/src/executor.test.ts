@@ -4623,11 +4623,11 @@ describe("ticket board tool capability", () => {
     const routine = names("routine");
     const silent = names("silent_routine");
     // Agent connections are offered on their own; offersAgentConnectionTools covers them.
-    for (const name of ["message_bot", "handoff_to_bot", "generate_image"]) {
+    for (const name of ["message_bot", "generate_image"]) {
       expect(routine).toContain(name);
       expect(silent).toContain(name);
     }
-    for (const name of ["message_user", "call_user", "generate_video"]) {
+    for (const name of ["message_user", "call_user", "handoff_to_bot", "generate_video"]) {
       expect(routine).toContain(name);
       expect(silent).not.toContain(name);
     }

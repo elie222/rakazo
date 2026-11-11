@@ -347,6 +347,7 @@ async function prepareChildRoutine(
   if (!child.thread) return refuse("That bot has no thread.");
 
   const when = formatTime(resolved.nextRunAt, timezone);
+  const silent = args.silent === true;
   return {
     ok: true,
     canonical: {
@@ -356,6 +357,7 @@ async function prepareChildRoutine(
       name,
       prompt,
       timezone,
+      ...(silent ? { silent: true } : {}),
       // A zone the bot did not name is the account's, re-read when the approved routine
       // is created, so a zone change between approval and creation does not strand the
       // routine in the old zone.
@@ -378,6 +380,7 @@ async function prepareChildRoutine(
           ? `Runs at ${when}`
           : `Repeats ${singleLine(resolved.cron)}, next at ${when}`,
         `Prompt: ${prompt}`,
+        ...(silent ? ["Silent: its runs post nothing in the chat"] : []),
       ],
     },
   };
@@ -1003,6 +1006,7 @@ export async function createChildRoutine(
   const prompt = text(canonical.prompt);
   const timezone = text(canonical.timezone) ?? "UTC";
   const schedule = asRecord(canonical.schedule);
+  const silent = canonical.silent === true;
   if (!name || !prompt || !schedule) return { error: "The approved routine is incomplete." };
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
@@ -1029,6 +1033,7 @@ export async function createChildRoutine(
       prompt,
       timezone: replayTimezone,
       crons: { equals: [cron] },
+      silent,
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
     },
@@ -1056,6 +1061,7 @@ export async function createChildRoutine(
     prompt,
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
+    silent,
   });
   return "error" in created ? created : { ...created, ...target };
 }
