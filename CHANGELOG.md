@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- In the desktop app's **This computer** mode, bots can see and use Mac and Windows apps when **Let bots use this computer** is enabled. Screen access is limited to owner-started chats and asks for approval on the first use of each app in a Space ([computer](docs/computer.md)).
 - See subscription allowances, reset times and remaining credits in the account menu and Settings > Usage, with the same breakdown on the mobile account screen.
 - Voice connections can reuse a supported model sign-in for speech and transcription instead of requiring another key ([voice and calls](docs/voice-and-calls.md)).
 - Added another optional remote computer adapter with suspend and resume support ([computer providers](docs/self-host-sandbox-providers.md#instabox-computers)).
@@ -24,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Deleting a bot on web or desktop names the group chats that will also be deleted, including their messages, files and pages.
 - Bots retain earlier conversation by token budget rather than stopping at eight exchanges, helping them follow decisions made earlier in a chat. Longer retained history can use more input tokens.
 - Bots receive a description of their Docker computer's tools and limits before starting work, and can offer the computer card when you need to see or scan its screen.
 - Admin-granted credit now includes computer hours for organizations without a monthly plan; purchased top-ups remain unchanged.
