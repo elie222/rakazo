@@ -1651,16 +1651,23 @@ describe("shared Linux desktop lifecycle", () => {
   it.skipIf(process.platform !== "linux")(
     "accepts a file chooser that execs between process checks",
     async () => {
-      const { bin, screenEnv, run, relocate, cleanup } = await portalScreenFixture();
+      const { bin, libexec, screenEnv, run, relocate, cleanup } = await portalScreenFixture();
       // The first executable read sees nohup; the next sees the portal after exec.
       writeFileSync(
         path.join(bin, "readlink"),
         [
           "#!/bin/bash",
           'target=$(/usr/bin/readlink "$@") || exit 1',
-          'case "$target" in',
-          "  */xdg-desktop-portal-gtk)",
-          '    if [ ! -f "$0.seen" ]; then',
+          'case "$1" in',
+          "  /proc/*/exe)",
+          '    proc_dir=$(dirname "$1")',
+          `    if [ ! -f "$0.seen" ] && tr '\\0' '\\n' < "$proc_dir/cmdline" 2>/dev/null | grep -Fx -- ${shellQuote(path.join(libexec, "xdg-desktop-portal-gtk"))} >/dev/null; then`,
+          "      for i in $(seq 1 100); do",
+          '        target=$(/usr/bin/readlink "$@") || exit 1',
+          '        case "$target" in */xdg-desktop-portal-gtk) break ;; esac',
+          "        sleep 0.01",
+          "      done",
+          '      case "$target" in */xdg-desktop-portal-gtk) ;; *) exit 1 ;; esac',
           '      touch "$0.seen"',
           "      printf '/usr/bin/nohup\\n'",
           "      exit 0",
@@ -1673,6 +1680,7 @@ describe("shared Linux desktop lifecycle", () => {
       chmodSync(path.join(bin, "readlink"), 0o755);
       try {
         const result = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(existsSync(path.join(bin, "readlink.seen"))).toBe(true);
         expect(result.status, result.stderr).toBe(0);
       } finally {
         cleanup();
