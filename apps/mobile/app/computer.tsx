@@ -188,6 +188,8 @@ export default function Computer() {
 
   // The bot whose control this screen holds and hands back when its window closes.
   const heldControl = useRef<string | null>(null);
+  const computerOpenRef = useRef(computerOpen);
+  computerOpenRef.current = computerOpen;
   const windowWasOpen = useRef(false);
   const handBackControl = useCallback(() => {
     const held = heldControl.current;
@@ -335,10 +337,14 @@ export default function Computer() {
   useEffect(() => {
     if (!botId || !foreground || computer?.state !== "running") return;
     // A refused heartbeat (403, 404, 426...) stops until the computer's state changes.
-    const ping = () =>
+    const ping = () => {
       void rpc("computer/heartbeat", { botId }).catch((error: unknown) => {
         if (!isRetryableError(error)) clearInterval(timer);
       });
+      // Another bot's run or another person's control changes elsewhere; the open window reads
+      // its status now and then to notice.
+      if (computerOpenRef.current) void refresh().catch(() => undefined);
+    };
     const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
     ping();
     return () => clearInterval(timer);
@@ -384,8 +390,21 @@ export default function Computer() {
   useEffect(() => {
     if (!computerFree || !computer || askedForControlOn.current === computer) return;
     askedForControlOn.current = computer;
-    void bootComputer({ takeControl: true, showProgress: false }).catch(() => {
+    const id = botId;
+    // A bot waiting on the user keeps its request until I'm done or Skip.
+    const answersBot = computer.takeoverRequested;
+    void bootComputer({
+      takeControl: true,
+      showProgress: false,
+      onControl: () => {
+        if (answersBot || !id) return;
+        heldControl.current = id;
+        // The window may have closed while the grant was on its way.
+        if (!computerOpenRef.current) handBackControl();
+      },
+    }).catch(() => {
       controlAskFailed.current = true;
+      askedForControlOn.current = null;
     });
   }, [computerFree, computer]);
 
@@ -795,11 +814,13 @@ function ComputerControlPill({
   const label =
     user.by === "you"
       ? t`You’re in control`
-      : user.by === "bot"
-        ? t`${ph({ name: user.name })} is working`
-        : user.name
-          ? t`${ph({ name: user.name })} is in control`
-          : t`Someone else is in control`;
+      : user.by === "youWithBot"
+        ? t`You’re using it with ${ph({ name: user.name })}`
+        : user.by === "bot"
+          ? t`${ph({ name: user.name })} is working`
+          : user.name
+            ? t`${ph({ name: user.name })} is in control`
+            : t`Someone else is in control`;
   return (
     <View pointerEvents="box-none" style={styles.pillDock}>
       <GlassSurface

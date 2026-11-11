@@ -41,10 +41,13 @@ export function useComputerBoot(botId: string | undefined) {
     takeControl,
     showProgress,
     force = false,
+    onControl,
   }: {
     takeControl: boolean;
     showProgress: boolean;
     force?: boolean;
+    /** Called as soon as control is granted, before the status read that shows it. */
+    onControl?: () => void;
   }) {
     if (!botId || !refreshController.isActive()) return false;
     const action = refreshController.beginAction();
@@ -76,8 +79,9 @@ export function useComputerBoot(botId: string | undefined) {
       if (!action.isActive()) return false;
       // The server grants control only when no one else is using the computer; when it does not,
       // nothing changed and the status already shows who keeps it.
-      if (takeControl && !(await rpc("computer/takeover", { botId, ifAvailable: true }))) {
-        return false;
+      if (takeControl) {
+        if (!(await rpc("computer/takeover", { botId, ifAvailable: true }))) return false;
+        onControl?.();
       }
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });

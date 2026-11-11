@@ -23,11 +23,13 @@ export function ComputerControlPill({
   const label =
     user.by === "you"
       ? t`You’re in control`
-      : user.by === "bot"
-        ? t`${user.name} is working`
-        : user.name
-          ? t`${user.name} is in control`
-          : t`Someone else is in control`;
+      : user.by === "youWithBot"
+        ? t`You’re using it with ${user.name}`
+        : user.by === "bot"
+          ? t`${user.name} is working`
+          : user.name
+            ? t`${user.name} is in control`
+            : t`Someone else is in control`;
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
       <div

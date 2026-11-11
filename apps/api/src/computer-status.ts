@@ -4,6 +4,7 @@ import {
   computerSupportsUpdate,
   DISK_WARNING_PERCENT,
   diskUsedPercent,
+  hasActiveComputerControl,
   holdsUserControl,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
@@ -67,19 +68,38 @@ export type ComputerControlView = {
 };
 
 /**
- * The name of another bot on this computer that is working or waiting for the user, when taking
- * control for this bot would interrupt its run or skip its request for help.
+ * The name of another bot on this computer that holds its control, is working or is waiting for
+ * the user, when taking control for this bot would take it from that bot.
  */
 export async function resolveOtherBotUsingComputer(
   prisma: PrismaClient,
   computer:
-    | { id: string; scope: string; controlBotId?: string | null; controlRunId?: string | null }
+    | {
+        id: string;
+        scope: string;
+        controlHolder: string;
+        controlLeaseId: string | null;
+        controlLeaseExpiresAt: Date | null;
+        controlBotId?: string | null;
+        controlRunId?: string | null;
+      }
     | null
     | undefined,
   botId: string,
 ): Promise<string | null> {
   // Only a team computer is shared between bots.
   if (computer?.scope !== "team") return null;
+  if (
+    hasActiveComputerControl(computer) &&
+    computer.controlBotId &&
+    computer.controlBotId !== botId
+  ) {
+    const holder = await prisma.bot.findUnique({
+      where: { id: computer.controlBotId },
+      select: { name: true },
+    });
+    if (holder) return holder.name;
+  }
   const runIds = (
     await prisma.computerExecutionLease.findMany({
       where: { computerId: computer.id, botId: { not: botId } },

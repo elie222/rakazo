@@ -49,4 +49,14 @@ describe("computerControlUser", () => {
     });
     expect(computerControlUser(running(), "bot-1", null)).toBeNull();
   });
+
+  it("says when the viewer already holds the computer through another bot", () => {
+    expect(
+      computerControlUser(
+        running({ controlHolder: "user", controlBotId: "bot-2", otherBotName: "Basil" }),
+        "bot-1",
+        null,
+      ),
+    ).toEqual({ by: "youWithBot", name: "Basil" });
+  });
 });

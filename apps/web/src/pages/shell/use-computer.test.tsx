@@ -615,6 +615,12 @@ it("asks whenever the status says the computer is free, and hands control back o
   await act(async () => state.commitComputer({ ...free }));
   expect(state.computerError).toBeNull();
   expect(takeover).toHaveBeenCalledTimes(5);
+  // Retry clears the error, which asks again on the same status.
+  takeover.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => state.commitComputer({ ...free }));
+  expect(takeover).toHaveBeenCalledTimes(6);
+  await act(async () => state.setComputerError(null));
+  expect(takeover).toHaveBeenCalledTimes(7);
 
   await act(async () => state.commitComputer({ ...held }));
   await act(async () => state.setComputerOpen(false));

@@ -335,6 +335,56 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     },
   );
 
+  it("leaves the computer to another bot whose run claims it just before the grant", async () => {
+    const fixture = await setup("opened");
+    await system.computer.update({
+      where: { id: fixture.computer.id },
+      data: {
+        controlHolder: "none",
+        controlBotId: null,
+        controlRunId: null,
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+      },
+    });
+    const other = await system.bot.create({
+      data: {
+        spaceId: fixture.actor.spaceId,
+        userId: fixture.actor.userId,
+        name: "Other fixture",
+        color: "test",
+        computerId: fixture.computer.id,
+      },
+    });
+    // Every earlier check passed; the run's claim lands between them and the grant itself.
+    const claim = async () => {
+      await system.run.update({ where: { id: fixture.run.id }, data: { status: "running" } });
+      await system.computerExecutionLease.upsert({
+        where: { computerId_botId: { computerId: fixture.computer.id, botId: fixture.bot.id } },
+        create: {
+          computerId: fixture.computer.id,
+          botId: fixture.bot.id,
+          runId: fixture.run.id,
+          fence: 1,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        update: { runId: fixture.run.id, expiresAt: new Date(Date.now() + 60_000) },
+      });
+    };
+    const { response } = await new RPCHandler(
+      createRouter({ ...fixture.deps, prisma: beforeRawGrant(prisma, claim) }),
+    ).handle(
+      new Request("http://127.0.0.1/rpc/computer/takeover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: other.id, ifAvailable: true } }),
+      }),
+      { prefix: "/rpc", context: { actor: fixture.actor } },
+    );
+    expect(await response?.json()).toMatchObject({ json: null });
+    expect(await fixture.control()).toMatchObject({ controlHolder: "none", controlLeaseId: null });
+  });
+
   it.each(["waiting", "pause-during-revoke", "pause-after-handoff"] as const)(
     "skips the previous bot's takeover on a shared screen (%s)",
     async (timing) => {
@@ -1327,6 +1377,24 @@ function beforeUserGrant(prisma: PrismaClient, before: () => Promise<unknown>): 
       if (key === "computer") return computer;
       const value = Reflect.get(client, key, client);
       return typeof value === "function" ? value.bind(client) : value;
+    },
+  });
+}
+
+/** Runs `before` once, just before the conditional grant's own statement. */
+function beforeRawGrant(prisma: PrismaClient, before: () => Promise<unknown>): PrismaClient {
+  let pending = true;
+  return new Proxy(prisma, {
+    get(client, key) {
+      const value = Reflect.get(client, key, client);
+      if (key !== "$executeRaw") return typeof value === "function" ? value.bind(client) : value;
+      return async (...args: unknown[]) => {
+        if (pending) {
+          pending = false;
+          await before();
+        }
+        return (value as (...args: unknown[]) => unknown).apply(client, args);
+      };
     },
   });
 }

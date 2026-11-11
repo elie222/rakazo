@@ -662,7 +662,14 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
+        // A bot waiting on the user keeps its request until I'm done or Skip.
+        const answersBot = computerRef.current?.takeoverRequested === true;
         const granted = await rpc.computer.takeover({ botId: targetBotId, ifAvailable: true });
+        if (granted && !answersBot) {
+          heldControl.current = targetBotId;
+          // The window may have closed while the grant was on its way.
+          if (!computerOpenRef.current) handBackControl();
+        }
         // Nothing changed, so the status already shows who keeps the computer.
         if (!granted || !stillThisBoot() || !stillThisBot()) return;
       }
@@ -778,10 +785,13 @@ export function useComputerControls({
       // Another bot's run or another person's control changes on other threads; the open
       // window reads its status now and then to notice.
       if (computerOpenRef.current) {
+        const before = computerRef.current;
         void rpc.computer
           .status({ botId: heartbeatBotId })
           .then((status) => {
-            if (computerBotIdRef.current !== heartbeatBotId) return;
+            // A control event or another read that landed meanwhile is newer than this answer.
+            if (computerBotIdRef.current !== heartbeatBotId || computerRef.current !== before)
+              return;
             commitComputer(status);
             cacheComputerFor(heartbeatBotId, { computer: status });
           })
@@ -913,6 +923,7 @@ export function useComputerControls({
       askedForControlOn.current = computer;
       void bootComputer({ botId, takeControl: true, showProgress: false }).catch(() => {
         controlAskFailed.current = true;
+        askedForControlOn.current = null;
       });
     };
     ask();

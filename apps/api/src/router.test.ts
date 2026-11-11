@@ -4427,7 +4427,10 @@ describe("computer terminal and file transfer", () => {
         }),
       },
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      computerExecutionLease: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
     } as unknown as PrismaClient;
     const deps = {
       prisma,

@@ -47,6 +47,7 @@ import {
   expireComputerExecutionLeases,
   IsolationError,
   isRecordNotFound,
+  Prisma,
   parseComputerMode,
   recordComputerRunEnd,
 } from "@rakazo/db";
@@ -66,7 +67,7 @@ import {
   withViewOnly,
 } from "../computer-control.js";
 import { scrollPoint } from "../computer-input.js";
-import { executionBlocksUserTakeover, resolveOtherBotUsingComputer } from "../computer-status.js";
+import { executionBlocksUserTakeover } from "../computer-status.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -80,6 +81,7 @@ export function computerRoutes(ctx: RouterContext) {
   async function grantTakeover(
     actor: Actor,
     botId: string,
+    ifAvailable = false,
   ): Promise<{ leaseId: string; expiresAt: string }> {
     let bot = await repos.getBot(actor, botId);
     if (!bot.computer?.providerRef || bot.computer.state !== "running") {
@@ -107,6 +109,8 @@ export function computerRoutes(ctx: RouterContext) {
       };
     }
     if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
+      // A window asking if the computer is free leaves control another bot holds where it is.
+      if (ifAvailable) throw new ORPCError("CONFLICT", { message: "Computer is busy" });
       await releaseComputerControl(deps, actor, bot.computer.controlBotId!, "skipped");
       bot = await repos.getBot(actor, botId);
       if (!bot.computer) throw new IsolationError();
@@ -157,24 +161,52 @@ export function computerRoutes(ctx: RouterContext) {
 
     const leaseId = randomUUID();
     const expiresAt = new Date(Date.now() + takeoverLeaseMs());
-    const granted = await deps.prisma.computer.updateMany({
-      where: {
-        id: bot.computer.id,
-        state: "running",
-        maintenanceId: null,
-        controlHolder: { not: "user" },
-        controlLeaseId: null,
-      },
-      data: {
-        controlHolder: "user",
-        controlLeaseId: leaseId,
-        controlLeaseExpiresAt: expiresAt,
-        controlBotId: bot.id,
-        controlRunId: waitingForTakeover ? executionLease?.runId : null,
-        controlUserId: actor.userId,
-        state: "running",
-      },
-    });
+    const controlRunId = waitingForTakeover ? (executionLease?.runId ?? null) : null;
+    const granted = ifAvailable
+      ? // The same statement leaves a computer another bot is working on or waiting with, so a
+        // run that claims it meanwhile cannot slip between the check and the grant.
+        {
+          count: await deps.prisma.$executeRaw`
+            UPDATE computers SET
+              "controlHolder" = 'user',
+              "controlLeaseId" = ${leaseId},
+              "controlLeaseExpiresAt" = ${expiresAt},
+              "controlBotId" = ${bot.id},
+              "controlRunId" = ${controlRunId},
+              "controlUserId" = ${actor.userId},
+              "updatedAt" = now()
+            WHERE id = ${bot.computer.id}
+              AND state = 'running'
+              AND "maintenanceId" IS NULL
+              AND "controlHolder" <> 'user'
+              AND "controlLeaseId" IS NULL
+              AND ("controlRunId" IS NULL OR "controlRunId" = ${controlRunId})
+              AND NOT EXISTS (
+                SELECT 1 FROM computer_execution_leases lease
+                JOIN runs run ON run.id = lease."runId"
+                WHERE lease."computerId" = computers.id
+                  AND run."botId" <> ${bot.id}
+                  AND run.status IN (${Prisma.join([...ACTIVE_RUN_STATUSES])})
+              )`,
+        }
+      : await deps.prisma.computer.updateMany({
+          where: {
+            id: bot.computer.id,
+            state: "running",
+            maintenanceId: null,
+            controlHolder: { not: "user" },
+            controlLeaseId: null,
+          },
+          data: {
+            controlHolder: "user",
+            controlLeaseId: leaseId,
+            controlLeaseExpiresAt: expiresAt,
+            controlBotId: bot.id,
+            controlRunId,
+            controlUserId: actor.userId,
+            state: "running",
+          },
+        });
     if (granted.count !== 1) {
       const current = await deps.prisma.computer.findUniqueOrThrow({
         where: { id: bot.computer.id },
@@ -513,20 +545,17 @@ export function computerRoutes(ctx: RouterContext) {
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
         if (!input.ifAvailable) return grantTakeover(context.actor, input.botId);
-        // The window asks for control as it opens; anyone else using the computer keeps it,
-        // and the window shows the screen read-only.
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (
-          !bot.computer?.providerRef ||
-          bot.computer.state !== "running" ||
-          (await resolveOtherBotUsingComputer(deps.prisma, bot.computer, bot.id))
-        ) {
-          return null;
-        }
+        // The window asks for control as it opens; anyone else using the computer, or a computer
+        // that is not running, keeps it, and the window shows the screen read-only.
         try {
-          return await grantTakeover(context.actor, input.botId);
+          return await grantTakeover(context.actor, input.botId, true);
         } catch (error) {
-          if (error instanceof ORPCError && error.code === "CONFLICT") return null;
+          if (
+            error instanceof ORPCError &&
+            (error.code === "CONFLICT" || error.code === "BAD_REQUEST")
+          ) {
+            return null;
+          }
           throw error;
         }
       }),
