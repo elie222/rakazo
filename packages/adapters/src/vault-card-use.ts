@@ -12,7 +12,8 @@ export type VaultCardUse = { card: string; site: string; title: string; savedAt:
 /**
  * A saved login that asks first, approved for one browser_act call: its `fields` on one of its
  * sites, as saved at `savedAt`. The approval card names it by `title`, never a username others
- * could read.
+ * could read, and says when the fields include its authenticator code (LOGIN_CODE_FIELD), which
+ * no approval without it covers.
  */
 export type VaultLoginUse = {
   kind: "login";
@@ -86,13 +87,21 @@ export function requestedLoginFills(actions: unknown): Map<string, string[]> {
   return fills;
 }
 
-/** The approval card for signing in with a saved login, named from what is saved. */
+/**
+ * The approval card for signing in with a saved login, named from what is saved. It is built from
+ * the approval a replay is held to, so allowing it lets the call type nothing the card left out:
+ * the one site it names, the login's fields, and its authenticator code only when it says so.
+ * It says what the call asks to type: whether the login has a key is in its value, which asking
+ * never reads, so a login without one types no code once allowed.
+ */
 export function loginUseSummary(use: VaultLoginUse): FleetCardSummary {
   const host = new URL(use.site).host;
   return {
     onceOnly: true,
     title: `Sign in to ${host} with ${use.title}?`,
-    lines: [],
+    lines: use.fields.includes(LOGIN_CODE_FIELD)
+      ? ["This types the login's authenticator code."]
+      : [],
   };
 }
 

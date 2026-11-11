@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { relabelVaultItem, storeBotSecret } from "./bot-secrets.js";
+import { buildApprovalAskBlock } from "./approval-ask.js";
+import { relabelVaultItem, resolveLoginFill, storeBotSecret } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { prepareToolRequest } from "./run-tool-request.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
+import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "./vault-card-use.js";
+
+// RFC 6238's test key, written in pieces so it never reads as a saved secret.
+const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
 
 function ownBotUpdateCall() {
   const ctx = {
@@ -413,4 +417,207 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       }
     },
   );
+
+  describe("what its card says, and what allowing it then lets the call type", () => {
+    const question = "Sign in to login.example.test with login.example.test?";
+    const typesCode = "This types the login's authenticator code.";
+    const other = "https://www.login.example.test";
+    const password = fill("work", "Password");
+    const code = { kind: "fill_code", ref: "e2", secret: "work" };
+    const notAllowed = "has not approved signing in with this login here";
+    type Db = Awaited<ReturnType<typeof setup>>["db"];
+
+    /** The `work` login, saved again as the row says, in the account vault or the Space's own. */
+    async function saved(login: {
+      policy?: "allow" | "ask" | "off";
+      key?: boolean;
+      ownVault?: boolean;
+      alsoOn?: string[];
+    }) {
+      const made = await setup();
+      if (login.ownVault) made.db.useOwnVault("space-1");
+      const save = (key = login.key) =>
+        storeBotSecret({
+          prisma: made.db.prisma,
+          secretStore,
+          scope: owner,
+          destination: { name: "work", origin: site, auth: { type: "login" } },
+          plaintext: JSON.stringify({
+            fields: [{ label: "Password", value: "fake-password-1", hidden: true }],
+            ...(key ? { otp: TEST_KEY } : {}),
+          }),
+          policy: login.policy ?? "ask",
+          alsoOn: login.alsoOn ?? [],
+        });
+      await save();
+      return { ...made, addKey: () => save(true) };
+    }
+
+    it.each<{
+      name: string;
+      login: Parameters<typeof saved>[0];
+      actions: object[];
+      /** Where the page is when the call is made, and when the answer is replayed. */
+      page?: string;
+      later?: string;
+      /** What the owner does between the card and the replay. */
+      meanwhile?: (made: { db: Db; addKey: () => Promise<unknown> }) => Promise<unknown>;
+      /** The card's detail under its question, or no card at all. */
+      card: string | undefined;
+      /** What the replay types of the password and of the code: a site, or why nothing. */
+      types: [string, string];
+    }>([
+      {
+        name: "the password of a login with no key",
+        login: {},
+        actions: [password],
+        card: "",
+        types: [site, notAllowed],
+      },
+      {
+        name: "the password and code of a login with no key",
+        login: {},
+        actions: [password, code],
+        card: typesCode,
+        types: [site, "no authenticator key"],
+      },
+      {
+        name: "the password alone of a login with a key",
+        login: { key: true },
+        actions: [password],
+        card: "",
+        types: [site, notAllowed],
+      },
+      {
+        name: "the password and code of a login with a key",
+        login: { key: true },
+        actions: [password, code],
+        card: typesCode,
+        types: [site, site],
+      },
+      {
+        name: "the code alone, with no approval before it",
+        login: { key: true },
+        actions: [code],
+        card: typesCode,
+        types: [notAllowed, site],
+      },
+      {
+        name: "a password allowed before the owner adds a key",
+        login: {},
+        actions: [password],
+        meanwhile: ({ addKey }) => addKey(),
+        card: "",
+        types: ["changed after the user approved it", notAllowed],
+      },
+      {
+        name: "a sign-in allowed on one site, replayed with the page on another of its sites",
+        login: { key: true, alsoOn: [other] },
+        actions: [password, code],
+        later: `${other}/login`,
+        card: typesCode,
+        types: [site, site],
+      },
+      {
+        name: "a sign-in allowed on a site the owner then takes off the login",
+        login: { key: true, alsoOn: [other] },
+        actions: [password, code],
+        page: `${other}/login`,
+        meanwhile: ({ db }) => relabelVaultItem(db.prisma, owner, "work", { alsoOn: [] }),
+        card: typesCode,
+        types: [notAllowed, notAllowed],
+      },
+      {
+        name: "a login in the Space's own vault",
+        login: { key: true, ownVault: true },
+        actions: [password, code],
+        card: typesCode,
+        types: [site, site],
+      },
+      {
+        name: "a login set to Allow, which asks nothing",
+        login: { policy: "allow", key: true },
+        actions: [password, code],
+        card: undefined,
+        types: [site, site],
+      },
+      {
+        name: "a login set to Block, which asks nothing and types nothing",
+        login: { policy: "off", key: true },
+        actions: [password, code],
+        card: undefined,
+        types: ["Login is unavailable", "Login is unavailable"],
+      },
+    ])("$name", async ({ login, actions, page, later, meanwhile, card, types }) => {
+      const made = await saved(login);
+      const run = made.ctx();
+      const asked = made.request({ actions });
+      expect(
+        await prepareToolRequest(
+          { ...run, state: { ...run.state, pageUrl: page } } as never,
+          asked,
+        ),
+      ).toBeUndefined();
+      // The card as every app gets it: one block, built from what the answer will be kept as.
+      const block =
+        asked.fleetSummary &&
+        buildApprovalAskBlock("effect-1", "browser_act", asked.args, [], {
+          summary: asked.fleetSummary,
+        });
+      const host = new URL(page ?? site).host;
+      expect(block).toEqual(
+        card === undefined
+          ? undefined
+          : expect.objectContaining({
+              text: question.replace("Sign in to login.example.test", `Sign in to ${host}`),
+              detail: card,
+              detailFormat: "text",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "deny", label: "Deny" },
+              ],
+            }),
+      );
+      await meanwhile?.(made);
+      // The replay of the allowed call types only what its stored approval names.
+      const approval = vaultLoginUseOf(asked.args.loginApproval);
+      const typed = async (field: string) => {
+        const fill = await resolveLoginFill({
+          prisma: made.db.prisma,
+          secretStore,
+          scope: { ...owner, botId: "bot-1" },
+          runId: "run-1",
+          name: "work",
+          field,
+          ...(field === LOGIN_CODE_FIELD ? { code: true as const } : {}),
+          approval,
+          pageUrl: later ?? page,
+        });
+        return "error" in fill ? fill.error : fill.origin;
+      };
+      const [passwordTyped, codeTyped] = types;
+      expect(await typed("Password")).toContain(passwordTyped);
+      expect(await typed(LOGIN_CODE_FIELD)).toContain(codeTyped);
+    });
+
+    it("leaves the card for a saved card as it was", async () => {
+      const { ctx, request } = await setup();
+      const paying = request({
+        actions: [
+          {
+            kind: "fill_card",
+            card: "visa",
+            site: "https://shop.example.test",
+            field: "number",
+          },
+        ],
+      });
+      expect(await prepareToolRequest(ctx() as never, paying)).toBeUndefined();
+      expect(paying.fleetSummary).toEqual({
+        onceOnly: true,
+        title: "Pay with Visa ·· 4242 on shop.example.test?",
+        lines: [],
+      });
+    });
+  });
 });

@@ -398,6 +398,10 @@ describe("approving a saved login", () => {
       title: "Sign in to login.example.test with Work login?",
       lines: [],
     });
+    // The card says when the approval it is built from also covers the login's code.
+    expect(loginUseSummary({ ...use, fields: [...use.fields, LOGIN_CODE_FIELD] }).lines).toEqual([
+      "This types the login's authenticator code.",
+    ]);
     expect(vaultLoginUseOf(use)).toEqual(use);
     expect(vaultLoginUseOf({ ...use, account: "alice" })).toEqual(use);
     expect(vaultLoginUseOf({ ...use, site: "http://login.example.test" })).toBeUndefined();

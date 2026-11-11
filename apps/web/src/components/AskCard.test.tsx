@@ -505,6 +505,30 @@ it("shows a question's detail as plain text above its options", async () => {
   expect(button("ASend it")).toBeDefined();
 });
 
+it("shows what a sign-in approval types besides the login, above its two answers", async () => {
+  // The card as the server builds it for a login that asks first and types its code.
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Sign in to login.example.test with Work login?",
+    detail: "This types the login's authenticator code.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(container.textContent).toContain("Sign in to login.example.test with Work login?");
+  expect(container.querySelector('[data-testid="ask-detail"]')?.textContent).toBe(
+    "This types the login's authenticator code.",
+  );
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "Allow once",
+    "Deny",
+  ]);
+});
+
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
