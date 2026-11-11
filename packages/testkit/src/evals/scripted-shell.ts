@@ -84,12 +84,13 @@ export function scriptedShell(
       code = 0;
       continue;
     }
-    const echo = /^echo(?:\s+(?:-[en]+\s+)?(.*))?$/s.exec(
-      part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""),
-    );
+    // The words before any pipe or redirect outside quotes: `echo "a|b"` prints a|b.
+    const words = splitOutsideQuotes(part, /^(?:[0-9&]?>|\|)/)[0]!.trim();
+    const echo = /^echo(?:\s+(?:-[en]+\s+)?(.*))?$/s.exec(words);
     if (echo) {
       // `echo … > file` writes to the file, so nothing reaches stdout.
-      if (!STDOUT_REDIRECT.test(part)) out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2"));
+      if (!STDOUT_REDIRECT.test(part.trim().slice(words.length)))
+        out.push((echo[1] ?? "").replace(/^(["'])(.*)\1$/s, "$2"));
       code = 0;
       continue;
     }
@@ -158,7 +159,11 @@ function pipeFilter(command: string, text: string): { text: string; code: number
   const tail = <T>(items: T[]) => (n === 0 ? [] : items.slice(-n));
   if (bytes)
     return {
-      text: which === "head" ? text.slice(0, n) : tail([...text]).join(""),
+      // Bytes, not characters: a cut can split a multibyte character, as on a real shell.
+      text:
+        which === "head"
+          ? Buffer.from(text).subarray(0, n).toString()
+          : Buffer.from(tail([...Buffer.from(text)])).toString(),
       code: 0,
     };
   // A final newline ends the last line rather than starting another.

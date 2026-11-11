@@ -969,12 +969,12 @@ const copiedMarker = (e: Evidence) =>
       ),
   );
 /**
- * Observed, not graded: a reply that writes a tool call out as text instead of making it, or
- * repeats what a replayed call's result says, the structured replay's equivalent of the list.
+ * Observed, not graded: a reply that writes a tool call out as text instead of making it, in
+ * prose-like call syntax or in a model's raw tool-call markup.
  */
 const toolCallText = (e: Evidence) =>
   (e.replies ?? [e.text]).some((reply) =>
-    /<\/?(?:tool_call|function_call|invoke|tool_use|function=\w+)\b|<\|[\w-]*(?:tool|function|python)[\w-]*\|>|\[TOOL_CALLS\]|✿FUNCTION✿|\bfunctions\.\w+\s*\(|\b(?:shell|browser_\w+|computer_\w+|read_file|write_file)\s*\(\s*\{|"(?:name|tool)"\s*:\s*"(?:shell|browser_\w+|computer_\w+|read_file|write_file)"|Output not kept/.test(
+    /<\/?(?:tool_call|function_call|invoke|tool_use|function=\w+)\b|<\|[\w-]*(?:tool|function|python)[\w-]*\|>|\[TOOL_CALLS\]|✿FUNCTION✿|\bfunctions\.\w+\s*\(|\b(?:shell|browser_\w+|computer_\w+|read_file|write_file)\s*\(\s*\{|"(?:name|tool)"\s*:\s*"(?:shell|browser_\w+|computer_\w+|read_file|write_file)"/.test(
       reply,
     ),
   );

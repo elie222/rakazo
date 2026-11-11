@@ -66,6 +66,10 @@ describe("scripted eval shell", () => {
     expect(scriptedShell(lines, "ls | tail -c 0")?.stdout).toBe("");
     const unended = { shell: [{ match: /\bls\b/, output: "a\nb" }], screen: script.screen };
     expect(scriptedShell(unended, "ls | head -1")?.stdout).toBe("a\n");
+    expect(scriptedShell(script, 'echo "a|b"; echo "x > y"')?.stdout).toBe("a|b\nx > y");
+    const accented = { shell: [{ match: /\bls\b/, output: "19 °C" }], screen: script.screen };
+    expect(scriptedShell(accented, "ls | head -c 4")?.stdout).toBe("19 \ufffd");
+    expect(scriptedShell(accented, "ls | tail -c 3")?.stdout).toBe("°C");
     expect(scriptedShell(unended, "ls | tail -1")?.stdout).toBe("b");
     // A `|` inside quotes, or escaped as basic-regex alternation, is not a pipe.
     expect(scriptedShell(script, 'df -h | grep -iE "nothing|free" | head -5')?.stdout).toBe(

@@ -291,7 +291,6 @@ describe("recall outcome grading", () => {
     for (const text of [
       'shell({"command": "uptime"})',
       '<tool_call>{"name": "shell", "arguments": {"command": "uptime"}}</tool_call>',
-      "Succeeded. Output not kept.",
       '<function=shell>{"command": "uptime"}</function>',
       '<|tool_call|>{"name": "shell"}',
       '[TOOL_CALLS] [{"name": "shell"}]',
