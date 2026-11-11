@@ -1234,9 +1234,9 @@ describe("browser_act fill_code with a saved login's authenticator key", () => {
     expect(repeat).not.toContain("request_secret");
     expect(used()).toHaveLength(1);
     expect(db.secrets()).toHaveLength(1);
-    // Two fills that both read the code as not yet typed: the one that loses the claim is told the
-    // same, never to ask the user.
-    vi.mocked(db.prisma.secret.findUnique).mockResolvedValue(null);
+    // A claim that found the code not yet typed, but whose row was written past the lock: the
+    // loser is told the same, never to ask the user.
+    vi.mocked(db.prisma.secret.findMany).mockResolvedValueOnce([]);
     const loser = await fill();
     expect(loser).toContain("This code was already typed in this run.");
     expect(loser).not.toContain("request_secret");
@@ -1302,10 +1302,13 @@ describe("browser_act fill_code with a saved login's authenticator key", () => {
   it("types no code of a key a run used up in later runs, until the owner saves the login again", async () => {
     const { fill, db, ctx, secretStore, scope } = await codeFill();
     const savedAt = db.rows()[0]!.updatedAt;
-    for (let step = 0; step <= LOGIN_CODE_TRIES; step++) {
+    // The run types its three codes and never asks for a fourth, as a run that gave up does.
+    for (let step = 0; step < LOGIN_CODE_TRIES; step++) {
       vi.setSystemTime(now + step * 30_000);
-      await fill();
+      expect(db.rows()[0]!.codesStoppedAt ?? null).toBeNull();
+      expect(await fill()).toContain('"ok":true');
     }
+    expect(db.rows()[0]!.codesStoppedAt).toBeInstanceOf(Date);
     // Stopping changes nothing an approval was given for.
     expect(db.rows()[0]!.updatedAt).toEqual(savedAt);
     const nextRun = (id: string) => {
@@ -1331,6 +1334,28 @@ describe("browser_act fill_code with a saved login's authenticator key", () => {
     });
     nextRun("run-3");
     expect(await fill()).toContain('"ok":true');
+  });
+
+  it("gives a third code the page refused back without stopping the login, and stops it once the third is typed", async () => {
+    const other = "https://other.example.test";
+    const { fill, db, browser } = await codeFill({ more: [other] });
+    for (let step = 0; step < LOGIN_CODE_TRIES - 1; step++) {
+      vi.setSystemTime(now + step * 30_000);
+      expect(await fill()).toContain('"ok":true');
+    }
+    // The third is refused before anything is typed: the page is on another site.
+    vi.setSystemTime(now + 2 * 30_000);
+    await browser.navigate(computer, { url: `${other}/verify` }, context);
+    expect(await fill()).toContain(`This login is saved for ${origin}`);
+    expect(db.secrets()).toHaveLength(LOGIN_CODE_TRIES - 1);
+    expect(db.rows()[0]!.codesStoppedAt ?? null).toBeNull();
+    // Typed on its site, it is the run's last.
+    await browser.navigate(computer, { url: `${origin}/verify` }, context);
+    expect(await fill()).toContain('"ok":true');
+    expect(db.secrets()).toHaveLength(LOGIN_CODE_TRIES);
+    expect(db.rows()[0]!.codesStoppedAt).toBeInstanceOf(Date);
+    vi.setSystemTime(now + 3 * 30_000);
+    expect(await fill()).toContain("request_secret with oneTimeCode");
   });
 
   it("hides a key the owner saved while the run went on, once a fill used the login", async () => {

@@ -1,7 +1,13 @@
 import type { BotSecretMetadata } from "@rakazo/contracts";
 import { BLOCKED_ITEM_ANSWER, encodeLoginSecret, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { secretAnswerRefusal, vaultImportProblemList, vaultSaveDrops } from "./vault.js";
+import type { VaultBots } from "./vault.js";
+import {
+  secretAnswerRefusal,
+  vaultAccessControls,
+  vaultImportProblemList,
+  vaultSaveDrops,
+} from "./vault.js";
 
 // RFC 6238's test key, written in pieces so it never reads as a saved secret.
 const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
@@ -91,5 +97,56 @@ describe("vaultImportProblemList", () => {
     expect(vaultImportProblemList(problems(7))).toEqual({ shown: problems(5), more: 2 });
     expect(vaultImportProblemList(problems(5))).toEqual({ shown: problems(5), more: 0 });
     expect(vaultImportProblemList([])).toEqual({ shown: [], more: 0 });
+  });
+});
+
+describe("vaultAccessControls", () => {
+  const some: VaultBots = { allBots: false, botIds: ["bot-1"] };
+  const every: VaultBots = { allBots: true, botIds: [] };
+  const note = "This limits only this Space's bots.";
+
+  it("offers Allow and Block to any item but a contact, and Ask first to a login or while set", () => {
+    expect(vaultAccessControls({ kind: "login", policy: "allow", bots: 0 }).policies).toEqual([
+      "allow",
+      "ask",
+      "off",
+    ]);
+    expect(vaultAccessControls({ kind: "api_key", policy: "allow", bots: 0 }).policies).toEqual([
+      "allow",
+      "off",
+    ]);
+    expect(vaultAccessControls({ kind: "card", policy: "ask", bots: 0 }).policies).toEqual([
+      "allow",
+      "ask",
+      "off",
+    ]);
+    expect(vaultAccessControls({ kind: "contact", policy: "allow", bots: 2 })).toEqual({
+      policies: [],
+      picker: false,
+      note: undefined,
+    });
+  });
+
+  it("picks bots only when there are some to choose and the item isn't blocked", () => {
+    const picker = (policy: "allow" | "ask" | "off", access?: VaultBots, bots = 2) =>
+      vaultAccessControls({ kind: "login", policy, access, bots }).picker;
+    expect(picker("allow", every)).toBe(true);
+    expect(picker("ask", some)).toBe(true);
+    expect(picker("off", some)).toBe(false);
+    expect(picker("allow", every, 0)).toBe(false);
+    expect(picker("allow", undefined)).toBe(false);
+  });
+
+  it("says the note under chosen bots, or alone when none can be chosen, never for a blocked item", () => {
+    const noted = (policy: "allow" | "ask" | "off", access?: VaultBots) =>
+      vaultAccessControls({ kind: "api_key", policy, access, bots: 1, note }).note;
+    expect(noted("allow", some)).toBe(note);
+    expect(noted("allow", every)).toBeUndefined();
+    expect(noted("off", some)).toBeUndefined();
+    expect(noted("allow", undefined)).toBe(note);
+    expect(noted("off", undefined)).toBeUndefined();
+    expect(
+      vaultAccessControls({ kind: "api_key", policy: "allow", access: some, bots: 1 }).note,
+    ).toBeUndefined();
   });
 });

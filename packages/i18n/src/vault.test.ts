@@ -4,6 +4,7 @@ import {
   secretAnswerErrorText,
   vaultImportProblemLines,
   vaultImportText,
+  vaultPolicyLabels,
   vaultSaveNotice,
 } from "./vault";
 
@@ -30,6 +31,11 @@ it("says what an older server dropped from a save, in one place for both apps", 
     "Saved, but this server can't block bots yet. Saved, but this server fills logins only on their own site.",
   );
   expect(vaultSaveNotice({ allBots: false }, { allBots: false })).toBe("");
+});
+
+it("names each policy the same in both apps", () => {
+  i18n.activate("en");
+  expect(vaultPolicyLabels()).toEqual({ allow: "Allow", ask: "Ask first", off: "Block" });
 });
 
 it("names import results and unusable files", () => {

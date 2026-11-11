@@ -7,9 +7,6 @@ import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
 import {
-  CODE_ALREADY_TYPED,
-  LOGIN_CODE_TRIES,
-  LOGIN_CODES_USED_UP,
   loginCodeClaim,
   resolveCodeFill,
   resolveLoginFill,
@@ -329,7 +326,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                   pageUrl: ctx.state.pageUrl,
                 });
                 if ("error" in resolved) return resolved;
-                if (!resolved.used)
+                if (!resolved.used || !resolved.login)
                   return {
                     error:
                       "This login has no authenticator key. Use request_secret with oneTimeCode.",
@@ -337,27 +334,22 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                 addRunSecrets(ctx, resolved.redactions);
                 loginFills.push({ ...resolved, index });
                 const { used } = resolved;
+                // Counted and taken just before the page is asked, as one step.
                 const code = loginCodeClaim({
                   prisma: deps.prisma,
                   secretStore: deps.secretStore,
                   scope: run,
                   runId: run.id,
-                  loginId: used.id,
+                  login: resolved.login,
                   origin: resolved.origin,
                   code: resolved.text,
                 });
-                if (await code.typed()) return { error: CODE_ALREADY_TYPED };
-                if ((await code.count()) >= LOGIN_CODE_TRIES) {
-                  await resolved.stopCodes?.();
-                  return { error: LOGIN_CODES_USED_UP };
-                }
                 return {
                   text: resolved.text,
                   origin: resolved.origin,
                   claim: code.claim,
                   restore: code.restore,
                   typed: () => recordVaultUse(ctx, name, used, resolved.origin),
-                  taken: CODE_ALREADY_TYPED,
                 };
               }
               const resolved = await resolveCodeFill({

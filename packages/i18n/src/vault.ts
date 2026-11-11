@@ -1,5 +1,5 @@
 import { i18n } from "@lingui/core";
-import type { VaultSaveDrop } from "@rakazo/core";
+import type { VaultSaveDrop, VaultSaveSent } from "@rakazo/core";
 import { secretAnswerRefusal, vaultImportProblemList, vaultSaveDrops } from "@rakazo/core";
 
 /**
@@ -23,6 +23,17 @@ export function secretAnswerErrorText(error: unknown, fallback: string): string 
     default:
       return fallback;
   }
+}
+
+type VaultPolicy = NonNullable<VaultSaveSent["policy"]>;
+
+/** What each policy is called, on the editor's control and the item. */
+export function vaultPolicyLabels(): Record<VaultPolicy, string> {
+  return {
+    allow: i18n._({ id: "Allow", message: "Allow" }),
+    ask: i18n._({ id: "Ask first", message: "Ask first" }),
+    off: i18n._({ id: "Block", message: "Block" }),
+  };
 }
 
 function dropText(drop: VaultSaveDrop): string {

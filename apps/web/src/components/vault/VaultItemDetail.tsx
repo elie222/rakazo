@@ -7,6 +7,7 @@ import {
   hasVaultAccess,
   vaultKind,
 } from "@rakazo/contracts";
+import { vaultPolicyLabels } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
@@ -14,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import type { VaultAuth } from "./kinds";
 import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
-import { usePolicyLabels, useVaultBots } from "./VaultItemAccess";
+import { useVaultBots } from "./VaultItemAccess";
 import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
 import { VaultPageHeader } from "./VaultPageHeader";
 
@@ -105,7 +106,7 @@ export function VaultItemDetail({
 }) {
   const { t } = useLingui();
   const { one } = useVaultKindLabels();
-  const policyLabels = usePolicyLabels();
+  const policyLabels = vaultPolicyLabels();
   const bots = useVaultBots(item.allBots === false, item.botIds);
   // An item saved under a name the current rules refuse can only be removed.
   const auth: VaultAuth | null =

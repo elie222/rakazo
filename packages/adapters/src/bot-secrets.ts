@@ -1800,8 +1800,8 @@ export async function resolveLoginFill(input: {
       sites: string[];
       redactions: string[];
       used?: VaultItemUse;
-      /** For a code: no run types this login's codes until it is saved again. */
-      stopCodes?: () => Promise<void>;
+      /** For a saved login's code: the login and the stored value the code came from, for loginCodeClaim. */
+      login?: { id: string; ciphertext: string };
     }
   | { error: string }
 > {
@@ -1901,17 +1901,7 @@ export async function resolveLoginFill(input: {
     ],
     // Only a saved login is a vault item; this run's own login was never saved.
     ...(row && { used: { id: row.id, name: row.name, spaceId: row.spaceId, kind: "login" } }),
-    // Its codes stop for every run, but only for the value read here: a save since keeps them.
-    // The time it was saved stays, so an approval given for it still holds.
-    ...(row &&
-      input.code && {
-        stopCodes: async () => {
-          await input.prisma.vaultCredential.updateMany({
-            where: { id: row.id, ciphertext: row.ciphertext },
-            data: { codesStoppedAt: new Date(), updatedAt: row.updatedAt },
-          });
-        },
-      }),
+    ...(row && input.code && { login: { id: row.id, ciphertext: row.ciphertext } }),
   };
 }
 
@@ -1947,9 +1937,9 @@ const NO_CODE_WAITING =
 /**
  * This run's code for a page fill. Like a login's, the caller must pass `origin` to the page
  * browser, which refuses to fill unless the page is still on it. The code is only read here:
- * `claim` takes it for one fill, atomically, so two fills never both get it, and `restore` gives
- * it back when the page refused, so the fill can be tried again on the right page. A claimed code
- * stays as a spent row, which the run keeps hiding until it ends.
+ * `claim` takes it for one fill, atomically, so two fills never both get it (the loser gets why),
+ * and `restore` gives it back when the page refused, so the fill can be tried again on the right
+ * page. A claimed code stays as a spent row, which the run keeps hiding until it ends.
  */
 export async function resolveCodeFill(input: {
   prisma: PrismaClient;
@@ -1961,7 +1951,7 @@ export async function resolveCodeFill(input: {
       text: string;
       origin: string;
       redactions: string[];
-      claim: () => Promise<boolean>;
+      claim: () => Promise<string | undefined>;
       restore: () => Promise<void>;
     }
   | { error: string }
@@ -1987,7 +1977,10 @@ export async function resolveCodeFill(input: {
     text: held.code,
     origin: held.origin,
     redactions: oneTimeCodeRedactions(held.code),
-    claim: () => move(runCodeKind(input.runId), runCodeSpentKind(input.runId)),
+    claim: async () =>
+      (await move(runCodeKind(input.runId), runCodeSpentKind(input.runId)))
+        ? undefined
+        : NO_CODE_WAITING,
     restore: async () => {
       await move(runCodeSpentKind(input.runId), runCodeKind(input.runId));
     },
@@ -1999,22 +1992,52 @@ export const CODE_ALREADY_TYPED =
 
 /**
  * Codes of one login a run types; a site that refused them all likely has another key, so once a
- * run asks for more, no run types its codes until the login is saved again.
+ * run has typed that many, no run types its codes until the login is saved again.
  */
 export const LOGIN_CODE_TRIES = 3;
-export const LOGIN_CODES_USED_UP = `A run typed this login's authenticator codes ${LOGIN_CODE_TRIES} times, so its saved key may be wrong, and none are typed until the user saves the login again. Use request_secret with oneTimeCode to ask the user for the code.`;
+/**
+ * How soon after a login's code was typed the next request for one reads as the site asking
+ * again. The backend can't see whether a site took a code; a wrong key is told apart from a
+ * working one used several times by its codes coming in quick succession.
+ */
+export const LOGIN_CODE_REPEAT_WINDOW_MS = 5 * 60_000;
+export const LOGIN_CODES_USED_UP = `A site asked for this login's authenticator code ${LOGIN_CODE_TRIES} times in a row, so its saved key may be wrong, and none are typed until the user saves the login again. Use request_secret with oneTimeCode to ask the user for the code.`;
 
 /**
- * Typing a saved login's authenticator code once in this run. Like a code the user answered, it
- * is claimed as a spent run code, which every later attempt of the run reloads to hide, and whose
- * id, made from the run, login and code, refuses the same code a second time.
+ * Typing a saved login's authenticator code once in this run. The state, all of it under the
+ * login's row lock:
+ * - The login is stopped or not (`codesStoppedAt`). Only the claim below stops it; only the
+ *   owner's save of its value clears it. A relabel changes neither.
+ * - Per run and saved value the code came from (the row's ciphertext; a save makes a new one),
+ *   the codes claimed, each with the time it was claimed, as spent run codes the run's later
+ *   attempts reload to hide. Codes of an earlier value are never counted again.
+ * A claim of a code:
+ * - is refused with LOGIN_CODES_USED_UP while the login is stopped, for every run and value;
+ * - is refused with CODE_ALREADY_TYPED when this run claimed the same code of this value;
+ * - else counts `asked`: this code, plus the run's earlier codes of this value walking back
+ *   from now, each claimed within LOGIN_CODE_REPEAT_WINDOW_MS of the one after it (the site
+ *   asked again, which is what a refusal looks like from here; the backend can't see whether
+ *   a site took a code). A code outside the window starts over, so a working key is used as
+ *   often as runs need;
+ * - past LOGIN_CODE_TRIES is refused with LOGIN_CODES_USED_UP (only reached for a value the
+ *   owner has replaced, whose codes stop nothing);
+ * - else is written, and when `asked` reaches LOGIN_CODE_TRIES with the saved value still the
+ *   one the code came from, the login is stopped at this claim's time, keeping `updatedAt` so
+ *   an approval given for the login holds. Parallel claims are serialised by the lock, so at
+ *   most three count and exactly one stops.
+ * A restore, for a code the page clearly never typed, deletes the claim, and clears the stop
+ * when it is this run's (set at this or a remaining claim's time) and fewer than
+ * LOGIN_CODE_TRIES codes now stand within the window of each other up to that time; a stop
+ * three other codes still justify stays. A fill the page may have typed changes nothing: the
+ * stop stands. Webhook and helper runs are refused before any fill, by the tool gate.
  */
 export function loginCodeClaim(input: {
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "put">;
   scope: BotSecretScope;
   runId: string;
-  loginId: string;
+  /** The saved login and the stored value the code came from; a save since keeps its codes. */
+  login: { id: string; ciphertext: string };
   origin: string;
   code: string;
 }) {
@@ -2027,45 +2050,113 @@ export function loginCodeClaim(input: {
       .update(text)
       .digest("hex")
       .slice(0, length);
-  // Starts the same for each code of this login in this run, so the run can count them.
-  const login = `run-totp-${keyed(`${runId}:${input.loginId}`, 16)}-`;
-  const id = `${login}${keyed(`${runId}:${input.loginId}:${input.code}`, 32)}`;
-  return {
-    typed: async () =>
-      Boolean(await prisma.secret.findUnique({ where: { id }, select: { id: true } })),
-    /** How many of this login's codes the run has typed. */
-    count: async () =>
-      (
-        await prisma.secret.findMany({
-          where: { userId: scope.userId, spaceId: scope.spaceId, kind: runCodeSpentKind(runId) },
-          select: { id: true },
-        })
-      ).filter((row) => row.id.startsWith(login)).length,
-    claim: async () => {
-      if (await prisma.secret.findUnique({ where: { id }, select: { id: true } })) return false;
+  // Starts the same for each code of this value of the login in this run, so the run counts
+  // them, and the codes of a value the owner has replaced no longer.
+  const value = `${runId}:${input.login.id}:${input.login.ciphertext}`;
+  const login = `run-totp-${keyed(value, 16)}-`;
+  const id = `${login}${keyed(`${value}:${input.code}`, 32)}`;
+  const spentKind = runCodeSpentKind(runId);
+  // The run's codes of this value, latest first.
+  const claimed = async (tx: Prisma.TransactionClient) =>
+    (
+      await tx.secret.findMany({
+        where: { userId: scope.userId, spaceId: scope.spaceId, kind: spentKind },
+        select: { id: true, createdAt: true },
+      })
+    )
+      .filter((row) => row.id.startsWith(login))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  // How many of `rows` were asked for again: claimed within the window of the one after, back
+  // from `until`.
+  const asked = (rows: { createdAt: Date }[], until: number) => {
+    let count = 0;
+    for (const row of rows) {
+      if (row.createdAt.getTime() > until) continue;
+      if (until - row.createdAt.getTime() > LOGIN_CODE_REPEAT_WINDOW_MS) break;
+      count += 1;
+      until = row.createdAt.getTime();
+    }
+    return count;
+  };
+  // One claim or restore of this login at a time, across every run and process; an owner's save
+  // of the login waits on the same row.
+  const locked = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
+    withTransactionRetry(() =>
+      prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM vault_credentials WHERE id = ${input.login.id} FOR UPDATE`;
+        return fn(tx);
+      }),
+    );
+  // When this claim was written, so a stop set then is known as its own.
+  let at: Date | undefined;
+  const take = () =>
+    locked(async (tx) => {
+      const spent = await claimed(tx);
+      const current = await tx.vaultCredential.findFirst({
+        where: { id: input.login.id },
+        select: { ciphertext: true, codesStoppedAt: true, updatedAt: true },
+      });
+      // Another run stopped the login since this one read it.
+      if (current?.codesStoppedAt) return LOGIN_CODES_USED_UP;
+      if (spent.some((row) => row.id === id)) return CODE_ALREADY_TYPED;
+      at = new Date();
+      const repeats = 1 + asked(spent, at.getTime());
+      if (repeats > LOGIN_CODE_TRIES) return LOGIN_CODES_USED_UP;
       const stored = await input.secretStore.put(
         encodeRunCode(input.origin, input.code),
         { operationId: runId, traceId: runId, ...scope, signal: new AbortController().signal },
         { recordId: id, ephemeral: true },
       );
-      try {
-        await prisma.secret.create({
-          data: {
-            id,
-            userId: scope.userId,
-            spaceId: scope.spaceId,
-            kind: runCodeSpentKind(runId),
-            ciphertext: stored.ciphertext,
-          },
+      await tx.secret.create({
+        data: {
+          id,
+          userId: scope.userId,
+          spaceId: scope.spaceId,
+          kind: spentKind,
+          ciphertext: stored.ciphertext,
+          createdAt: at,
+        },
+      });
+      // The last code a site keeps asking for stops the login, but only for the value it came
+      // from: a key saved since may be right. The time it was saved stays, so an approval given
+      // for it holds.
+      if (repeats >= LOGIN_CODE_TRIES && current?.ciphertext === input.login.ciphertext) {
+        await tx.vaultCredential.updateMany({
+          where: { id: input.login.id, ciphertext: current.ciphertext },
+          data: { codesStoppedAt: at, updatedAt: current.updatedAt },
         });
-        return true;
+      }
+      return undefined;
+    });
+  return {
+    claim: async (): Promise<string | undefined> => {
+      try {
+        return await take();
       } catch (error) {
-        if ((error as { code?: unknown } | null)?.code === "P2002") return false;
+        // The same code's row, written by a previous release's claim that takes no lock.
+        if ((error as { code?: unknown } | null)?.code === "P2002") return CODE_ALREADY_TYPED;
         throw error;
       }
     },
     restore: async () => {
-      await prisma.secret.deleteMany({ where: { id, kind: runCodeSpentKind(runId) } });
+      await locked(async (tx) => {
+        const { count } = await tx.secret.deleteMany({ where: { id, kind: spentKind } });
+        if (!count) return;
+        const current = await tx.vaultCredential.findFirst({
+          where: { id: input.login.id },
+          select: { codesStoppedAt: true, updatedAt: true },
+        });
+        const stop = current?.codesStoppedAt?.getTime();
+        if (!stop) return;
+        const rest = await claimed(tx);
+        // Only a stop this run's codes of this value caused, by this claim or one still standing.
+        const ours = stop === at?.getTime() || rest.some((row) => row.createdAt.getTime() === stop);
+        if (ours && asked(rest, stop) < LOGIN_CODE_TRIES)
+          await tx.vaultCredential.updateMany({
+            where: { id: input.login.id, codesStoppedAt: current!.codesStoppedAt! },
+            data: { codesStoppedAt: null, updatedAt: current!.updatedAt },
+          });
+      });
     },
   };
 }

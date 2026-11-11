@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { VaultItemEditor } from "../components/vault-item-editor";
 import { VaultItemSheet } from "../components/vault-item-sheet";
+import { resetI18nForTests } from "./i18n";
 
 // Authenticator keys (the first is RFC 6238's), written in pieces so they never read as saved secrets.
 const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
@@ -153,6 +154,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  resetI18nForTests();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);

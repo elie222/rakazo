@@ -80,8 +80,9 @@ export type ResolveCardFill = (
 ) => Promise<{ text: string; origin: string; typed?: () => Promise<void> } | { error: string }>;
 
 /**
- * `claim` takes the code for this one fill; `restore` gives it back if the page refused. `taken`
- * is what the bot is told when another fill claimed it first. `typed` is as a login fill's.
+ * `claim` takes the code for this one fill, or says why the bot gets no code: another fill took
+ * it first, or the run may type no more of them. `restore` gives it back if the page refused.
+ * `typed` is as a login fill's.
  */
 export type ResolveCodeFill = (
   step: CodeFillStep,
@@ -90,9 +91,8 @@ export type ResolveCodeFill = (
   | {
       text: string;
       origin: string;
-      claim: () => Promise<boolean>;
+      claim: () => Promise<string | undefined>;
       restore: () => Promise<void>;
-      taken?: string;
       typed?: () => Promise<void>;
     }
   | { error: string }
@@ -200,9 +200,8 @@ export async function browserActFromTool(
     let codeTyped:
       | {
           index: number;
-          claim: () => Promise<boolean>;
+          claim: () => Promise<string | undefined>;
           restore: () => Promise<void>;
-          taken?: string;
         }
       | undefined;
     // Resolve every saved login and card before acting, so a missing one cannot leave a
@@ -258,8 +257,8 @@ export async function browserActFromTool(
           return { ...refusedInput("This code could not be loaded."), completed: 0 };
         }
         if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
-        const { claim, restore, taken, typed } = resolved;
-        codeTyped = { index: actions.length, claim, restore, taken };
+        const { claim, restore, typed } = resolved;
+        codeTyped = { index: actions.length, claim, restore };
         if (typed) fills.push({ index: actions.length, typed });
         actions.push({
           kind: "fill",
@@ -346,14 +345,10 @@ export async function browserActFromTool(
       if (refused) return { ...refusedInput(refused), completed: 0 };
     }
     // Taken just before the page is asked, by one call only, so two fills never both type it.
-    if (codeTyped && !(await codeTyped.claim())) {
+    const refusedCode = codeTyped && (await codeTyped.claim());
+    if (refusedCode) {
       if (approved) await options.releasePurchase?.();
-      return {
-        ...refusedInput(
-          codeTyped.taken ?? "No code is waiting. Use request_secret with oneTimeCode.",
-        ),
-        completed: 0,
-      };
+      return { ...refusedInput(refusedCode), completed: 0 };
     }
     asked = true;
     const result = await browser.act(

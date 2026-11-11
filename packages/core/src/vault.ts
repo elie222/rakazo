@@ -1,5 +1,15 @@
-import type { BotSecretMetadata, VaultImportProblem, VaultPolicy } from "@rakazo/contracts";
-import { BLOCKED_ITEM_ANSWER, hasAuthenticatorKey, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import type {
+  BotSecretMetadata,
+  VaultImportProblem,
+  VaultKind,
+  VaultPolicy,
+} from "@rakazo/contracts";
+import {
+  BLOCKED_ITEM_ANSWER,
+  hasAuthenticatorKey,
+  hasVaultAccess,
+  UNCHOSEN_ITEM_ANSWER,
+} from "@rakazo/contracts";
 
 /**
  * Which fixed refusal a secret answer's server error is. Its other errors could echo the value,
@@ -12,6 +22,38 @@ export function secretAnswerRefusal(error: unknown): "blocked" | "unchosen" | un
     : message === UNCHOSEN_ITEM_ANSWER
       ? "unchosen"
       : undefined;
+}
+
+/** Which of the owner's bots may use an item: every one, or those in `botIds`. */
+export type VaultBots = { allBots: boolean; botIds: string[] };
+
+/**
+ * The Bots controls an item's editor shows, the same on web and mobile: which policies it offers,
+ * whether bots are picked, and whether the note under them is said.
+ */
+export function vaultAccessControls(input: {
+  kind: VaultKind;
+  policy: VaultPolicy;
+  /** Which bots may use it; left out when the server, or this Space, can't limit it to chosen bots. */
+  access?: VaultBots;
+  /** How many bots there are to choose from. */
+  bots: number;
+  /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
+  note?: string;
+}): { policies: VaultPolicy[]; picker: boolean; note: string | undefined } {
+  const { kind, policy, access, bots, note } = input;
+  return {
+    // Only a login asks first; another kind keeps Ask first only while it is set.
+    policies: hasVaultAccess(kind)
+      ? (["allow", "ask", "off"] as const).filter(
+          (option) => option !== "ask" || kind === "login" || policy === "ask",
+        )
+      : [],
+    // Blocked, no bot may use it at all; a Space without bots has nothing to choose from.
+    picker: Boolean(access) && policy !== "off" && bots > 0,
+    // Said when the choice is limited, or no choice can be made; a blocked item needs neither.
+    note: note && policy !== "off" && !access?.allBots ? note : undefined,
+  };
 }
 
 export type VaultSaveDrop = "ask" | "block" | "bots" | "alsoOn" | "authenticatorKey";

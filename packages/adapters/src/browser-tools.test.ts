@@ -1272,11 +1272,11 @@ describe("browser_act fill_code", () => {
     expect(() => parseBrowserActions([{ kind: "fill_code" }])).toThrow(/requires ref/);
   });
 
-  function held(overrides: { claim?: () => Promise<boolean> } = {}) {
+  function held(overrides: { claim?: () => Promise<string | undefined> } = {}) {
     return {
       text: "123456",
       origin,
-      claim: overrides.claim ?? vi.fn(async () => true),
+      claim: overrides.claim ?? vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
     };
   }
@@ -1450,7 +1450,10 @@ describe("browser_act fill_code", () => {
       computer,
       context,
       { actions: [{ kind: "fill_code", ref: "e1" }] },
-      { resolveCodeFill: async () => held({ claim: async () => false }) },
+      {
+        resolveCodeFill: async () =>
+          held({ claim: async () => "No code is waiting. Use request_secret with oneTimeCode." }),
+      },
     );
     expect(result).toMatchObject({
       ok: false,

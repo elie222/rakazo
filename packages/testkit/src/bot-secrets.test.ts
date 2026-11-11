@@ -5,7 +5,9 @@ import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import {
   EncryptedSecretStore,
   forgetBotSecret,
+  LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
+  loginCodeClaim,
   relabelVaultItem,
   resolveLoginFill,
   revealBotSecret,
@@ -814,7 +816,7 @@ describeIntegration("reusable credential lifecycle", () => {
     }
   });
 
-  it("stops a login's codes for every run without changing when it was saved, until the owner saves it", async () => {
+  it("types three of a login's codes in a run, parallel fills included, then stops them for every run without changing when it was saved, until the owner saves it", async () => {
     const seeded = await seedRun("vault-codes-stop", "Sign in");
     const secretStore = new EncryptedSecretStore(resolveEncryptionKey());
     const value = JSON.stringify({
@@ -826,13 +828,14 @@ describeIntegration("reusable credential lifecycle", () => {
       destination: login,
       value,
     });
-    const code = () =>
+    const scope = { ...seeded.me, botId: seeded.bot.id };
+    const code = (runId = seeded.run.id) =>
       runAsTenant(seeded.me, () =>
         resolveLoginFill({
           prisma: handles.prisma,
           secretStore,
-          scope: { ...seeded.me, botId: seeded.bot.id },
-          runId: seeded.run.id,
+          scope,
+          runId,
           name: saved.name,
           field: "code",
           code: true,
@@ -844,15 +847,39 @@ describeIntegration("reusable credential lifecycle", () => {
       });
     const before = await row();
     const first = await code();
-    if ("error" in first) throw new Error(first.error);
-    await runAsTenant(seeded.me, async () => first.stopCodes?.());
+    if ("error" in first || !first.login) throw new Error("no code");
+    // Five fills of the run, each with another step's code, all claiming at once.
+    const claims = await Promise.all(
+      ["000001", "000002", "000003", "000004", "000005"].map((text) =>
+        runAsTenant(seeded.me, () =>
+          loginCodeClaim({
+            prisma: handles.prisma,
+            secretStore,
+            scope,
+            runId: seeded.run.id,
+            login: first.login!,
+            origin: first.origin,
+            code: text,
+          }).claim(),
+        ),
+      ),
+    );
+    expect(claims.filter((refused) => refused === undefined)).toHaveLength(LOGIN_CODE_TRIES);
+    expect(claims.filter((refused) => refused === LOGIN_CODES_USED_UP)).toHaveLength(2);
+    expect(
+      await db.secret.count({
+        where: { userId: seeded.me.userId, kind: { startsWith: "run-code" } },
+      }),
+    ).toBe(LOGIN_CODE_TRIES);
+    // The third code stopped the login, for this run and every other.
     const stopped = await row();
     expect(stopped.codesStoppedAt).not.toBeNull();
     expect(stopped.updatedAt).toEqual(before.updatedAt);
     expect(await code()).toEqual({ error: LOGIN_CODES_USED_UP });
+    expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP });
     await rpc(seeded.cookie, "vault/put", { destination: { ...login, name: saved.name }, value });
     expect((await row()).codesStoppedAt).toBeNull();
-    expect(await code()).toMatchObject({ text: expect.stringMatching(/^\d{6}$/) });
+    expect(await code("another-run")).toMatchObject({ text: expect.stringMatching(/^\d{6}$/) });
   });
 
   it("reuses a website login saved for the same site under another name", async () => {

@@ -6,12 +6,12 @@ import {
   commandVariableName,
   decodeLoginSecret,
   encodeLoginSecret,
-  hasVaultAccess,
   LoginSecretValue,
   typedOtherSites,
   VAULT_ALSO_ON_LIMIT,
 } from "@rakazo/contracts";
-import { secretAnswerErrorText } from "@rakazo/i18n/vault";
+import { vaultAccessControls } from "@rakazo/core";
+import { secretAnswerErrorText, vaultPolicyLabels } from "@rakazo/i18n/vault";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import type { TextInputInstance, TextInputProps } from "react-native";
@@ -96,25 +96,21 @@ export function VaultItemEditor({
   const [submitting, setSubmitting] = useState(false);
   const savedPolicy = item?.policy ?? "allow";
   const [policy, setPolicy] = useState<VaultPolicy>(savedPolicy);
-  // Only a login asks first.
-  const policies = (["allow", "ask", "off"] as const).filter(
-    (option) =>
-      !ask &&
-      hasVaultAccess(kind) &&
-      (option !== "ask" || kind === "login" || savedPolicy === "ask"),
-  );
-  const policyLabels: Record<VaultPolicy, string> = {
-    allow: t`Allow`,
-    ask: t`Ask first`,
-    off: t`Block`,
-  };
+  const policyLabels = vaultPolicyLabels();
   const savedAccess = { allBots: item?.allBots ?? true, botIds: item?.botIds ?? [] };
   const [access, setAccess] = useState<VaultBots>(savedAccess);
   const accessChanged =
     access.allBots !== savedAccess.allBots || access.botIds.join() !== savedAccess.botIds.join();
-  // As on the web, a Space without bots has nothing to choose from.
-  const choosing = bots?.length && !ask && policy !== "off";
-  const noted = botsNote && !ask && policy !== "off" && (!bots || !access.allBots);
+  // The same rules as the web's editor; a request saves under the bot's name and sets nothing.
+  const controls = ask
+    ? { policies: [], picker: false, note: undefined }
+    : vaultAccessControls({
+        kind,
+        policy,
+        access: bots ? access : undefined,
+        bots: bots?.length ?? 0,
+        note: botsNote,
+      });
   // Chosen bots this list doesn't show, such as archived ones, stay chosen.
   const toggleBot = (id: string) =>
     setAccess((prev) => ({
@@ -549,9 +545,9 @@ export function VaultItemEditor({
               })}
             </View>
           )}
-          {policies.length || choosing || noted ? (
+          {controls.policies.length || controls.picker || controls.note ? (
             <View style={styles.group}>
-              {policies.length ? (
+              {controls.policies.length ? (
                 <View style={styles.row}>
                   <Text style={styles.label}>{t`Bots`}</Text>
                   <NativeSegmentedControl
@@ -559,16 +555,16 @@ export function VaultItemEditor({
                     disabled={!editable}
                     value={policy}
                     onChange={setPolicy}
-                    options={policies.map((option) => ({
+                    options={controls.policies.map((option) => ({
                       value: option,
                       label: policyLabels[option],
                     }))}
                   />
                 </View>
               ) : null}
-              {choosing ? (
+              {controls.picker ? (
                 <View style={styles.row}>
-                  {policies.length ? null : <Text style={styles.label}>{t`Bots`}</Text>}
+                  {controls.policies.length ? null : <Text style={styles.label}>{t`Bots`}</Text>}
                   <NativeSegmentedControl
                     accessibilityLabel={t`Bots`}
                     disabled={!editable}
@@ -583,8 +579,8 @@ export function VaultItemEditor({
                   />
                 </View>
               ) : null}
-              {choosing && !access.allBots
-                ? bots.map((bot) => (
+              {controls.picker && !access.allBots
+                ? (bots ?? []).map((bot) => (
                     <SettingsRow
                       key={bot.id}
                       title={bot.name}
@@ -600,7 +596,7 @@ export function VaultItemEditor({
                     />
                   ))
                 : null}
-              {noted ? <Text style={styles.label}>{botsNote}</Text> : null}
+              {controls.note ? <Text style={styles.label}>{controls.note}</Text> : null}
             </View>
           ) : null}
           {error ? (

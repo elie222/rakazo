@@ -1,6 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { VaultKind, VaultPolicy } from "@rakazo/contracts";
-import { hasVaultAccess, VaultPolicy as Policies } from "@rakazo/contracts";
+import { VaultPolicy as Policies } from "@rakazo/contracts";
+import { vaultAccessControls } from "@rakazo/core";
+import { vaultPolicyLabels } from "@rakazo/i18n/vault";
 import { ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -40,11 +42,6 @@ export function useVaultBots(enabled: boolean, chosen: string[] = []) {
   );
 }
 
-export function usePolicyLabels(): Record<VaultPolicy, string> {
-  const { t } = useLingui();
-  return { allow: t`Allow`, ask: t`Ask first`, off: t`Block` };
-}
-
 export function VaultItemAccess({
   kind,
   policy,
@@ -65,16 +62,14 @@ export function VaultItemAccess({
   onAccessChange: (next: AgentAccess) => void;
 }) {
   const { t } = useLingui();
-  const labels = usePolicyLabels();
+  const labels = vaultPolicyLabels();
   // As the item was saved, so an archived bot let go of stays in the list until saving. Taken
   // when the bots are first offered, which may be after this opened.
   const [saved, setSaved] = useState(access && (access.allBots ? [] : access.botIds));
   if (!saved && access) setSaved(access.allBots ? [] : access.botIds);
   const bots = useVaultBots(Boolean(access), saved) ?? [];
-  const policies = hasVaultAccess(kind);
-  const picker = access && policy !== "off" && bots.length > 0;
-  const noted = note && (!access || (!access.allBots && policy !== "off"));
-  if (!policies && !picker && !noted) return null;
+  const controls = vaultAccessControls({ kind, policy, access, bots: bots.length, note });
+  if (!controls.policies.length && !controls.picker && !controls.note) return null;
   // Bots chosen that this list doesn't show, such as archived ones, stay chosen.
   const shown = new Set(bots.map((bot) => bot.id));
   const choose = (next: AgentAccess) =>
@@ -87,7 +82,7 @@ export function VaultItemAccess({
   return (
     <div data-testid="vault-item-access" className="flex flex-wrap items-center gap-2">
       <span className="text-body-sm text-muted-foreground">{t`Bots`}</span>
-      {policies ? (
+      {controls.policies.length ? (
         <ToggleGroup
           aria-label={t`Bots`}
           value={[policy]}
@@ -99,21 +94,18 @@ export function VaultItemAccess({
           spacing={1}
           className="rounded-lg bg-muted p-1"
         >
-          {(["allow", "ask", "off"] as const)
-            // Only a login asks first.
-            .filter((option) => option !== "ask" || kind === "login" || policy === "ask")
-            .map((option) => (
-              <ToggleGroupItem
-                key={option}
-                value={option}
-                className="h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-              >
-                {labels[option]}
-              </ToggleGroupItem>
-            ))}
+          {controls.policies.map((option) => (
+            <ToggleGroupItem
+              key={option}
+              value={option}
+              className="h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+            >
+              {labels[option]}
+            </ToggleGroupItem>
+          ))}
         </ToggleGroup>
       ) : null}
-      {picker ? (
+      {controls.picker && access ? (
         <AgentAccessControl
           bots={bots}
           access={access}
@@ -122,7 +114,9 @@ export function VaultItemAccess({
           onChange={choose}
         />
       ) : null}
-      {noted ? <p className="w-full text-body-sm text-muted-foreground">{note}</p> : null}
+      {controls.note ? (
+        <p className="w-full text-body-sm text-muted-foreground">{controls.note}</p>
+      ) : null}
     </div>
   );
 }

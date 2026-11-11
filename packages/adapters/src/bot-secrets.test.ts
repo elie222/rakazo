@@ -6,18 +6,24 @@ import { installAuditEventStore } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CODE_ALREADY_TYPED,
   credentialArgument,
   encodeRunCode,
   encodeRunLogin,
   forgetBotSecret,
+  LOGIN_CODE_REPEAT_WINDOW_MS,
+  LOGIN_CODE_TRIES,
+  LOGIN_CODES_USED_UP,
   listBotSecrets,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
+  loginCodeClaim,
   normalizeSecretDestination,
   oneTimeCodeArgument,
   oneTimeCodeRedactions,
   prepareBotSecret,
+  relabelVaultItem,
   requestWithBotSecret,
   resolveCodeFill,
   resolveLoginFill,
@@ -31,8 +37,10 @@ import { EncryptedSecretStore } from "./secrets.js";
 
 // RFC 6238's test key, written in pieces so it never reads as a saved secret.
 const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
+const OTHER_TEST_KEY = "MFRGGZDF" + "MZTWQ2LK" + "NNWG23TP" + "OBYXE43U";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   installAuditEventStore(undefined);
 });
@@ -1581,7 +1589,8 @@ describe("resolveCodeFill", () => {
     const [first, second] = await Promise.all([resolveCodeFill(input), resolveCodeFill(input)]);
     if ("error" in first || "error" in second) throw new Error("both fills should resolve");
     const claims = await Promise.all([first.claim(), second.claim()]);
-    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.filter((refused) => refused === undefined)).toHaveLength(1);
+    expect(claims.filter((refused) => refused?.includes("No code is waiting"))).toHaveLength(1);
     expect(rows).toMatchObject([{ kind: "run-code-spent:run-1" }]);
     expect(await resolveCodeFill(input)).toEqual({
       error:
@@ -1594,7 +1603,7 @@ describe("resolveCodeFill", () => {
     const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
     const fill = await resolveCodeFill(input);
     if ("error" in fill) throw new Error(fill.error);
-    expect(await fill.claim()).toBe(true);
+    expect(await fill.claim()).toBeUndefined();
     await fill.restore();
     expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
     expect(await resolveCodeFill(input)).toMatchObject({ text: "123456" });
@@ -1643,6 +1652,241 @@ describe("resolveCodeFill", () => {
     } finally {
       logger.mockRestore();
     }
+  });
+});
+
+describe("loginCodeClaim", () => {
+  // What a site asking again looks like: the next code requested soon after one was typed.
+  const window = LOGIN_CODE_REPEAT_WINDOW_MS;
+  const login = {
+    name: "site_login",
+    origin: "https://login.example.test",
+    auth: { type: "login" as const },
+  };
+  const value = (otp: string) =>
+    encodeLoginSecret({
+      fields: [{ label: "Password", value: "saved-password-1", hidden: true }],
+      otp,
+    });
+  type Step =
+    // Claim a code at this time; `stopped` is the login's stop after it; `stale` claims with
+    // the value read before the owner's last save, as a fill that raced the save does.
+    | {
+        at: number;
+        run?: string;
+        stale?: true;
+        refused?: typeof LOGIN_CODES_USED_UP | typeof CODE_ALREADY_TYPED;
+        stopped?: boolean;
+        uncertain?: true;
+      }
+    // Give an earlier claim back (the page clearly never typed it), by its index in `steps`.
+    | { restore: number; stopped: boolean }
+    // The owner saves the login's value again, or only relabels it.
+    | { save: "value" | "label"; stopped: boolean };
+  const cases: { name: string; steps: Step[]; parallel?: number[] }[] = [
+    {
+      name: "three sign-ins far apart, as a working key gives, stop nothing",
+      steps: [
+        { at: 0, stopped: false },
+        { at: window + 1, stopped: false },
+        { at: 2 * (window + 1), stopped: false },
+        { at: 3 * (window + 1), stopped: false },
+      ],
+    },
+    {
+      name: "three quick repeats in one run stop the login with the third, and refuse another run with no fourth request",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { at: 90_000, run: "run-2", refused: LOGIN_CODES_USED_UP, stopped: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+      ],
+    },
+    {
+      name: "a repeat a moment inside the window counts, one a moment outside starts over",
+      steps: [
+        { at: 0, stopped: false },
+        { at: window, stopped: false },
+        { at: 2 * window + 1, stopped: false },
+        { at: 3 * window, stopped: false },
+        { at: 4 * window, stopped: true },
+      ],
+    },
+    {
+      name: "quick repeats split across two runs count for each run on its own",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, run: "run-2", stopped: false },
+        { at: 60_000, stopped: false },
+        { at: 90_000, run: "run-2", stopped: false },
+        { at: 120_000, stopped: true },
+      ],
+    },
+    {
+      name: "the same code is typed once per run, and a repeat refusal is no repeat",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 10_000, refused: CODE_ALREADY_TYPED, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+      ],
+    },
+    {
+      name: "a new key the owner saves starts the count again, and its codes are not stopped by the old key's",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { save: "value", stopped: false },
+        { at: 60_000, stopped: false },
+        { at: 90_000, stopped: false },
+        { at: 120_000, stopped: true },
+      ],
+    },
+    {
+      name: "a code of the old key typed after the owner's save never stops the new one",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { save: "value", stopped: false },
+        { at: 60_000, stale: true, stopped: false },
+        { at: 90_000, stale: true, refused: LOGIN_CODES_USED_UP, stopped: false },
+        { at: 90_000, stopped: false },
+      ],
+    },
+    {
+      name: "the owner's save clears a stop, a relabel alone does not",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { save: "label", stopped: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { save: "value", stopped: false },
+        { at: 120_000, stopped: false },
+      ],
+    },
+    {
+      name: "an uncertain third fill keeps the stop: two codes were asked for again",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true, uncertain: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+      ],
+    },
+    {
+      name: "a third code the page never typed gives its place back, and with it the stop",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { restore: 2, stopped: false },
+        { at: 61_000, stopped: true },
+      ],
+    },
+    {
+      name: "a refused claim given back changes nothing: three others still stand",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { restore: 3, stopped: true },
+      ],
+    },
+    ...[0, 1, 2].map((index): (typeof cases)[number] => ({
+      name: `parallel claims count three at most, one writes the stop, and giving back the ${["first", "second", "third"][index]} of them lifts it`,
+      parallel: [0, 1, 2, 3, 4],
+      steps: [
+        { at: 0, stopped: true },
+        { at: 0, stopped: true },
+        { at: 0, stopped: true },
+        { at: 0, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { at: 0, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { restore: index, stopped: false },
+        { at: 1_000, stopped: true },
+      ],
+    })),
+  ];
+  it.each(cases)("$name", async ({ steps, parallel }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const db = fakeDatabase();
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination: login,
+      plaintext: value(TEST_KEY),
+    });
+    const row = db.rows()[0]!;
+    const start = Date.now();
+    // What a fill reads before claiming: the login as saved then.
+    let read = { id: row.id, ciphertext: row.ciphertext };
+    let before = read;
+    const claims = new Map<number, ReturnType<typeof loginCodeClaim>>();
+    const claim = (index: number, step: Extract<Step, { at: number }>) => {
+      vi.setSystemTime(start + step.at);
+      const code = loginCodeClaim({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        runId: step.run ?? "run-1",
+        login: step.stale ? before : read,
+        origin: row.origin,
+        // Two codes of a step are the same code; three others of other steps.
+        code: index === 1 && step.refused === CODE_ALREADY_TYPED ? "000000" : `00000${index}`,
+      });
+      claims.set(index, code);
+      return code.claim();
+    };
+    const stopped = (index: number, step: Step) =>
+      expect
+        .soft(row.codesStoppedAt instanceof Date, `stop after step ${index}`)
+        .toBe(step.stopped ?? false);
+    const parallelResults = parallel
+      ? await Promise.all(
+          parallel.map((index) => claim(index, steps[index] as Extract<Step, { at: number }>)),
+        )
+      : [];
+    if (parallel) {
+      expect(parallelResults.filter((refused) => refused === undefined)).toHaveLength(
+        LOGIN_CODE_TRIES,
+      );
+      expect(parallelResults.filter((refused) => refused === LOGIN_CODES_USED_UP)).toHaveLength(
+        parallel.length - LOGIN_CODE_TRIES,
+      );
+      // Which of them the lock refused is not fixed, so the table's refusals are not matched.
+    }
+    for (const [index, step] of steps.entries()) {
+      if (parallel?.includes(index)) continue;
+      if ("restore" in step) {
+        await claims.get(step.restore)!.restore();
+      } else if ("save" in step) {
+        if (step.save === "value") {
+          before = read;
+          await storeBotSecret({
+            prisma: db.prisma,
+            secretStore,
+            scope,
+            destination: login,
+            plaintext: value(OTHER_TEST_KEY),
+          });
+          read = { id: row.id, ciphertext: row.ciphertext };
+        } else {
+          await relabelVaultItem(db.prisma, scope, login.name, { title: "Renamed" });
+        }
+      } else {
+        expect.soft(await claim(index, step), `claim ${index}`).toBe(step.refused);
+      }
+      stopped(index, step);
+    }
+    expect(db.secrets().filter((secret) => String(secret.id).startsWith("run-totp-"))).toHaveLength(
+      steps.filter((step, index) => {
+        if (!("at" in step) || step.refused) return false;
+        return !steps.some((later) => "restore" in later && later.restore === index);
+      }).length,
+    );
   });
 });
 
