@@ -267,6 +267,15 @@ describe("recall outcome grading", () => {
       ]);
     expect(scriptedShell(c.computer!, "cat /proc/uptime")?.stdout).toBe("274620.31 1081234.55");
     expect(scriptedShell(c.computer!, "pwd; ls -la ~; uptime")?.stdout).toContain(".config");
+    expect(scriptedShell(c.computer!, 'ls -la "$HOME"')?.stdout).toContain(".config");
+    // A search that also covers places the computer lacks still finds the extension.
+    const installed = scenario("tool-steps-replayed").computer!;
+    for (const command of [
+      'grep -ril "midnight" ~/.config ~/.cache',
+      'grep -ril "midnight" ~/.config ~/Library/Application\\ Support',
+    ])
+      expect(scriptedShell(installed, command)?.stdout).toContain("manifest.json");
+    expect(scriptedShell(installed, "ls ~/.config/google-chrome/Default/Extensions")?.code).toBe(2);
     // A probe for several browsers still finds the Chromium the computer has.
     expect(
       scriptedShell(

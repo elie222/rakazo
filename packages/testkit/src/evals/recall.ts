@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
 import { MessageBlock } from "@rakazo/contracts";
 import { toolStepsHistoryText } from "@rakazo/core";
 import { z } from "zod";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
+import { readCasesFile } from "./cases.js";
 import type { HistoryFixture, HistoryMessage } from "./history-fixtures.js";
 import { historyFixture } from "./history-fixtures.js";
 import type { JudgeInput } from "./judge.js";
@@ -248,12 +248,12 @@ const DISK = {
 };
 /**
  * Places a Linux Chromium computer does not have: other browsers' profiles, macOS paths, system
- * policies and other shells' history. A command that also names Chromium (its profile, or the
- * browser in a list of browsers to look for) is answered by the more specific checks instead.
+ * policies and other shells' history. A command that also names Chromium or searches the config
+ * folder it lives in is answered by the more specific checks instead, so it still finds it.
  */
 const ELSEWHERE = {
   match:
-    /^(?![^;&|]*\bchromium\b(?!-browser))(?=[^;&|]*(?:google-chrome|chromium-browser|Library\/Application|\/etc\/(?:opt\/)?chrom|\/opt\/chrom|\.var\b|\.zsh_history|\.local\/share|\.cache\b))/,
+    /^(?![^;&|]*(?:\bchromium\b(?!-browser)|\.config(?!\/google-chrome)\b))(?=[^;&|]*(?:google-chrome|chromium-browser|Library\/Application|\/etc\/(?:opt\/)?chrom|\/opt\/chrom|\.zsh_history))/,
   output: "No such file or directory",
   exitCode: 2,
 };
@@ -265,11 +265,11 @@ const HOME = [
   {
     // `-a` shows the hidden folders too.
     match:
-      /^\s*ls\b(?:\s+-\w+)*\s+-\w*a\w*(?:\s+-\w+)*(?:\s+(?:~|\$HOME|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
+      /^\s*ls\b(?:\s+-\w+)*\s+-\w*a\w*(?:\s+-\w+)*(?:\s+(?:~|"?\$HOME"?|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
     output: ".\n..\n.cache\n.config\nDesktop\nDownloads\nattachments",
   },
   {
-    match: /^\s*ls\b(?:\s+-\w+)*(?:\s+(?:~|\$HOME|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
+    match: /^\s*ls\b(?:\s+-\w+)*(?:\s+(?:~|"?\$HOME"?|\/home\/rakazo)\/?)?\s*(?:[0-9&]?>\S*\s*)*$/,
     output: "Desktop\nDownloads\nattachments",
   },
   { match: /\bls\b[^;&|]*\.config\/?(?:\s|$)/, output: "chromium" },
@@ -1451,12 +1451,5 @@ function recallCaseFromFile(entry: RecallFileCase): EvalCase {
 
 /** Extra recall cases from a JSON array or JSON-lines file, for private or local fixtures. */
 export function loadRecallCases(file: string): EvalCase[] {
-  const text = readFileSync(file, "utf8").trim();
-  const raw: unknown[] = text.startsWith("[")
-    ? (JSON.parse(text) as unknown[])
-    : text
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => JSON.parse(line) as unknown);
-  return raw.map((entry) => recallCaseFromFile(RecallFileCaseSchema.parse(entry)));
+  return readCasesFile(file).map((entry) => recallCaseFromFile(RecallFileCaseSchema.parse(entry)));
 }

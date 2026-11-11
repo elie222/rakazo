@@ -165,7 +165,12 @@ function pipeFilter(command: string, text: string): { text: string; code: number
   const ended = text.endsWith("\n");
   const lines = (ended ? text.slice(0, -1) : text).split("\n");
   const kept = which === "head" ? lines.slice(0, n) : tail(lines);
-  return { text: kept.length ? `${kept.join("\n")}${ended ? "\n" : ""}` : "", code: 0 };
+  // Every kept line but the input's own last one ended in a newline.
+  const lastKept = which === "head" ? kept.length === lines.length : true;
+  return {
+    text: kept.length ? `${kept.join("\n")}${ended || !lastKept ? "\n" : ""}` : "",
+    code: 0,
+  };
 }
 
 /** `grep` over piped text with the flags checks commonly use; anything else is undefined. */
