@@ -120,6 +120,13 @@ describeRunsList("runs.list activity tracker", () => {
     expect(
       (await raw(app, cookie, "preferences/update", { quietHours: { start: 8, end: 8 } })).status,
     ).toBe(400);
+    // The database holds both ends or neither, whatever writes it.
+    const user = await prisma.user.findFirstOrThrow({
+      where: { email: `runs-quiet-${stamp}@rakazo.test` },
+    });
+    await expect(
+      prisma.user.update({ where: { id: user.id }, data: { quietHoursStart: 3 } }),
+    ).rejects.toThrow();
   });
 
   it("never returns runs from another workspace", async () => {

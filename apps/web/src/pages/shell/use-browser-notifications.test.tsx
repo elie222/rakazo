@@ -404,7 +404,7 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown().map((row) => row[1])).toContain("Awake again.");
   });
 
-  it("stays quiet for an ordinary reply in quiet hours, and still announces a question", async () => {
+  it("holds the open chat in quiet hours, and shows the server's question and failure instead", async () => {
     // From the hour before now until two hours later, in UTC.
     const hour = new Date().getUTCHours();
     me.quietHours = { start: (hour + 23) % 24, end: (hour + 2) % 24 };
@@ -424,12 +424,22 @@ describe("useBrowserNotifications chat alerts", () => {
           ),
         );
       notify("quiet-plain", [{ kind: "text", text: "The report is ready." }]);
-      expect(shown()).toEqual([]);
+      // A question in the stream may be a teammate's; the server asks only the run's owner.
       notify("quiet-ask", [{ kind: "ask", text: "Which repo?", status: "pending" }]);
-      expect(shown().map((row) => row[1])).toEqual(["Which repo?"]);
+      expect(shown()).toEqual([]);
+      await send({ kind: "help", title: "Scout needs an answer", body: "Which repo?" });
+      await send({ kind: "failure", title: "Scout failed", body: "The build broke." });
+      expect(shown().map((row) => row[1])).toEqual(["Which repo?", "The build broke."]);
+
       me.quietHours = null;
       notify("loud-plain", [{ kind: "text", text: "Done for the day." }]);
-      expect(shown().map((row) => row[1])).toContain("Done for the day.");
+      await send({ kind: "help", title: "Scout needs an answer", body: "Which branch?" });
+      // Outside quiet hours the stream alerts for the open chat, and the server's copy stays out.
+      expect(shown().map((row) => row[1])).toEqual([
+        "Which repo?",
+        "The build broke.",
+        "Done for the day.",
+      ]);
     } finally {
       me.quietHours = null;
     }

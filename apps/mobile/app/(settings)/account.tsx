@@ -144,7 +144,7 @@ export default function Account() {
     updateAccountName,
     refresh: () => rpc("me"),
     onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
-    onRefreshed: setMe,
+    onRefreshed: refreshedMe,
     setNameDraft,
     setNamePending,
     setNameError,
@@ -169,6 +169,14 @@ export default function Account() {
   const quietHoursQueue = useRef<ReturnType<typeof createQueuedSave<QuietHours | null>> | null>(
     null,
   );
+  const savedTimezone = useRef<string | null | undefined>(undefined);
+  savedTimezone.current = me?.timezone;
+
+  /** A fresh read of the account, which is also the quiet hours' new baseline between saves. */
+  function refreshedMe(next: MobileMe) {
+    setMe(next);
+    if (next.quietHours !== undefined) quietHoursQueue.current?.reset(next.quietHours);
+  }
   const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -257,7 +265,7 @@ export default function Account() {
 
   useEffect(() => {
     void rpc("me")
-      .then(setMe)
+      .then(refreshedMe)
       .catch(() => undefined);
     void rpc("usage/summary")
       .then(setUsage)
@@ -454,17 +462,21 @@ export default function Account() {
 
   function updateQuietHours(next: QuietHours | null) {
     if (!me || me.quietHours === undefined) return;
-    const savedTimezone = me.timezone;
     quietHoursQueue.current ??= createQueuedSave(me.quietHours, {
       onChange: (quietHours) =>
         setMe((current) => (current ? { ...current, quietHours } : current)),
       equals: (a, b) => a?.start === b?.start && a?.end === b?.end,
       save: async (quietHours) => {
         // The hours are read in the account's timezone; an account without one takes this
-        // device's first.
-        const timezone = deviceTimeZone();
-        if (!savedTimezone && timezone) await rpc("preferences/adoptTimezone", { timezone });
-        await rpc("preferences/update", { quietHours });
+        // device's in the same save, and none at all would read them in UTC.
+        const timezone = quietHours && !savedTimezone.current ? deviceTimeZone() : undefined;
+        if (quietHours && !savedTimezone.current && !timezone) throw new Error("No timezone");
+        const next = await rpc("preferences/update", {
+          quietHours,
+          ...(timezone ? { timezone } : {}),
+        });
+        savedTimezone.current = next.timezone;
+        setMe((current) => (current ? { ...current, timezone: next.timezone ?? null } : current));
       },
       onError: () => Alert.alert(t`Couldn't update quiet hours`),
     });

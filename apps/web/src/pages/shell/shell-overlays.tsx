@@ -12,6 +12,7 @@ import type { RefObject } from "react";
 import { useCallback } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import type { connectedAppMarks } from "../../lib/connected-apps";
+import { localTimezone } from "../../lib/local-timezone";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
@@ -199,9 +200,21 @@ export function SettingsOverlays({
           }}
           quietHours={bootstrapMe?.quietHours}
           onQuietHoursChange={async (quietHours) => {
-            const nextMe = await rpc.preferences.update({ quietHours });
+            // The hours are read in the account's timezone. Settings shows this device's while
+            // none is saved, so the same save keeps it.
+            const timezone = quietHours && !bootstrapMe?.timezone ? localTimezone() : undefined;
+            const nextMe = await rpc.preferences.update({
+              quietHours,
+              ...(timezone ? { timezone } : {}),
+            });
             setBootstrapMe((prev) =>
-              prev ? { ...prev, quietHours: nextMe.quietHours ?? null } : nextMe,
+              prev
+                ? {
+                    ...prev,
+                    quietHours: nextMe.quietHours ?? null,
+                    timezone: nextMe.timezone ?? null,
+                  }
+                : nextMe,
             );
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}

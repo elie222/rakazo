@@ -354,9 +354,10 @@ vi.mock("./organizations", () => ({
 }));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
+const device = vi.hoisted(() => ({ timezone: "Europe/Berlin" as string | undefined }));
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof Routine>()),
-  deviceTimeZone: () => "Europe/Berlin",
+  deviceTimeZone: () => device.timezone,
 }));
 vi.mock("./remote-images-preference", () => ({
   getCachedRemoteImagesEnabled: () => true,
@@ -921,48 +922,83 @@ async function chooseHour(screen: HTMLElement, label: string, hour: number) {
   });
 }
 
+/** Answers saves like the server: the account as saved, with the timezone the save kept. */
+function savingPreferences(fail = false) {
+  const answer = vi.mocked(rpc).getMockImplementation()!;
+  vi.mocked(rpc).mockImplementation(((method: string, ...rest: unknown[]) => {
+    if (method !== "preferences/update")
+      return (answer as (...args: unknown[]) => unknown)(method, ...rest);
+    if (fail) return Promise.reject(new Error("offline"));
+    const body = rest[0] as { timezone?: string };
+    account.me = { ...account.me, ...(body.timezone ? { timezone: body.timezone } : {}) };
+    return Promise.resolve(account.me);
+  }) as typeof rpc);
+  return () => vi.mocked(rpc).mockImplementation(answer);
+}
+
+const preferenceCalls = () =>
+  vi.mocked(rpc).mock.calls.filter(([method]) => String(method).startsWith("preferences/"));
+
 it("turns quiet hours on in this device's timezone when the account has none, and moves an end", async () => {
   account.me = { ...account.me, timezone: null, quietHours: null };
-  const { screen } = await renderAccount();
-  const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
-  expect(quiet().getAttribute("aria-checked")).toBe("false");
-  expect(screen.querySelector('select[aria-label="Starts"]')).toBeNull();
+  const restore = savingPreferences();
+  try {
+    const { screen } = await renderAccount();
+    const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
+    expect(quiet().getAttribute("aria-checked")).toBe("false");
+    expect(screen.querySelector('select[aria-label="Starts"]')).toBeNull();
 
-  await act(async () => quiet().click());
-  const calls = () =>
-    vi.mocked(rpc).mock.calls.filter(([method]) => String(method).startsWith("preferences/"));
-  expect(calls()).toEqual([
-    ["preferences/adoptTimezone", { timezone: "Europe/Berlin" }],
-    ["preferences/update", { quietHours: { start: 22, end: 7 } }],
-  ]);
-  expect(quiet().getAttribute("aria-checked")).toBe("true");
-  // The start hour isn't offered as the end, so the two can't match.
-  const ends = screen.querySelector<HTMLSelectElement>('select[aria-label="Ends"]')!;
-  expect([...ends.options].map((option) => option.value)).not.toContain("22");
+    await act(async () => quiet().click());
+    // One save keeps both, so a failure can't leave only the timezone changed.
+    expect(preferenceCalls()).toEqual([
+      ["preferences/update", { quietHours: { start: 22, end: 7 }, timezone: "Europe/Berlin" }],
+    ]);
+    expect(quiet().getAttribute("aria-checked")).toBe("true");
+    // The start hour isn't offered as the end, so the two can't match.
+    const ends = screen.querySelector<HTMLSelectElement>('select[aria-label="Ends"]')!;
+    expect([...ends.options].map((option) => option.value)).not.toContain("22");
 
-  await chooseHour(screen, "Ends", 6);
-  expect(calls().at(-1)).toEqual(["preferences/update", { quietHours: { start: 22, end: 6 } }]);
+    await chooseHour(screen, "Ends", 6);
+    expect(preferenceCalls().at(-1)).toEqual([
+      "preferences/update",
+      { quietHours: { start: 22, end: 6 } },
+    ]);
+  } finally {
+    restore();
+  }
 });
 
 it("turns quiet hours back off when the save fails, and says so", async () => {
   account.me = { ...account.me, timezone: "Europe/Berlin", quietHours: null };
-  const answer = vi.mocked(rpc).getMockImplementation()!;
-  vi.mocked(rpc).mockImplementation(((method: string, ...rest: unknown[]) =>
-    method === "preferences/update"
-      ? Promise.reject(new Error("offline"))
-      : (answer as (...args: unknown[]) => unknown)(method, ...rest)) as typeof rpc);
+  const restore = savingPreferences(true);
   try {
     const { screen } = await renderAccount();
     const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
 
     await act(async () => quiet().click());
-    expect(vi.mocked(rpc).mock.calls.map(([method]) => method)).not.toContain(
-      "preferences/adoptTimezone",
-    );
+    expect(preferenceCalls()).toEqual([
+      ["preferences/update", { quietHours: { start: 22, end: 7 } }],
+    ]);
     expect(quiet().getAttribute("aria-checked")).toBe("false");
     expect(Alert.alert).toHaveBeenCalledWith("Couldn't update quiet hours");
   } finally {
-    vi.mocked(rpc).mockImplementation(answer);
+    restore();
+  }
+});
+
+it("keeps quiet hours off when neither the account nor this device knows its timezone", async () => {
+  account.me = { ...account.me, timezone: null, quietHours: null };
+  device.timezone = undefined;
+  try {
+    const { screen } = await renderAccount();
+    const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
+
+    await act(async () => quiet().click());
+    expect(preferenceCalls()).toEqual([]);
+    expect(quiet().getAttribute("aria-checked")).toBe("false");
+    expect(Alert.alert).toHaveBeenCalledWith("Couldn't update quiet hours");
+  } finally {
+    device.timezone = "Europe/Berlin";
   }
 });
 
