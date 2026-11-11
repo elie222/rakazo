@@ -37,6 +37,14 @@ export function isRoutineRunTrigger(trigger: string | null | undefined): boolean
 export function routineRunTrigger(routine: { silent: boolean }): string {
   return routine.silent ? SILENT_ROUTINE_TRIGGER : "routine";
 }
+
+/** Marks the nonce of a routine run someone asked for by naming the routine in a chat message. */
+export const ROUTINE_MENTION_NONCE = "routine-mention:";
+
+/** Whether a routine run answers a chat message, so it stays in the chat whatever Silent says. */
+export function routineRunAnswersChat(clientNonce: string | null | undefined): boolean {
+  return clientNonce?.includes(`:${ROUTINE_MENTION_NONCE}`) ?? false;
+}
 /**
  * These turns carry their own prompt and must not take a user message as steering.
  * Routine and webhook runs are not the conversation, and neither is a wake from another bot:

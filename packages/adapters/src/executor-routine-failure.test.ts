@@ -650,6 +650,8 @@ interface RetryScenario {
   silent?: boolean;
   status?: string;
   retryOfRunId?: string | null;
+  /** How the failed run was started: a chat message's routine run carries its nonce. */
+  clientNonce?: string | null;
   active?: boolean;
   oneShot?: boolean;
   archived?: boolean;
@@ -682,6 +684,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     trigger: scenario.trigger ?? "routine",
     routineId: "routine-1",
     retryOfRunId: scenario.retryOfRunId ?? null,
+    clientNonce: scenario.clientNonce ?? null,
     modelProvider: "routine-provider",
     modelId: "routine-model",
     thinkingLevel: "low",
@@ -960,6 +963,18 @@ describe("running a routine retry", () => {
     });
   });
 
+  it("keeps a run someone asked for in the chat in the chat when it retries", async () => {
+    const { executor, tx } = retryHarness({
+      trigger: "routine",
+      silent: true,
+      clientNonce: "routine-run:user-1:routine-mention:message-1:routine-1",
+    });
+    await executor.retryRoutineRun("run-1");
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ trigger: "routine", retryOfRunId: "run-1" }),
+    });
+  });
+
   it("says in the chat when a silent routine's retry is abandoned", async () => {
     const { executor, send } = retryHarness({ trigger: "silent_routine", active: false });
 
@@ -973,6 +988,7 @@ describe("running a routine retry", () => {
       text: "Inbox sweep routine: failed",
       clientNonce: "routine-failed:run-1",
       markUnread: true,
+      required: true,
     });
     expect(send).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ kind: "failure" }),

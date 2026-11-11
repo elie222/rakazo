@@ -9,6 +9,7 @@ import {
   expandSkillReferencesInPrompt,
   MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
+  ROUTINE_MENTION_NONCE,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -227,7 +228,7 @@ export function threadsRoutes(ctx: RouterContext) {
           prompt: expandSkillReferencesInPrompt(target.routine.prompt, skillRecords),
           nonce: routineTestRunNonce(
             actor,
-            `routine-mention:${input.clientNonce}:${target.routine.id}`,
+            `${ROUTINE_MENTION_NONCE}${input.clientNonce}:${target.routine.id}`,
           ),
         }));
         const nonces = routines.map((routine) => routine.nonce);

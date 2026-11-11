@@ -2,6 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   callIdFromClientNonce,
   isBackgroundRunTrigger,
+  RUN_REPLY_EVENT,
   redactSecrets,
   SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
@@ -90,9 +91,21 @@ export async function publishMessage(
     // run history instead; ticket work reports on the board.
     const held = blocks.filter((block) => !reachesChat(block));
     if (run.trigger === SILENT_ROUTINE_TRIGGER && role === "bot" && held.length) {
+      // A turn replayed after a restart publishes its interim texts again under the same nonce.
+      // The chat keeps such a message once, and so does the history.
+      const kept =
+        clientNonce !== undefined &&
+        (await deps.prisma.event.findFirst({
+          where: {
+            runId: run.id,
+            type: RUN_REPLY_EVENT,
+            payload: { path: ["clientNonce"], equals: clientNonce },
+          },
+          select: { id: true },
+        }));
       // Under the attempt's lease like the chat's own writes, so a superseded attempt can't
       // add to the history twice.
-      await deps.events.append(runReplyEvent(run, held, lease));
+      if (!kept) await deps.events.append(runReplyEvent(run, held, lease, clientNonce));
     }
     blocks = blocks.filter(reachesChat);
     if (blocks.length === 0 && !stoppedHelper) return null;

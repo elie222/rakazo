@@ -13,6 +13,7 @@ import {
   isOneShotRoutineCrons,
   isRoutineRunTrigger,
   nextRoutineRunDateAcross,
+  routineRunAnswersChat,
   routineRunTrigger,
   SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
@@ -139,6 +140,8 @@ export async function notifyFailedRoutineRun(
         clientNonce: `routine-failed:${failed.id}`,
         // With the routine's notifications off, the unread chat is how the person finds out.
         markUnread: true,
+        // A retried notice writes the line again before any push, so neither is lost.
+        ...(options.retryOnFailure ? { required: true } : {}),
       });
     }
   }
@@ -529,8 +532,12 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
           taskId: retryTask.id,
           userId: failed.userId,
           status: "queued",
-          // Silent as the routine is now, as a fresh tick would be.
-          trigger: routine ? routineRunTrigger(routine) : failed.trigger,
+          // Silent as the routine is now, as a fresh tick would be. A run someone asked for in a
+          // chat message answers there, so its retry does too.
+          trigger:
+            routine && !routineRunAnswersChat(failed.clientNonce)
+              ? routineRunTrigger(routine)
+              : failed.trigger,
           routineId: failed.routineId,
           retryOfRunId: failed.id,
           ...(failed.modelPinned

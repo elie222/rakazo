@@ -49,7 +49,7 @@ const hotQueries = [
   },
   {
     name: "a user's latest finished run in a Space",
-    index: "runs_recent_activity_idx",
+    index: "runs_recent_user_activity_idx",
     sql: `SELECT "completedAt" FROM runs WHERE "spaceId" = $1 AND "userId" = $1
       AND status IN ('completed', 'failed', 'cancelled')
       AND trigger NOT IN ('tickets', 'silent_routine', 'helper', 'helper_result')

@@ -876,11 +876,15 @@ async function finalizeRunOnce(
   }, FINALIZE_TRANSACTION_OPTIONS);
 }
 
-/** A silent routine's reply, kept as a run event for its run history instead of the chat. */
+/**
+ * A silent routine's reply, kept as a run event for its run history instead of the chat. A
+ * clientNonce names a publication a replayed turn makes again, so it is kept once.
+ */
 export function runReplyEvent(
   run: { id: string; spaceId: string; threadId: string; botId: string },
   blocks: unknown[],
   lease?: RunLease,
+  clientNonce?: string,
 ): AppendEventInput {
   return {
     spaceId: run.spaceId,
@@ -888,7 +892,7 @@ export function runReplyEvent(
     botId: run.botId,
     runId: run.id,
     type: RUN_REPLY_EVENT,
-    payload: { blocks },
+    payload: clientNonce ? { blocks, clientNonce } : { blocks },
     ...(lease ? { lease } : {}),
   };
 }
