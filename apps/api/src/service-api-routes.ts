@@ -14,7 +14,7 @@ import {
 } from "@rakazo/contracts";
 import { isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { recordAuditEvent } from "@rakazo/db";
+import { recordAuditEvent, runAsSystem } from "@rakazo/db";
 import type { createRouter } from "./router.js";
 import type { AuthenticatedServiceCredential } from "./service-credentials.js";
 
@@ -162,6 +162,7 @@ async function sendPrompt(
         seq: true,
         runId: true,
         blocks: true,
+        createdAt: true,
         sourceRuns: { select: { id: true }, take: 1 },
       },
     });
@@ -180,7 +181,9 @@ async function sendPrompt(
   const savedText = blocks.success && blocks.data[0]?.kind === "text" ? blocks.data[0].text : null;
   if (savedText !== text) throw new ServiceRejection("idempotency_conflict");
   const placement = await placementOf(prisma, message.id, sent.runId);
-  if (!replayed) {
+  // Checked rather than inferred from a replay: the send commits before this point, so a request
+  // that failed after it left the message unaudited, and its retry is the one to write it.
+  if (!replayed || !(await promptAudited(prisma, credential.id, threadId, message))) {
     await recordAuditEvent({
       action: "service_api.prompt",
       actor: { type: "service", id: credential.id, label: credential.name },
@@ -192,6 +195,30 @@ async function sendPrompt(
     });
   }
   return { ...placement, messageId: message.id, seq: sent.seq, idempotencyKey };
+}
+
+/** Audit metadata keeps no message ids, so the thread and the message's place in it name it. */
+function promptAudited(
+  prisma: PrismaClient,
+  credentialId: string,
+  threadId: string,
+  message: { seq: number; createdAt: Date },
+): Promise<boolean> {
+  return runAsSystem("check a key's prompt audit", async () =>
+    Boolean(
+      await prisma.auditEvent.findFirst({
+        where: {
+          action: "service_api.prompt",
+          actorType: "service",
+          actorId: credentialId,
+          threadId,
+          createdAt: { gte: message.createdAt },
+          metadata: { path: ["seq"], equals: message.seq },
+        },
+        select: { id: true },
+      }),
+    ),
+  );
 }
 
 const WAIT_POLL_MS = 400;
