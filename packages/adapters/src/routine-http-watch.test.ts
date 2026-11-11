@@ -1,3 +1,4 @@
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "./computer-lifecycle.js";
 import { egressRefused } from "./network-address.js";
@@ -201,4 +202,58 @@ it.each([undefined, ["id"]])("refuses deeply nested JSON safely with track=%s", 
   await expect(checkRoutineWatch(deps, routine, now)).rejects.toThrow(
     new RoutineWatchError("HTTPS check JSON is too deeply nested."),
   );
+});
+
+describe("HTTP watch transport diagnostics", () => {
+  let sink: ReturnType<typeof createTestSink>;
+  beforeEach(() => {
+    sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+  });
+
+  it.each([
+    ["ENOTFOUND", "dns"],
+    ["EAI_AGAIN", "dns"],
+    ["ECONNREFUSED", "connection"],
+    ["ECONNRESET", "connection"],
+    ["ETIMEDOUT", "timeout"],
+    ["UND_ERR_CONNECT_TIMEOUT", "timeout"],
+    ["CERT_HAS_EXPIRED", "tls"],
+    ["ERR_TLS_CERT_ALTNAME_INVALID", "tls"],
+    ["fake-private-code", "transport"],
+  ])("records a safe category for %s without request details", async (code, kind) => {
+    const { deps, routine, fetch } = setup();
+    const error = new TypeError("Request failed: https://example.com/status/fake-secret", {
+      cause: Object.assign(new Error("fake-secret"), { code }),
+    });
+    error.name = "fake-secret";
+    fetch.mockRejectedValueOnce(error);
+    await expect(checkRoutineWatch(deps, routine, now)).rejects.toBeInstanceOf(RoutineWatchRetry);
+    const event = sink.events.find((entry) => entry.message === "routine.http_check_failed");
+    expect(event).toMatchObject({
+      level: "warn",
+      "routine.id": routine.id,
+      "http.failure.kind": kind,
+    });
+    expect(event).not.toHaveProperty("error");
+    expect(JSON.stringify(event)).not.toContain("fake-secret");
+    expect(JSON.stringify(event)).not.toContain("https://");
+  });
+
+  it("distinguishes an aborted request without logging its message", async () => {
+    const { deps, routine, fetch } = setup();
+    fetch.mockRejectedValueOnce(new DOMException("fake-secret", "TimeoutError"));
+    await expect(checkRoutineWatch(deps, routine, now)).rejects.toBeInstanceOf(RoutineWatchRetry);
+    const event = sink.events.find((entry) => entry.message === "routine.http_check_failed");
+    expect(event?.["http.failure.kind"]).toBe("timeout");
+    expect(JSON.stringify(event)).not.toContain("fake-secret");
+  });
+
+  it("records refused destinations separately from transport failures", async () => {
+    const { deps, routine } = setup();
+    routine.watch = { kind: "http", url: "https://127.0.0.1/status" };
+    await expect(checkRoutineWatch(deps, routine, now)).rejects.toBeInstanceOf(RoutineWatchError);
+    const event = sink.events.find((entry) => entry.message === "routine.http_check_failed");
+    expect(event?.["http.failure.kind"]).toBe("destination_refused");
+  });
 });

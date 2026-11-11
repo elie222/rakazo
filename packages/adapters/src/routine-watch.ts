@@ -14,7 +14,12 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
-import { connectorKindFromToolName, redactSecrets, watchToolRefusal } from "@rakazo/core";
+import {
+  connectorKindFromToolName,
+  isAbandonedRequest,
+  redactSecrets,
+  watchToolRefusal,
+} from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -125,7 +130,7 @@ export async function checkRoutineWatch(
   const previous = parseRoutineWatchState(routine.watchState);
   const reading =
     watch.kind === "http"
-      ? await readHttp(deps, watch)
+      ? await readHttp(deps, watch, routine.id)
       : watch.kind === "tool"
         ? await readTool(deps, routine, watch)
         : await readComputer(deps, routine, watch);
@@ -142,7 +147,11 @@ type Reading = {
 };
 
 /** A structured public GET, never a shell command or an authenticated server session. */
-async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Reading> {
+async function readHttp(
+  deps: RoutineWatchDeps,
+  watch: RoutineWatch,
+  routineId: string,
+): Promise<Reading> {
   let response: Awaited<ReturnType<typeof fetchSafeHttpRequest>>;
   try {
     response = await fetchSafeHttpRequest(
@@ -156,6 +165,10 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
       },
     );
   } catch (error) {
+    getLogger().warn("routine.http_check_failed", {
+      "routine.id": routineId,
+      "http.failure.kind": httpFailureKind(error),
+    });
     // Keep destination refusals permanent even when the transport wraps one in its cause.
     if (isEgressRefused(error)) throw new RoutineWatchError("Could not check the HTTPS endpoint.");
     // Never expose a transport error's URL; it can carry a token in its path or query.
@@ -190,6 +203,37 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
     ? readJsonItems(data, watch.track).fingerprint
     : sha256(stableStringify(data));
   return { fingerprint, detail: null };
+}
+
+const HTTP_FAILURE_CODES: Record<string, string> = {
+  ENOTFOUND: "dns",
+  EAI_AGAIN: "dns",
+  ECONNREFUSED: "connection",
+  ECONNRESET: "connection",
+  EHOSTUNREACH: "connection",
+  ENETUNREACH: "connection",
+  ETIMEDOUT: "timeout",
+  UND_ERR_CONNECT_TIMEOUT: "timeout",
+  UND_ERR_HEADERS_TIMEOUT: "timeout",
+  UND_ERR_BODY_TIMEOUT: "timeout",
+  CERT_HAS_EXPIRED: "tls",
+  ERR_TLS_CERT_ALTNAME_INVALID: "tls",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "tls",
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "tls",
+};
+
+/** Only fixed categories leave this boundary: error names, codes, and messages may contain secrets. */
+function httpFailureKind(error: unknown): string {
+  if (isEgressRefused(error)) return "destination_refused";
+  if (isAbandonedRequest(error)) return "timeout";
+  let current = error;
+  for (let depth = 0; current !== null && typeof current === "object" && depth < 4; depth += 1) {
+    const { code, cause } = current as { code?: unknown; cause?: unknown };
+    if (typeof code === "string" && Object.hasOwn(HTTP_FAILURE_CODES, code))
+      return HTTP_FAILURE_CODES[code]!;
+    current = cause;
+  }
+  return "transport";
 }
 
 /** Pure: decides baseline / unchanged / changed and describes the change. */
