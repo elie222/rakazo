@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DeploymentModels } from "./deployment-model.js";
 import {
   allowlistOpens,
   allowlistWithProvider,
@@ -339,6 +340,37 @@ describe("deployment models", () => {
       ],
     });
     expect(models.default).toEqual(environment.default);
+  });
+
+  it("runs the environment's default on an admin's endpoint only if the endpoint lists it", () => {
+    const environment: DeploymentModels = {
+      default: {
+        provider: "openai-compatible",
+        model: "fixture/env-model",
+        key: "fixture-env-key",
+        configured: true,
+        hostCredentials: false,
+      },
+      connections: [
+        {
+          provider: "openai-compatible",
+          source: "environment",
+          key: "fixture-env-key",
+          models: ["fixture/env-model"],
+        },
+      ],
+      allowed: [],
+    };
+    const replaced = (models: string[]) =>
+      applyDeploymentModelSettings(environment, {
+        modelConnections: [{ provider: "openai-compatible", ciphertext: "fixture", models }],
+      });
+    const without = replaced(["fixture/admin-model"]);
+    expect(without.default.configured).toBe(false);
+    expect(deploymentServes(without, "openai-compatible", "fixture/env-model")).toBe(false);
+    const listing = replaced(["fixture/admin-model", "fixture/env-model"]);
+    expect(listing.default.configured).toBe(true);
+    expect(deploymentServes(listing, "openai-compatible", "fixture/env-model")).toBe(true);
   });
 
   it("keeps the environment's default while model credits bill", () => {

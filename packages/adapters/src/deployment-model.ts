@@ -284,11 +284,16 @@ export function applyDeploymentModelSettings(
       hostCredentials: environmentKey && env.hostCredentials,
     };
   };
-  // The environment's own default keeps exactly the rules it has always had.
+  // The environment's own default keeps exactly the rules it has always had. An admin's
+  // connection that replaces its provider runs it too, unless it names models without it.
+  const replacement = byProvider.get(env.provider);
   const environmentDefault: DeploymentModel = {
     ...env,
     ...keyFor(env.provider),
-    configured: env.configured || byProvider.get(env.provider)?.source === "settings",
+    configured:
+      replacement?.source === "settings"
+        ? !replacement.models || replacement.models.includes(env.model)
+        : env.configured,
   };
   const provider = saved?.defaultModelProvider?.trim();
   const model = usableModelId(saved?.defaultModelId) ?? env.model;
