@@ -203,6 +203,8 @@ export function createRunRuntime(
     secrets: [
       env.deploymentModelKey ?? "",
       ...env.deploymentModels.connections.map((connection) => connection.key ?? ""),
+      // The operator's voice key, which bot tools use to list the deployment's voices.
+      process.env.VOICE_DEFAULT_API_KEY?.trim() ?? "",
       localModelsApiKey() ?? "",
       env.composioApiKey ?? "",
       env.cursorApiKey ?? "",

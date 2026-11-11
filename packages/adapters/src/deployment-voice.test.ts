@@ -209,10 +209,13 @@ describe("listDefaultVoices", () => {
       userVoicePreference: { findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
 
+    const revealed = vi.fn();
     await expect(
-      listDefaultVoices({ prisma, secretStore: secrets }, scope, context),
+      listDefaultVoices({ prisma, secretStore: secrets }, scope, context, revealed),
     ).resolves.toEqual([{ id: "voice-a", label: "Voice A" }]);
     expect(createVoiceProvider).toHaveBeenCalledWith("fish-audio");
     expect(listVoices).toHaveBeenCalledWith("plain:cipher-1", context);
+    // The run redacts the deployment's key from whatever the provider sends back.
+    expect(revealed).toHaveBeenCalledExactlyOnceWith("plain:cipher-1");
   });
 });

@@ -140,12 +140,16 @@ export async function listDefaultVoices(
   },
   scope: Pick<Actor, "userId" | "spaceId">,
   context: AdapterContext,
+  /** Called with each key before it is used, so a run redacts it from what the call returns. */
+  revealed?: (key: string) => void,
 ): Promise<VoiceInfo[] | null> {
   const credential = await findDefaultVoiceCredential(deps.prisma, scope);
   if (!credential) {
     const deployment = await findDeploymentVoice(deps.prisma, deps.secretStore);
     if (!deployment) return null;
-    return createVoiceProvider(deployment.provider).listVoices(await deployment.loadKey(), context);
+    const key = await deployment.loadKey();
+    revealed?.(key);
+    return createVoiceProvider(deployment.provider).listVoices(key, context);
   }
   const secret = await deps.prisma.secret.findFirst({
     where: { id: credential.secretId, userId: scope.userId, spaceId: null },
@@ -164,6 +168,7 @@ export async function listDefaultVoices(
     plaintext,
     context.signal,
   );
+  revealed?.(apiKey);
   return provider.listVoices(apiKey, context);
 }
 

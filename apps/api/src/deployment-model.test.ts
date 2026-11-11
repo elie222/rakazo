@@ -168,6 +168,24 @@ describe("deployment model settings", () => {
     expect(state.connections.size).toBe(0);
   });
 
+  it("checks a catalog key as a member's is, and takes only one that reads back as a key", async () => {
+    const { deps, state } = makeDeps();
+    const endpoint = JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "https://elsewhere.example.test/v1",
+    });
+    await expect(
+      connectDeploymentModel(deps, actor, { provider: "deepseek", apiKey: endpoint }),
+    ).rejects.toThrow("Enter an API key");
+    await expect(
+      connectDeploymentModel(deps, actor, { provider: "deepseek", apiKey: "short" }),
+    ).rejects.toThrow("at least 8 characters");
+    expect(state.connections.size).toBe(0);
+    await connectDeploymentModel(deps, actor, { provider: "deepseek", apiKey: " fixture-key " });
+    const [stored] = [...state.secrets.values()];
+    expect(parseModelSecret(stored!)).toEqual({ kind: "api_key", key: "fixture-key" });
+  });
+
   it("asks for a key on a new connection", async () => {
     const { deps } = makeDeps();
     await expect(

@@ -388,7 +388,13 @@ export type DeploymentModelSettings = z.infer<typeof DeploymentModelSettingsSche
 
 /** Saves the default model and the allowlist; null for either follows the environment. */
 export const DeploymentModelUpdateSchema = z.object({
-  defaultModel: DeploymentModelChoiceSchema.nullable().optional(),
+  defaultModel: z
+    .object({
+      provider: z.string().trim().min(1).max(64),
+      modelId: z.string().trim().min(1).max(512),
+    })
+    .nullable()
+    .optional(),
   allowedModels: z.array(z.string().trim().min(1).max(600)).max(500).nullable().optional(),
   /** Opens all of one connection's models to members, or closes every one of them. */
   open: z.object({ provider: z.string().trim().min(1).max(64), open: z.boolean() }).optional(),
