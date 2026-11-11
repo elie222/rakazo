@@ -206,6 +206,7 @@ describe("parseVaultCsv", () => {
       error: "unreadable",
     });
     expect(parseVaultCsv("name,username\nExample,alice")).toEqual({ error: "no_logins" });
+    expect(parseVaultCsv("name,phone\nAda,+1 555 0100")).toEqual({ error: "no_logins" });
     expect(parseVaultCsv("")).toEqual({ error: "no_logins" });
     expect(parseVaultCsv("x".repeat(VAULT_IMPORT_FILE_LIMIT + 1))).toEqual({ error: "too_large" });
   });

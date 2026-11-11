@@ -347,12 +347,13 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     // A site no login may be saved for: not saved, and it takes no place.
     `Metadata,https://169.254.169.254,admin,fake-pass-meta-${stamp},`,
   ].join("\n");
-  // A file the import can't read says why, and offers nothing to import. A KeePass 1.x export,
-  // whose escapes CSV doesn't use, is one; a sheet without a site and password column another.
+  // A file the import can't read says why, and offers nothing to import. A KeePass 1.x export
+  // with a doubled backslash, an escape CSV doesn't use, is one; a sheet without a site and
+  // password column another.
   const refused = [
     {
       name: "keepass.csv",
-      text: '"Account","Login Name","Password","Web Site","Comments"\n"Work","bob","p","https://a.test",""',
+      text: '"Account","Login Name","Password","Web Site","Comments"\n"Work","CORP\\\\bob","fake-pass","https://example.com",""',
       says: "This file can't be read as CSV.",
       shot: "vault-import-unreadable",
     },
