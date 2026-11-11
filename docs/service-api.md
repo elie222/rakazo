@@ -44,7 +44,7 @@ These stay with a person in the app:
 
 A message sent with a key is marked by the platform with the key's name. The sender cannot set or remove the mark. You see it in the chat, API readers see a `sent_with_key` block, and the bot reads it as part of the message.
 
-A run started this way is not treated as one you started. The bot does not get its bot management tools, and the text does not count as your words when Auto Review or site trust decides what is allowed. Your approval settings still apply, and any approval card comes to you. A message sent with a key while the bot is working waits for its own run instead of steering the current one.
+A run started this way is not treated as one you started. The bot does not get its bot management tools or the tools for connecting to other people's agents, and the text does not count as your words when Auto Review or site trust decides what is allowed. Your approval settings still apply, and any approval card comes to you. A message sent with a key while the bot is working waits for its own run instead of steering the current one.
 
 Instructions, routines and memory written with a key are saved as yours, and later runs treat them that way, so `bots:write`, `routines:write` and `memory:write` are the scopes to grant with care.
 
