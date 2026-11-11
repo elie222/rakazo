@@ -2,6 +2,7 @@ import type { AgentRuntimeEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
+  question: "Which city should I use?" as string,
   options: ["Berlin", "Seoul", "Toronto"],
   detail: undefined as string | undefined,
   tools: [] as Array<{
@@ -28,7 +29,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       if (!askUser) throw new Error("ask_user tool missing");
       // The real agent prepares the model's arguments before executing them.
       const raw = {
-        question: "Which city should I use?",
+        question: fakeAgentState.question,
         options: fakeAgentState.options,
         ...(fakeAgentState.detail === undefined ? {} : { detail: fakeAgentState.detail }),
       };
@@ -101,6 +102,7 @@ describe("Pi choice asks", () => {
     fakeAgentState.tools = [];
     fakeAgentState.options = ["Berlin", "Seoul", "Toronto"];
     fakeAgentState.detail = undefined;
+    fakeAgentState.question = "Which city should I use?";
   });
 
   it("emits a tappable ask and stops without a finished-work fallback", async () => {
@@ -140,6 +142,18 @@ describe("Pi choice asks", () => {
         { id: "choice-3", label: "Toronto" },
       ],
     });
+  });
+
+  it("rejects a blank question instead of posting a card nobody can answer", async () => {
+    fakeAgentState.question = " ";
+    fakeAgentState.options = ["ok", "ok2"];
+    const runtime = new PiAgentRuntime();
+    const events: AgentRuntimeEvent[] = [];
+
+    await expect(async () => {
+      for await (const event of runtime.run(runRequest, runContext)) events.push(event);
+    }).rejects.toThrow("reply exactly NO_RESPONSE instead");
+    expect(events.some((event) => event.type === "ask")).toBe(false);
   });
 
   it("rejects an empty choice set before emitting an ask", async () => {
