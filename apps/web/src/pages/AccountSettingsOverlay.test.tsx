@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import type { AccountSecurity } from "@rakazo/contracts";
+import type { AccountSecurity, QuietHours } from "@rakazo/contracts";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
-import { act, useEffect } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
@@ -32,6 +32,8 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
+  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
+  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Switch: ({
     checked,
     onCheckedChange,
@@ -575,5 +577,134 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await editor.cleanup();
+  }
+});
+
+function QuietHoursPanel({
+  initial,
+  save,
+}: {
+  initial: QuietHours | null;
+  save: (next: QuietHours | null) => Promise<void>;
+}) {
+  const [quietHours, setQuietHours] = useState(initial);
+  return (
+    <GeneralSettingsPanels
+      name="Jamie"
+      quietHours={quietHours}
+      onQuietHoursChange={async (next) => {
+        await save(next);
+        setQuietHours(next);
+      }}
+    />
+  );
+}
+
+it("turns quiet hours on at the usual hours, moves one end, and turns them off", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const saved: Array<QuietHours | null> = [];
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="quiet-hours-toggle"]')!;
+  const range = () => container.querySelector('[data-testid="quiet-hours-range"]');
+  try {
+    await act(async () => {
+      root.render(<QuietHoursPanel initial={null} save={async (next) => void saved.push(next)} />);
+    });
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+    expect(range()).toBeNull();
+
+    await act(async () => toggle().click());
+    expect(saved).toEqual([{ start: 22, end: 7 }]);
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    const start = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Quiet hours start"]',
+    )!;
+    // The end hour isn't offered as the start, so the two can't match.
+    expect([...start.options].map((option) => option.value)).not.toContain("7");
+    expect(start.options).toHaveLength(23);
+    await act(async () => {
+      start.value = "23";
+      start.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(saved.at(-1)).toEqual({ start: 23, end: 7 });
+
+    await act(async () => toggle().click());
+    expect(saved.at(-1)).toBeNull();
+    expect(range()).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("keeps quiet hours as they were when a save fails, and offers none to an older server", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="quiet-hours-toggle"]');
+  try {
+    await act(async () => {
+      root.render(
+        <QuietHoursPanel initial={null} save={() => Promise.reject(new Error("offline"))} />,
+      );
+    });
+    await act(async () => toggle()!.click());
+    expect(toggle()!.getAttribute("aria-checked")).toBe("false");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Couldn't update quiet hours",
+    );
+
+    await act(async () => {
+      root.render(<GeneralSettingsPanels name="Jamie" onQuietHoursChange={async () => {}} />);
+    });
+    expect(toggle()).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("lets a quiet hours save and a timezone save wait for each other", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let finishQuiet: () => void = () => undefined;
+  let finishZone: () => void = () => undefined;
+  const zone = () => container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')!;
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="quiet-hours-toggle"]')!;
+  try {
+    await act(async () => {
+      root.render(
+        <GeneralSettingsPanels
+          name="Jamie"
+          timezone="Europe/Berlin"
+          onTimezoneChange={() => new Promise<void>((resolve) => (finishZone = resolve))}
+          quietHours={null}
+          onQuietHoursChange={() => new Promise<void>((resolve) => (finishQuiet = resolve))}
+        />,
+      );
+    });
+    await act(async () => toggle().click());
+    expect(zone().disabled).toBe(true);
+    await act(async () => finishQuiet());
+    expect(zone().disabled).toBe(false);
+
+    await act(async () => {
+      zone().value = "UTC";
+      zone().dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(toggle().disabled).toBe(true);
+    await act(async () => finishZone());
+    expect(toggle().disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
   }
 });

@@ -120,6 +120,7 @@ import {
   PluginSubmissionReviewSchema,
   PluginSubmissionSchema,
   PluginSubmissionStatusSchema,
+  QuietHoursSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
@@ -394,13 +395,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Null turns quiet hours off. */
+            quietHours: QuietHoursSchema.nullable().optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.quietHours !== undefined,
             { message: "Nothing to update" },
           ),
       )

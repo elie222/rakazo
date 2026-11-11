@@ -1,5 +1,5 @@
-import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
+import type { Bot, ChatAlert, Me, ProductEvent } from "@rakazo/contracts";
+import { chatSnoozed, inQuietHours, isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -27,6 +27,8 @@ type ChatAlertOptions = {
   meId: string | undefined;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
   groupsRef?: RefObject<readonly SnoozableChat[]>;
+  /** The signed-in person's quiet hours and timezone, read each time something would notify. */
+  quietHoursRef?: RefObject<Pick<Me, "quietHours" | "timezone"> | null | undefined>;
 };
 
 /** A question still arrives while a chat is snoozed; an ordinary reply waits. */
@@ -75,8 +77,12 @@ function openChatOnClick(
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef }: ChatAlertOptions,
+  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef, quietHoursRef }: ChatAlertOptions,
 ) {
+  const quietNow = () => {
+    const me = quietHoursRef?.current;
+    return inQuietHours(me?.quietHours, me?.timezone, new Date());
+  };
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
   useEffect(() => prepareNotificationIcons(bots), [bots]);
@@ -93,10 +99,13 @@ export function useBrowserNotifications(
         ? alert.groupId === activeGroupId.current
         : !activeGroupId.current && alert.botId === activeBotId.current;
       // The open chat's own stream alerts for its replies and failures; only a takeover is missed.
+      // In quiet hours the stream holds everything, and the server's question, takeover or
+      // failure, which goes only to the person whose run it is, shows instead.
+      const streamAlerts =
+        alert.kind !== "takeover" && !(alert.kind !== "completion" && quietNow());
       if (
         isOpen &&
-        (alert.kind !== "takeover" ||
-          (document.visibilityState === "visible" && document.hasFocus()))
+        (streamAlerts || (document.visibilityState === "visible" && document.hasFocus()))
       )
         return;
       try {
@@ -166,8 +175,9 @@ export function useBrowserNotifications(
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
-    // A reply queued while permission was pending can be snoozed before it is shown.
-    if (snoozedOrdinaryReply(pending.event, chatFor(pending))) return true;
+    // A reply queued while permission was pending can be snoozed, or quiet hours begin, before
+    // it is shown.
+    if (snoozedOrdinaryReply(pending.event, chatFor(pending)) || quietNow()) return true;
     const result = deliverNativeBrowserNotification(
       pending.event,
       currentBot.name || pending.botName,
@@ -226,8 +236,9 @@ export function useBrowserNotifications(
         groupId,
       } satisfies PendingBrowserNotification;
       // Ordinary replies wait out a snooze. A question still comes through, and a reply that was
-      // queued before the snooze is checked again when it is actually shown.
-      if (snoozedOrdinaryReply(event, chatFor(pending))) return;
+      // queued before the snooze is checked again when it is actually shown. In quiet hours
+      // nothing from the stream does: the server alerts the run's owner to what needs them.
+      if (snoozedOrdinaryReply(event, chatFor(pending)) || quietNow()) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
         pendingBrowserNotifications.current.set(event.threadId, pending);

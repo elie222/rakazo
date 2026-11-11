@@ -1,9 +1,17 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, PlanLimits, UsageSummary } from "@rakazo/contracts";
+import type { AccountSecurity, PlanLimits, QuietHours, UsageSummary } from "@rakazo/contracts";
 import { modelCreditsUsd } from "@rakazo/contracts";
-import { APP_LOCALE_LABELS, accountDisplay, displayName, formatTimeUntil } from "@rakazo/core";
+import {
+  APP_LOCALE_LABELS,
+  accountDisplay,
+  DEFAULT_QUIET_HOURS,
+  displayName,
+  formatTimeUntil,
+  quietHourChoices,
+  quietHoursSave,
+} from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -22,6 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAccountDeletion } from "../../components/account-deletion";
 import { AppMark } from "../../components/app-mark";
 import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
+import { MenuPicker } from "../../components/menu-picker";
 import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
@@ -91,6 +100,7 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { deviceTimeZone } from "../../lib/routine";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import { loadSessionToken } from "../../lib/session";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
@@ -135,7 +145,7 @@ export default function Account() {
     updateAccountName,
     refresh: () => rpc("me"),
     onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
-    onRefreshed: setMe,
+    onRefreshed: refreshedMe,
     setNameDraft,
     setNamePending,
     setNameError,
@@ -157,6 +167,21 @@ export default function Account() {
   const notificationQueue = useRef<ReturnType<
     typeof createQueuedSave<LiveNotificationSettings>
   > | null>(null);
+  const quietHoursQueue = useRef<ReturnType<typeof createQueuedSave<QuietHours | null>> | null>(
+    null,
+  );
+  const savedTimezone = useRef<string | null | undefined>(undefined);
+  savedTimezone.current = me?.timezone;
+
+  const quietHoursSaving = useRef(false);
+
+  /** A fresh read of the account, which is also the quiet hours' new baseline between saves. */
+  function refreshedMe(next: MobileMe) {
+    // A save in flight owns the hours shown; a read that overlaps it may predate it.
+    const saving = quietHoursSaving.current;
+    setMe((current) => (saving && current ? { ...next, quietHours: current.quietHours } : next));
+    if (!saving && next.quietHours !== undefined) quietHoursQueue.current?.reset(next.quietHours);
+  }
   const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -245,7 +270,7 @@ export default function Account() {
 
   useEffect(() => {
     void rpc("me")
-      .then(setMe)
+      .then(refreshedMe)
       .catch(() => undefined);
     void rpc("usage/summary")
       .then(setUsage)
@@ -438,6 +463,27 @@ export default function Account() {
     });
     setNotificationError(null);
     notificationQueue.current.update(next);
+  }
+
+  function updateQuietHours(next: QuietHours | null) {
+    if (!me || me.quietHours === undefined) return;
+    quietHoursQueue.current ??= createQueuedSave(me.quietHours, {
+      onChange: (quietHours) =>
+        setMe((current) => (current ? { ...current, quietHours } : current)),
+      equals: (a, b) => a?.start === b?.start && a?.end === b?.end,
+      onSavingChange: (saving) => {
+        quietHoursSaving.current = saving;
+      },
+      save: async (quietHours) => {
+        const save = quietHoursSave(quietHours, savedTimezone.current, deviceTimeZone());
+        if (!save) throw new Error("No timezone to read quiet hours in");
+        const next = await rpc("preferences/update", save);
+        savedTimezone.current = next.timezone;
+        setMe((current) => (current ? { ...current, timezone: next.timezone ?? null } : current));
+      },
+      onError: () => Alert.alert(t`Couldn't update quiet hours`),
+    });
+    quietHoursQueue.current.update(next);
   }
 
   useEffect(() => {
@@ -770,6 +816,37 @@ export default function Account() {
           </SettingsGroup>
         ) : null}
 
+        {me && me.quietHours !== undefined ? (
+          <SettingsGroup>
+            <SettingsSwitch
+              label={t`Quiet hours`}
+              detail={me.quietHours ? t`Only what needs you comes through.` : undefined}
+              value={me.quietHours !== null}
+              onChange={(on) => updateQuietHours(on ? DEFAULT_QUIET_HOURS : null)}
+            />
+            {me.quietHours ? (
+              <>
+                <QuietHourPicker
+                  label={t`Starts`}
+                  value={me.quietHours.start}
+                  other={me.quietHours.end}
+                  locale={locale}
+                  onChange={(start) =>
+                    me.quietHours && updateQuietHours({ ...me.quietHours, start })
+                  }
+                />
+                <QuietHourPicker
+                  label={t`Ends`}
+                  value={me.quietHours.end}
+                  other={me.quietHours.start}
+                  locale={locale}
+                  onChange={(end) => me.quietHours && updateQuietHours({ ...me.quietHours, end })}
+                />
+              </>
+            ) : null}
+          </SettingsGroup>
+        ) : null}
+
         <SettingsGroup>
           {me?.billingEnabled ? (
             <SettingsRow
@@ -941,6 +1018,33 @@ export default function Account() {
       ) : null}
       {deletion.dialog}
     </SafeAreaView>
+  );
+}
+
+/** One end of the quiet hours, on the hour; the other end's hour isn't offered. */
+function QuietHourPicker({
+  label,
+  value,
+  other,
+  locale,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  other: number;
+  locale: string;
+  onChange: (hour: number) => void;
+}) {
+  return (
+    <MenuPicker
+      label={label}
+      value={String(value)}
+      choices={quietHourChoices(other, locale).map(({ hour, label }) => ({
+        key: String(hour),
+        label,
+      }))}
+      onChange={(key) => onChange(Number(key))}
+    />
   );
 }
 

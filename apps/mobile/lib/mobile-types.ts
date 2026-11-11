@@ -58,6 +58,8 @@ export type MobileMe = Pick<
   | "paymentWalletProvider"
   | "ticketBoardEnabled"
   | "botAvatarSet"
+  | "timezone"
+  | "quietHours"
 >;
 export type MobileModel = ModelCatalogEntry;
 /** Shared DTO includes headerNames only; header values remain in the server secret. */

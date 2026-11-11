@@ -7,7 +7,7 @@ Open **Settings** from the account menu (your avatar at the bottom of the sideba
 ## Preferences
 
 **Settings → General** holds your name, **Appearance** (light, dark or system), **Sidebar density**,
-**Language** and **Timezone**. Routines run on your timezone.
+**Language**, **Timezone** and **Quiet hours**. Routines run on your timezone.
 
 Under **Advanced**:
 
@@ -18,6 +18,14 @@ Under **Advanced**:
 
 When you open an outside link from a chat, Rakazo asks first. Choose **Always open** for a site you
 trust; those sites are listed under **Trusted sites**, where you can remove them.
+
+### Quiet hours
+
+Turn on **Quiet hours** and pick when they start and end, on the hour; 10 PM to 7 AM unless you
+change it. Every day in that window, replies and other news in your chats don't notify you on any
+device. They wait in your chats as unread. A question for you, a request to take over the screen,
+and a run of yours that failed still notify you, since only you can act on them. The hours follow
+your timezone, or your device's if you never set one.
 
 ## Sign-in and security
 
