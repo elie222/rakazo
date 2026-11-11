@@ -1294,14 +1294,11 @@ msgstr "한 번 허용"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "시스템 설정에서 Rakazo가 음성 인식과 마이크를 사용하도록 허용하세요."
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "설정에서 음성 인식을 허용하거나, 텍스트 변환을 지원하는 음성 서비스를 연결하세요."
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "설정에서 음성 인식을 허용하거나, ElevenLabs, OpenAI 또는 Fish Audio를 연결하세요."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -3303,6 +3300,7 @@ msgstr "스페이스에서 나가지 못했습니다"
 msgid "Could not load"
 msgstr "불러올 수 없음"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "활동을 불러오지 못했습니다"
@@ -3534,6 +3532,7 @@ msgstr "샘플 음성을 재생하지 못했습니다."
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "클립을 재생하지 못했습니다."
 
@@ -6968,6 +6967,7 @@ msgstr "행 없음"
 msgid "No runs match these filters."
 msgstr "이 필터와 일치하는 실행이 없습니다."
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"
