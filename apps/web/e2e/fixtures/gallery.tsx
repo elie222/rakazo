@@ -439,13 +439,16 @@ const working: Scenario = {
         prUrl: "https://example.test/pull/42",
       },
     ]),
-    bot([
-      {
-        kind: "computer",
-        state: "Needs you",
-        text: "Sign in to Harbor Bookings, then hand it back.",
-      },
-    ]),
+    bot(
+      [
+        {
+          kind: "computer",
+          state: "Needs you",
+          text: "Sign in to Harbor Bookings, then hand it back.",
+        },
+      ],
+      { runId: "run-sign-in" },
+    ),
     bot([{ kind: "computer", state: "Working", text: "Filling in the booking form." }]),
     bot([
       { kind: "computer", state: "Done", text: "Sign in to the booking site, then hand it back." },

@@ -79,7 +79,7 @@ export function ComputerCard({
   const pending = block.state === TAKEOVER_COMPUTER_PENDING_STATE;
   const [expanded, setExpanded] = useState(false);
   const [releasing, setReleasing] = useState(false);
-  const image = useComputerPreview(pending && !readOnly ? botId : undefined, runId);
+  const image = useComputerPreview(pending && !readOnly && runId ? botId : undefined, runId);
   const label =
     block.state === TAKEOVER_COMPUTER_PENDING_STATE
       ? t`Needs you`
@@ -174,7 +174,7 @@ export function ComputerCard({
           ) : null}
           {canAct && onOpen ? (
             <View style={styles.actions}>
-              {pending && botId ? (
+              {pending && botId && runId ? (
                 <>
                   <NativeActionButton
                     label={t`Skip`}

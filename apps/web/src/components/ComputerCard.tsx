@@ -95,7 +95,8 @@ function PendingComputerCard({
   const queries = useSpaceQueries();
   const preview = useQuery({
     ...queries.computer.preview.queryOptions({ input: { botId: botId ?? "", runId } }),
-    enabled: Boolean(botId),
+    // A card with no run (an imported one) never answers or shows a later request.
+    enabled: Boolean(botId && runId),
     retry: false,
     // A later request must never paint an earlier screen, and a return to the tab redraws it.
     gcTime: 0,
@@ -137,7 +138,7 @@ function PendingComputerCard({
         >
           <img src={image} alt="" className="block h-auto w-full" draggable={false} />
         </button>
-      ) : preview.isPending && botId ? (
+      ) : preview.isPending && botId && runId ? (
         <div className="mt-3 aspect-[16/10] w-full animate-pulse rounded-lg bg-foreground/5" />
       ) : null}
       {releaseError ? (
@@ -146,24 +147,28 @@ function PendingComputerCard({
         </p>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={releasing !== null}
-          onClick={() => void release("skipped")}
-        >
-          <Trans>Skip</Trans>
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={releasing !== null}
-          onClick={() => void release("done")}
-        >
-          <Trans>I’m done</Trans>
-        </Button>
+        {runId ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={releasing !== null}
+              onClick={() => void release("skipped")}
+            >
+              <Trans>Skip</Trans>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={releasing !== null}
+              onClick={() => void release("done")}
+            >
+              <Trans>I’m done</Trans>
+            </Button>
+          </>
+        ) : null}
         <Button
           type="button"
           size="sm"
