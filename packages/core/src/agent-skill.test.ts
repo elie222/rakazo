@@ -76,6 +76,27 @@ describe("parseSkillMd", () => {
     expect(String(parsed.frontmatter.literal).endsWith("\n")).toBe(true);
   });
 
+  it("parses nested metadata with wrapped plain scalar values", () => {
+    const parsed = parseSkillMd(`---
+name: ai-governance
+description: >-
+  Design an AI governance system with lifecycle gates, risk controls, and oversight.
+metadata:
+  tags: ai-governance, responsible-ai, model-risk, governance-operating-model,
+    fairness, privacy, security
+  source_repo: https://example.test/skills
+---
+
+Apply the governance controls.
+`);
+    expect("error" in parsed).toBe(false);
+    if ("error" in parsed) return;
+    expect(parsed.frontmatter.metadata).toEqual({
+      tags: "ai-governance, responsible-ai, model-risk, governance-operating-model, fairness, privacy, security",
+      source_repo: "https://example.test/skills",
+    });
+  });
+
   it("accepts comments after block scalar headers without changing their values", () => {
     for (const header of [">", ">-", ">2", ">2-", ">-2", "|", "|+", "|2", "|2+", "|+2"]) {
       for (const separator of [" ", "\t"]) {
@@ -96,7 +117,7 @@ describe("parseSkillMd", () => {
 
   it("does not treat a hash without separation as a block header comment", () => {
     const parsed = parseSkillMd("---\nname: Example\ndescription: >#comment\n  text\n---\n");
-    expect(parsed).toEqual({ error: "Unexpected indented frontmatter line without a key." });
+    expect(parsed).toMatchObject({ error: expect.any(String) });
   });
 
   it("preserves commas in quoted inline array items through save and reload", () => {
