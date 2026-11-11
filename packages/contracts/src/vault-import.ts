@@ -158,6 +158,7 @@ export function parseVaultCsv(text: string): VaultCsv {
     ]),
   ) as Record<Column, number[]>;
   if (!columns.url.length || !columns.password.length) return { error: "no_logins" };
+  // Trimmed, so never used for the password: that is read below exactly as the file has it.
   const value = (record: string[], column: Column) =>
     columns[column].map((index) => (record[index] ?? "").trim()).find(Boolean) ?? "";
   const skipped = noneSkipped();

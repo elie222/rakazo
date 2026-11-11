@@ -115,6 +115,7 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
+  PlanLimitsSchema,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
   PluginPreviewSchema,
@@ -1441,6 +1442,8 @@ export const appContract = {
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
     summary: oc.output(UsageSummarySchema),
+    /** Subscription sign-ins whose allowance could be read; others are left out. */
+    limits: oc.output(z.array(PlanLimitsSchema)),
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),

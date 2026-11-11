@@ -1294,14 +1294,11 @@ msgstr "एक बार अनुमति दें"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "सिस्टम सेटिंग्स में Rakazo को स्पीच रिकग्निशन और माइक्रोफ़ोन उपयोग करने की अनुमति दें।"
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "सेटिंग्स में स्पीच रिकग्निशन की अनुमति दें, या ट्रांसक्राइब करने वाला आवाज़ प्रोवाइडर कनेक्ट करें।"
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "सेटिंग्स में स्पीच रिकग्निशन की अनुमति दें, या ElevenLabs, OpenAI या Fish Audio कनेक्ट करें।"
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -3303,6 +3300,7 @@ msgstr "स्पेस छोड़ा नहीं जा सका"
 msgid "Could not load"
 msgstr "लोड नहीं हो सका"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "गतिविधि लोड नहीं हो सकी"
@@ -3534,6 +3532,7 @@ msgstr "टेस्ट क्लिप नहीं चलाई जा सक�
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "वह क्लिप नहीं चलाई जा सकी।"
 
@@ -6968,6 +6967,7 @@ msgstr "कोई पंक्ति नहीं"
 msgid "No runs match these filters."
 msgstr "इन फ़िल्टर से कोई रन मेल नहीं खाता।"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"

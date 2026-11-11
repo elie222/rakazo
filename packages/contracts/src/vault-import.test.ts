@@ -273,12 +273,17 @@ describe("parseVaultCsv", () => {
       "B,https://b.example.com,bee,fake-b,fake-other",
       "C,https://c.example.com,cee,,",
       "D,https://d.example.com,dee,   ,",
+      // Spaces alone are a password too, so a later column never replaces them.
+      "E,https://e.example.com,ee,  , fake-other",
+      "F,https://f.example.com,eff,\tfake-f ,",
     ].join("\n");
     expect(parseVaultCsv(csv)).toMatchObject({
       rows: [
         { origin: "https://a.example.com", password: " fake-a " },
         { origin: "https://b.example.com", password: "fake-b" },
         { origin: "https://d.example.com", password: "   " },
+        { origin: "https://e.example.com", password: "  " },
+        { origin: "https://f.example.com", password: "\tfake-f " },
       ],
       skipped: { noPassword: 1 },
       problems: [{ line: 3, label: "C", reason: "noPassword" }],

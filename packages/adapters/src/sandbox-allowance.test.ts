@@ -25,6 +25,7 @@ function allowanceDeps(input: {
   };
   hours?: Array<{ kind: string; hours: number }>;
   sandbox?: Partial<SandboxProvider>;
+  granted?: { creditCents: number; since: Date };
 }) {
   const prisma = {
     deploymentSettings: {
@@ -45,6 +46,12 @@ function allowanceDeps(input: {
                 byokTier: input.subscription?.byokTier ?? null,
                 byokPriceCents: input.subscription?.byokPriceCents ?? null,
               },
+      }),
+    },
+    accessGrant: {
+      aggregate: vi.fn().mockResolvedValue({
+        _sum: { creditCents: input.granted?.creditCents ?? null },
+        _min: { appliedAt: input.granted?.since ?? null },
       }),
     },
     $queryRaw: vi.fn().mockResolvedValue(input.hours ?? []),
@@ -115,6 +122,28 @@ describe("computer allowance", () => {
   it("gives nothing without a monthly plan", async () => {
     const { deps } = allowanceDeps({ billing: true, mode: "credits", creditAmountCents: null });
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(0);
+  });
+
+  it("gives granted credit without a monthly plan a fifth of it, once, since the first grant", async () => {
+    const since = new Date("2026-01-15T00:00:00.000Z");
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "credits",
+      granted: { creditCents: 5000, since },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
+    expect(prisma.$queryRaw.mock.calls[0]).toContainEqual(since);
+  });
+
+  it("does not add granted credit to a monthly credit plan", async () => {
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "credits",
+      creditAmountCents: 2000,
+      granted: { creditCents: 5000, since: new Date() },
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(4_000_000);
+    expect(prisma.accessGrant.aggregate).not.toHaveBeenCalled();
   });
 
   it("gives a trial $2 and a cancelled trial nothing", async () => {

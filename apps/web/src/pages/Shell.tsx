@@ -158,6 +158,7 @@ function SpaceShell() {
   const {
     groups,
     setGroups,
+    groupsRef,
     bots,
     setBots,
     botsRef,
@@ -455,6 +456,7 @@ function SpaceShell() {
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
       },
       meId: userId,
+      groupsRef,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({

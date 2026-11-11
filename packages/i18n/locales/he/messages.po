@@ -1294,14 +1294,11 @@ msgstr "אישור חד-פעמי"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "יש לאפשר ל-Rakazo להשתמש בזיהוי דיבור ובמיקרופון בהגדרות המערכת."
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "יש לאפשר זיהוי דיבור בהגדרות, או לחבר ספק קול שמתמלל."
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "יש לאפשר זיהוי דיבור בהגדרות, או לחבר את ElevenLabs, OpenAI או Fish Audio."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -3303,6 +3300,7 @@ msgstr "לא ניתן לצאת מהמרחב"
 msgid "Could not load"
 msgstr "לא ניתן לטעון"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "לא ניתן לטעון את הפעילות"
@@ -3534,6 +3532,7 @@ msgstr "לא ניתן להשמיע קטע בדיקה"
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "לא ניתן להשמיע את הקטע."
 
@@ -6968,6 +6967,7 @@ msgstr "אין שורות"
 msgid "No runs match these filters."
 msgstr "אין הרצות שתואמות למסננים האלה."
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"

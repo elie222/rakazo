@@ -407,14 +407,22 @@ beforeEach(() => {
   state.overrides = [];
   state.rpc.mockReset().mockImplementation(async (proc: string, input: Record<string, unknown>) => {
     if (proc === "vault/list") return state.credentials;
+    // Keeps what it is told, as the server does, so a read after a change finds it.
     if (proc === "vault/put") {
       const destination = input.destination as Credential;
       const saved = state.credentials.find((entry) => entry.name === destination.name);
-      return saved
-        ? { ...saved, title: input.title || saved.title }
+      const next = saved
+        ? { ...saved, title: (input.title as string) || saved.title }
         : credential({ ...destination, origin: destination.origin ?? "", title: destination.name });
+      state.credentials = saved
+        ? state.credentials.map((entry) => (entry === saved ? next : entry))
+        : [...state.credentials, next];
+      return next;
     }
-    if (proc === "vault/remove") return { ok: true };
+    if (proc === "vault/remove") {
+      state.credentials = state.credentials.filter((entry) => entry.name !== input.name);
+      return { ok: true };
+    }
     if (proc === "vault/activity")
       return input.name === "github" ? [{ botName: "Research bot" }, { botName: "Helper" }] : [];
     if (proc === "vault/reveal") {
@@ -517,6 +525,7 @@ it("adds an item of the kind picked from New, and closes the editor once saved",
 
   await act(async () => button("Save", dialog())!.click());
   expect(container.querySelector("dialog")).toBeNull();
+  expect(state.rpc).toHaveBeenLastCalledWith("vault/list", { scope: "account" });
   expect(rows()).toEqual(["api.github.com: API key", "netbird-key: $NETBIRD_KEY"]);
 });
 
@@ -591,7 +600,7 @@ it("offers the owner's bots once the server keeps a choice, and says when it did
   await act(async () => button("Variable", menu("New item"))!.click());
   expect(dialog().getAttribute("data-bots")).toBe("Ada");
   await act(async () => button("Chosen", dialog())!.click());
-  expect(state.rpc).toHaveBeenLastCalledWith(
+  expect(state.rpc).toHaveBeenCalledWith(
     "vault/put",
     expect.objectContaining({ allBots: false, botIds: ["bot-1"] }),
   );
@@ -733,11 +742,12 @@ it("offers no choice of bots when the saved items show the server can't keep one
 it("opens a saved login saying an older server kept neither its other sites nor its key", async () => {
   // An older server reads the saved login back as a preview, without the key.
   const rpc = state.rpc.getMockImplementation()!;
-  state.rpc.mockImplementation(async (proc: string, input: Record<string, unknown>) =>
-    proc === "vault/put"
-      ? credential({ name: "shop", auth: { type: "login" }, preview: {} })
-      : rpc(proc, input),
-  );
+  state.rpc.mockImplementation(async (proc: string, input: Record<string, unknown>) => {
+    if (proc !== "vault/put") return rpc(proc, input);
+    const saved = credential({ name: "shop", auth: { type: "login" }, preview: {} });
+    state.credentials = [...state.credentials, saved];
+    return saved;
+  });
   await render();
   await act(async () => button("Login", menu("New item"))!.click());
   await act(async () => button("Save key", dialog())!.click());
@@ -778,7 +788,7 @@ it("opens an item's detail on tap, and edits it from there or from its menu", as
   await act(async () => button("Edit", dialog())!.click());
   expect(container.querySelector('dialog[aria-label="Edit api_key github"]')).not.toBeNull();
   await act(async () => button("Save", dialog())!.click());
-  expect(state.rpc).toHaveBeenLastCalledWith("vault/put", {
+  expect(state.rpc).toHaveBeenCalledWith("vault/put", {
     scope: "account",
     destination: { name: "github", auth: { type: "bearer" } },
     title: "Renamed",
@@ -833,6 +843,7 @@ it("removes an item only once the destructive alert is confirmed", async () => {
 
   await act(async () => alertButton("Remove").onPress?.());
   expect(state.rpc).toHaveBeenCalledWith("vault/remove", { scope: "account", name: "github" });
+  expect(state.rpc).toHaveBeenLastCalledWith("vault/list", { scope: "account" });
   expect(rows()).toEqual(["netbird-key: $NETBIRD_KEY"]);
 });
 
@@ -1171,6 +1182,250 @@ it("keeps an item removed while the list is read after an import", async () => {
     await imported;
   });
   expect(rows()).toEqual(["netbird-key: $NETBIRD_KEY"]);
+});
+
+// Everything the screen holds belongs to the one vault it shows. When it comes to show another
+// vault it starts over, so nothing read, saved or failed for the first one is shown as the
+// second's, whatever was on its way: an import, or the list read after it. An import that ends
+// once the first vault's screen is gone reads that list no more.
+it.each([
+  ["the import", "saves", "isn't read"],
+  ["the import", "fails", "isn't read"],
+  ["the read after it", "saves", "is read"],
+  ["the read after it", "saves", "can't be read"],
+] as const)(
+  "starts over for another vault shown during %s, which %s before the first one's list %s",
+  async (during, importing, reading) => {
+    const login = { title: "", origin: "https://shop.example.com", password: "fake-pass" };
+    state.pickCsv.mockResolvedValue({
+      rows: [{ ...login, username: "bob" }],
+      lines: [1],
+      skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+      problems: [],
+    });
+    await render();
+    await act(async () => button("Import CSV", menu("New item"))!.click());
+    const account = state.credentials;
+    const waits: (() => void)[] = [];
+    const later = <T,>(answer: () => T) =>
+      state.rpc.mockImplementationOnce(
+        () =>
+          new Promise<T>((resolve, reject) => {
+            waits.push(() => {
+              try {
+                resolve(answer());
+              } catch (error) {
+                reject(error);
+              }
+            });
+          }),
+      );
+    const imported = () => {
+      if (importing === "fails") throw new Error("Internal server error");
+      return {
+        added: 1,
+        skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+        notSaved: [],
+      };
+    };
+    // The account's list, read after the import.
+    const read = () =>
+      later(() => {
+        if (reading === "is read") return account;
+        throw new Error("offline");
+      });
+    if (during === "the import") later(imported);
+    else {
+      state.rpc.mockImplementationOnce(async () => imported());
+      read();
+    }
+    let saving!: Promise<void> | void;
+    await act(async () => {
+      saving = alertButton("Import").onPress?.();
+    });
+    // The Space's vault, its list still on its way: the account's is not shown as its own, and
+    // nothing can be added or imported against it.
+    state.spaceId = "space-work";
+    state.credentials = [variable];
+    let listed!: () => void;
+    state.rpc.mockImplementationOnce(
+      () => new Promise((resolve) => (listed = () => resolve(state.credentials))),
+    );
+    await render();
+    expect(rows()).toEqual([]);
+    expect(menu("New item")).toBeNull();
+    await act(async () => listed());
+    expect(rows()).toEqual(["netbird-key: $NETBIRD_KEY"]);
+    const alerts = state.alert.mock.calls.length;
+    const lists = () => state.rpc.mock.calls.filter(([proc]) => proc === "vault/list").length;
+    const readsBefore = lists();
+    await act(async () => {
+      waits.shift()!();
+      await saving;
+    });
+    expect(lists()).toBe(readsBefore);
+    expect(rows()).toEqual(["netbird-key: $NETBIRD_KEY"]);
+    expect(state.alert.mock.calls).toHaveLength(alerts);
+    expect(container.textContent).not.toContain("Something went wrong.");
+    expect(container.textContent).not.toContain("Could not import");
+    expect(button("Import CSV", menu("New item"))?.disabled).toBe(false);
+  },
+);
+
+it("reads the list again when an import's read was out across a save, and shows both", async () => {
+  state.credentials = [credential({})];
+  state.pickCsv.mockResolvedValue({
+    rows: [
+      { title: "", origin: "https://shop.example.com", password: "fake-pass", username: "bob" },
+    ],
+    lines: [1],
+    skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+    problems: [],
+  });
+  const server = state.rpc.getMockImplementation()!;
+  await render();
+  await act(async () => button("Card", menu("New item"))!.click());
+  // The save reaches the server only once let go.
+  let saved!: () => void;
+  state.rpc.mockImplementationOnce(
+    (proc: string, input: Record<string, unknown>) =>
+      new Promise((resolve) => (saved = () => resolve(server(proc, input)))),
+  );
+  await act(async () => button("Save", dialog())!.click());
+  await act(async () => button("Import CSV", menu("New item"))!.click());
+  state.rpc.mockImplementationOnce(async () => {
+    state.credentials = [...state.credentials, credential({ name: "shop", title: "shop" })];
+    return {
+      added: 1,
+      skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+      notSaved: [],
+    };
+  });
+  // Each list read answers with the list as it was when sent, once let go.
+  const reads: (() => void)[] = [];
+  const read = () =>
+    state.rpc.mockImplementationOnce(async (proc: string, input: Record<string, unknown>) => {
+      const list = await server(proc, input);
+      return new Promise((resolve) => reads.push(() => resolve(list)));
+    });
+  read();
+  read();
+  await act(async () => void alertButton("Import").onPress?.());
+  expect(reads).toHaveLength(1);
+  await act(async () => saved());
+  const shown = rows();
+  expect(shown.join()).toContain("netbird-key");
+  // Read before the save reached the server: dropped, and read again.
+  await act(async () => reads[0]!());
+  expect(rows()).toEqual(shown);
+  expect(reads).toHaveLength(2);
+  await act(async () => reads[1]!());
+  expect(rows()).toHaveLength(3);
+  expect(rows().join()).toContain("shop");
+  expect(rows().join()).toContain("netbird-key");
+  expect(button("Import CSV", menu("New item"))?.disabled).toBe(false);
+});
+
+// A change counts as finished before the list is read after it, so each change is followed by
+// one read of the list, never by one that is dropped and sent again.
+it.each(["an item is saved", "an item is removed", "an import saves", "an import fails"] as const)(
+  "reads the list once after %s",
+  async (change) => {
+    state.pickCsv.mockResolvedValue({
+      rows: [
+        { title: "", origin: "https://shop.example.com", password: "fake-pass", username: "bob" },
+      ],
+      lines: [1],
+      skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+      problems: [],
+    });
+    await render();
+    const lists = () => state.rpc.mock.calls.filter(([proc]) => proc === "vault/list").length;
+    const before = lists();
+    if (change === "an item is saved") {
+      await act(async () => button("Card", menu("New item"))!.click());
+      await act(async () => button("Save", dialog())!.click());
+    } else if (change === "an item is removed") {
+      await act(async () => button("Remove", menu("api.github.com"))!.click());
+      await act(async () => alertButton("Remove").onPress?.());
+    } else {
+      await act(async () => button("Import CSV", menu("New item"))!.click());
+      state.rpc.mockImplementationOnce(async () => {
+        if (change === "an import fails") throw new Error("Internal server error");
+        return {
+          added: 1,
+          skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+          notSaved: [],
+        };
+      });
+      await act(async () => void alertButton("Import").onPress?.());
+    }
+    expect(lists()).toBe(before + 1);
+  },
+);
+
+// Whenever the list can't be read, the screen offers Retry, read or not before; once Retry reads
+// it, the error goes and Import CSV is on again.
+it.each([
+  "the screen is first shown",
+  "the screen is shown again",
+  "an item is saved",
+  "an item is removed",
+  "an import saves",
+  "an import fails",
+] as const)("offers Retry when the list can't be read after %s", async (after) => {
+  state.pickCsv.mockResolvedValue({
+    rows: [
+      { title: "", origin: "https://shop.example.com", password: "fake-pass", username: "bob" },
+    ],
+    lines: [1],
+    skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+    problems: [],
+  });
+  const server = state.rpc.getMockImplementation()!;
+  let failList = after === "the screen is first shown";
+  state.rpc.mockImplementation(async (proc: string, input: Record<string, unknown>) => {
+    if (proc === "vault/list" && failList) {
+      failList = false;
+      throw new Error("offline");
+    }
+    return server(proc, input);
+  });
+  await render();
+  if (after === "the screen is shown again") {
+    state.focused = false;
+    await render();
+    failList = true;
+    state.focused = true;
+    await render();
+  } else if (after === "an item is saved") {
+    await act(async () => button("Card", menu("New item"))!.click());
+    failList = true;
+    await act(async () => button("Save", dialog())!.click());
+  } else if (after === "an item is removed") {
+    await act(async () => button("Remove", menu("api.github.com"))!.click());
+    failList = true;
+    await act(async () => alertButton("Remove").onPress?.());
+  } else if (after !== "the screen is first shown") {
+    await act(async () => button("Import CSV", menu("New item"))!.click());
+    state.rpc.mockImplementationOnce(async () => {
+      if (after === "an import fails") throw new Error("Internal server error");
+      return {
+        added: 1,
+        skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+        notSaved: [],
+      };
+    });
+    failList = true;
+    await act(async () => void alertButton("Import").onPress?.());
+  }
+  expect(failList).toBe(false);
+  if (after === "an import fails")
+    expect(container.textContent).toContain("Importing the file again skips them.");
+  await act(async () => button("Something went wrong. Try again. Retry")!.click());
+  expect(state.rpc).toHaveBeenLastCalledWith("vault/list", { scope: "account" });
+  expect(container.textContent).not.toContain("Something went wrong.");
+  expect(button("Import CSV", menu("New item"))?.disabled).toBe(false);
 });
 
 it("shows a finished import's result even when the list can't be read after it", async () => {

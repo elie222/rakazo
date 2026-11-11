@@ -47,6 +47,8 @@
   --violet-soft: #ece3fd;
   --rose: #e0457b;
   --rose-soft: #fce1ea;
+  --teal: #0e8a96;
+  --teal-soft: #d2f1f3;
   --shadow-soft: 0 2px 16px rgba(0, 0, 0, 0.03);
   --shadow-demo: 0 30px 80px -30px rgba(0, 0, 0, 0.35);
   --radius-card: 20px;
@@ -2610,6 +2612,41 @@ button.product-demo__dock-icon {
 .privacy-copy a:not(.button):hover,
 .privacy-copy a:not(.button):focus-visible {
   color: var(--blue);
+}
+
+.enterprise {
+  padding: 72px 0 110px;
+  text-align: center;
+}
+
+.enterprise__features {
+  margin-top: 64px;
+  text-align: left;
+}
+
+.enterprise__features .feature-card {
+  position: relative;
+  transition: border-color 180ms ease;
+}
+
+.enterprise__features .feature-card:hover,
+.enterprise__features .feature-card:focus-within {
+  border-color: var(--line-2);
+}
+
+.enterprise__features h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: Aeonik, Geist, ui-sans-serif, system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.enterprise__features h2 a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
 .pricing {

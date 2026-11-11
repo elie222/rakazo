@@ -38,6 +38,8 @@ import { VaultItemEditor } from "../../components/vault-item-editor";
 import { VaultItemSheet } from "../../components/vault-item-sheet";
 import { VaultTile } from "../../components/vault-tile";
 import { mobileTokens } from "../../lib/appearance";
+import type { ListRead } from "../../lib/list-refresh";
+import { createListRefresh } from "../../lib/list-refresh";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import type { MobileBot } from "../../lib/mobile-types";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
@@ -72,6 +74,12 @@ type Editing = { kind: VaultKind; item?: VaultItem; revealed?: VaultRevealed };
  */
 export default function Vault() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
+  // Everything the screen holds belongs to one vault, so another vault starts it over: nothing
+  // read, saved or failed for the first is ever shown as the second's.
+  return <VaultItems key={spaceId ?? ""} spaceId={spaceId} />;
+}
+
+function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   const navigation = useNavigation();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
@@ -86,7 +94,6 @@ export default function Vault() {
   const [loadError, setLoadError] = useState<string | null>(null);
   // A review plans against the Vault as read, so it waits for a good read.
   const listed = items !== null && !loadError;
-  const [attempt, setAttempt] = useState(0);
   const [filter, setFilter] = useState<VaultKind | "all">("all");
   const [query, setQuery] = useState("");
   const [opened, setOpened] = useState<string | null>(null);
@@ -95,8 +102,26 @@ export default function Vault() {
   // A saved item to open once the editor has gone, so two sheets are never up at once.
   const afterEditing = useRef<{ name: string; notice: string } | null>(null);
   const [notice, setNotice] = useState<{ name: string; text: string } | null>(null);
-  // Counts changes, so a read that started before one never shows what it replaced.
+  // Counts changes as they start and as they finish, so a list read that was out across one is
+  // dropped and read again.
   const changes = useRef(0);
+  const applyList = useRef<(read: ListRead<BotSecretMetadata[]>) => void>(() => undefined);
+  applyList.current = (read) => {
+    if (read.ok) {
+      setItems(read.value);
+      setLoadError(null);
+    } else setLoadError(errorText(read.error, t`Something went wrong. Try again.`));
+  };
+  // The only way the list is read. The screen is keyed by its vault, so the vault stays the same.
+  const [listRefresh] = useState(() =>
+    createListRefresh({
+      vault: () => spaceId ?? "",
+      changes: () => changes.current,
+      read: () => rpc("vault/list", { scope }),
+      apply: (read) => applyList.current(read),
+    }),
+  );
+  const requestListRefresh = listRefresh.request;
   // A value that arrives after the screen lost focus is dropped instead of shown.
   const focused = useRef(false);
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
@@ -112,22 +137,10 @@ export default function Vault() {
 
   useFocusEffect(
     useCallback(() => {
-      let current = true;
-      const changesAtRead = changes.current;
-      void rpc("vault/list", { scope })
-        .then((next) => {
-          if (!current || changes.current !== changesAtRead) return;
-          setItems(next);
-          setError(null);
-          setLoadError(null);
-        })
-        .catch((err: unknown) => {
-          if (current) setLoadError(errorText(err, t`Something went wrong. Try again.`));
-        });
-      return () => {
-        current = false;
-      };
-    }, [attempt, rpc, scope, t]),
+      setError(null);
+      listRefresh.start();
+      return () => listRefresh.stop();
+    }, [listRefresh]),
   );
 
   useEffect(() => {
@@ -283,17 +296,9 @@ export default function Vault() {
       } finally {
         setPending(false);
         // Also after a failure, which may come after some logins were saved. A list that can't
-        // be read now is read again when the screen is next shown; until then, import waits. A
-        // change made while it is read is kept, as the screen's own read keeps it.
-        const changesAtRead = changes.current;
-        await rpc("vault/list", { scope }).then(
-          (next) => {
-            if (changes.current !== changesAtRead) return;
-            setItems(next);
-            setLoadError(null);
-          },
-          (err: unknown) => setLoadError(errorText(err, t`Something went wrong. Try again.`)),
-        );
+        // be read now is offered again with Retry; until it is read, import waits.
+        changes.current += 1;
+        requestListRefresh();
       }
     }
     Alert.alert(t`Import CSV`, lines(), [
@@ -312,8 +317,11 @@ export default function Vault() {
       ...change,
       ...access,
       ...(policy ? { policy } : {}),
+    }).finally(() => {
+      changes.current += 1;
     });
     setItems((current) => withItem(current ?? [], saved));
+    requestListRefresh();
     // An older server drops what it doesn't know silently, but the item is saved, so say what.
     const notice = vaultSaveNotice({ ...change, ...access, ...(policy ? { policy } : {}) }, saved);
     if (notice) afterEditing.current = { name: saved.name, notice };
@@ -324,8 +332,11 @@ export default function Vault() {
     setPending(true);
     setError(null);
     try {
-      await rpc("vault/remove", { scope, name });
+      await rpc("vault/remove", { scope, name }).finally(() => {
+        changes.current += 1;
+      });
       setItems((current) => current?.filter((entry) => entry.name !== name) ?? null);
+      requestListRefresh();
       setOpened(null);
       setUses(null);
     } catch (err) {
@@ -438,7 +449,8 @@ export default function Vault() {
   const activeFilter = filter !== "all" && !kinds.includes(filter) ? "all" : filter;
   const shown = items ? filterVaultItems(items, activeFilter, query) : [];
   const failure = error ?? loadError;
-  const shownError = error ?? (items ? loadError : null);
+  // A list that can't be read is always offered again, read before or not.
+  const unread = items ? loadError : failure;
   const openedItem = items?.find((item) => item.name === opened);
   const contacts = items ? billingChoices(items) : [];
   const billingTitle = (name?: string) => contacts.find((contact) => contact.key === name)?.label;
@@ -451,19 +463,20 @@ export default function Vault() {
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
       >
-        {failure && !items ? (
+        {items && error ? (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {error}
+          </Text>
+        ) : null}
+        {unread ? (
           <LoadFailure
-            message={failure}
+            message={unread}
             onRetry={() => {
               setError(null);
               setLoadError(null);
-              setAttempt((count) => count + 1);
+              requestListRefresh();
             }}
           />
-        ) : shownError ? (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {shownError}
-          </Text>
         ) : null}
         {items && !iosAtLeast(26) ? (
           // Older iOS and Android have no header menu, so New sits above the list.

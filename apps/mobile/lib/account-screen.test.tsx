@@ -51,6 +51,8 @@ const { element, account } = vi.hoisted(() => ({
     approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
     rules: [] as { id: string }[],
     messaging: { enabled: true },
+    plans: [] as unknown[],
+    billing: {} as Record<string, unknown>,
   },
 }));
 
@@ -234,7 +236,11 @@ vi.mock("./api", async (importOriginal) => ({
           ? account.rules
           : method === "messaging/status"
             ? account.messaging
-            : {},
+            : method === "usage/limits"
+              ? account.plans
+              : method === "billing/status"
+                ? account.billing
+                : {},
   ),
   selectedSpaceId: () => "space-1",
 }));
@@ -363,6 +369,8 @@ beforeEach(() => {
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
   account.rules = [];
   account.messaging = { enabled: true };
+  account.plans = [];
+  account.billing = {};
   haptics.enabled = true;
   storeUpdate.available = false;
   haptics.listeners.clear();
@@ -872,4 +880,28 @@ it("hangs up the active call before signing out", async () => {
   });
   await view.press("Sign out");
   expect(order).toEqual(["hang-up", "sign-out"]);
+});
+
+it("shows subscription allowances and credits only for members who have them", async () => {
+  let view = await renderAccount();
+  let titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).not.toContain("Session");
+  expect(titles).not.toContain("Credits");
+
+  act(() => root?.unmount());
+  container?.remove();
+  account.plans = [
+    {
+      credentialId: "c1",
+      name: "Claude",
+      label: "Claude",
+      windows: [{ period: "session", usedPercent: 37.6, resetsAt: null }],
+    },
+  ];
+  account.billing = { funding: "credits", balanceUsd: 12.5 };
+  view = await renderAccount();
+  titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).toContain("Session");
+  expect(view.button("Session")!.dataset.value).toBe("38% used");
+  expect(view.button("Credits")!.dataset.value).toBe("$12.50 left");
 });
