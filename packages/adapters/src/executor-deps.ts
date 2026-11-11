@@ -77,6 +77,12 @@ export interface ExecutorDeps {
   mcpAllowPrivateEndpoint?: boolean;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
+  /** `CURSOR_CLI=on` with a key. Does not enable `cloudAgent`. */
+  cursorCliEnabled?: boolean;
+  /** Passed only to the coding CLI process. Already listed in `secrets`. */
+  cursorApiKey?: string;
+  /** Command name for the coding CLI. Default `agent`. */
+  cursorCliBin?: string;
   /** The deployment's payment wallet. Null/omit means purchase tools stay uninjected. */
   paymentWallet?: PaymentWalletProvider | null;
   /** Optional Auto Review verifier. When omitted, the factory selects from env (llm | jev | scripted). */

@@ -908,6 +908,20 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "cursor_agent",
+    description:
+      "Run the coding CLI installed on this bot's computer, in its workspace. Returns the final text and a session id; pass resume to continue. Does not install the CLI.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Task for the CLI." },
+        model: { type: "string", description: "Model id, one token." },
+        resume: { type: "string", description: "Session id from an earlier result." },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
     name: "cloud_agent_cancel",
     description: "Cancel the active run on a cloud coding agent.",
     inputSchema: {

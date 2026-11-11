@@ -7,6 +7,8 @@ import {
   apnsVoipConfig,
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
+  cursorCliBin,
+  cursorCliEnabled,
   mcpStdioOptionsFromEnv,
   photonProjectsFromEnv,
   resolveCloudAgentProvider,
@@ -93,6 +95,9 @@ export interface AppEnv {
   cloudAgentProvider: string;
   cloudAgentSpaceId: string | undefined;
   cursorApiKey: string | undefined;
+  /** CURSOR_CLI=on with a key. Does not enable the HTTP cloud-agent provider. */
+  cursorCliEnabled: boolean;
+  cursorCliBin: string;
   /** Raw PAYMENT_WALLET_* values; createPaymentWalletProvider resolves them. */
   paymentWalletProvider: string | undefined;
   paymentWalletClientId: string | undefined;
@@ -287,6 +292,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     cloudAgentProvider,
     cloudAgentSpaceId: optional(source.CLOUD_AGENT_SPACE_ID),
     cursorApiKey: optional(source.CURSOR_API_KEY),
+    cursorCliEnabled: cursorCliEnabled(source),
+    cursorCliBin: cursorCliBin(source),
     paymentWalletProvider: optional(source.PAYMENT_WALLET_PROVIDER),
     paymentWalletClientId: optional(source.PAYMENT_WALLET_CLIENT_ID),
     agentRuntime: source.AGENT_RUNTIME ?? "pi",

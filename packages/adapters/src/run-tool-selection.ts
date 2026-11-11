@@ -108,6 +108,8 @@ export function selectBuiltinToolsForRun(options: {
   /** The configured provider can forget individual facts. */
   semanticMemoryForgets?: boolean;
   cloudAgentEnabled?: boolean;
+  /** `CURSOR_CLI=on` and a key. Independent of the HTTP cloud-agent provider. */
+  cursorCliEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
@@ -169,6 +171,7 @@ export function selectBuiltinToolsForRun(options: {
         (Boolean(options.fleetManagement) && ownerStartedRun)) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
+      (options.cursorCliEnabled || tool.name !== "cursor_agent") &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&

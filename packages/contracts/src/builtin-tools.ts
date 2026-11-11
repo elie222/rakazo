@@ -60,6 +60,7 @@ export const BUILTIN_TOOL_NAMES = [
   "cloud_agent_status",
   "cloud_agent_reply",
   "cloud_agent_cancel",
+  "cursor_agent",
   "request_purchase",
   "purchase_status",
   "paid_request",

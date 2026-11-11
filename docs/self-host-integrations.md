@@ -257,6 +257,21 @@ The stored credential binding fails closed if the key or provider changes. Cance
 
 The emulator models run creation, unknown run statuses, archived or expired agents, removed agents and runs, rejected keys, and rate limits without network calls. The conformance suite runs against it, and `pnpm test:integration` exercises the database lifecycle against the Cursor emulator: lost responses, stale run metadata, queue outages, ownership boundaries, cleared chats, worker restart, overlapping polls, and cancellation races.
 
+## Cursor CLI on the bot computer
+
+`cursor_agent` runs the official `agent` CLI inside the bot computer's workspace. It is not a model provider and it does not launch a hosted cloud agent. `CURSOR_CLI=on` does not change `CLOUD_AGENT_PROVIDER` and does not enable `cloud_agent_launch`.
+
+The computer's operator installs the CLI and puts `agent` on its `PATH`. Rakazo does not download the installer. Set the same values on the API and the worker:
+
+```dotenv
+CURSOR_CLI=on
+CURSOR_API_KEY=replace-with-your-key
+# Optional. One command name, no spaces. Default: agent
+# CURSOR_CLI_BIN=agent
+```
+
+The key is passed only in that command's environment. It is not a tool argument. The tool needs approval, then the CLI may edit the workspace and run its own shell (`--trust --force`). A missing binary is reported as the command's own error.
+
 ## Payments
 
 Bots can buy things with their user's wallet. Each user connects their own wallet, and every purchase asks them to approve it in the wallet provider's app or page before any card or token exists. Card numbers, security codes and payment tokens go straight to the merchant; they never reach the model, chat history, tool results, or logs.

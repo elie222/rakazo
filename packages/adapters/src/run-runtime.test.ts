@@ -12,6 +12,9 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     encryptionKey: resolveEncryptionKey(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     cursorApiKey: source.CURSOR_API_KEY,
+    cursorCliEnabled:
+      source.CURSOR_CLI?.trim().toLowerCase() === "on" && Boolean(source.CURSOR_API_KEY?.trim()),
+    cursorCliBin: source.CURSOR_CLI_BIN?.trim() || "agent",
     deploymentModelKey: key,
     deploymentModelConfigured: configured,
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",

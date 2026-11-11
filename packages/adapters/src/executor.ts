@@ -1275,6 +1275,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            cursorCliEnabled: Boolean(deps.cursorCliEnabled),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,
