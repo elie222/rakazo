@@ -240,7 +240,13 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     // the already-loaded list.
     const current = await tx.routine.findUnique({
       where: { id: routine.id },
-      select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
+      select: {
+        prompt: true,
+        promptCredentialId: true,
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
+      },
     });
     if (!current) return null;
     const routinePrompt =
@@ -256,6 +262,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         userId: routine.userId,
         threadId: thread.id,
         prompt: routinePrompt,
+        promptCredentialId: current.promptCredentialId,
         ...routineRunModelPin(current),
       });
       if (pending) return { ...pending, coalesced: true };
@@ -286,6 +293,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         status: "queued",
         trigger: "routine",
         routineId: routine.id,
+        promptCredentialId: current.promptCredentialId,
         clientNonce: timerNonce,
         ...routineRunModelPin(current),
       },
@@ -482,6 +490,8 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
           status: "queued",
           trigger: "routine",
           routineId: failed.routineId,
+          // The retry repeats the failed run's prompt, so it carries the same author.
+          promptCredentialId: failed.promptCredentialId,
           retryOfRunId: failed.id,
           ...(failed.modelPinned
             ? {

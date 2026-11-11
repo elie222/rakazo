@@ -1319,6 +1319,9 @@ model Run {
   userId               String
   status               String
   trigger              String
+  /// For a routine run, the API key that wrote the prompt it follows (Routine.promptCredentialId
+  /// when it fired), so a later edit cannot change whose words it carries.
+  promptCredentialId   String?
   modelProvider        String?
   modelId              String?
   thinkingLevel        String?
@@ -1582,6 +1585,9 @@ model Routine {
   thread         Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
   name           String
   prompt         String
+  /// The API key that last wrote the prompt; null once the person writes it in the app. A key's
+  /// text is never the person's word, so its runs get no owner trust.
+  promptCredentialId String?
   crons          String[]
   timezone       String    @default("UTC")
   active         Boolean   @default(false)

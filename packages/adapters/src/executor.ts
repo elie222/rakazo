@@ -1415,6 +1415,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             hasMessagingIdentity,
             crossSpaceCommunication: bot.crossSpaceCommunication === true,
             trigger: run.trigger,
+            promptCredentialId: run.promptCredentialId,
           })
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
