@@ -606,6 +606,38 @@ describeWithDatabase("service API surface", () => {
       expect(sent?.blocks).toContainEqual({ kind: "sent_with_key", name: credential.name });
     });
 
+    it("holds a group message for a busy member instead of joining its run", async () => {
+      const { cookie, actor } = await person();
+      const first = await newBot(cookie, "Busy");
+      const second = await newBot(cookie, "Free");
+      const { token } = await newKey(cookie);
+      const group = await ok<{ id: string; threadId: string }>(token, "POST", "/groups", {
+        body: { name: "Busy team", botIds: [first.id, second.id] },
+        key: "busy-group",
+      });
+      const owner = { spaceId: actor.spaceId, userId: actor.userId, threadId: group.threadId };
+      const task = await db.task.create({
+        data: { ...owner, botId: first.id, prompt: "the owner's work", status: "running" },
+      });
+      const busy = await db.run.create({
+        data: { ...owner, botId: first.id, taskId: task.id, status: "running", trigger: "user" },
+      });
+      const sent = await ok<{ messageId: string; runId: string | null }>(
+        token,
+        "POST",
+        `/groups/${group.id}/prompts`,
+        { body: { text: "for whoever is free" }, key: "busy-group-prompt" },
+      );
+      expect(sent.runId).not.toBe(busy.id);
+      const message = await db.message.findUniqueOrThrow({ where: { id: sent.messageId } });
+      expect(message.runId).not.toBe(busy.id);
+      expect(
+        await db.steeringMessage.count({
+          where: { messageId: sent.messageId, botId: first.id, runId: null },
+        }),
+      ).toBe(1);
+    });
+
     it("marks a key's message for the person and the bot, without letting the key forge it", async () => {
       const { cookie, actor } = await person();
       const bot = await newBot(cookie, "Told");
