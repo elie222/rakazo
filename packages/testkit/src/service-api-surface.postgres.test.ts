@@ -545,6 +545,41 @@ describeWithDatabase("service API surface", () => {
       expect(history.runs.map((entry) => entry.id)).toContain(run.runId);
     });
 
+    it("marks a routine prompt a key wrote until the person writes their own", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Marked");
+      const { credential, token } = await newKey(cookie);
+      const path = `/bots/${bot.id}/routines`;
+      const routine = await ok<{ id: string }>(token, "POST", path, {
+        body: { name: "Daily", prompt: "Check https://example.com", crons: ["0 9 * * *"] },
+        key: "marked-routine",
+      });
+      const mark = async () =>
+        (await db.routine.findUniqueOrThrow({ where: { id: routine.id } })).promptCredentialId;
+      const runMark = async (runId: string) =>
+        (await db.run.findUniqueOrThrow({ where: { id: runId } })).promptCredentialId;
+      expect(await mark()).toBe(credential.id);
+      // A rename leaves the prompt, and so its author, alone.
+      await ok(token, "PATCH", `${path}/${routine.id}`, { body: { name: "Renamed" } });
+      expect(await mark()).toBe(credential.id);
+      const keyRun = await ok<{ runId: string }>(token, "POST", `${path}/${routine.id}/run`, {
+        key: "marked-run",
+      });
+      expect(await runMark(keyRun.runId)).toBe(credential.id);
+
+      await rpc(cookie, "routines/update", { routineId: routine.id, prompt: "My own words" });
+      expect(await mark()).toBeNull();
+      const ownRun = await rpc<{ runId: string }>(cookie, "routines/testRun", {
+        routineId: routine.id,
+      });
+      expect(await runMark(ownRun.runId)).toBeNull();
+      // The earlier run keeps the author of the prompt it was started with.
+      expect(await runMark(keyRun.runId)).toBe(credential.id);
+
+      await ok(token, "PATCH", `${path}/${routine.id}`, { body: { prompt: "Key words again" } });
+      expect(await mark()).toBe(credential.id);
+    });
+
     it("edits memory at a known revision and only under its own bot", async () => {
       const { cookie, actor } = await person();
       const bot = await newBot(cookie, "Remembers");

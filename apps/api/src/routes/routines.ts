@@ -83,7 +83,10 @@ export function routinesRoutes(ctx: RouterContext) {
         }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
         const row = await deps.prisma.routine.create({
-          data: routineRowData(context.actor, input, routineNextRunAt(input)),
+          data: {
+            ...routineRowData(context.actor, input, routineNextRunAt(input)),
+            promptCredentialId: context.serviceOrigin?.credentialId ?? null,
+          },
         });
         await announceRoutine(context.actor, bot, row);
         return mapRoutine(row);
@@ -264,6 +267,10 @@ export function routinesRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
+              // A key's prompt stays marked as the key's until the person writes their own.
+              ...(input.prompt === undefined
+                ? {}
+                : { promptCredentialId: context.serviceOrigin?.credentialId ?? null }),
               crons: input.crons,
               timezone: input.timezone,
               active: input.active,

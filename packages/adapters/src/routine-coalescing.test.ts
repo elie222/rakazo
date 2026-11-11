@@ -86,6 +86,17 @@ describe("pending routine timer coalescing", () => {
       }),
     );
   });
+  it("requires the same prompt author", async () => {
+    const { tx, findMany } = fixture();
+    await findPendingRoutineTick(tx, config);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ promptCredentialId: null }) }),
+    );
+    await findPendingRoutineTick(tx, { ...config, promptCredentialId: "key-1" });
+    expect(findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ promptCredentialId: "key-1" }) }),
+    );
+  });
   it("preserves a run holding the computer", async () => {
     const { tx, updateMany } = fixture();
     vi.mocked(tx.computerExecutionLease.findMany).mockResolvedValue([{ runId: "run-1" }] as never);
