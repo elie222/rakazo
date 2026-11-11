@@ -475,6 +475,7 @@ dbTests("own-key trial hold lifecycle", () => {
       provider: failingByokCheckout(provider),
       webOrigin: "https://example.test",
     });
+    let expiryWrite: Promise<unknown> | undefined;
     const blocker = await db.pool.connect();
     try {
       await service.selectFunding(owner.first.actor, "byok");
@@ -507,12 +508,13 @@ dbTests("own-key trial hold lifecycle", () => {
                 AND query LIKE 'UPDATE%billing_accounts%'`,
           )
           .then((result) => result.rowCount);
-      void asSystem(expiry.prisma)
+      expiryWrite = asSystem(expiry.prisma)
         .billingAccount.updateMany({
           where: { organizationId: owner.first.organizationId },
           data: { checkoutLeaseExpiresAt: new Date(0) },
         })
-        .then();
+        // A failure here shows as a wrong lease below; teardown waits for it either way.
+        .catch(() => undefined);
       const newer = service.selectFunding(owner.first.actor, "byok");
       // Unrelated work queued on the older instance's pool delays its next statement.
       const queued = stalled.pool.query("SELECT pg_sleep(2)");
@@ -532,6 +534,7 @@ dbTests("own-key trial hold lifecycle", () => {
       blocker.release();
       await stalled.prisma.$disconnect();
       await stalled.pool.end();
+      await expiryWrite;
       await expiry.prisma.$disconnect();
       await expiry.pool.end();
     }
