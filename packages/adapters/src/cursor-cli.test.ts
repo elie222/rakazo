@@ -35,9 +35,10 @@ describe("cursor CLI", () => {
     expect(resolveCloudAgentProvider({ CURSOR_CLI: "on", CURSOR_API_KEY: KEY })).toBe("none");
     expect(cursorCliBin({})).toBe("agent");
     expect(cursorCliBin({ CURSOR_CLI_BIN: " agent.exe " })).toBe("agent.exe");
-    expect(() => cursorCliBin({ CURSOR_CLI_BIN: "agent cli" })).toThrow(
-      "CURSOR_CLI_BIN must not contain spaces",
-    );
+    expect(() =>
+      cursorCliBin({ CURSOR_CLI: "on", CURSOR_API_KEY: KEY, CURSOR_CLI_BIN: "agent cli" }),
+    ).toThrow("CURSOR_CLI_BIN must not contain spaces");
+    expect(cursorCliBin({ CURSOR_CLI_BIN: "agent cli" })).toBe("agent cli");
   });
 
   it("passes the key only in env and returns the clipped result plus session id", async () => {
@@ -67,6 +68,7 @@ describe("cursor CLI", () => {
         "composer-2",
         "--resume",
         "sess-0",
+        "--",
         "fix the tests",
       ],
       cwd: "bots/b1",
@@ -105,6 +107,30 @@ describe("cursor CLI", () => {
       error: "model must be a single token.",
     });
     expect(seen.request).toBeUndefined();
+  });
+
+  it("places -- before the prompt so leading dashes are not parsed as flags", async () => {
+    const seen: { request?: CommandRequest } = {};
+    await executeCursorCli(run(success("ok"), seen), {
+      prompt: "--help",
+      enabled: true,
+      apiKey: KEY,
+      bin: "agent",
+      cwd: undefined,
+      secrets: [KEY],
+    });
+    expect(seen.request?.argv).toEqual([
+      "agent",
+      "-p",
+      "--trust",
+      "--force",
+      "--output-format",
+      "json",
+      "--workspace",
+      ".",
+      "--",
+      "--help",
+    ]);
   });
 
   it("reports a failed run from redacted stderr, without the environment", async () => {

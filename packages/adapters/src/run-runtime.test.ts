@@ -1,5 +1,6 @@
 import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
+import { cursorCliBin, cursorCliEnabled } from "./cursor-cli.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { mcpStdioOptionsFromEnv } from "./mcp-connector.js";
 import { runRuntimeEnvFromProcess } from "./run-runtime.js";
@@ -12,9 +13,8 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     encryptionKey: resolveEncryptionKey(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     cursorApiKey: source.CURSOR_API_KEY,
-    cursorCliEnabled:
-      source.CURSOR_CLI?.trim().toLowerCase() === "on" && Boolean(source.CURSOR_API_KEY?.trim()),
-    cursorCliBin: source.CURSOR_CLI_BIN?.trim() || "agent",
+    cursorCliEnabled: cursorCliEnabled(source),
+    cursorCliBin: cursorCliBin(source),
     deploymentModelKey: key,
     deploymentModelConfigured: configured,
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",

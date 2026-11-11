@@ -15,7 +15,9 @@ export function cursorCliEnabled(source: NodeJS.ProcessEnv = process.env): boole
 /** One argv element. Empty means the default `agent`. */
 export function cursorCliBin(source: NodeJS.ProcessEnv = process.env): string {
   const raw = source.CURSOR_CLI_BIN?.trim() || "agent";
-  if (/\s/.test(raw)) throw new Error("CURSOR_CLI_BIN must not contain spaces");
+  if (cursorCliEnabled(source) && /\s/.test(raw)) {
+    throw new Error("CURSOR_CLI_BIN must not contain spaces");
+  }
   return raw;
 }
 
@@ -65,7 +67,7 @@ export async function executeCursorCli(
   ];
   if (model) argv.push("--model", model);
   if (resume) argv.push("--resume", resume);
-  argv.push(prompt);
+  argv.push("--", prompt);
 
   let stdout = "";
   let stderr = "";
