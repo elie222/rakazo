@@ -321,6 +321,15 @@ describeWithDatabase("service API", () => {
     expect((await get(departed.token)).status).toBe(401);
   });
 
+  it("stops working once the creator's account is deactivated", async () => {
+    const { cookie, actor } = await person();
+    const { token } = await newKey(cookie);
+    expect((await get(token)).status).toBe(200);
+    // Deactivation sets the flag before its cleanup steps run; the key must stop on the flag alone.
+    await db.user.update({ where: { id: actor.userId }, data: { deactivatedAt: new Date() } });
+    expect((await get(token)).status).toBe(401);
+  });
+
   it("will not revoke another member's key", async () => {
     const owner = await person();
     const { credential, token } = await newKey(owner.cookie);

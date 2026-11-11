@@ -167,6 +167,10 @@ export async function authenticateServiceCredential(
         "windowStartedAt" = CASE WHEN "windowStartedAt" <= now() - interval '1 minute'
           THEN now() ELSE "windowStartedAt" END
       WHERE "tokenHash" = ${tokenHash} AND "revokedAt" IS NULL AND "expiresAt" > now()
+        -- A deactivated account's keys stop with its sessions, even if a revoke step failed.
+        AND NOT EXISTS (
+          SELECT 1 FROM "user" u WHERE u."id" = "service_credentials"."userId" AND u."deactivatedAt" IS NOT NULL
+        )
       RETURNING "id", "name", "userId", "spaceId", "scopes", "botIds", "expiresAt", "windowCount",
         LEAST(60, GREATEST(1, CEIL(60 - EXTRACT(EPOCH FROM now() - "windowStartedAt"))))::int AS "resetSeconds"`;
     const row = rows[0];
