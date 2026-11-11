@@ -96,7 +96,14 @@ describeBackup("compose backup and restore", () => {
         "\\.",
         "",
       ].join("\n");
-      expect(() => importDump(broken)).toThrow();
+      // psql exits 3 when ON_ERROR_STOP aborts the script; any other failure is not this case.
+      let status: number | null | undefined;
+      try {
+        importDump(broken);
+      } catch (error) {
+        status = (error as { status?: number | null }).status;
+      }
+      expect(status).toBe(3);
     } finally {
       dropSideDatabase();
     }
