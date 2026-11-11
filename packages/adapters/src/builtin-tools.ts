@@ -159,7 +159,7 @@ const scheduleTimingSpecs = {
   watch: {
     type: "object",
     description:
-      'Run only when something changes, checked without a model every everyMinutes (5 to 1440, default 15); send no cron, every or startAt with it. kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. kind http: a public HTTPS url checked with GET, no custom headers, credentials, body, or redirects. Prefer tool or http for network checks: neither needs a computer; files and command start the computer. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+      'Run when something changes; quiet checks use no model. everyMinutes: 5–1440 (default 15). Do not combine watch with cron/every/startAt. files: computer paths. command: shell command in your folder, repeated without per-run approval; compare its output. tool: read-only connected tool + args. http: public HTTPS url, GET only; no headers, auth, body or redirects. Prefer tool/http for network checks: no computer; files/command wake it. Watch one named resource, not a whole account. For JSON lists, track names the identity then changed fields: mail search ["id"], Drive folder ["id","modifiedTime"], ClickUp list ["id","date_updated"].',
     properties: {
       kind: { type: "string", enum: ["files", "command", "tool", "http"] },
       paths: { type: "array", items: { type: "string" } },
@@ -171,7 +171,7 @@ const scheduleTimingSpecs = {
         type: "array",
         items: { type: "string" },
         description:
-          "For a JSON result: the field naming each item, then the fields whose change counts. Everything else is ignored, and the run is told which items are new, updated or gone.",
+          "For JSON: identity field, then fields whose changes count. Other fields are ignored. HTTP watches detect changes only; other kinds can name changed items.",
       },
       everyMinutes: { type: "number" },
       loud: {
