@@ -902,8 +902,6 @@ model FeedbackReport {
   @@map("feedback_reports")
 }
 
-/// A site one user opens from chat links without the external-link prompt, in every space.
-/// Never consulted for what a bot may fetch: those are action approval rules.
 model ServiceCredential {
   id              String    @id @default(cuid())
   userId          String
@@ -950,6 +948,8 @@ model ServiceIdempotencyKey {
   @@map("service_idempotency_keys")
 }
 
+/// A site one user opens from chat links without the external-link prompt, in every space.
+/// Never consulted for what a bot may fetch: those are action approval rules.
 model TrustedLinkSite {
   id        String   @id @default(cuid())
   userId    String
