@@ -1439,6 +1439,33 @@ describeWithDatabase("service API surface", () => {
       targetId: bot.id,
     });
     expect(events[0]?.metadata).toMatchObject({ onBehalfOf: actor.userId });
+
+    // A write outside a bot names the group or ticket, and what it created.
+    const peer = await newBot(cookie, "Peer");
+    const group = await ok<{ id: string }>(token, "POST", "/groups", {
+      body: { name: "Crew", botIds: [bot.id, peer.id] },
+      key: "audited-group",
+    });
+    await ok(token, "POST", `/groups/${group.id}/archive`);
+    const ticket = await ok<{ id: string }>(token, "POST", "/tickets", {
+      body: { title: "audited", assigneeBotId: bot.id },
+      key: "audited-ticket",
+    });
+    const comment = await ok<{ id: string }>(token, "POST", `/tickets/${ticket.id}/comments`, {
+      body: { body: "noted" },
+      key: "audited-comment",
+    });
+    const later = await db.auditEvent.findMany({
+      where: { actorId: credential.id, action: { not: "service_api.updateBot" } },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(later.map((event) => [event.action, event.targetType, event.targetId])).toEqual([
+      ["service_api.createGroup", "group", group.id],
+      ["service_api.archiveGroup", "group", group.id],
+      ["service_api.createTicket", "ticket", ticket.id],
+      ["service_api.addTicketComment", "ticket", ticket.id],
+    ]);
+    expect(later[3]?.metadata).toMatchObject({ ticketId: ticket.id, createdId: comment.id });
   });
 
   it("has seen every route succeed", () => {
