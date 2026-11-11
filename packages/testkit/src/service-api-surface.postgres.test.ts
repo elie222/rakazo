@@ -367,6 +367,67 @@ describeWithDatabase("service API surface", () => {
       expect(await db.serviceIdempotencyKey.count({ where: { key: "free" } })).toBe(0);
     });
 
+    it("refuses one key for a prompt to a different bot", async () => {
+      const { cookie } = await person();
+      const { token } = await newKey(cookie);
+      const first = await newBot(cookie, "First");
+      const second = await newBot(cookie, "Second");
+      const body = { text: "only once" };
+      await ok(token, "POST", `/bots/${first.id}/prompts`, { body, key: "one-key" });
+      const again = await api(token, "POST", `/bots/${first.id}/prompts`, { body, key: "one-key" });
+      expect(again.status).toBe(200);
+      const elsewhere = await api(token, "POST", `/bots/${second.id}/prompts`, {
+        body,
+        key: "one-key",
+      });
+      expect([elsewhere.status, elsewhere.json.error?.code]).toEqual([409, "idempotency_conflict"]);
+      const secondThread = await threadOf(cookie, second.id);
+      expect(await db.message.count({ where: { threadId: secondThread, role: "user" } })).toBe(0);
+      // A refused prompt frees its key, as a refused stored write does.
+      const refused = await api(token, "POST", `/bots/absent/prompts`, {
+        body,
+        key: "free-prompt",
+      });
+      expect(refused.status).toBe(404);
+      expect(await db.serviceIdempotencyKey.count({ where: { key: "free-prompt" } })).toBe(0);
+    });
+
+    it("replays a finished write after its bot is archived", async () => {
+      const { cookie } = await person();
+      const { token } = await newKey(cookie);
+      const bot = await newBot(cookie, "Archived later");
+      const body = { title: "remember this" };
+      const path = `/bots/${bot.id}/scratchpad`;
+      const first = await ok<{ id: string }>(token, "POST", path, { body, key: "before-archive" });
+      await ok(token, "POST", `/bots/${bot.id}/archive`);
+      const retry = await api<{ id: string }>(token, "POST", path, { body, key: "before-archive" });
+      expect(retry.status).toBe(200);
+      expect(retry.json.id).toBe(first.id);
+      expect(retry.headers.get("idempotent-replayed")).toBe("true");
+      const fresh = await api(token, "POST", path, { body, key: "after-archive" });
+      expect(fresh.status).toBe(404);
+    });
+
+    it("keeps a running write's claim from lapsing", async () => {
+      const { cookie, actor } = await person();
+      const { credential } = await newKey(cookie);
+      const { holdIdempotencyKey } = await import("../../../apps/api/src/service-idempotency.ts");
+      const soon = new Date(Date.now() + 1000);
+      await db.serviceIdempotencyKey.create({
+        data: {
+          userId: actor.userId,
+          spaceId: actor.spaceId,
+          credentialId: credential.id,
+          key: "slow",
+          requestHash: "h",
+          expiresAt: soon,
+        },
+      });
+      await holdIdempotencyKey(db, credential.id, "slow");
+      const row = await db.serviceIdempotencyKey.findFirstOrThrow({ where: { key: "slow" } });
+      expect(row.expiresAt.getTime()).toBeGreaterThan(Date.now() + 200_000);
+    });
+
     it("runs a routine's whole life and keeps it on its own bot", async () => {
       const { cookie } = await person();
       const bot = await newBot(cookie, "Scheduled");

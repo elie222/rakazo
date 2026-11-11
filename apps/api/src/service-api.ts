@@ -27,8 +27,10 @@ import {
   SERVICE_REQUESTS_PER_MINUTE,
 } from "./service-credentials.js";
 import {
+  bindIdempotencyKey,
   claimIdempotencyKey,
   finishIdempotencyKey,
+  holdIdempotencyKey,
   IDEMPOTENCY_HOLD_SECONDS,
   releaseIdempotencyKey,
   requestHash,
@@ -123,6 +125,9 @@ function rejectionOf(error: unknown): ServiceRejection {
   return new ServiceRejection("service_unavailable");
 }
 
+/** Well inside the five-minute hold, so one missed renewal does not release a running write. */
+const IDEMPOTENCY_RENEW_MS = 60_000;
+
 export function serviceApiHandler(deps: {
   prisma: PrismaClient;
   router: ReturnType<typeof createRouter>;
@@ -216,20 +221,16 @@ export function serviceApiHandler(deps: {
       return await runAsTenant(actor, async () => {
         let bot: Bot | null = null;
         const botId = matched.params.botId;
-        if (botId) {
-          // One 404 for a bot that is absent, archived, someone else's or off this key's list.
-          if (credential.botIds.length && !credential.botIds.includes(botId)) {
-            throw new ServiceRejection("not_found");
-          }
-          if (!definition.allowArchived) {
-            bot = await client.bots.get({ botId });
-            if (bot.archivedAt) throw new ServiceRejection("not_found");
-          }
+        // One 404 for a bot that is absent, archived, someone else's or off this key's list.
+        if (botId && credential.botIds.length && !credential.botIds.includes(botId)) {
+          throw new ServiceRejection("not_found");
         }
 
+        // Before the archive check, so a retry of a write that finished replays its answer even
+        // if the bot has been archived since.
+        const hash = requestHash(request.method, url.pathname, raw);
         const storedKey = definition.idempotency === "stored" ? suppliedKey : null;
         if (storedKey) {
-          const hash = requestHash(request.method, url.pathname, raw);
           const claim = await claimIdempotencyKey(prisma, actor, credential.id, storedKey, hash);
           if (claim.kind === "conflict") throw new ServiceRejection("idempotency_conflict");
           if (claim.kind === "in_progress") {
@@ -240,22 +241,41 @@ export function serviceApiHandler(deps: {
             return json(claim.status, claim.body, { ...headers, "idempotent-replayed": "true" });
           }
         }
+        // A native write's message or run deduplicates a retry, but only for the same target.
+        let boundKey: string | null = null;
+        if (definition.idempotency === "native" && suppliedKey) {
+          const bound = await bindIdempotencyKey(prisma, actor, credential.id, suppliedKey, hash);
+          if (bound === "conflict") throw new ServiceRejection("idempotency_conflict");
+          if (bound === "bound") boundKey = suppliedKey;
+        }
+        // A long write keeps its claim, so a retry cannot run it a second time meanwhile.
+        const hold = storedKey
+          ? setInterval(() => {
+              void holdIdempotencyKey(prisma, credential.id, storedKey).catch((error) =>
+                getLogger().warn("service_api.idempotency_hold_failed", error),
+              );
+            }, IDEMPOTENCY_RENEW_MS)
+          : undefined;
 
-        const context = {
-          request,
-          abort,
-          client,
-          prisma,
-          actor,
-          credential,
-          params: matched.params,
-          query,
-          body,
-          idempotencyKey: suppliedKey ?? "",
-          bot,
-          openStream,
-        } as ServiceContext<ServiceRouteId>;
         try {
+          if (botId && !definition.allowArchived) {
+            bot = await client.bots.get({ botId });
+            if (bot.archivedAt) throw new ServiceRejection("not_found");
+          }
+          const context = {
+            request,
+            abort,
+            client,
+            prisma,
+            actor,
+            credential,
+            params: matched.params,
+            query,
+            body,
+            idempotencyKey: suppliedKey ?? "",
+            bot,
+            openStream,
+          } as ServiceContext<ServiceRouteId>;
           const handler = SERVICE_HANDLERS[matched.id] as (
             context: ServiceContext<ServiceRouteId>,
           ) => Promise<unknown>;
@@ -283,10 +303,13 @@ export function serviceApiHandler(deps: {
           return json(200, projected, headers);
         } catch (error) {
           // A refused write did nothing, so its key is free. An unknown outcome keeps its hold.
-          if (storedKey && rejectionOf(error).code !== "service_unavailable") {
-            await releaseIdempotencyKey(prisma, credential.id, storedKey);
+          const freed = storedKey ?? boundKey;
+          if (freed && rejectionOf(error).code !== "service_unavailable") {
+            await releaseIdempotencyKey(prisma, credential.id, freed);
           }
           throw error;
+        } finally {
+          clearInterval(hold);
         }
       });
     } catch (error) {
