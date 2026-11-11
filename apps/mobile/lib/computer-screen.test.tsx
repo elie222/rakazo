@@ -639,6 +639,29 @@ describe("computer screen", () => {
     expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
   });
 
+  it("hands control back when the screen is left or switched to another bot", async () => {
+    grantTakeover({ ...botWorking, busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(calls("computer/takeover")).toHaveLength(1);
+
+    routeParams.botId = "bot-2";
+    act(() => root?.render(<Computer />));
+    await settle();
+    expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
+    expect(calls("computer/takeover")).toHaveLength(1);
+
+    routeParams.botId = "bot-1";
+    act(() => root?.render(<Computer />));
+    await settle();
+    await act(async () => preview(view).click());
+    await settle();
+    act(() => root?.unmount());
+    root = undefined;
+    expect(calls("computer/release")).toHaveLength(2);
+  });
+
   it("keeps a bot's request for help open when the window closes without I’m done", async () => {
     respond({
       ...botWorking,

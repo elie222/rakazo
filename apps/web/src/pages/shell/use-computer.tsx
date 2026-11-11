@@ -611,6 +611,16 @@ export function useComputerControls({
   const autoBooted = useRef<string | null>(null);
   const takeoverInFlight = useRef(false);
   const [handingBack, setHandingBack] = useState(false);
+  // The bot whose control this window took and hands back when it closes.
+  const heldControl = useRef<string | null>(null);
+  const windowWasOpen = useRef(false);
+  const rpcRef = useRef(rpc);
+  rpcRef.current = rpc;
+  const handBackControl = useCallback(() => {
+    const botId = heldControl.current;
+    heldControl.current = null;
+    if (botId) void rpcRef.current.computer.release({ botId }).catch(() => undefined);
+  }, []);
 
   async function bootComputer({
     botId: targetBotId,
@@ -648,11 +658,18 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
+        // A bot waiting on the user keeps its takeover until I'm done or Skip.
+        const answersBot = computerRef.current?.takeoverRequested === true;
         takeoverInFlight.current = true;
         try {
           await rpc.computer.takeover({ botId: targetBotId });
         } finally {
           takeoverInFlight.current = false;
+        }
+        if (!answersBot) {
+          heldControl.current = targetBotId;
+          // The window may have closed while the grant was on its way.
+          if (!computerOpenRef.current) handBackControl();
         }
         if (!stillThisBoot() || !stillThisBot()) return;
       }
@@ -762,9 +779,11 @@ export function useComputerControls({
     // A computer panel left open in a hidden window must not keep the computer awake.
     const ping = () => {
       if (document.visibilityState !== "visible") return;
-      void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch((error) => {
-        if (!isRetryableError(error)) window.clearInterval(timer);
-      });
+      void rpc.computer
+        .heartbeat({ botId: heartbeatBotId, holdingControl: computerOpen })
+        .catch((error) => {
+          if (!isRetryableError(error)) window.clearInterval(timer);
+        });
     };
     const timer = window.setInterval(ping, 60_000);
     ping();
@@ -819,7 +838,6 @@ export function useComputerControls({
   async function releaseComputer(reason?: ComputerReleaseReason): Promise<boolean> {
     const botId = computerBotIdRef.current ?? activeBotId.current;
     if (!botId) return false;
-    releaseOnClose.current = null;
     // The read-only screen is safe to show at once; the release itself takes a while.
     const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
     let controlScreen: string | null = null;
@@ -831,6 +849,7 @@ export function useComputerControls({
     }
     try {
       await rpc.computer.release({ botId, reason });
+      if (heldControl.current === botId) heldControl.current = null;
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return true;
       await refreshComputerFor(botId).catch(() => undefined);
       const groupId = activeGroupId.current;
@@ -885,20 +904,22 @@ export function useComputerControls({
     return () => document.removeEventListener("visibilitychange", take);
   }, [shouldTakeControl, computerBot?.id]);
 
-  // Closing the window hands control back. A bot waiting on the user keeps waiting for I'm done.
-  const releaseOnClose = useRef<string | null>(null);
+  // Closing the window, switching bots or leaving hands back control this window holds.
+  // A bot waiting on the user keeps waiting for I'm done.
   useEffect(() => {
-    if (computerOpen) {
-      releaseOnClose.current =
-        hasControl && !recording && !computerRef.current?.takeoverRequested
-          ? (computerBot?.id ?? null)
-          : null;
+    if (!computerOpen) {
+      if (windowWasOpen.current) handBackControl();
+      windowWasOpen.current = false;
       return;
     }
-    const botId = releaseOnClose.current;
-    releaseOnClose.current = null;
-    if (botId) void rpc.computer.release({ botId }).catch(() => undefined);
+    windowWasOpen.current = true;
+    if (heldControl.current && heldControl.current !== computerBot?.id) handBackControl();
+    if (computer?.botId !== computerBot?.id) return;
+    // Teaching keeps its own control until it stops.
+    if (recording || computer?.takeoverRequested) heldControl.current = null;
+    else if (hasControl) heldControl.current = computerBot?.id ?? null;
   }, [computerOpen, hasControl, recording, computer?.takeoverRequested, computerBot?.id]);
+  useEffect(() => () => handBackControl(), []);
 
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
   const screenFailure =

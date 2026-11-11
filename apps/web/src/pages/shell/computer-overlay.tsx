@@ -207,16 +207,6 @@ export function ComputerOverlay({
                   screenHeight={computer?.screenHeight}
                 />
               ) : null}
-              {recordingSkill ? null : (
-                <ComputerControlPill
-                  computer={computer}
-                  hasControl={hasControl}
-                  busyBotName={
-                    computerTakeoverBlocked(computer, runStatus) ? computer.busyBotName : null
-                  }
-                  onFinish={onFinish}
-                />
-              )}
             </>
           ) : (
             <div className="grid h-full place-items-center text-body text-muted-foreground/80">
@@ -238,6 +228,17 @@ export function ComputerOverlay({
                 ))}
             </div>
           )}
+          {/* Stays over errors too, so a bot waiting on the user can still be answered. */}
+          {computer && computer.kind !== "desktop" && !recordingSkill ? (
+            <ComputerControlPill
+              computer={computer}
+              hasControl={hasControl}
+              busyBotName={
+                computerTakeoverBlocked(computer, runStatus) ? computer.busyBotName : null
+              }
+              onFinish={onFinish}
+            />
+          ) : null}
         </div>
       </div>
     </div>

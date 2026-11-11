@@ -600,3 +600,73 @@ it("takes control on open once no run is using the screen, and hands it back on 
   await act(async () => state.setComputerOpen(false));
   expect(release).toHaveBeenCalledWith({ botId: "bot-1" });
 });
+
+it("hands control back on close after a failed I’m done", async () => {
+  const release = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValue({ ok: true });
+  const takeover = vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" }));
+  const bot = { id: "bot-1", name: "Ada" } as never;
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    state = useComputerState({
+      rpc: { computer: { screenUrl } } as never,
+      panel: null,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    controls = useComputerControls({
+      rpc: {
+        computer: {
+          boot: vi.fn(async () => null),
+          takeover,
+          release,
+          screenUrl,
+          heartbeat: vi.fn(async () => ({ ok: true })),
+        },
+      } as never,
+      state,
+      panel: null,
+      active: bot,
+      bots: [bot],
+      botsRef: { current: [bot] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      recording: false,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => ({}) as never),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () => root.render(<Controls />));
+  await act(async () =>
+    state.commitComputer({
+      botId: "bot-1",
+      mode: "team",
+      kind: "boat",
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      takeoverRequested: false,
+      screenAvailable: true,
+      screenWidth: 1280,
+      screenHeight: 800,
+      homeRevision: null,
+      busyBotName: null,
+      canUpdate: false,
+      terminalAvailable: false,
+    }),
+  );
+  await act(async () => state.setComputerOpen(true));
+  await act(async () => controls.finishControl());
+  expect(state.computerOpen).toBe(true);
+  expect(state.computerError).toBe("Could not continue");
+  await act(async () => state.setComputerOpen(false));
+  expect(release).toHaveBeenCalledTimes(2);
+  expect(release).toHaveBeenLastCalledWith({ botId: "bot-1" });
+  expect(takeover).not.toHaveBeenCalled();
+});

@@ -857,7 +857,7 @@ export function computerRoutes(ctx: RouterContext) {
             },
           ).catch(() => undefined);
           // An open screen keeps its person in control; the lease runs out once it closes.
-          if (holdsComputerControl(bot.computer, bot.id, context.actor)) {
+          if (input.holdingControl && holdsComputerControl(bot.computer, bot.id, context.actor)) {
             await extendActiveComputerControl(
               deps.prisma,
               deps.jobs,

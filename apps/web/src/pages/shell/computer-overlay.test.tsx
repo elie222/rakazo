@@ -69,6 +69,7 @@ async function render(
     screenUrl?: string;
     runStatus?: Run["status"];
     onFinish?: (reason?: ComputerReleaseReason) => void;
+    screenError?: ReactNode;
   } = {},
 ) {
   await act(async () => {
@@ -90,7 +91,7 @@ async function render(
         sendError={null}
         embeddedScreenUrl={options.screenUrl ?? null}
         screenFrameRef={() => undefined}
-        computerScreenError={null}
+        computerScreenError={options.screenError ?? null}
         computerBooting={null}
         onStopTeaching={() => undefined}
         onStopRun={() => undefined}
@@ -176,6 +177,19 @@ describe("control pill", () => {
     await act(async () => button("Skip")?.click());
     await act(async () => button("I’m done")?.click());
     expect(onFinish.mock.calls).toEqual([["skipped"], ["done"]]);
+  });
+
+  it("keeps a waiting bot answerable when the screen fails", async () => {
+    const onFinish = vi.fn();
+    await render("running", vi.fn(), {
+      hasControl: true,
+      screenError: <p role="alert">Screen not connected</p>,
+      status: { takeoverRequested: true, controlHolder: "user", controlBotId: "bot-1" },
+      onFinish,
+    });
+    expect(container.querySelector("iframe")).toBeNull();
+    await act(async () => button("I’m done")?.click());
+    expect(onFinish).toHaveBeenCalledWith("done");
   });
 
   it("names who has control of a shared computer, with nothing to press", async () => {
