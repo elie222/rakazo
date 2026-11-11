@@ -494,7 +494,7 @@ export function runIdentityInstruction(
     if (!instructions || instructions === description) return identity;
     return [
       identity,
-      "Teammates see only the profile above. These instructions are private to you:",
+      "Teammates see only the profile above. The text below is private to you: it is who you are and how you work. Speak and act from it, not as a generic assistant:",
       instructions,
     ].join("\n");
   }
