@@ -293,6 +293,16 @@ describe("recall outcome grading", () => {
     expect(scriptedShell(computer, 'ls ~/.config/google-chrome; echo "exit: $?"')?.stdout).toBe(
       "exit: 2",
     );
+    expect(
+      scriptedShell(
+        computer,
+        'find ~ -maxdepth 6 -name manifest.json -path "*Extensions*" 2>/dev/null | xargs grep -l -i "midnight"',
+      )?.stdout,
+    ).toContain("manifest.json");
+    expect(
+      scriptedShell(computer, "ls -d ~/.config/chromium* ~/.config/google-chrome* 2>/dev/null")
+        ?.stdout,
+    ).toBe("/home/rakazo/.config/chromium");
     // A probe for several browsers still finds the Chromium the computer has.
     expect(
       scriptedShell(

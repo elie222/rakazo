@@ -287,6 +287,11 @@ const HOME = [
   },
   { match: /\bls\b[^;&|]*\.config\/?(?:\s|$)/, output: "chromium" },
   { match: /\bls\b[^;&|]*\.config\/chromium\/?(?:\s|$)/, output: "Default\nLocal State" },
+  // `ls -d ~/.config/chromium*`: the profile folder itself.
+  {
+    match: /\bls\s+-\w*d\w*\b[^;&|]*\.config\/chromium\*/,
+    output: "/home/rakazo/.config/chromium",
+  },
 ];
 /** What any Chromium computer answers, extension or not: the running browser and its version. */
 const CHROMIUM = [

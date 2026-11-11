@@ -175,6 +175,9 @@ function pipeFilter(command: string, text: string): { text: string; code: number
       );
     return { text: lines.join("\n"), code: 0 };
   }
+  // `find … | xargs grep -l`: the scripted computers' finds list only files that match.
+  if (/^xargs\s+grep\s+(?:-\w+\s+)*-\w*l/.test(command.trim()))
+    return { text, code: text.trim() ? 0 : 1 };
   const cut = /^(head|tail)(?:\s+-(?:(n)\s*|(c)\s*)?(\d+))?$/.exec(command.trim());
   if (!cut) return grepFilter(command, text);
   const [, which, , bytes, count] = cut;
