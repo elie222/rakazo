@@ -150,7 +150,7 @@ export function useThreadRows({
         <MessageRow
           key={message.id}
           message={message}
-          separateAnswer={separateAnswers.get(message.id)}
+          separateAnswers={separateAnswers.get(message.id)}
           actions={rowActions}
           botId={botId}
           bubbleBotId={botId ?? snap?.members?.[0]?.botId ?? ""}

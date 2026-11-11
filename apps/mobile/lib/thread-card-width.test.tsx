@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { separateAskAnswers } from "@rakazo/core";
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
@@ -444,6 +445,7 @@ describe("thread cards", () => {
           kind: "ask",
           text: longQuestion,
           status: "pending",
+          answerMessageId: "reply",
           actions: [
             { id: "yes", label: "Yes" },
             { id: "no", label: "No" },
@@ -459,7 +461,10 @@ describe("thread cards", () => {
           bots={[]}
           message={message}
           canAnswer={canAnswer}
-          separateAnswer={separateAnswer}
+          separateAnswers={separateAskAnswers([
+            message,
+            { id: "reply", role: "user", blocks: [{ kind: "text", text: separateAnswer ?? "" }] },
+          ]).get(message.id)}
           onAnswer={async () => undefined}
           actionProps={{}}
         />,

@@ -604,7 +604,7 @@ export const Transcript = memo(function Transcript({
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}
-                      separateAnswer={separateAnswers.get(message.id)}
+                      separateAnswers={separateAnswers.get(message.id)}
                       meId={meId}
                       markedUnread={message.id === markedUnreadMessageId}
                       mentions={mentionView.mentions.get(message.id)}

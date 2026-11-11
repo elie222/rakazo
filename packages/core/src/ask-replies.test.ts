@@ -26,7 +26,8 @@ const reply = (text = "Build a plan", botId = "bot-1") => ({
 
 describe("separateAskAnswers", () => {
   it("suppresses only an answer also present in its linked visible user message", () => {
-    expect([...separateAskAnswers([question(), reply()])]).toEqual([["question", "Build a plan"]]);
+    const asked = question();
+    expect([...separateAskAnswers([asked, reply()]).get("question")!]).toEqual([asked.blocks[0]]);
     expect(separateAskAnswers([question()]).size).toBe(0);
     expect(separateAskAnswers([question({ answerMessageId: undefined }), reply()]).size).toBe(0);
     expect(separateAskAnswers([question(), reply("Something else")]).size).toBe(0);
@@ -64,4 +65,19 @@ describe("separateAskAnswers", () => {
       separateAskAnswers([question(), { id: "later", role: "bot", blocks: [] }, reply()]).size,
     ).toBe(1);
   });
+});
+
+it("identifies each linked block independently of sibling answers with the same text", () => {
+  const linked = question().blocks[0]!;
+  const cardOnly = question({ answerMessageId: undefined }).blocks[0]!;
+  const selected = question({ actions: [{ id: "Build a plan", label: "Selected choice" }] })
+    .blocks[0]!;
+  const otherLinked = question({ answer: "Another answer", answerMessageId: "second-reply" })
+    .blocks[0]!;
+  const message = { ...question(), blocks: [linked, cardOnly, selected, otherLinked] };
+  const secondReply = { ...reply("Another answer"), id: "second-reply" };
+  const repeated = separateAskAnswers([message, reply(), secondReply]).get(message.id)!;
+  expect([...repeated]).toEqual([linked, otherLinked]);
+  expect(repeated.has(cardOnly)).toBe(false);
+  expect(repeated.has(selected)).toBe(false);
 });

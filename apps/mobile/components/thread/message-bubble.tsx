@@ -9,7 +9,6 @@ import {
   isApprovalAskBlock,
   memberName,
   messagingProviderLabel,
-  resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
@@ -213,7 +212,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   message,
   members,
   canAnswer,
-  separateAnswer,
+  separateAnswers,
   canDismiss,
   onAnswer,
   onOpenComputer,
@@ -237,7 +236,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   message: MobileMessage;
   members?: MobileSnapshot["members"];
   canAnswer: boolean;
-  separateAnswer?: string;
+  separateAnswers?: ReadonlySet<MessageBlock>;
   canDismiss: boolean;
   onAnswer: (
     message: MobileMessage,
@@ -285,7 +284,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       <View style={{ gap: 8, width: "100%" }}>
         <AskBlock
           ask={ask}
-          separateAnswer={separateAnswer}
+          answerIsSeparate={separateAnswers?.has(ask)}
           actionProps={actionProps}
           canAnswer={canAnswer}
           canDismiss={canDismiss}
@@ -456,12 +455,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   {askBlock.detail}
                 </Text>
               ) : null}
-              {askBlock.status === "answered" &&
-              !isApprovalAskBlock(askBlock) &&
-              !askBlock.instructionUpdate &&
-              !resolveAskChoice(askBlock.answer ?? "", askBlock.actions) &&
-              separateAnswer &&
-              askBlock.answer?.trim() === separateAnswer ? null : askBlock.status === "answered" ? (
+              {separateAnswers?.has(askBlock) ? null : askBlock.status === "answered" ? (
                 <Text
                   {...actionProps}
                   style={{

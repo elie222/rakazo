@@ -1,6 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import { markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type { BotAvatarSet, LoginFieldInput, MessageReaction } from "@rakazo/contracts";
+import type {
+  BotAvatarSet,
+  LoginFieldInput,
+  MessageBlock,
+  MessageReaction,
+} from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
@@ -80,7 +85,7 @@ type MessageRowProps = {
   readOnly: boolean;
   onCall: boolean;
   canAnswer: boolean;
-  separateAnswer?: string;
+  separateAnswers?: ReadonlySet<MessageBlock>;
   canDismiss: boolean;
   highlighted: boolean;
   separator: boolean;
@@ -120,7 +125,7 @@ export const MessageRow = memo(function MessageRow({
   readOnly,
   onCall,
   canAnswer,
-  separateAnswer,
+  separateAnswers,
   canDismiss,
   highlighted,
   separator,
@@ -450,7 +455,7 @@ export const MessageRow = memo(function MessageRow({
                 bots={bots}
                 members={members}
                 canAnswer={canAnswer}
-                separateAnswer={separateAnswer}
+                separateAnswers={separateAnswers}
                 canDismiss={canDismiss}
                 onAnswer={actions.answer}
                 onOpenBot={actions.openBot}

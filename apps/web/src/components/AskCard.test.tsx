@@ -68,13 +68,13 @@ async function render(
     fields?: LoginFieldInput[],
     remember?: false,
   ) => Promise<void> = async () => undefined,
-  separateAnswer?: string,
+  answerIsSeparate?: boolean,
 ) {
   await act(async () =>
     root.render(
       <AskCard
         block={block}
-        separateAnswer={separateAnswer}
+        answerIsSeparate={answerIsSeparate}
         canAnswer
         canDismiss
         onAnswer={onAnswer}
@@ -734,7 +734,7 @@ it("leaves a typed reply in its message and marks a sent draft", async () => {
   const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
   await render(block);
   expect(container.textContent).toContain("Tuesday");
-  await render(block, undefined, undefined, "Tuesday");
+  await render(block, undefined, undefined, true);
   expect(container.textContent).not.toContain("Tuesday");
   expect(container.textContent).not.toContain("Answered");
 

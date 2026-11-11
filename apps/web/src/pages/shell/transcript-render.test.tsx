@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { ThreadMessage } from "@rakazo/contracts";
+import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, useCallback, useMemo, useRef } from "react";
 import type { Root } from "react-dom/client";
@@ -15,15 +15,15 @@ vi.mock("./message-view", async () => {
   return {
     MessageView: memo(function MessageView({
       message,
-      separateAnswer,
+      separateAnswers,
     }: {
       message: { id: string };
-      separateAnswer?: string;
+      separateAnswers?: ReadonlySet<MessageBlock>;
     }) {
       messageRenders.set(message.id, (messageRenders.get(message.id) ?? 0) + 1);
       return createElement("div", {
         "data-testid": `message-${message.id}`,
-        "data-separate-answer": separateAnswer,
+        "data-separate-answer": separateAnswers ? "linked" : undefined,
       });
     }),
   };
@@ -198,7 +198,7 @@ it("only marks a question's answer as repeated while its user message is visible
     container
       .querySelector('[data-testid="message-question"]')
       ?.getAttribute("data-separate-answer"),
-  ).toBe("Build a plan");
+  ).toBe("linked");
   act(() => root.render(<Host messages={[question]} />));
   expect(
     container

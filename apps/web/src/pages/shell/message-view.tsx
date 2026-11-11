@@ -4,6 +4,7 @@ import { ChatMarkdown, LinkifiedText, withBlockMentions } from "@rakazo/chat-ui/
 import type {
   BotAvatarSet,
   LoginFieldInput,
+  MessageBlock,
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
@@ -54,7 +55,7 @@ import { MessageHoverActions } from "./message-hover-actions";
 export const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
-  separateAnswer,
+  separateAnswers,
   canDismiss,
   message,
   meId,
@@ -88,7 +89,7 @@ export const MessageView = memo(function MessageView({
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
-  separateAnswer?: string;
+  separateAnswers?: ReadonlySet<MessageBlock>;
   canDismiss: boolean;
   message: ThreadMessage;
   /** The signed-in person; anyone else's message is named and set apart. */
@@ -638,7 +639,7 @@ export const MessageView = memo(function MessageView({
               <div key={i} className="relative w-full min-w-0">
                 <AskCard
                   block={block}
-                  separateAnswer={separateAnswer}
+                  answerIsSeparate={separateAnswers?.has(block)}
                   canAnswer={canAnswer}
                   canDismiss={canDismiss}
                   onAnswer={(text, fields, remember) =>

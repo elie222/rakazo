@@ -118,7 +118,7 @@ function approvalActionLabel(
 export type AskCardProps = {
   block: AskBlock;
   canAnswer: boolean;
-  separateAnswer?: string;
+  answerIsSeparate?: boolean;
   canDismiss: boolean;
   /** A login card answers with its fields and an empty `text`; `remember` false uses it once. */
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
@@ -140,7 +140,7 @@ export function AskCard(props: AskCardProps) {
 function PromptAskCard({
   block,
   canAnswer,
-  separateAnswer,
+  answerIsSeparate,
   onAnswer,
   rpc = selectedSpaceRpc,
 }: AskCardProps) {
@@ -303,7 +303,7 @@ function PromptAskCard({
           ))}
         </div>
       ) : typedAnswer ? (
-        typedAnswer.trim() === separateAnswer ? null : (
+        answerIsSeparate ? null : (
           <blockquote
             data-testid="ask-answer"
             className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-body-lg leading-[1.5] text-muted-foreground"

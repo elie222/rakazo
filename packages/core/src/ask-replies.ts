@@ -9,8 +9,10 @@ type Message = {
 };
 
 /** Answers linked by the server to a user message currently visible in the transcript. */
-export function separateAskAnswers(messages: readonly Message[]): Map<string, string> {
-  const answers = new Map<string, string>();
+export function separateAskAnswers(
+  messages: readonly Message[],
+): Map<string, ReadonlySet<MessageBlock>> {
+  const answers = new Map<string, Set<MessageBlock>>();
   const byId = new Map(messages.map((message) => [message.id, message]));
   for (const message of messages) {
     if (message.role !== "bot") continue;
@@ -32,7 +34,11 @@ export function separateAskAnswers(messages: readonly Message[]): Map<string, st
         .flatMap((part) => (part.kind === "text" ? [part.text] : []))
         .join("\n")
         .trim();
-      if (text && block.answer.trim() === text) answers.set(message.id, text);
+      if (text && block.answer.trim() === text) {
+        const repeated = answers.get(message.id) ?? new Set<MessageBlock>();
+        repeated.add(block);
+        answers.set(message.id, repeated);
+      }
     }
   }
   return answers;
