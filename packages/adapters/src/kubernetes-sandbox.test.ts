@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { encodeTarEntry, TarReader } from "./exec-computer.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
 const TAR_END = Buffer.alloc(1024);
@@ -157,6 +158,74 @@ describe("KubernetesSandboxProvider", () => {
     );
     await assertSandboxWorkspaceContract(provider, provisioned, context);
     await provider.destroy(provisioned, context);
+  });
+
+  describe("when the exec connection is refused", () => {
+    class SocketErrorEvent {
+      readonly #status: number;
+      constructor(status: number) {
+        this.#status = status;
+      }
+      get error() {
+        return new Error(`Unexpected server response: ${this.#status}`);
+      }
+    }
+
+    it("keeps the reason", async () => {
+      expect(JSON.stringify(new SocketErrorEvent(503))).toBe("{}");
+      const failure = await providerFor({}, vi.fn().mockRejectedValue(new SocketErrorEvent(503)))
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ message: "Unexpected server response: 503" });
+      expect(isSandboxGoneError(failure)).toBe(false);
+    });
+
+    it.each([
+      ["missing", undefined],
+      ["failed", { status: { phase: "Failed" } }],
+      ["succeeded", { status: { phase: "Succeeded" } }],
+      ["deleting", { ...readyPod, metadata: { deletionTimestamp: new Date() } }],
+    ])("reports a %s pod as a computer that is gone", async (_state, pod) => {
+      const reason = new Error("Unexpected server response: 404");
+      const readNamespacedPod = pod
+        ? vi.fn().mockResolvedValue(pod)
+        : vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { code: 404 }));
+      const failure = await providerFor(
+        { readNamespacedPod },
+        vi.fn().mockRejectedValue({ error: reason }),
+      )
+        .prepare(computer, context)
+        .catch((error: unknown) => error);
+
+      expect(isSandboxGoneError(failure)).toBe(true);
+      expect(failure).toMatchObject({ message: "Kubernetes computer pod no longer exists" });
+      expect((failure as Error).cause).toBe(reason);
+      expect(readNamespacedPod).toHaveBeenCalledWith(
+        { name: "pod", namespace: "rakazo-sandboxes" },
+        expect.anything(),
+      );
+    });
+
+    it.each(["running", "read fails"])(
+      "keeps the original 404 when the pod is %s",
+      async (state) => {
+        const reason = new Error("Unexpected server response: 404");
+        const readNamespacedPod =
+          state === "running"
+            ? vi.fn().mockResolvedValue(readyPod)
+            : vi.fn().mockRejectedValue(new Error("API unavailable"));
+        const failure = await providerFor(
+          { readNamespacedPod },
+          vi.fn().mockRejectedValue({ error: reason }),
+        )
+          .prepare(computer, context)
+          .catch((error: unknown) => error);
+
+        expect(failure).toBe(reason);
+        expect(isSandboxGoneError(failure)).toBe(false);
+      },
+    );
   });
 
   it("validates the immutable computer image without package installation", async () => {
