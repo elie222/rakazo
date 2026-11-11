@@ -3,7 +3,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
-import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
+import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
@@ -80,12 +80,13 @@ import {
 } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
+import { watchEventLoopStalls } from "@rakazo/logging/event-loop";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
 const logger = await createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
-  const stopStallWatch = watchEventLoopStalls();
+  const stopStallWatch = watchEventLoopStalls("worker.event_loop_stalled");
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
