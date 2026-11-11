@@ -1,7 +1,15 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServiceCredential, ServiceScope } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired, SERVICE_SCOPES } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import {
+  Button,
+  Checkbox,
+  Field,
+  FieldLabel,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { useCopyText } from "../lib/copy-text";
@@ -27,7 +35,7 @@ export function ServiceKeysSettings() {
   const [scopes, setScopes] = useState<ServiceScope[]>(["bots:read"]);
   const [days, setDays] = useState<number>(90);
   const [botIds, setBotIds] = useState<string[]>([]);
-  const [token, setToken] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ id: string; token: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, copy] = useCopyText();
@@ -38,10 +46,10 @@ export function ServiceKeysSettings() {
     setBusy(true);
     setError(null);
     try {
-      const created = await withIdentityConfirmation(() =>
+      const result = await withIdentityConfirmation(() =>
         rpc.serviceCredentials.create({ name, scopes, botIds, expiresInDays: days }),
       );
-      setToken(created.token);
+      setCreated({ id: result.credential.id, token: result.token });
       setName("");
       setBotIds([]);
       await refresh();
@@ -60,7 +68,8 @@ export function ServiceKeysSettings() {
     setError(null);
     try {
       await rpc.serviceCredentials.revoke({ id: key.id });
-      setToken(null);
+      // Revoking another key leaves the new one on screen to copy.
+      setCreated((current) => (current?.id === key.id ? null : current));
       await refresh();
     } catch (err) {
       setError(errorText(err, t`Could not revoke the key`));
@@ -76,19 +85,22 @@ export function ServiceKeysSettings() {
       : t`Expires ${date}`;
   }
 
+  function lastUsedText(key: ServiceCredential) {
+    if (!key.lastUsedAt) return t`Never used`;
+    const date = new Date(key.lastUsedAt).toLocaleDateString();
+    return t`Last used ${date}`;
+  }
+
   return (
     <div className="space-y-4">
       {identityDialog}
-      <p className="text-body text-muted-foreground">
-        <Trans>Keys let a program read your bots and send them prompts as you.</Trans>
-      </p>
-      {token ? (
+      {created ? (
         <div className="space-y-2 rounded-md border border-border p-3">
           <p className="text-body">
             <Trans>Copy this key now. It won't be shown again.</Trans>
           </p>
-          <code className="block break-all text-body-sm">{token}</code>
-          <Button type="button" variant="outline" size="sm" onClick={() => copy(token)}>
+          <code className="block break-all text-body-sm">{created.token}</code>
+          <Button type="button" variant="outline" size="sm" onClick={() => copy(created.token)}>
             {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
           </Button>
         </div>
@@ -114,20 +126,20 @@ export function ServiceKeysSettings() {
             <Trans>What this key can do</Trans>
           </legend>
           {SERVICE_SCOPES.map((scope) => (
-            <label key={scope} className="flex items-center gap-2 text-body">
-              <input
-                type="checkbox"
+            <Field key={scope} orientation="horizontal">
+              <Checkbox
+                id={`${ids}-scope-${scope}`}
                 checked={scopes.includes(scope)}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setScopes((current) =>
-                    event.target.checked
+                    checked === true
                       ? [...current, scope]
                       : current.filter((entry) => entry !== scope),
                   )
                 }
               />
-              {scope}
-            </label>
+              <FieldLabel htmlFor={`${ids}-scope-${scope}`}>{scope}</FieldLabel>
+            </Field>
           ))}
         </fieldset>
         {bots?.length ? (
@@ -136,20 +148,20 @@ export function ServiceKeysSettings() {
               <Trans>Limit to these bots, or leave empty for all</Trans>
             </legend>
             {bots.map((bot) => (
-              <label key={bot.id} className="flex items-center gap-2 text-body">
-                <input
-                  type="checkbox"
+              <Field key={bot.id} orientation="horizontal">
+                <Checkbox
+                  id={`${ids}-bot-${bot.id}`}
                   checked={botIds.includes(bot.id)}
-                  onChange={(event) =>
+                  onCheckedChange={(checked) =>
                     setBotIds((current) =>
-                      event.target.checked
+                      checked === true
                         ? [...current, bot.id]
                         : current.filter((id) => id !== bot.id),
                     )
                   }
                 />
-                {bot.name}
-              </label>
+                <FieldLabel htmlFor={`${ids}-bot-${bot.id}`}>{bot.name}</FieldLabel>
+              </Field>
             ))}
           </fieldset>
         ) : null}
@@ -189,7 +201,9 @@ export function ServiceKeysSettings() {
               <div className="truncate text-muted-foreground">
                 {key.tokenPrefix}… {key.scopes.join(", ")}
               </div>
-              <div className="truncate text-muted-foreground">{expiryText(key)}</div>
+              <div className="truncate text-muted-foreground">
+                {expiryText(key)} · {lastUsedText(key)}
+              </div>
             </div>
             {key.revokedAt ? (
               <span className="text-body text-muted-foreground">
