@@ -880,9 +880,13 @@ export function useComputerControls({
 
   /** I'm done: hand control back and close the window, or stay open to try again. */
   async function finishControl(reason?: ComputerReleaseReason) {
+    const botId = computerBotIdRef.current;
     setHandingBack(true);
     try {
-      if (await releaseComputer(reason)) setComputerOpen(false);
+      // The window may show another bot by the time the release answers.
+      if ((await releaseComputer(reason)) && computerBotIdRef.current === botId) {
+        setComputerOpen(false);
+      }
     } finally {
       setHandingBack(false);
     }

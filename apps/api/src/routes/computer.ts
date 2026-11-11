@@ -139,8 +139,10 @@ export function computerRoutes(ctx: RouterContext) {
           select: { botId: true, status: true, userId: true },
         })
       : null;
+    // A request whose run has since ended (cancelled, say) no longer waits for anyone.
     const waitingForTakeover =
       executionRun?.botId === bot.id &&
+      ACTIVE_RUN_STATUSES.some((status) => status === executionRun.status) &&
       (executionRun.status === "waiting_takeover" ||
         bot.computer.controlRunId === executionLease?.runId);
     // A run that asked a person to take over waits for that person, not whoever opens the screen.
@@ -181,7 +183,14 @@ export function computerRoutes(ctx: RouterContext) {
               AND "maintenanceId" IS NULL
               AND "controlHolder" <> 'user'
               AND "controlLeaseId" IS NULL
-              AND ("controlRunId" IS NULL OR "controlRunId" = ${controlRunId}::text)
+              AND (
+                "controlRunId" IS NULL
+                OR "controlRunId" = ${controlRunId}::text
+                OR NOT EXISTS (
+                  SELECT 1 FROM runs waiting
+                  WHERE waiting.id = computers."controlRunId" AND waiting.status = 'waiting_takeover'
+                )
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM computer_execution_leases lease
                 JOIN runs run ON run.id = lease."runId"

@@ -783,3 +783,62 @@ it("asks for the bot switched to while another bot's answer is still on its way"
   });
   expect(takeover).toHaveBeenLastCalledWith({ botId: "bot-2", ifAvailable: true });
 });
+
+it("keeps another bot's window open when I’m done for the previous bot answers late", async () => {
+  let answer!: () => void;
+  const release = vi.fn(
+    () =>
+      new Promise<{ ok: true }>((resolve) => {
+        answer = () => resolve({ ok: true });
+      }),
+  );
+  const first = { id: "bot-1", name: "Ada" } as never;
+  const second = { id: "bot-2", name: "Grace" } as never;
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    state = useComputerState({
+      rpc: { computer: { screenUrl } } as never,
+      panel: null,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    controls = useComputerControls({
+      rpc: {
+        computer: {
+          boot: vi.fn(async () => null),
+          takeover: vi.fn(async () => null),
+          release,
+          screenUrl,
+          status: vi.fn(async () => null),
+          heartbeat: vi.fn(async () => ({ ok: true })),
+        },
+      } as never,
+      state,
+      panel: null,
+      active: first,
+      bots: [first, second],
+      botsRef: { current: [first, second] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      recording: false,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => ({}) as never),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () => root.render(<Controls />));
+  await act(async () => state.setComputerOpen(true));
+  let finished!: Promise<void>;
+  await act(async () => {
+    finished = controls.finishControl();
+  });
+  await act(async () => state.setComputerBotId("bot-2"));
+  await act(async () => {
+    answer();
+    await finished;
+  });
+  expect(state.computerOpen).toBe(true);
+});

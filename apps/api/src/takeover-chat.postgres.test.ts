@@ -398,6 +398,44 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     },
   );
 
+  it.each(["another bot", "this bot"] as const)(
+    "lets %s take a computer whose set-aside request was cancelled",
+    async (whose) => {
+      const fixture = await setup("opened");
+      const call = (path: string, json: unknown) =>
+        new RPCHandler(createRouter(fixture.deps)).handle(
+          new Request(`http://127.0.0.1/rpc/${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json }),
+          }),
+          { prefix: "/rpc", context: { actor: fixture.actor } },
+        );
+      await call("computer/release", { botId: fixture.bot.id });
+      expect(await fixture.control()).toMatchObject({ controlRunId: fixture.run.id });
+      // Cancelling ends the run and lets go of its lease, but leaves the request's marker.
+      await system.run.update({ where: { id: fixture.run.id }, data: { status: "cancelled" } });
+      await system.computerExecutionLease.deleteMany({ where: { runId: fixture.run.id } });
+      const other = await system.bot.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Other fixture",
+          color: "test",
+          computerId: fixture.computer.id,
+        },
+      });
+      const botId = whose === "this bot" ? fixture.bot.id : other.id;
+      const { response } = await call("computer/takeover", { botId, ifAvailable: true });
+      expect(await response?.json()).toMatchObject({ json: { leaseId: expect.any(String) } });
+      expect(await fixture.control()).toMatchObject({
+        controlHolder: "user",
+        controlBotId: botId,
+        controlRunId: null,
+      });
+    },
+  );
+
   it("keeps a bot's request for help waiting when its window closes without an answer", async () => {
     const fixture = await setup("opened");
     const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
