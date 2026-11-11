@@ -21,7 +21,8 @@ import { readInboundEmail } from "./inbound-email.js";
 export const EMAILED_CODE_WINDOW_MS = 5 * 60 * 1000;
 /** The earliest an email may have arrived to answer a code request: in its run, shortly before. */
 export function emailedCodeWindowStart(requestedAt: Date, runStartedAt: Date): Date {
-  return new Date(Math.max(requestedAt.getTime() - EMAILED_CODE_WINDOW_MS, runStartedAt.getTime()));
+  const beforeRequest = requestedAt.getTime() - EMAILED_CODE_WINDOW_MS;
+  return new Date(Math.max(beforeRequest, runStartedAt.getTime()));
 }
 /** Emails read from the inbox per query while looking for the site's: its sender is encrypted. */
 const EMAIL_BATCH = 50;
