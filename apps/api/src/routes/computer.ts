@@ -885,15 +885,12 @@ export function computerRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         const computer = bot.computer;
         if (!computer?.providerRef || computer.state !== "running") return { image: null };
-        if (input.runId) {
-          const waiting = await waitingTakeoverRun(
-            deps,
-            context.actor.spaceId,
-            computer.id,
-            bot.id,
-          );
-          if (waiting?.id !== input.runId) return { image: null };
-        }
+        // A card shows the screen only while its run waits, before and after the capture.
+        const stillWaiting = async () =>
+          !input.runId ||
+          (await waitingTakeoverRun(deps, context.actor.spaceId, computer.id, bot.id))?.id ===
+            input.runId;
+        if (!(await stillWaiting())) return { image: null };
         const observation = await deps.sandbox
           .observe(
             toComputerRef(computer),
@@ -904,7 +901,7 @@ export function computerRoutes(ctx: RouterContext) {
             getLogger().warn("computer.preview_failed", { error });
             return null;
           });
-        if (!observation) return { image: null };
+        if (!observation || !(await stillWaiting())) return { image: null };
         const data = Buffer.from(observation.image).toString("base64");
         return { image: `data:${observation.mimeType};base64,${data}` };
       }),
