@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type * as ComputerControl from "./computer-control.js";
 import { expireComputerControl } from "./computer-control.js";
+import { retainRunConversation, settleRetainedConversation } from "./conversation-memory.js";
 import { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import {
@@ -23,6 +24,10 @@ import {
 } from "./messaging-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
+vi.mock("./conversation-memory.js", () => ({
+  retainRunConversation: vi.fn(async () => ({})),
+  settleRetainedConversation: vi.fn(async () => ({ settled: true })),
+}));
 vi.mock("./history-compaction.js", () => ({ compactHistory: vi.fn(async () => undefined) }));
 vi.mock("./computer-control.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerControl>()),
@@ -327,4 +332,78 @@ it("retries retired messaging credentials without deleting a currently reference
   await expect(
     handlers["messaging.credential-cleanup"]({ installationId: "install-a", ref: "retired-ref" }),
   ).rejects.toThrow("temporarily unavailable");
+});
+
+describe("memory.retain-turn", () => {
+  const retainTurn = () => {
+    const jobs = { enqueue: vi.fn(async () => undefined) };
+    const handlers = createBackgroundJobHandlers({
+      executor: {} as unknown as ReturnType<typeof createRunExecutor>,
+      prisma: { run: owned() } as unknown as PrismaClient,
+      sandbox: {} as unknown as SandboxProvider,
+      home: {} as unknown as AgentHomeStore,
+      artifacts: {} as unknown as ArtifactStore,
+      jobs: jobs as unknown as JobPublisher,
+      events: {} as unknown as ThreadEvents,
+      workerId: "worker-1",
+      runtime: {} as unknown as AgentRuntime,
+      secretStore: {} as unknown as EncryptedSecretStore,
+      memoryProviders: { resolve: vi.fn(async () => null) },
+    });
+    return { jobs, handle: handlers["memory.retain-turn"] };
+  };
+
+  it("checks again later when the provider is still storing a new turn", async () => {
+    vi.mocked(retainRunConversation).mockResolvedValueOnce({
+      pending: { token: "op-1", generation: 3 },
+    });
+    const { jobs, handle } = retainTurn();
+    const before = Date.now();
+    await handle({ runId: "run-1", messageIds: ["m-1"], withoutReplies: true });
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "memory.retain-turn",
+        payload: {
+          runId: "run-1",
+          messageIds: ["m-1"],
+          withoutReplies: true,
+          pending: { token: "op-1", generation: 3, checks: 0 },
+        },
+        replaceKey: "memory.retain-turn:run-1",
+      }),
+    );
+    const [job] = jobs.enqueue.mock.calls[0] as unknown as [{ availableAt: Date }];
+    expect(job.availableAt.getTime()).toBeGreaterThanOrEqual(before + 5_000);
+  });
+
+  it("polls a pending turn without resubmitting it", async () => {
+    vi.mocked(retainRunConversation).mockClear();
+    vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
+    const { jobs, handle } = retainTurn();
+    const pending = { token: "op-1", generation: 3, checks: 2 };
+    await handle({ runId: "run-1", pending });
+    expect(retainRunConversation).not.toHaveBeenCalled();
+    expect(settleRetainedConversation).toHaveBeenCalledWith(expect.anything(), "run-1", pending);
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { runId: "run-1", pending: { ...pending, checks: 3 } } }),
+    );
+  });
+
+  it.each([
+    ["a new turn is stored at once", {}],
+    ["a pending turn settles", { pending: { token: "op-1", generation: 3, checks: 4 } }],
+  ])("stops once %s", async (_case, extra) => {
+    const { jobs, handle } = retainTurn();
+    await handle({ runId: "run-1", ...extra });
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("gives up after 60 checks without failing the job", async () => {
+    vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
+    const { jobs, handle } = retainTurn();
+    await expect(
+      handle({ runId: "run-1", pending: { token: "op-1", generation: 3, checks: 59 } }),
+    ).resolves.toBeUndefined();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
 });

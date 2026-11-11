@@ -414,6 +414,12 @@ export interface SemanticMemoryCapabilities {
   save: true;
   purgeHistory: true;
   sharedScope: true;
+  /** Recall before every run, not only once thread history is compacted. */
+  recallEachRun?: true;
+  /** Never recall before a run: the bot recalls only through its memory tools. */
+  recallOnRequestOnly?: true;
+  /** purgeHistory removes what was learned in a chat by thread, so clearing any chat calls it. */
+  purgesByThread?: true;
 }
 
 export interface SemanticMemoryResult {
@@ -426,6 +432,8 @@ export interface SemanticMemoryResult {
   provenance?: string;
   /** Provider entity/namespace the fact was recalled from, when scoped. */
   entity?: string;
+  /** Written by another app, not by this product's bots: untrusted outside content. */
+  external?: true;
 }
 
 export interface SemanticMemoryForgetRequest {
@@ -460,7 +468,43 @@ export interface SemanticMemorySaveRequest {
 
 export interface SemanticMemoryPurgeHistoryRequest {
   botId: string;
+  threadId: string;
   generations: number[];
+}
+
+export interface SemanticMemoryConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+  /** ISO 8601. */
+  timestamp: string;
+  /** Who said it, when not the person or this bot: another bot in a group chat or a bot message. */
+  speaker?: string;
+}
+
+/**
+ * The new messages of one finished turn; earlier turns of the conversation were sent before. When
+ * the run took in outside content, its replies are left out and the turns are people's (and other
+ * bots') words only.
+ */
+export interface SemanticMemoryConversationRequest {
+  botId: string;
+  botName: string;
+  userName: string;
+  /** The bot's own chat with its person, or a group chat with other bots. */
+  conversation: "direct" | "group";
+  /** The bot's effective memory scope; shared also pools the turn with the Space's other bots. */
+  scope: DurableMemoryScope;
+  threadId: string;
+  /** Thread history generation; purgeHistory with this threadId and generation removes it. */
+  generation: number;
+  runId: string;
+  turns: SemanticMemoryConversationTurn[];
+}
+
+/** Reflects over the bot's own memory only. */
+export interface SemanticMemoryReflectRequest {
+  query: string;
+  botId: string;
 }
 
 export type SemanticMemoryForgetResponse = SemanticMemoryResponse<{
@@ -832,6 +876,19 @@ export interface BackgroundJobPayloads {
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
+  /**
+   * `messageIds`: what the person sent while the run worked, which the run also answered.
+   * `withoutReplies`: the run took in outside content, so its replies are not learned.
+   * `pending`: the turn was submitted and the provider is still storing it. Later checks poll the
+   * provider's token instead of submitting again, and purge `generation` once it settles if the
+   * chat was cleared meanwhile. `checks` counts the polls so far.
+   */
+  "memory.retain-turn": {
+    runId: string;
+    messageIds?: string[];
+    withoutReplies?: true;
+    pending?: { token: string; generation: number; checks: number };
+  };
   "messaging.deliver": { runId?: string };
   /** A running chat-app run's interim messages; the run is not marked mirrored. */
   "messaging.progress": { runId: string };

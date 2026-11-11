@@ -130,7 +130,11 @@ import type {
   RunningHelper,
   RunState,
 } from "./run-context.js";
-import { restoreTurnCheckpointEffects, settleRunningHelpers } from "./run-context.js";
+import {
+  persistReadOutsideContent,
+  restoreTurnCheckpointEffects,
+  settleRunningHelpers,
+} from "./run-context.js";
 import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-effects.js";
 import {
   BOT_DIRECTORY_LIMIT,
@@ -829,17 +833,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
+        const capabilities = semanticMemory?.describe().capabilities;
+        const recallsEachRun = capabilities?.recallEachRun === true;
+        const compacted = thread.historyCompactedUpToSeq != null;
         const recallPromise =
           threadContext.includeSemanticRecall &&
           semanticMemory &&
           memoryScope &&
-          thread.historyCompactedUpToSeq != null
+          capabilities?.recallOnRequestOnly !== true &&
+          (compacted || recallsEachRun)
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
                   scope: memoryScope,
                   botId: bot.id,
-                  historyGeneration: thread.historyCompactionGeneration,
+                  ...(compacted ? { historyGeneration: thread.historyCompactionGeneration } : {}),
                   limit: MAX_RECALLED_MEMORIES,
                 },
                 context,
@@ -875,10 +883,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const semanticMemoryEnabled = Boolean(semanticMemory) && !nonOwnerChatRun;
         let recalledMemory = "";
         let recallSucceeded = false;
+        let recalledExternalMemory = false;
         if (recalled) {
           if (recalled.ok && recalled.value.length > 0) {
             recallSucceeded = true;
             recalledMemory = formatRecalledMemory(recalled.value);
+            // Memory another app wrote is outside text, not this product's own saved state.
+            recalledExternalMemory =
+              recalledMemory !== "" && recalled.value.some((result) => result.external);
           } else if (!recalled.ok) {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
@@ -887,7 +899,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           history = history.slice(
             -historyWindowSize({
               semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
-              compacted: thread.historyCompactedUpToSeq != null,
+              compacted,
               recallSucceeded,
             }),
           );
@@ -1271,6 +1283,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             trigger: run.trigger,
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
+            semanticMemoryReflects: Boolean(semanticMemory?.reflect),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
@@ -1331,7 +1344,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
         const initiallyTainted =
-          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
+          !ownerStartedRun ||
+          Boolean(turnCheckpoint) ||
+          Boolean(checkpointLoadError) ||
+          recalledExternalMemory;
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either.
         const tools =
@@ -1420,6 +1436,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           overLimitActionCalls: 0,
           toolResults: new Map(),
           tainted: initiallyTainted,
+          // A resumed attempt restores earlier tool results, which may hold outside content.
+          readOutsideContent:
+            recalledExternalMemory || Boolean(turnCheckpoint) || Boolean(checkpointLoadError),
           ownerSettingsRefused: false,
           // A resumed turn replaces this with the baseline its saved prompt was built from.
           ownInstructionsBaseline: bot.instructions ?? "",
@@ -1428,6 +1447,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           handedOff: false,
           terminalCheckpointComplete: false,
         };
+        if (state.readOutsideContent) await persistReadOutsideContent(deps.prisma, runId);
         const { effects } = state;
         /** Fleet tools take every scope from the run, never from arguments. */
         const fleetRun: FleetRun = {

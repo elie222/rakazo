@@ -36,6 +36,13 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 - **Honcho**: saves and recalls facts using Rakazo’s own peers. Optionally, enter a workspace
   and **User peer** to also recall what Honcho already knows about you. That existing peer stays
   read-only; Rakazo writes new facts to its own peers in the same workspace.
+- **Hindsight**: its cloud service, or your own server. Each bot keeps its own memory; with the
+  Shared scope, bots also share one memory for the Space. Bots learn from their conversations (their
+  own chats, group chats, and messages between bots) unless you turn off **Learn from
+  conversations**; clearing a chat removes what was learned from it. Bots can't forget a single
+  memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
+  under **Recall from banks**; bots read those banks but never write to them. Bots can also ask
+  their memory to answer a question by combining what it knows.
 
 Once connected, **Default scope** decides what bots share in the provider:
 

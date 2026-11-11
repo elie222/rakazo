@@ -187,6 +187,8 @@ export interface RunState {
    * and so does a later attempt, including one with restored untrusted tool results.
    */
   tainted: boolean;
+  /** This run read outside content (not just started tainted), so its replies are not learned. */
+  readOutsideContent: boolean;
   /**
    * The taint refusal for owner settings was returned in this attempt. A model that calls
    * again gets the turn ended instead of the same error a second time.
@@ -393,6 +395,32 @@ export async function isRunTainted(ctx: RunContext) {
   if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage()))
     state.tainted = true;
   return state.tainted;
+}
+
+/**
+ * Record on the run row that it took in outside content, so other bots do not learn the
+ * words it sends them as trusted memory. Never throws: the flag only narrows learning.
+ */
+export async function persistReadOutsideContent(
+  prisma: Pick<ExecutorDeps["prisma"], "run">,
+  runId: string,
+) {
+  try {
+    await prisma.run.updateMany({
+      where: { id: runId, readOutsideContent: false },
+      data: { readOutsideContent: true },
+    });
+  } catch (error) {
+    getLogger().error("run readOutsideContent update failed", error);
+  }
+}
+
+/** The run read outside content: taint it and record it once, before the result returns. */
+export async function markReadOutsideContent(ctx: RunContext) {
+  ctx.state.tainted = true;
+  if (ctx.state.readOutsideContent) return;
+  ctx.state.readOutsideContent = true;
+  await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */

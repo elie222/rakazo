@@ -1,5 +1,6 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
+import { HindsightSettingsForm } from "./HindsightSettingsForm";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
 import { SerenitySettingsForm } from "./SerenitySettingsForm";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
@@ -51,6 +52,15 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
       if (mode === "local")
         return [`Self-hosted (${baseUrl})`, workspaceId].filter(Boolean).join(", ");
       return workspaceId ? `Honcho Cloud (${workspaceId})` : "Honcho Cloud";
+    },
+  },
+  {
+    id: "hindsight",
+    name: "Hindsight",
+    SettingsForm: HindsightSettingsForm,
+    connectedLabel: (config) => {
+      const { mode, baseUrl } = config.settings;
+      return mode === "local" ? `Self-hosted (${baseUrl})` : "Hindsight Cloud";
     },
   },
 ];

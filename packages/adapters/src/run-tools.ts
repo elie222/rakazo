@@ -3,6 +3,7 @@ import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 import { noteComputerTaskStep } from "./run-progress.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
@@ -88,7 +89,7 @@ export async function applyTool(
   } finally {
     // Editing its own profile returns only what this run wrote; a child's profile is another bot's.
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
-    if (toolResultTaintsRun(name) && !ownProfile) ctx.state.tainted = true;
+    if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx);
   }
 }
 

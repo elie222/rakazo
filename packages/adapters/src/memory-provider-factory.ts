@@ -2,6 +2,12 @@ import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@r
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
+  createHindsightProvider,
+  HINDSIGHT_PROVIDER_ID,
+  hindsightRequiresPrivateEndpoint,
+  prepareHindsightConnection,
+} from "./hindsight-memory-provider.js";
+import {
   createHonchoProvider,
   HONCHO_PROVIDER_ID,
   honchoRequiresPrivateEndpoint,
@@ -98,6 +104,15 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
       revalidate: revalidateLocalServiceSettings,
       prepare: prepareHonchoConnection,
       create: createHonchoProvider,
+    },
+  ],
+  [
+    HINDSIGHT_PROVIDER_ID,
+    {
+      requiresPrivateEndpoint: hindsightRequiresPrivateEndpoint,
+      revalidate: revalidateLocalServiceSettings,
+      prepare: prepareHindsightConnection,
+      create: createHindsightProvider,
     },
   ],
 ]);

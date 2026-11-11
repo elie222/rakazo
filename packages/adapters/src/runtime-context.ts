@@ -21,6 +21,9 @@ import {
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
+/** Opens the recalled-memory history message, which context trimming keeps. */
+export const RECALLED_MEMORY_LEAD = "Memory recalled from earlier conversations.";
+
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
 
@@ -442,9 +445,7 @@ export function createRuntimeContextPolicy(
         (message as Message & OriginalMetadata).rakazoHistory &&
         !(message as Message & OriginalMetadata).rakazoMessageId &&
         (text(message).startsWith("Rakazo-owned compacted context through message sequence ") ||
-          text(message).startsWith(
-            "Memory recalled from earlier conversations that fell outside the visible history.",
-          )),
+          text(message).startsWith(`${RECALLED_MEMORY_LEAD} `)),
     );
     for (const summary of summaries) {
       const required = protectedIndexes.map((index) => messages[index]!);

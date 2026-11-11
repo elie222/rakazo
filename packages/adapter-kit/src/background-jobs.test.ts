@@ -4,6 +4,7 @@ import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   historyCompactJobKey,
+  memoryRetainTurnJob,
   messagingDeliverJob,
   parseBackgroundJob,
   routineRetryJob,
@@ -21,6 +22,7 @@ function handlers(): BackgroundJobHandlers {
     "skill.teaching-expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.retain-turn": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
@@ -97,6 +99,57 @@ describe("background job contracts", () => {
       parseBackgroundJob("computer.control-expire", {
         computerId: "computer-1",
         leaseId: "",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("memoryRetainTurnJob", () => {
+  it("names withoutReplies only when the run read outside content", () => {
+    expect(memoryRetainTurnJob("run-1").payload).toEqual({ runId: "run-1" });
+    expect(memoryRetainTurnJob("run-1", ["m-1"], { withoutReplies: false }).payload).toEqual({
+      runId: "run-1",
+      messageIds: ["m-1"],
+    });
+    expect(memoryRetainTurnJob("run-1", [], { withoutReplies: true })).toEqual({
+      name: "memory.retain-turn",
+      payload: { runId: "run-1", withoutReplies: true },
+      replaceKey: "memory.retain-turn:run-1",
+      maxAttempts: 4,
+    });
+  });
+
+  it("schedules a later check under the same key", () => {
+    const availableAt = new Date("2026-11-11T12:00:05.000Z");
+    const pending = { token: "op-1", generation: 3, checks: 2 };
+    expect(memoryRetainTurnJob("run-1", [], { pending, availableAt })).toEqual({
+      name: "memory.retain-turn",
+      payload: { runId: "run-1", pending },
+      replaceKey: "memory.retain-turn:run-1",
+      availableAt,
+      maxAttempts: 4,
+    });
+  });
+
+  it("parses withoutReplies and older payloads without it", () => {
+    expect(
+      parseBackgroundJob("memory.retain-turn", { runId: "run-1", withoutReplies: true }).payload,
+    ).toEqual({ runId: "run-1", withoutReplies: true });
+    expect(parseBackgroundJob("memory.retain-turn", { runId: "run-1" }).payload).toEqual({
+      runId: "run-1",
+    });
+    expect(() =>
+      parseBackgroundJob("memory.retain-turn", { runId: "run-1", withoutReplies: false }),
+    ).toThrow();
+    const pending = { token: "op-1", generation: 3, checks: 0 };
+    expect(parseBackgroundJob("memory.retain-turn", { runId: "run-1", pending }).payload).toEqual({
+      runId: "run-1",
+      pending,
+    });
+    expect(() =>
+      parseBackgroundJob("memory.retain-turn", {
+        runId: "run-1",
+        pending: { ...pending, checks: -1 },
       }),
     ).toThrow();
   });

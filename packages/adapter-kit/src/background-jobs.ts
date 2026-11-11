@@ -27,6 +27,18 @@ const payloadSchemas = {
     threadId: z.string().min(1),
     userId: z.string().min(1).optional(),
   }),
+  "memory.retain-turn": z.object({
+    runId: z.string().min(1),
+    messageIds: z.array(z.string().min(1)).optional(),
+    withoutReplies: z.literal(true).optional(),
+    pending: z
+      .object({
+        token: z.string().min(1),
+        generation: z.number().int().min(0),
+        checks: z.number().int().min(0),
+      })
+      .optional(),
+  }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
   "messaging.credential-cleanup": z.object({
@@ -194,6 +206,30 @@ export function historyCompactJob(threadId: string, userId?: string): Background
     payload: userId ? { threadId, userId } : { threadId },
     replaceKey: historyCompactJobKey(threadId),
     maxAttempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+  };
+}
+
+/** Retries reuse the run's operation id, so the memory service never stores a turn twice. */
+export function memoryRetainTurnJob(
+  runId: string,
+  messageIds: string[] = [],
+  options: {
+    withoutReplies?: boolean;
+    pending?: BackgroundJobPayloads["memory.retain-turn"]["pending"];
+    availableAt?: Date;
+  } = {},
+): BackgroundJob {
+  return {
+    name: "memory.retain-turn",
+    payload: {
+      runId,
+      ...(messageIds.length ? { messageIds } : {}),
+      ...(options.withoutReplies ? { withoutReplies: true as const } : {}),
+      ...(options.pending ? { pending: options.pending } : {}),
+    },
+    replaceKey: `memory.retain-turn:${runId}`,
+    ...(options.availableAt ? { availableAt: options.availableAt } : {}),
+    maxAttempts: 4,
   };
 }
 

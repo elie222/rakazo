@@ -1246,7 +1246,7 @@ function compatibleExecutor(
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 }
 
-function pinnedRoutineRunPrisma(modelId: string) {
+function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -1255,7 +1255,7 @@ function pinnedRoutineRunPrisma(modelId: string) {
     userId: "user-1",
     spaceId: "ws-1",
     status: "queued",
-    trigger: "routine",
+    trigger,
     routineId: "routine-1",
     routine: { name: "Daily check" },
     modelProvider: COMPATIBLE_PROVIDER,
@@ -1315,13 +1315,17 @@ function pinnedRoutineRunPrisma(modelId: string) {
   };
 }
 
-async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
+async function continuePinnedRoutineRun(
+  plaintext: string,
+  modelId: string,
+  options: { trigger?: string; executor?: Record<string, unknown> } = {},
+) {
   const runtimeRun = vi.fn();
   const enqueue = vi.fn(async () => undefined);
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const append = vi.fn(async () => undefined);
   const prisma: Record<string, unknown> = {
-    ...pinnedRoutineRunPrisma(modelId),
+    ...pinnedRoutineRunPrisma(modelId, options.trigger),
     ...compatiblePrismaParts("space-model", plaintext),
   };
   prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -1332,6 +1336,7 @@ async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
     events: { append, finalizeRun },
     jobs: { enqueue },
     secrets: [],
+    ...options.executor,
   });
   // The fixture has no computer stack, so a run that passes model resolution
   // stops at computer setup (requeued, not finalized).
@@ -3974,6 +3979,37 @@ description: Prepare standup notes
       const { finalizeRun } = await continuePinnedRoutineRun(plaintext, "second-model");
 
       expect(finalizeRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [true, 1],
+    [false, 0],
+  ])(
+    "recalls before a run on an uncompacted thread only when the provider asks: %s",
+    async (recallEachRun, calls) => {
+      const recall = vi.fn(async (_request: unknown) => ({ ok: true as const, value: [] }));
+      const provider = {
+        describe: () => ({ capabilities: recallEachRun ? { recallEachRun: true } : {} }),
+        recall,
+        save: vi.fn(),
+        purgeHistory: vi.fn(),
+      };
+      await continuePinnedRoutineRun(compatibleSecret(), "space-model", {
+        trigger: "user",
+        executor: {
+          memoryProviders: { resolve: vi.fn(async () => ({ provider, defaultScope: "isolated" })) },
+        },
+      });
+      expect(recall).toHaveBeenCalledTimes(calls);
+      if (calls) {
+        expect(recall.mock.calls[0]?.[0]).toEqual({
+          query: "hello",
+          scope: "isolated",
+          botId: "bot-1",
+          limit: expect.any(Number),
+        });
+      }
     },
   );
 

@@ -4,6 +4,7 @@ import {
   historyCompactJob,
   ModelAccountError,
   ModelOutputError,
+  memoryRetainTurnJob,
   runContinueJob,
   SandboxAllowanceUsedError,
   SandboxProviderAccountError,
@@ -34,6 +35,7 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
+import { answeredSteeringMessageIds, retainsConversationTurn } from "./conversation-memory.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -46,7 +48,7 @@ import {
   modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { persistTurnCheckpoint } from "./run-context.js";
+import { persistReadOutsideContent, persistTurnCheckpoint } from "./run-context.js";
 import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
@@ -763,6 +765,29 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
   return !earlier;
 }
 
+/**
+ * Whether this run took in outside content, recorded on the run row so bots learning from its
+ * replies leave them out. A retried run restored earlier tool results, and channel or webhook
+ * text it took in mid-turn counts too; an unreadable answer counts as outside content.
+ */
+async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
+  const { state } = ctx;
+  if (state.readOutsideContent) return true;
+  let outside: boolean;
+  try {
+    state.earlierAttempt ??= ctx.deps.prisma.attempt
+      .count({ where: { runId: ctx.runId } })
+      .then((count) => count > 1);
+    outside = (await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage());
+  } catch {
+    outside = true;
+  }
+  if (!outside) return false;
+  state.readOutsideContent = true;
+  await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
+  return true;
+}
+
 /** The turn ended: apply a scripted runtime's files and memory, then finalize the reply. */
 export async function completeRun(ctx: RunContext) {
   const { deps, run, runId, bot, thread, context } = ctx;
@@ -917,6 +942,20 @@ export async function completeRun(ctx: RunContext) {
     ctx.source.peerMessage?.repliesToRequest === true,
   );
   await ctx.settleRunningHelpers();
+  const retainsTurn = retainsConversationTurn({
+    trigger: run.trigger,
+    sourceMessageId: run.sourceMessageId,
+    runBotId: run.botId,
+    threadBotId: thread.botId,
+    threadGroupId: thread.groupId,
+    nonOwnerChatRun: ctx.source.messagingChannelRun,
+    provider: ctx.memory.semantic,
+  });
+  // Finalizing deletes the claims of what the person sent while the run worked.
+  const answeredMessageIds = retainsTurn ? await answeredSteeringMessageIds(deps, runId) : [];
+  // Read before finalizing deletes the claims of what arrived mid-turn.
+  const readOutsideContent = await runReadOutsideContent(ctx);
+  const withoutReplies = retainsTurn && readOutsideContent;
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -972,6 +1011,11 @@ export async function completeRun(ctx: RunContext) {
       threadId: thread.id,
       runId: run.id,
     });
+  }
+  if (retainsTurn) {
+    await deps.jobs
+      .enqueue(memoryRetainTurnJob(run.id, answeredMessageIds, { withoutReplies }))
+      .catch((error) => getLogger().error("memory.retain-turn enqueue failed", error));
   }
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
   // the failure path, where a second finalizeRun would match no rows and silently

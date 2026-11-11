@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe("SpaceMemoryProviderResolver", () => {
-  it.each(["honcho", "supermemory"])(
+  it.each(["honcho", "supermemory", "hindsight"])(
     "disables %s without loading credentials when local DNS revalidation fails",
     async (provider) => {
       vi.mocked(lookup).mockRejectedValue(new Error("DNS unavailable"));

@@ -29,7 +29,7 @@ the default work as described for Parallel.
 
 ## Self-hosted memory
 
-Supermemory and Honcho can run on your own network. In **Settings → Memory**, choose **Local**
+Supermemory, Honcho and Hindsight can run on your own network. In **Settings → Memory**, choose **Self-hosted**
 and enter the instance's base URL. The operator must set `MCP_ALLOW_PRIVATE_ENDPOINT=true`; workspace owners can then save a local endpoint. It must
 be loopback or resolve to private addresses (a Compose service name, an RFC1918 or unique-local
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
@@ -42,6 +42,15 @@ its own PostgreSQL with pgvector, an LLM provider, and an embedding provider; se
 `EMBEDDING_VECTOR_DIMENSIONS` before its first start. Rakazo stores only explicitly saved facts
 in Honcho; conversation summaries stay in Rakazo. Bots can forget a saved fact on Honcho v3.2 or
 later.
+
+For [Hindsight](https://github.com/vectorize-io/hindsight) 1.0 or later, the key is optional when
+the server has no authentication. Hindsight needs its own LLM provider to extract facts. Rakazo
+creates a bank per bot (`rakazo-<space id>-<bot id>`) and, for the Shared scope, one per Space
+(`rakazo-<space id>`). It does not configure banks, so set extraction missions in Hindsight if you
+want them. Rakazo sends each finished turn (unless **Learn from conversations** is off) and the
+facts bots save; banks under **Recall from banks** are only read. A bank under **Recall from banks**
+must be on the same Hindsight server or Cloud account; an app that runs Hindsight embedded on its
+own machine keeps its banks there.
 
 ## MCP servers
 

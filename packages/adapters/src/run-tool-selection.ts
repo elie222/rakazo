@@ -28,6 +28,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
   "task_catalog",
   "recall_memory",
+  "reflect_memory",
   "schedule_list",
   "scratchpad_list",
   "board_tickets",
@@ -72,6 +73,7 @@ export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
   "web_fetch",
   "recall_memory",
+  "reflect_memory",
   "skill_read",
   "task_catalog",
   "scratchpad_list",
@@ -107,6 +109,8 @@ export function selectBuiltinToolsForRun(options: {
   semanticMemoryEnabled: boolean;
   /** The configured provider can forget individual facts. */
   semanticMemoryForgets?: boolean;
+  /** The configured provider can answer a question from many memories. */
+  semanticMemoryReflects?: boolean;
   cloudAgentEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
@@ -157,6 +161,7 @@ export function selectBuiltinToolsForRun(options: {
       ),
       options.semanticMemoryEnabled,
       Boolean(options.semanticMemoryForgets),
+      Boolean(options.semanticMemoryReflects),
     ),
     Boolean(options.cloudAgentEnabled),
   ).filter(
@@ -207,6 +212,7 @@ export function selectBuiltinToolsForRun(options: {
             "save_memory",
             "recall_memory",
             "forget_memory",
+            "reflect_memory",
             "task_catalog",
             "board_tickets",
           ].includes(tool.name) &&

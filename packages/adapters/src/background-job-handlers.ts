@@ -12,6 +12,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import {
+  memoryRetainTurnJob,
   messagingDeliverJob,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -26,6 +27,7 @@ import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
+import { retainRunConversation, settleRetainedConversation } from "./conversation-memory.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
@@ -61,6 +63,9 @@ function asOwner<Key, P extends Key>(
 
 const OWNER = { spaceId: true, userId: true } as const;
 const CONTROL_EXPIRE_RETRY_MS = 30_000;
+/** How often to ask whether the memory provider finished storing a turn, and for how long. */
+const RETAIN_TURN_CHECK_MS = 5_000;
+const MAX_RETAIN_TURN_CHECKS = 60;
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -257,6 +262,47 @@ export function createBackgroundJobHandlers(deps: {
         },
         payload.threadId,
         payload.userId,
+      );
+    }),
+    "memory.retain-turn": asOwner(run, async (payload) => {
+      const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders };
+      const options = { withoutReplies: payload.withoutReplies };
+      let next: { token: string; generation: number; checks: number };
+      if (!payload.pending) {
+        const { pending } = await retainRunConversation(
+          memory,
+          payload.runId,
+          payload.messageIds,
+          options,
+        );
+        if (!pending) return;
+        next = { ...pending, checks: 0 };
+      } else {
+        // Never rebuild the turn: a clear may have deleted its messages meanwhile.
+        const { settled } = await settleRetainedConversation(
+          memory,
+          payload.runId,
+          payload.pending,
+        );
+        if (settled) return;
+        next = { ...payload.pending, checks: payload.pending.checks + 1 };
+        if (next.checks >= MAX_RETAIN_TURN_CHECKS) {
+          getLogger().warn(
+            "memory.retain-turn gave up waiting for the provider to store the turn",
+            {
+              "run.id": payload.runId,
+            },
+          );
+          return;
+        }
+      }
+      // The provider is still storing the turn: check again later instead of holding a worker.
+      await deps.jobs.enqueue(
+        memoryRetainTurnJob(payload.runId, payload.messageIds, {
+          ...options,
+          pending: next,
+          availableAt: new Date(Date.now() + RETAIN_TURN_CHECK_MS),
+        }),
       );
     }),
   };

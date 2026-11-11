@@ -1180,7 +1180,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
   // Space memory provider is configured (`remember` stays), and
-  // forget_memory only when that provider can forget.
+  // forget_memory/reflect_memory only when that provider can forget/reflect.
   {
     name: "save_memory",
     description:
@@ -1196,6 +1196,18 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "recall_memory",
     description: "Semantically search this bot's durable memory for facts relevant to a query.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "reflect_memory",
+    description:
+      "Answer a question by reasoning over this bot's long-term memory, combining many memories. Use recall_memory to look up specific facts.",
     inputSchema: {
       type: "object",
       properties: {

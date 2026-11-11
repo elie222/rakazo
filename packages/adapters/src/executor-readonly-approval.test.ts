@@ -109,7 +109,10 @@ function fixture({
   batch,
   browser,
   spendingLimit = null,
+  memoryProvider,
 }: {
+  /** The Space's semantic memory provider; none by default. */
+  memoryProvider?: Record<string, unknown>;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
   /** The user's spending limit for payments. */
@@ -618,7 +621,10 @@ function fixture({
       },
       commit,
     },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () =>
+        memoryProvider ? { provider: memoryProvider, defaultScope: "isolated" } : null,
+    },
     events: {
       append: vi.fn(async () => undefined),
       notify: vi.fn(async () => undefined),
@@ -1828,6 +1834,18 @@ describe("own instructions through update_bot", () => {
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
+  it("records a resumed run as having read outside content", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    const flagged = expect.objectContaining({ data: { readOutsideContent: true } });
+    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+    f.pauseWithTurnCheckpoint("call-1", savedTurn());
+    await f.run();
+    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
+    f.setCalls([{ args: {}, executionId: "call-2" }]);
+    await f.run();
+    // The restored turn holds earlier tool results, so its replies are never learned.
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
+  });
   it("refuses own instruction writes resumed from a checkpoint without a baseline", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
@@ -2761,6 +2779,35 @@ describe("outbound destinations", () => {
       actions: expect.arrayContaining([{ id: "always", label: "Always allow this tool" }]),
     });
   });
+
+  it.each([true, false])(
+    "starts the run tainted only when recalled memory came from another app: %s",
+    async (external) => {
+      reviewMock.mockReset();
+      reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
+      const memory = {
+        memory: "The dog is named Pixel.",
+        score: 0.9,
+        ...(external ? { external: true as const } : {}),
+      };
+      const recall = vi.fn(async () => ({ ok: true as const, value: [memory] }));
+      const f = fixture({
+        autoReview: true,
+        memoryProvider: {
+          describe: () => ({ capabilities: { recall: true, save: true, recallEachRun: true } }),
+          recall,
+          save: vi.fn(),
+          purgeHistory: vi.fn(),
+        },
+      });
+      f.setCalls([{ args: { id: "item-1" }, executionId: "call-1" }]);
+      await f.run();
+      expect(recall).toHaveBeenCalledOnce();
+      // A tainted run asks before a read on a connector it has not used yet.
+      expect(reviewMock).toHaveBeenCalledTimes(external ? 1 : 0);
+      expect(f.execute).toHaveBeenCalledTimes(external ? 0 : 1);
+    },
+  );
 
   it("keeps read trust to the installed resource the run used, not its name prefix", async () => {
     reviewMock.mockReset();

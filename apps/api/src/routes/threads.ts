@@ -94,6 +94,68 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
   };
 }
 
+/** Clear removes conversation-derived memory of the previous generation (summaries and learned
+ * turns); including the new generation also covers a compaction or retain job that began just
+ * after the clear committed. Durable memories remain in their Space-private containers. */
+export async function purgeClearedThreadMemory(
+  deps: Pick<RouterDeps, "prisma" | "memoryProviders">,
+  actor: Actor,
+  target: ThreadTarget,
+  historyCompactionGeneration: number,
+): Promise<void> {
+  const configuredMemory = await deps.memoryProviders.resolve(actor.spaceId).catch((error) => {
+    getLogger().error("semantic memory resolution after thread clear failed", error);
+    return null;
+  });
+  if (!configuredMemory) return;
+  // Group chats only feed memory through learned turns, which are keyed by thread. Providers that
+  // purge by thread are purged even with learning off now, since earlier turns may be stored;
+  // others key history by bot and generation alone, so purging a group's generations there would
+  // delete the member bots' direct-chat summaries. A bot removed from the group still learned
+  // from it, and its runs outlive the clear.
+  const botIds =
+    target.kind === "bot"
+      ? [target.botId]
+      : configuredMemory.provider.describe().capabilities.purgesByThread === true
+        ? [
+            ...new Set([
+              ...target.memberBotIds,
+              ...(
+                await deps.prisma.run.findMany({
+                  where: { threadId: target.threadId },
+                  distinct: ["botId"],
+                  select: { botId: true },
+                })
+              ).map((run) => run.botId),
+            ]),
+          ]
+        : [];
+  await Promise.all(
+    botIds.map(async (botId) => {
+      // Best effort: the conversation rows are already deleted, so failing the clear here
+      // would help nothing — a failed purge only leaves stale memory recallable.
+      try {
+        const purged = await configuredMemory.provider.purgeHistory(
+          {
+            botId,
+            threadId: target.threadId,
+            generations: [
+              Math.max(0, historyCompactionGeneration - 1),
+              historyCompactionGeneration,
+            ],
+          },
+          computerContext(actor, botId, `thread-clear:${target.threadId}`),
+        );
+        if (!purged.ok) {
+          getLogger().error("semantic memory purge after thread clear failed", purged.error);
+        }
+      } catch (error) {
+        getLogger().error("semantic memory purge after thread clear failed", error);
+      }
+    }),
+  );
+}
+
 export function threadsRoutes(ctx: RouterContext) {
   const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
   /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
@@ -324,43 +386,10 @@ export function threadsRoutes(ctx: RouterContext) {
           botId: contextBotId,
           ...(target.kind === "group" ? { groupId: target.groupId } : {}),
         });
-        const [configuredMemory] = await Promise.all([
-          target.kind === "bot"
-            ? deps.memoryProviders.resolve(context.actor.spaceId).catch((error) => {
-                getLogger().error("semantic memory resolution after thread clear failed", error);
-                return null;
-              })
-            : Promise.resolve(null),
-          Promise.all(
-            cancelledRunIds.map((runId) =>
-              deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-            ),
-          ),
-        ]);
-        // Durable memories remain in their Space-private containers. Clear only removes
-        // conversation-derived summaries from the previous generation; including the new
-        // generation also covers a compaction job that began just after the clear committed.
-        if (configuredMemory && target.kind === "bot") {
-          // Best effort: the conversation rows are already deleted, so failing the clear here
-          // would help nothing — a failed purge only leaves stale summaries recallable.
-          try {
-            const purged = await configuredMemory.provider.purgeHistory(
-              {
-                botId: target.botId,
-                generations: [
-                  Math.max(0, historyCompactionGeneration - 1),
-                  historyCompactionGeneration,
-                ],
-              },
-              computerContext(context.actor, target.botId, `thread-clear:${target.threadId}`),
-            );
-            if (!purged.ok) {
-              getLogger().error("semantic memory purge after thread clear failed", purged.error);
-            }
-          } catch (error) {
-            getLogger().error("semantic memory purge after thread clear failed", error);
-          }
-        }
+        await Promise.all(
+          cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
+        );
+        await purgeClearedThreadMemory(deps, context.actor, target, historyCompactionGeneration);
         return { ok: true as const };
       }),
       followUp: authed.threads.followUp.handler(async ({ context, input }) => {
