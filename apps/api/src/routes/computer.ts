@@ -545,16 +545,16 @@ export function computerRoutes(ctx: RouterContext) {
             throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
           }
         }
-        await releaseComputerControl(deps, context.actor, input.botId, input.reason, input.runId);
-        if (input.runId) {
-          // The card waits for its answer to land, so one that changed nothing must say so.
-          const after = await deps.prisma.run.findUnique({
-            where: { id: input.runId, spaceId: context.actor.spaceId },
-            select: { status: true },
-          });
-          if (after?.status === "waiting_takeover") {
-            throw new ORPCError("CONFLICT", { message: "Could not continue" });
-          }
+        const released = await releaseComputerControl(
+          deps,
+          context.actor,
+          input.botId,
+          input.reason,
+          input.runId,
+        );
+        // The card waits for its answer to land, so one that changed nothing must say so.
+        if (input.runId && !released) {
+          throw new ORPCError("CONFLICT", { message: "Could not continue" });
         }
         return { ok: true as const };
       }),

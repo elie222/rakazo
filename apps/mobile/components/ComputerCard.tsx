@@ -198,7 +198,7 @@ export function ComputerCard({
                   prominence={pending ? "primary" : "secondary"}
                   fill={false}
                   size="compact"
-                  disabled={releasing}
+                  disabled={pending && releasing}
                   onPress={onOpen}
                 />
               </View>
