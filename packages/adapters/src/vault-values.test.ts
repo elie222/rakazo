@@ -378,6 +378,35 @@ describe("vault values under the envelope keys", () => {
     );
   });
 
+  it("gives up a key read that stalls once the request's deadline passes", async () => {
+    const db = encryptedDatabase();
+    const api = {
+      name: "example_api",
+      origin: "https://api.example.test",
+      auth: { type: "bearer" },
+    };
+    await save(db, api as BotSecretDestination, "fake-api-key-1");
+    await db.migrate();
+    // The key manager takes the unwrap and never answers; nothing is cached.
+    vi.spyOn(db.provider, "unwrap").mockImplementation(() => new Promise(() => {}));
+    db.ring.clear();
+    await expect(
+      openVaultValue(db.prisma, secretStore, row(db, "example_api"), AbortSignal.timeout(20)),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    await expect(
+      requestWithBotSecret({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        request: { name: "example_api", url: "https://api.example.test/v1/items" },
+        signal: AbortSignal.timeout(20),
+        remote: { fetch, resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(fetch).not.toHaveBeenCalled();
+  }, 2_000);
+
   it("fills a migrated card's postal code from its migrated billing contact", async () => {
     const db = encryptedDatabase();
     const home = { name: "Alex", line1: "12 Elm St", city: "Springfield", postalCode: "12345" };

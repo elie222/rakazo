@@ -1,4 +1,5 @@
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import { withAbort } from "@rakazo/core";
 import type { ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
 import {
   CIPHERTEXT_PREFIX,
@@ -59,18 +60,23 @@ export async function openVaultValue(
 ): Promise<string> {
   if (!ciphertextKeyId(row.ciphertext))
     return store.load(row.ciphertext, signal ? { recordId: row.id, signal } : row.id);
-  return openSealedVaultValue(prisma, row);
+  return openSealedVaultValue(prisma, row, signal);
 }
 
-/** A value under its vault's key; it names that key, and only a key of the row's vault opens it. */
+/**
+ * A value under its vault's key; it names that key, and only a key of the row's vault opens it.
+ * A request's `signal` ends the key lookup at its deadline, since the key manager may hold it
+ * open for longer; the read writes nothing, so a lookup left behind is harmless.
+ */
 export async function openSealedVaultValue(
   prisma: PrismaClient,
   row: VaultRow & { ciphertext: string },
+  signal?: AbortSignal,
 ): Promise<string> {
   const keyId = ciphertextKeyId(row.ciphertext);
   if (!keyId) throw new ContentDecryptionError("Vault item is not under a vault key");
   const ring = ringOf(prisma);
-  const key = await ring.byId(keyId).catch(async (error: unknown) => {
+  const lookup = ring.byId(keyId).catch(async (error: unknown) => {
     // A key its vault no longer has is damaged data, not a key manager outage; listing the
     // vault's keys fails in an outage too, which then stands. Listed from the store, since another
     // process may have just added the key.
@@ -78,6 +84,7 @@ export async function openSealedVaultValue(
       throw new ContentDecryptionError("Vault item names a key that no longer exists");
     throw error;
   });
+  const key = await (signal ? withAbort(lookup, signal) : lookup);
   if (key.spaceId !== keyScope(row))
     throw new ContentDecryptionError("Vault item names another vault's key");
   return decryptText(key, location(row), row.ciphertext);
