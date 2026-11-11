@@ -31,6 +31,7 @@ import {
   archiveSpawnedBot,
   confirmSpawnedBotName,
   destroyBot,
+  groupsRemovedByDeletingBot,
   managedBotsWhere,
   spawnBot,
 } from "./child-bots.js";
@@ -755,6 +756,101 @@ describe("destroyBot", () => {
         botId: "bot-2",
       }),
     );
+  });
+
+  it("names the same groups deleting the bot dissolves", async () => {
+    // group-1 has one other active member, group-2 keeps two, group-3's other member is archived.
+    const groups = [
+      {
+        id: "group-1",
+        name: "Alpha",
+        thread: { id: "thread-1" },
+        members: [
+          { botId: "bot-1", bot: { archivedAt: null } },
+          { botId: "bot-2", bot: { archivedAt: null } },
+        ],
+      },
+      {
+        id: "group-2",
+        name: "Beta",
+        thread: { id: "thread-2" },
+        members: [
+          { botId: "bot-1", bot: { archivedAt: null } },
+          { botId: "bot-2", bot: { archivedAt: null } },
+          { botId: "bot-3", bot: { archivedAt: null } },
+        ],
+      },
+      {
+        id: "group-3",
+        name: "Gamma",
+        thread: { id: "thread-3" },
+        members: [
+          { botId: "bot-1", bot: { archivedAt: null } },
+          { botId: "bot-2", bot: { archivedAt: new Date() } },
+          { botId: "bot-3", bot: { archivedAt: null } },
+        ],
+      },
+    ];
+    const deleteGroups = vi.fn().mockResolvedValue({ count: 2 });
+    const prisma = {
+      chatGroup: { findMany: vi.fn().mockResolvedValue(groups) },
+      computer: { findUnique: vi.fn().mockResolvedValue(null) },
+      spaceMember: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn() },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
+          artifact: {
+            findMany: vi.fn().mockResolvedValue([]),
+            deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
+          page: {
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+            deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
+          secret: {
+            findMany: vi.fn().mockResolvedValue([]),
+            deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
+          chatGroup: {
+            findMany: vi.fn().mockResolvedValue(groups),
+            deleteMany: deleteGroups,
+          },
+          chatGroupMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+          run: { findMany: vi.fn().mockResolvedValue([]) },
+          computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          botDeletion: { create: vi.fn().mockResolvedValue({}) },
+          bot: { delete: vi.fn().mockResolvedValue({}) },
+        }),
+      ),
+    } as unknown as PrismaClient;
+
+    const removed = await groupsRemovedByDeletingBot(prisma, "bot-1");
+    await destroyBot(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        home: {} as AgentHomeStore,
+        jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+      },
+      {
+        id: "bot-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        name: "Researcher",
+        archivedAt: null,
+      },
+      context,
+      { deleteMemories: true },
+    );
+
+    expect(removed).toEqual([
+      { id: "group-1", name: "Alpha" },
+      { id: "group-3", name: "Gamma" },
+    ]);
+    expect(deleteGroups).toHaveBeenCalledWith({ where: { id: { in: ["group-1", "group-3"] } } });
   });
 
   it("surfaces transaction failures instead of reporting deletion success", async () => {
