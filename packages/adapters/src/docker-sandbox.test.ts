@@ -262,8 +262,33 @@ describe("Docker sandbox", () => {
       await provider.prepare(computer, context);
       expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
         "http://supervisor.test/computers/computer/exec",
-        expect.objectContaining({ body: expect.stringContaining("test -w .") }),
+        expect.objectContaining({
+          body: expect.stringContaining(
+            JSON.stringify(["/bin/sh", "-c", "test -w . || echo unwritable"]),
+          ),
+        }),
       );
+    });
+
+    it("shares one home probe while callers stop waiting independently", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const stopped = new AbortController();
+      const first = provider.prepare(computer, { ...context, signal: stopped.signal });
+      const second = provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      stopped.abort(new Error("stopped"));
+      await expect(first).rejects.toThrow("stopped");
+      answer(commandOutput(""));
+      await expect(second).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("reports a computer that cannot write its home folder as damaged", async () => {

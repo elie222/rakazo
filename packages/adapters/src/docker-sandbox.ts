@@ -48,7 +48,7 @@ export const SCREEN_RELEASE_TIMEOUT_MS = 8_000;
 /** How long a computer gets to run a trivial health check. */
 export const HEALTH_CHECK_TIMEOUT_MS = 10_000;
 const HOME_UNWRITABLE = "unwritable";
-const HOME_CHECK = ["sh", "-c", `test -w . || echo ${HOME_UNWRITABLE}`];
+const HOME_CHECK = ["/bin/sh", "-c", `test -w . || echo ${HOME_UNWRITABLE}`];
 const SANDBOX_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
 
 function unwritableHome() {
@@ -222,18 +222,11 @@ export class DockerSandboxProvider implements SandboxProvider {
    */
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     if (context.signal?.aborted) return withAbort(Promise.resolve(), context.signal);
-    if (!this.unresponsive.has(computer.id)) {
-      const signal = AbortSignal.any([
-        context.signal,
-        AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-      ]);
-      if (!(await this.checkHome(computer, { ...context, signal })).writable)
-        throw unwritableHome();
-      return;
-    }
     let check = this.healthChecks.get(computer.id);
     if (!check) {
-      const started = this.checkHealth(computer, context);
+      const started = this.unresponsive.has(computer.id)
+        ? this.checkHealth(computer, context)
+        : this.checkWritableHome(computer, context);
       check = started.finally(() => {
         if (this.healthChecks.get(computer.id) === check) this.healthChecks.delete(computer.id);
       });
@@ -242,6 +235,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       void check.catch(() => undefined);
     }
     await withAbort(check, context.signal);
+  }
+
+  private async checkWritableHome(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    const signal = AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS);
+    if (!(await this.checkHome(computer, { ...context, signal })).writable) throw unwritableHome();
   }
 
   /** Runs on its own deadline, so one caller stopping does not decide the others' check. */
