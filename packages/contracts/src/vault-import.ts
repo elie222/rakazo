@@ -323,13 +323,12 @@ function importLabel(row: VaultImportRow): string {
 
 type VaultImportPlan = ReturnType<typeof newVaultImportRows>;
 
-// Once the server answered: a repeat of a login it saved is already saved, and a repeat of one it
-// turned down is turned down the same way.
+// A repeat is left out as a duplicate. Once the server answered, a repeat of a login it saved is
+// already saved, and a repeat of one it turned down is turned down the same way.
 function repeatAnswers(plan: Pick<VaultImportPlan, "repeats">, result?: VaultImportResult) {
-  if (!result) return [];
   return plan.repeats.map(({ of, ...repeat }) => ({
     ...repeat,
-    reason: result.notSaved.find(({ index }) => index === of)?.reason ?? repeat.reason,
+    reason: result?.notSaved.find(({ index }) => index === of)?.reason ?? repeat.reason,
   }));
 }
 

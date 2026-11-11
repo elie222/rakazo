@@ -1,11 +1,17 @@
-import type { BotSecretMetadata, VaultPolicy } from "@rakazo/contracts";
-import { BLOCKED_ITEM_ANSWER, encodeLoginSecret, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import type { BotSecretMetadata, LoginFieldInput, VaultPolicy } from "@rakazo/contracts";
+import {
+  BLOCKED_ITEM_ANSWER,
+  encodeLoginSecret,
+  UNCHOSEN_ITEM_ANSWER,
+  VAULT_ALSO_ON_LIMIT,
+} from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { VaultBots } from "./vault.js";
 import {
   secretAnswerRefusal,
   vaultAccessControls,
   vaultImportProblemList,
+  vaultLoginSave,
   vaultSaveDrops,
 } from "./vault.js";
 
@@ -27,6 +33,86 @@ describe("secretAnswerRefusal", () => {
       undefined,
     ])
       expect(secretAnswerRefusal(error)).toBeUndefined();
+  });
+});
+
+describe("vaultLoginSave", () => {
+  const saved = { otp: TEST_KEY, alsoOn: "https://login.example.com" };
+  const typed = { ...saved, fields: fields as LoginFieldInput[], asking: false };
+  const value = (otp?: string) => encodeLoginSecret({ fields, ...(otp ? { otp } : {}) });
+  // What both apps' editors send for a login, or that they can't send it yet.
+  it.each([
+    ["as shown: the shown key is left out, so the saved one stays", {}, { value: value() }],
+    ["a new key is sent", { otp: ` ${"A".repeat(32)} ` }, { value: value("A".repeat(32)) }],
+    ["an emptied key removes it", { otp: "" }, { value: encodeLoginSecret({ fields, otp: "" }) }],
+    ["an unreadable key can't be sent", { otp: "not a key" }, undefined, true],
+    [
+      "changed sites are sent",
+      { alsoOn: "https://a.example.com, https://b.example.com" },
+      {
+        value: value(),
+        alsoOn: ["https://a.example.com", "https://b.example.com"],
+      },
+    ],
+    ["emptied sites are sent as none", { alsoOn: "" }, { value: value(), alsoOn: [] }],
+    ["a site that isn't HTTPS can't be sent", { alsoOn: "http://a.example.com" }, undefined],
+    [
+      "more sites than a login keeps can't be sent",
+      {
+        alsoOn: Array.from(
+          { length: VAULT_ALSO_ON_LIMIT + 1 },
+          (_, i) => `https://s${i}.example.com`,
+        ).join(" "),
+      },
+      undefined,
+    ],
+    ["unchanged fields send no value", { fields: undefined, alsoOn: "" }, { alsoOn: [] }],
+    ["a login without fields can't be sent", { fields: [] }, undefined],
+    // A key is kept inside the login's value, so a changed one waits for the fields to be sent.
+    [
+      "a typed key without fields can't be sent",
+      { fields: undefined, otp: "A".repeat(32) },
+      undefined,
+    ],
+    [
+      "an unreadable key without fields can't be sent",
+      { fields: undefined, otp: "x" },
+      undefined,
+      true,
+    ],
+    ["an emptied key without fields can't be sent", { fields: undefined, otp: "" }, undefined],
+    [
+      "a chat answer without fields ignores a typed key",
+      { fields: undefined, asking: true, otp: "A".repeat(32) },
+      {},
+    ],
+    [
+      "a chat answer without fields ignores an unreadable key",
+      { fields: undefined, asking: true, otp: "x" },
+      {},
+    ],
+    [
+      "a chat answer without fields ignores an emptied key",
+      { fields: undefined, asking: true, otp: "" },
+      {},
+    ],
+    // A chat card's answer sends neither a key nor sites, whatever was typed.
+    [
+      "a chat answer sends the fields only",
+      { asking: true, otp: "not a key", alsoOn: "x" },
+      {
+        value: value(),
+      },
+    ],
+  ] as const)("%s", (_, change, save, ...unreadable) => {
+    const result = vaultLoginSave({
+      ...typed,
+      ...change,
+      savedOtp: saved.otp,
+      savedAlsoOn: saved.alsoOn,
+    });
+    expect(result.save).toEqual(save);
+    expect(result.keyUnreadable).toBe(unreadable.length > 0);
   });
 });
 

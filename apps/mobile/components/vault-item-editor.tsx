@@ -1,16 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ContactFields, VaultKind, VaultPolicy, VaultRevealed } from "@rakazo/contracts";
-import {
-  authenticatorKey,
-  commandVariableName,
-  decodeLoginSecret,
-  encodeLoginSecret,
-  LoginSecretValue,
-  typedOtherSites,
-  VAULT_ALSO_ON_LIMIT,
-} from "@rakazo/contracts";
-import { vaultAccessControls } from "@rakazo/core";
+import { commandVariableName, decodeLoginSecret, VAULT_ALSO_ON_LIMIT } from "@rakazo/contracts";
+import { vaultAccessControls, vaultLoginSave } from "@rakazo/core";
 import { secretAnswerErrorText, vaultPolicyLabels } from "@rakazo/i18n/vault";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
@@ -138,26 +130,23 @@ export function VaultItemEditor({
   const { close, closing, endEditing } = useSecretSheetClose(inputs, clear, onClose);
   const draftChange = draftSave(kind, draft, item);
   const login = kind === "login" && !ask;
-  // Checked before Save clears what was typed, so a typo is fixed without retyping.
-  const keyUnreadable = login && otp.trim() !== "" && !authenticatorKey(otp);
-  const typedSites = typedOtherSites(alsoOn);
-  const otherSites = Array.isArray(typedSites) ? typedSites : undefined;
-  // A key left as shown is not sent, so the saved one stays: the copy shown may be older than it.
-  // A chat card's answer sends none either. The whole value as it is saved, key included, is
-  // checked here so encoding never throws in render.
-  const loginValue =
-    login && draftChange?.value
-      ? LoginSecretValue.safeParse({
-          ...decodeLoginSecret(draftChange.value),
-          ...(otp === savedOtp ? {} : { otp }),
-        })
-      : undefined;
+  // The same rules as the web's editor; a chat card's answer is saved as typed.
+  const loginSave = login
+    ? vaultLoginSave({
+        fields: draftChange?.value ? decodeLoginSecret(draftChange.value).fields : undefined,
+        otp,
+        savedOtp,
+        alsoOn,
+        savedAlsoOn,
+        asking: false,
+      })
+    : undefined;
+  const keyUnreadable = loginSave?.keyUnreadable ?? false;
+  const typedSites = loginSave?.sites ?? [];
   const save: VaultSave | undefined =
-    !loginValue || !draftChange
+    !loginSave || !draftChange
       ? draftChange
-      : loginValue.success && otherSites
-        ? { ...draftChange, value: encodeLoginSecret(loginValue.data) }
-        : undefined;
+      : loginSave.save && { ...draftChange, ...loginSave.save };
   const editable = !submitting && !closing;
   // A save in flight keeps the sheet open, so its failure is still shown here.
   const cancel = () => {
@@ -172,7 +161,7 @@ export function VaultItemEditor({
     setError(null);
     try {
       await onSave(
-        login && otherSites && alsoOn !== savedAlsoOn ? { ...save, alsoOn: otherSites } : save,
+        save,
         policy !== savedPolicy ? policy : undefined,
         bots && accessChanged ? access : undefined,
       );

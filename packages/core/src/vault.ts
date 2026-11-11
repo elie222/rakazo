@@ -1,13 +1,18 @@
 import type {
   BotSecretMetadata,
+  LoginFieldInput,
   VaultImportProblem,
   VaultKind,
   VaultPolicy,
 } from "@rakazo/contracts";
 import {
+  authenticatorKey,
   BLOCKED_ITEM_ANSWER,
+  encodeLoginSecret,
   hasAuthenticatorKey,
   hasVaultAccess,
+  LoginSecretValue,
+  typedOtherSites,
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 
@@ -60,6 +65,42 @@ export function vaultAccessControls(input: {
     // Said when the choice is limited, or no choice can be made; a blocked item needs neither.
     note: note && policy !== "off" && !access?.allBots ? note : undefined,
   };
+}
+
+/**
+ * A login's save as both apps' editors send it, or no save while what was typed can't be sent.
+ * The key is checked before Save clears what was typed, so a typo is fixed without retyping.
+ */
+export function vaultLoginSave(input: {
+  /** The login's fields as typed; left out when its value isn't being changed. */
+  fields?: readonly LoginFieldInput[];
+  otp: string;
+  savedOtp: string;
+  /** The other sites as typed, and as they were shown. */
+  alsoOn: string;
+  savedAlsoOn: string;
+  /** A chat card's answer, which sends neither a key nor other sites. */
+  asking: boolean;
+}): {
+  keyUnreadable: boolean;
+  sites: ReturnType<typeof typedOtherSites>;
+  save: { value?: string; alsoOn?: string[] } | undefined;
+} {
+  const { fields, otp, asking } = input;
+  const keyUnreadable = !asking && otp.trim() !== "" && !authenticatorKey(otp);
+  const sites = asking ? [] : typedOtherSites(input.alsoOn);
+  // A key left as shown is not sent, so the saved one stays: the copy shown may be older than it.
+  // One that changed is kept inside the login's value, so it waits for the fields to be sent.
+  const keyChanged = !asking && otp !== input.savedOtp;
+  const login = LoginSecretValue.safeParse({ fields, ...(keyChanged ? { otp } : {}) });
+  const save =
+    !Array.isArray(sites) || (fields ? !login.success : keyChanged)
+      ? undefined
+      : {
+          ...(fields && login.success ? { value: encodeLoginSecret(login.data) } : {}),
+          ...(!asking && input.alsoOn !== input.savedAlsoOn ? { alsoOn: sites } : {}),
+        };
+  return { keyUnreadable, sites, save };
 }
 
 export type VaultSaveDrop = "ask" | "block" | "bots" | "alsoOn" | "authenticatorKey";

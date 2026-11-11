@@ -322,11 +322,17 @@ describe("parseVaultCsv", () => {
     const rows = distinct.flatMap((row, index) => (index < 15 ? [row, { ...row }] : [row]));
     const plan = newVaultImportRows(rows, []);
     expect(plan.rows).toEqual(distinct.slice(0, VAULT_ITEM_LIMIT));
-    // Before the server answers, a repeat is nobody's "Already saved".
+    // Before the server answers, the review already shows each repeat as left out, by its row.
     expect(vaultImportCounts(noneSkipped(), plan)).toEqual([
       ["toAdd", VAULT_ITEM_LIMIT],
+      ["duplicate", 15],
       ["full", 15],
     ]);
+    expect(vaultImportProblems([], plan)[0]).toEqual({
+      line: 2,
+      label: "Example",
+      reason: "duplicate",
+    });
     const result = { added: VAULT_ITEM_LIMIT, skipped: noneSkipped(), notSaved: [] };
     expect(vaultImportCounts(noneSkipped(), plan, result)).toEqual([
       ["added", VAULT_ITEM_LIMIT],
@@ -426,9 +432,10 @@ describe("newVaultImportRows", () => {
     const alsoOn = { ...saved, alsoOn: ["https://www.example.com"] };
     expect(newVaultImportRows([elsewhere], [alsoOn])).toMatchObject({ rows: [], duplicate: 1 });
     const skipped = { notHttps: 1, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 };
+    // The repeat on line 5 is a duplicate already before the server answers.
     expect(vaultImportCounts(skipped, plan)).toEqual([
       ["toAdd", 2],
-      ["duplicate", 1],
+      ["duplicate", 2],
       ["notHttps", 1],
     ]);
     // The rows left out, in file order: the file's, the duplicates, then the server's by place.

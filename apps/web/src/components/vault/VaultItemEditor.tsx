@@ -7,7 +7,6 @@ import type {
   VaultPolicy,
 } from "@rakazo/contracts";
 import {
-  authenticatorKey,
   BotSecretName,
   CardSecretValue as CardSecretValueSchema,
   ContactSecretValue,
@@ -16,12 +15,10 @@ import {
   commandVariableProblem,
   encodeCardSecret,
   encodeContactSecret,
-  encodeLoginSecret,
-  LoginSecretValue,
   parseCardExpiry,
-  typedOtherSites,
   VAULT_ALSO_ON_LIMIT,
 } from "@rakazo/contracts";
+import { vaultLoginSave } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -306,17 +303,21 @@ function EditorForm({
   const commandVariable = exported ? `$${exported}` : null;
   // An edit keeps the saved value of a key or variable when its field is left empty.
   const valueReady = value.length > 0 || editing;
-  // Checked here, before Save clears what was typed, so a typo is fixed without retyping.
-  const keyUnreadable = !asking && otp.trim() !== "" && !authenticatorKey(otp);
-  const otherSites = typedOtherSites(alsoOn);
+  // The same rules as the mobile editor's.
+  const loginSave = vaultLoginSave({
+    fields: login,
+    otp,
+    savedOtp: initial?.otp ?? "",
+    alsoOn,
+    savedAlsoOn,
+    asking,
+  });
+  const { keyUnreadable, sites: otherSites } = loginSave;
   const limit = VAULT_ALSO_ON_LIMIT;
 
   const ready =
     kind === "login"
-      ? origin.trim().length > 0 &&
-        // The whole value as it is saved, key included, so Save never meets a value it can't encode.
-        LoginSecretValue.safeParse(asking ? { fields: login } : { fields: login, otp }).success &&
-        Array.isArray(otherSites)
+      ? origin.trim().length > 0 && loginSave.save !== undefined
       : kind === "card"
         ? card.success
         : kind === "contact"
@@ -344,16 +345,10 @@ function EditorForm({
     if (kind === "login") {
       return {
         destination: { name, origin: origin.trim(), auth: { type: "login" } },
-        // A key left as shown is not sent, so the saved one stays: the copy shown may be older than
-        // it. A chat card's answer sends none either.
-        value: encodeLoginSecret(
-          asking || otp === (initial?.otp ?? "") ? { fields: login } : { fields: login, otp },
-        ),
+        value: loginSave.save?.value,
         fields: login,
         ...(asking && !remember ? { remember: false as const } : {}),
-        ...(!asking && Array.isArray(otherSites) && alsoOn !== savedAlsoOn
-          ? { alsoOn: otherSites }
-          : {}),
+        ...(loginSave.save?.alsoOn ? { alsoOn: loginSave.save.alsoOn } : {}),
         ...labels,
       };
     }
