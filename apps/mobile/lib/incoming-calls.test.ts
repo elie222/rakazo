@@ -82,6 +82,7 @@ import {
   startIncomingCalls,
   stopIncomingCalls,
 } from "./incoming-calls";
+import { registerCallPushToken } from "./push";
 
 const bot = { id: "bot-1", spaceId: "space-1", name: "Caller", color: "", avatarSet: undefined };
 const block = () => ({
@@ -246,6 +247,34 @@ describe("mobile incoming calls", () => {
       ),
     );
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-roster", true);
+  });
+  it("answers a native call without waiting for VoIP token registration", async () => {
+    let settled = false;
+    let releaseRegistration = () => undefined;
+    vi.mocked(registerCallPushToken).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRegistration = () => {
+            settled = true;
+            resolve();
+          };
+        }),
+    );
+    fake.native.incomingState.mockResolvedValue({
+      token: "voip-token",
+      actions: [
+        { action: "answer", callId: "call-roster", botId: bot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    stop = startIncomingCalls();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.rpc).toHaveBeenCalledWith(
+      "threads/answerCall",
+      { botId: bot.id, callId: "call-roster" },
+      expect.anything(),
+    );
+    expect(settled).toBe(false);
+    releaseRegistration();
   });
   const pendingNativeAnswer = (expiresAt = block().expiresAt) =>
     fake.native.incomingState.mockResolvedValue({

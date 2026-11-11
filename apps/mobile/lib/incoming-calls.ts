@@ -332,7 +332,8 @@ async function drainNative() {
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
   if (!state || !running || generation !== currentSessionGeneration()) return;
-  if (state.token) await registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
+  // Registration is bookkeeping. An answer expires with its ring, so it must not wait on it.
+  if (state.token) void registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
   // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
   for (const action of state.actions) {
     if (action.action === "end") {
