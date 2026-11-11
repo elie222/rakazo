@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
@@ -7,7 +7,8 @@ const REPLAY_MS = 24 * 60 * 60 * 1000;
 export const IDEMPOTENCY_HOLD_SECONDS = 300;
 
 export type IdempotencyClaim =
-  | { kind: "claimed" }
+  /** `claimId` names this request's row, so a later retry's row is never mistaken for it. */
+  | { kind: "claimed"; claimId: string }
   | { kind: "replay"; status: number; body: unknown }
   | { kind: "in_progress" }
   | { kind: "conflict" };
@@ -34,9 +35,11 @@ export async function claimIdempotencyKey(
   await prisma.serviceIdempotencyKey.deleteMany({
     where: { credentialId, expiresAt: { lte: new Date() } },
   });
+  const claimId = randomUUID();
   const created = await prisma.serviceIdempotencyKey.createMany({
     data: [
       {
+        id: claimId,
         userId: actor.userId,
         spaceId: actor.spaceId,
         credentialId,
@@ -47,7 +50,7 @@ export async function claimIdempotencyKey(
     ],
     skipDuplicates: true,
   });
-  if (created.count === 1) return { kind: "claimed" };
+  if (created.count === 1) return { kind: "claimed", claimId };
   const row = await prisma.serviceIdempotencyKey.findUnique({
     where: { credentialId_key: { credentialId, key } },
   });
@@ -67,13 +70,15 @@ export async function bindIdempotencyKey(
   credentialId: string,
   key: string,
   hash: string,
-): Promise<"bound" | "same" | "conflict"> {
+): Promise<{ kind: "bound"; claimId: string } | { kind: "same" } | { kind: "conflict" }> {
   await prisma.serviceIdempotencyKey.deleteMany({
     where: { credentialId, expiresAt: { lte: new Date() } },
   });
+  const claimId = randomUUID();
   const created = await prisma.serviceIdempotencyKey.createMany({
     data: [
       {
+        id: claimId,
         userId: actor.userId,
         spaceId: actor.spaceId,
         credentialId,
@@ -85,47 +90,45 @@ export async function bindIdempotencyKey(
     ],
     skipDuplicates: true,
   });
-  if (created.count === 1) return "bound";
+  if (created.count === 1) return { kind: "bound", claimId };
   const row = await prisma.serviceIdempotencyKey.findUnique({
     where: { credentialId_key: { credentialId, key } },
   });
-  return row?.requestHash === hash && row.responseStatus === NATIVE_BINDING ? "same" : "conflict";
+  return row?.requestHash === hash && row.responseStatus === NATIVE_BINDING
+    ? { kind: "same" }
+    : { kind: "conflict" };
 }
 
 /** Keeps an unfinished write's claim from lapsing while its handler is still running. */
-export async function holdIdempotencyKey(
-  prisma: PrismaClient,
-  credentialId: string,
-  key: string,
-): Promise<void> {
+export async function holdIdempotencyKey(prisma: PrismaClient, claimId: string): Promise<void> {
   await prisma.serviceIdempotencyKey.updateMany({
-    where: { credentialId, key, responseStatus: null },
+    where: { id: claimId, responseStatus: null },
     data: { expiresAt: holdUntil() },
   });
 }
 
+/**
+ * Stores the answer on this request's own claim. A claim that lapsed and was taken by a retry is
+ * left to that retry: returns false, and nothing is written.
+ */
 export async function finishIdempotencyKey(
   prisma: PrismaClient,
-  credentialId: string,
-  key: string,
+  claimId: string,
   status: number,
   body: unknown,
-): Promise<void> {
-  await prisma.serviceIdempotencyKey.update({
-    where: { credentialId_key: { credentialId, key } },
+): Promise<boolean> {
+  const finished = await prisma.serviceIdempotencyKey.updateMany({
+    where: { id: claimId, responseStatus: null },
     data: {
       responseStatus: status,
       responseBody: body as Prisma.InputJsonValue,
       expiresAt: new Date(Date.now() + REPLAY_MS),
     },
   });
+  return finished.count === 1;
 }
 
 /** The write was refused and nothing happened, so the same key may be used again. */
-export async function releaseIdempotencyKey(
-  prisma: PrismaClient,
-  credentialId: string,
-  key: string,
-): Promise<void> {
-  await prisma.serviceIdempotencyKey.deleteMany({ where: { credentialId, key } });
+export async function releaseIdempotencyKey(prisma: PrismaClient, claimId: string): Promise<void> {
+  await prisma.serviceIdempotencyKey.deleteMany({ where: { id: claimId } });
 }
