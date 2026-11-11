@@ -3620,13 +3620,14 @@ describe("user computer screen control", () => {
     tree: '- [0] AXWindow "Untitled"\n  - [1] AXTextArea = "token sk-fake-secret"',
     image: { mimeType: "image/png", data: "iVBORw0KGgo=", width: 800, height: 600 },
   };
-  function devices(platform = "darwin") {
+  function devices(platform = "darwin", screenOnly?: boolean) {
     const requests: HostComputerRequest[] = [];
     const gateway = {
       connected: vi.fn(async (_userId: string) => ({
         deviceId: "device-1",
         name: "Laptop",
         platform,
+        screenOnly,
       })),
       pairedSince: vi.fn(async (_userId: string) => new Date(0)),
       async *request<T>(_userId: string, request: HostComputerRequest) {
@@ -3679,6 +3680,15 @@ describe("user computer screen control", () => {
     });
     await disabled.run();
     expect(disabled.offeredTools()).not.toContain("user_computer_act");
+  });
+
+  it("offers no shell on a computer that is already the bot's own", async () => {
+    const f = fixture({ ...ownRun, userDevices: devices("win32", true).gateway });
+    await f.run();
+    expect(f.offeredTools()).toEqual(
+      expect.arrayContaining(["user_computer_observe", "user_computer_act"]),
+    );
+    expect(f.offeredTools()).not.toContain("user_computer_shell");
   });
 
   it("asks per app, then uses an allowed app across this space", async () => {

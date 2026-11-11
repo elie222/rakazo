@@ -13,9 +13,11 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { useId, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 
 /** Each dialog is mounted only while open, so `open` is always true and the
@@ -343,33 +345,82 @@ export function ClearConversationDialog({
   );
 }
 
+/** The groups a failed preview cannot name, so Delete stays available. */
+function removedGroupsWarning(input: { failed: boolean; groups: readonly { name: string }[] }) {
+  if (input.failed) {
+    return (
+      <>
+        {" "}
+        <Trans>
+          Groups left with fewer than two bots are deleted too, including their messages, files, and
+          pages.
+        </Trans>
+      </>
+    );
+  }
+  if (input.groups.length === 0) return null;
+  const names = input.groups.map((group) => group.name).join(", ");
+  if (input.groups.length === 1) {
+    return (
+      <>
+        {" "}
+        <Trans>
+          The group {names} will be deleted too, including its messages, files, and pages.
+        </Trans>
+      </>
+    );
+  }
+  return (
+    <>
+      {" "}
+      <Trans>
+        The groups {names} will be deleted too, including their messages, files, and pages.
+      </Trans>
+    </>
+  );
+}
+
 export function DeleteBotDialog({
   bot,
   onCancel,
   onConfirm,
 }: {
-  bot: Bot;
+  bot: Pick<Bot, "id" | "name">;
   onCancel: () => void;
   onConfirm: (deleteMemories: boolean) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const queries = useSpaceQueries();
   const [deleting, setDeleting] = useState(false);
   const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const memoriesLabelId = useId();
+  // A failed read must not keep Delete disabled.
+  const preview = useQuery({
+    ...queries.bots.removePreview.queryOptions({ input: { botId: bot.id } }),
+    retry: false,
+  });
+  const groupWarning = removedGroupsWarning({
+    failed: preview.isError && !preview.isFetching,
+    groups: preview.data ?? [],
+  });
 
   return (
     <ConfirmDialog
       onCancel={onCancel}
       title={<Trans>Delete {bot.name}?</Trans>}
       description={
-        <Trans>
-          Its conversation, files, and routines will be permanently deleted. Bots it created stay in
-          your list.
-        </Trans>
+        <>
+          <Trans>
+            Its conversation, files, and routines will be permanently deleted. Bots it created stay
+            in your list.
+          </Trans>
+          {groupWarning}
+        </>
       }
       error={error}
       busy={deleting}
+      confirmDisabled={preview.isPending || preview.isFetching}
       onConfirm={() => {
         setDeleting(true);
         setError(null);

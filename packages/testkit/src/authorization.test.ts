@@ -294,6 +294,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
       ["bots/importSetupState"],
       ["bots/templates"],
@@ -877,6 +878,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).toMatchObject({ content: "owner-only-memory" });
 
     // Destructive bot removal is checked last so an authorization regression is unmistakable.
+    await expectDenied(app, intruder, "bots/removePreview", { botId: ownerBot.id });
     await expectDenied(app, intruder, "bots/remove", {
       botId: ownerBot.id,
       deleteMemories: true,
