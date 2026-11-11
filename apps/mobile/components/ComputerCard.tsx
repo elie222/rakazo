@@ -196,6 +196,8 @@ export function ComputerCard({
 function useComputerPreview(botId: string | undefined, runId: string | undefined) {
   const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
+    // A card that turns read-only or moves to another run never keeps the earlier screen.
+    setImage(null);
     if (!botId) return;
     let live = true;
     rpc("computer/preview", { botId, runId })
