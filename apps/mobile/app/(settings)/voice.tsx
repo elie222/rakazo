@@ -393,11 +393,22 @@ export default function VoiceSettings() {
     setError(null);
     if (status) setLoadError(null);
     try {
-      await rpc("voice/disconnect", { provider: providerId });
+      try {
+        await rpc("voice/disconnect", { provider: providerId });
+      } catch (err) {
+        setError(errorText(err, t`Could not disconnect`));
+        return;
+      }
       setApiKey("");
-      await load(providerId);
-    } catch (err) {
-      setError(errorText(err, t`Could not disconnect`));
+      // The key is gone; a failed read after it must not put the provider back or say the disconnect failed.
+      const drop = (current: VoiceCredential[] = []) =>
+        current.filter((entry) => entry.provider !== providerId);
+      loadRevision.current += 1;
+      setCredentials(drop);
+      await writeSaved(queryClient, voiceReads(target).credentials.queryKey, drop);
+      await load(providerId).catch((err: unknown) => {
+        if (!isCancelledError(err)) setError(errorText(err, t`Could not load voice settings`));
+      });
     } finally {
       setPending(null);
     }

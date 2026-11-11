@@ -325,6 +325,24 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(state.save.mock.calls).toEqual([[false]]);
 });
 
+it("keeps a disconnect when the read after it fails", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") return undefined;
+    // A body without a message, so the text shown is the caller's own fallback.
+    if (proc === "voice/catalog") return Promise.reject({});
+    return original(proc, args);
+  });
+  await click("Disconnect");
+  expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "fish-audio" });
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Could not disconnect");
+  expect(container.textContent).not.toContain("Disconnect");
+  expect(container.textContent).toContain("Connect");
+});
+
 it("edits a Space's override in that Space, leaving this device's voice and sounds out", async () => {
   state.params = { spaceId: "space-other" };
   await render();
