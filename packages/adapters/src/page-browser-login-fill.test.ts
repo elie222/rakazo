@@ -336,8 +336,10 @@ describe("live page helper one-time code fill", () => {
       const { fill, set } = widget(10);
       fill("123456");
       expect(set).not.toHaveBeenCalled();
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+      // The helper masks again after its own short delay; a loaded runner can stretch it.
+      await vi.waitFor(() =>
+        expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important"),
+      );
     });
 
     it("finds a code written with dashes shown without them, and gives the slots back when the box is refilled", () => {
