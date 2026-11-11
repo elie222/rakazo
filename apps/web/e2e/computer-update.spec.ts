@@ -23,15 +23,16 @@ test("restarting the computer shows durable background progress and failure retr
     mode: "team",
     status: "running",
     stage: "restoring",
+    updatedAt: new Date().toISOString(),
   };
   let finishRestart: (() => void) | undefined;
-  let discardUnsaved: unknown;
+  let discardUnsavedAfter: unknown;
   let holdRestart = false;
   await page.route("**/rpc/computer/updates", (route) =>
     route.fulfill({ json: { json: updates } }),
   );
   await page.route("**/rpc/computer/restart", async (route) => {
-    discardUnsaved = route.request().postDataJSON()?.json?.discardUnsaved;
+    discardUnsavedAfter = route.request().postDataJSON()?.json?.discardUnsavedAfter;
     if (holdRestart) {
       await new Promise<void>((resolve) => {
         finishRestart = resolve;
@@ -79,7 +80,7 @@ test("restarting the computer shows durable background progress and failure retr
   await expect(dialog.getByRole("button", { name: "Restart without saving" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
-  expect(discardUnsaved).toBe(false);
+  expect(discardUnsavedAfter).toBeUndefined();
   updates = [{ ...restarting, status: "failed", stage: "saving" }];
   await expect(dialog.getByRole("heading")).toHaveText("Restart failed");
   await captureScreenshot(page, testInfo, "computer-restart-save-failed");
@@ -89,7 +90,7 @@ test("restarting the computer shows durable background progress and failure retr
   await captureScreenshot(page, testInfo, "computer-restart-discard-confirm");
   await confirmDiscard.getByRole("button", { name: "Restart without saving", exact: true }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
-  expect(discardUnsaved).toBe(true);
+  expect(discardUnsavedAfter).toBe("restart-example");
   updates = [];
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole("button", { name: /Restarting Team Computer/ })).toHaveCount(0);

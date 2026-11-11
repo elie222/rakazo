@@ -1,6 +1,10 @@
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createComputerUpdates } from "./computer-updates.js";
+import {
+  COMPUTER_RESTART_DISCARD_WINDOW_MS,
+  computerRestartFailedSaving,
+  createComputerUpdates,
+} from "./computer-updates.js";
 
 const update: ComputerUpdate = {
   id: "update-1",
@@ -9,6 +13,7 @@ const update: ComputerUpdate = {
   mode: "team",
   status: "running",
   stage: "saving",
+  updatedAt: "2026-01-01T00:00:00.000Z",
 };
 afterEach(() => vi.useRealTimers());
 describe("computer update presentation", () => {
@@ -104,5 +109,20 @@ describe("computer update presentation", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(list).toHaveBeenCalledTimes(3);
     stop();
+  });
+});
+
+describe("computerRestartFailedSaving", () => {
+  const failed = { status: "failed", stage: "saving", updatedAt: "2026-01-01T00:00:00.000Z" };
+  const at = Date.parse(failed.updatedAt);
+
+  it("allows giving up unsaved work only right after a failed save", () => {
+    expect(computerRestartFailedSaving(failed, at + 60_000)).toBe(true);
+    expect(computerRestartFailedSaving(failed, at + COMPUTER_RESTART_DISCARD_WINDOW_MS)).toBe(
+      false,
+    );
+    expect(computerRestartFailedSaving({ ...failed, stage: "restoring" }, at)).toBe(false);
+    expect(computerRestartFailedSaving({ ...failed, status: "dismissed" }, at)).toBe(false);
+    expect(computerRestartFailedSaving(null, at)).toBe(false);
   });
 });

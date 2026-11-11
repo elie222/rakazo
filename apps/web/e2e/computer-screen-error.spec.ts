@@ -115,6 +115,7 @@ test(
       mode: "team",
       status: "running",
       stage: "preparing",
+      updatedAt: new Date().toISOString(),
     };
     await page.route("**/rpc/computer/updates", (route) =>
       route.fulfill({ json: { json: [restarting] } }),

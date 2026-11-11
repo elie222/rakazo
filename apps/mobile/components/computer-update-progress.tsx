@@ -40,11 +40,11 @@ export function ComputerUpdateProgress() {
         ? t`Restarting Team Computer`
         : t`Restarting ${ph({ name: update.name })}’s Computer`;
   const selected = updates.find((item) => item.id === openId);
-  const restart = (botId: string, discardUnsaved: boolean) => {
+  const restart = (update: ComputerUpdate, discardUnsaved: boolean) => {
     setBusy(true);
     setError(false);
     void computerUpdates
-      .start(botId, { discardUnsaved })
+      .start(update.botId, discardUnsaved ? { discardUnsavedAfter: update.id } : {})
       .catch(() => setError(true))
       .finally(() => setBusy(false));
   };
@@ -132,7 +132,7 @@ export function ComputerUpdateProgress() {
               <NativeActionButton
                 label={t`Try again`}
                 busy={busy}
-                onPress={() => restart(selected.botId, false)}
+                onPress={() => restart(selected, false)}
               />
             ) : null}
             {computerRestartFailedSaving(selected) ? (
@@ -149,7 +149,7 @@ export function ComputerUpdateProgress() {
                       {
                         text: t`Restart without saving`,
                         style: "destructive",
-                        onPress: () => restart(selected.botId, true),
+                        onPress: () => restart(selected, true),
                       },
                     ],
                   )

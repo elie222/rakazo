@@ -290,16 +290,57 @@ describeJourneys("required product journeys", () => {
       instructions: "Help.",
     });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const first = await rpc<{ id: string }>(app, cookie, "computer/restart", { botId: bot.id });
+    await waitForDatabase(
+      async () =>
+        (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: first.id } })).status ===
+        "completed",
+    );
     const response = await raw(app, cookie, "computer/restart", {
       botId: bot.id,
-      discardUnsaved: true,
+      discardUnsavedAfter: first.id,
     });
     expect(response.status).toBe(400);
     expect(
       await prisma.computerUpdate.count({
         where: { computer: { bots: { some: { id: bot.id } } } },
       }),
-    ).toBe(0);
+    ).toBe(1);
+  });
+
+  it("keeps the procedures older apps call as restarts", async () => {
+    const cookie = await signup(app, `maintenance-legacy-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Keeper",
+      description: "Keeps work",
+      instructions: "Help.",
+    });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const status = await rpc<{ canUpdate?: boolean; canRestart: boolean }>(
+      app,
+      cookie,
+      "computer/status",
+      { botId: bot.id },
+    );
+    expect(status.canUpdate).toBe(status.canRestart);
+    for (const proc of ["computer/update", "computer/recover"] as const) {
+      const update = await rpc<{ id: string }>(app, cookie, proc, { botId: bot.id });
+      await waitForDatabase(
+        async () =>
+          (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
+          "completed",
+      );
+      expect(
+        await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } }),
+      ).toMatchObject({ discardUnsaved: false });
+    }
+    await rpc(app, cookie, "computer/reset", { botId: bot.id });
+    const reset = await prisma.computerUpdate.findFirstOrThrow({
+      where: { botId: bot.id },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(reset.discardUnsaved).toBe(true);
   });
 
   it("maintenance leaves a run waiting on control", async () => {

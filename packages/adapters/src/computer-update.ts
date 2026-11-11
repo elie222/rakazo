@@ -53,6 +53,7 @@ export function computerUpdateView(row: {
   botId: string;
   status: string;
   stage: string;
+  updatedAt: Date;
   computer: { scope: string; bots: { id: string; name: string }[] };
 }): ComputerUpdate {
   return ComputerUpdateSchema.parse({
@@ -65,6 +66,7 @@ export function computerUpdateView(row: {
     mode: row.computer.scope === "team" ? "team" : "dedicated",
     status: row.status,
     stage: row.stage,
+    updatedAt: row.updatedAt.toISOString(),
   });
 }
 
@@ -73,7 +75,12 @@ export async function queueComputerUpdate(
   computerId: string,
   botId: string,
   userId: string,
-  options: { discardUnsaved?: boolean } = {},
+  options: {
+    /** The restart whose save failed; this one then skips saving. */
+    discardUnsavedAfter?: string;
+    /** @deprecated Older apps' Reset, which never saved. Remove with that procedure. */
+    legacyReset?: boolean;
+  } = {},
 ) {
   const prepared = await deps.prisma.$transaction(async (tx) => {
     // Mode switches lock this same row before marking a bot as switching.
@@ -83,14 +90,15 @@ export async function queueComputerUpdate(
     const staleClaim =
       (computer.state === "booting" || computer.state === "suspending") &&
       isAbandonedLifecycleClaim(computer.updatedAt);
-    if (options.discardUnsaved) {
-      // Only a restart whose save just failed may give up the unsaved work.
+    if (options.discardUnsavedAfter) {
+      // Only the computer's latest restart, if its save just failed, lets the next give up work.
       const last = await tx.computerUpdate.findFirst({
         where: { computerId },
         orderBy: { createdAt: "desc" },
-        select: { status: true, stage: true },
+        select: { id: true, status: true, stage: true, updatedAt: true },
       });
-      if (!computerRestartFailedSaving(last)) throw new ComputerDiscardNotAllowedError();
+      if (last?.id !== options.discardUnsavedAfter || !computerRestartFailedSaving(last))
+        throw new ComputerDiscardNotAllowedError();
     }
     // A run bound to this takeover must keep it. Maintenance does not resume that run.
     if (
@@ -145,7 +153,7 @@ export async function queueComputerUpdate(
       data: {
         computerId,
         botId,
-        discardUnsaved: options.discardUnsaved === true,
+        discardUnsaved: Boolean(options.discardUnsavedAfter || options.legacyReset),
         // Stay reserving until the provider release is attempted. Reconciliation gives that
         // takeover back. revoking is written before the call and is not proof of release.
         // revoked is written after the provider returns; reconciliation then clears the lease.

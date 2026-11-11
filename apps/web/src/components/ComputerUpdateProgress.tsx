@@ -48,11 +48,11 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
         ? t`Restarting Team Computer`
         : t`Restarting ${update.name}’s Computer`;
   const selected = updates.find((update) => update.id === openId);
-  const restart = (botId: string, discardUnsaved: boolean) => {
+  const restart = (update: ComputerUpdate, discardUnsaved: boolean) => {
     setRetrying(true);
     setError(false);
     void computerUpdates
-      .start(botId, { discardUnsaved })
+      .start(update.botId, discardUnsaved ? { discardUnsavedAfter: update.id } : {})
       .catch(() => setError(true))
       .finally(() => setRetrying(false));
   };
@@ -173,7 +173,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 </Button>
               ) : null}
               {selected.status === "failed" ? (
-                <Button disabled={retrying} onClick={() => restart(selected.botId, false)}>
+                <Button disabled={retrying} onClick={() => restart(selected, false)}>
                   <Trans>Try again</Trans>
                 </Button>
               ) : null}
@@ -190,7 +190,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
         confirmDisabled={retrying}
         onConfirm={() => {
           setConfirmDiscard(false);
-          if (selected) restart(selected.botId, true);
+          if (selected) restart(selected, true);
         }}
       />
     </>

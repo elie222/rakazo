@@ -812,8 +812,14 @@ export const appContract = {
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),
     restart: oc
-      .input(botId.extend({ discardUnsaved: z.boolean().optional() }))
+      .input(botId.extend({ discardUnsavedAfter: Id.optional() }))
       .output(ComputerUpdateSchema),
+    /** @deprecated Older apps call these; they restart. Remove once those apps have updated. */
+    update: oc.input(botId).output(ComputerUpdateSchema),
+    /** @deprecated See `update`. */
+    recover: oc.input(botId).output(ComputerUpdateSchema),
+    /** @deprecated See `update`; restarts without saving, as Reset did. */
+    reset: oc.input(botId).output(ComputerStatusSchema),
     updates: oc.output(z.array(ComputerUpdateSchema)),
     releaseInterrupted: oc
       .input(z.object({ id: Id, workersStopped: z.literal(true) }))

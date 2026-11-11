@@ -1236,7 +1236,12 @@ export async function replaceComputer(
           : previousState;
     // Saving may have woken a computer that was down; put it back to match its row.
     if (oldRef && !tornDown && (previousState === "suspended" || previousState === "stopped")) {
-      await deps.sandbox.stop(oldRef, context).catch(() => undefined);
+      await deps.sandbox.stop(oldRef, context).catch((stopError: unknown) => {
+        getLogger().warn("computer.restart_stop_failed", {
+          "computer.id": computerId,
+          error: stopError,
+        });
+      });
     }
     await deps.prisma.computer
       .updateMany({

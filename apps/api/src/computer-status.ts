@@ -119,6 +119,7 @@ export function toComputerStatus(
     homeRevision: computer?.homeRevision ?? null,
     busyBotName,
     canRestart: computerSupportsRestart(kind),
+    canUpdate: computerSupportsRestart(kind),
     terminalAvailable: computerSupportsTerminal(kind),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };

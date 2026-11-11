@@ -64,6 +64,28 @@ const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
+  async function restart(
+    actor: Parameters<typeof repos.getBot>[0],
+    botId: string,
+    options?: Parameters<typeof queueComputerUpdate>[4],
+  ) {
+    const bot = await repos.getBot(actor, botId);
+    if (!bot.computer) throw new IsolationError();
+    assertNotAnotherPersonsControl(bot.computer, actor);
+    if (!computerSupportsRestart(bot.computer.kind))
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Computer restart is not available on this device",
+      });
+    try {
+      return await queueComputerUpdate(deps, bot.computer.id, bot.id, actor.userId, options);
+    } catch (error) {
+      if (error instanceof ComputerBusyError)
+        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+      if (error instanceof ComputerDiscardNotAllowedError)
+        throw new ORPCError("BAD_REQUEST", { message: error.message });
+      throw error;
+    }
+  }
   return {
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
@@ -125,25 +147,18 @@ export function computerRoutes(ctx: RouterContext) {
         }
         return computerStatus(deps, context.actor, input.botId);
       }),
-      restart: authed.computer.restart.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer) throw new IsolationError();
-        assertNotAnotherPersonsControl(bot.computer, context.actor);
-        if (!computerSupportsRestart(bot.computer.kind))
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Computer restart is not available on this device",
-          });
-        try {
-          return await queueComputerUpdate(deps, bot.computer.id, bot.id, context.actor.userId, {
-            discardUnsaved: input.discardUnsaved,
-          });
-        } catch (error) {
-          if (error instanceof ComputerBusyError)
-            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-          if (error instanceof ComputerDiscardNotAllowedError)
-            throw new ORPCError("BAD_REQUEST", { message: error.message });
-          throw error;
-        }
+      restart: authed.computer.restart.handler(({ context, input }) =>
+        restart(context.actor, input.botId, { discardUnsavedAfter: input.discardUnsavedAfter }),
+      ),
+      update: authed.computer.update.handler(({ context, input }) =>
+        restart(context.actor, input.botId),
+      ),
+      recover: authed.computer.recover.handler(({ context, input }) =>
+        restart(context.actor, input.botId),
+      ),
+      reset: authed.computer.reset.handler(async ({ context, input }) => {
+        await restart(context.actor, input.botId, { legacyReset: true });
+        return computerStatus(deps, context.actor, input.botId);
       }),
       updates: authed.computer.updates.handler(async ({ context }) => {
         const rows = await deps.prisma.computerUpdate.findMany({

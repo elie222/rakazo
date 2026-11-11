@@ -311,28 +311,50 @@ describe("background computer maintenance", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  const failedSave = (overrides: Partial<FailedRow> = {}): FailedRow => ({
+    id: "failed-1",
+    status: "failed",
+    stage: "saving",
+    updatedAt: new Date(),
+    ...overrides,
+  });
+
   it.each([
     ["no earlier restart", null],
-    ["a restart that failed after saving", { status: "failed", stage: "restoring" }],
-    ["a restart whose failed save was dismissed", { status: "dismissed", stage: "saving" }],
+    ["a restart that failed after saving", failedSave({ stage: "restoring" })],
+    ["a failed save that was dismissed", failedSave({ status: "dismissed" })],
+    ["a newer restart than the one named", failedSave({ id: "failed-2" })],
+    ["a failed save past the discard window", failedSave({ updatedAt: new Date(0) })],
   ])("refuses to restart without saving after %s", async (_case, last) => {
     const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
     harness.computerUpdate.findFirst.mockResolvedValue(last);
 
     await expect(
-      queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user", { discardUnsaved: true }),
+      queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user", {
+        discardUnsavedAfter: "failed-1",
+      }),
     ).rejects.toBeInstanceOf(ComputerDiscardNotAllowedError);
     expect(harness.computerUpdate.create).not.toHaveBeenCalled();
   });
 
-  it("restarts without saving right after a failed save", async () => {
+  it("restarts without saving right after the named restart failed while saving", async () => {
     const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
     harness.computerRow.controlLeaseId = null;
-    harness.computerUpdate.findFirst.mockResolvedValue({ status: "failed", stage: "saving" });
+    harness.computerUpdate.findFirst.mockResolvedValue(failedSave());
 
     await queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user", {
-      discardUnsaved: true,
+      discardUnsavedAfter: "failed-1",
     });
+    expect(harness.computerUpdate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ discardUnsaved: true }),
+    });
+  });
+
+  it("keeps older apps' Reset as a restart without saving", async () => {
+    const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
+    harness.computerRow.controlLeaseId = null;
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user", { legacyReset: true });
     expect(harness.computerUpdate.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ discardUnsaved: true }),
     });
@@ -839,6 +861,8 @@ describe("background computer maintenance", () => {
   });
 });
 
+type FailedRow = { id: string; status: string; stage: string; updatedAt: Date };
+
 function takeoverQueue(
   overrides: {
     controlHolder?: string;
@@ -870,6 +894,7 @@ function takeoverQueue(
     botId: "bot-1",
     status: "queued",
     stage: "preparing",
+    updatedAt: new Date(0),
     computer: { ...computerRow, bots: [{ id: "bot-1", name: "Writer" }] },
   };
   const computer = {
@@ -905,7 +930,7 @@ function takeoverQueue(
       return [updateRow];
     }),
     deleteMany: vi.fn(async () => ({ count: 1 })),
-    findFirst: vi.fn(async (): Promise<{ status: string; stage: string } | null> => null),
+    findFirst: vi.fn(async (): Promise<FailedRow | null> => null),
   };
   const prisma = {
     $queryRaw: vi.fn(async () => []),

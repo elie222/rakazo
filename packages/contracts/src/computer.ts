@@ -23,6 +23,7 @@ export const ComputerUpdateSchema = z.object({
   mode: ComputerModeSchema,
   status: z.enum(["queued", "running", "interrupted", "completed", "failed"]),
   stage: z.enum(COMPUTER_UPDATE_STAGES),
+  updatedAt: z.string(),
 });
 export type ComputerUpdate = z.infer<typeof ComputerUpdateSchema>;
 
@@ -40,6 +41,8 @@ export const ComputerStatusSchema = z.object({
   homeRevision: z.string().nullable(),
   busyBotName: z.string().nullable(),
   canRestart: z.boolean(),
+  /** @deprecated Older apps read this; equals canRestart. Remove once they have updated. */
+  canUpdate: z.boolean().optional(),
   terminalAvailable: z.boolean(),
   /** Set only while the user should see that the disk is nearly full. */
   diskFullPercent: z.number().int().min(0).max(100).optional(),
