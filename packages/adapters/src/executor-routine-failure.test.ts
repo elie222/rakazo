@@ -56,6 +56,8 @@ interface Scenario {
   resumeAfterScheduleEdit?: boolean;
   lateLookupFails?: boolean;
   setupFailsOnce?: boolean;
+  /** A message sent during the run waits for a follow-up run. */
+  continuation?: boolean;
 }
 
 async function failRun(scenario: Scenario) {
@@ -241,7 +243,9 @@ async function failRun(scenario: Scenario) {
     space: { findUnique: vi.fn(async () => null) },
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };
-  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const finalizeRun = vi.fn(async () => ({
+    continuationRunId: scenario.continuation ? "run-follow-up" : null,
+  }));
   const enqueue = vi.fn(async (job: { name: string }) => {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });
@@ -391,6 +395,16 @@ describe("silent routine failures", () => {
       expect.objectContaining({ kind: "failure", title: "Assistant failed" }),
       expect.anything(),
     );
+  });
+
+  it("only say so in the chat while a message sent meanwhile waits for its follow-up", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      trigger: "silent_routine",
+      continuation: true,
+    });
+    expect(postRoutineMessage).toHaveBeenCalledExactlyOnceWith(expect.anything(), failureLine);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("still show in the chat when the routine sends no notifications", async () => {

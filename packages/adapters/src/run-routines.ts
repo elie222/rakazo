@@ -111,7 +111,11 @@ export async function scheduleRoutineRetry(
 export async function notifyFailedRoutineRun(
   deps: ExecutorDeps,
   failed: Parameters<typeof notifyRun>[1] & { id: string; error: string | null },
-  options: { retryOnFailure?: boolean } = {},
+  options: {
+    retryOnFailure?: boolean;
+    /** The person sent a message the run left for a follow-up, so they are in the chat. */
+    inChat?: boolean;
+  } = {},
 ) {
   const bot = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: failed.botId },
@@ -138,6 +142,8 @@ export async function notifyFailedRoutineRun(
       });
     }
   }
+  // Someone already in the chat sees the line there, as with any run's failure, so no push.
+  if (options.inChat) return;
   await notifyRun(
     deps,
     failed,
@@ -148,7 +154,7 @@ export async function notifyFailedRoutineRun(
       botId: failed.botId,
       threadId: failed.threadId,
     },
-    options,
+    { retryOnFailure: options.retryOnFailure },
   );
 }
 

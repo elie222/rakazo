@@ -126,9 +126,11 @@ export async function failRunBeforeTurn(
       getLogger().error("background helper failure return", error),
     );
   } else if (run.trigger === SILENT_ROUTINE_TRIGGER) {
-    await notifyFailedRoutineRun(deps, { ...run, error: message }).catch((error) =>
-      getLogger().error("silent routine failure notice", error),
-    );
+    await notifyFailedRoutineRun(
+      deps,
+      { ...run, error: message },
+      { inChat: Boolean(failed.continuationRunId) },
+    ).catch((error) => getLogger().error("silent routine failure notice", error));
   } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",

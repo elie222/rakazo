@@ -69,6 +69,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
       groupId: thread.groupId ?? undefined,
       operationId: executionId,
       holdReply: silent,
+      lease: runLeaseFor(deps, run.id),
     }),
   });
   // The run may end before the video does, so a background poll posts it when it is ready.

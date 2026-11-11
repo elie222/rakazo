@@ -13,6 +13,7 @@ describe("media delivery", () => {
     const tx = { externalEffect: { updateMany: vi.fn(async () => ({ count: 1 })) } };
     const notify = vi.fn(async () => undefined);
     const onSettled = vi.fn(async () => undefined);
+    const lease = { owner: "worker-1", fence: 2 };
     const run = {
       id: "run-1",
       threadId: "thread-1",
@@ -27,13 +28,14 @@ describe("media delivery", () => {
         artifacts: {},
       } as never,
       run,
-      { providerId: "fixture", operationId: "op-1", holdReply: true, onSettled },
+      { providerId: "fixture", operationId: "op-1", holdReply: true, onSettled, lease },
     );
     const block = { kind: "image", artifactId: "artifact-1", name: "chart.png" };
 
     await delivery.publish(block as never, "job-1", "artifact-1");
 
-    expect(holdRunReplyInTransaction).toHaveBeenCalledExactlyOnceWith(tx, run, [block]);
+    // Under the attempt's lease, so a superseded attempt can't add the image to the history.
+    expect(holdRunReplyInTransaction).toHaveBeenCalledExactlyOnceWith(tx, run, [block], lease);
     expect(persistMessageInTransaction).not.toHaveBeenCalled();
     expect(onSettled).toHaveBeenCalledWith(tx, "completed");
     expect(notify).not.toHaveBeenCalled();

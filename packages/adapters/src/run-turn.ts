@@ -1143,9 +1143,11 @@ export async function failRun(
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
   if (retrying) return;
   if (run.trigger === SILENT_ROUTINE_TRIGGER) {
-    await notifyFailedRoutineRun(deps, { ...run, error: message }).catch((noticeError) =>
-      getLogger().error("silent routine failure notice", noticeError),
-    );
+    await notifyFailedRoutineRun(
+      deps,
+      { ...run, error: message },
+      { inChat: Boolean(failed.continuationRunId) },
+    ).catch((noticeError) => getLogger().error("silent routine failure notice", noticeError));
     return;
   }
   // Nobody asked for a check-in, so its failure is not news to the user.
