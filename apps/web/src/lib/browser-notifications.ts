@@ -55,7 +55,8 @@ export type BrowserNotificationContext = {
   meId?: string;
 };
 
-/** The takeover alert already announces this card, so the message must not announce it again. */
+/** A card that only asks for the screen shares the takeover alert's tag, so the two show as one
+ * notification; a viewer who gets no takeover alert still sees the card. */
 function pendingTakeoverOnly(event: Pick<ProductEvent, "type" | "payload">): boolean {
   if (event.type !== "thread.message.created") return false;
   const blocks = event.payload.blocks;
@@ -78,8 +79,7 @@ export function shouldNotifyBrowser(
   const notifiable =
     (event.type === "thread.message.created" &&
       messageUnreadFor(event.payload, context.meId) &&
-      (event.payload.role === "bot" || memberMessageAlerts(event.payload)) &&
-      !pendingTakeoverOnly(event)) ||
+      (event.payload.role === "bot" || memberMessageAlerts(event.payload))) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";
   return (
@@ -155,7 +155,8 @@ export function deliverBrowserNotification(
   if (context.permission === "default") return "pending";
   const message = browserNotificationMessage(event, botName);
   try {
-    context.show(message.title, message.body, event.threadId);
+    const tag = pendingTakeoverOnly(event) ? `${event.threadId}:takeover` : event.threadId;
+    context.show(message.title, message.body, tag);
     context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {

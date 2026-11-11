@@ -115,29 +115,29 @@ describe("browser notifications", () => {
     });
   });
 
-  it("stays quiet for a message that only asks for the computer", () => {
+  it("tags a card that only asks for the computer like the takeover alert", () => {
     const card = {
       kind: "computer",
       state: TAKEOVER_COMPUTER_PENDING_STATE,
       text: "Sign in to continue.",
     };
-    expect(
-      shouldNotifyBrowser(event({ payload: { role: "bot", blocks: [card] } }), context()),
-    ).toBe(false);
-    expect(
-      shouldNotifyBrowser(
-        event({ payload: { role: "bot", blocks: [card, { kind: "text", text: "Also this." }] } }),
-        context(),
-      ),
-    ).toBe(true);
-    expect(
-      shouldNotifyBrowser(
-        event({
-          payload: { role: "bot", blocks: [{ kind: "computer", state: "Done", text: "Back." }] },
-        }),
-        context(),
-      ),
-    ).toBe(true);
+    const tagFor = (blocks: unknown[], id: string) => {
+      const show = vi.fn();
+      deliverBrowserNotification(event({ id, payload: { role: "bot", blocks } }), "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission: "granted",
+        notifiedEventIds: new Set(),
+        show,
+      });
+      return show.mock.calls[0]?.[2];
+    };
+    expect(tagFor([card], "event-card")).toBe("thread-1:takeover");
+    expect(tagFor([card, { kind: "text", text: "Also this." }], "event-mixed")).toBe("thread-1");
+    expect(tagFor([{ kind: "computer", state: "Done", text: "Back." }], "event-done")).toBe(
+      "thread-1",
+    );
   });
 
   it("puts the bot message in the native notification", () => {

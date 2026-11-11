@@ -272,8 +272,12 @@ describe("useBrowserNotifications chat alerts", () => {
       title: "Scout needs you on the screen",
       body: "Sign in to continue.",
     });
-    expect(shown()).toEqual([
-      ["Scout needs you on the screen", "Sign in to continue.", "thread-b:takeover"],
+    // Same tag, so the browser shows the alert in place of the card: one notification.
+    expect(shown().map(([, , tag]) => tag)).toEqual(["thread-b:takeover", "thread-b:takeover"]);
+    expect(shown().at(-1)).toEqual([
+      "Scout needs you on the screen",
+      "Sign in to continue.",
+      "thread-b:takeover",
     ]);
   });
 
