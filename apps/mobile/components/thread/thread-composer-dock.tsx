@@ -76,8 +76,9 @@ export function ThreadComposerDock({
     },
     [],
   );
+  // On iOS the input rests just above the home indicator rather than a full safe area up.
   const composerRestingPadding =
-    Platform.OS === "ios" ? insets.bottom : Math.max(insets.bottom + 12, 24);
+    Platform.OS === "ios" ? Math.max(insets.bottom - 14, 8) : Math.max(insets.bottom + 12, 24);
   // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
   // dips into the home indicator and then jumps back up.
   const composerKeyboardPadding = useAnimatedStyle(() => ({
