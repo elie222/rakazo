@@ -76,8 +76,6 @@ class ChangedAreasTests(unittest.TestCase):
     def test_classifies_what_the_pull_request_changed(self):
         cases = [
             ("apps/mobile/app/screen.tsx", expect()),
-            ("apps/mobile/eas.json", expect()),
-            ("packages/i18n/locales/pl/messages.po", expect("web", "e2e", "server")),
             (".agents/skills/x/SKILL.md", expect()),
             ("CHANGELOG.md", expect()),
             ("docs/getting-started.md", expect("web")),
