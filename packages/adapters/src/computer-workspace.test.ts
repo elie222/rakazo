@@ -343,6 +343,36 @@ describe("mounted Kubernetes homes", () => {
 });
 
 describe("Team run checkpoints", () => {
+  it("keeps a mounted team home running while recording a checkpoint", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-mounted-checkpoint-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const exportWorkspace = vi.fn();
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const deps = {
+      home,
+      sandbox: { hasMountedHome: async () => true, exportWorkspace },
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
+    const revision = await checkpointRunComputerWorkspace(
+      deps as never,
+      { id: "team", homeKey: "team", scope: "team", spaceId: "space" },
+      { id: "pod", providerRef: "pod", kind: "kubernetes", botId: "team" },
+      context,
+    );
+    expect(revision).toMatch(/^rev-/);
+    expect(exportWorkspace).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "team" },
+      data: { homeRevision: revision, homeRevisionAt: expect.any(Date) },
+    });
+  });
+
   it("defers a remote export when another run prevents an exclusive checkpoint", async () => {
     const { checkpointRunComputerWorkspace } = await import("./computer-workspace.js");
     const exportWorkspace = vi.fn();

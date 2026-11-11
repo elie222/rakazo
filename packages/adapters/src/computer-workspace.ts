@@ -442,7 +442,11 @@ export async function checkpointRunComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string | undefined> {
-  if (computerRecord.scope !== "team" || computer.kind === "docker") {
+  if (
+    computerRecord.scope !== "team" ||
+    computer.kind === "docker" ||
+    (await homeIsMounted(deps.home, deps.sandbox, computer, context))
+  ) {
     return checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
   }
   const now = new Date();

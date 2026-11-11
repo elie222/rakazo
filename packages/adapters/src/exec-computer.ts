@@ -472,7 +472,10 @@ function paxRecord(key: string, value: string): Buffer {
 
 /** Incremental reader for the regular files in a ustar/PAX stream. */
 export class TarReader {
-  private buffer: Buffer = Buffer.alloc(0);
+  private chunks: Buffer[] = [];
+  private bufferedBytes = 0;
+  private chunkIndex = 0;
+  private chunkOffset = 0;
   private pending:
     | { name: string; mode: number; size: number; kind: "file" | "pax" | "skip" }
     | undefined;
@@ -482,36 +485,64 @@ export class TarReader {
   constructor(private readonly maxFileBytes: number) {}
 
   push(chunk: Buffer): PortableFile[] {
-    this.buffer = this.buffer.byteLength ? Buffer.concat([this.buffer, chunk]) : chunk;
+    if (this.ended) return [];
+    if (chunk.byteLength) {
+      this.chunks.push(chunk);
+      this.bufferedBytes += chunk.byteLength;
+    }
     const files: PortableFile[] = [];
     while (!this.ended) {
       if (!this.pending) {
-        if (this.buffer.byteLength < TAR_BLOCK) break;
-        const header = this.buffer.subarray(0, TAR_BLOCK);
-        this.buffer = this.buffer.subarray(TAR_BLOCK);
+        if (this.bufferedBytes < TAR_BLOCK) break;
+        const header = this.read(TAR_BLOCK);
         if (header.every((byte) => byte === 0)) {
           this.ended = true;
+          this.chunks = [];
+          this.bufferedBytes = 0;
           break;
         }
         this.pending = this.parseHeader(header);
       }
       const { size } = this.pending;
       const padded = Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
-      if (this.buffer.byteLength < padded) break;
-      const body = this.buffer.subarray(0, size);
-      this.buffer = this.buffer.subarray(padded);
+      if (this.bufferedBytes < padded) break;
+      const body = this.read(size);
+      this.read(padded - size);
       const { kind, name, mode } = this.pending;
       this.pending = undefined;
       if (kind === "pax") this.paxPath = parsePaxPath(body) ?? this.paxPath;
       else if (kind === "file") {
         files.push({
           path: normalizeWorkspacePath(name),
-          content: new Uint8Array(Buffer.from(body)),
+          content: new Uint8Array(body.buffer, body.byteOffset, body.byteLength),
           ...((mode & 0o111) !== 0 ? { executable: true } : {}),
         });
       }
     }
     return files;
+  }
+
+  /** Copy each archive byte once, rather than recopying a growing file on every packet. */
+  private read(size: number): Buffer {
+    const result = Buffer.allocUnsafe(size);
+    let written = 0;
+    while (written < size) {
+      const chunk = this.chunks[this.chunkIndex]!;
+      const count = Math.min(size - written, chunk.byteLength - this.chunkOffset);
+      chunk.copy(result, written, this.chunkOffset, this.chunkOffset + count);
+      written += count;
+      this.chunkOffset += count;
+      if (this.chunkOffset === chunk.byteLength) {
+        this.chunkIndex += 1;
+        this.chunkOffset = 0;
+      }
+    }
+    this.bufferedBytes -= size;
+    if (this.chunkIndex) {
+      this.chunks = this.chunks.slice(this.chunkIndex);
+      this.chunkIndex = 0;
+    }
+    return result;
   }
 
   finish(): void {
