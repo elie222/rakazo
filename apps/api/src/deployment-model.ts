@@ -159,17 +159,8 @@ export async function updateDeploymentModelSettings(
 ): Promise<DeploymentModelSettings> {
   await requireAdmin(deps, actor.userId);
   const data: Omit<SavedDeploymentModels, "modelConnections"> = {};
-  if (input.defaultModel !== undefined) {
-    const choice = input.defaultModel;
-    if (choice) {
-      // Only a model one of the deployment's connections runs can be everyone's default.
-      const models = await currentDeploymentModels(deps);
-      const connection = models.connections.find(
-        (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
-      );
-      if (!connection || !deploymentConnectionModels(connection).includes(choice.modelId))
-        throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
-    }
+  const choice = input.defaultModel;
+  if (choice !== undefined) {
     data.defaultModelProvider = choice ? canonicalPiProviderId(choice.provider) : null;
     data.defaultModelId = choice?.modelId ?? null;
   }
@@ -179,30 +170,43 @@ export async function updateDeploymentModelSettings(
         ? null
         : parseModelAllowlist(input.allowedModels.join(",")).join(",");
   const open = input.open;
-  // Serializable and retried, as a connection is: a switch edits the list it reads, so two at
-  // once each keep the other's.
+  // Serializable and retried, as a connection is: a default and a switch check the connections
+  // they read, so a disconnect or another switch committed meanwhile is never lost.
   await withTransactionRetry(() =>
     runAsSystem("an admin sets the deployment's models", () =>
       deps.prisma.$transaction(
         async (tx) => {
           const next = { ...data };
-          if (open) {
-            // A switch opens or closes one connection; the list it edits is the one in effect.
+          if (choice || open) {
             const saved = await tx.deploymentSettings.findUnique({
               where: { id: "default" },
               include: DEPLOYMENT_MODEL_SETTINGS,
             });
             const models = await currentDeploymentModels(deps, saved);
-            const allowed =
-              typeof next.allowedModels === "string"
-                ? parseModelAllowlist(next.allowedModels)
-                : models.allowed;
-            next.allowedModels = allowlistWithProvider(
-              allowed,
-              models.connections.map((connection) => connection.provider),
-              open.provider,
-              open.open,
-            ).join(",");
+            if (choice) {
+              // Only a model one of the deployment's connections runs can be everyone's default.
+              const connection = models.connections.find(
+                (entry) =>
+                  canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
+              );
+              if (!connection || !deploymentConnectionModels(connection).includes(choice.modelId))
+                throw new ORPCError("BAD_REQUEST", {
+                  message: "Connect that model provider first",
+                });
+            }
+            if (open) {
+              // A switch opens or closes one connection; the list it edits is the one in effect.
+              const allowed =
+                typeof next.allowedModels === "string"
+                  ? parseModelAllowlist(next.allowedModels)
+                  : models.allowed;
+              next.allowedModels = allowlistWithProvider(
+                allowed,
+                models.connections.map((connection) => connection.provider),
+                open.provider,
+                open.open,
+              ).join(",");
+            }
           }
           await tx.deploymentSettings.upsert({
             where: { id: "default" },

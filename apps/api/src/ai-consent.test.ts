@@ -398,7 +398,7 @@ it("names the deployment's endpoint for a model the member's own endpoint doesn'
   ] as never);
   const ownSecret = { id: "own-secret", ciphertext: "own-cipher" };
   vi.mocked(deps.prisma.secret.findMany).mockResolvedValue([ownSecret] as never);
-  vi.mocked(deps.prisma.secret.findFirst).mockResolvedValue(ownSecret);
+  vi.mocked(deps.prisma.secret.findFirst).mockResolvedValue(ownSecret as never);
   vi.mocked(deps.prisma.bot.findMany).mockResolvedValue([
     {
       id: "bot",

@@ -175,6 +175,24 @@ describe("deployment model settings", () => {
     ).rejects.toThrow("Enter an API key");
   });
 
+  it("checks a default against the connections its own save reads", async () => {
+    const { deps, state } = makeDeps();
+    await connectDeploymentModel(deps, actor, { provider: "deepseek", apiKey: "fixture-key" });
+    // Another admin's disconnect commits just before this save's transaction starts.
+    vi.mocked(deps.prisma.$transaction).mockImplementationOnce((async (
+      callback: (tx: unknown) => unknown,
+    ) => {
+      state.connections.delete("deepseek");
+      return callback(deps.prisma);
+    }) as never);
+    await expect(
+      updateDeploymentModelSettings(deps, actor, {
+        defaultModel: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+      }),
+    ).rejects.toThrow("Connect that model provider first");
+    expect(state.settings.defaultModelProvider).toBeUndefined();
+  });
+
   it("sets a default only a connection runs, and falls back to the environment when cleared", async () => {
     const { deps, state } = makeDeps({ env: { OPENROUTER_API_KEY: "fixture-openrouter-key" } });
     await expect(
