@@ -563,7 +563,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for CAPTCHA, payment, passkeys, or other protected input request_secret cannot take. Never ask the user to paste protected values in chat.",
+      "Ask the user to open the computer screen to take over for CAPTCHA, payment, passkeys, or other protected input request_secret cannot take, or to see something only the screen shows, such as a QR code to scan. Never ask the user to paste protected values in chat.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },

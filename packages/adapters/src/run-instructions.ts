@@ -316,7 +316,7 @@ function toolUsageLine(parts: {
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
     builtinOffered(disabled, "request_takeover")
-      ? "Use request_takeover when the user must provide protected input or human judgment."
+      ? "Use request_takeover when the user must provide protected input or human judgment, or must see or scan something on the computer screen, such as a QR code; you cannot send screen images into chat."
       : undefined,
     "Use destination_write only for connected destination records.",
   ].filter((clause): clause is string => Boolean(clause));
