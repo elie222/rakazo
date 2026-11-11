@@ -283,6 +283,24 @@ describe("sentry sink", () => {
     expect(events[1]!.message).toBe("mail sync failed");
   });
 
+  it("groups a report by its logged fingerprint on top of the default grouping", async () => {
+    const { events, transport } = recordingTransport();
+    const logger = createLogger({
+      service: "rakazo-worker",
+      sinks: [await createSentrySink("rakazo-worker", { dsn: DSN }, transport)],
+    });
+    logger.error("run.failed", new Error("provider error"), {
+      "error.fingerprint": ["run.failed", "openrouter", "rate", "429"],
+    });
+    logger.error("job crashed", new Error("unexpected failure"));
+    await logger.flush();
+
+    expect(events.map((event) => event.fingerprint)).toEqual([
+      ["{{ default }}", "run.failed", "openrouter", "rate", "429"],
+      undefined,
+    ]);
+  });
+
   it("titles a failed request report by its method, route and status", async () => {
     const { events, transport } = recordingTransport();
     const logger = createLogger({
