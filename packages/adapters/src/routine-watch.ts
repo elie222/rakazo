@@ -29,6 +29,7 @@ import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { EgressRefusedError } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
@@ -154,10 +155,17 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
         maxBytes: 1_000_000,
       },
     );
-  } catch {
-    // Transport errors can include the URL, which can carry a token in its path or query.
-    throw new RoutineWatchError("Could not check the HTTPS endpoint.");
+  } catch (error) {
+    // Keep destination refusals permanent even when the transport wraps one in its cause.
+    for (let cause = error; cause instanceof Error; cause = cause.cause) {
+      if (cause instanceof EgressRefusedError)
+        throw new RoutineWatchError("Could not check the HTTPS endpoint.");
+    }
+    // Never expose a transport error's URL; it can carry a token in its path or query.
+    throw new RoutineWatchRetry("Could not check the HTTPS endpoint.");
   }
+  if (response.status === 408 || response.status === 429 || response.status >= 500)
+    throw new RoutineWatchRetry();
   if (response.status < 200 || response.status >= 300)
     throw new RoutineWatchError(`HTTPS check returned status ${response.status}.`);
   if (response.truncated) throw new RoutineWatchError("HTTPS check response is too large.");
@@ -167,10 +175,13 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
     data = JSON.parse(text);
   } catch {
     if (watch.track) throw new RoutineWatchError("Tracked HTTP fields require a JSON response.");
-    return { fingerprint: sha256(text), detail: clip(text) || null };
+    return { fingerprint: sha256(text), detail: null };
   }
-  if (watch.track) return readItems(data, watch.track);
-  return { fingerprint: sha256(stableStringify(data)), detail: clip(text) || null };
+  // Store only a fingerprint: endpoint data must not become trusted instructions or internal tool output.
+  const fingerprint = watch.track
+    ? readJsonItems(data, watch.track).fingerprint
+    : sha256(stableStringify(data));
+  return { fingerprint, detail: null };
 }
 
 /** Pure: decides baseline / unchanged / changed and describes the change. */
@@ -264,6 +275,14 @@ export function readItems(
   track: readonly string[],
   secrets: readonly string[] = [],
 ): Reading {
+  return readJsonItems(resultJson(data), track, secrets);
+}
+
+function readJsonItems(
+  data: unknown,
+  track: readonly string[],
+  secrets: readonly string[] = [],
+): Reading {
   const [identity, ...fields] = track;
   const items = new Map<string, { fields: string[]; titles: string[] }>();
   let count = 0;
@@ -286,7 +305,7 @@ export function readItems(
     }
     for (const child of Object.values(record)) visit(child);
   };
-  visit(redactJsonStrings(resultJson(data), secrets));
+  visit(redactJsonStrings(data, secrets));
   // IDs can repeat in nested results. Preserve every object's values, independent of order.
   const entries = Object.fromEntries(
     [...items].map(([id, item]) => [
@@ -769,7 +788,10 @@ export async function tickRoutineWatch(
     outcome = await checkRoutineWatch(deps, routine, now);
   } catch (error) {
     if (error instanceof RoutineWatchRetry) {
-      const retryAt = new Date(now.getTime() + RETRY_AFTER_MS);
+      const retryAt =
+        watch?.kind === "http"
+          ? nextRoutineWatchAt(watch, now)
+          : new Date(now.getTime() + RETRY_AFTER_MS);
       const deferred = await deps.prisma.routine.updateMany({
         where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
         data: { nextRunAt: retryAt },

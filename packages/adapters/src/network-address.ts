@@ -78,6 +78,9 @@ export function createAddressCheckedLookup(
   };
 }
 
+/** A refused network destination, distinct from a temporary DNS or transport failure. */
+export class EgressRefusedError extends Error {}
+
 /**
  * Record that an outbound-request guard refused a destination, so a probe of private addresses
  * leaves a security event. Returns the error for `throw egressRefused(...)`.
@@ -88,7 +91,7 @@ export function egressRefused(hostname: string, error: unknown): Error {
     type: "egress.refused",
     metadata: { host: hostname.slice(0, 253), reason: refusal.message },
   });
-  return refusal;
+  return new EgressRefusedError(refusal.message, { cause: refusal });
 }
 
 function pinnedAddressesFor(hostname: string): ResolvedAddress[] | undefined {

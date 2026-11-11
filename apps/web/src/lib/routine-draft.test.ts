@@ -63,3 +63,16 @@ it("saves an HTTPS watch with its URL and tracked fields", () => {
     watchFromDraft({ ...emptyWatchDraft(), kind: "http", url: "http://localhost" }),
   ).toHaveProperty("error");
 });
+
+it("leaves non-URL watch validation to the server, as other watch kinds do", () => {
+  for (const invalid of [{ everyMinutes: 1 }, { track: "a,b,c,d,e,f" }]) {
+    expect(
+      watchFromDraft({
+        ...emptyWatchDraft(),
+        kind: "http",
+        url: "https://example.com/status",
+        ...invalid,
+      }),
+    ).toHaveProperty("watch");
+  }
+});

@@ -210,10 +210,14 @@ export async function gateToolCall(
   }
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
+  const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
+  const httpWatch = watch?.kind === "http";
   // paid_request with only a purchase id sends the request its approval already named.
   const sendsToSite =
-    SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
-  const fetchUrl = sendsToSite ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
+    httpWatch || (SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined));
+  const fetchUrl = sendsToSite
+    ? normalizedHttpUrl(String(httpWatch ? watch.url : (args.url ?? "")))
+    : undefined;
   const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
   if (sendsToSite && !fetchSite)
     return { result: refusal("fetch_url_invalid", "url must be an http(s) URL") };
@@ -226,7 +230,7 @@ export async function gateToolCall(
     };
   // The card, the stored effect and the request all use the URL the gate checked.
   if (fetchUrl) {
-    args = { ...args, url: fetchUrl };
+    args = httpWatch ? { ...args, watch: { ...watch, url: fetchUrl } } : { ...args, url: fetchUrl };
     effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
   }
   const connectorTrusts = connectorTrustKeys(
@@ -246,7 +250,6 @@ export async function gateToolCall(
           rules: await ctx.trust.loadApprovalRules(),
         })
       : "allow";
-  const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
   // A tool watch repeats its read unattended, so it passes the read check that call would now.
   const watchedTool = watch?.kind === "tool" ? watch.tool : undefined;
   const readTrusts = watchedTool
@@ -272,9 +275,9 @@ export async function gateToolCall(
         .loadTrustedConnectors()
         .then((trusted) => readTrusts.every((trust) => trusted.has(trust))),
     });
-  // This schedules unattended shell execution; require a person to approve
-  // the command once, rather than letting an allow rule or reviewer schedule it.
-  const commandWatch = watch?.kind === "command";
+  // Unattended shell execution or repeated HTTP requests need a person's approval once;
+  // neither an allow rule nor an automatic reviewer may create them.
+  const unattendedWatch = watch?.kind === "command" || httpWatch;
   // A routine's prompt counts as the owner's words when it runs, so the sites it names are
   // ones its runs may fetch. Once outside content entered this run, a routine naming a
   // site this run was not given needs a person: a reviewer would judge it on this run's
@@ -291,7 +294,7 @@ export async function gateToolCall(
   const requiresApprovalByDefault =
     request.heldForApproval ||
     paying ||
-    commandWatch ||
+    unattendedWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
     unidentifiedAction ||
@@ -303,12 +306,12 @@ export async function gateToolCall(
   const gated = requiresApprovalByDefault || connectorReadGated;
   // These ask in every run, whatever started it.
   const mandatoryInAnyRun =
-    paying || commandWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
+    paying || unattendedWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
   const requiresMandatoryApproval = mandatoryInAnyRun || requiresUnattendedApproval;
   // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
   // on their card would save a rule that never takes effect.
   const asksEveryTime =
-    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
+    (unattendedWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({

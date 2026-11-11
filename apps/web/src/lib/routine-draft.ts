@@ -101,9 +101,9 @@ export function watchFromDraft(
     return { watch: { ...base, command: draft.command.trim(), ...track } };
   }
   if (draft.kind === "http") {
-    const parsed = RoutineWatchSchema.safeParse({ ...base, url: draft.url.trim(), ...track });
+    const parsed = RoutineWatchSchema.safeParse({ kind: "http", url: draft.url.trim() });
     if (!parsed.success) return { error: t`Enter an HTTPS URL` };
-    return { watch: parsed.data };
+    return { watch: { ...base, url: parsed.data.url, ...track } };
   }
   if (!draft.tool.trim()) return { error: t`Pick a tool to check` };
   let args: unknown;

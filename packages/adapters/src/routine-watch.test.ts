@@ -187,6 +187,30 @@ describe("tickRoutineWatch", () => {
     return { deps, routine, updateMany, messages };
   }
 
+  it("reschedules temporary HTTP failures at the watch interval without disabling it", async () => {
+    const { deps, routine, updateMany, messages } = setup(
+      {},
+      { kind: "http", url: "https://example.com/status", everyMinutes: 5 },
+    );
+    deps.http = {
+      fetch: async () => new Response("temporary outage", { status: 503 }),
+      resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+    };
+    const before = Date.now();
+    expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
+    expect(updateMany).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt: expect.any(Date) },
+    });
+    const retry = (updateMany.mock.calls[0] as unknown as [{ data: { nextRunAt: Date } }])[0].data
+      .nextRunAt;
+    expect(retry.getTime()).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(retry.getTime()).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+    expect(messages).toHaveLength(0);
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ availableAt: retry }));
+  });
+
   it("records a quiet no-change check without a message and schedules the next", async () => {
     const { deps, routine, updateMany, messages } = setup({ data: { changes: [] } });
     // First reading is the baseline.
