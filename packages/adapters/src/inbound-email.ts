@@ -73,11 +73,15 @@ export type ReadInboundEmailOptions = {
   relayArcDomain?: string;
 };
 
-/** Parse a raw RFC 5322 message and check its DKIM signatures. */
+/**
+ * Parse a raw RFC 5322 message and check its DKIM signatures. One larger than
+ * INBOUND_EMAIL_MAX_BYTES is refused before any of it is read, whoever hands it over.
+ */
 export async function readInboundEmail(
   raw: Uint8Array,
   options: ReadInboundEmailOptions = {},
 ): Promise<InboundEmail> {
+  if (raw.byteLength > INBOUND_EMAIL_MAX_BYTES) throw new Error("The message is too large");
   // Loaded only on servers that receive email.
   const [{ default: PostalMime }, { arc, dkimVerify }] = await Promise.all([
     import("postal-mime"),

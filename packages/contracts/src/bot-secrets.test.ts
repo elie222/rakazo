@@ -8,16 +8,17 @@ import {
   commandVariableProblem,
   decodeLoginSecret,
   encodeLoginSecret,
-  extractOneTimeCode,
   hideOneTimeCodeInEmail,
   LOGIN_FIELD_LIMIT,
   LoginFieldLabels,
   loginCardFields,
   normalizeOneTimeCode,
+  ONE_TIME_CODE_TEXT_LIMIT,
   ONE_TIME_CODE_TOKENS,
   ONE_TIME_CODE_UNIT_LIMIT,
   OneTimeCodeTarget,
   oneTimeCodeWritings,
+  readOneTimeCode,
   SecretHttpRequest,
 } from "./bot-secrets.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./domain.js";
@@ -599,7 +600,7 @@ describe("one-time code contracts", () => {
   });
 
   describe("reading a code out of an email", () => {
-    const read = (text: string, subject = "Sign in") => extractOneTimeCode({ subject, text });
+    const read = (text: string, subject = "Sign in") => readOneTimeCode({ subject, text }).code;
 
     it.each([
       ["six digits", "Your verification code is 482913.", "482913"],
@@ -782,79 +783,123 @@ describe("one-time code contracts", () => {
 
     // In every language with code words: a sentence naming a code with a word saying it is old,
     // previous, expired or invalid makes the email give none, whatever else that sentence says;
-    // one saying when the code will expire does not.
-    const STALE: [language: string, code: string, stale: string, expires: string][] = [
+    // one saying when the code will expire does not. `wrapped` is such a sentence over two lines,
+    // the code word on the first and the stale word on the second, as plain-text mail wraps it.
+    const STALE: [
+      language: string,
+      code: string,
+      stale: string,
+      expires: string,
+      wrapped: string,
+    ][] = [
       [
         "en",
         "Your verification code is 482913.",
         "Your previous code has expired.",
         "This code expires in 10 minutes.",
+        "This code has\nexpired.",
       ],
       [
         "de",
         "Ihr Bestätigungscode lautet 482913.",
         "Der alte Code ist abgelaufen.",
         "Der Code läuft in 10 Minuten ab.",
+        "Dieser Code ist\nabgelaufen.",
       ],
       [
         "es",
         "Tu código de verificación es 482913.",
         "El código anterior ha caducado.",
         "El código caduca en 10 minutos.",
+        "Este código ha\ncaducado.",
       ],
       [
         "fr",
         "Votre code de vérification est 482913.",
         "Ce code a expiré.",
         "Ce code expire dans 10 minutes.",
+        "Ce code a\nexpiré.",
       ],
       [
         "nl",
         "Je verificatiecode is 482913.",
         "De vorige code is verlopen.",
         "De code verloopt over 10 minuten.",
+        "Deze code is\nverlopen.",
       ],
       [
         "pl",
         "Twój kod weryfikacyjny to 482913.",
         "Poprzedni kod wygasł.",
         "Kod wygaśnie za 10 minut.",
+        "Ten kod\nwygasł.",
       ],
       [
         "pt",
         "Seu código de verificação é 482913.",
         "O código anterior expirou.",
         "O código expira em 10 minutos.",
+        "Este código\nexpirou.",
       ],
       [
         "ru",
         "Ваш код подтверждения: 482913",
         "Предыдущий код истёк.",
         "Код истекает через 10 минут.",
+        "Этот код\nистёк.",
       ],
-      ["tr", "Doğrulama kodunuz: 482913", "Önceki kod geçersiz.", "Bu kod 10 dakika geçerlidir."],
+      [
+        "tr",
+        "Doğrulama kodunuz: 482913",
+        "Önceki kod geçersiz.",
+        "Bu kod 10 dakika geçerlidir.",
+        "Bu kod\ngeçersiz.",
+      ],
       [
         "hi",
         "आपका सत्यापन कोड 482913 है।",
         "पिछला कोड समाप्त हो गया।",
         "यह कोड 10 मिनट में समाप्त हो जाएगा।",
+        "यह कोड\nसमाप्त हो गया।",
       ],
-      ["he", "קוד האימות שלך הוא 482913", "הקוד הקודם פג תוקף.", "הקוד יפוג בעוד 10 דקות."],
+      [
+        "he",
+        "קוד האימות שלך הוא 482913",
+        "הקוד הקודם פג תוקף.",
+        "הקוד יפוג בעוד 10 דקות.",
+        "הקוד הזה\nפג תוקף.",
+      ],
       [
         "ja",
         "認証コードは482913です。",
         "以前のコードは期限切れです。",
         "このコードは10分後に無効になります。",
+        "このコードは\n期限切れです。",
       ],
       [
         "ko",
         "인증번호는 482913입니다.",
         "이전 코드는 만료되었습니다.",
         "이 코드는 10분 후에 만료됩니다.",
+        "이 코드는\n만료되었습니다.",
       ],
-      ["zh-CN", "您的验证码是482913。", "之前的验证码已过期。", "验证码10分钟内有效。"],
-      ["zh-TW", "您的驗證碼為482913。", "之前的驗證碼已過期。", "驗證碼10分鐘內有效。"],
+      [
+        "zh-CN",
+        "您的验证码是482913。",
+        "之前的验证码已过期。",
+        "验证码10分钟内有效。",
+        "此验证码\n已过期。",
+      ],
+      [
+        "zh-TW",
+        "您的驗證碼為482913。",
+        "之前的驗證碼已過期。",
+        "驗證碼10分鐘內有效。",
+        "此驗證碼\n已過期。",
+      ],
     ];
+    /** Words no list holds, with no sentence mark: `count` of them run past any length cap. */
+    const filler = (count: number) => "lorem ".repeat(count).trim();
     it.each(STALE)(
       "in %s, gives no code beside a sentence saying the code expired, only beside when it will",
       (_language, code, stale, expires) => {
@@ -864,6 +909,87 @@ describe("one-time code contracts", () => {
         expect(read(`${code}\n${expires}`)).toBe("482913");
       },
     );
+
+    // The rule: a stale word applies to a code word in the same sentence, however long the
+    // sentence is. A sentence ends at sentence or clause punctuation or a blank line, not at a
+    // line break, as mail wraps sentences over lines.
+    it.each(STALE)(
+      "in %s, a sentence saying the code expired counts however long it is or its lines wrap",
+      (_language, code, stale, _expires, wrapped) => {
+        const [codeLine, staleLine] = wrapped.split("\n") as [string, string];
+        const unmarked = (sentence: string) => sentence.replace(/[.。।]$/u, "");
+        // The notice runs on without a sentence mark, past the cap on a unit that gives a code.
+        const long = `${unmarked(stale)} ${filler(40)}`;
+        expect(long.length).toBeGreaterThan(ONE_TIME_CODE_UNIT_LIMIT);
+        expect(read(`${code}\n${long}`)).toBeUndefined();
+        expect(read(`${code}\n${filler(40)} ${stale}`)).toBeUndefined();
+        expect(read(code, long)).toBeUndefined();
+        // Wrapped over two lines, short and long, the code word far from the stale word.
+        expect(read(`${code}\n${wrapped}`)).toBeUndefined();
+        const apart = `${codeLine} ${filler(60)}\n${filler(60)} ${staleLine}`;
+        expect(read(`${code}\n${apart}`)).toBeUndefined();
+        // A stale word in another sentence or another paragraph of a long block is about
+        // something else: the code is still read.
+        const block = `${filler(40)} ${codeLine}`;
+        expect(read(`${code}\n\n${block}\n\n${staleLine} ${filler(40)}`)).toBe("482913");
+        expect(read(`${code}\n${block}. ${unmarked(staleLine)} ${filler(40)}.`)).toBe("482913");
+      },
+    );
+
+    // Case is folded without a locale: JavaScript's own folding leaves the Turkish dotted capital
+    // İ and the dotless ı apart from i, and a decomposed accent apart from its letter.
+    it.each<[name: string, text: string, code: string | undefined]>([
+      ["an expired notice in Turkish capitals", "Kodunuz: 482913\nÖNCEKİ KOD GEÇERSİZ.", undefined],
+      ["an old code in Turkish capitals", "Kodunuz: 482913\nESKİ KODUN SÜRESİ DOLDU.", undefined],
+      [
+        "a Turkish notice lowercased by a mailer",
+        "Kodunuz: 482913\nönceki\u0307 kod geçersi\u0307z.",
+        undefined,
+      ],
+      [
+        "a French notice with decomposed accents",
+        "Code: 482913\nCe code a expire\u0301.",
+        undefined,
+      ],
+      ["a Turkish sign-in code in capitals", "GİRİŞ KODUNUZ: 482913", "482913"],
+      ["a Turkish one-time password in capitals", "TEK KULLANIMLIK ŞİFRE: 482913", "482913"],
+      ["a Turkish one-time password", "Tek kullanımlık şifre: 482913", "482913"],
+    ])("reads %s whatever case its letters are in", (_name, text, code) => {
+      expect(read(text)).toBe(code);
+    });
+
+    // An email that gives no code either names none, and says nothing of the site's other
+    // emails, or is unclear: it names a code that cannot be taken, so theirs are in doubt.
+    it.each<[name: string, text: string, unclear: boolean]>([
+      ["names no code", "Welcome! Your account is ready.", false],
+      ["names an order, not a code", "Order 48213977 confirmed.", false],
+      ["writes a code in a form that is not read", "Your code is roughly 482913", false],
+      ["holds two codes", "Your code is 482913. Your code is 731905.", true],
+      ["holds a code too short to take", "Your code: 4829", true],
+      ["says a code expired", "Your previous code has expired.", true],
+      ["says a code expired and gives another", "Your old code expired.\nYour code: 482913", true],
+      ["is longer than is read", `Hello.\n${"x".repeat(ONE_TIME_CODE_TEXT_LIMIT)}`, true],
+    ])("says an email that %s is unclear: %s", (_name, text, unclear) => {
+      expect(readOneTimeCode({ subject: "Hello", text })).toEqual({ unclear });
+      expect(readOneTimeCode({ subject: text.split("\n")[0]!, text: "Hello" }).unclear).toBe(
+        unclear && text.length <= ONE_TIME_CODE_TEXT_LIMIT,
+      );
+    });
+
+    it("is clear about the one code an email gives", () => {
+      expect(readOneTimeCode({ subject: "Sign in", text: "Your code is 482913." })).toEqual({
+        code: "482913",
+        unclear: false,
+      });
+    });
+
+    it("reads no email past the length the inbox keeps, where the rest was cut", () => {
+      const code = "Your verification code is 482913.";
+      const rest = (length: number) => `\n${"x".repeat(length - code.length - 1)}`;
+      expect(read(`${code}${rest(ONE_TIME_CODE_TEXT_LIMIT)}`)).toBe("482913");
+      expect(read(`${code}${rest(ONE_TIME_CODE_TEXT_LIMIT + 1)}`)).toBeUndefined();
+      expect(read("Welcome back.", `${code}${rest(ONE_TIME_CODE_TEXT_LIMIT + 1)}`)).toBeUndefined();
+    });
 
     // Every sentence that is not one of the templates gives nothing, whatever stands near the
     // number: each counter-example from every review round so far is a row.
@@ -942,6 +1068,11 @@ describe("one-time code contracts", () => {
         "Your code is 482913.\nThe code is invalid.",
       ],
       ["a code under a subject saying the code expired", "Code: 482913", "Your code has expired"],
+      [
+        "a code in the subject over an expired notice in a line past the cap",
+        `This code has expired ${"x".repeat(181)}`,
+        "Your code: 482913",
+      ],
       // On purpose: the rule does not judge what the stale word is about, so the card opens.
       [
         "a code beside a sentence naming the previous page",
@@ -1092,7 +1223,7 @@ describe("one-time code contracts", () => {
         { subject: "Sign in", text },
         { subject: text, text: "Welcome back." },
       ]) {
-        const code = extractOneTimeCode(email);
+        const { code } = readOneTimeCode(email);
         expect(code).toBe(written.replace(/[ -]/g, ""));
         expect(oneTimeCodeWritings(code!)).toContain(written);
       }
@@ -1102,7 +1233,7 @@ describe("one-time code contracts", () => {
       const execs = (email: { subject: string; text: string }) => {
         const exec = vi.spyOn(RegExp.prototype, "exec");
         try {
-          extractOneTimeCode(email);
+          readOneTimeCode(email);
           return exec.mock.calls.length;
         } finally {
           exec.mockRestore();
@@ -1130,15 +1261,22 @@ describe("one-time code contracts", () => {
         ["filler words", `${"a ".repeat(99)}a`],
         ["naming words and numbers", "order 48213977 code 482913 ref 731905"],
         ["unknown words", "x".repeat(ONE_TIME_CODE_UNIT_LIMIT)],
+        [
+          "a code word and a stale word far apart",
+          `code ${"x".repeat(250)} old ${"x".repeat(250)}.`,
+        ],
         ["a code line under a cue line", "Your code:\n482913"],
       ])("runs at most a fixed number of regexes per unit of %s", (_name, unit) => {
         const text = (count: number) => Array.from({ length: count }, () => unit).join("\n");
         const count = (units: number) => execs({ subject: "Hello", text: text(units) });
+        // As many units as an email may hold, and half of them.
+        const most = Math.floor(ONE_TIME_CODE_TEXT_LIMIT / (unit.length + 1));
+        const half = Math.floor(most / 2);
         // Each unit past the first adds the same number of runs: no unit reads past its own text
-        // and the line below it.
+        // and the line below it, and a stale word is looked for once in each sentence.
         const one = count(2) - count(1);
-        expect(count(51) - count(50)).toBe(one);
-        expect(count(100) - count(50)).toBe(50 * one);
+        expect(count(half + 1) - count(half)).toBe(one);
+        expect(count(most) - count(half)).toBe((most - half) * one);
         // At most the token patterns once per character, plus the splits and the form checks.
         expect(one).toBeLessThanOrEqual(
           ONE_TIME_CODE_UNIT_LIMIT * (ONE_TIME_CODE_TOKENS.length + 1) + 8,

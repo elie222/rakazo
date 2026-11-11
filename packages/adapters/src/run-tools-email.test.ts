@@ -1,4 +1,5 @@
 import {
+  createStreamingRedactor,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -57,8 +58,13 @@ function fakeRun(
     /** When `arriving` shows up, in ms from the first look: on the second look unless given. */
     arrivesAfterMs?: number;
     secrets?: string[];
-    /** A code the run took from an email, held as request_secret keeps it. */
-    emailedCode?: string;
+    /** A code the run took from an email, or several, held as request_secret keeps them. */
+    emailedCode?: string | string[];
+    /**
+     * A code the run takes from an email while the call is under way: once the inbox has been
+     * read this many times, as that read returns, or `after` ms from the first read.
+     */
+    takes?: { code: string; onRead?: number; afterMs?: number };
     /** How many loads of the held code fail first, as when the secret store is down. */
     unreadableLoads?: number;
     /** The Space's query tokens per key version, as content encryption returns them. */
@@ -68,8 +74,23 @@ function fakeRun(
   const inbox = [...rows];
   let listed = 0;
   let firstLook: number | undefined;
+  /** The codes the run holds from email now, as its claims and its code rows say. */
+  const held = [options.emailedCode ?? []].flat();
+  /** Another call of the run keeps a code: not in what this attempt hides until it is asked. */
+  const takeCode = () => {
+    const code = options.takes?.code;
+    if (code && !held.includes(code)) held.push(code);
+  };
+  const inboxRead = () => {
+    const { onRead, afterMs } = options.takes ?? {};
+    if (onRead === listed) takeCode();
+    if (afterMs !== undefined && firstLook !== undefined)
+      setTimeout(takeCode, Math.max(0, firstLook + afterMs - Date.now()));
+  };
   /** Every email the inbox handed out, decrypted, across all looks. */
   const read: string[] = [];
+  /** How many codes the run held each time the database was asked to match a search itself. */
+  const databaseSearches: number[] = [];
   const copyEarlierFiles = vi.fn();
   const matches = (email: Row, where: Record<string, unknown>) => {
     const since = (where.receivedAt as { gt?: Date } | undefined)?.gt;
@@ -104,15 +125,21 @@ function fakeRun(
             }
           : {}),
         secret: {
-          findMany: async () =>
-            options.emailedCode ? [{ id: "code-row", ciphertext: "sealed" }] : [],
+          // One row a code; what is sealed in it stands for the code here.
+          findMany: async () => held.map((code) => ({ id: `row-${code}`, ciphertext: code })),
         },
         externalEffect: {
-          findFirst: async () => (options.emailedCode ? { id: "claim" } : null),
+          findFirst: async () => (held.length ? { id: "claim" } : null),
         },
         botEmailMessage: {
-          findFirst: async ({ where }: { where: { id: string; botId: string } }) =>
-            inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null,
+          findFirst: async ({ where }: { where: { id: string; botId: string } }) => {
+            listed += 1;
+            firstLook ??= Date.now();
+            inboxRead();
+            return (
+              inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null
+            );
+          },
           findMany: async ({
             where,
             skip = 0,
@@ -126,6 +153,7 @@ function fakeRun(
           }) => {
             listed += 1;
             firstLook ??= Date.now();
+            if (where.OR) databaseSearches.push(held.length);
             // Mail that arrives while the bot waits shows up on the second look, or once due.
             const due =
               options.arrivesAfterMs === undefined
@@ -142,6 +170,7 @@ function fakeRun(
               )
               .slice(skip, take === undefined ? undefined : skip + take);
             read.push(...page.map((email) => email.id));
+            inboxRead();
             return page;
           },
           deleteMany: async ({
@@ -163,19 +192,21 @@ function fakeRun(
     },
     bot: { id: "bot-1", userId: "owner-1" },
     run: { userId: options.runUserId ?? "owner-1" },
+    runId: "run-1",
+    state: { reply: { pendingProgress: "", redactor: createStreamingRedactor([]) } },
     computer: { copyEarlierFiles },
     context: { signal: new AbortController().signal },
     secrets: [
       ...(options.secrets ?? []),
-      ...(options.emailedCode ? oneTimeCodeRedactions(options.emailedCode, { emailed: true }) : []),
+      ...held.flatMap((code) => oneTimeCodeRedactions(code, { emailed: true })),
     ],
   };
   let unreadable = options.unreadableLoads ?? 0;
   Object.assign(ctx.deps, {
     secretStore: {
-      load: async () => {
+      load: async (sealed: string) => {
         if (unreadable-- > 0) throw new Error("store unavailable");
-        return encodeRunCode("https://shop.test", options.emailedCode!, "email-0");
+        return encodeRunCode("https://shop.test", sealed, "email-0");
       },
     },
   });
@@ -191,7 +222,7 @@ function fakeRun(
     ) as Promise<Record<string, unknown>>;
   const call = (args: Record<string, unknown>) => invoke("read_email", args);
   const remove = (args: Record<string, unknown>) => invoke("delete_email", args);
-  return { call, remove, inbox, copyEarlierFiles, read };
+  return { call, remove, inbox, copyEarlierFiles, read, secrets: ctx.secrets, databaseSearches };
 }
 
 describe("read_email", () => {
@@ -431,6 +462,130 @@ describe("read_email", () => {
     }
     expect(read).toContain("scout@bots.test");
     expect(read).toContain('"id":"email-1"');
+  });
+
+  // SECRECY: what a result hides is decided from the codes the run holds when the result is
+  // produced, never when its call began. The run can take a code from mail at any point of a
+  // call (its own request keeps one, or mail answers its card), and from then on no result shows
+  // it, matches a search on it, or hands over a file that could hold it: the call returns what
+  // it would have returned had the run held the code from the start.
+  const CODE_EMAIL = row({
+    id: "code-mail",
+    subject: "Your code: 48 29 13",
+    text: "Your verification code is 482913, or 4.8.2.9.1.3.",
+    attachments: [{ artifactId: "art-1", name: "code.pdf", mimeType: "application/pdf", size: 3 }],
+    receivedAt: new Date("2026-11-07T10:00:00.000Z"),
+  });
+  const OTHER_EMAIL = row({ id: "other-mail", subject: "Welcome", text: "Thanks for joining." });
+  type Taken = { onRead?: number; afterMs?: number };
+  // A wait's first look finds nothing; the code's email arrives for its second.
+  const WAITS: [mode: string, args: Record<string, unknown>][] = [
+    ["a waiting search for the code", { query: "482913" }],
+    ["a waiting search for the code written apart", { query: "4.8.2.9.1.3" }],
+    ["a waiting search for a word in the code's email", { query: "verification" }],
+    ["a waiting search after a time", { query: "482913", since: "2026-11-06T00:00:00Z" }],
+    ["a wait for new mail", { since: "2026-11-06T00:00:00Z" }],
+  ];
+  const DURING_A_WAIT: [point: string, takes: Taken | undefined][] = [
+    ["before the call", undefined],
+    ["while the first look read the inbox", { onRead: 1 }],
+    ["between two looks", { afterMs: 300 }],
+    ["while the look that found its email read the inbox", { onRead: 2 }],
+  ];
+  const LOOKS: [mode: string, args: Record<string, unknown>][] = [
+    ["a search for the code", { query: "482913" }],
+    ["a search for a word in the code's email", { query: "verification" }],
+    ["a list", {}],
+    ["a read by id", { id: "code-mail" }],
+  ];
+  const DURING_A_LOOK: [point: string, takes: Taken | undefined][] = [
+    ["before the call", undefined],
+    ["while the call read the inbox", { onRead: 1 }],
+  ];
+  type Interleaving = [
+    mode: string,
+    point: string,
+    args: Record<string, unknown>,
+    takes: Taken | undefined,
+    inbox: { rows: Row[]; arriving?: Row },
+  ];
+  const interleavings: Interleaving[] = [
+    ...WAITS.flatMap(([mode, args]) =>
+      DURING_A_WAIT.map(([point, takes]): Interleaving => {
+        const inbox = { rows: [OTHER_EMAIL], arriving: CODE_EMAIL };
+        return [mode, point, { ...args, waitSeconds: 1 }, takes, inbox];
+      }),
+    ),
+    ...LOOKS.flatMap(([mode, args]) =>
+      DURING_A_LOOK.map(
+        ([point, takes]): Interleaving => [mode, point, args, takes, { rows: [CODE_EMAIL] }],
+      ),
+    ),
+  ];
+  it.each(interleavings)(
+    "in %s, hides a code the run took %s",
+    async (_mode, _point, args, takes, inbox) => {
+      const run = (options: Parameters<typeof fakeRun>[1]) =>
+        fakeRun(inbox.rows, { ...options, arriving: inbox.arriving });
+      const taking = run(
+        takes ? { takes: { code: "482913", ...takes } } : { emailedCode: "482913" },
+      );
+      const result = await taking.call(args);
+      const shown = JSON.stringify(result);
+      expect(shown.replace(/\D/g, "")).not.toContain("482913");
+      expect(shown).not.toContain("art-1");
+      expect(taking.copyEarlierFiles).not.toHaveBeenCalled();
+      // The same as a run that held the code all along gets, and hidden in the attempt from now.
+      expect(result).toEqual(await run({ emailedCode: "482913" }).call(args));
+      expect(taking.secrets).toEqual(
+        expect.arrayContaining(oneTimeCodeRedactions("482913", { emailed: true })),
+      );
+    },
+  );
+
+  it("never has the database match a search in a look begun after a code was taken", async () => {
+    // The database matches stored text, the code included: only the look the code was taken
+    // during may have asked it, and that look's answer is dropped.
+    const between = fakeRun([OTHER_EMAIL], { takes: { code: "482913", afterMs: 300 } });
+    await between.call({ query: "482913", waitSeconds: 1 });
+    expect(between.databaseSearches).toEqual([0]);
+    const during = fakeRun([OTHER_EMAIL], { takes: { code: "482913", onRead: 1 } });
+    await during.call({ query: "482913", waitSeconds: 1 });
+    expect(during.databaseSearches).toEqual([0]);
+  });
+
+  it("reads again what a look matched before the run took a second code", async () => {
+    // The run holds one site's code and takes another's while it searches: what the look had
+    // read and matched without the second code is dropped and read again, not skipped as read.
+    const args = { query: "verification" };
+    const both = ["731905", "482913"];
+    const taking = fakeRun([CODE_EMAIL], {
+      emailedCode: "731905",
+      takes: { code: "482913", onRead: 1 },
+    });
+    const result = await taking.call(args);
+    expect(result).toMatchObject({ emails: [{ id: "code-mail" }] });
+    expect(JSON.stringify(result).replace(/\D/g, "")).not.toContain("482913");
+    expect(result).toEqual(await fakeRun([CODE_EMAIL], { emailedCode: both }).call(args));
+  });
+
+  it("shows no email when the run takes another code during every look it makes", async () => {
+    let reads = 0;
+    const { call } = fakeRun([CODE_EMAIL], {
+      takes: {
+        // Each read of the inbox ends with a code the look did not begin with.
+        get code() {
+          return String(482913 + reads);
+        },
+        get onRead() {
+          reads += 1;
+          return reads;
+        },
+      },
+    });
+    expect(await call({ query: "482913" })).toEqual({
+      error: expect.stringContaining("Try again"),
+    });
   });
 
   it("gives no email while its emailed code is unreadable, and hides it after", async () => {

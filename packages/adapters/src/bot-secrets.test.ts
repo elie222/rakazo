@@ -11,8 +11,8 @@ import {
   forgetBotSecret,
   listBotSecrets,
   loadLoginPasswordRedactions,
+  loadRunCodeHiding,
   loadRunCodeRedactions,
-  loadRunEmailedCodes,
   loadRunLoginRedactions,
   normalizeSecretDestination,
   oneTimeCodeArgument,
@@ -1394,14 +1394,16 @@ describe("resolveCodeFill", () => {
     const unreadable = () => store.load.mockRejectedValueOnce(new Error("store unavailable"));
     const load = [
       () => loadRunCodeRedactions(prisma, store, codeScope, "run-1"),
-      () => loadRunEmailedCodes(prisma, store, codeScope, "run-1"),
+      () => loadRunCodeHiding(prisma, store, codeScope, "run-1"),
     ];
     for (const loader of load) {
       unreadable();
       await expect(loader()).rejects.toThrow(RunCodeUnreadableError);
     }
-    expect(await load[0]!()).toContain("123456");
-    expect(await load[1]!()).toEqual(["123456"]);
+    // One reading of what the run holds gives both: every form, and the codes taken from mail.
+    const redactions = await load[0]!();
+    expect(redactions).toContain("123456");
+    expect(await load[1]!()).toEqual({ redactions, emailed: ["123456"] });
   });
 
   it("skips an unreadable code typed in chat, in a run that took none from an email", async () => {

@@ -1207,7 +1207,7 @@ export async function readRunCode(
  * Every form of a code the model could be handed: as is, without dashes, URL-encoded, in either
  * case, and as a page draws it per character or in two groups (input-otp widgets put each digit in
  * its own element, which a snapshot reads as one digit per line). A code taken from an email also
- * hides each way extractOneTimeCode read it as written (oneTimeCodeWritings). The bare code is
+ * hides each way readOneTimeCode read it as written (oneTimeCodeWritings). The bare code is
  * hidden only when it stands alone, which every code taken from an email does.
  */
 export function oneTimeCodeRedactions(code: string, options: { emailed?: boolean } = {}): string[] {
@@ -1408,31 +1408,36 @@ async function loadRunCodes(
 }
 
 /**
- * Redaction forms of this run's codes, from the start of every attempt: a filled code stays on
- * its page and in what the run has read.
+ * This run's codes as it holds them at this moment: every form of each that the run hides, and
+ * the codes it took from mail, which every email it reads hides however written. The one place
+ * that says what a run hides of its codes: an attempt asks it as it starts, as a filled code
+ * stays on its page and in what the run has read, and again whenever one may have been taken
+ * since (hideRunEmailedCodes).
  */
+export async function loadRunCodeHiding(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+  runId: string,
+): Promise<{ redactions: string[]; emailed: string[] }> {
+  const held = await loadRunCodes(prisma, secretStore, scope, runId);
+  const forms = held.flatMap((code) =>
+    oneTimeCodeRedactions(code.code, { emailed: Boolean(code.fromEmail) }),
+  );
+  return {
+    redactions: [...new Set(forms)],
+    emailed: held.flatMap((code) => (code.fromEmail ? [code.code] : [])),
+  };
+}
+
+/** Every form of this run's codes that it hides, as an attempt loads them when it starts. */
 export async function loadRunCodeRedactions(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
   scope: BotSecretScope,
   runId: string,
 ): Promise<string[]> {
-  const forms = new Set<string>();
-  for (const held of await loadRunCodes(prisma, secretStore, scope, runId))
-    for (const form of oneTimeCodeRedactions(held.code, { emailed: Boolean(held.fromEmail) }))
-      forms.add(form);
-  return [...forms];
-}
-
-/** The codes this run took from mail, which every email it reads hides however written. */
-export async function loadRunEmailedCodes(
-  prisma: PrismaClient,
-  secretStore: Pick<SecretStore, "load">,
-  scope: BotSecretScope,
-  runId: string,
-): Promise<string[]> {
-  const held = await loadRunCodes(prisma, secretStore, scope, runId);
-  return held.flatMap((code) => (code.fromEmail ? [code.code] : []));
+  return (await loadRunCodeHiding(prisma, secretStore, scope, runId)).redactions;
 }
 
 const NO_CODE_WAITING =

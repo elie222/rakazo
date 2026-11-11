@@ -37,10 +37,21 @@ class ComposioMailReader implements ConnectedMailReader {
 
   async recent(
     context: AdapterContext,
-    query: { fromDomain: string; after: Date; limit: number; page?: string },
+    query: { fromDomain: string; after: Date; limit: number; maxBytes: number; page?: string },
   ): Promise<ConnectedMailPage> {
+    const search = `from:${query.fromDomain} after:${epochSeconds(query.after)}`;
+    // Asked before any message is fetched: one too large to read is never downloaded, and it may
+    // be the newest from the site, so the read fails rather than read the others in its place.
+    if (!query.page) {
+      const tooLarge = await this.call(context, "GMAIL_FETCH_EMAILS", {
+        query: `${search} larger:${query.maxBytes}`,
+        max_results: 1,
+        ids_only: true,
+      });
+      if (messageIds(tooLarge).length > 0) throw new Error("A matched message is too large");
+    }
     const listed = await this.call(context, "GMAIL_FETCH_EMAILS", {
-      query: `from:${query.fromDomain} after:${epochSeconds(query.after)}`,
+      query: search,
       max_results: query.limit,
       ids_only: true,
       ...(query.page ? { page_token: query.page } : {}),
@@ -49,6 +60,8 @@ class ComposioMailReader implements ConnectedMailReader {
     const ids = messageIds(listed);
     // The page past the limit would be left unread, and the next page starts after it.
     if (ids.length > query.limit) throw new Error("The mail listing has more messages than asked");
+    // What the page may still hold, in bytes.
+    let left = query.maxBytes;
     for (const id of ids) {
       // Between raw reads too: once the look gave up or timed out, no further message is read.
       context.signal.throwIfAborted();
@@ -60,6 +73,10 @@ class ComposioMailReader implements ConnectedMailReader {
       // A listed message that cannot be read may hold the newest code: the whole read fails,
       // so the card opens, rather than the other messages answering in its place.
       if (!raw) throw new Error("A listed message cannot be read in its raw form");
+      // Held to the limit by its encoded length, before it is decoded: one that arrived since
+      // the provider was asked, or that it sized otherwise, is not decoded either.
+      left -= Buffer.byteLength(raw, "base64");
+      if (left < 0) throw new Error("The listed messages are larger than the read may hold");
       const stamp = valueAt(read, "internalDate");
       const received =
         typeof stamp === "string" || typeof stamp === "number" ? Number(stamp) : Number.NaN;

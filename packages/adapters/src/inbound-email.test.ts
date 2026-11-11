@@ -3,6 +3,7 @@ import { dkimSign, sealMessage } from "mailauth";
 import { describe, expect, it } from "vitest";
 import type { InboundEmailResolver } from "./inbound-email.js";
 import {
+  INBOUND_EMAIL_MAX_BYTES,
   INBOUND_EMAIL_MAX_SIGNATURES,
   INBOUND_EMAIL_TEXT_MAX_CHARS,
   readInboundEmail,
@@ -463,6 +464,16 @@ describe("readInboundEmail", () => {
 
     expect(email.authenticated).toBe(false);
     expect(lookups).toEqual([]);
+  });
+
+  it("refuses a message larger than the size limit before reading any of it", async () => {
+    // Whoever hands it over: the route that receives mail, or a mailbox someone connected.
+    const tooLarge = new Uint8Array(INBOUND_EMAIL_MAX_BYTES + 1);
+    await expect(readInboundEmail(tooLarge, { resolver })).rejects.toThrow("too large");
+    const small = bytes(message(plain));
+    await expect(readInboundEmail(small, { resolver })).resolves.toMatchObject({
+      text: "Please summarize the attached report.",
+    });
   });
 
   it("refuses mail with more parts than real mail has", async () => {

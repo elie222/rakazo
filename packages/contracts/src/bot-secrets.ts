@@ -288,7 +288,7 @@ const CODE_GROUP_SIZES = [4, 3];
 const CODE_GROUP_SEPARATORS = [" ", "-"];
 
 /**
- * Every way an email may write `code` that extractOneTimeCode reads as this code: as is, and a
+ * Every way an email may write `code` that readOneTimeCode reads as this code: as is, and a
  * code of two equal digit groups split by a space or a dash. A run that holds a code taken from
  * an email hides each of these in everything it reads (oneTimeCodeRedactions), and its emails
  * also hide any spelling of the code (hideOneTimeCodeInEmail).
@@ -341,10 +341,11 @@ const YEAR = /^(?:19|20)[0-9]{2}$/;
 // Han, kana and Hangul text puts no space between words, so their letters end a word written in
 // another script: "您的code是" names a code. A word in those scripts has no word edges at all.
 const NOT_WORD_EDGE = String.raw`(?![${SPACELESS}])[\p{L}\p{M}\p{N}]`;
-const word = (cue: string) =>
-  String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})(?!(?![${SPACELESS}])[\p{L}\p{M}])`;
+/** Where a word may start: not right after a letter, mark or digit of a script with word edges. */
+const WORD_START = `(?<!${NOT_WORD_EDGE})`;
+const word = (cue: string) => String.raw`${WORD_START}(?:${cue})(?!(?![${SPACELESS}])[\p{L}\p{M}])`;
 /** A word by its distinctive start, with whatever ending it has. */
-const stem = (cue: string) => String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})[\p{L}\p{M}]*`;
+const stem = (cue: string) => String.raw`${WORD_START}(?:${cue})[\p{L}\p{M}]*`;
 
 /**
  * The words an email may use around a sign-in code, in each language the app ships. A unit of
@@ -353,11 +354,11 @@ const stem = (cue: string) => String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})[\p{L}\p
  * PIN); `qualifier` is a word a cue may carry (verification, security, one-time); `filler` is
  * the little words such a sentence has around them (your, is, enter); `stale` is a word that says
  * a code is no longer good (old, previous, expired, invalid: past forms only, never "expires"),
- * so a unit that names a code with one makes the whole email give none, whatever else the unit
- * says. Any other word, a number among them, or a noun that makes the cue name something else
- * (tracking code, code de suivi, ZIP code, promo code) keeps the unit from yielding anything: the
- * owner's card is the fallback. Each entry is a regex alternative for a whole word; a `stem`
- * takes any ending.
+ * so a sentence that names a code with one makes the whole email give none, whatever else it
+ * says (namesStaleCode). Any other word, a number among them, or a noun that makes the cue name
+ * something else (tracking code, code de suivi, ZIP code, promo code) keeps the unit from
+ * yielding anything: the owner's card is the fallback. Each entry is a regex alternative for a
+ * whole word; a `stem` takes any ending.
  */
 const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale: string[] }[] = [
   {
@@ -876,14 +877,38 @@ const SEPARATOR = String.raw`[:：=\p{Pd}]`;
 // backs up, so the order decides, not any backtracking.
 const longestFirst = (alternatives: string[]) =>
   [...new Set(alternatives)].sort((left, right) => right.length - left.length);
-/** Words in any case: "Code", "CODE" and "code" are one cue. Only words: never a code. */
-const anyCaseWords = (alternatives: string[], flags = "yiu") =>
-  new RegExp(`(?:${alternatives.join("|")})`, flags);
+/**
+ * Text as words are matched in it: composed (NFC), with the Turkish dotted capital I (U+0130),
+ * the dotless small i (U+0131) and a small i with a dot above (U+0069 U+0307) all read as "i".
+ * A case-insensitive match folds none of those to "i", so a notice in Turkish capitals would
+ * not read as the same words in small letters; this folding is the same under every locale. It
+ * changes no capital letter or digit a code is made of.
+ */
+const foldCase = (text: string) => text.normalize("NFC").replace(/\u0130|i\u0307|\u0131/gu, "i");
+/**
+ * Words in any case: "Code", "CODE" and "code" are one cue. Only words: never a code. Matched
+ * against text folded by foldCase, as the words themselves are here.
+ */
+const anyCaseWords = (alternatives: string[]) =>
+  new RegExp(`(?:${alternatives.map(foldCase).join("|")})`, "yiu");
 const CUE_WORDS = longestFirst(LANGUAGES.flatMap((language) => language.cue));
 const STALE_WORDS = longestFirst(LANGUAGES.flatMap((language) => language.stale));
-/** A code word, and a word saying a code is no longer good, anywhere in a unit. */
-const CUE_ANYWHERE = anyCaseWords(CUE_WORDS, "iu");
-const STALE_ANYWHERE = anyCaseWords(STALE_WORDS, "iu");
+/**
+ * The same words, for finding one anywhere in a sentence of any length: the word-start check
+ * most of them begin with is made once at a position, not once for each word tried there.
+ */
+function anywhere(alternatives: string[]): RegExp {
+  const starts = (one: string) => one.startsWith(WORD_START);
+  const edged = alternatives.filter(starts).map((one) => one.slice(WORD_START.length));
+  const sources = [
+    `${WORD_START}(?:${edged.join("|")})`,
+    ...alternatives.filter((one) => !starts(one)),
+  ];
+  return new RegExp(foldCase(sources.join("|")), "iu");
+}
+/** A code word, and a word saying a code is no longer good, anywhere in a sentence. */
+const CUE_ANYWHERE = anywhere(CUE_WORDS);
+const STALE_ANYWHERE = anywhere(STALE_WORDS);
 /**
  * A code as written, matched case-sensitively: no `i` flag, unlike the words, so its letters are
  * capitals only. Lowercase letters and digits ("Code abc123.") are a word the scanner cannot
@@ -907,10 +932,18 @@ export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: Re
 ];
 
 /**
- * A unit of text longer than this yields nothing. A real sentence naming a code is far shorter,
- * and the cap bounds what reading one unit can cost.
+ * A unit of text longer than this yields no code. A real sentence naming a code is far shorter,
+ * and the cap bounds what reading one unit for a code can cost. It never keeps a sentence from
+ * being read for a stale word (namesStaleCode): that takes two passes over it, whatever its length.
  */
 export const ONE_TIME_CODE_UNIT_LIMIT = 200;
+
+/**
+ * The longest subject or text read for a code, in characters: what the inbox keeps of a body. A
+ * longer one gives none: the inbox cut it, and what was cut could say the code expired or name
+ * another. It also bounds what reading one email can cost.
+ */
+export const ONE_TIME_CODE_TEXT_LIMIT = 20_000;
 
 /**
  * A character that ends a unit inside a line: sentence and clause punctuation (Chinese, Japanese
@@ -928,16 +961,21 @@ type Unit = {
 };
 
 /**
- * The sentences and lines of `text` in order, each trimmed with its spaces collapsed, blank ones
- * dropped. Apostrophes read as spaces ("here's", "d'accès") so the words around them stand whole.
+ * The pieces of `text` between unit breaks, each folded (foldCase) and trimmed with its spaces
+ * collapsed, blank ones dropped. Apostrophes read as spaces ("here's", "d'accès") so the words
+ * around them stand whole.
  */
+const pieces = (text: string) =>
+  text
+    .split(UNIT_BREAK)
+    .map((part) => foldCase(part).replace(/['’]/gu, " ").replace(/\s+/gu, " ").trim())
+    .filter(Boolean);
+
+/** The sentences and lines of `text` in order: each line's pieces. */
 function units(text: string): Unit[] {
   const result: Unit[] = [];
   for (const line of text.split("\n")) {
-    const parts = line
-      .split(UNIT_BREAK)
-      .map((part) => part.replace(/['’]/gu, " ").replace(/\s+/gu, " ").trim())
-      .filter(Boolean);
+    const parts = pieces(line);
     for (const [index, part] of parts.entries()) {
       result.push({
         text: part,
@@ -984,13 +1022,33 @@ function scanUnit(unit: string): { kinds: string; codes: string[] } | undefined 
 }
 
 /**
- * Whether a unit names a code and says it is no longer good (old, previous, expired, invalid in
- * any of LANGUAGES), whatever else it holds: such an email gives no code. Read up to the same cap.
+ * The sentences of `text` that a stale word is read in: its pieces as for units(), except that a
+ * line break inside a paragraph is a space, as mail wraps a sentence over lines. A sentence ends
+ * at a unit break (sentence or clause punctuation, a bracket, a quote, a pipe) or a blank line,
+ * and is as long as it is: every unit a code is read from is inside one of them.
  */
-function namesStaleCode(unit: string): boolean {
-  return (
-    unit.length <= ONE_TIME_CODE_UNIT_LIMIT && STALE_ANYWHERE.test(unit) && CUE_ANYWHERE.test(unit)
-  );
+function sentences(text: string): string[] {
+  const result: string[] = [];
+  let paragraph: string[] = [];
+  for (const line of [...text.split("\n"), ""]) {
+    if (line.trim()) paragraph.push(line);
+    else if (paragraph.length) {
+      result.push(...pieces(paragraph.join(" ")));
+      paragraph = [];
+    }
+  }
+  return result;
+}
+
+/**
+ * Whether a sentence names a code and says it is no longer good (old, previous, expired, invalid
+ * in any of LANGUAGES), whatever else it holds and however long it is: such an email gives no
+ * code. The sentence is the unit because that is what says one thing of another: a stale word
+ * is about the code its own sentence names, and one in another sentence or paragraph ("Your
+ * previous orders") is about something else.
+ */
+function namesStaleCode(sentence: string): boolean {
+  return STALE_ANYWHERE.test(sentence) && CUE_ANYWHERE.test(sentence);
 }
 
 /** A phrase naming a code: cues, qualifiers and fillers in any order, with a cue among them. */
@@ -1033,24 +1091,30 @@ function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
 }
 
 /**
- * The one-time code an email carries, as it would be typed: digit groups joined. The subject and
- * each sentence or line of the text is read on its own (readUnit), and yields a code only when it
- * is written in one of a few fixed forms with the words LANGUAGES lists and nothing else: "Your
- * verification code is 482913", "Code: 482913", "482913 is your sign-in code", or "Your code:"
- * on a line with the code alone on the next; the subject counts as the line above the text.
- * Anything else, an order or tracking number near a code word included, yields nothing. Nothing
- * unless the email holds exactly one such code, the same one wherever it appears, so an email
- * that also writes another number as a code gives none rather than a guess, and an email with a
- * sentence naming a code with a `stale` word ("This code has expired", namesStaleCode) gives
- * none, whether or not it also names a current one; and nothing unless that code stands alone
- * (oneTimeCodeStandsAlone), as a shorter one could not be hidden.
+ * What an email says of a one-time code: the one it gives, as it would be typed (digit groups
+ * joined), or none. The subject and each sentence or line of the text is read on its own
+ * (readUnit), and yields a code only when it is written in one of a few fixed forms with the
+ * words LANGUAGES lists and nothing else: "Your verification code is 482913", "Code: 482913",
+ * "482913 is your sign-in code", or "Your code:" on a line with the code alone on the next; the
+ * subject counts as the line above the text. Anything else, an order or tracking number near a
+ * code word included, yields nothing. The email gives a code only when it holds exactly one, the
+ * same one wherever it appears, and that one stands alone (oneTimeCodeStandsAlone), as a shorter
+ * one could not be hidden. Without one it is `unclear` when it names a code all the same: it
+ * writes several, or one too short to take, or has a sentence naming a code with a `stale` word
+ * ("This code has expired", namesStaleCode), whether or not it also names a current one, or its
+ * subject or text is longer than ONE_TIME_CODE_TEXT_LIMIT, so not all of it was read. An unclear
+ * email leaves in doubt every code its sender wrote around then; one that names no code does not.
  */
-export function extractOneTimeCode(email: { subject: string; text: string }): string | undefined {
+export function readOneTimeCode(email: { subject: string; text: string }): {
+  code?: string;
+  unclear: boolean;
+} {
+  const parts = [email.subject, email.text];
+  if (parts.some((part) => part.length > ONE_TIME_CODE_TEXT_LIMIT)) return { unclear: true };
+  if (parts.some((part) => sentences(part).some(namesStaleCode))) return { unclear: true };
   const codes = new Set<string>();
-  let stale = false;
-  const all = [...units(email.subject), ...units(email.text)];
+  const all = parts.flatMap(units);
   for (const [index, unit] of all.entries()) {
-    stale ||= namesStaleCode(unit.text);
     const written = readUnit(unit, all[index + 1]);
     if (written === undefined) continue;
     const code = normalizeOneTimeCode(written.replace(/[ -]/g, ""));
@@ -1058,7 +1122,8 @@ export function extractOneTimeCode(email: { subject: string; text: string }): st
     codes.add(code);
   }
   const [code] = codes;
-  return codes.size === 1 && !stale && code && oneTimeCodeStandsAlone(code) ? code : undefined;
+  if (codes.size === 1 && code && oneTimeCodeStandsAlone(code)) return { code, unclear: false };
+  return { unclear: codes.size > 0 };
 }
 
 export const LOGIN_FIELD_LIMIT = 8;

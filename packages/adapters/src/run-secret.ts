@@ -292,7 +292,9 @@ export class SecretRequestNotOpen extends Error {
  * card is. The same transaction completes the request with `request.result`, what the call
  * returns, from the status the call holds it in: a call cut off right after is answered with that
  * result when retried, and leaves nothing approved for an attempt to replay. A request settled
- * meanwhile (SecretRequestNotOpen) rolls it all back. Nothing when there is no code.
+ * meanwhile (SecretRequestNotOpen) rolls it all back. Nothing when there is no code. `hide` is
+ * given the code once it is claimed, before that transaction commits: the attempt hides it from
+ * then on, so nothing it writes while or after the code is kept can show it.
  */
 export async function holdEmailedCode(
   prisma: PrismaClient,
@@ -300,6 +302,7 @@ export async function holdEmailedCode(
   input: Parameters<typeof takeEmailedCode>[1] & {
     scope: RunScope;
     request: { id: string; from: "intended" | "executing"; result: Prisma.InputJsonValue };
+    hide: (code: string) => void;
   },
 ) {
   return takeEmailedCode(prisma, input, async (found, claim) => {
@@ -312,6 +315,7 @@ export async function holdEmailedCode(
     const commit = async () => {
       kept = await prisma.$transaction(async (tx) => {
         await claim(tx);
+        input.hide(found.code);
         const row = await holdRunCode(tx, input.scope, input.runId, sealed);
         const { id, from, result } = input.request;
         const answered = await tx.externalEffect.updateMany({

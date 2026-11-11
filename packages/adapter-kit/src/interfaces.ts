@@ -718,11 +718,14 @@ export interface ConnectedMailReader {
    * One page, newest first, of the messages received since `after` that the provider matches to
    * senders at `fromDomain`: the first page, or the one `page` names. The provider's match is
    * loose (a name or another domain holding `fromDomain` matches), so the caller judges the
-   * sender itself and reads on through `next` until it has what it needs.
+   * sender itself and reads on through `next` until it has what it needs. The page's messages
+   * hold at most `maxBytes` in all. The read fails, rather than leave a message out, when the
+   * provider says one of the matched messages is larger than that, which it is asked before any
+   * is fetched, or when what it returns would pass it.
    */
   recent(
     context: AdapterContext,
-    query: { fromDomain: string; after: Date; limit: number; page?: string },
+    query: { fromDomain: string; after: Date; limit: number; maxBytes: number; page?: string },
   ): Promise<ConnectedMailPage>;
 }
 

@@ -12,11 +12,10 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { z } from "zod";
-import { loadRunEmailedCodes, RunCodeUnreadableError } from "./bot-secrets.js";
+import { RunCodeUnreadableError } from "./bot-secrets.js";
 import { maskPayload, redactConnectorPayload } from "./connector-safety.js";
-import { runTookEmailedCode } from "./emailed-code.js";
 import type { RunContext } from "./run-context.js";
-import { isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
+import { hideRunEmailedCodes, isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { argsError } from "./tool-args.js";
 
@@ -32,6 +31,8 @@ const DELETE_EMAIL_MAX_IDS = 50;
 const SEARCH_CANDIDATES = 100;
 /** Emails a search in a run holding a code from an email reads, at most, to check them itself. */
 const SEARCH_HIDDEN_EMAILS = 1_000;
+/** Times one look is made again because the run took a code from mail while it looked. */
+const LOOK_AGAIN_LIMIT = 3;
 /**
  * How far before the newest email a look read the next look of the same wait starts. An email is
  * stamped when the insert saving it starts and shows up once that commits, so under load it can
@@ -94,7 +95,17 @@ async function emailQuery(ctx: RunContext, query: string) {
   return { where: { OR: [...encrypted, ...plaintext] }, check: true };
 }
 
+/** While a code the run took from mail cannot be read, no email is shown: any could hold it. */
 async function readEmail(ctx: RunContext, call: ToolCall) {
+  try {
+    return await readInbox(ctx, call);
+  } catch (error) {
+    if (!(error instanceof RunCodeUnreadableError)) throw error;
+    return call.finish({ error: "The inbox cannot be read right now. Try again in a minute." });
+  }
+}
+
+async function readInbox(ctx: RunContext, call: ToolCall) {
   const parsed = ReadEmailSchema.safeParse(call.args);
   if (!parsed.success) {
     return call.finish({ error: argsError(parsed.error) });
@@ -105,15 +116,15 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
   // A code the run took from mail is hidden in every email also with any separators between its
   // characters (hideOneTimeCodeInEmail), whatever else the run hides; its claim says it took one.
-  // While that code cannot be read, no email is shown: any of them could hold it.
+  // Which codes those are is asked as each result is produced, never once for the call: the run
+  // can take one while the call waits.
   let emailedCodes: string[] = [];
-  try {
-    if (await runTookEmailedCode(deps.prisma, ctx.runId))
-      emailedCodes = await loadRunEmailedCodes(deps.prisma, deps.secretStore, run, ctx.runId);
-  } catch (error) {
-    if (!(error instanceof RunCodeUnreadableError)) throw error;
-    return call.finish({ error: "The inbox cannot be read right now. Try again in a minute." });
-  }
+  /** Asks which codes the run holds from mail now; whether they are the ones it last held. */
+  const sameCodes = async () => {
+    const before = emailedCodes;
+    emailedCodes = (await hideRunEmailedCodes(ctx)).sort();
+    return before.join("\n") === emailedCodes.join("\n");
+  };
   const hide = (value: string) =>
     emailedCodes.reduce(hideOneTimeCodeInEmail, redactSecrets(value, ctx.secrets));
   /**
@@ -138,6 +149,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       where: { id: input.id, botId: bot.id },
     });
     if (!email) return call.finish({ error: "No email with that id in your inbox." });
+    // Asked once the email is read: nothing is awaited from here until the result is built.
+    await sameCodes();
     const offset = input.textOffset ?? 0;
     // Masked whole before paging, so a secret split across two pages is still caught.
     const body = hide(email.text);
@@ -291,7 +304,28 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         (matches.length >= limit ? matches[limit - 1] : found.at(-1))?.receivedAt ?? checkedTo;
     return matches.slice(0, limit);
   };
-  let emails = await list();
+  /**
+   * One look, made with the codes the run holds from mail as it starts and kept only when it
+   * holds the same ones as it ends. When it took one meanwhile, what the look found was matched
+   * without that code: it is dropped and the look is made again. Whenever the codes are not the
+   * ones the looks so far were made with, how far those read is forgotten, so the call goes on
+   * as one that began holding them would. Past LOOK_AGAIN_LIMIT no email is shown.
+   */
+  const look = async () => {
+    let dropped = false;
+    for (let again = 0; ; again++) {
+      if (!(await sameCodes()) || dropped) {
+        checkedTo = undefined;
+        readNewest = undefined;
+        read.clear();
+      }
+      const found = await list();
+      dropped = !(await sameCodes());
+      if (!dropped) return found;
+      if (again >= LOOK_AGAIN_LIMIT) throw new RunCodeUnreadableError();
+    }
+  };
+  let emails = await look();
   const deadline = startedAt + (input.waitSeconds ?? 0) * 1000;
   // The last look lands on the deadline, so a wait shorter than one poll still waits.
   for (
@@ -300,7 +334,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     left = deadline - Date.now()
   ) {
     await sleep(Math.min(POLL_MS, left), undefined, { signal: ctx.context.signal });
-    emails = await list();
+    emails = await look();
   }
   // Where the next look starts, on the inbox's own clock: the newest email shown here, or the
   // caller's since when nothing new arrived.

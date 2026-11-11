@@ -9,6 +9,7 @@ import { encodeRunCode } from "./bot-secrets.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+import { readInboundEmail } from "./inbound-email.js";
 import type * as RunNotificationsModule from "./run-notifications.js";
 import type * as SecretPersistenceModule from "./secret-persistence.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -171,7 +172,9 @@ function world(printed = "") {
         ? (value.in as unknown[]).includes(row[key])
         : value && typeof value === "object" && "startsWith" in value
           ? String(row[key]).startsWith(String(value.startsWith))
-          : row[key] === value,
+          : value && typeof value === "object" && "not" in value
+            ? row[key] !== value.not
+            : row[key] === value,
     );
 
   async function attempt(
@@ -365,7 +368,8 @@ function world(printed = "") {
         externalEffect: {
           findUnique: async ({ where }: { where: Row }) =>
             effects.find((row) => matches(row, where)) ?? null,
-          findMany: async ({ where }: { where: Row }) =>
+          // Whose run an effect is in is the test's doing: every row here is the owner's.
+          findMany: async ({ where: { run: _owner, ...where } }: { where: Row }) =>
             effects.filter((row) => matches(row, where)),
           findFirst: async ({
             where,
@@ -1125,7 +1129,7 @@ describe("request_secret for a code the site emailed to the bot", () => {
     // Claimed for this run as any inbox answer is, and nobody is asked for it.
     expect(run.effects).toContainEqual(
       expect.objectContaining({
-        idempotencyKey: expect.stringMatching(/^emailed-code:email:bot-1:/),
+        idempotencyKey: expect.stringMatching(/^emailed-code:message:/),
         request: { emailId: "email-1", site: "example.test" },
         runId: "run-1",
       }),
@@ -1277,6 +1281,42 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.secrets.find((row) => row.kind === runCodeKind("run-1"))).toBeUndefined();
   });
 
+  it("shows the card while another run of the owner's asks for the site's code", async () => {
+    const run = world();
+    run.receives(CODE_EMAIL);
+    // Another sign-in to the site is under way in another run: the email does not say whose it is.
+    const theirs = {
+      id: "their-request",
+      runId: "run-9",
+      kind: "request_secret",
+      status: "intended",
+      idempotencyKey: "their-request",
+      request: {
+        label: "Code",
+        purpose: "otp",
+        oneTimeCode: { origin: "https://app.example.test" },
+      },
+      createdAt: minutesAgo(1),
+      run: { createdAt: minutesAgo(10) },
+    };
+    run.effects.push(theirs);
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked).toHaveLength(1);
+    expect(run.secrets).toEqual([]);
+    expect(run.effects.some((effect) => effect.status === "taken")).toBe(false);
+    expect(run.answered).toEqual([]);
+    // Once that request is answered, the next email from the site fills this run's request.
+    Object.assign(theirs, { status: "approved", updatedAt: new Date() });
+    run.receives({
+      text: `Your verification code is ${NEWER_CODE}.`,
+      receivedAt: new Date(Date.now() + 1000),
+    });
+    const [filled] = await run.attempt([requestCode({ label: "Code again" })]);
+    expect(filled).toMatchObject({ submitted: true, note: EMAILED_NOTE });
+    expect(await decoded(run.secrets[0]!)).toMatchObject({ code: NEWER_CODE });
+  });
+
   it("gives a background helper neither the code's email nor a fill of its own", async () => {
     const run = world();
     run.receives(CODE_EMAIL);
@@ -1308,9 +1348,11 @@ describe("request_secret for a code the site emailed to the mail the owner conne
       record: `v=DKIM1; k=rsa; p=${der}`,
     };
   })();
-  /** The claim on message m1 in the owner's mailbox. */
-  const CONNECTED_DIGEST = createHash("sha256").update("owner@example.net:m1").digest("base64url");
-  const CONNECTED_CLAIM = `emailed-code:connected:${CONNECTED_DIGEST}`;
+  /** The claim on a message in the owner's mailbox: on the message, by its sender's signature. */
+  const claimOf = async (message: { raw: Uint8Array }) => {
+    const { key } = await readInboundEmail(message.raw);
+    return `emailed-code:message:${createHash("sha256").update(key).digest("base64url")}`;
+  };
   const decoded = async (row: Row) =>
     JSON.parse(await secretStore.load(String(row.ciphertext), String(row.id)));
 
@@ -1354,7 +1396,9 @@ describe("request_secret for a code the site emailed to the mail the owner conne
   it("takes the one code the site sent there when the bot's own inbox has none", async () => {
     notified.length = 0;
     const run = await connectedWorld();
-    run.connectedInbox.push(await connectedMail());
+    const message = await connectedMail();
+    const CONNECTED_CLAIM = await claimOf(message);
+    run.connectedInbox.push(message);
     const [result] = await run.attempt([requestCode()]);
     expect(result).toMatchObject({
       submitted: true,
@@ -1377,7 +1421,7 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     );
     // Only the site's newest mail in the window was asked for.
     expect(run.connectedReads).toEqual([
-      { fromDomain: "example.test", after: expect.any(Date), limit: 5 },
+      { fromDomain: "example.test", after: expect.any(Date), limit: 5, maxBytes: 2 * 1024 * 1024 },
     ]);
     expect(run.everythingWritten()).not.toContain(CODE);
   });
@@ -1454,7 +1498,7 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     const [result] = await run.attempt([requestCode()]);
     expect(result).toMatchObject({ details: { secret: "paused" } });
     expect(run.answered).toMatchObject([
-      { runId: "run-1", messageId: "card-1", answer: CODE, fromEmail: CONNECTED_CLAIM },
+      { runId: "run-1", messageId: "card-1", answer: CODE, fromEmail: await claimOf(message) },
     ]);
     expect(notified).not.toContainEqual(expect.objectContaining({ kind: "help" }));
     expect(run.everythingWritten()).not.toContain(CODE);

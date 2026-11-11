@@ -8,11 +8,16 @@ import type {
 } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { extractOneTimeCode } from "@rakazo/contracts";
-import { isMessagingChannelRun, PUBLIC_MAILBOX_DOMAINS } from "@rakazo/core";
+import { readOneTimeCode } from "@rakazo/contracts";
+import { ACTIVE_RUN_STATUSES, isMessagingChannelRun, PUBLIC_MAILBOX_DOMAINS } from "@rakazo/core";
 import { hostSite } from "@rakazo/core/egress";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { findPendingAsk, recordAuditEvent, teamChatRunFromOwner } from "@rakazo/db";
+import {
+  findPendingAsk,
+  recordAuditEvent,
+  runAsSystemInTransaction,
+  teamChatRunFromOwner,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { readInboundEmail } from "./inbound-email.js";
@@ -84,21 +89,16 @@ export async function isNonOwnerChatRun(
  */
 const EMAILED_CODE_EFFECT = "emailed_code";
 /**
- * The claim on an email is on the message, not the row: the same message delivered again after
- * its row was deleted (a relay's retry, the bot's delete_email) has the same key and is not new.
+ * The claim on an email is on the message, by its key (InboundEmail.key): the signature its
+ * sender's domain made, which every copy of the message carries. So one message has one claim,
+ * whichever mailbox a look reads it from: the bot's inbox, also after its row was deleted and the
+ * message delivered again (a relay's retry, the bot's delete_email), or a mailbox the owner
+ * connected, through any connection to it.
  */
-const emailClaimKey = (botId: string, key: string) =>
-  `emailed-code:email:${botId}:${createHash("sha256").update(key).digest("base64url")}`;
+const messageClaimKey = (key: string) =>
+  `emailed-code:message:${createHash("sha256").update(key).digest("base64url")}`;
 const runSiteClaimKey = (runId: string, site: string) => `emailed-code:run:${runId}:${site}`;
 const pageSeenKey = (requestId: string) => `emailed-code:page:${requestId}`;
-/**
- * The claim on a message in a connected mailbox: on the provider's id for it in that mailbox, so
- * two connections to one mailbox share it.
- */
-const connectedClaimKey = (mailbox: string, messageId: string) => {
-  const digest = createHash("sha256").update(`${mailbox}:${messageId}`).digest("base64url");
-  return `emailed-code:connected:${digest}`;
-};
 /**
  * The most messages from the site read from a connected mailbox for one lookup (past it there is
  * no code), and how long the read may take. As for the inbox, the limit is on the site's mail: the
@@ -109,6 +109,14 @@ export const CONNECTED_MAIL_LIMIT = 5;
 export const CONNECTED_MAIL_TIMEOUT_MS = 3000;
 /** The most pages of one mailbox's search read: past them the card opens. */
 export const CONNECTED_MAIL_PAGE_LIMIT = 10;
+/**
+ * The most mail one lookup reads from the mailboxes the owner connected, in bytes, in all: a
+ * sign-in code's email is a few tens of kilobytes. Past it the card opens: what was left unread
+ * may be the newest from the site.
+ */
+export const CONNECTED_MAIL_MAX_BYTES = 2 * 1024 * 1024;
+/** The most open code requests of one owner compared when a code is taken: past it, the card. */
+export const OPEN_CODE_REQUEST_LIMIT = 100;
 
 /**
  * The site a code may be filled for from mail: an HTTPS origin's, unless it is a public mailbox
@@ -145,16 +153,47 @@ export function mayGiveCode(email: MailKind): boolean {
   return email.verified && email.mailingList === false && email.autoReplyOrBulk === false;
 }
 
+/** What a look knows of an email, whichever mailbox holds it. */
+type Mail = MailKind & {
+  fromAddress: string | null | undefined;
+  /** When the mailbox received it. */
+  receivedAt: Date;
+  /** Who it was sent to: read only for a mailbox someone connected. */
+  recipients?: string[];
+};
+
+/** What a code request asks of an email that answers it. */
+type CodeRule = {
+  site: string;
+  /** The domain this server's bots send mail from. */
+  botEmailDomain: string | undefined;
+  /** The earliest the email may have arrived (emailedCodeWindowStart). */
+  after: Date;
+  /** When a secret request was last answered since `after` (lastAnsweredAt), if one was. */
+  answered: Date | undefined;
+  /** The address of the connected mailbox the email is in; absent for the bot's own inbox. */
+  mailbox?: string;
+};
+
 /**
- * Whether an email may answer a code request for `site`, from whichever mailbox it was read: it
- * may give a code at all (mayGiveCode), it is signed by its From domain, which is the site's own
- * (subdomains of a shared hosting suffix are each their own site), not a public mailbox domain,
- * not this server's, and, for a mailbox someone connected, was sent to that mailbox itself.
+ * Whether an email arrived in time to answer a request: in its window, and after the last
+ * answered secret request, whose answer may have been the code an older email holds.
  */
-export function emailMayAnswer(
-  email: MailKind & { fromAddress: string | null | undefined; recipients?: string[] },
-  rule: { site: string; botEmailDomain: string | undefined; mailbox?: string },
-): boolean {
+function arrivedInTime(receivedAt: Date, rule: Pick<CodeRule, "after" | "answered">): boolean {
+  return receivedAt >= rule.after && !(rule.answered && receivedAt <= rule.answered);
+}
+
+/**
+ * Whether an email may answer a code request, by what the email itself says, from whichever
+ * mailbox it was read, on every look: it arrived in time (arrivedInTime), it may give a code at
+ * all (mayGiveCode), it is signed by its From domain, which is the site's own (subdomains of a
+ * shared hosting suffix are each their own site), not a public mailbox domain, not this server's,
+ * and, for a mailbox someone connected, was sent to that mailbox itself. What the database says
+ * of it (no run took its code, and the request is its owner's only open one for the site) is
+ * decided when the code is taken, by claimEmailedCode.
+ */
+export function emailMayAnswer(email: Mail, rule: CodeRule): boolean {
+  if (!arrivedInTime(email.receivedAt, rule)) return false;
   if (!email.fromAddress || !mayGiveCode(email)) return false;
   const domain = domainOf(email.fromAddress);
   if (domain === rule.botEmailDomain || hostSite(domain) !== rule.site) return false;
@@ -166,20 +205,29 @@ export function emailMayAnswer(
   return (email.recipients ?? []).some((address) => address.toLowerCase() === mailbox);
 }
 
-/** The one code the emails that may answer hold, newest first; nothing when they differ. */
-function theOneCode<T extends { code: string }>(candidates: T[]): T | undefined {
-  const [newest] = candidates;
-  if (!newest || candidates.some((candidate) => candidate.code !== newest.code)) return undefined;
-  return newest;
+/** The one code the emails that may answer hold, with the newest of them; none when they differ. */
+function theOneCode<T extends { code: string; receivedAt: Date }>(candidates: T[]): T | undefined {
+  const [first] = candidates;
+  if (!first || candidates.some((candidate) => candidate.code !== first.code)) return undefined;
+  return candidates.reduce((newest, one) => (one.receivedAt > newest.receivedAt ? one : newest));
 }
 
 /**
- * When the newest secret request of the bot, or with `userId` of any run of that user's too, was
- * answered since `after`: older mail may hold its code.
+ * The runs whose sign-in codes can be in the mail a look for the bot reads: every run of the
+ * bot, whose address its sites write to, and every run of its owner `userId`, whose own mailbox
+ * the bot may read.
+ */
+const runsSharingMail = (input: { botId: string; userId: string }) => ({
+  OR: [{ botId: input.botId }, { userId: input.userId }],
+});
+
+/**
+ * When the newest secret request in one of those runs in the Space was answered since `after`:
+ * older mail may hold its code, as the owner may have typed it into any of their cards.
  */
 async function lastAnsweredAt(
   prisma: PrismaClient,
-  input: { botId: string; spaceId: string; after: Date; userId?: string },
+  input: { botId: string; spaceId: string; after: Date; userId: string },
 ): Promise<Date | undefined> {
   const answered = await prisma.externalEffect.findFirst({
     where: {
@@ -187,9 +235,7 @@ async function lastAnsweredAt(
       kind: "request_secret",
       status: { not: "intended" },
       updatedAt: { gte: input.after },
-      run: input.userId
-        ? { OR: [{ botId: input.botId }, { userId: input.userId }] }
-        : { botId: input.botId },
+      run: runsSharingMail(input),
     },
     orderBy: { updatedAt: "desc" },
     select: { updatedAt: true },
@@ -199,11 +245,11 @@ async function lastAnsweredAt(
 
 /**
  * The code for `origin` in the bot's own inbox, if there is exactly one to take. It comes from
- * signed mail from the site's own domain (subdomains of a shared hosting suffix are each their
- * own site), received since `after`, that the bot did not send and no bot on this server did,
- * that no run took a code from, and that holds exactly one code. Emails with none or several are
- * skipped, and two such emails with different codes give nothing. An email that came before any
- * of the bot's secret requests was answered may hold the code that answer used, so it is not one.
+ * mail that may answer (emailMayAnswer: signed mail from the site's own domain, received since
+ * `after` and since the last answered secret request, that no bot on this server sent), that no
+ * run took a code from, and that gives exactly one code (readOneTimeCode). Emails that name no
+ * code are skipped; two with different codes give nothing, and neither does any while one of
+ * them is unclear: it names a code but gives none to take, so the others' are in doubt.
  * A run takes at most one emailed code per site; after that the owner answers the card.
  * Null when the inbox holds codes from the site but not one to take, or more mail than it reads:
  * no other source may answer then.
@@ -214,12 +260,14 @@ export async function findEmailedCode(
     botId: string;
     spaceId: string;
     runId: string;
+    /** The bot's owner. */
+    userId: string;
     origin: string;
     after: Date;
     /** The domain this server's bots send mail from. */
     botEmailDomain: string | undefined;
   },
-): Promise<{ code: string; emailId: string; emailKey: string; site: string } | null | undefined> {
+): Promise<MailCode | null | undefined> {
   const site = fillableSite(input.origin);
   if (!site) return undefined;
   const filled = await prisma.externalEffect.findUnique({
@@ -227,15 +275,13 @@ export async function findEmailedCode(
     select: { id: true },
   });
   if (filled) return undefined;
-  const answered = await lastAnsweredAt(prisma, {
-    botId: input.botId,
-    spaceId: input.spaceId,
-    after: input.after,
-  });
+  const answered = await lastAnsweredAt(prisma, input);
+  const rule = { site, botEmailDomain: input.botEmailDomain, after: input.after, answered };
   // The sender is encrypted, so the whole window (minutes long) is read newest first in batches,
   // without subject or text, each filtered here: the limit is on the site's mail, so mail from
-  // other senders, however much, never hides the site's email.
-  const fromSite: { id: string; key: string }[] = [];
+  // other senders, however much, never hides the site's email. The query only narrows what is
+  // read: emailMayAnswer decides each email, as it does for every other look.
+  const fromSite: { id: string; key: string; receivedAt: Date }[] = [];
   let cursor: string | undefined;
   let read = 0;
   while (true) {
@@ -258,12 +304,10 @@ export async function findEmailedCode(
         verified: true,
         mailingList: true,
         autoReplyOrBulk: true,
+        receivedAt: true,
       },
     });
-    for (const email of emails) {
-      if (emailMayAnswer(email, { site, botEmailDomain: input.botEmailDomain }))
-        fromSite.push(email);
-    }
+    for (const email of emails) if (emailMayAnswer(email, rule)) fromSite.push(email);
     // Older mail from the site left unread may hold another code: the card stays instead.
     if (fromSite.length > EMAIL_SEARCH_LIMIT) return null;
     cursor = emails.at(-1)?.id;
@@ -273,7 +317,7 @@ export async function findEmailedCode(
     if (read >= EMAIL_READ_LIMIT) return null;
   }
   if (fromSite.length === 0) return undefined;
-  const claimOf = (email: { key: string }) => emailClaimKey(input.botId, email.key);
+  const claimOf = (email: { key: string }) => messageClaimKey(email.key);
   const claimed = new Set(
     (
       await prisma.externalEffect.findMany({
@@ -294,16 +338,32 @@ export async function findEmailedCode(
           })
         ).map((email) => [email.id, email]),
   );
-  // One was deleted meanwhile and might have held another code.
-  if (bodies.size !== unclaimed.length) return null;
-  const candidates = unclaimed.flatMap((email) => {
-    const body = bodies.get(email.id);
-    const code = body && extractOneTimeCode(body);
-    return code ? [{ code, emailId: email.id, emailKey: email.key }] : [];
-  });
+  const candidates: (Omit<MailCode, "site"> & { emailId: string })[] = [];
+  for (const { id: emailId, key, receivedAt } of unclaimed) {
+    const body = bodies.get(emailId);
+    // One was deleted meanwhile and might have held another code.
+    if (!body) return null;
+    const { code, unclear } = readOneTimeCode(body);
+    // The site's own mail leaves its codes in doubt: the card stays instead.
+    if (unclear) return null;
+    if (code) candidates.push({ code, emailId, key, receivedAt });
+  }
   const newest = theOneCode(candidates);
   return newest ? { ...newest, site } : candidates.length > 0 ? null : undefined;
 }
+
+/** The message a code was read from: what taking its code needs to know of it. */
+type CodeMessage = {
+  site: string;
+  /** The message's key (InboundEmail.key), the same for every copy of the message. */
+  key: string;
+  receivedAt: Date;
+  /** The inbox row it was read from, when it came from the bot's own inbox. */
+  emailId?: string;
+};
+
+/** A code found in mail, with the message it came from. */
+type MailCode = CodeMessage & { code: string };
 
 /** What finds a code in the mailboxes the owner connected. */
 export type ConnectedMailDeps = {
@@ -317,8 +377,9 @@ export type ConnectedMailDeps = {
  * The code for `origin` in the mailboxes the owner connected in the run's Space, if there is
  * exactly one to take, by the rules of findEmailedCode: from each, the newest few messages from
  * the site's domain in the window, read raw so their signatures can be checked, and only those
- * emailMayAnswer with the mailbox's own address. The whole read is bounded in time and only ever
- * reads. When it fails for any reason, there is no code, and only the error's name is logged.
+ * emailMayAnswer with the mailbox's own address. The whole read is bounded in time and in bytes
+ * (CONNECTED_MAIL_MAX_BYTES) and only ever reads. When it fails for any reason, there is no code,
+ * and only the error's name is logged.
  */
 export async function findConnectedMailCode(
   deps: ConnectedMailDeps,
@@ -331,7 +392,7 @@ export async function findConnectedMailCode(
     origin: string;
     after: Date;
   },
-): Promise<{ code: string; mailbox: string; messageId: string; site: string } | undefined> {
+): Promise<MailCode | undefined> {
   const { prisma } = deps;
   const site = fillableSite(input.origin);
   if (!site) return undefined;
@@ -365,11 +426,12 @@ export async function findConnectedMailCode(
     return reader ? [{ row, context, reader }] : [];
   });
   if (readers.length === 0) return undefined;
-  // The mailbox is the owner's: the owner may have typed its code into any of their runs' cards.
   const answered = await lastAnsweredAt(prisma, input);
-  const since = answered && answered > input.after ? answered : input.after;
-  const candidates: { code: string; mailbox: string; messageId: string; receivedAt: Date }[] = [];
+  const rule = { site, botEmailDomain: deps.botEmailDomain, after: input.after, answered };
+  const candidates: { code: string; key: string; receivedAt: Date }[] = [];
   const signal = AbortSignal.timeout(CONNECTED_MAIL_TIMEOUT_MS);
+  // What the look may still read, in bytes, from all its mailboxes.
+  let left = CONNECTED_MAIL_MAX_BYTES;
   // The connections whose mailbox the look began to read, and how many of them it read through.
   const opened: (typeof rows)[number][] = [];
   let readThrough = 0;
@@ -398,16 +460,22 @@ export async function findConnectedMailCode(
           if (++pages > CONNECTED_MAIL_PAGE_LIMIT) throw new Error("The search has too many pages");
           const read = await reader.recent(context, {
             fromDomain: site,
-            after: input.after,
+            // Nothing older than the last answer can answer, so it is not asked for.
+            after: answered ?? input.after,
             limit: CONNECTED_MAIL_LIMIT,
+            maxBytes: left,
             ...(page ? { page } : {}),
           });
           for (const message of read.messages) {
             signal.throwIfAborted();
-            // A message that cannot be judged may hold the newest code: the whole look fails, so
-            // the card opens rather than an older message answering in its place.
+            // Held to the look's limit here too, whatever the reader did: nothing past it is
+            // parsed. A message that cannot be read or judged may hold the newest code: the whole
+            // look fails, so the card opens rather than an older message answering in its place.
+            left -= message.raw.byteLength;
+            if (left < 0) throw new Error("The mailbox returned more mail than the look may read");
             if (!message.receivedAt) throw new Error("A message's arrival time is not known");
-            if (message.receivedAt <= since) continue;
+            // Too old to answer: not parsed.
+            if (!arrivedInTime(message.receivedAt, rule)) continue;
             const email = await readInboundEmail(message.raw);
             if (email.temporaryFailure) throw new Error("A message's signature cannot be checked");
             const mayAnswer = emailMayAnswer(
@@ -416,17 +484,19 @@ export async function findConnectedMailCode(
                 verified: email.authenticated,
                 mailingList: email.mailingList,
                 autoReplyOrBulk: email.autoReplyOrBulk,
+                receivedAt: message.receivedAt,
                 recipients: [...email.to, ...email.cc],
               },
-              { site, botEmailDomain: deps.botEmailDomain, mailbox },
+              { ...rule, mailbox },
             );
             if (!mayAnswer) continue;
             // An older message from the site left unread may hold another code.
             if (++fromSite > CONNECTED_MAIL_LIMIT)
               throw new Error("The site sent too many messages");
-            const code = extractOneTimeCode(email);
-            const receivedAt = message.receivedAt;
-            if (code) candidates.push({ code, mailbox, messageId: message.id, receivedAt });
+            const { code, unclear } = readOneTimeCode(email);
+            // As in the bot's inbox: the site's own mail leaves its codes in doubt.
+            if (unclear) throw new Error("A message from the site names a code it does not give");
+            if (code) candidates.push({ code, key: email.key, receivedAt: message.receivedAt });
           }
           page = read.next;
         } while (page);
@@ -455,53 +525,16 @@ export async function findConnectedMailCode(
   );
   if (failed) return undefined;
   if (candidates.length === 0) return undefined;
-  const claimOf = (found: { mailbox: string; messageId: string }) =>
-    connectedClaimKey(found.mailbox, found.messageId);
   const claimed = new Set(
     (
       await prisma.externalEffect.findMany({
-        where: { idempotencyKey: { in: candidates.map(claimOf) } },
+        where: { idempotencyKey: { in: candidates.map((found) => messageClaimKey(found.key)) } },
         select: { idempotencyKey: true },
       })
     ).map((effect) => effect.idempotencyKey),
   );
-  const unclaimed = candidates.filter((found) => !claimed.has(claimOf(found)));
-  const newest = theOneCode(unclaimed);
-  if (!newest) return undefined;
-  // The owner's mailbox serves every sign-in of theirs: while another of their runs waits on a
-  // card this message could answer, it cannot say whose code it is, so it answers neither.
-  const latest = new Date(Math.max(...unclaimed.map((found) => found.receivedAt.getTime())));
-  const others = { userId: input.userId, runId: input.runId, site, receivedAt: latest };
-  if (await anotherCardMayTake(prisma, others)) return undefined;
-  return { code: newest.code, mailbox: newest.mailbox, messageId: newest.messageId, site };
-}
-
-/**
- * Whether another run of `userId`'s, of any of their bots, waits on a code card for `site` whose
- * window had opened by `receivedAt`, so a message received then may hold its code. Decided from
- * the cards alone: nothing is read from mail for those runs.
- */
-async function anotherCardMayTake(
-  prisma: PrismaClient,
-  input: { userId: string; runId: string; site: string; receivedAt: Date },
-): Promise<boolean> {
-  const runs = await prisma.run.findMany({
-    where: { userId: input.userId, status: "waiting_input", id: { not: input.runId } },
-    select: { id: true, spaceId: true, threadId: true, createdAt: true },
-  });
-  for (const run of runs) {
-    const pending = await findPendingAsk(prisma, { threadId: run.threadId, runId: run.id });
-    const origin = pending?.pendingAsk.oneTimeCode?.origin;
-    if (!origin || fillableSite(origin) !== input.site) continue;
-    const request = await prisma.externalEffect.findFirst({
-      where: { runId: run.id, spaceId: run.spaceId, kind: "request_secret", status: "intended" },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    });
-    if (request && emailedCodeWindowStart(request.createdAt, run.createdAt) <= input.receivedAt)
-      return true;
-  }
-  return false;
+  const newest = theOneCode(candidates.filter((found) => !claimed.has(messageClaimKey(found.key))));
+  return newest && { ...newest, site };
 }
 
 /** Run `work` until `signal` times out, whether or not what it waits on honours the signal. */
@@ -516,61 +549,69 @@ async function bounded<T>(signal: AbortSignal, work: () => Promise<T>): Promise<
   });
 }
 
-/** Another run, or this run for the same site, already took the email's code. */
+/**
+ * The email's code is not this request's to take: another run, or this run for the same site,
+ * already took it, or another open request could be the one it is for.
+ */
 export class EmailedCodeTaken extends Error {}
 
 /**
- * Take the email's code for `runId` in `tx`, the transaction that keeps the code: throws
- * EmailedCodeTaken when it was already taken, which rolls `tx` back. So a claim stands only with
- * the kept code, and a code that was kept is offered once: a claim is never given back.
+ * Whether the email could be for another code request: one for the same site that is open
+ * (asked and not yet answered, whether or not its card shows yet) in another run still going
+ * that shares the mail (runsSharingMail), in any Space, whose window the email arrived in. Mail
+ * does not say which sign-in it is for, so while two it could be for are open it answers neither.
+ */
+async function anotherRequestMayTake(
+  tx: Prisma.TransactionClient,
+  input: { runId: string; botId: string; userId: string; site: string; receivedAt: Date },
+): Promise<boolean> {
+  // A run sees only its own Space's runs; the owner's other sign-ins can be in any of theirs.
+  const reason = "find a bot owner's other open code requests in every Space";
+  const open = await runAsSystemInTransaction(tx, reason, () =>
+    tx.externalEffect.findMany({
+      where: {
+        kind: "request_secret",
+        status: "intended",
+        runId: { not: input.runId },
+        run: { status: { in: [...ACTIVE_RUN_STATUSES] }, ...runsSharingMail(input) },
+      },
+      select: { request: true, createdAt: true, run: { select: { createdAt: true } } },
+      take: OPEN_CODE_REQUEST_LIMIT + 1,
+    }),
+  );
+  // More than are compared: one left out may be for the site.
+  if (open.length > OPEN_CODE_REQUEST_LIMIT) return true;
+  return open.some((request) => {
+    const asked = request.request as { oneTimeCode?: { origin?: unknown } } | null;
+    const origin = asked?.oneTimeCode?.origin;
+    return (
+      typeof origin === "string" &&
+      fillableSite(origin) === input.site &&
+      emailedCodeWindowStart(request.createdAt, request.run.createdAt) <= input.receivedAt
+    );
+  });
+}
+
+/**
+ * Take the email's code for `runId` in `tx`, the transaction that keeps the code, deciding there
+ * what only the database knows of the email: throws EmailedCodeTaken, which rolls `tx` back, when
+ * another open request could be the one it is for (anotherRequestMayTake), when a run already
+ * took the message's code, or when this run took one for the site. So a claim stands only with
+ * the kept code, and a code that was kept is offered once: a claim is never given back. Every
+ * look takes a code through here, whichever mailbox it read it from.
  */
 export async function claimEmailedCode(
   tx: Prisma.TransactionClient,
-  input: {
+  input: CodeMessage & {
     runId: string;
     spaceId: string;
+    /** The bot, and its owner: the email could be for another sign-in of either's runs. */
     botId: string;
-    emailId: string;
-    /** The email's message key, the same for every delivery of the message. */
-    emailKey: string;
-    site: string;
+    userId: string;
   },
 ): Promise<void> {
-  await claimCode(tx, {
-    runId: input.runId,
-    spaceId: input.spaceId,
-    site: input.site,
-    key: emailClaimKey(input.botId, input.emailKey),
-    request: { emailId: input.emailId, site: input.site },
-  });
-}
-
-/** As claimEmailedCode, for a message in a mailbox the owner connected. */
-export async function claimConnectedMailCode(
-  tx: Prisma.TransactionClient,
-  input: { runId: string; spaceId: string; mailbox: string; messageId: string; site: string },
-): Promise<void> {
-  await claimCode(tx, {
-    runId: input.runId,
-    spaceId: input.spaceId,
-    site: input.site,
-    key: connectedClaimKey(input.mailbox, input.messageId),
-    request: { site: input.site },
-  });
-}
-
-/** The site's claim for the run and the message's own, both or neither, whichever mailbox. */
-async function claimCode(
-  tx: Prisma.TransactionClient,
-  input: {
-    runId: string;
-    spaceId: string;
-    site: string;
-    key: string;
-    request: Prisma.InputJsonObject;
-  },
-): Promise<void> {
-  const keys = [runSiteClaimKey(input.runId, input.site), input.key];
+  if (await anotherRequestMayTake(tx, input)) throw new EmailedCodeTaken();
+  const keys = [runSiteClaimKey(input.runId, input.site), messageClaimKey(input.key)];
   const { count } = await tx.externalEffect.createMany({
     data: keys.map((idempotencyKey) => ({
       runId: input.runId,
@@ -578,7 +619,7 @@ async function claimCode(
       kind: EMAILED_CODE_EFFECT,
       status: "taken",
       idempotencyKey,
-      request: input.request,
+      request: { site: input.site, ...(input.emailId ? { emailId: input.emailId } : {}) },
     })),
     skipDuplicates: true,
   });
@@ -607,45 +648,26 @@ export type FoundCode = {
  */
 export async function findCodeForRequest(
   prisma: PrismaClient,
-  input: Parameters<typeof findEmailedCode>[1] & { userId: string; sources: CodeSources },
+  input: Parameters<typeof findEmailedCode>[1] & { sources: CodeSources },
 ): Promise<FoundCode | undefined> {
+  const { runId, spaceId, botId, userId } = input;
   const emailed = input.sources.inbox ? await findEmailedCode(prisma, input) : undefined;
   // The inbox holds the site's mail but no one code: the card is the owner's.
   if (emailed === null) return undefined;
-  if (emailed) {
-    return {
-      code: emailed.code,
-      site: emailed.site,
-      fromEmail: emailed.emailId,
-      claim: (tx) =>
-        claimEmailedCode(tx, {
-          runId: input.runId,
-          spaceId: input.spaceId,
-          botId: input.botId,
-          emailId: emailed.emailId,
-          emailKey: emailed.emailKey,
-          site: emailed.site,
-        }),
-    };
-  }
-  if (!input.sources.connected) return undefined;
-  const found = await findConnectedMailCode(
-    { prisma, connectedMail: input.sources.connected, botEmailDomain: input.botEmailDomain },
-    input,
-  );
+  const found =
+    emailed ??
+    (input.sources.connected &&
+      (await findConnectedMailCode(
+        { prisma, connectedMail: input.sources.connected, botEmailDomain: input.botEmailDomain },
+        input,
+      )));
   if (!found) return undefined;
+  const { code, ...message } = found;
   return {
-    code: found.code,
-    site: found.site,
-    fromEmail: connectedClaimKey(found.mailbox, found.messageId),
-    claim: (tx) =>
-      claimConnectedMailCode(tx, {
-        runId: input.runId,
-        spaceId: input.spaceId,
-        mailbox: found.mailbox,
-        messageId: found.messageId,
-        site: found.site,
-      }),
+    code,
+    site: message.site,
+    fromEmail: message.emailId ?? messageClaimKey(message.key),
+    claim: (tx) => claimEmailedCode(tx, { ...message, runId, spaceId, botId, userId }),
   };
 }
 
@@ -664,7 +686,8 @@ export async function runTookEmailedCode(
 /**
  * Find the code for a request in its sources (findCodeForRequest) and keep it with `keep`, which
  * makes the claim it is given in the transaction that stores the code: nothing when there is no
- * code or another run took it first. When keeping fails, the email stays for the next try.
+ * code, or the claim refuses it (claimEmailedCode). When keeping fails, the email stays for the
+ * next try.
  */
 export async function takeEmailedCode<T>(
   prisma: PrismaClient,
@@ -676,20 +699,6 @@ export async function takeEmailedCode<T>(
 ): Promise<T | undefined> {
   const found = await findCodeForRequest(prisma, input);
   if (!found) return undefined;
-  // As on mail arriving: an email that another run's waiting card would also take answers neither.
-  const waiting = await waitingCardCodes(
-    { prisma, botEmailDomain: input.botEmailDomain },
-    {
-      id: input.botId,
-      userId: input.userId,
-    },
-  );
-  if (
-    waiting.some(
-      (other) => other.run.id !== input.runId && other.found.fromEmail === found.fromEmail,
-    )
-  )
-    return undefined;
   try {
     return await keep({ code: found.code, fromEmail: found.fromEmail }, found.claim);
   } catch (error) {
@@ -748,7 +757,7 @@ export async function runPageOrigin(ctx: {
 /**
  * The code each of the bot's runs waiting on a code card would take now: the owner's own run, on
  * a card for a code (not a login), whose browser was on the card's origin when it asked. With
- * `runId`, that run's look also reads the owner's connected mail.
+ * `runId`, only that run, whose look also reads the owner's connected mail.
  */
 async function waitingCardCodes(
   deps: {
@@ -764,6 +773,7 @@ async function waitingCardCodes(
       botId: bot.id,
       userId: bot.userId,
       status: "waiting_input",
+      ...(runId ? { id: runId } : {}),
     },
     select: {
       id: true,
@@ -809,7 +819,7 @@ async function waitingCardCodes(
       after: emailedCodeWindowStart(request.createdAt, run.createdAt),
       botEmailDomain: deps.botEmailDomain,
       // Connected mail is read only for the one run that asks, never on mail arriving.
-      sources: { inbox: true, connected: run.id === runId ? deps.connectedMail : undefined },
+      sources: { inbox: true, connected: runId ? deps.connectedMail : undefined },
     });
     if (found) answers.push({ run, messageId: pending.messageId, found });
   }
@@ -820,11 +830,11 @@ async function waitingCardCodes(
  * New mail in a bot's inbox answers the code card its owner's run is waiting on, when the mail
  * holds the one code for the card's site, as the owner would by typing it in; the run then goes
  * on. Only a card whose run's browser was on the card's origin when it asked, and an email
- * claimed for that run, as findEmailedCode and claimEmailedCode decide. An email that would answer
- * two waiting cards answers neither. The card's own answer path settles a race with the owner:
- * whichever comes second finds the card answered and does nothing. With `runId`, only that run's
- * card: the run looks again once it waits, for mail that came while it was saving the card, and
- * still answers neither when the email would also answer another run's card.
+ * claimed for that run, as findEmailedCode and claimEmailedCode decide: while another open code
+ * request could be the one the email is for, the claim refuses it and the card stays, so mail
+ * two cards wait for answers neither. The card's own answer path settles a race with the owner:
+ * whichever comes second finds the card answered and does nothing. With `runId`, only that
+ * run's card: the run looks again once it waits, for mail that came while it was saving the card.
  * Returns how many cards it answered.
  */
 export async function answerCodeCardsFromInbox(
@@ -842,10 +852,7 @@ export async function answerCodeCardsFromInbox(
 ): Promise<number> {
   let count = 0;
   try {
-    const answers = await waitingCardCodes(deps, bot, runId);
-    for (const { run, messageId, found } of answers) {
-      if (runId && run.id !== runId) continue;
-      if (answers.filter((other) => other.found.fromEmail === found.fromEmail).length > 1) continue;
+    for (const { run, messageId, found } of await waitingCardCodes(deps, bot, runId)) {
       try {
         const answered = await deps.events.answerRunInput({
           spaceId: run.spaceId,

@@ -26,7 +26,6 @@ import {
   forgetBotSecret,
   generateBotSecret,
   listBotSecrets,
-  loadRunCodeRedactions,
   normalizeSecretDestination,
   oneTimeCodeRedactions,
   readRunCode,
@@ -42,7 +41,12 @@ import {
   runPageOrigin,
   runTookEmailedCode,
 } from "./emailed-code.js";
-import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
+import {
+  addRunSecrets,
+  hideRunEmailedCodes,
+  pauseForSecret,
+  persistTurnCheckpoint,
+} from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "./run-notifications.js";
@@ -273,6 +277,7 @@ export const secretTools: ToolHandlers = {
           from: call.claimedEffect ? "executing" : "intended",
           result: answer,
         },
+        hide: (code) => addRunSecrets(ctx, oneTimeCodeRedactions(code, { emailed: true })),
       }).catch((error: unknown) => {
         context.signal.throwIfAborted();
         getLogger().warn("emailed code could not be looked up for a request", {
@@ -372,8 +377,7 @@ export const secretTools: ToolHandlers = {
     if (missingSecretAction.action === "return") {
       // A code from mail can be kept though the look failed as it saw it (its commit was never
       // acknowledged): the request was answered, so hide what the run holds before answering.
-      if (codeOrigin && (await runTookEmailedCode(deps.prisma, runId)))
-        addRunSecrets(ctx, await loadRunCodeRedactions(deps.prisma, deps.secretStore, run, runId));
+      if (codeOrigin) await hideRunEmailedCodes(ctx);
       return missingSecretAction.result;
     }
     if (connectionId) {

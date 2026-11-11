@@ -848,13 +848,14 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(new Set(tools)).toEqual(
           new Set(["GMAIL_GET_PROFILE", "GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"]),
         );
-        expect(
-          connectedMail.executions.find((execution) => execution.tool === "GMAIL_FETCH_EMAILS")
-            ?.args,
-        ).toMatchObject({
-          query: expect.stringMatching(/^from:example\.test after:\d+$/),
-          max_results: 5,
-        });
+        // First whether the site sent anything too large to read, then its newest few.
+        const searches = connectedMail.executions
+          .filter((execution) => execution.tool === "GMAIL_FETCH_EMAILS")
+          .map((execution) => execution.args);
+        expect(searches.slice(0, 2)).toMatchObject([
+          { query: expect.stringMatching(/^from:example\.test after:\d+ larger:\d+$/) },
+          { query: expect.stringMatching(/^from:example\.test after:\d+$/), max_results: 5 },
+        ]);
         expect(
           mailbox.messages
             .filter((message) => message.sender === "no-reply@example.test")
@@ -872,7 +873,7 @@ describeIntegration("reusable credential lifecycle", () => {
         ).toEqual(
           expect.arrayContaining([
             { idempotencyKey: `emailed-code:run:${run.seeded.run.id}:example.test` },
-            { idempotencyKey: expect.stringMatching(/^emailed-code:connected:/) },
+            { idempotencyKey: expect.stringMatching(/^emailed-code:message:/) },
           ]),
         );
         const [messages, events, effects] = await Promise.all([

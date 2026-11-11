@@ -14,20 +14,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   answerCodeCardsFromInbox,
   CONNECTED_MAIL_LIMIT,
+  CONNECTED_MAIL_MAX_BYTES,
   CONNECTED_MAIL_PAGE_LIMIT,
   EMAIL_READ_LIMIT,
   EMAIL_SEARCH_LIMIT,
   EMAILED_CODE_WINDOW_MS,
   emailMayAnswer,
+  OPEN_CODE_REQUEST_LIMIT,
   takeEmailedCode,
 } from "./emailed-code.js";
 import { readInboundEmail } from "./inbound-email.js";
 
 const ORIGIN = "https://login.example.test";
 const CODE = "482913";
-/** The claim on the test email's message, which a copy delivered again shares. */
+/** The claim on a message, by its key: the same for every copy of it, in whichever mailbox. */
 const digest = (text: string) => createHash("sha256").update(text).digest("base64url");
-const EMAIL_CLAIM = `emailed-code:email:bot-1:${digest("dkim:signature-1")}`;
+const claimOn = (key: string) => `emailed-code:message:${digest(key)}`;
+const EMAIL_CLAIM = claimOn("dkim:signature-1");
 const bot = { id: "bot-1", userId: "user-1" };
 const ago = (ms: number) => new Date(Date.now() - ms);
 
@@ -59,12 +62,25 @@ function inbox(
     switchedOff?: boolean;
     /** When each run asked for its code: a minute ago unless given. */
     requestedAt?: Record<string, Date>;
+    /** The origin a run asked a code for, for a run whose request shows no card yet. */
+    asking?: Record<string, string>;
   } = {},
 ) {
   const runs = options.runs ?? [waitingRun()];
   const cards = options.cards ?? { "run-1": codeCard() };
   const emails = options.emails ?? [codeEmail()];
   const effects = new Map<string, Row>(Object.entries(options.effects ?? {}));
+  /** The runs whose cards mail answered. */
+  const answered: string[] = [];
+  /** Each run's code request still waiting for its answer, with or without a card. */
+  const openRequests = () =>
+    runs.flatMap((run) => {
+      const id = String(run.id);
+      const card = cards[id]?.status === "answered" ? undefined : cards[id];
+      const origin = options.asking?.[id] ?? (card?.oneTimeCode as Row | undefined)?.origin;
+      const createdAt = options.requestedAt?.[id] ?? ago(60 * 1000);
+      return origin ? [{ run, request: { oneTimeCode: { origin } }, createdAt }] : [];
+    });
   for (const run of runs) {
     const id = String(run.id);
     const page = options.pages
@@ -80,13 +96,20 @@ function inbox(
       ? (run.OR as Row[]).some((one) => answeredRunMatches({ run: one }))
       : Object.entries(run).every(([field, value]) => answeredIn[field] === value));
   const answerRunInput = vi.fn(
-    async ({ claimEmail }: { claimEmail?: (tx: unknown) => Promise<void> }) => {
+    async ({
+      runId,
+      claimEmail,
+    }: {
+      runId: string;
+      claimEmail?: (tx: unknown) => Promise<void>;
+    }) => {
       if (options.answered === false) return false;
       // The email is taken in the answer's own transaction, as the database does it.
       return (prisma.$transaction as (fn: (tx: unknown) => Promise<boolean>) => Promise<boolean>)(
         async (tx) => {
           await claimEmail?.(tx);
           if (options.answered instanceof Error) throw options.answered;
+          answered.push(runId);
           return true;
         },
       );
@@ -125,10 +148,29 @@ function inbox(
       ),
       findUnique: async ({ where }: { where: { idempotencyKey: string } }) =>
         effects.get(where.idempotencyKey) ?? null,
-      findMany: async ({ where }: { where: { idempotencyKey: { in: string[] } } }) =>
-        where.idempotencyKey.in
-          .filter((key) => effects.has(key))
-          .map((idempotencyKey) => ({ idempotencyKey })),
+      findMany: async ({ where, take }: { where: Row; take?: number }) => {
+        if (where.kind !== "request_secret")
+          return (where.idempotencyKey as { in: string[] }).in
+            .filter((key) => effects.has(key))
+            .map((idempotencyKey) => ({ idempotencyKey }));
+        // The open code requests of the bot's runs and of its owner's runs, in any Space.
+        const asked = where as {
+          status: string;
+          runId: { not: string };
+          run: { status: { in: string[] }; OR: [{ botId: string }, { userId: string }] };
+        };
+        const [{ botId }, { userId }] = asked.run.OR;
+        return openRequests()
+          .filter(
+            ({ run }) =>
+              asked.status === "intended" &&
+              run.id !== asked.runId.not &&
+              asked.run.status.in.includes(String(run.status)) &&
+              (run.botId === botId || run.userId === userId),
+          )
+          .slice(0, take)
+          .map(({ run, ...request }) => ({ ...request, run: { createdAt: run.createdAt } }));
+      },
       createMany: async ({ data }: { data: Row[] }) => {
         let count = 0;
         for (const row of data) {
@@ -140,6 +182,8 @@ function inbox(
         return { count };
       },
     },
+    // The settings a transaction's connection holds, which a read across Spaces saves and restores.
+    $queryRaw: async () => [{ bypass: "off", key: "", login: "app" }],
     // All or nothing, as PostgreSQL would.
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       const before = new Map(effects);
@@ -213,8 +257,36 @@ function inbox(
       bot,
       runId,
     );
+  /** A run asks for its code, as request_secret does: what it kept, or nothing. */
+  const ask = (runId: string, sources: { inbox?: boolean; connected?: boolean } = {}) =>
+    takeEmailedCode(
+      prisma as unknown as PrismaClient,
+      {
+        botId: bot.id,
+        spaceId: "space-1",
+        runId,
+        userId: bot.userId,
+        origin: ORIGIN,
+        after: ago(60 * 1000),
+        botEmailDomain: "bots.test",
+        sources: {
+          inbox: sources.inbox ?? true,
+          connected: sources.connected ? { readerFor } : undefined,
+        },
+      },
+      // Kept in a transaction that makes the claim, as the code is stored.
+      (found, claim) =>
+        (prisma.$transaction as (fn: (tx: never) => Promise<string>) => Promise<string>)(
+          async (tx) => {
+            await claim(tx);
+            return found.code;
+          },
+        ),
+    );
   return {
     deliver,
+    ask,
+    answered,
     answerRunInput,
     enqueue,
     prisma: prisma as typeof prisma & {
@@ -256,7 +328,11 @@ async function connectedMail(
     to?: string;
     code?: string;
     signed?: boolean;
+    /** Changed after it was signed, so its signature no longer holds. */
+    tampered?: boolean;
     headers?: string[];
+    /** What the mail says, instead of a sentence giving `code`. */
+    text?: string;
     /** When the mailbox received it, a few seconds ago unless given; null when not told. */
     receivedAt?: Date | null;
     /** The site's key the signature names: `s2`'s lookup fails for now. */
@@ -275,7 +351,7 @@ async function connectedMail(
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=utf-8",
     "",
-    `Your verification code is ${options.code ?? CODE}.`,
+    options.text ?? `Your verification code is ${options.code ?? CODE}.`,
     "",
   ].join("\r\n");
   const signed =
@@ -295,9 +371,102 @@ async function connectedMail(
   const receivedAt = options.receivedAt === undefined ? ago(10 * 1000) : options.receivedAt;
   return {
     id: options.id ?? "m1",
-    raw: new TextEncoder().encode(signed),
+    raw: new TextEncoder().encode(options.tampered ? signed.replace("Your ", "Our ") : signed),
     ...(receivedAt ? { receivedAt } : {}),
   };
+}
+
+/** The claim on a message a mailbox holds: on the message itself, by its sender's signature. */
+const claimOf = async (message: ConnectedMailMessage) =>
+  claimOn((await readInboundEmail(message.raw)).key);
+
+const BOT_ADDRESS = "helper@bots.test";
+const OWNER_MAILBOX = "owner@example.net";
+
+/** A message as delivery saves it to the bot's inbox, classified as the inbound route does. */
+async function savedToInbox(message: ConnectedMailMessage): Promise<Row> {
+  const email = await readInboundEmail(message.raw);
+  return codeEmail({
+    id: `email-${message.id}`,
+    key: email.key,
+    fromAddress: email.from?.address,
+    verified: email.authenticated && [...email.to, ...email.cc].includes(BOT_ADDRESS),
+    mailingList: email.mailingList,
+    autoReplyOrBulk: email.autoReplyOrBulk,
+    subject: email.subject,
+    text: email.text,
+    receivedAt: message.receivedAt,
+  });
+}
+
+/** The three looks that take a code from mail; each rule holds on every one of them. */
+const PATHS = [
+  "mail arriving in the bot's inbox",
+  "a request reading the bot's inbox",
+  "a request reading connected mail",
+] as const;
+type World = NonNullable<Parameters<typeof inbox>[0]>;
+type Mail = NonNullable<Parameters<typeof connectedMail>[0]> & {
+  /** Another run already took this message's code. */
+  claimed?: boolean;
+  /** Both the bot's inbox and the owner's mailbox hold it: the site copied one on the other's. */
+  inBothMailboxes?: boolean;
+};
+
+/**
+ * Run-1's look on one path, over the same mail and the same other runs: on arrival it waits on
+ * its card; on a request it has asked and shows no card yet. `took` says whether it got the code.
+ */
+async function look(path: (typeof PATHS)[number], mail: Mail[], world: World = {}) {
+  publishKeys();
+  vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+  const arriving = path === PATHS[0];
+  const inInbox = path !== PATHS[2];
+  const messages = await Promise.all(
+    mail.map((one, index) =>
+      connectedMail({
+        id: `m${index + 1}`,
+        to: one.inBothMailboxes
+          ? `${BOT_ADDRESS}, ${OWNER_MAILBOX}`
+          : inInbox
+            ? BOT_ADDRESS
+            : OWNER_MAILBOX,
+        ...one,
+      }),
+    ),
+  );
+  const held = (inMailbox: boolean) =>
+    messages.filter((_message, index) => inMailbox || mail[index]?.inBothMailboxes);
+  const claims = await Promise.all(messages.map(claimOf));
+  const cards = { ...(arriving ? { "run-1": codeCard() } : {}), ...world.cards };
+  const asking = { ...(arriving ? {} : { "run-1": ORIGIN }), ...world.asking };
+  const scene = inbox({
+    ...world,
+    runs: [waitingRun(arriving ? {} : { status: "running" }), ...(world.runs ?? [])],
+    cards,
+    asking,
+    emails: await Promise.all(held(inInbox).map(savedToInbox)),
+    effects: {
+      ...world.effects,
+      ...Object.fromEntries(
+        claims.flatMap((claim, index) =>
+          mail[index]?.claimed ? [[claim, { runId: "run-9" }]] : [],
+        ),
+      ),
+    },
+    connectedMailCodes: true,
+    connected: { recent: async () => ({ messages: held(!inInbox) }) },
+  });
+  if (arriving) await scene.deliver();
+  const took = arriving
+    ? scene.answered.includes("run-1")
+    : (await scene.ask("run-1", { inbox: inInbox, connected: !inInbox })) === CODE;
+  /** Run-1's request is answered: its card, or its call, is done. */
+  const settle = () => {
+    delete asking["run-1"];
+    if (cards["run-1"]) cards["run-1"] = { ...codeCard(), status: "answered" };
+  };
+  return { ...scene, took, claims, settle };
 }
 
 afterEach(() => {
@@ -416,59 +585,6 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
   });
 
-  it("answers neither card when one email would answer two", async () => {
-    const { deliver, answerRunInput } = inbox({
-      runs: [waitingRun(), waitingRun({ id: "run-2", threadId: "thread-2" })],
-      cards: { "run-1": codeCard(), "run-2": codeCard() },
-    });
-    await deliver();
-    expect(answerRunInput).not.toHaveBeenCalled();
-  });
-
-  it.each<[string, Row[]]>([
-    [
-      "two other runs' waiting cards",
-      [waitingRun(), waitingRun({ id: "run-2", threadId: "thread-2" })],
-    ],
-    ["another run's waiting card", [waitingRun()]],
-  ])(
-    "gives a run asking for a code none from an email that would answer %s",
-    async (_name, runs) => {
-      const { deliver, answerRunInput, prisma } = inbox({
-        runs,
-        cards: Object.fromEntries(runs.map((run) => [String(run.id), codeCard()])),
-      });
-      if (runs.length > 1) expect(await deliver()).toBe(0);
-      const keep = vi.fn(async () => "kept");
-      const taken = await takeEmailedCode(
-        prisma as unknown as PrismaClient,
-        {
-          botId: bot.id,
-          spaceId: "space-1",
-          runId: "run-3",
-          userId: bot.userId,
-          origin: ORIGIN,
-          after: ago(60 * 1000),
-          botEmailDomain: "bots.test",
-          sources: { inbox: true, connected: undefined },
-        },
-        keep,
-      );
-      expect(taken).toBeUndefined();
-      expect(keep).not.toHaveBeenCalled();
-      expect(answerRunInput).not.toHaveBeenCalled();
-    },
-  );
-
-  it("answers neither card when one email would answer two, also on a run's look", async () => {
-    const { deliver, answerRunInput } = inbox({
-      runs: [waitingRun(), waitingRun({ id: "run-2", threadId: "thread-2" })],
-      cards: { "run-1": codeCard(), "run-2": codeCard() },
-    });
-    await deliver("run-2");
-    expect(answerRunInput).not.toHaveBeenCalled();
-  });
-
   it("ignores mail from long before the card was asked for", async () => {
     const { deliver, answerRunInput } = inbox({
       emails: [codeEmail({ receivedAt: ago(60 * 1000 + EMAILED_CODE_WINDOW_MS + 1000) })],
@@ -514,15 +630,14 @@ describe("a code emailed to the bot while its run waits on the card", () => {
   it("answers once with an email that was deleted and delivered again", async () => {
     const emails = [codeEmail()];
     const later = waitingRun({ id: "run-2", threadId: "thread-2", status: "running" });
-    const { deliver, answerRunInput } = inbox({
-      runs: [waitingRun(), later],
-      emails,
-      cards: { "run-1": codeCard(), "run-2": codeCard() },
-    });
+    const cards: Record<string, Row> = { "run-1": codeCard() };
+    const { deliver, answerRunInput } = inbox({ runs: [waitingRun(), later], emails, cards });
     await expect(deliver()).resolves.toBe(1);
     // The bot deleted the email; the sender's relay delivers the same signed message again, and
     // a later run asks for a code from the same site.
     emails.splice(0, 1, codeEmail({ id: "email-2", receivedAt: new Date() }));
+    cards["run-1"] = { ...codeCard(), status: "answered" };
+    cards["run-2"] = codeCard();
     later.status = "waiting_input";
     await expect(deliver()).resolves.toBe(0);
     expect(answerRunInput).toHaveBeenCalledOnce();
@@ -737,7 +852,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
         codeEmail({ receivedAt: ago(10_000) }),
       ],
       effects: {
-        [`emailed-code:email:bot-1:${digest("dkim:taken")}`]: { runId: "run-9" },
+        [claimOn("dkim:taken")]: { runId: "run-9" },
       },
     });
     const findMany = vi.spyOn(prisma.botEmailMessage as { findMany: () => unknown }, "findMany");
@@ -784,19 +899,6 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     const { deliver, answerRunInput } = inbox({
       emails: [
         codeEmail({ id: "email-2", text: "Welcome! Your account is ready." }),
-        codeEmail({ receivedAt: ago(10 * 1000) }),
-      ],
-    });
-    await deliver();
-    expect(answerRunInput).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ fromEmail: "email-1" }),
-    );
-  });
-
-  it("skips an email holding two codes", async () => {
-    const { deliver, answerRunInput } = inbox({
-      emails: [
-        codeEmail({ id: "email-2", text: "Your code is 731905. Your old code 112233 expired." }),
         codeEmail({ receivedAt: ago(10 * 1000) }),
       ],
     });
@@ -913,37 +1015,6 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
   });
 
-  // The rule, the same for the bot's inbox (as delivery classified and saved the mail) and for a
-  // connected mailbox (classified as read): a site's sign-in notice gives its code, also when it
-  // is marked as generated for one person; an auto-reply, which can quote what someone else
-  // sent, bulk mail and list mail never do.
-  it.each<[kind: string, gives: boolean, headers: string[]]>([
-    ["a plain notice", true, []],
-    ["a notice marked auto-generated", true, ["Auto-Submitted: auto-generated"]],
-    [
-      "a notice asking not to be auto-answered",
-      true,
-      ["Auto-Submitted: auto-generated", "X-Auto-Response-Suppress: All"],
-    ],
-    ["an auto-reply", false, ["Auto-Submitted: auto-replied"]],
-    ["a vacation reply", false, ["X-Autoreply: yes"]],
-    ["bulk mail", false, ["Precedence: bulk"]],
-    ["junk mail", false, ["Precedence: junk"]],
-    ["list mail", false, ["List-Id: <news.example.test>"]],
-  ])("in either mailbox, %s gives its code: %s", async (_kind, gives, headers) => {
-    publishKeys();
-    const message = await connectedMail({ id: "m1", headers });
-    const { mailingList, autoReplyOrBulk } = await readInboundEmail(message.raw);
-    const fromInbox = inbox({ emails: [codeEmail({ mailingList, autoReplyOrBulk })] });
-    expect(await fromInbox.deliver()).toBe(gives ? 1 : 0);
-    const fromMailbox = inbox({
-      emails: [],
-      connectedMailCodes: true,
-      connected: { recent: async () => ({ messages: [message] }) },
-    });
-    expect(await fromMailbox.deliver("run-1")).toBe(gives ? 1 : 0);
-  });
-
   it("does not fail the email when the lookup fails, logging only the error's name", async () => {
     const logged = vi.spyOn(getLogger(), "error").mockImplementation(() => undefined);
     const { deliver, prisma, answerRunInput } = inbox();
@@ -956,13 +1027,251 @@ describe("a code emailed to the bot while its run waits on the card", () => {
   });
 });
 
+// ELIGIBILITY, what the email says: one predicate (emailMayAnswer) decides, for every look, and
+// the one extractor reads its code. Each row is one message, delivered to the mailbox the path
+// reads and classified there as that mailbox's mail is.
+const LONG = `${"lorem ipsum dolor sit amet ".repeat(3)}\r\n`.repeat(260);
+// Each row is built when its test runs, so its times are relative to that look.
+const ELIGIBILITY: [kind: string, gives: boolean, row: () => [Mail, World?]][] = [
+  ["a plain notice from the site", true, () => [{}]],
+  ["a notice marked auto-generated", true, () => [{ headers: ["Auto-Submitted: auto-generated"] }]],
+  [
+    "a notice asking not to be auto-answered",
+    true,
+    () => [{ headers: ["Auto-Submitted: auto-generated", "X-Auto-Response-Suppress: All"] }],
+  ],
+  ["mail from the site's mail subdomain", true, () => [{ from: "codes@mail.example.test" }]],
+  ["mail whose signature does not hold", false, () => [{ tampered: true }]],
+  ["mail with no signature", false, () => [{ signed: false }]],
+  ["an auto-reply", false, () => [{ headers: ["Auto-Submitted: auto-replied"] }]],
+  ["a vacation reply", false, () => [{ headers: ["X-Autoreply: yes"] }]],
+  ["bulk mail", false, () => [{ headers: ["Precedence: bulk"] }]],
+  ["junk mail", false, () => [{ headers: ["Precedence: junk"] }]],
+  ["list mail", false, () => [{ headers: ["List-Id: <news.example.test>"] }]],
+  ["mail from another site", false, () => [{ from: "no-reply@other.test" }]],
+  [
+    "mail from a domain that only holds the site's",
+    false,
+    () => [{ from: "no-reply@example.test.elsewhere.test" }],
+  ],
+  ["mail sent to someone else", false, () => [{ to: "someone-else@example.net" }]],
+  ["mail that came before the request's window", false, () => [{ receivedAt: ago(7 * 60 * 1000) }]],
+  [
+    "mail that came before the owner last answered a request",
+    false,
+    () => [{ receivedAt: ago(40 * 1000) }, { answeredAt: ago(30 * 1000) }],
+  ],
+  [
+    "mail that came before the owner answered another bot's request",
+    false,
+    () => [
+      { receivedAt: ago(40 * 1000) },
+      { answeredAt: ago(30 * 1000), answeredIn: { botId: "bot-2", userId: "user-1" } },
+    ],
+  ],
+  [
+    "mail that came after the owner last answered a request",
+    true,
+    () => [{ receivedAt: ago(20 * 1000) }, { answeredAt: ago(30 * 1000) }],
+  ],
+  ["mail a run already took the code from", false, () => [{ claimed: true }]],
+  ["mail holding two codes", false, () => [{ text: "Your code is 482913. Your code is 731905." }]],
+  [
+    "mail saying the code expired",
+    false,
+    () => [{ text: "Your verification code is 482913.\r\nThis code has expired." }],
+  ],
+  ["mail with a code too short to hide", false, () => [{ code: "4829" }]],
+  ["mail longer than is kept of it", false, () => [{ text: `Your code is 482913.\r\n${LONG}` }]],
+];
+
+// ELIGIBILITY, what the database says when the code is taken: one claim (claimEmailedCode)
+// decides, for every look. Mail does not say which sign-in it is for, so it answers a request
+// only while that is the one open request it could be for: among the runs whose codes can be in
+// the same mail (the bot's runs, whoever started them, and its owner's runs, in whichever of
+// their bots), for the same site, whose window the mail came in.
+const other = (overrides: Row = {}) =>
+  waitingRun({ id: "run-2", threadId: "thread-2", ...overrides });
+const OTHER_REQUESTS: [others: string, fills: boolean, world: () => World][] = [
+  ["no other request", true, () => ({})],
+  [
+    "another run of the bot waiting on a card for the site",
+    false,
+    () => ({ runs: [other()], cards: { "run-2": codeCard() } }),
+  ],
+  [
+    "a run of another of the owner's bots waiting on a card for the site",
+    false,
+    () => ({ runs: [other({ botId: "bot-2" })], cards: { "run-2": codeCard() } }),
+  ],
+  [
+    "someone else's run of the owner's bot waiting on a card for the site",
+    false,
+    () => ({ runs: [other({ userId: "user-2" })], cards: { "run-2": codeCard() } }),
+  ],
+  [
+    "another run that asked for the site's code and shows no card yet",
+    false,
+    () => ({ runs: [other({ status: "running" })], asking: { "run-2": ORIGIN } }),
+  ],
+  // A sign-in whose run has not asked for its code yet has left the server nothing to go on.
+  [
+    "another run of the owner's that has asked for no code",
+    true,
+    () => ({ runs: [other({ status: "running" })] }),
+  ],
+  [
+    "another run waiting on a card for another host of the site",
+    false,
+    () => ({ runs: [other()], cards: { "run-2": codeCard("https://app.example.test") } }),
+  ],
+  [
+    "another run waiting on a card for another site",
+    true,
+    () => ({ runs: [other()], cards: { "run-2": codeCard("https://bank.test") } }),
+  ],
+  [
+    "someone else's run of another bot waiting on a card for the site",
+    true,
+    () => ({
+      runs: [other({ userId: "user-2", botId: "bot-9" })],
+      cards: { "run-2": codeCard() },
+    }),
+  ],
+  [
+    "a run whose card for the site was answered",
+    true,
+    () => ({ runs: [other()], cards: { "run-2": { ...codeCard(), status: "answered" } } }),
+  ],
+  [
+    "a cancelled run whose card for the site was left open",
+    true,
+    () => ({ runs: [other({ status: "cancelled" })], cards: { "run-2": codeCard() } }),
+  ],
+  [
+    "a run that started after the mail came",
+    true,
+    () => ({ runs: [other({ createdAt: ago(5 * 1000) })], cards: { "run-2": codeCard() } }),
+  ],
+  [
+    "more open requests than are compared",
+    false,
+    () => ({
+      runs: Array.from({ length: OPEN_CODE_REQUEST_LIMIT + 1 }, (_, index) =>
+        other({ id: `other-${index}`, threadId: `thread-other-${index}`, botId: "bot-2" }),
+      ),
+      cards: Object.fromEntries(
+        Array.from({ length: OPEN_CODE_REQUEST_LIMIT + 1 }, (_, index) => [
+          `other-${index}`,
+          codeCard("https://bank.test"),
+        ]),
+      ),
+    }),
+  ],
+];
+
+// EXTRACTION over the site's mail in the window: one reader (readOneTimeCode) reads every email
+// that may answer. Those that give a code must give the same one; one that names no code says
+// nothing of the others; one that is unclear, naming a code it does not give, puts them in
+// doubt, so none is taken. Mail that may not answer changes nothing, whatever it says.
+const WITH_OTHER_MAIL: [other: string, fills: boolean, mail: () => Mail][] = [
+  ["a newer welcome email that names no code", true, () => ({ text: "Welcome! You are in." })],
+  ["a newer email with the same code", true, () => ({})],
+  ["a newer email with another code", false, () => ({ code: "731905" })],
+  [
+    "a newer email holding two codes",
+    false,
+    () => ({ text: "Your code is 731905. Your code is 112233." }),
+  ],
+  [
+    "a newer email saying the previous code expired",
+    false,
+    () => ({ text: "Your previous code has expired." }),
+  ],
+  [
+    "a newer email giving a new code and calling the old one expired",
+    false,
+    () => ({ text: "Your old code expired.\r\nYour code: 731905" }),
+  ],
+  ["a newer email with a code too short to take", false, () => ({ code: "4829" })],
+  ["a newer email longer than is read", false, () => ({ text: LONG })],
+  [
+    "an older email saying a code expired",
+    false,
+    () => ({ text: "Your previous code has expired.", receivedAt: ago(30 * 1000) }),
+  ],
+  [
+    "a newer email saying the code expired that the site did not sign",
+    true,
+    () => ({ text: "Your previous code has expired.", signed: false }),
+  ],
+  [
+    "a newer email saying the code expired from another site",
+    true,
+    () => ({ text: "Your previous code has expired.", from: "no-reply@other.test" }),
+  ],
+];
+
+describe.each(PATHS)("which mail may answer a code request, on %s", (path) => {
+  it.each(WITH_OTHER_MAIL)("beside %s, takes the site's code: %s", async (kind, fills, mail) => {
+    const older = { receivedAt: ago(20 * 1000) };
+    const { took, effects, claims } = await look(path, [older, mail()]);
+    expect(took).toBe(fills);
+    // The newest email that gives the code is the one taken; otherwise none is.
+    const taken = claims.filter((claim) => effects.has(claim));
+    const newest = kind.includes("same code") ? claims[1] : claims[0];
+    expect(taken).toEqual(fills ? [newest] : []);
+  });
+
+  it.each(ELIGIBILITY)("%s gives its code: %s", async (_kind, gives, row) => {
+    const [mail, world] = row();
+    const { took, effects, claims } = await look(path, [mail], world);
+    expect(took).toBe(gives);
+    // Taken with its claim, or not at all.
+    expect(effects.get(claims[0]!)?.runId).toBe(
+      gives ? "run-1" : mail.claimed ? "run-9" : undefined,
+    );
+  });
+
+  it.each(OTHER_REQUESTS)("with %s, takes the site's code: %s", async (_others, fills, world) => {
+    const { took, answered, effects, claims } = await look(path, [{}], world());
+    expect(took).toBe(fills);
+    // Mail two requests could be for answers neither: no other card is answered with it.
+    expect(answered.filter((runId) => runId !== "run-1")).toEqual([]);
+    expect(effects.has(claims[0]!)).toBe(fills);
+  });
+
+  it("gives a message both mailboxes hold to one run, whichever mailbox a run reads", async () => {
+    // The site sent one message to the bot and to the owner: one message, one claim.
+    const { took, effects, claims, ask, settle } = await look(path, [{ inBothMailboxes: true }], {
+      runs: [other({ status: "running" })],
+    });
+    expect(took).toBe(true);
+    const taken = [...effects.keys()].sort();
+    // Run-1's request is answered; another run then asks, reading either mailbox.
+    settle();
+    expect(await ask("run-2", { inbox: true, connected: false })).toBeUndefined();
+    expect(await ask("run-2", { inbox: false, connected: true })).toBeUndefined();
+    expect(effects.get(claims[0]!)).toMatchObject({ runId: "run-1" });
+    expect([...effects.keys()].sort()).toEqual(taken);
+  });
+});
+
 describe("emailMayAnswer", () => {
-  const rule = { site: "example.test", botEmailDomain: "bots.test", mailbox: "owner@example.net" };
+  const after = ago(5 * 60 * 1000);
+  const rule = {
+    site: "example.test",
+    botEmailDomain: "bots.test",
+    after,
+    answered: undefined,
+    mailbox: "owner@example.net",
+  };
   const ok = {
     fromAddress: "no-reply@example.test",
     verified: true,
     mailingList: false,
     autoReplyOrBulk: false,
+    receivedAt: ago(10 * 1000),
     recipients: ["Owner@Example.net"],
   };
 
@@ -972,7 +1281,19 @@ describe("emailMayAnswer", () => {
     expect(
       emailMayAnswer({ ...ok, recipients: ["x@example.net", "owner@example.net"] }, rule),
     ).toBe(true);
-    expect(emailMayAnswer(ok, { site: "example.test", botEmailDomain: undefined })).toBe(true);
+    const inbox = { site: "example.test", botEmailDomain: undefined, after, answered: undefined };
+    expect(emailMayAnswer(ok, inbox)).toBe(true);
+  });
+
+  it("refuses mail that came before the request's window, or before the last answer", () => {
+    expect(emailMayAnswer({ ...ok, receivedAt: after }, rule)).toBe(true);
+    expect(emailMayAnswer({ ...ok, receivedAt: new Date(after.getTime() - 1) }, rule)).toBe(false);
+    const answered = ago(20 * 1000);
+    expect(emailMayAnswer(ok, { ...rule, answered })).toBe(true);
+    expect(emailMayAnswer({ ...ok, receivedAt: answered }, { ...rule, answered })).toBe(false);
+    expect(emailMayAnswer({ ...ok, receivedAt: ago(30 * 1000) }, { ...rule, answered })).toBe(
+      false,
+    );
   });
 
   it("refuses mail that is not signed by its From domain, or came through a list", () => {
@@ -1003,19 +1324,15 @@ describe("emailMayAnswer", () => {
   });
 });
 
-/** The claim on a message in a connected mailbox: on the message in that mailbox. */
-const connectedClaim = (messageId: string, mailbox = "owner@example.net") =>
-  `emailed-code:connected:${digest(`${mailbox}:${messageId}`)}`;
-
 describe("a code the site emailed to the mail the owner connected", () => {
-  const CONNECTED_CLAIM = connectedClaim("m1");
-
   it("answers the card from it when the bot's inbox has nothing, claiming it", async () => {
     publishKeys();
+    const message = await connectedMail();
+    const CONNECTED_CLAIM = await claimOf(message);
     const { deliver, answerRunInput, effects, recent } = inbox({
       emails: [],
       connectedMailCodes: true,
-      connected: { recent: async () => ({ messages: [await connectedMail()] }) },
+      connected: { recent: async () => ({ messages: [message] }) },
     });
     expect(await deliver("run-1")).toBe(1);
     expect(answerRunInput).toHaveBeenCalledWith(
@@ -1065,7 +1382,12 @@ describe("a code the site emailed to the mail the owner connected", () => {
     expect(context.connectedConnections.map((connection) => connection.id)).toEqual([
       "connection-1",
     ]);
-    expect(query).toEqual({ fromDomain: "example.test", after: expect.any(Date), limit: 5 });
+    expect(query).toEqual({
+      fromDomain: "example.test",
+      after: expect.any(Date),
+      limit: 5,
+      maxBytes: CONNECTED_MAIL_MAX_BYTES,
+    });
     // The window opens five minutes before the request, which the card fixture made a minute ago.
     const windowAge = Date.now() - query.after.getTime();
     expect(windowAge).toBeGreaterThanOrEqual(EMAILED_CODE_WINDOW_MS + 60_000 - 5_000);
@@ -1106,11 +1428,12 @@ describe("a code the site emailed to the mail the owner connected", () => {
 
   it("never takes a message another run claimed", async () => {
     publishKeys();
+    const message = await connectedMail();
     const { deliver, answerRunInput } = inbox({
       emails: [],
       connectedMailCodes: true,
-      effects: { [CONNECTED_CLAIM]: { runId: "run-9" } },
-      connected: { recent: async () => ({ messages: [await connectedMail()] }) },
+      effects: { [await claimOf(message)]: { runId: "run-9" } },
+      connected: { recent: async () => ({ messages: [message] }) },
     });
     expect(await deliver("run-1")).toBe(0);
     expect(answerRunInput).not.toHaveBeenCalled();
@@ -1156,18 +1479,17 @@ describe("a code the site emailed to the mail the owner connected", () => {
       },
     });
     expect(await differing.deliver("run-1")).toBe(0);
+    // Whatever order the mailbox lists them in, the newest is the one taken.
+    const older = await connectedMail({ id: "m1", receivedAt: ago(20 * 1000) });
+    const newer = await connectedMail({ id: "m2", receivedAt: ago(10 * 1000) });
     const same = inbox({
       emails: [],
       connectedMailCodes: true,
-      connected: {
-        recent: async () => ({
-          messages: [await connectedMail({ id: "m1" }), await connectedMail({ id: "m2" })],
-        }),
-      },
+      connected: { recent: async () => ({ messages: [older, newer] }) },
     });
     expect(await same.deliver("run-1")).toBe(1);
-    expect(same.effects.has(CONNECTED_CLAIM)).toBe(true);
-    expect(same.effects.has(connectedClaim("m2"))).toBe(false);
+    expect(same.effects.has(await claimOf(newer))).toBe(true);
+    expect(same.effects.has(await claimOf(older))).toBe(false);
   });
 
   // The rule for which message may answer a request: one that arrived in the window after the
@@ -1186,7 +1508,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     ["received at an unknown time", { receivedAt: null }, {}, null],
     ["not signed by its sender", { signed: false }, {}, "m1"],
     ["signed, with a signature that cannot be checked for now", { selector: "s2" }, {}, null],
-    ["taken by another run", {}, { effects: { [connectedClaim("m2")]: { runId: "run-9" } } }, "m1"],
+    ["taken by another run", {}, { claimed: true }, "m1"],
     [
       "received before the owner answered another bot's request",
       { receivedAt: ago(40 * 1000) },
@@ -1233,103 +1555,34 @@ describe("a code the site emailed to the mail the owner connected", () => {
     [
       "taken by another run through another connection to the same mailbox",
       {},
-      {
-        connections: [mailConnection({ id: "connection-2" })],
-        effects: { [connectedClaim("m2")]: { runId: "run-9" } },
-      },
+      { connections: [mailConnection({ id: "connection-2" })], claimed: true },
       "m1",
     ],
   ])(
     "takes the code from the right message when the newest is %s",
-    async (_state, newest, extra, taken) => {
+    async (_state, newest, { claimed, ...extra }, taken) => {
       publishKeys();
       vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+      const messages = {
+        m2: await connectedMail({ id: "m2", ...newest }),
+        m1: await connectedMail({ id: "m1", receivedAt: ago(20 * 1000) }),
+      };
       const { deliver, effects } = inbox({
         emails: [],
         connectedMailCodes: true,
         answeredAt: ago(30 * 1000),
-        connected: {
-          recent: async () => ({
-            messages: [
-              await connectedMail({ id: "m2", ...newest }),
-              await connectedMail({ id: "m1", receivedAt: ago(20 * 1000) }),
-            ],
-          }),
-        },
+        connected: { recent: async () => ({ messages: [messages.m2, messages.m1] }) },
+        // Another run took the newest message's code.
+        ...(claimed ? { effects: { [await claimOf(messages.m2)]: { runId: "run-9" } } } : {}),
         ...extra,
       });
       expect(await deliver("run-1")).toBe(taken ? 1 : 0);
-      const takenNow = ["m1", "m2"].filter(
-        (id) => effects.get(connectedClaim(id))?.runId === "run-1",
-      );
+      const takenNow: string[] = [];
+      for (const [id, message] of Object.entries(messages))
+        if (effects.get(await claimOf(message))?.runId === "run-1") takenNow.push(id);
       expect(takenNow).toEqual(taken ? [taken] : []);
     },
   );
-
-  // The rule: a message in the owner's mailbox cannot say which of their sign-ins it is for. While
-  // another of their runs, of any bot, waits on a code card for the same site that the message
-  // could answer (its window had opened when the message came), it answers neither: the cards
-  // stay for the owner. Nothing is read from the mailbox for the other run.
-  it.each<[other: string, fills: boolean, run: Row, card: Row]>([
-    ["another bot's run for the same site", false, { botId: "bot-2" }, codeCard()],
-    ["another run of this bot for the same site", false, {}, codeCard()],
-    ["another bot's run for another site", true, { botId: "bot-2" }, codeCard("https://bank.test")],
-    ["someone else's run for the same site", true, { userId: "user-2" }, codeCard()],
-    ["a run whose card was answered", true, {}, { ...codeCard(), status: "answered" }],
-    ["a run that was cancelled", true, { status: "cancelled" }, codeCard()],
-    ["a run that started after the message came", true, { createdAt: ago(5 * 1000) }, codeCard()],
-  ])("with %s waiting, takes a code from connected mail: %s", async (_other, fills, run, card) => {
-    publishKeys();
-    const other = waitingRun({ id: "run-2", threadId: "thread-2", ...run });
-    const rows: Row[] = [];
-    installAuditEventStore({
-      auditEvent: { createMany: async ({ data }: { data: Row[] }) => rows.push(...data) },
-      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
-      user: { findUnique: async () => null },
-      member: { findMany: async () => [] },
-    } as never);
-    try {
-      const message = await connectedMail({ id: "m1" });
-      const connected = { recent: async () => ({ messages: [message] }) };
-      // A run asks while the other waits.
-      const asking = inbox({
-        emails: [],
-        runs: [other],
-        cards: { "run-2": card },
-        connectedMailCodes: true,
-        connected,
-      });
-      const keep = vi.fn(async () => "kept");
-      const taken = await takeEmailedCode(
-        asking.prisma as unknown as PrismaClient,
-        {
-          botId: bot.id,
-          spaceId: "space-1",
-          runId: "run-3",
-          userId: bot.userId,
-          origin: ORIGIN,
-          after: ago(60 * 1000),
-          botEmailDomain: "bots.test",
-          sources: { inbox: true, connected: { readerFor: asking.readerFor } },
-        },
-        keep,
-      );
-      expect(taken).toBe(fills ? "kept" : undefined);
-      // A run looks again once its own card is saved, while the other waits.
-      const looking = inbox({
-        emails: [],
-        runs: [waitingRun(), other],
-        cards: { "run-1": codeCard(), "run-2": card },
-        connectedMailCodes: true,
-        connected,
-      });
-      expect(await looking.deliver("run-1")).toBe(fills ? 1 : 0);
-      // One audit row for each mailbox read, none for the other run.
-      expect(rows.map((row) => row.runId)).toEqual(["run-3", "run-1"]);
-    } finally {
-      installAuditEventStore(undefined);
-    }
-  });
 
   it("reads no mailbox once the owner turned the switch off during the attempt", async () => {
     publishKeys();
@@ -1360,15 +1613,20 @@ describe("a code the site emailed to the mail the owner connected", () => {
 
   it("skips a message received before another request was answered", async () => {
     publishKeys();
+    const answeredAt = ago(30 * 1000);
+    const message = await connectedMail({ receivedAt: ago(45 * 1000) });
+    const recent = vi.fn(async (_context: unknown, _query: { after: Date }) => ({
+      messages: [message],
+    }));
     const { deliver } = inbox({
       emails: [],
       connectedMailCodes: true,
-      answeredAt: ago(30 * 1000),
-      connected: {
-        recent: async () => ({ messages: [await connectedMail({ receivedAt: ago(45 * 1000) })] }),
-      },
+      answeredAt,
+      connected: { recent },
     });
     expect(await deliver("run-1")).toBe(0);
+    // Mail that old is not asked for either: it would only use up what the look may read.
+    expect(recent.mock.calls.map(([, query]) => query.after)).toEqual([answeredAt]);
   });
 
   it.each<
@@ -1418,6 +1676,46 @@ describe("a code the site emailed to the mail the owner connected", () => {
       expect(JSON.stringify(rows)).not.toContain(CODE);
     },
   );
+
+  // BOUNDS: a look reads at most CONNECTED_MAIL_MAX_BYTES of mail in all, tells each reader how
+  // much of that is left, and parses nothing past it. Mail left unread may be the newest from
+  // the site, so the look gives no code: never the code of what it did read.
+  const padding = (id: string, bytes: number): ConnectedMailMessage => ({
+    id,
+    raw: new Uint8Array(bytes),
+    receivedAt: ago(5 * 1000),
+  });
+  it.each<[name: string, sizes: number[], fills: boolean]>([
+    ["other mail well within its size limit", [1024, 1024], true],
+    ["other mail up to its size limit", [CONNECTED_MAIL_MAX_BYTES - 64 * 1024], true],
+    ["one message larger than its size limit", [CONNECTED_MAIL_MAX_BYTES + 1], false],
+    [
+      "messages that pass its size limit together",
+      [CONNECTED_MAIL_MAX_BYTES / 2, CONNECTED_MAIL_MAX_BYTES / 2 + 1],
+      false,
+    ],
+  ])("with %s in the mailbox, takes the site's code: %s", async (_name, sizes, fills) => {
+    publishKeys();
+    vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    const code = await connectedMail();
+    const pages = [sizes.map((bytes, index) => padding(`pad-${index}`, bytes)), [code]];
+    const recent = vi.fn(async (_context: unknown, query: { maxBytes: number; page?: string }) => {
+      const page = Number(query.page ?? 0);
+      return { messages: pages[page]!, ...(page === 0 ? { next: "1" } : {}) };
+    });
+    const { deliver, effects } = inbox({
+      emails: [],
+      connectedMailCodes: true,
+      connected: { recent },
+    });
+    expect(await deliver("run-1")).toBe(fills ? 1 : 0);
+    expect(effects.has(await claimOf(code))).toBe(fills);
+    // Each read is told what the look may still hold, and the look stops once that is passed.
+    const read = sizes.reduce((sum, bytes) => sum + bytes, 0);
+    expect(recent.mock.calls.map(([, query]) => query.maxBytes)).toEqual(
+      [CONNECTED_MAIL_MAX_BYTES, CONNECTED_MAIL_MAX_BYTES - read].slice(0, fills ? 2 : 1),
+    );
+  });
 
   it("leaves the card, logging only the error's name, when the mail cannot be read", async () => {
     const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);

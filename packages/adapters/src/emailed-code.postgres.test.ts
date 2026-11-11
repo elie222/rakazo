@@ -1,10 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AnswerRunInput } from "@rakazo/db";
-import { answerRunInput, createDb, runAsSystem, runCodeKind } from "@rakazo/db";
+import { answerRunInput, createDb, runAsSystem, runAsTenant, runCodeKind } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   answerCodeCardsFromInbox,
-  claimConnectedMailCode,
   claimEmailedCode,
   EmailedCodeTaken,
   findEmailedCode,
@@ -24,6 +23,8 @@ postgres("emailed code claims (PostgreSQL)", () => {
   const userId = `${id}-user`;
   const organizationId = `${id}-org`;
   const system = <T>(fn: () => Promise<T>) => runAsSystem("test fixture", fn);
+  /** Someone who is not the bot's owner. */
+  const stranger = `${id}-stranger`;
   const origin = "https://login.example.test";
   let botId = "";
   let threadId = "";
@@ -33,8 +34,11 @@ postgres("emailed code claims (PostgreSQL)", () => {
 
   beforeAll(async () => {
     await system(async () => {
-      await prisma.user.create({
-        data: { id: userId, name: "Code tester", email: `${id}@rakazo.test` },
+      await prisma.user.createMany({
+        data: [
+          { id: userId, name: "Code tester", email: `${id}@rakazo.test` },
+          { id: stranger, name: "Stranger", email: `${stranger}@rakazo.test` },
+        ],
       });
       await prisma.organization.create({
         data: { id: organizationId, name: "Code tests", slug: id, createdAt: new Date() },
@@ -56,33 +60,74 @@ postgres("emailed code claims (PostgreSQL)", () => {
     runs = [await newRun("running"), await newRun("running")];
   });
 
-  async function newRun(status: "running" | "waiting_input") {
+  type Place = { spaceId: string; userId: string; botId: string; threadId: string };
+  const home = (): Place => ({ spaceId, userId, botId, threadId });
+
+  async function newRun(status: "running" | "waiting_input" | "cancelled", place: Place = home()) {
     return system(async () => {
       const task = await prisma.task.create({
-        data: { spaceId, userId, botId, threadId, prompt: "Sign in", status: "running" },
+        data: { ...place, prompt: "Sign in", status: "running" },
       });
       const run = await prisma.run.create({
-        data: {
-          spaceId,
-          userId,
-          botId,
-          threadId,
-          taskId: task.id,
-          status,
-          trigger: "user_message",
-        },
+        data: { ...place, taskId: task.id, status, trigger: "user_message" },
         select: { id: true },
       });
       return run.id;
     });
   }
 
+  /** Another Space with a bot of `owner`'s: the tester's own unless given. */
+  async function otherSpace(name: string, owner = userId): Promise<Place> {
+    return system(async () => {
+      const space = await prisma.space.create({
+        data: { id: `${id}-${name}`, organizationId, name },
+      });
+      const bot = await prisma.bot.create({
+        data: {
+          spaceId: space.id,
+          userId: owner,
+          name,
+          color: "ink",
+          thread: { create: { spaceId: space.id, userId: owner } },
+        },
+        include: { thread: true },
+      });
+      return { spaceId: space.id, userId: owner, botId: bot.id, threadId: bot.thread!.id };
+    });
+  }
+
+  /** A run's code request for a page of the site, recorded as request_secret records it. */
+  const ask = (runId: string, place: Place = home(), page = origin) =>
+    system(() =>
+      prisma.externalEffect.create({
+        data: {
+          runId,
+          spaceId: place.spaceId,
+          kind: "request_secret",
+          status: "intended",
+          idempotencyKey: `${runId}:request:${randomUUID()}`,
+          request: { label: "Code", purpose: "otp", oneTimeCode: { origin: page } },
+        },
+        select: { id: true },
+      }),
+    );
+  const settle = (requestId: string, status: string) =>
+    system(() => prisma.externalEffect.update({ where: { id: requestId }, data: { status } }));
+  /** Leave no mail and no request, open or answered, of the owner's bots for the next case. */
+  const forgetRequests = () =>
+    system(async () => {
+      await prisma.botEmailMessage.deleteMany({ where: { botId } });
+      await prisma.externalEffect.deleteMany({
+        where: { kind: "request_secret", run: { bot: { userId } } },
+      });
+    });
+
   afterAll(async () => {
     try {
       // The organization cascades to the space, bot, runs, their effects and the inbox.
       await system(async () => {
         await prisma.organization.deleteMany({ where: { id: organizationId } });
-        await prisma.user.deleteMany({ where: { id: userId } });
+        await prisma.user.deleteMany({ where: { id: { in: [userId, stranger] } } });
       });
       await prisma.$disconnect();
     } finally {
@@ -118,17 +163,23 @@ postgres("emailed code claims (PostgreSQL)", () => {
     );
   }
 
-  /** Claim as a run keeping the code does, in its own transaction: false when taken. */
-  const claimFor = (runId: string, email: { id: string; key: string }) =>
+  /** Claim a message's code as a run keeping it does, in its own transaction: false when taken. */
+  const claimMessage = (
+    runId: string,
+    message: { key: string; id?: string },
+    site = "example.test",
+  ) =>
     system(() =>
       prisma.$transaction((tx) =>
         claimEmailedCode(tx, {
           runId,
           spaceId,
           botId,
-          emailId: email.id,
-          emailKey: email.key,
-          site: "example.test",
+          userId,
+          site,
+          key: message.key,
+          receivedAt: new Date(),
+          ...(message.id ? { emailId: message.id } : {}),
         }),
       ),
     ).then(
@@ -138,6 +189,8 @@ postgres("emailed code claims (PostgreSQL)", () => {
         throw error;
       },
     );
+  const claimFor = (runId: string, email: { id: string; key: string }) =>
+    claimMessage(runId, email);
 
   const lookup = (runId: string) => ({
     botId,
@@ -150,46 +203,44 @@ postgres("emailed code claims (PostgreSQL)", () => {
     sources: { inbox: true, connected: undefined },
   });
 
-  const connectedClaim = (messageId: string) => {
-    const hash = createHash("sha256").update(`owner@example.net:${messageId}`);
-    return `emailed-code:connected:${hash.digest("base64url")}`;
-  };
-  /** Claim a message of a connected mailbox as a run keeping its code does: false when taken. */
-  const claimConnected = (runId: string, messageId: string, site = "example.test") =>
-    system(() =>
-      prisma.$transaction((tx) =>
-        claimConnectedMailCode(tx, {
-          runId,
-          spaceId,
-          mailbox: "owner@example.net",
-          messageId,
-          site,
-        }),
-      ),
-    ).then(
-      () => true,
-      (error) => {
-        if (error instanceof EmailedCodeTaken) return false;
-        throw error;
-      },
+  /** The runs that took the email's code: one claim per run and site, one per message. */
+  const takers = (emailId: string) =>
+    system(async () =>
+      (
+        await prisma.externalEffect.findMany({
+          where: {
+            kind: "emailed_code",
+            idempotencyKey: { startsWith: "emailed-code:message:" },
+            request: { path: ["emailId"], equals: emailId },
+          },
+          select: { runId: true },
+        })
+      ).map((effect) => effect.runId),
     );
+  const heldCodes = (runId: string) =>
+    system(() => prisma.secret.count({ where: { userId, kind: runCodeKind(runId) } }));
 
-  it("gives a connected mailbox's message to one run, and a site's code once in all", async () => {
+  const messageClaim = (key: string) =>
+    `emailed-code:message:${createHash("sha256").update(key).digest("base64url")}`;
+
+  it("gives one message to one run across mailboxes, and a site's code once in all", async () => {
     const runId = await newRun("running");
     const other = await newRun("running");
-    // Two runs want the same message: one gets it.
+    // One message, read by one run from the bot's inbox and by the other from the owner's
+    // connected mailbox: the same key, so one of them gets it.
+    const message = await receive("884200");
     const claims = await Promise.all([
-      claimConnected(runId, "message-1"),
-      claimConnected(other, "message-1"),
+      claimMessage(runId, message),
+      claimMessage(other, { key: message.key }),
     ]);
     expect(claims.filter(Boolean)).toHaveLength(1);
     const taker = claims[0] ? runId : other;
     const loser = claims[0] ? other : runId;
     // Neither another connected message nor the bot's own inbox gives the taker a second code
     // for the site in this run; a code for another site is still free.
-    expect(await claimConnected(taker, "message-2")).toBe(false);
+    expect(await claimMessage(taker, { key: "dkim:message-2" })).toBe(false);
     expect(await claimFor(taker, await receive("884201"))).toBe(false);
-    expect(await claimConnected(taker, "message-3", "other.example")).toBe(true);
+    expect(await claimMessage(taker, { key: "dkim:message-3" }, "other.example")).toBe(true);
     // The loser took no code for the site, so the inbox's is still free for it.
     expect(await claimFor(loser, await receive("884202"))).toBe(true);
     // The refused claims wrote nothing but the taken ones.
@@ -201,18 +252,118 @@ postgres("emailed code claims (PostgreSQL)", () => {
       }),
     );
     const keys = taken.map((effect) => effect.idempotencyKey);
-    expect(keys.filter((key) => key.startsWith("emailed-code:email:"))).toHaveLength(1);
-    expect(keys.filter((key) => !key.startsWith("emailed-code:email:")).sort()).toEqual(
-      [
-        connectedClaim("message-1"),
-        connectedClaim("message-3"),
+    expect(keys.filter((key) => key.startsWith("emailed-code:message:"))).toHaveLength(3);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        messageClaim(message.key),
+        messageClaim("dkim:message-3"),
         `emailed-code:run:${taker}:example.test`,
         `emailed-code:run:${taker}:other.example`,
         `emailed-code:run:${loser}:example.test`,
-      ].sort(),
+      ]),
     );
+    expect(keys).toHaveLength(6);
     // This case's inbox mail would make the site's code ambiguous for the cases after it.
     await system(() => prisma.botEmailMessage.deleteMany({ where: { botId } }));
+  });
+
+  // The rule: mail does not say which sign-in it is for, so a run takes its code only while
+  // its own is the one open code request the mail could be for, among the bot's runs and its
+  // owner's runs in every Space. Decided in the transaction that takes the code.
+  it.each<
+    [
+      others: string,
+      fills: boolean,
+      other: () => Promise<{ place?: Place; page?: string; status?: string; asks?: boolean }>,
+    ]
+  >([
+    ["no other request", true, async () => ({ asks: false })],
+    ["another run of the bot asking for the site", false, async () => ({})],
+    [
+      "a run of another of the owner's bots, in another Space, asking for the site",
+      false,
+      async () => ({ place: await otherSpace("mine") }),
+    ],
+    [
+      "another run asking for another host of the site",
+      false,
+      async () => ({ page: "https://app.example.test" }),
+    ],
+    ["another run asking for another site", true, async () => ({ page: "https://bank.test" })],
+    [
+      "someone else's run of the owner's bot asking for the site",
+      false,
+      async () => ({ place: { ...home(), userId: stranger } }),
+    ],
+    [
+      "another owner's run of their own bot asking for the site",
+      true,
+      async () => ({ place: await otherSpace("theirs", stranger) }),
+    ],
+    [
+      "someone else's run of another of the owner's bots asking for the site",
+      true,
+      async () => ({ place: { ...(await otherSpace("lent")), userId: stranger } }),
+    ],
+    ["a run whose request for the site was answered", true, async () => ({ status: "approved" })],
+    ["a cancelled run that had asked for the site", true, async () => ({ status: "cancelled" })],
+  ])("with %s, a run in its own Space takes the site's code: %s", async (_others, fills, other) => {
+    const runId = await newRun("running");
+    const mine = await ask(runId);
+    const { place = home(), page, status, asks = true } = await other();
+    if (asks) {
+      const theirs = await newRun(status === "cancelled" ? "cancelled" : "waiting_input", place);
+      const request = await ask(theirs, place, page);
+      if (status === "approved") await settle(request.id, status);
+    }
+    // Mail no older than an answer is never used: this one comes after it.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const email = await receive("551204");
+    const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+    // As the run's job does: in the run's own Space, where other Spaces' runs are not visible.
+    const kept = await runAsTenant({ spaceId, userId }, () =>
+      holdEmailedCode(prisma, secretStore, {
+        ...lookup(runId),
+        scope: { userId, spaceId, botId },
+        request: { id: mine.id, from: "intended", result: { ok: true } },
+        hide: () => undefined,
+      }),
+    );
+    expect(Boolean(kept)).toBe(fills);
+    expect(await takers(email.id)).toEqual(fills ? [runId] : []);
+    expect(await heldCodes(runId)).toBe(fills ? 1 : 0);
+    await forgetRequests();
+  });
+
+  it("gives the code to neither of two runs that ask for the site at the same moment", async () => {
+    const [runA, runB] = [await newRun("running"), await newRun("running")];
+    // Both requests are recorded, as the call records its request before it looks.
+    const [requestA, requestB] = [await ask(runA), await ask(runB)];
+    const email = await receive("660319");
+    const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+    const hold = (runId: string, requestId: string) =>
+      system(() =>
+        holdEmailedCode(prisma, secretStore, {
+          ...lookup(runId),
+          scope: { userId, spaceId, botId },
+          request: { id: requestId, from: "intended", result: { ok: true } },
+          hide: () => undefined,
+        }),
+      );
+    expect(await Promise.all([hold(runA, requestA.id), hold(runB, requestB.id)])).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(await takers(email.id)).toEqual([]);
+    // One is answered by its owner: the other still takes no mail that came before that answer.
+    await settle(requestA.id, "approved");
+    expect(await hold(runB, requestB.id)).toBeUndefined();
+    // Mail that comes after it is the one open request's.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const next = await receive("660320");
+    expect(await hold(runB, requestB.id)).toMatchObject({ code: "660320" });
+    expect(await takers(next.id)).toEqual([runB]);
+    await forgetRequests();
   });
 
   it.each([
@@ -257,7 +408,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
     const effects = await system(() =>
       prisma.externalEffect.findMany({
         where: {
-          idempotencyKey: { startsWith: "emailed-code:email:" },
+          idempotencyKey: { startsWith: "emailed-code:message:" },
           request: { path: ["emailId"], equals: email.id },
         },
         select: { runId: true, kind: true, status: true },
@@ -280,23 +431,6 @@ postgres("emailed code claims (PostgreSQL)", () => {
     const loser = runs.find((runId) => runId !== winner)!;
     expect(await claim(loser)).toBe(true);
   });
-
-  /** The runs that took the email's code: one claim per run and site, one per message. */
-  const takers = (emailId: string) =>
-    system(async () =>
-      (
-        await prisma.externalEffect.findMany({
-          where: {
-            kind: "emailed_code",
-            idempotencyKey: { startsWith: "emailed-code:email:" },
-            request: { path: ["emailId"], equals: emailId },
-          },
-          select: { runId: true },
-        })
-      ).map((effect) => effect.runId),
-    );
-  const heldCodes = (runId: string) =>
-    system(() => prisma.secret.count({ where: { userId, kind: runCodeKind(runId) } }));
 
   it("leaves the email's code, and its request open, when keeping it fails", async () => {
     const runId = await newRun("running");
@@ -326,12 +460,15 @@ postgres("emailed code claims (PostgreSQL)", () => {
     const secretStore = new EncryptedSecretStore("test-only-encryption-key");
     const scope = { userId, spaceId, botId };
     const answer = { note: "The code from the email the site sent was entered." };
+    /** What the attempt was told to hide, and when: before the code's transaction commits. */
+    const hidden: string[] = [];
     const hold = (over: { scope?: typeof scope } = {}) =>
       system(() =>
         holdEmailedCode(prisma, secretStore, {
           ...lookup(runId),
           scope,
           request: { id: request.id, from: "intended", result: answer },
+          hide: (code) => hidden.push(code),
           ...over,
         }),
       );
@@ -356,6 +493,8 @@ postgres("emailed code claims (PostgreSQL)", () => {
     expect(await requestNow()).toMatchObject({ status: "denied", result: null });
     await settle("intended");
 
+    // A code is hidden from the moment it is claimed, also when keeping it then fails.
+    expect(hidden).toEqual(["605118", "605118"]);
     // The next try takes it, once, and answers the request with it in the same transaction.
     expect(await hold()).toMatchObject({ code: "605118", fromEmail: email.id });
     expect(await takers(email.id)).toEqual([runId]);

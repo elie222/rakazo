@@ -770,10 +770,13 @@ function matchesQuery(message: MailMessage, query: string): boolean {
     .toLowerCase()
     .split(/\s+/)
     .every((token) => {
-      const labeled = token.match(/^(from|to|subject|label|after):(.*)$/);
+      const labeled = token.match(/^(from|to|subject|label|after|larger):(.*)$/);
       if (!labeled) return haystack.includes(token);
       const [, field, value] = labeled;
       if (!value) return true;
+      // larger:<bytes> matches a message bigger than that as it was received.
+      if (field === "larger")
+        return Buffer.byteLength(message.raw ?? plainRaw(message)) > Number(value);
       // after:<epoch seconds> is exact; after:YYYY/MM/DD is a day on the mailbox's own clock,
       // which this fake keeps eight hours behind UTC, as the provider resolves it.
       if (field === "after") {
