@@ -258,13 +258,13 @@ starting point for a browser computer is 2 CPU and 4Gi memory, adjusted to its w
 for all concurrent computers **plus** the API, worker, database and the node's other workloads.
 Keep spare disk capacity for browser profiles, uploads and backups.
 
-| What you observe | What to check next |
-| --- | --- |
-| `Computer is busy` as a task finishes | Inspect the real pod mount; an old unmounted pod still exports its home. Also check for an active boot, recovery or another computer operation. |
-| Container restarts or `OOMKilled` | Check pod events and memory usage. Increase the affected container's memory only after confirming memory pressure. |
-| CPU stays at its limit | Compare usage and CPU throttling with the configured limit; increasing that limit may help. |
-| A new pod stays `Pending` | Describe the pod: inspect quota, available resources, claim binding and affinity. A local disk cannot follow the pod to another node. |
-| Screen reconnects but the computer stays running | Check the screen-proxy/WebSocket path and authorization separately from disk persistence. |
+| What you observe                                 | What to check next                                                                                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Computer is busy` as a task finishes            | Inspect the real pod mount; an old unmounted pod still exports its home. Also check for an active boot, recovery or another computer operation. |
+| Container restarts or `OOMKilled`                | Check pod events and memory usage. Increase the affected container's memory only after confirming memory pressure.                              |
+| CPU stays at its limit                           | Compare usage and CPU throttling with the configured limit; increasing that limit may help.                                                     |
+| A new pod stays `Pending`                        | Describe the pod: inspect quota, available resources, claim binding and affinity. A local disk cannot follow the pod to another node.           |
+| Screen reconnects but the computer stays running | Check the screen-proxy/WebSocket path and authorization separately from disk persistence.                                                       |
 
 Use `kubectl top pods -n <namespace>` for current CPU/memory and
 `kubectl describe pod -n <namespace> <computer-pod>` for scheduling and restart evidence.
