@@ -1238,6 +1238,34 @@ describeWithDatabase("service API surface", () => {
         })
         .toBe(200);
     });
+
+    it("counts streams another server holds, until their lease lapses", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Shared");
+      const { token, credential } = await newKey(cookie);
+      const owner = await db.serviceCredential.findUniqueOrThrow({ where: { id: credential.id } });
+      await db.serviceEventStream.createMany({
+        data: Array.from({ length: 5 }, () => ({
+          userId: owner.userId,
+          spaceId: owner.spaceId,
+          credentialId: credential.id,
+          expiresAt: new Date(Date.now() + 60_000),
+        })),
+      });
+      const refused = await open(token, bot.id);
+      expect(refused.status).toBe(429);
+      await db.serviceEventStream.updateMany({
+        where: { credentialId: credential.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      const lapsed = await open(token, bot.id);
+      expect(lapsed.status).toBe(200);
+      expect(await db.serviceEventStream.count({ where: { credentialId: credential.id } })).toBe(1);
+      await lapsed.body?.cancel();
+      await expect
+        .poll(() => db.serviceEventStream.count({ where: { credentialId: credential.id } }))
+        .toBe(0);
+    });
   });
 
   it("answers with a valid body on the routes the other tests do not exercise", async () => {

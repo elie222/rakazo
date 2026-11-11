@@ -92,7 +92,7 @@ curl -X POST "$RAKAZO_URL/api/service/v1/bots/$BOT_ID/prompts" \
 
 `GET /bots/{id}/events` is a server-sent event stream of new messages and run changes, filtered the same way as conversations. Each event's `id` is its sequence number. To resume, send it back as `Last-Event-ID` or `?cursor=`. With neither, the stream starts now. The first thing sent is the comment line `: connected`, so a client knows the stream is open before anything happens.
 
-A stream closes after 15 minutes, so reconnect with the last id. A key may hold 5 streams per server process.
+A stream closes after 15 minutes, so reconnect with the last id. A key may hold 5 streams at once, across every server.
 
 ## For agents
 

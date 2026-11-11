@@ -66,7 +66,8 @@ export type ServiceContext<Id extends ServiceRouteId> = {
   idempotencyKey: string;
   /** The bot in the path, already checked against this key. Null when the path has none. */
   bot: Bot | null;
-  openStream: (credentialId: string) => () => void;
+  /** Takes one of the key's stream slots; the result gives it back. */
+  openStream: () => Promise<() => void>;
 };
 
 type Handlers = {
@@ -386,7 +387,7 @@ async function streamBotEvents(context: ServiceContext<"botEvents">): Promise<Re
     (resumed && /^(0|[1-9][0-9]{0,14})$/.test(resumed)
       ? Number(resumed)
       : (await client.threads.head({ botId })).cursor);
-  const release = context.openStream(credential.id);
+  const release = await context.openStream();
   const timer = setTimeout(() => abort.abort(), STREAM_MS);
   const finish = () => {
     clearTimeout(timer);

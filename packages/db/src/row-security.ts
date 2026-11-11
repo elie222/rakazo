@@ -117,6 +117,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "Artifact",
   "Secret",
   "ServiceCredential",
+  "ServiceEventStream",
   "ServiceIdempotencyKey",
   "BotSecret",
   "VaultCredential",
