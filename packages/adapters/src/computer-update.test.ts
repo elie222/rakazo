@@ -315,7 +315,6 @@ describe("background computer maintenance", () => {
     id: "failed-1",
     status: "failed",
     stage: "saving",
-    updatedAt: new Date(),
     ...overrides,
   });
 
@@ -324,7 +323,6 @@ describe("background computer maintenance", () => {
     ["a restart that failed after saving", failedSave({ stage: "restoring" })],
     ["a failed save that was dismissed", failedSave({ status: "dismissed" })],
     ["a newer restart than the one named", failedSave({ id: "failed-2" })],
-    ["a failed save past the discard window", failedSave({ updatedAt: new Date(0) })],
   ])("refuses to restart without saving after %s", async (_case, last) => {
     const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
     harness.computerUpdate.findFirst.mockResolvedValue(last);
@@ -861,7 +859,7 @@ describe("background computer maintenance", () => {
   });
 });
 
-type FailedRow = { id: string; status: string; stage: string; updatedAt: Date };
+type FailedRow = { id: string; status: string; stage: string };
 
 function takeoverQueue(
   overrides: {
@@ -894,7 +892,6 @@ function takeoverQueue(
     botId: "bot-1",
     status: "queued",
     stage: "preparing",
-    updatedAt: new Date(0),
     computer: { ...computerRow, bots: [{ id: "bot-1", name: "Writer" }] },
   };
   const computer = {

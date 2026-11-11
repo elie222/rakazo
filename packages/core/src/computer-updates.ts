@@ -3,12 +3,6 @@ import type { ComputerStatus, ComputerUpdate } from "@rakazo/contracts";
 /** `discardUnsavedAfter` names the restart whose save failed; the next one skips saving. */
 export type ComputerRestartOptions = { discardUnsavedAfter?: string };
 
-/**
- * How long after a failed save a restart may give up the unsaved work. It matches the default idle
- * window, after which the computer is saved again and the failure says nothing current.
- */
-export const COMPUTER_RESTART_DISCARD_WINDOW_MS = 10 * 60_000;
-
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 /** Shared polling and local presentation state; the server owns operation lifetime. */
@@ -104,16 +98,11 @@ export function canOfferComputerRestart(computer: Pick<ComputerStatus, "canResta
   return computer.canRestart && computer.state !== "booting";
 }
 
-/** A restart that just failed while saving can only go ahead by giving up the unsaved work. */
+/** A restart that failed while saving can only go ahead by giving up the unsaved work. */
 export function computerRestartFailedSaving(
-  update: { status: string; stage: string; updatedAt: Date | string } | null | undefined,
-  now = Date.now(),
+  update: { status: string; stage: string } | null | undefined,
 ): boolean {
-  return (
-    update?.status === "failed" &&
-    update.stage === "saving" &&
-    now - new Date(update.updatedAt).getTime() < COMPUTER_RESTART_DISCARD_WINDOW_MS
-  );
+  return update?.status === "failed" && update.stage === "saving";
 }
 
 export function computerUpdateNeedsAttention(update: ComputerUpdate): boolean {

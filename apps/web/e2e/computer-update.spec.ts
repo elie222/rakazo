@@ -23,7 +23,6 @@ test("restarting the computer shows durable background progress and failure retr
     mode: "team",
     status: "running",
     stage: "restoring",
-    updatedAt: new Date().toISOString(),
   };
   let finishRestart: (() => void) | undefined;
   let discardUnsavedAfter: unknown;

@@ -53,7 +53,6 @@ export function computerUpdateView(row: {
   botId: string;
   status: string;
   stage: string;
-  updatedAt: Date;
   computer: { scope: string; bots: { id: string; name: string }[] };
 }): ComputerUpdate {
   return ComputerUpdateSchema.parse({
@@ -66,7 +65,6 @@ export function computerUpdateView(row: {
     mode: row.computer.scope === "team" ? "team" : "dedicated",
     status: row.status,
     stage: row.stage,
-    updatedAt: row.updatedAt.toISOString(),
   });
 }
 
@@ -91,11 +89,11 @@ export async function queueComputerUpdate(
       (computer.state === "booting" || computer.state === "suspending") &&
       isAbandonedLifecycleClaim(computer.updatedAt);
     if (options.discardUnsavedAfter) {
-      // Only the computer's latest restart, if its save just failed, lets the next give up work.
+      // Only the computer's newest restart, failed while saving, lets the next give up the work.
       const last = await tx.computerUpdate.findFirst({
         where: { computerId },
         orderBy: { createdAt: "desc" },
-        select: { id: true, status: true, stage: true, updatedAt: true },
+        select: { id: true, status: true, stage: true },
       });
       if (last?.id !== options.discardUnsavedAfter || !computerRestartFailedSaving(last))
         throw new ComputerDiscardNotAllowedError();
