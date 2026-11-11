@@ -45,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The bot style setting stays available when no preference has been saved, so either style can be chosen.
 - Incoming voice notes and other supported attachments are accepted when their reported media type includes parameters.
 - Group messages, handoffs and membership changes no longer deadlock against a finishing bot turn.
+- Group messages keep author labels after a bot leaves or is deleted. Android incoming-call labels use the selected app language; Android 12 and later still use the phone language for system-provided Answer and Decline buttons.
 - Mobile dictation keeps a pending transcription across backgrounding or screen blur, and Send stays disabled until recording and transcription finish.
 - Android custom server settings show Save, sheets fit tablets and foldables, composer controls align with the text, and voice calls show a hang-up icon.
 
