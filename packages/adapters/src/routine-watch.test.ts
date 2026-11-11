@@ -196,19 +196,56 @@ describe("tickRoutineWatch", () => {
       fetch: async () => new Response("temporary outage", { status: 503 }),
       resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
     };
+    routine.watchState.fingerprint = "last-known";
     const before = Date.now();
     expect(await tickRoutineWatch(deps, routine, target, scheduledAt)).toEqual({ run: false });
     expect(updateMany).toHaveBeenCalledOnce();
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
-      data: { nextRunAt: expect.any(Date) },
+      data: {
+        nextRunAt: expect.any(Date),
+        watchState: {
+          checkedAt: expect.any(String),
+          outcome: "failed",
+          fingerprint: "last-known",
+          detail: "HTTPS check returned status 503.",
+        },
+      },
     });
-    const retry = (updateMany.mock.calls[0] as unknown as [{ data: { nextRunAt: Date } }])[0].data
-      .nextRunAt;
+    const saved = (
+      updateMany.mock.calls[0] as unknown as [
+        {
+          data: {
+            nextRunAt: Date;
+            watchState: {
+              checkedAt: string;
+              outcome: "failed";
+              fingerprint: string;
+              detail: string;
+            };
+          };
+        },
+      ]
+    )[0].data;
+    const retry = saved.nextRunAt;
     expect(retry.getTime()).toBeGreaterThanOrEqual(before + 5 * 60_000);
     expect(retry.getTime()).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
-    expect(messages).toHaveLength(0);
+    expect(messages).toHaveLength(1);
+    expect(JSON.stringify(messages[0])).toContain("HTTPS check returned status 503.");
+    expect(messages[0]?.role).toBe("system");
     expect(deps.jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ availableAt: retry }));
+    expect(new Date(saved.watchState.checkedAt).getTime()).toBeGreaterThanOrEqual(before);
+    // A continuing outage refreshes failure state without another thread notice.
+    await tickRoutineWatch(deps, { ...routine, watchState: saved.watchState }, target, new Date());
+    expect(messages).toHaveLength(1);
+    deps.http.fetch = async () => new Response("ready");
+    const recovered = await tickRoutineWatch(
+      deps,
+      { ...routine, watchState: saved.watchState },
+      target,
+      new Date(),
+    );
+    expect(recovered).toMatchObject({ run: true, state: { outcome: "changed", detail: null } });
   });
 
   it("records a quiet no-change check without a message and schedules the next", async () => {

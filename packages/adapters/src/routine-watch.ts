@@ -162,7 +162,7 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
     throw new RoutineWatchRetry("Could not check the HTTPS endpoint.");
   }
   if (response.status === 408 || response.status === 429 || response.status >= 500)
-    throw new RoutineWatchRetry();
+    throw new RoutineWatchRetry(`HTTPS check returned status ${response.status}.`);
   if (response.status < 200 || response.status >= 300)
     throw new RoutineWatchError(`HTTPS check returned status ${response.status}.`);
   if (response.truncated) throw new RoutineWatchError("HTTPS check response is too large.");
@@ -802,9 +802,31 @@ export async function tickRoutineWatch(
           : new Date(now.getTime() + RETRY_AFTER_MS);
       const deferred = await deps.prisma.routine.updateMany({
         where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
-        data: { nextRunAt: retryAt },
+        data: {
+          nextRunAt: retryAt,
+          ...(watch?.kind === "http"
+            ? {
+                watchState: {
+                  checkedAt: now.toISOString(),
+                  outcome: "failed",
+                  fingerprint: previous?.fingerprint ?? null,
+                  detail: error.message,
+                } satisfies RoutineWatchState,
+              }
+            : {}),
+        },
       });
-      if (deferred.count === 1) await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
+      if (deferred.count === 1) {
+        await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
+        if (watch?.kind === "http" && previous?.outcome !== "failed") {
+          await postRoutineWatchMessage(deps, {
+            spaceId: routine.spaceId,
+            ...target,
+            role: "system",
+            text: `The **${routine.name}** routine's HTTPS check failed: ${error.message} I'll keep checking.`,
+          });
+        }
+      }
       return { run: false };
     }
     const reason = error instanceof Error ? error.message : String(error);
