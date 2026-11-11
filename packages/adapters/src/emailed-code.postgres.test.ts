@@ -93,7 +93,10 @@ postgres("emailed code claims (PostgreSQL)", () => {
   async function receive(
     code: string,
     from = "no-reply@example.test",
-    options: { mailingList?: false } = { mailingList: false },
+    options: { mailingList?: false; autoReplyOrBulk?: false } = {
+      mailingList: false,
+      autoReplyOrBulk: false,
+    },
   ) {
     return system(() =>
       prisma.botEmailMessage.create({
@@ -212,10 +215,14 @@ postgres("emailed code claims (PostgreSQL)", () => {
     await system(() => prisma.botEmailMessage.deleteMany({ where: { botId } }));
   });
 
-  it("never takes mail saved before it was known whether it came through a list", async () => {
+  it.each([
+    ["it came through a list", { autoReplyOrBulk: false as const }],
+    ["it was an auto-reply or bulk mail", { mailingList: false as const }],
+    ["either", {}],
+  ])("never takes mail saved before it was known whether %s", async (_flag, known) => {
     // As the previous release saves mail while it still runs, and as every older row reads.
     const runId = runs[0]!;
-    await receive("482913", "no-reply@example.test", {});
+    await receive("482913", "no-reply@example.test", known);
     expect(await system(() => findEmailedCode(prisma, lookup(runId)))).toBeUndefined();
     await receive("482913");
     expect(await system(() => findEmailedCode(prisma, lookup(runId)))).toMatchObject({

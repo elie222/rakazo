@@ -127,23 +127,35 @@ function publicMailboxDomain(site: string): boolean {
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).toLowerCase();
 
+/** What delivery tells about an email that decides whether it may give any code at all. */
+type MailKind = {
+  /** Signed by its From domain and addressed to the mailbox (for the bot's inbox: verified). */
+  verified: boolean;
+  /** Each null when the mail was saved before this was told apart: then it never gives one. */
+  mailingList: boolean | null;
+  autoReplyOrBulk: boolean | null;
+};
+
+/**
+ * Whether an email may give a sign-in code at all, whichever mailbox has it and whichever site
+ * asks: verified, and known to be neither list mail nor an auto-reply or bulk mail (any of which
+ * can carry what someone else wrote, or went to many people).
+ */
+export function mayGiveCode(email: MailKind): boolean {
+  return email.verified && email.mailingList === false && email.autoReplyOrBulk === false;
+}
+
 /**
  * Whether an email may answer a code request for `site`, from whichever mailbox it was read: it
- * is signed by its From domain, which is the site's own (subdomains of a shared hosting suffix are
- * each their own site), not a public mailbox domain, not this server's, is known not to have come
- * through a mailing list (null: saved before that was told apart), and, for a mailbox someone
- * connected, was sent to that mailbox itself.
+ * may give a code at all (mayGiveCode), it is signed by its From domain, which is the site's own
+ * (subdomains of a shared hosting suffix are each their own site), not a public mailbox domain,
+ * not this server's, and, for a mailbox someone connected, was sent to that mailbox itself.
  */
 export function emailMayAnswer(
-  email: {
-    fromAddress: string | null | undefined;
-    verified: boolean;
-    mailingList: boolean | null;
-    recipients?: string[];
-  },
+  email: MailKind & { fromAddress: string | null | undefined; recipients?: string[] },
   rule: { site: string; botEmailDomain: string | undefined; mailbox?: string },
 ): boolean {
-  if (!email.fromAddress || !email.verified || email.mailingList !== false) return false;
+  if (!email.fromAddress || !mayGiveCode(email)) return false;
   const domain = domainOf(email.fromAddress);
   if (domain === rule.botEmailDomain || hostSite(domain) !== rule.site) return false;
   if (publicMailboxDomain(rule.site)) return false;
@@ -233,6 +245,7 @@ export async function findEmailedCode(
         sent: false,
         verified: true,
         mailingList: false,
+        autoReplyOrBulk: false,
         receivedAt: { gte: input.after, ...(answered ? { gt: answered } : {}) },
       },
       orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
@@ -244,6 +257,7 @@ export async function findEmailedCode(
         fromAddress: true,
         verified: true,
         mailingList: true,
+        autoReplyOrBulk: true,
       },
     });
     for (const email of emails) {
@@ -354,7 +368,7 @@ export async function findConnectedMailCode(
   // The mailbox is the owner's: the owner may have typed its code into any of their runs' cards.
   const answered = await lastAnsweredAt(prisma, input);
   const since = answered && answered > input.after ? answered : input.after;
-  const candidates: { code: string; mailbox: string; messageId: string }[] = [];
+  const candidates: { code: string; mailbox: string; messageId: string; receivedAt: Date }[] = [];
   const signal = AbortSignal.timeout(CONNECTED_MAIL_TIMEOUT_MS);
   // The connections whose mailbox the look began to read, and how many of them it read through.
   const opened: (typeof rows)[number][] = [];
@@ -401,6 +415,7 @@ export async function findConnectedMailCode(
                 fromAddress: email.from?.address,
                 verified: email.authenticated,
                 mailingList: email.mailingList,
+                autoReplyOrBulk: email.autoReplyOrBulk,
                 recipients: [...email.to, ...email.cc],
               },
               { site, botEmailDomain: deps.botEmailDomain, mailbox },
@@ -410,7 +425,8 @@ export async function findConnectedMailCode(
             if (++fromSite > CONNECTED_MAIL_LIMIT)
               throw new Error("The site sent too many messages");
             const code = extractOneTimeCode(email);
-            if (code) candidates.push({ code, mailbox, messageId: message.id });
+            const receivedAt = message.receivedAt;
+            if (code) candidates.push({ code, mailbox, messageId: message.id, receivedAt });
           }
           page = read.next;
         } while (page);
@@ -449,8 +465,43 @@ export async function findConnectedMailCode(
       })
     ).map((effect) => effect.idempotencyKey),
   );
-  const newest = theOneCode(candidates.filter((found) => !claimed.has(claimOf(found))));
-  return newest && { ...newest, site };
+  const unclaimed = candidates.filter((found) => !claimed.has(claimOf(found)));
+  const newest = theOneCode(unclaimed);
+  if (!newest) return undefined;
+  // The owner's mailbox serves every sign-in of theirs: while another of their runs waits on a
+  // card this message could answer, it cannot say whose code it is, so it answers neither.
+  const latest = new Date(Math.max(...unclaimed.map((found) => found.receivedAt.getTime())));
+  const others = { userId: input.userId, runId: input.runId, site, receivedAt: latest };
+  if (await anotherCardMayTake(prisma, others)) return undefined;
+  return { code: newest.code, mailbox: newest.mailbox, messageId: newest.messageId, site };
+}
+
+/**
+ * Whether another run of `userId`'s, of any of their bots, waits on a code card for `site` whose
+ * window had opened by `receivedAt`, so a message received then may hold its code. Decided from
+ * the cards alone: nothing is read from mail for those runs.
+ */
+async function anotherCardMayTake(
+  prisma: PrismaClient,
+  input: { userId: string; runId: string; site: string; receivedAt: Date },
+): Promise<boolean> {
+  const runs = await prisma.run.findMany({
+    where: { userId: input.userId, status: "waiting_input", id: { not: input.runId } },
+    select: { id: true, spaceId: true, threadId: true, createdAt: true },
+  });
+  for (const run of runs) {
+    const pending = await findPendingAsk(prisma, { threadId: run.threadId, runId: run.id });
+    const origin = pending?.pendingAsk.oneTimeCode?.origin;
+    if (!origin || fillableSite(origin) !== input.site) continue;
+    const request = await prisma.externalEffect.findFirst({
+      where: { runId: run.id, spaceId: run.spaceId, kind: "request_secret", status: "intended" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (request && emailedCodeWindowStart(request.createdAt, run.createdAt) <= input.receivedAt)
+      return true;
+  }
+  return false;
 }
 
 /** Run `work` until `signal` times out, whether or not what it waits on honours the signal. */

@@ -21,6 +21,7 @@ import {
   emailMayAnswer,
   takeEmailedCode,
 } from "./emailed-code.js";
+import { readInboundEmail } from "./inbound-email.js";
 
 const ORIGIN = "https://login.example.test";
 const CODE = "482913";
@@ -56,6 +57,8 @@ function inbox(
     connectedMailCodes?: boolean;
     /** The owner turned that off after the attempt started. */
     switchedOff?: boolean;
+    /** When each run asked for its code: a minute ago unless given. */
+    requestedAt?: Record<string, Date>;
   } = {},
 ) {
   const runs = options.runs ?? [waitingRun()];
@@ -92,10 +95,14 @@ function inbox(
   const enqueue = vi.fn(async (_job: unknown) => undefined);
   const prisma: Record<string, unknown> = {
     run: {
-      findMany: vi.fn(async ({ where }: { where: Row }) =>
+      findMany: vi.fn(async ({ where }: { where: Row & { id?: string | { not: string } } }) =>
         runs.filter(
           (run) =>
-            (!where.id || run.id === where.id) && (!where.status || run.status === where.status),
+            (where.id === undefined ||
+              (typeof where.id === "string" ? run.id === where.id : run.id !== where.id.not)) &&
+            ["status", "botId", "userId"].every(
+              (key) => where[key] === undefined || run[key] === where[key],
+            ),
         ),
       ),
     },
@@ -107,7 +114,10 @@ function inbox(
       findFirst: vi.fn(async ({ where }: { where: { runId?: string; status: unknown } }) =>
         where.status === "intended"
           ? cards[where.runId!]
-            ? { id: `request-${where.runId}`, createdAt: ago(60 * 1000) }
+            ? {
+                id: `request-${where.runId}`,
+                createdAt: options.requestedAt?.[where.runId!] ?? ago(60 * 1000),
+              }
             : null
           : options.answeredAt && answeredRunMatches(where as { run?: Row })
             ? { updatedAt: options.answeredAt }
@@ -307,6 +317,7 @@ function publishKeys() {
 function waitingRun(overrides: Row = {}): Row {
   return {
     id: "run-1",
+    botId: "bot-1",
     status: "waiting_input",
     spaceId: "space-1",
     threadId: "thread-1",
@@ -337,6 +348,7 @@ function codeEmail(overrides: Row = {}): Row {
     fromAddress: "no-reply@example.test",
     verified: true,
     mailingList: false,
+    autoReplyOrBulk: false,
     subject: "Your sign-in code",
     text: `Your verification code is ${CODE}.`,
     receivedAt: new Date(),
@@ -901,6 +913,37 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
   });
 
+  // The rule, the same for the bot's inbox (as delivery classified and saved the mail) and for a
+  // connected mailbox (classified as read): a site's sign-in notice gives its code, also when it
+  // is marked as generated for one person; an auto-reply, which can quote what someone else
+  // sent, bulk mail and list mail never do.
+  it.each<[kind: string, gives: boolean, headers: string[]]>([
+    ["a plain notice", true, []],
+    ["a notice marked auto-generated", true, ["Auto-Submitted: auto-generated"]],
+    [
+      "a notice asking not to be auto-answered",
+      true,
+      ["Auto-Submitted: auto-generated", "X-Auto-Response-Suppress: All"],
+    ],
+    ["an auto-reply", false, ["Auto-Submitted: auto-replied"]],
+    ["a vacation reply", false, ["X-Autoreply: yes"]],
+    ["bulk mail", false, ["Precedence: bulk"]],
+    ["junk mail", false, ["Precedence: junk"]],
+    ["list mail", false, ["List-Id: <news.example.test>"]],
+  ])("in either mailbox, %s gives its code: %s", async (_kind, gives, headers) => {
+    publishKeys();
+    const message = await connectedMail({ id: "m1", headers });
+    const { mailingList, autoReplyOrBulk } = await readInboundEmail(message.raw);
+    const fromInbox = inbox({ emails: [codeEmail({ mailingList, autoReplyOrBulk })] });
+    expect(await fromInbox.deliver()).toBe(gives ? 1 : 0);
+    const fromMailbox = inbox({
+      emails: [],
+      connectedMailCodes: true,
+      connected: { recent: async () => ({ messages: [message] }) },
+    });
+    expect(await fromMailbox.deliver("run-1")).toBe(gives ? 1 : 0);
+  });
+
   it("does not fail the email when the lookup fails, logging only the error's name", async () => {
     const logged = vi.spyOn(getLogger(), "error").mockImplementation(() => undefined);
     const { deliver, prisma, answerRunInput } = inbox();
@@ -919,6 +962,7 @@ describe("emailMayAnswer", () => {
     fromAddress: "no-reply@example.test",
     verified: true,
     mailingList: false,
+    autoReplyOrBulk: false,
     recipients: ["Owner@Example.net"],
   };
 
@@ -936,6 +980,9 @@ describe("emailMayAnswer", () => {
     expect(emailMayAnswer({ ...ok, mailingList: true }, rule)).toBe(false);
     // Saved before lists were told apart: it may have come through one.
     expect(emailMayAnswer({ ...ok, mailingList: null }, rule)).toBe(false);
+    expect(emailMayAnswer({ ...ok, autoReplyOrBulk: true }, rule)).toBe(false);
+    // Saved before auto-replies and bulk mail were told apart.
+    expect(emailMayAnswer({ ...ok, autoReplyOrBulk: null }, rule)).toBe(false);
     expect(emailMayAnswer({ ...ok, fromAddress: null }, rule)).toBe(false);
   });
 
@@ -1218,6 +1265,71 @@ describe("a code the site emailed to the mail the owner connected", () => {
       expect(takenNow).toEqual(taken ? [taken] : []);
     },
   );
+
+  // The rule: a message in the owner's mailbox cannot say which of their sign-ins it is for. While
+  // another of their runs, of any bot, waits on a code card for the same site that the message
+  // could answer (its window had opened when the message came), it answers neither: the cards
+  // stay for the owner. Nothing is read from the mailbox for the other run.
+  it.each<[other: string, fills: boolean, run: Row, card: Row]>([
+    ["another bot's run for the same site", false, { botId: "bot-2" }, codeCard()],
+    ["another run of this bot for the same site", false, {}, codeCard()],
+    ["another bot's run for another site", true, { botId: "bot-2" }, codeCard("https://bank.test")],
+    ["someone else's run for the same site", true, { userId: "user-2" }, codeCard()],
+    ["a run whose card was answered", true, {}, { ...codeCard(), status: "answered" }],
+    ["a run that was cancelled", true, { status: "cancelled" }, codeCard()],
+    ["a run that started after the message came", true, { createdAt: ago(5 * 1000) }, codeCard()],
+  ])("with %s waiting, takes a code from connected mail: %s", async (_other, fills, run, card) => {
+    publishKeys();
+    const other = waitingRun({ id: "run-2", threadId: "thread-2", ...run });
+    const rows: Row[] = [];
+    installAuditEventStore({
+      auditEvent: { createMany: async ({ data }: { data: Row[] }) => rows.push(...data) },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      user: { findUnique: async () => null },
+      member: { findMany: async () => [] },
+    } as never);
+    try {
+      const message = await connectedMail({ id: "m1" });
+      const connected = { recent: async () => ({ messages: [message] }) };
+      // A run asks while the other waits.
+      const asking = inbox({
+        emails: [],
+        runs: [other],
+        cards: { "run-2": card },
+        connectedMailCodes: true,
+        connected,
+      });
+      const keep = vi.fn(async () => "kept");
+      const taken = await takeEmailedCode(
+        asking.prisma as unknown as PrismaClient,
+        {
+          botId: bot.id,
+          spaceId: "space-1",
+          runId: "run-3",
+          userId: bot.userId,
+          origin: ORIGIN,
+          after: ago(60 * 1000),
+          botEmailDomain: "bots.test",
+          sources: { inbox: true, connected: { readerFor: asking.readerFor } },
+        },
+        keep,
+      );
+      expect(taken).toBe(fills ? "kept" : undefined);
+      // A run looks again once its own card is saved, while the other waits.
+      const looking = inbox({
+        emails: [],
+        runs: [waitingRun(), other],
+        cards: { "run-1": codeCard(), "run-2": card },
+        connectedMailCodes: true,
+        connected,
+      });
+      expect(await looking.deliver("run-1")).toBe(fills ? 1 : 0);
+      // One audit row for each mailbox read, none for the other run.
+      expect(rows.map((row) => row.runId)).toEqual(["run-3", "run-1"]);
+    } finally {
+      installAuditEventStore(undefined);
+    }
+  });
 
   it("reads no mailbox once the owner turned the switch off during the attempt", async () => {
     publishKeys();

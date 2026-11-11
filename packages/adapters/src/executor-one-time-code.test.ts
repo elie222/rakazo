@@ -523,6 +523,7 @@ function world(printed = "") {
       subject: "Your sign-in code",
       verified: true,
       mailingList: false,
+      autoReplyOrBulk: false,
       sent: false,
       to: ["helper@bots.test"],
       cc: [],

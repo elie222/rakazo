@@ -606,6 +606,7 @@ describe("one-time code contracts", () => {
       ["eight digits", "Code: 48291375", "48291375"],
       ["a code split by a space", "Your code: 482 913", "482913"],
       ["a code split by a dash", "Your code: 482-913", "482913"],
+      ["a code split by a no-break space", "Your code: 482\u00a0913", "482913"],
       ["eight digits in two groups", "Passcode 4829 1375", "48291375"],
       ["letters and digits", "Use code K7Q2M9 to sign in.", "K7Q2M9"],
       ["a code after its cue", "482913 is your one-time password", "482913"],
@@ -779,6 +780,91 @@ describe("one-time code contracts", () => {
       },
     );
 
+    // In every language with code words: a sentence naming a code with a word saying it is old,
+    // previous, expired or invalid makes the email give none, whatever else that sentence says;
+    // one saying when the code will expire does not.
+    const STALE: [language: string, code: string, stale: string, expires: string][] = [
+      [
+        "en",
+        "Your verification code is 482913.",
+        "Your previous code has expired.",
+        "This code expires in 10 minutes.",
+      ],
+      [
+        "de",
+        "Ihr Bestätigungscode lautet 482913.",
+        "Der alte Code ist abgelaufen.",
+        "Der Code läuft in 10 Minuten ab.",
+      ],
+      [
+        "es",
+        "Tu código de verificación es 482913.",
+        "El código anterior ha caducado.",
+        "El código caduca en 10 minutos.",
+      ],
+      [
+        "fr",
+        "Votre code de vérification est 482913.",
+        "Ce code a expiré.",
+        "Ce code expire dans 10 minutes.",
+      ],
+      [
+        "nl",
+        "Je verificatiecode is 482913.",
+        "De vorige code is verlopen.",
+        "De code verloopt over 10 minuten.",
+      ],
+      [
+        "pl",
+        "Twój kod weryfikacyjny to 482913.",
+        "Poprzedni kod wygasł.",
+        "Kod wygaśnie za 10 minut.",
+      ],
+      [
+        "pt",
+        "Seu código de verificação é 482913.",
+        "O código anterior expirou.",
+        "O código expira em 10 minutos.",
+      ],
+      [
+        "ru",
+        "Ваш код подтверждения: 482913",
+        "Предыдущий код истёк.",
+        "Код истекает через 10 минут.",
+      ],
+      ["tr", "Doğrulama kodunuz: 482913", "Önceki kod geçersiz.", "Bu kod 10 dakika geçerlidir."],
+      [
+        "hi",
+        "आपका सत्यापन कोड 482913 है।",
+        "पिछला कोड समाप्त हो गया।",
+        "यह कोड 10 मिनट में समाप्त हो जाएगा।",
+      ],
+      ["he", "קוד האימות שלך הוא 482913", "הקוד הקודם פג תוקף.", "הקוד יפוג בעוד 10 דקות."],
+      [
+        "ja",
+        "認証コードは482913です。",
+        "以前のコードは期限切れです。",
+        "このコードは10分後に無効になります。",
+      ],
+      [
+        "ko",
+        "인증번호는 482913입니다.",
+        "이전 코드는 만료되었습니다.",
+        "이 코드는 10분 후에 만료됩니다.",
+      ],
+      ["zh-CN", "您的验证码是482913。", "之前的验证码已过期。", "验证码10分钟内有效。"],
+      ["zh-TW", "您的驗證碼為482913。", "之前的驗證碼已過期。", "驗證碼10分鐘內有效。"],
+    ];
+    it.each(STALE)(
+      "in %s, gives no code beside a sentence saying the code expired, only beside when it will",
+      (_language, code, stale, expires) => {
+        expect(read(`${code}\n${stale}`)).toBeUndefined();
+        expect(read(`${code} ${stale}`)).toBeUndefined();
+        expect(read(code, stale)).toBeUndefined();
+        expect(read(`${code}\n${expires}`)).toBe("482913");
+      },
+    );
+
     // Every sentence that is not one of the templates gives nothing, whatever stands near the
     // number: each counter-example from every review round so far is a row.
     const NEGATIVES: [name: string, text: string, subject?: string][] = [
@@ -856,6 +942,11 @@ describe("one-time code contracts", () => {
         "Your code is 482913.\nThe code is invalid.",
       ],
       ["a code under a subject saying the code expired", "Code: 482913", "Your code has expired"],
+      // On purpose: the rule does not judge what the stale word is about, so the card opens.
+      [
+        "a code beside a sentence naming the previous page",
+        "Your verification code is 482913. Enter this code on the previous page.",
+      ],
       ["a previous code alone", "Your previous code: 731905 expired. Request a new one."],
       ["an expired code alone, in German", "Ihr alter Code 731905 ist abgelaufen."],
       ["an expired code alone, in Spanish", "Su código anterior 731905 ha caducado."],
@@ -887,6 +978,7 @@ describe("one-time code contracts", () => {
       ["an amount", "You paid $1234.56, or 1,234.56 EUR."],
       ["a number in a link", "Verify at https://example.test/verify?token=482913&id=5512"],
       ["three digits", "Code 123."],
+      ["full-width digits", "Your code is \uff14\uff18\uff12\uff19\uff11\uff13"],
       ["nine digits", "Code 482913755."],
       ["lowercase letters and digits", "Code abc123."],
       ["an email with no code", "Thanks for signing up. Click the link to confirm your address."],

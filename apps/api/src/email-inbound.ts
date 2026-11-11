@@ -4,6 +4,7 @@ import type { InboundEmail } from "@rakazo/adapters";
 import {
   answerCodeCardsFromInbox,
   INBOUND_EMAIL_MAX_BYTES,
+  mayGiveCode,
   readInboundEmail,
 } from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
@@ -186,8 +187,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     standalone: !starts,
   });
   if (!saved) return ignored("inbox full");
-  // A sign-in code the bot's run is waiting for answers its card; never fails the delivery.
-  if (email.authenticated && addressed)
+  // A sign-in code the bot's run is waiting for answers its card; never fails the delivery. Only
+  // mail that may give one looks, by the rule every later look applies to the saved row.
+  if (mayGiveCode({ ...email, verified: email.authenticated && addressed }))
     await answerCodeCardsFromInbox({ ...deps, botEmailDomain: deps.domain }, bot);
   if (!starts) {
     // BCC'd mail never starts anything whatever its signature, so it never earns a note either.
@@ -298,6 +300,7 @@ async function saveToInbox(
         fromName: from.name.slice(0, HEADER_MAX_CHARS),
         verified: options.verified,
         mailingList: email.mailingList,
+        autoReplyOrBulk: email.autoReplyOrBulk,
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),

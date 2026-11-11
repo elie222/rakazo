@@ -53,6 +53,13 @@ export type InboundEmail = {
    * relay could add the header, but that only makes mail count for less.
    */
   mailingList: boolean;
+  /**
+   * An automatic reply to or notice about another message (RFC 3834 Auto-Submitted other than
+   * auto-generated, or a responder's X-Autoreply or X-Autorespond), which can quote what someone
+   * else sent, or bulk mail (Precedence: bulk or junk), sent to many people. A notification a
+   * sender generates for one person, such as a sign-in code (auto-generated), is neither.
+   */
+  autoReplyOrBulk: boolean;
   attachments: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
 };
 
@@ -172,10 +179,15 @@ export async function readInboundEmail(
 
   // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
   const mailingList = values("precedence").includes("list") || fieldCount("list-id") > 0;
+  const autoReplyOrBulk =
+    values("auto-submitted").some((value) => !["no", "auto-generated"].includes(value)) ||
+    fieldCount("x-autoreply") > 0 ||
+    fieldCount("x-autorespond") > 0 ||
+    values("precedence").some((value) => ["bulk", "junk"].includes(value));
   const automated =
     mailingList ||
-    values("auto-submitted").some((value) => value !== "no") ||
-    values("precedence").some((value) => ["bulk", "junk"].includes(value));
+    autoReplyOrBulk ||
+    values("auto-submitted").some((value) => value === "auto-generated");
 
   // A huge HTML part is cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS
   // of its text.
@@ -249,6 +261,7 @@ export async function readInboundEmail(
     text,
     automated,
     mailingList,
+    autoReplyOrBulk,
     attachments,
   };
 }

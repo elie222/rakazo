@@ -352,13 +352,14 @@ const stem = (cue: string) => String.raw`(?<!${NOT_WORD_EDGE})(?:${cue})[\p{L}\p
  * the code, in one of the forms readUnit lists. `cue` names a sign-in code (code, passcode, OTP,
  * PIN); `qualifier` is a word a cue may carry (verification, security, one-time); `filler` is
  * the little words such a sentence has around them (your, is, enter); `stale` is a word that says
- * the code named is no longer good (old, previous, expired), so a unit that names a code with one
- * makes the whole email give none. Any other word, a number among them, or a noun that makes the
- * cue name something else (tracking code, code de suivi, ZIP code, promo code) keeps the unit
- * from yielding anything: the owner's card is the fallback. Each entry is a regex alternative for
- * a whole word; a `stem` takes any ending.
+ * a code is no longer good (old, previous, expired, invalid: past forms only, never "expires"),
+ * so a unit that names a code with one makes the whole email give none, whatever else the unit
+ * says. Any other word, a number among them, or a noun that makes the cue name something else
+ * (tracking code, code de suivi, ZIP code, promo code) keeps the unit from yielding anything: the
+ * owner's card is the fallback. Each entry is a regex alternative for a whole word; a `stem`
+ * takes any ending.
  */
-const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?: string[] }[] = [
+const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale: string[] }[] = [
   {
     // English, and the words every language's emails borrow.
     cue: [
@@ -448,6 +449,13 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "nutzen",
       "verwenden",
     ].map(word),
+    stale: [
+      "alt(?:e|er|en|es|em)?",
+      "vorherig(?:e|er|en|es|em)?",
+      "vorig(?:e|er|en|es|em)?",
+      "abgelaufen(?:e|er|en|es|em)?",
+      "ungültig(?:e|er|en|es|em)?",
+    ].map(word),
   },
   {
     // Spanish.
@@ -482,6 +490,17 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "sesi[óo]n",
       "continuaci[óo]n",
     ].map(word),
+    stale: [
+      "anterior(?:es)?",
+      "antigu[oa]s?",
+      "caducad[oa]s?",
+      "caducó",
+      "expirad[oa]s?",
+      "expiró",
+      "vencid[oa]s?",
+      "venció",
+      "inv[áa]lid[oa]s?",
+    ].map(word),
   },
   {
     // French.
@@ -515,6 +534,13 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "connecter",
       "à",
     ].map(word),
+    stale: [
+      "ancien(?:ne)?s?",
+      "précédent(?:e)?s?",
+      "expiré(?:e)?s?",
+      "périmé(?:e)?s?",
+      "invalide(?:s)?",
+    ].map(word),
   },
   {
     // Dutch.
@@ -542,6 +568,7 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "loggen",
       "luidt",
     ].map(word),
+    stale: ["oud(?:e)?", "vorige", "verlopen", "ongeldig(?:e)?"].map(word),
   },
   {
     // Polish.
@@ -570,6 +597,13 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "ten",
       "w",
     ].map(word),
+    stale: [
+      word("star(?:y|a|e|ego|ej)"),
+      stem("poprzedni"),
+      stem("wygasł"),
+      stem("nieważn"),
+      stem("nieaktualn"),
+    ],
   },
   {
     // Portuguese.
@@ -603,6 +637,15 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "fazer",
       "seguir",
     ].map(word),
+    stale: [
+      "antig[oa]s?",
+      "anterior(?:es)?",
+      "expirad[oa]s?",
+      "expirou",
+      "vencid[oa]s?",
+      "venceu",
+      "inv[áa]lid[oa]s?",
+    ].map(word),
   },
   {
     // Russian.
@@ -633,6 +676,15 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "войдите",
       "с",
     ].map(word),
+    stale: [
+      word("стар(?:ый|ая|ое|ого|ом|ые|ых)"),
+      stem("предыдущ"),
+      stem("прежн"),
+      stem("устаревш"),
+      stem("недействительн"),
+      stem("просрочен"),
+      word("ист[её]к(?:ла|ло|ли)?"),
+    ],
   },
   {
     // Turkish.
@@ -657,6 +709,7 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "lütfen",
       "ile",
     ].map(word),
+    stale: ["eski", "önceki", "geçersiz", "süresi doldu", "süresi dolmuş"].map(word),
   },
   {
     // Hindi.
@@ -676,6 +729,16 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "का",
       "में",
       "नीचे",
+    ].map(word),
+    stale: [
+      "पुराना",
+      "पुरानी",
+      "पिछला",
+      "पिछली",
+      "अमान्य",
+      "समाप्त हो गया",
+      "समाप्त हो गई",
+      "समाप्त हो चुका",
     ].map(word),
   },
   {
@@ -701,6 +764,12 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "יש",
       "להזין",
     ].map(word),
+    stale: [
+      "(?:[הבולמכש]|של)?(?:ישנה?|קודמ(?:ת|ים)|קודם)",
+      "פג תוקף(?:ו|ה)?",
+      "אינו תקף",
+      "לא תקף",
+    ].map(word),
   },
   {
     // Japanese: words run together, so these are matched as written, longest first.
@@ -722,6 +791,17 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "を",
       "に",
       "ご",
+    ],
+    stale: [
+      "有効期限切れ",
+      "有効期限が切れ",
+      "期限切れ",
+      "以前の",
+      "前回の",
+      "古い",
+      "無効になりました",
+      "無効です",
+      "無効な",
     ],
   },
   {
@@ -746,6 +826,7 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "을",
       "의",
     ],
+    stale: ["만료되었", "만료된", "만료됐", "이전", "예전", "유효하지 않은"],
   },
   {
     // Chinese, simplified and traditional.
@@ -769,6 +850,21 @@ const LANGUAGES: { cue: string[]; qualifier: string[]; filler: string[]; stale?:
       "的",
       "此",
     ],
+    stale: [
+      "已过期",
+      "已過期",
+      "过期的",
+      "過期的",
+      "已失效",
+      "无效的",
+      "無效的",
+      "之前的",
+      "以前的",
+      "旧的",
+      "舊的",
+      "上一个",
+      "上一個",
+    ],
   },
 ];
 
@@ -781,7 +877,13 @@ const SEPARATOR = String.raw`[:：=\p{Pd}]`;
 const longestFirst = (alternatives: string[]) =>
   [...new Set(alternatives)].sort((left, right) => right.length - left.length);
 /** Words in any case: "Code", "CODE" and "code" are one cue. Only words: never a code. */
-const anyCaseWords = (alternatives: string[]) => new RegExp(`(?:${alternatives.join("|")})`, "yiu");
+const anyCaseWords = (alternatives: string[], flags = "yiu") =>
+  new RegExp(`(?:${alternatives.join("|")})`, flags);
+const CUE_WORDS = longestFirst(LANGUAGES.flatMap((language) => language.cue));
+const STALE_WORDS = longestFirst(LANGUAGES.flatMap((language) => language.stale));
+/** A code word, and a word saying a code is no longer good, anywhere in a unit. */
+const CUE_ANYWHERE = anyCaseWords(CUE_WORDS, "iu");
+const STALE_ANYWHERE = anyCaseWords(STALE_WORDS, "iu");
 /**
  * A code as written, matched case-sensitively: no `i` flag, unlike the words, so its letters are
  * capitals only. Lowercase letters and digits ("Code abc123.") are a word the scanner cannot
@@ -797,9 +899,9 @@ const CODE_TOKEN = new RegExp(`${CODE_LEAD}(?:${CODE_FORMS.join("|")})${CODE_TRA
  */
 export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: RegExp])[] = [
   ["N", CODE_TOKEN],
-  ["C", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.cue)))],
+  ["C", anyCaseWords(CUE_WORDS)],
   ["Q", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.qualifier)))],
-  ["X", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.stale ?? [])))],
+  ["X", anyCaseWords(STALE_WORDS)],
   ["F", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.filler)))],
   ["S", new RegExp(SEPARATOR, "yu")],
 ];
@@ -848,15 +950,14 @@ function units(text: string): Unit[] {
 }
 
 /**
- * The token kinds of a unit as a string ("FCSN" for "Your code: 482913"), whether a stale word
- * (X, left out of the kinds) said the code is no longer good, and the code tokens as written; or
- * undefined when the unit holds anything that is not a known word, a code or a separator, or is
- * longer than ONE_TIME_CODE_UNIT_LIMIT.
+ * The token kinds of a unit as a string ("FCSN" for "Your code: 482913") and the code tokens as
+ * written; or undefined when the unit holds anything that is not a known word, a code or a
+ * separator, or is longer than ONE_TIME_CODE_UNIT_LIMIT. A stale word (X) is known, so its unit
+ * reads, but no form takes it: such a unit yields no code.
  */
-function scanUnit(unit: string): { kinds: string; stale: boolean; codes: string[] } | undefined {
+function scanUnit(unit: string): { kinds: string; codes: string[] } | undefined {
   if (unit.length > ONE_TIME_CODE_UNIT_LIMIT) return undefined;
   let kinds = "";
-  let stale = false;
   const codes: string[] = [];
   let at = 0;
   while (at < unit.length) {
@@ -875,12 +976,21 @@ function scanUnit(unit: string): { kinds: string; stale: boolean; codes: string[
     }
     if (!token) return undefined;
     const [kind, written] = token;
-    if (kind === "X") stale = true;
-    else kinds += kind;
+    kinds += kind;
     if (kind === "N") codes.push(written);
     at += written.length;
   }
-  return { kinds, stale, codes };
+  return { kinds, codes };
+}
+
+/**
+ * Whether a unit names a code and says it is no longer good (old, previous, expired, invalid in
+ * any of LANGUAGES), whatever else it holds: such an email gives no code. Read up to the same cap.
+ */
+function namesStaleCode(unit: string): boolean {
+  return (
+    unit.length <= ONE_TIME_CODE_UNIT_LIMIT && STALE_ANYWHERE.test(unit) && CUE_ANYWHERE.test(unit)
+  );
 }
 
 /** A phrase naming a code: cues, qualifiers and fillers in any order, with a cue among them. */
@@ -911,22 +1021,15 @@ function yieldsCode(kinds: string): boolean {
 
 /**
  * The code a unit writes in a form yieldsCode accepts, or, when the unit only names a code and
- * ends its line, the code the line below holds alone; and whether the unit says a code is no
- * longer good ("This code has expired" names one with no code, and says so all the same).
- * Undefined when the unit neither writes nor names a code.
+ * ends its line, the code the line below holds alone. Undefined when the unit takes no such form.
  */
-function readUnit(
-  unit: Unit,
-  below: Unit | undefined,
-): { written?: string; stale: boolean } | undefined {
+function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
   const scanned = scanUnit(unit.text);
   if (!scanned) return undefined;
-  if (yieldsCode(scanned.kinds)) return { written: scanned.codes[0]!, stale: scanned.stale };
+  if (yieldsCode(scanned.kinds)) return scanned.codes[0];
   if (!namesCode(withoutSeparator(scanned.kinds, "end"))) return undefined;
   const next = unit.endsLine && below?.wholeLine ? scanUnit(below.text) : undefined;
-  return next?.kinds === "N" && !next.stale
-    ? { written: next.codes[0]!, stale: scanned.stale }
-    : { stale: scanned.stale };
+  return next?.kinds === "N" ? next.codes[0] : undefined;
 }
 
 /**
@@ -938,7 +1041,7 @@ function readUnit(
  * Anything else, an order or tracking number near a code word included, yields nothing. Nothing
  * unless the email holds exactly one such code, the same one wherever it appears, so an email
  * that also writes another number as a code gives none rather than a guess, and an email with a
- * sentence of listed words that names a code with a `stale` word ("This code has expired") gives
+ * sentence naming a code with a `stale` word ("This code has expired", namesStaleCode) gives
  * none, whether or not it also names a current one; and nothing unless that code stands alone
  * (oneTimeCodeStandsAlone), as a shorter one could not be hidden.
  */
@@ -947,12 +1050,11 @@ export function extractOneTimeCode(email: { subject: string; text: string }): st
   let stale = false;
   const all = [...units(email.subject), ...units(email.text)];
   for (const [index, unit] of all.entries()) {
-    const read = readUnit(unit, all[index + 1]);
-    if (read === undefined) continue;
-    stale ||= read.stale;
-    if (read.written === undefined) continue;
-    const code = normalizeOneTimeCode(read.written.replace(/[ -]/g, ""));
-    if (!code || YEAR.test(code) || !oneTimeCodeWritings(code).includes(read.written)) continue;
+    stale ||= namesStaleCode(unit.text);
+    const written = readUnit(unit, all[index + 1]);
+    if (written === undefined) continue;
+    const code = normalizeOneTimeCode(written.replace(/[ -]/g, ""));
+    if (!code || YEAR.test(code) || !oneTimeCodeWritings(code).includes(written)) continue;
     codes.add(code);
   }
   const [code] = codes;

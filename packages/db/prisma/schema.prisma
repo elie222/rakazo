@@ -1560,6 +1560,9 @@ model BotEmailMessage {
   /// Came through a mailing list, which sends on what anyone on it writes; null when not known
   /// (saved before lists were told apart).
   mailingList Boolean?
+  /// An auto-reply or notice about another message, or bulk mail; null when not known (saved
+  /// before these were told apart).
+  autoReplyOrBulk Boolean?
   to          String[]
   cc          String[]
   subject     String
