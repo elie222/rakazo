@@ -89,6 +89,8 @@ export type EvalCase = {
   steps: Step[];
   files?: string[];
   approvalTool?: string;
+  /** Tools the owner set to Always allow before the first step. */
+  alwaysAllowTools?: string[];
   expectedClarification?: true;
   connections?: string[];
   /** A run waiting on the user (a choice, a secret, an approval) ends its step instead of failing. */
