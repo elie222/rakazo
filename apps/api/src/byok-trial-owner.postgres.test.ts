@@ -491,7 +491,20 @@ dbTests("own-key trial hold lifecycle", () => {
           { interval: 10, timeout: 5_000 },
         )
         .toBe(1);
-      // The lease lapses during the wait; the write waits for the lease row once that is locked.
+      // The lease lapses during the wait: the expiry write queues on the lease row the older
+      // request's transaction holds while its hold write waits, so the lapse is already
+      // bound to land mid-write. Wait until the write reached that queue instead of pacing
+      // it with a fixed delay a loaded runner can invalidate. The newer request needs no
+      // such wait: while the lease reads valid, its claim is refused and retried, not
+      // queued behind the holder.
+      const expiryWriteQueued = () =>
+        db.pool
+          .query(
+            `SELECT 1 FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event_type = 'Lock'
+                AND query LIKE 'UPDATE%billing_accounts%'`,
+          )
+          .then((result) => result.rowCount);
       void prisma.billingAccount
         .updateMany({
           where: { organizationId: owner.first.organizationId },
@@ -501,7 +514,7 @@ dbTests("own-key trial hold lifecycle", () => {
       const newer = service.selectFunding(owner.first.actor, "byok");
       // Unrelated work queued on the older instance's pool delays its next statement.
       const queued = stalled.pool.query("SELECT pg_sleep(2)");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await expect.poll(expiryWriteQueued, { interval: 10, timeout: 5_000 }).toBe(1);
       await blocker.query("COMMIT");
       await newer;
       const first = await customerOf(owner.first.organizationId);
