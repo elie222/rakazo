@@ -53,7 +53,6 @@ import { dateLocaleForUi } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import {
   activeOrganization,
-  leaveDeletedOrganization,
   organizationSwitchActions,
   useOrganizations,
 } from "../lib/organizations";
@@ -97,26 +96,6 @@ export default function Paywall() {
   const deletableOrganization =
     active && canDeleteOrganization(organizations?.organizations ?? [], active) ? active : null;
 
-  function confirmOrganizationDeletion() {
-    const organization = deletableOrganization;
-    if (!organization) return;
-    Alert.alert(t`Delete ${ph({ name: organization.name })}?`, t`This cannot be undone.`, [
-      { text: t`Cancel`, style: "cancel" },
-      {
-        text: t`Delete`,
-        style: "destructive",
-        onPress: () => {
-          setPending(true);
-          rpc("organizations/remove", { organizationId: organization.id })
-            .then(({ activeSpaceId }) => leaveDeletedOrganization(organization, activeSpaceId))
-            .catch((error: unknown) => {
-              Alert.alert(errorText(error));
-              setPending(false);
-            });
-        },
-      },
-    ]);
-  }
   useEffect(() => {
     if (deletion.error) Alert.alert(deletion.error);
   }, [deletion.error]);
@@ -244,7 +223,8 @@ export default function Paywall() {
           onPressAction={({ nativeEvent }) => {
             if (pending || deletion.pending) return;
             if (nativeEvent.event === "delete") void deletion.request();
-            else if (nativeEvent.event === "delete-organization") confirmOrganizationDeletion();
+            else if (nativeEvent.event === "delete-organization")
+              router.push("/organization?delete=1");
             else if (nativeEvent.event === "sign-out") void leave();
             else organizationAction(nativeEvent.event);
           }}
