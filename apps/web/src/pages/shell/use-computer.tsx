@@ -7,11 +7,7 @@ import type {
   Run,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import {
-  isComputerAllowanceUsed,
-  mayTakeComputerControl,
-  userHoldsComputerControl,
-} from "@rakazo/contracts";
+import { isComputerAllowanceUsed, userHoldsComputerControl } from "@rakazo/contracts";
 import {
   createScreenReconnects,
   isRetryableError,
@@ -611,8 +607,8 @@ export function useComputerControls({
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
   const autoBooted = useRef<string | null>(null);
-  // The bot a takeover is on its way for; another bot's window may take control meanwhile.
-  const [takingControlOf, setTakingControlOf] = useState<string | null>(null);
+  // The status the window last asked for control on, so each change asks once.
+  const askedForControlAt = useRef<string | null>(null);
   const [handingBack, setHandingBack] = useState(false);
   // The bot whose control this window took and hands back when it closes.
   const heldControl = useRef<string | null>(null);
@@ -661,8 +657,7 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        setTakingControlOf(targetBotId);
-        await rpc.computer.takeover({ botId: targetBotId });
+        await rpc.computer.takeover({ botId: targetBotId, ifAvailable: true });
         if (!stillThisBoot() || !stillThisBot()) return;
       }
       await refreshComputerFor(targetBotId);
@@ -675,8 +670,6 @@ export function useComputerControls({
       throw error;
     } finally {
       if (stillThisBoot()) setBootingBotId(null);
-      // Held until the status read shows the grant, so it is asked for once.
-      if (takeControl) setTakingControlOf((current) => (current === targetBotId ? null : current));
     }
   }
 
@@ -807,18 +800,11 @@ export function useComputerControls({
       if (!bootsInFlight.current.has(id)) await refreshComputerFor(id).catch(() => undefined);
       return true;
     }
-    const takeControl =
-      !recording &&
-      mayTakeComputerControl(
-        targetComputer,
-        id,
-        computerTakeoverBlocked(targetComputer, runStatus),
-      );
     try {
       await bootComputer({
         botId: id,
-        takeControl,
-        showProgress: takeControl || targetComputer?.state !== "running",
+        takeControl: false,
+        showProgress: targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
       return true;
@@ -878,30 +864,44 @@ export function useComputerControls({
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
 
-  // The open window takes control once nothing stands in the way: the run it waited for
-  // ended, the person holding it let go, or Retry cleared a failed attempt.
-  const shouldTakeControl =
+  // The open window asks for control once per computer status; the server grants it only when
+  // no one else is using the computer.
+  const controlAsk =
     computerOpen &&
     !recording &&
     !handingBack &&
     !booting &&
     !computerError &&
+    !hasControl &&
     computer?.botId === computerBot?.id &&
-    computer?.state === "running" &&
-    takingControlOf !== computerBot?.id &&
-    mayTakeComputerControl(computer, computerBot?.id, computerTakeoverBlocked(computer, runStatus));
+    computer?.state === "running"
+      ? [
+          computer.botId,
+          computer.controlHolder,
+          computer.controlBotId,
+          computer.takeoverRequested,
+          computer.busyBotName,
+          computer.controlledByOther,
+        ].join(":")
+      : null;
   useEffect(() => {
+    if (!computerOpen) askedForControlAt.current = null;
     const botId = computerBot?.id;
-    if (!shouldTakeControl || !botId) return;
-    // A hidden window would hold the computer past its idle expiry.
-    const take = () => {
-      if (document.visibilityState !== "visible") return;
-      void bootComputer({ botId, takeControl: true, showProgress: false }).catch(() => undefined);
+    if (!controlAsk || !botId) return;
+    // A hidden window would keep taking the computer back after its idle expiry.
+    const ask = () => {
+      if (document.visibilityState !== "visible" || askedForControlAt.current === controlAsk)
+        return;
+      askedForControlAt.current = controlAsk;
+      void bootComputer({ botId, takeControl: true, showProgress: false }).catch(() => {
+        // A failed ask shows its error; Retry asks again.
+        askedForControlAt.current = null;
+      });
     };
-    take();
-    document.addEventListener("visibilitychange", take);
-    return () => document.removeEventListener("visibilitychange", take);
-  }, [shouldTakeControl, computerBot?.id]);
+    ask();
+    document.addEventListener("visibilitychange", ask);
+    return () => document.removeEventListener("visibilitychange", ask);
+  }, [controlAsk, computerOpen, computerBot?.id]);
 
   // Closing the window, switching bots or leaving hands back control this window holds.
   // A bot waiting on the user keeps waiting for I'm done.

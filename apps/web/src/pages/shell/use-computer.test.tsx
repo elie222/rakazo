@@ -529,12 +529,12 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
   expect(container.textContent).not.toContain("Upgrade");
 });
 
-it("takes control on open once no run is using the screen, and hands it back on close", async () => {
-  const takeover = vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" }));
+it("asks for control once per status change and hands it back on close", async () => {
+  // The server answers null while the bot's run keeps the screen.
+  const takeover = vi.fn(async (): Promise<{ leaseId: string; expiresAt: string } | null> => null);
   const release = vi.fn(async () => ({ ok: true as const }));
   const heartbeat = vi.fn(async () => ({ ok: true as const }));
   const bot = { id: "bot-1", name: "Ada" } as never;
-  let runStatus: "running" | undefined = "running";
   function Controls() {
     state = useComputerState({
       rpc: { computer: { screenUrl } } as never,
@@ -553,7 +553,7 @@ it("takes control on open once no run is using the screen, and hands it back on 
       botsRef: { current: [bot] },
       activeBotId: { current: "bot-1" },
       activeGroupId: { current: undefined },
-      runStatus,
+      runStatus: undefined,
       recording: false,
       sandboxProvider: undefined,
       refreshThread: vi.fn(async () => ({}) as never),
@@ -581,13 +581,15 @@ it("takes control on open once no run is using the screen, and hands it back on 
   await act(async () => root.render(<Controls />));
   await act(async () => state.commitComputer(status));
   await act(async () => state.setComputerOpen(true));
-  // The bot's run keeps the screen; the window only watches.
-  expect(takeover).not.toHaveBeenCalled();
-  runStatus = undefined;
+  expect(takeover).toHaveBeenCalledWith({ botId: "bot-1", ifAvailable: true });
+  // An unchanged status is not asked about again.
+  await act(async () => state.commitComputer({ ...status }));
+  expect(takeover).toHaveBeenCalledOnce();
+  takeover.mockResolvedValue({ leaseId: "lease-1", expiresAt: "" });
   await act(async () =>
     state.commitComputer({ ...status, controlHolder: "none", busyBotName: null }),
   );
-  expect(takeover).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(takeover).toHaveBeenCalledTimes(2);
   await act(async () =>
     state.commitComputer({
       ...status,
@@ -596,7 +598,7 @@ it("takes control on open once no run is using the screen, and hands it back on 
       busyBotName: null,
     }),
   );
-  expect(takeover).toHaveBeenCalledOnce();
+  expect(takeover).toHaveBeenCalledTimes(2);
   await act(async () => state.setComputerOpen(false));
   expect(release).toHaveBeenCalledWith({ botId: "bot-1" });
 });
@@ -671,7 +673,7 @@ it("hands control back on close after a failed I’m done", async () => {
   expect(takeover).not.toHaveBeenCalled();
 });
 
-it("takes control of the bot switched to while another bot's takeover is still on its way", async () => {
+it("asks for the bot switched to while another bot's answer is still on its way", async () => {
   const takeover = vi.fn(({ botId }: { botId: string }) =>
     botId === "bot-1"
       ? new Promise(() => undefined)
@@ -733,11 +735,11 @@ it("takes control of the bot switched to while another bot's takeover is still o
   await act(async () => root.render(<Controls />));
   await act(async () => state.commitComputer(free("bot-1")));
   await act(async () => state.setComputerOpen(true));
-  expect(takeover).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(takeover).toHaveBeenCalledWith({ botId: "bot-1", ifAvailable: true });
 
   await act(async () => {
     state.setComputerBotId("bot-2");
     state.commitComputer(free("bot-2"));
   });
-  expect(takeover).toHaveBeenLastCalledWith({ botId: "bot-2" });
+  expect(takeover).toHaveBeenLastCalledWith({ botId: "bot-2", ifAvailable: true });
 });

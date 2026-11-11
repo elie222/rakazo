@@ -1,10 +1,6 @@
 import { ph, t } from "@lingui/core/macro";
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
-import {
-  isLocalhostOrLoopbackIp,
-  isPrivateNetworkHost,
-  userHoldsComputerControl,
-} from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
 
@@ -186,25 +182,6 @@ export function previewPlaceholder(
   if (state === "suspended") return t`Computer is asleep. Open it to wake.`;
   if (state === "error") return t`Computer failed to boot`;
   return t`Computer is stopped`;
-}
-
-/** Who is using the screen, when it is not free. */
-export function controlPillLabel(computer: ComputerStatus | null, botId?: string): string | null {
-  if (userHoldsComputerControl(computer, botId)) return t`You’re in control`;
-  if (computer?.controlledByOther) {
-    return computer.controlledByName
-      ? t`${ph({ name: computer.controlledByName })} is in control`
-      : t`Someone else is in control`;
-  }
-  if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is working`;
-  return null;
-}
-
-export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
-  const control = controlPillLabel(computer, botId);
-  if (control) return control;
-  if (computer?.state === "suspended") return t`Asleep`;
-  return computerLabel(computer?.mode, name);
 }
 
 export function computerLabel(mode: ComputerMode | undefined, name: string) {

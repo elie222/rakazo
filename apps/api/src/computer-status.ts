@@ -9,6 +9,7 @@ import {
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { userControlHolder } from "@rakazo/db";
 
 /** Mirrors computer.takeover: an execution lease blocks user control unless a takeover is pending. */
 export function executionBlocksUserTakeover(input: {
@@ -59,9 +60,7 @@ export async function resolveBusyBotName(
 export type ComputerControlView = {
   /** The person in control, when it is not the viewer. */
   controllerName?: string | null;
-  /** The bot whose request for help the user has not opened yet. */
-  requestBotId?: string | null;
-  /** That unopened request waits for another person, so this viewer only watches. */
+  /** A bot's unopened request for help waits for another person, so this viewer only watches. */
   requestForOther?: boolean;
 };
 
@@ -82,18 +81,15 @@ export async function resolveComputerControl(
 ): Promise<ComputerControlView> {
   const runId = computer?.controlBotId ? null : computer?.controlRunId;
   const run = runId
-    ? await prisma.run.findUnique({ where: { id: runId }, select: { botId: true, userId: true } })
+    ? await prisma.run.findUnique({ where: { id: runId }, select: { userId: true } })
     : null;
-  // A lease from before holders were recorded belongs to the person the computer is kept for.
-  const holderId =
-    computer?.controlHolder === "user" ? computer.controlUserId || computer.userId : run?.userId;
+  const holderId = computer?.controlHolder === "user" ? userControlHolder(computer) : run?.userId;
   const otherId = viewerId && holderId && holderId !== viewerId ? holderId : null;
   const user = otherId
     ? await prisma.user.findUnique({ where: { id: otherId }, select: { name: true } })
     : null;
   return {
     controllerName: user?.name || null,
-    requestBotId: run?.botId ?? null,
     requestForOther: Boolean(run && otherId),
   };
 }
@@ -158,7 +154,7 @@ export function toComputerStatus(
     kind,
     state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
-    controlBotId: computer?.controlBotId ?? control.requestBotId ?? null,
+    controlBotId: computer?.controlBotId ?? null,
     takeoverRequested: Boolean(computer?.controlRunId),
     screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
     screenWidth: screen.width,

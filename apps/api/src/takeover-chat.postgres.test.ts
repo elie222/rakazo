@@ -264,6 +264,65 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     };
   }
 
+  it.each(["opened", "unopened", "working"] as const)(
+    "leaves a computer another bot is using to it when a window asks if it is free (%s)",
+    async (mode) => {
+      const fixture = await setup(mode === "unopened" ? "unopened" : "opened");
+      if (mode === "working") {
+        await system.computer.update({
+          where: { id: fixture.computer.id },
+          data: {
+            controlHolder: "none",
+            controlBotId: null,
+            controlRunId: null,
+            controlLeaseId: null,
+            controlLeaseExpiresAt: null,
+          },
+        });
+        await system.run.update({ where: { id: fixture.run.id }, data: { status: "running" } });
+        await system.computerExecutionLease.upsert({
+          where: {
+            computerId_botId: { computerId: fixture.computer.id, botId: fixture.bot.id },
+          },
+          create: {
+            computerId: fixture.computer.id,
+            botId: fixture.bot.id,
+            runId: fixture.run.id,
+            fence: 1,
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+          update: { runId: fixture.run.id, expiresAt: new Date(Date.now() + 60_000) },
+        });
+      }
+      const before = await fixture.control();
+      const other = await system.bot.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Other fixture",
+          color: "test",
+          computerId: fixture.computer.id,
+        },
+      });
+      const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+        new Request("http://127.0.0.1/rpc/computer/takeover", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: other.id, ifAvailable: true } }),
+        }),
+        { prefix: "/rpc", context: { actor: fixture.actor } },
+      );
+      expect(response?.status).toBe(200);
+      expect(await response?.json()).toMatchObject({ json: null });
+      expect(await fixture.control()).toMatchObject({
+        controlHolder: before.controlHolder,
+        controlBotId: before.controlBotId,
+        controlRunId: before.controlRunId,
+        controlLeaseId: before.controlLeaseId,
+      });
+    },
+  );
+
   it.each(["waiting", "pause-during-revoke", "pause-after-handoff"] as const)(
     "skips the previous bot's takeover on a shared screen (%s)",
     async (timing) => {
@@ -495,30 +554,6 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
     await runAsTenant(fixture.actor, () => executor.continueRun(fixture.run.id, "late-worker"));
     expect(requests).toHaveLength(1);
-  });
-
-  it("names the bot an unopened request belongs to, so another bot's screen leaves it", async () => {
-    const fixture = await setup("unopened");
-    const other = await system.bot.create({
-      data: {
-        spaceId: fixture.actor.spaceId,
-        userId: fixture.actor.userId,
-        name: "Other fixture",
-        color: "test",
-        computerId: fixture.computer.id,
-      },
-    });
-    const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
-      new Request("http://127.0.0.1/rpc/computer/status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: { botId: other.id } }),
-      }),
-      { prefix: "/rpc", context: { actor: fixture.actor } },
-    );
-    expect(await response?.json()).toMatchObject({
-      json: { takeoverRequested: true, controlHolder: "none", controlBotId: fixture.bot.id },
-    });
   });
 
   it("releases an unopened takeover and restores tools for the steered continuation", async () => {

@@ -206,7 +206,7 @@ describe("resolveComputerControl", () => {
     homeRevision: "revision-1",
   };
   const prisma = {
-    run: { findUnique: async () => ({ botId: "bot-1", userId: "grace" }) },
+    run: { findUnique: async () => ({ userId: "grace" }) },
     user: { findUnique: async () => ({ name: "Grace" }) },
   } as unknown as PrismaClient;
 
@@ -214,13 +214,12 @@ describe("resolveComputerControl", () => {
     const forOther = await resolveComputerControl(prisma, waiting, "ada");
     expect(toComputerStatus("bot-2", waiting, null, true, "ada", forOther)).toMatchObject({
       takeoverRequested: true,
-      controlBotId: "bot-1",
       controlledByOther: true,
       controlledByName: "Grace",
     });
     const forViewer = await resolveComputerControl(prisma, waiting, "grace");
     const status = toComputerStatus("bot-1", waiting, null, true, "grace", forViewer);
-    expect(status).toMatchObject({ takeoverRequested: true, controlBotId: "bot-1" });
+    expect(status).toMatchObject({ takeoverRequested: true });
     expect(status).not.toHaveProperty("controlledByOther");
   });
 });

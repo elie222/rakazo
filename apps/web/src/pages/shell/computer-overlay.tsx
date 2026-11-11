@@ -232,7 +232,7 @@ export function ComputerOverlay({
           {computer && computer.kind !== "desktop" && !recordingSkill ? (
             <ComputerControlPill
               computer={computer}
-              hasControl={hasControl}
+              botId={bot.id}
               busyBotName={
                 computerTakeoverBlocked(computer, runStatus) ? computer.busyBotName : null
               }

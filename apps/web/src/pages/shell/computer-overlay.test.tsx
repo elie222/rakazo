@@ -158,7 +158,12 @@ describe("control pill", () => {
 
   it("hands control back with I’m done and never offers Take control", async () => {
     const onFinish = vi.fn();
-    await render("running", vi.fn(), { hasControl: true, screenUrl: screen, onFinish });
+    await render("running", vi.fn(), {
+      hasControl: true,
+      screenUrl: screen,
+      status: { controlHolder: "user", controlBotId: "bot-1" },
+      onFinish,
+    });
     expect(pill()?.textContent).toContain("You’re in control");
     expect(button("Skip")).toBeUndefined();
     await act(async () => button("I’m done")?.click());

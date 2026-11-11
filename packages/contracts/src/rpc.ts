@@ -821,7 +821,10 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
     dismissUpdate: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     dismissDiskWarning: oc.input(botId).output(z.object({ ok: z.literal(true) })),
-    takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
+    takeover: oc
+      // ifAvailable: take control only if no one else is using the computer, else answer null.
+      .input(botId.extend({ ifAvailable: z.boolean().optional() }))
+      .output(z.object({ leaseId: Id, expiresAt: z.string() }).nullable()),
     release: oc
       .input(
         z.object({

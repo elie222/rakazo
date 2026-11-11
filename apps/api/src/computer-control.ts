@@ -86,6 +86,33 @@ export async function computerStatus(
   return toComputerStatus(botId, bot.computer, busyBotName, shared, actor.userId, control);
 }
 
+/**
+ * Whether another bot on this computer is working or waiting for the user, so taking control for
+ * this bot would interrupt its run or skip its request for help.
+ */
+export async function anotherBotUsesComputer(
+  prisma: PrismaClient,
+  computer: { id: string; controlBotId: string | null; controlRunId: string | null },
+  botId: string,
+): Promise<boolean> {
+  const runIds = (
+    await prisma.computerExecutionLease.findMany({
+      where: { computerId: computer.id, botId: { not: botId } },
+      select: { runId: true },
+    })
+  ).map((lease) => lease.runId);
+  if (computer.controlRunId && computer.controlBotId !== botId) runIds.push(computer.controlRunId);
+  if (runIds.length === 0) return false;
+  const running = await prisma.run.count({
+    where: {
+      id: { in: runIds },
+      botId: { not: botId },
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+    },
+  });
+  return running > 0;
+}
+
 /** Whether this person holds this bot's user control, so they may drive its screen. */
 export function holdsComputerControl(
   computer: Parameters<typeof hasActiveComputerControl>[0] & {

@@ -93,10 +93,7 @@ export function reduceComputerStatus(
       ...prev,
       busyBotName: null,
       takeoverRequested: true,
-      // On a shared computer the snapshot says whose request this is before anyone may answer it.
-      ...(retainedControl
-        ? {}
-        : { controlHolder: "none" as const, controlBotId: prev.shared ? null : event.botId }),
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
     };
     return prev.busyBotName === next.busyBotName &&
       prev.takeoverRequested === next.takeoverRequested &&

@@ -69,25 +69,25 @@ export function userHoldsComputerControl(
   );
 }
 
+/** Who is using the screen, when it is not free: the viewer, another person, or a working bot. */
+export type ComputerControlUser =
+  | { by: "you" }
+  | { by: "person"; name: string | null }
+  | { by: "bot"; name: string };
+
 /**
- * Whether opening this bot's computer takes control: no person, no working run (`busy`) and no
- * other bot's request for help is using it.
+ * Who is using this bot's computer, in the order the screen says it. `busyBotName` is the bot whose
+ * run keeps the screen, when one does.
  */
-export function mayTakeComputerControl(
+export function computerControlUser(
   computer: ComputerStatus | null | undefined,
   botId: string | undefined,
-  busy: boolean,
-): boolean {
-  return Boolean(
-    botId &&
-      computer &&
-      computer.kind !== "desktop" &&
-      !computer.controlledByOther &&
-      !busy &&
-      // Taking control would skip another bot's request for help.
-      !(computer.takeoverRequested && computer.controlBotId !== botId) &&
-      !userHoldsComputerControl(computer, botId),
-  );
+  busyBotName: string | null | undefined,
+): ComputerControlUser | null {
+  if (userHoldsComputerControl(computer, botId)) return { by: "you" };
+  if (computer?.controlledByOther) return { by: "person", name: computer.controlledByName ?? null };
+  if (busyBotName) return { by: "bot", name: busyBotName };
+  return null;
 }
 
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);

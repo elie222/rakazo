@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ComputerStatus } from "./computer.js";
 import {
-  controlLabel,
   embeddableScreenUrl,
   fromScreenPage,
   isProxiedScreenPage,
@@ -199,46 +198,12 @@ describe("screen stream identity", () => {
 });
 
 describe("computer copy", () => {
-  it("matches the web pane while booting, asleep, or in control", () => {
+  it("matches the web pane while booting or asleep", () => {
     expect(previewPlaceholder("stopped", false, "Chief")).toBe("Computer is stopped");
     expect(previewPlaceholder("suspended", false, "Chief")).toBe(
       "Computer is asleep. Open it to wake.",
     );
     expect(previewPlaceholder("running", true, "Chief")).toBe("Booting live desktop…");
-    expect(
-      controlLabel(
-        computer({
-          state: "running",
-          controlHolder: "user",
-          controlBotId: "bot-1",
-          takeoverRequested: true,
-        }),
-        "Chief",
-        "bot-1",
-      ),
-    ).toBe("You’re in control");
-    expect(
-      controlLabel(
-        computer({
-          state: "running",
-          controlHolder: "user",
-          controlBotId: "other-bot",
-        }),
-        "Chief",
-        "bot-1",
-      ),
-    ).toBe("Team Computer");
-    expect(
-      controlLabel(
-        computer({
-          state: "suspended",
-          controlHolder: "none",
-          controlBotId: null,
-          screenAvailable: false,
-        }),
-        "Chief",
-      ),
-    ).toBe("Asleep");
   });
 });
 

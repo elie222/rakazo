@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ComputerStatus } from "./computer.js";
-import { mayTakeComputerControl } from "./computer.js";
+import { computerControlUser } from "./computer.js";
 
 function running(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
   return {
@@ -22,56 +22,27 @@ function running(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
   };
 }
 
-describe("mayTakeComputerControl", () => {
-  it("takes a free computer and answers this bot's own request", () => {
-    expect(mayTakeComputerControl(running(), "bot-1", false)).toBe(true);
+describe("computerControlUser", () => {
+  it("says the viewer first, then another person, then a working bot", () => {
     expect(
-      mayTakeComputerControl(
-        running({ takeoverRequested: true, controlBotId: "bot-1" }),
-        "bot-1",
-        false,
-      ),
-    ).toBe(true);
-  });
-
-  it("never skips another bot's request for help on a shared computer", () => {
-    for (const controlHolder of ["none", "user"] as const) {
-      expect(
-        mayTakeComputerControl(
-          running({ takeoverRequested: true, controlHolder, controlBotId: "bot-2" }),
-          "bot-1",
-          false,
-        ),
-      ).toBe(false);
-    }
-  });
-
-  it("leaves a computer another person, a working run or a bot waiting on someone else holds", () => {
-    expect(
-      mayTakeComputerControl(
-        running({ controlHolder: "user", controlledByOther: true }),
-        "bot-1",
-        false,
-      ),
-    ).toBe(false);
-    expect(
-      mayTakeComputerControl(
-        running({ takeoverRequested: true, controlBotId: "bot-1", controlledByOther: true }),
-        "bot-1",
-        false,
-      ),
-    ).toBe(false);
-    expect(mayTakeComputerControl(running({ busyBotName: "Ada" }), "bot-1", true)).toBe(false);
-  });
-
-  it("does nothing for a computer it already holds or a desktop", () => {
-    expect(
-      mayTakeComputerControl(
+      computerControlUser(
         running({ controlHolder: "user", controlBotId: "bot-1" }),
         "bot-1",
-        false,
+        "Ada",
       ),
-    ).toBe(false);
-    expect(mayTakeComputerControl(running({ kind: "desktop" }), "bot-1", false)).toBe(false);
+    ).toEqual({ by: "you" });
+    expect(
+      computerControlUser(
+        running({ controlHolder: "user", controlledByOther: true, controlledByName: "Grace" }),
+        "bot-1",
+        "Ada",
+      ),
+    ).toEqual({ by: "person", name: "Grace" });
+    expect(computerControlUser(running({ controlledByOther: true }), "bot-1", null)).toEqual({
+      by: "person",
+      name: null,
+    });
+    expect(computerControlUser(running(), "bot-1", "Ada")).toEqual({ by: "bot", name: "Ada" });
+    expect(computerControlUser(running(), "bot-1", null)).toBeNull();
   });
 });

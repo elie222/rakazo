@@ -1,31 +1,33 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ComputerReleaseReason, ComputerStatus } from "@rakazo/contracts";
+import { computerControlUser } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 
 /** Who is using the screen, floating over it, with the hand-back when it is the viewer. */
 export function ComputerControlPill({
   computer,
-  hasControl,
+  botId,
   busyBotName,
   onFinish,
 }: {
   computer: ComputerStatus;
-  hasControl: boolean;
+  botId: string;
   /** The bot whose run is using the screen, so the viewer only watches. */
   busyBotName: string | null;
   onFinish: (reason?: ComputerReleaseReason) => void;
 }) {
-  const label = hasControl
-    ? t`You’re in control`
-    : computer.controlledByOther
-      ? computer.controlledByName
-        ? t`${computer.controlledByName} is in control`
-        : t`Someone else is in control`
-      : busyBotName
-        ? t`${busyBotName} is working`
-        : null;
-  if (!label) return null;
+  const user = computerControlUser(computer, botId, busyBotName);
+  if (!user) return null;
+  const hasControl = user.by === "you";
+  const label =
+    user.by === "you"
+      ? t`You’re in control`
+      : user.by === "bot"
+        ? t`${user.name} is working`
+        : user.name
+          ? t`${user.name} is in control`
+          : t`Someone else is in control`;
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
       <div

@@ -1,9 +1,9 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
+import type { ComputerControlUser, ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import {
+  computerControlUser,
   isComputerAllowanceUsed,
-  mayTakeComputerControl,
   userHoldsComputerControl,
 } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
@@ -46,8 +46,6 @@ import {
   COMPUTER_HEARTBEAT_MS,
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
   computerLabel,
-  controlLabel,
-  controlPillLabel,
   embeddableScreenUrl,
   fromScreenPage,
   isProxiedScreenPage,
@@ -345,7 +343,7 @@ export default function Computer() {
     if (!botId) return;
     try {
       const opened = await bootComputer({
-        takeControl: mayTakeComputerControl(computer, botId, Boolean(computer?.busyBotName)),
+        takeControl: false,
         showProgress: computer?.state !== "running",
         force: computer?.state !== "running",
       });
@@ -357,29 +355,37 @@ export default function Computer() {
     }
   }
 
-  // The bot a takeover is on its way for; another bot's window may take control meanwhile.
-  const [takingControlOf, setTakingControlOf] = useState<string | null>(null);
-  // The open window takes control once nothing stands in the way: the run it waited for
-  // ended, or the person holding it let go.
-  const shouldTakeControl =
+  // The status the window last asked for control on, so each change asks once.
+  const askedForControlAt = useRef<string | null>(null);
+  // The open window asks for control once per computer status; the server grants it only when
+  // no one else is using the computer.
+  const controlAsk =
     computerOpen &&
     foreground &&
     !releasing &&
     !booting &&
     !error &&
+    !hasControl &&
     computer?.botId === botId &&
-    computer?.state === "running" &&
-    takingControlOf !== botId &&
-    mayTakeComputerControl(computer, botId, Boolean(computer?.busyBotName));
+    computer?.state === "running"
+      ? [
+          computer.botId,
+          computer.controlHolder,
+          computer.controlBotId,
+          computer.takeoverRequested,
+          computer.busyBotName,
+          computer.controlledByOther,
+        ].join(":")
+      : null;
   useEffect(() => {
-    if (!shouldTakeControl || !botId) return;
-    const id = botId;
-    setTakingControlOf(id);
-    void bootComputer({ takeControl: true, showProgress: false })
-      .catch(() => undefined)
-      // Held until the status read shows the grant, so it is asked for once.
-      .finally(() => setTakingControlOf((current) => (current === id ? null : current)));
-  }, [shouldTakeControl]);
+    if (!computerOpen) askedForControlAt.current = null;
+    if (!controlAsk || askedForControlAt.current === controlAsk) return;
+    askedForControlAt.current = controlAsk;
+    void bootComputer({ takeControl: true, showProgress: false }).catch(() => {
+      // A failed ask shows its error; trying again asks again.
+      askedForControlAt.current = null;
+    });
+  }, [controlAsk, computerOpen]);
 
   // Closing the window hands back control it holds. A bot waiting on the user keeps waiting
   // for I'm done.
@@ -602,9 +608,6 @@ export default function Computer() {
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
         />
       </View>
-      <Text style={{ marginTop: 16, color: tokens.mutedForeground }}>
-        {controlLabel(computer, name, botId)}
-      </Text>
       {computer?.diskFullPercent !== undefined ? (
         <View
           style={{
@@ -747,8 +750,7 @@ export default function Computer() {
               {/* Stays over errors too, so a bot waiting on the user can still be answered. */}
               {foreground ? (
                 <ComputerControlPill
-                  label={controlPillLabel(computer, botId)}
-                  hasControl={hasControl}
+                  user={computerControlUser(computer, botId, computer?.busyBotName)}
                   takeoverRequested={computer?.takeoverRequested ?? false}
                   onFinish={releaseComputer}
                 />
@@ -776,19 +778,26 @@ export default function Computer() {
 
 /** Who is using the screen, floating over it, with the hand-back when it is the viewer. */
 function ComputerControlPill({
-  label,
-  hasControl,
+  user,
   takeoverRequested,
   onFinish,
 }: {
-  label: string | null;
-  hasControl: boolean;
+  user: ComputerControlUser | null;
   takeoverRequested: boolean;
   onFinish: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  if (!label) return null;
+  if (!user) return null;
+  const hasControl = user.by === "you";
+  const label =
+    user.by === "you"
+      ? t`You’re in control`
+      : user.by === "bot"
+        ? t`${ph({ name: user.name })} is working`
+        : user.name
+          ? t`${ph({ name: user.name })} is in control`
+          : t`Someone else is in control`;
   return (
     <View pointerEvents="box-none" style={styles.pillDock}>
       <View

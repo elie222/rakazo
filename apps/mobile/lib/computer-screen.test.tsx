@@ -332,12 +332,14 @@ describe("computer screen", () => {
     return view.querySelector('section [data-testid="computer-control-pill"]');
   }
 
-  /** Answers a takeover as the server would, with the status that follows it. */
+  /** Answers boots and takeovers as the server would, with the status that follows them. */
   function grantTakeover(status: ComputerStatus) {
     let current = status;
     rpc.mockImplementation(async (method: string) => {
       if (method === "computer/takeover") {
-        current = { ...current, controlHolder: "user", controlBotId: "bot-1", busyBotName: null };
+        // Someone else using the computer keeps it; the window stays read-only.
+        if (current.busyBotName || current.controlledByOther) return null;
+        current = { ...current, controlHolder: "user", controlBotId: "bot-1" };
       }
       if (method === "computer/release") current = { ...current, controlHolder: "none" };
       if (method === "computer/status") return current;
@@ -591,7 +593,9 @@ describe("computer screen", () => {
 
     const fullWindow = view.querySelector("section");
     expect(fullWindow?.querySelector('[aria-label="Close computer"]')).not.toBeNull();
-    expect(calls("computer/takeover")).toEqual([]);
+    expect(calls("computer/takeover")).toEqual([
+      ["computer/takeover", { botId: "bot-1", ifAvailable: true }],
+    ]);
     expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
     const screens = view.querySelectorAll("iframe");
     expect(screens).toHaveLength(1);
@@ -604,7 +608,7 @@ describe("computer screen", () => {
     server.set({ ...botWorking, busyBotName: null });
     await returnFromBackground();
 
-    expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
+    expect(calls("computer/takeover")).toHaveLength(2);
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-elements-hidden")).toBe("false");
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-important")).toBe("auto");
     expect(fullWindow?.querySelector("[data-keyboard-bar]")).not.toBeNull();
@@ -612,15 +616,17 @@ describe("computer screen", () => {
   });
 
   it("wakes a sleeping computer from the preview and takes control", async () => {
-    grantTakeover({ ...botWorking, state: "suspended", busyBotName: null });
+    const server = grantTakeover({ ...botWorking, state: "suspended", busyBotName: null });
     const view = await render();
     expect(calls("computer/boot")).toEqual([]);
 
+    server.set({ ...botWorking, busyBotName: null });
     await act(async () => preview(view).click());
     await settle();
 
-    expect(calls("computer/boot")).toHaveLength(1);
+    expect(calls("computer/boot").length).toBeGreaterThan(0);
     expect(calls("computer/takeover")).toHaveLength(1);
+    expect(view.querySelector("[data-keyboard-bar]")).not.toBeNull();
   });
 
   it("takes control as the full window opens and hands it back when it closes", async () => {
@@ -629,7 +635,9 @@ describe("computer screen", () => {
 
     await act(async () => preview(view).click());
     await settle();
-    expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
+    expect(calls("computer/takeover")).toEqual([
+      ["computer/takeover", { botId: "bot-1", ifAvailable: true }],
+    ]);
     expect(view.querySelector("[data-keyboard-bar]")).not.toBeNull();
 
     await act(async () =>
@@ -697,7 +705,8 @@ describe("computer screen", () => {
     await settle();
     expect(pill(view)?.textContent).toBe("Grace is in control");
     expect(pill(view)?.querySelector("button")).toBeNull();
-    expect(calls("computer/takeover")).toEqual([]);
+    // The server keeps it with Grace; the window asked once and stays read-only.
+    expect(calls("computer/takeover")).toHaveLength(1);
     expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
   });
 
@@ -1350,7 +1359,8 @@ describe("computer screen", () => {
       expect(view.textContent).toContain("Request timed out");
       expect(view.textContent).not.toContain("Couldn't start the computer");
       expect(tryAgain(view)).toBeUndefined();
-      expect(view.querySelector("section")).toBeNull();
+      // The window stays open on the read-only screen.
+      expect(view.querySelector("section")).not.toBeNull();
     });
 
     it("keeps following the boot after the request times out", async () => {

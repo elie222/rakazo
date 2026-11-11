@@ -17,8 +17,16 @@ export function holdsUserControl(
   computer: { controlUserId?: string | null; userId?: string | null },
   userId: string,
 ): boolean {
-  const holder = computer.controlUserId || computer.userId;
+  const holder = userControlHolder(computer);
   return !holder || holder === userId;
+}
+
+/** The person holding a computer's user control: who took it, or for an older lease its owner. */
+export function userControlHolder(computer: {
+  controlUserId?: string | null;
+  userId?: string | null;
+}): string | null {
+  return computer.controlUserId || computer.userId || null;
 }
 
 export function hasActiveComputerControl(

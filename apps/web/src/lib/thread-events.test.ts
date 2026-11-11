@@ -340,7 +340,7 @@ describe("computer event reduction", () => {
     ).toBe(prev);
   });
 
-  it("marks takeover requested for its bot and clears control unless the lease was retained", () => {
+  it("marks takeover requested and clears control unless the lease was retained", () => {
     const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "bot" });
     expect(
       reduceComputerStatus(busy, event({ type: "computer.takeover.requested", payload: {} })),
@@ -348,15 +348,8 @@ describe("computer event reduction", () => {
       busyBotName: null,
       takeoverRequested: true,
       controlHolder: "none",
-      controlBotId: "bot-1",
+      controlBotId: null,
     });
-    // On a shared computer the request's owner comes with the next snapshot.
-    expect(
-      reduceComputerStatus(
-        { ...busy, shared: true },
-        event({ type: "computer.takeover.requested", payload: {} }),
-      ),
-    ).toMatchObject({ takeoverRequested: true, controlBotId: null });
     expect(
       reduceComputerStatus(
         computer({
