@@ -1649,6 +1649,39 @@ describe("shared Linux desktop lifecycle", () => {
   );
 
   it.skipIf(process.platform !== "linux")(
+    "accepts a file chooser that execs between process checks",
+    async () => {
+      const { bin, screenEnv, run, relocate, cleanup } = await portalScreenFixture();
+      // The first executable read sees nohup; the next sees the portal after exec.
+      writeFileSync(
+        path.join(bin, "readlink"),
+        [
+          "#!/bin/bash",
+          'target=$(/usr/bin/readlink "$@") || exit 1',
+          'case "$target" in',
+          "  */xdg-desktop-portal-gtk)",
+          '    if [ ! -f "$0.seen" ]; then',
+          '      touch "$0.seen"',
+          "      printf '/usr/bin/nohup\\n'",
+          "      exit 0",
+          "    fi ;;",
+          "esac",
+          `printf '%s\\n' "$target"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(path.join(bin, "readlink"), 0o755);
+      try {
+        const result = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(result.status, result.stderr).toBe(0);
+      } finally {
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
     "restarts a dead screen bus without killing an unrelated pid",
     async () => {
       const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =
