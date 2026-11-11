@@ -295,6 +295,21 @@ export function connectorReadRequiresApproval(input: {
   return input.tainted && !input.connectorTrusted;
 }
 
+const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
+
+/**
+ * Saved memory is trusted in every later run. Once outside content entered this run, a planted
+ * instruction could become that memory, so the save goes through the run's approval mode like
+ * any consequential action. A run that only started from a routine, ticket or another bot has
+ * read nothing yet and saves freely. `readOutsideContent` is only checked for a memory write.
+ */
+export async function memoryWriteNeedsApproval(
+  toolName: string,
+  readOutsideContent: () => Promise<boolean>,
+): Promise<boolean> {
+  return MEMORY_WRITE_TOOLS.has(toolName) && (await readOutsideContent());
+}
+
 /**
  * web_fetch sends its whole URL, query string included, to the site it names, so a site this run
  * was not given is a new destination that injected text could have picked. Trusted sites (named in

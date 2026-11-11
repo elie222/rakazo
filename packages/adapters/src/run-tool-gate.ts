@@ -16,6 +16,7 @@ import {
   decisiveActionApprovalRules,
   displayName,
   humanizeToolName,
+  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -274,6 +275,10 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
+  const memoryWriteGated = await memoryWriteNeedsApproval(
+    name,
+    async () => ctx.state.readOutsideContent || (await ctx.trust.receivedOutsideMessage()),
+  );
   const { purchase, cardUse } = request;
   // Typing a saved card is approved like a purchase: every time, by a person.
   const paying = Boolean(purchase) || Boolean(cardUse);
@@ -282,6 +287,7 @@ export async function gateToolCall(
     paying ||
     unattendedWatch ||
     siteGate === "new" ||
+    memoryWriteGated ||
     unidentifiedAction ||
     (!catalogControlRead &&
       approvalToolNames.some(

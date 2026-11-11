@@ -7,7 +7,8 @@ Decide how much a bot can do without asking you first.
 Open **Settings → Approvals** and pick a **Mode**:
 
 - **Ask**: the bot asks before any action that changes something, such as sending an email or
-  editing a document. Reading usually doesn't ask.
+  editing a document. Reading usually doesn't ask. Saving to memory asks first once the bot has
+  read outside content in that run.
 - **Auto**: an approval model checks each action against what you asked for. Actions that fit go
   ahead; the bot asks when one is off-task, or can't be undone and you didn't ask for it.
 - **Never ask**: every action runs without waiting.
