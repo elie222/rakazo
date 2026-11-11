@@ -62,7 +62,10 @@ import {
   withVoiceConnection,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
-import { HEARTBEAT, meDto, withHeartbeats } from "./shared.js";
+import { HEARTBEAT, HEARTBEAT_MS, meDto, withHeartbeats } from "./shared.js";
+
+/** Three missed heartbeats, so a desktop app that quit or crashed gets pushes within a minute. */
+const DESKTOP_LIVE_MS = 3 * HEARTBEAT_MS;
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -336,12 +339,39 @@ export function accountRoutes(ctx: RouterContext) {
         const { followChatAlerts } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
-        const alerts = withHeartbeats(context, (signal) =>
-          followChatAlerts(userId, spaceId, signal),
-        );
-        for await (const next of alerts) {
-          if (next === HEARTBEAT) yield { type: "heartbeat" as const };
-          else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
+        // A desktop app on this stream shows the Space's alerts, so it gets no push for them.
+        const sessionId = deps.env?.desktopPushEnabled ? context.sessionId : undefined;
+        let markedAt = 0;
+        let written: Date | undefined;
+        const markLive = (live: boolean) => {
+          if (!sessionId) return undefined;
+          markedAt = Date.now();
+          // Clearing names this stream's own mark: after a reload or Space switch, a newer
+          // stream of the same session may have written its own since.
+          const previous = written;
+          written = live ? new Date(markedAt + DESKTOP_LIVE_MS) : undefined;
+          return deps.pushTokens
+            .markDesktopLive?.(
+              userId,
+              sessionId,
+              written ? { spaceId, until: written } : null,
+              written ? undefined : previous,
+            )
+            .catch((error) => getLogger().warn("desktop live mark failed", { error }));
+        };
+        try {
+          await markLive(true);
+          const alerts = withHeartbeats(context, (signal) =>
+            followChatAlerts(userId, spaceId, signal),
+          );
+          for await (const next of alerts) {
+            // Renewed by time, not by heartbeat: a busy stream may never reach one.
+            if (Date.now() - markedAt >= HEARTBEAT_MS) await markLive(true);
+            if (next === HEARTBEAT) yield { type: "heartbeat" as const };
+            else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
+          }
+        } finally {
+          await markLive(false);
         }
       }),
       subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
@@ -418,6 +448,20 @@ export function accountRoutes(ctx: RouterContext) {
         }
         return { ok: true as const };
       }),
+      registerDesktopPush: authed.notifications.registerDesktopPush.handler(
+        async ({ context, input }) => {
+          if (!deps.env?.desktopPushEnabled || !deps.pushTokens.saveDesktop)
+            throw new ORPCError("NOT_FOUND");
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          try {
+            await deps.pushTokens.saveDesktop(context.actor.userId, input.token, context.sessionId);
+          } catch (error) {
+            if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+            throw error;
+          }
+          return { ok: true as const };
+        },
+      ),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
         if (context.sessionId) {
           // Only the calling session's registration: another device of this account,

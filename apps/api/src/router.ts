@@ -134,6 +134,8 @@ export interface RouterDeps {
     navLinks?: NavLink[];
     adminEmails?: string[];
     phoneCallsEnabled?: boolean;
+    /** Desktop apps can get notifications while closed. */
+    desktopPushEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     maxAttachmentsPerMessage?: number;

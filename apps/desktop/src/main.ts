@@ -14,6 +14,7 @@ import {
   nativeImage,
   net,
   powerMonitor,
+  pushNotifications,
   safeStorage,
   session,
   shell,
@@ -42,6 +43,7 @@ import type { ElectronAutoUpdater } from "./auto-update.js";
 import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
+import { createDesktopPush, DESKTOP_PUSH_BUILD } from "./desktop-push.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import { runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
@@ -485,6 +487,15 @@ if (!hasSingleInstanceLock) {
     revealSecondInstanceWindow(win);
   });
 }
+
+// Notifications while the app is closed. `ready` carries the one a click launched the app from.
+const desktopPush = createDesktopPush({
+  enabled: process.platform === "darwin" && DESKTOP_PUSH_BUILD,
+  getTarget: permissionTarget,
+  register: () => pushNotifications.registerForAPNSNotifications(),
+});
+app.once("ready", (_event, launchInfo) => desktopPush.launched(launchInfo));
+
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   installSessionPermissions(session.defaultSession, permissionTarget);
@@ -756,6 +767,8 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
+  ipcMain.handle("desktop.push.token", (event) => desktopPush.token(event));
+  ipcMain.handle("desktop.push.takeOpened", (event) => desktopPush.takeOpened(event));
   ipcMain.handle("desktop.monitoring.enabled", () => reportsErrors);
   handleOnlyFrom(fromMainWindow, "desktop.server.change", () => {
     showSetupWindow();

@@ -22,8 +22,30 @@ export type CallPushDevice = CallPushRegistration & {
   revision: string;
 };
 
+/** Desktop apps per account that get pushes; the oldest registration beyond it is dropped. */
+const MAX_DESKTOP_DEVICES = 10;
+
+/** A desktop app's notification token. `id` names it for removal without decrypting it again. */
+export type DesktopPushTarget = { id: string; token: string };
+
 /** Account-wide registrations, shared by API replicas and notification workers. */
 export interface PushTokenStore {
+  saveDesktop?(userId: string, token: string, sessionId: string): Promise<void>;
+  /** The desktop tokens to push to, leaving out apps showing this Space's alerts themselves. */
+  desktopTargets?(userId: string, spaceId: string): Promise<DesktopPushTarget[]>;
+  /** Whether any desktop app would get a push for this Space, without decrypting tokens. */
+  hasDesktopTarget?(userId: string, spaceId: string): Promise<boolean>;
+  removeDesktop?(userId: string, id: string): Promise<void>;
+  /**
+   * Marks this session's desktop apps as showing a Space's alerts until `live.until`. Null clears
+   * the mark, but only the one `written` names, so an older stream cannot clear a newer one's.
+   */
+  markDesktopLive?(
+    userId: string,
+    sessionId: string,
+    live: { spaceId: string; until: Date } | null,
+    written?: Date,
+  ): Promise<void>;
   saveDevice?(userId: string, registration: CallPushRegistration, sessionId: string): Promise<void>;
   devices?(userId: string): Promise<CallPushDevice[]>;
   removeDevice?(
@@ -198,6 +220,142 @@ export class PrismaPushTokenStore implements PushTokenStore {
     );
   }
 
+  async saveDesktop(userId: string, token: string, sessionId: string): Promise<void> {
+    const value = token.trim();
+    if (!value) throw new Error("Push token is empty");
+    // One physical token has one owner, so its digest is the row id across accounts.
+    const id = credentialDigest(value);
+    const sealed = await this.encryption.put(
+      value,
+      {
+        operationId: "push.register",
+        traceId: "push.register",
+        spaceId: "",
+        userId,
+        signal: new AbortController().signal,
+      },
+      { recordId: `desktop-push:${id}` },
+    );
+    await runAsSystem("register a desktop notification token", () =>
+      withTransactionRetry(() =>
+        this.prisma.$transaction(async (tx) => {
+          for (const key of [`push-user:${userId}`, `push-desktop:${id}`].sort())
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))::text`;
+          // A registration that lost a race with sign-out must not publish the token.
+          const sessions = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "session" WHERE id = ${sessionId} AND "userId" = ${userId}
+          AND "expiresAt" > CURRENT_TIMESTAMP FOR UPDATE`;
+          if (!sessions.length) throw new PushSessionEndedError();
+          const data = { userId, sessionId, ciphertext: sealed.ciphertext };
+          const existing = await tx.desktopPushDevice.findUnique({
+            where: { id },
+            select: { userId: true, sessionId: true },
+          });
+          // The same app registering again keeps the live mark its open stream may have set. A new
+          // token for that app takes over the mark from the row it replaces, so the open stream
+          // keeps covering its own alerts until its next renewal.
+          const sameApp = existing?.userId === userId && existing.sessionId === sessionId;
+          const replaced = sameApp
+            ? null
+            : await tx.desktopPushDevice.findFirst({
+                where: { userId, sessionId, id: { not: id }, liveUntil: { gt: new Date() } },
+                orderBy: { liveUntil: "desc" },
+                select: { liveSpaceId: true, liveUntil: true },
+              });
+          const live = {
+            liveSpaceId: replaced?.liveSpaceId ?? null,
+            liveUntil: replaced?.liveUntil ?? null,
+          };
+          await tx.desktopPushDevice.upsert({
+            where: { id },
+            create: { id, ...data, ...live },
+            update: sameApp ? data : { ...data, ...live },
+          });
+          // One token per signed-in app, and a few apps per account, so a client cannot make
+          // every alert fan out to an unbounded number of APNs requests.
+          await tx.desktopPushDevice.deleteMany({ where: { userId, sessionId, id: { not: id } } });
+          const kept = await tx.desktopPushDevice.findMany({
+            where: { userId },
+            orderBy: { updatedAt: "desc" },
+            skip: MAX_DESKTOP_DEVICES,
+            select: { id: true },
+          });
+          if (kept.length)
+            await tx.desktopPushDevice.deleteMany({
+              where: { userId, id: { in: kept.map((row) => row.id) } },
+            });
+        }),
+      ),
+    );
+  }
+
+  async desktopTargets(userId: string, spaceId: string): Promise<DesktopPushTarget[]> {
+    return runAsSystem("load an account's desktop notification tokens", async () => {
+      const rows = await this.eligibleDesktopRows(userId, spaceId);
+      return Promise.all(
+        rows.map(async (row) => ({
+          id: row.id,
+          token: await this.encryption.load(row.ciphertext, `desktop-push:${row.id}`),
+        })),
+      );
+    });
+  }
+
+  async hasDesktopTarget(userId: string, spaceId: string): Promise<boolean> {
+    return runAsSystem("check an account's desktop notification tokens", async () => {
+      return (await this.eligibleDesktopRows(userId, spaceId)).length > 0;
+    });
+  }
+
+  /** Registrations of live sessions, except apps already showing this Space's alerts. */
+  private async eligibleDesktopRows(userId: string, spaceId: string) {
+    const rows = await this.prisma.desktopPushDevice.findMany({
+      // Spelled out: a NOT over nullable columns would also drop rows that were never live.
+      where: {
+        userId,
+        OR: [
+          { liveSpaceId: null },
+          { liveSpaceId: { not: spaceId } },
+          { liveUntil: null },
+          { liveUntil: { lte: new Date() } },
+        ],
+      },
+      select: { id: true, ciphertext: true, sessionId: true },
+    });
+    if (!rows.length) return [];
+    // A signed-out or expired session no longer receives its chats' contents.
+    const live = await this.prisma.session.findMany({
+      where: {
+        id: { in: [...new Set(rows.map((row) => row.sessionId))] },
+        userId,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    const sessions = new Set(live.map((session) => session.id));
+    return rows.filter((row) => sessions.has(row.sessionId));
+  }
+
+  async removeDesktop(userId: string, id: string): Promise<void> {
+    await runAsSystem("remove an invalid desktop notification token", () =>
+      this.prisma.desktopPushDevice.deleteMany({ where: { id, userId } }),
+    );
+  }
+
+  async markDesktopLive(
+    userId: string,
+    sessionId: string,
+    live: { spaceId: string; until: Date } | null,
+    written?: Date,
+  ): Promise<void> {
+    await runAsSystem("mark a desktop app as showing its own alerts", () =>
+      this.prisma.desktopPushDevice.updateMany({
+        where: { userId, sessionId, ...(written ? { liveUntil: written } : {}) },
+        data: { liveSpaceId: live?.spaceId ?? null, liveUntil: live?.until ?? null },
+      }),
+    );
+  }
+
   async load(userId: string): Promise<PushRecord | undefined> {
     return runAsSystem("load an account's notification registration", async () => {
       const row = await this.prisma.pushToken.findUnique({ where: { userId } });
@@ -309,8 +467,11 @@ export class PrismaPushTokenStore implements PushTokenStore {
         this.prisma.$transaction(async (tx) => {
           await advisoryLock(tx, "push-user", userId, "joined");
           const where = { userId, sessionId };
-          // Password changes may retarget a live installation; sign-out revokes both transports.
-          if (!nextSessionId) await tx.callPushDevice.deleteMany({ where });
+          // Password changes may retarget a live installation; sign-out revokes every transport.
+          if (!nextSessionId) {
+            await tx.callPushDevice.deleteMany({ where });
+            await tx.desktopPushDevice.deleteMany({ where });
+          }
           if (nextSessionId) {
             const session = await tx.session.findFirst({
               where: { id: nextSessionId, userId, expiresAt: { gt: new Date() } },
@@ -318,10 +479,12 @@ export class PrismaPushTokenStore implements PushTokenStore {
             });
             if (!session) {
               await tx.callPushDevice.deleteMany({ where });
+              await tx.desktopPushDevice.deleteMany({ where });
               await tx.pushToken.deleteMany({ where });
               return;
             }
             await tx.callPushDevice.updateMany({ where, data: { sessionId: nextSessionId } });
+            await tx.desktopPushDevice.updateMany({ where, data: { sessionId: nextSessionId } });
             await tx.pushToken.updateMany({ where, data: { sessionId: nextSessionId } });
           } else await tx.pushToken.deleteMany({ where });
         }),

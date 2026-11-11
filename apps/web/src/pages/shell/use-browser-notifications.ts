@@ -6,6 +6,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/browser-notifications";
+import { desktopBridge } from "../../lib/desktop";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
 import type { RpcClient } from "../../lib/rpc";
 
@@ -22,7 +23,8 @@ type ChatAlertOptions = {
   rpc: Pick<RpcClient, "notifications">;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
-  openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
+  /** `spaceId` is set when the chat may belong to another Space than the shell's. */
+  openChat: (chat: Pick<ChatAlert, "botId" | "groupId"> & { spaceId?: string }) => void;
   /** The signed-in person, whose own messages never notify them. */
   meId: string | undefined;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
@@ -146,6 +148,44 @@ export function useBrowserNotifications(
       controller?.abort();
       cancelRetry?.();
       for (const notification of shown.current) notification.close();
+    };
+  }, [rpc]);
+  // Notifications while the desktop app is closed: open the chat a click launched the app for,
+  // then register its token. A server that cannot send them answers NOT_FOUND.
+  useEffect(() => {
+    const push = desktopBridge()?.push;
+    if (!push) return;
+    let active = true;
+    let cancelRetry: (() => void) | undefined;
+    // First and on its own: a slow token or server must not hold up the clicked chat.
+    void push
+      .takeOpened()
+      .then((opened) => {
+        if (opened && active) openChatRef.current(opened);
+      })
+      .catch(() => undefined);
+    void (async () => {
+      const token = await push.token().catch(() => null);
+      for (let attempt = 0; token && active && attempt < 5; attempt++) {
+        try {
+          await rpc.notifications.registerDesktopPush({ token });
+          return;
+        } catch (error) {
+          if (!isRetryableError(error)) return;
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, retryDelayMs(error, 2_000 * 2 ** attempt));
+            cancelRetry = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+          });
+          cancelRetry = undefined;
+        }
+      }
+    })();
+    return () => {
+      active = false;
+      cancelRetry?.();
     };
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());

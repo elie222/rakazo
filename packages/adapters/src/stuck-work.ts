@@ -212,7 +212,7 @@ async function remindStuckRun(
   // A skipped push (notices off, no provider, or no push token yet) stays unmarked
   // so a later sweep can still remind during this same wait.
   if (!deps.notifications || !noticesEnabled(run)) return;
-  if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
+  if (!(await pushCanDeliver(deps.notifications, run.userId, run.spaceId))) return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       (tx) => claimStuckReminder(tx, run, deps.now),
@@ -246,9 +246,10 @@ async function remindStuckRun(
 async function pushCanDeliver(
   notifications: NotificationProvider,
   userId: string,
+  spaceId: string,
 ): Promise<boolean> {
   if (!(notifications instanceof ExpoPushProvider)) return true;
-  return notifications.hasPushRecipient(userId);
+  return notifications.hasPushRecipient(userId, spaceId);
 }
 
 async function claimStuckReminder(

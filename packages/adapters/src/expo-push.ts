@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import type { DesktopPushProvider } from "./apns-desktop.js";
 import type { IncomingCallPush, VoipPushProvider } from "./apns-voip.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
@@ -171,6 +172,8 @@ function expoPushReceipts(body: unknown): Record<string, ExpoPushTicket | undefi
 
 export type ExpoPushOptions = {
   voip?: VoipPushProvider;
+  /** Reaches desktop apps while they are closed. */
+  desktop?: DesktopPushProvider;
   sessionExpiresAt?: PushSessionExpiresAt;
   /** Schedules the receipt check; without it receipts are not read. */
   jobs?: JobPublisher;
@@ -181,6 +184,7 @@ export type ExpoPushOptions = {
 
 export class ExpoPushProvider implements NotificationProvider {
   private readonly voip?: VoipPushProvider;
+  private readonly desktop?: DesktopPushProvider;
   private readonly sessionExpiresAt?: PushSessionExpiresAt;
   private readonly jobs?: JobPublisher;
   private readonly accessToken?: string;
@@ -191,6 +195,7 @@ export class ExpoPushProvider implements NotificationProvider {
     options: ExpoPushOptions = {},
   ) {
     this.voip = options.voip;
+    this.desktop = options.desktop;
     this.sessionExpiresAt = options.sessionExpiresAt;
     this.jobs = options.jobs;
     this.accessToken = options.accessToken?.trim() || undefined;
@@ -206,8 +211,11 @@ export class ExpoPushProvider implements NotificationProvider {
     };
   }
 
-  async hasPushRecipient(userId: string): Promise<boolean> {
-    return Boolean(await this.deliverableToken(userId));
+  /** With a Space, a desktop app already showing that Space's alerts does not count. */
+  async hasPushRecipient(userId: string, spaceId = ""): Promise<boolean> {
+    if (await this.deliverableToken(userId)) return true;
+    if (!this.desktop) return false;
+    return (await this.tokens.hasDesktopTarget?.(userId, spaceId)) ?? false;
   }
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
@@ -307,8 +315,14 @@ export class ExpoPushProvider implements NotificationProvider {
    * Neither is an Expo acceptance, so callers must not record a reminder.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
+    const desktop = await this.deliverDesktop(message, context);
     const registration = await this.deliverableToken(context.userId);
-    if (!registration) return "undeliverable";
+    if (!registration) {
+      if (desktop === "sent") return "delivered";
+      // Thrown like an Expo failure, so callers that retry a notice retry this one too.
+      if (desktop === "failed") throw new Error("Desktop push failed.");
+      return "undeliverable";
+    }
     const token = registration.token;
     const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
     let bodyChars = MAX_PUSH_BODY_CHARS;
@@ -367,6 +381,25 @@ export class ExpoPushProvider implements NotificationProvider {
     if (failure) throw new Error(failure);
     if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
     return "delivered";
+  }
+
+  /** Pushes to the account's desktop apps, except those showing this Space's alerts already. */
+  private async deliverDesktop(
+    message: NotificationMessage,
+    context: AdapterContext,
+  ): Promise<"sent" | "failed" | "none"> {
+    const desktop = this.desktop;
+    if (!desktop) return "none";
+    const targets = (await this.tokens.desktopTargets?.(context.userId, context.spaceId)) ?? [];
+    const results = await Promise.all(
+      targets.map(async (target) => {
+        const result = await desktop.send(target.token, message, context.spaceId);
+        if (result === "invalid") await this.tokens.removeDesktop?.(context.userId, target.id);
+        return result;
+      }),
+    );
+    if (results.includes("sent")) return "sent";
+    return results.includes("failed") ? "failed" : "none";
   }
 
   /** Drops the token when the receipt says the device is no longer registered. */
@@ -503,7 +536,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function capped(text: string, maxChars: number): string {
+export function capped(text: string, maxChars: number): string {
   const chars = Array.from(text);
   return chars.length <= maxChars ? text : `${chars.slice(0, maxChars - 1).join("")}…`;
 }

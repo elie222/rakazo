@@ -55,6 +55,7 @@ function fixture() {
       strings.join("").includes('FROM "session"') ? (live ? [{ id: "session-1" }] : []) : [],
     ),
     pushToken: { deleteMany: vi.fn(async () => {}) },
+    desktopPushDevice: { deleteMany: vi.fn(async () => {}), updateMany: vi.fn(async () => {}) },
   };
   const prisma = {
     ...tx,

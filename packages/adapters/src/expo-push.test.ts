@@ -1007,3 +1007,86 @@ it("falls back to the small avatar when no larger one fit the payload", async ()
   );
   expect(request.data.sender).toEqual({ botId: "bot", name: "Marketing", avatar: "small" });
 });
+
+describe("desktop push", () => {
+  const message = {
+    kind: "completion" as const,
+    title: "Done",
+    body: "ok",
+    botId: "b",
+    threadId: "t",
+  };
+  const desktopSender = (result: "sent" | "invalid" | "failed" = "sent") => ({
+    send: vi.fn(async () => result),
+  });
+
+  it("reaches a closed desktop app without a phone, and counts it as a recipient", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const desktop = desktopSender();
+    const push = new ExpoPushProvider(tokens, { desktop });
+    await expect(push.hasPushRecipient("user-1")).resolves.toBe(true);
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("delivered");
+    expect(desktop.send).toHaveBeenCalledWith("a".repeat(64), message, "w");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips an app showing this Space's alerts itself, but not another Space's", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    await tokens.markDesktopLive("user-1", "session-1", {
+      spaceId: "w",
+      until: new Date(Date.now() + 60_000),
+    });
+    const desktop = desktopSender();
+    const push = new ExpoPushProvider(tokens, { desktop });
+    await expect(push.hasPushRecipient("user-1", "w")).resolves.toBe(false);
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("undeliverable");
+    expect(desktop.send).not.toHaveBeenCalled();
+    await push.deliver(message, { ...notifyContext, spaceId: "other" });
+    expect(desktop.send).toHaveBeenCalledOnce();
+  });
+
+  it("pushes again once an app's live mark has lapsed", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    await tokens.markDesktopLive("user-1", "session-1", {
+      spaceId: "w",
+      until: new Date(Date.now() - 1),
+    });
+    const desktop = desktopSender();
+    await new ExpoPushProvider(tokens, { desktop }).deliver(message, notifyContext);
+    expect(desktop.send).toHaveBeenCalledOnce();
+  });
+
+  it("drops a token APNs no longer knows and keeps the phone push", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.save("user-1", "ExponentPushToken[test]");
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ data: { status: "ok", id: "ticket" } })),
+    );
+    const push = new ExpoPushProvider(tokens, { desktop: desktopSender("invalid") });
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("delivered");
+    expect(tokens.desktop.size).toBe(0);
+  });
+
+  it("fails a desktop-only delivery that APNs could not take, so the caller can retry", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    const push = new ExpoPushProvider(tokens, { desktop: desktopSender("failed") });
+    await expect(push.deliver(message, notifyContext)).rejects.toThrow("Desktop push failed.");
+    expect(tokens.desktop.size).toBe(1);
+  });
+
+  it("ignores desktop registrations when the server cannot send to desktops", async () => {
+    const tokens = new MemoryPushTokenStore();
+    await tokens.saveDesktop("user-1", "a".repeat(64), "session-1");
+    const push = new ExpoPushProvider(tokens);
+    await expect(push.hasPushRecipient("user-1")).resolves.toBe(false);
+    await expect(push.deliver(message, notifyContext)).resolves.toBe("undeliverable");
+  });
+});

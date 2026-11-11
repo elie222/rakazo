@@ -64,6 +64,8 @@ x-app-environment: &app-environment # Runtime
   APNS_VOIP_PRIVATE_KEY:
   APNS_VOIP_ENVIRONMENT:
   APNS_VOIP_BUNDLE_ID:
+  APNS_DESKTOP_ENVIRONMENT:
+  APNS_DESKTOP_BUNDLE_ID:
   # Secret storage
   SECRET_STORE: ${SECRET_STORE:-encrypted}
   INFISICAL_URL: ${INFISICAL_URL:-}

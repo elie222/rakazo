@@ -451,9 +451,13 @@ function SpaceShell() {
       rpc,
       activeBotId,
       activeGroupId,
-      openChat: (alert) => {
+      openChat: (chat) => {
         setMobileSidebarOpen(false);
-        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
+        const path = chat.groupId ? `/app/g/${chat.groupId}` : `/app/${chat.botId}`;
+        // A desktop notification can come from another Space than this shell's.
+        if (chat.spaceId && chat.spaceId !== shellSpaceId)
+          openSpaceChatRef.current(chat.spaceId, path);
+        else navigate(path);
       },
       meId: userId,
       groupsRef,

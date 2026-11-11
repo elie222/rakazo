@@ -88,6 +88,7 @@ model User {
   pushToken                   PushToken?
   callPushDevices             CallPushDevice[]
   workActivityTokens          WorkActivityToken[]
+  desktopPushDevices          DesktopPushDevice[]
   workActivityStartTokens     WorkActivityStartToken[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
@@ -180,6 +181,23 @@ model WorkActivityToken {
   @@index([userId])
   @@index([sessionId])
   @@map("work_activity_tokens")
+}
+
+/// Desktop notification registrations, one per token; the id is the token's digest.
+/// `liveUntil` is set while the app's own alert stream is open for `liveSpaceId`. The app shows
+/// those alerts itself, so a push for that Space would show the same alert twice.
+model DesktopPushDevice {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  ciphertext String
+  liveSpaceId String?
+  liveUntil DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, sessionId])
+  @@map("desktop_push_devices")
 }
 
 /// A phone the server may start a live status card on when the user's bots get to work elsewhere.

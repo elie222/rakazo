@@ -4,6 +4,7 @@ import type {
   TelegramBotCredentials,
 } from "@rakazo/adapters";
 import {
+  apnsDesktopConfig,
   apnsVoipConfig,
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
@@ -123,6 +124,8 @@ export interface AppEnv {
   sendbluePhoneNumber: string | undefined;
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
+  /** Signing key for desktop app notifications while the app is closed. */
+  apnsDesktop?: ApnsVoipConfig;
   smtpUrl: string | undefined;
   emailProvider?: string;
   welcomeEmailEnabled?: boolean;
@@ -312,6 +315,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
+    apnsDesktop: apnsDesktopConfig(source),
     smtpUrl: optional(source.SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
