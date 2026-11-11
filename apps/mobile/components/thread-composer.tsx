@@ -438,8 +438,8 @@ export function ThreadComposer({
   const pillInset = (lineHeight - composerPillStyle.height) / 2;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
-  // Sending resets the box, which would drop words a provider is still transcribing.
-  const sendBlocked = sending || !canSend || dictation.status === "transcribing";
+  // Sending resets the box, which would drop a clip still recording or words still being transcribed.
+  const sendBlocked = sending || !canSend || dictation.status !== "idle";
 
   return (
     <>
