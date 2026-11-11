@@ -38,6 +38,7 @@ import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
 import {
+  THREAD_HEADER_PILL_BOTTOM_INSET,
   threadColumnPadding,
   threadHeaderClearance,
   threadHeaderFloats,
@@ -603,7 +604,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               showLatest={showLatest}
             />
           </NewestPageCards.Provider>
-          <ThreadEdgeFade edge="top" height={headerClearance.padding + 28} />
+          {headerHeight > 0 ? (
+            // Ends halfway down the floating header's 44pt pills.
+            <ThreadEdgeFade
+              edge="top"
+              style={{ height: headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET - 22 }}
+            />
+          ) : null}
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
             hidden={readOnly}

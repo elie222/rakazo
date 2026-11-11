@@ -1,17 +1,27 @@
-import { View } from "react-native";
+import type { ComponentProps } from "react";
+import Animated from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { mobileTokens } from "../../lib/appearance";
 
-/** Fades messages scrolling under the header or the composer into the thread background. */
-export function ThreadEdgeFade({ edge, height }: { edge: "top" | "bottom"; height: number }) {
+/**
+ * Fades messages scrolling under the header or the composer into the thread background.
+ * The caller sets the height, which may be animated.
+ */
+export function ThreadEdgeFade({
+  edge,
+  style,
+}: {
+  edge: "top" | "bottom";
+  style: ComponentProps<typeof Animated.View>["style"];
+}) {
   const color = mobileTokens().background;
   const id = `thread-fade-${edge}`;
   return (
-    <View
+    <Animated.View
       pointerEvents="none"
-      style={{ position: "absolute", left: 0, right: 0, height, [edge]: 0 }}
+      style={[{ position: "absolute", left: 0, right: 0, [edge]: 0 }, style]}
     >
-      <Svg width="100%" height={height}>
+      <Svg width="100%" height="100%">
         <Defs>
           <LinearGradient
             id={id}
@@ -21,12 +31,12 @@ export function ThreadEdgeFade({ edge, height }: { edge: "top" | "bottom"; heigh
             y2={edge === "top" ? "0" : "1"}
           >
             <Stop offset="0" stopColor={color} stopOpacity={0} />
-            <Stop offset="0.45" stopColor={color} stopOpacity={0.8} />
-            <Stop offset="0.75" stopColor={color} stopOpacity={1} />
+            <Stop offset="0.4" stopColor={color} stopOpacity={0.85} />
+            <Stop offset="0.6" stopColor={color} stopOpacity={1} />
           </LinearGradient>
         </Defs>
-        <Rect width="100%" height={height} fill={`url(#${id})`} />
+        <Rect width="100%" height="100%" fill={`url(#${id})`} />
       </Svg>
-    </View>
+    </Animated.View>
   );
 }

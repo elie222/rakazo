@@ -84,8 +84,10 @@ export function ThreadComposerDock({
     paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
   }));
 
-  // Reaches from the bottom edge to about the middle of the input.
-  const fadeHeight = composerRestingPadding + 48;
+  // Ends about halfway up the input, following it as the keyboard moves.
+  const fadeHeight = useAnimatedStyle(() => ({
+    height: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]) + 22,
+  }));
 
   const noticeHeight = useRef(0);
   const controlsHeight = useRef(0);
@@ -102,7 +104,7 @@ export function ThreadComposerDock({
         columnPadding,
       ]}
     >
-      {hidden ? null : <ThreadEdgeFade edge="bottom" height={fadeHeight} />}
+      {hidden ? null : <ThreadEdgeFade edge="bottom" style={fadeHeight} />}
       <View
         pointerEvents="box-none"
         onLayout={(event) => {
