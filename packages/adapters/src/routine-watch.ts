@@ -29,7 +29,7 @@ import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
-import { EgressRefusedError } from "./network-address.js";
+import { isEgressRefused } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
@@ -157,10 +157,7 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
     );
   } catch (error) {
     // Keep destination refusals permanent even when the transport wraps one in its cause.
-    for (let cause = error; cause instanceof Error; cause = cause.cause) {
-      if (cause instanceof EgressRefusedError)
-        throw new RoutineWatchError("Could not check the HTTPS endpoint.");
-    }
+    if (isEgressRefused(error)) throw new RoutineWatchError("Could not check the HTTPS endpoint.");
     // Never expose a transport error's URL; it can carry a token in its path or query.
     throw new RoutineWatchRetry("Could not check the HTTPS endpoint.");
   }
@@ -176,6 +173,17 @@ async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Re
   } catch {
     if (watch.track) throw new RoutineWatchError("Tracked HTTP fields require a JSON response.");
     return { fingerprint: sha256(text), detail: null };
+  }
+  // Bound recursion in the shared JSON comparators before handing them external data.
+  const pending = [{ value: data, depth: 0 }];
+  while (pending.length) {
+    const { value, depth } = pending.pop()!;
+    if (value === null || typeof value !== "object") continue;
+    if (depth > 64) throw new RoutineWatchError("HTTPS check JSON is too deeply nested.");
+    for (const child of Object.values(value)) {
+      if (child !== null && typeof child === "object")
+        pending.push({ value: child, depth: depth + 1 });
+    }
   }
   // Store only a fingerprint: endpoint data must not become trusted instructions or internal tool output.
   const fingerprint = watch.track

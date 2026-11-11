@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "./computer-lifecycle.js";
-import { EgressRefusedError } from "./network-address.js";
+import { egressRefused } from "./network-address.js";
 import type { RoutineWatchDeps, RoutineWatchTarget } from "./routine-watch.js";
 import {
   checkRoutineWatch,
@@ -162,7 +162,7 @@ it("retries transport errors but keeps wrapped network refusals permanent", asyn
   fetch.mockRejectedValueOnce(new TypeError("fetch failed"));
   await expect(checkRoutineWatch(deps, routine, now)).rejects.toBeInstanceOf(RoutineWatchRetry);
   fetch.mockRejectedValueOnce(
-    new TypeError("fetch failed", { cause: new EgressRefusedError("blocked") }),
+    new TypeError("fetch failed", { cause: egressRefused("example.test", new Error("blocked")) }),
   );
   await expect(checkRoutineWatch(deps, routine, now)).rejects.toBeInstanceOf(RoutineWatchError);
 });
@@ -193,4 +193,12 @@ it("keeps arbitrary endpoint text out of routine state and prompts", async () =>
   expect(changed.changed).toBe(true);
   expect(changed.state.detail).toBeNull();
   expect(JSON.stringify(changed.state)).not.toContain("Ignore the owner");
+});
+
+it.each([undefined, ["id"]])("refuses deeply nested JSON safely with track=%s", async (track) => {
+  const { deps, routine } = setup(`${"[".repeat(5000)}{"id":"item"}${"]".repeat(5000)}`);
+  routine.watch = { kind: "http", url: "https://example.com/status", ...(track ? { track } : {}) };
+  await expect(checkRoutineWatch(deps, routine, now)).rejects.toThrow(
+    new RoutineWatchError("HTTPS check JSON is too deeply nested."),
+  );
 });

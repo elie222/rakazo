@@ -78,8 +78,18 @@ export function createAddressCheckedLookup(
   };
 }
 
-/** A refused network destination, distinct from a temporary DNS or transport failure. */
-export class EgressRefusedError extends Error {}
+const refusedEgress = new WeakSet<Error>();
+
+/** Recognize a policy refusal through transport wrappers without replacing its original type. */
+export function isEgressRefused(error: unknown): boolean {
+  const seen = new Set<Error>();
+  while (error instanceof Error && !seen.has(error)) {
+    if (refusedEgress.has(error)) return true;
+    seen.add(error);
+    error = error.cause;
+  }
+  return false;
+}
 
 /**
  * Record that an outbound-request guard refused a destination, so a probe of private addresses
@@ -91,7 +101,8 @@ export function egressRefused(hostname: string, error: unknown): Error {
     type: "egress.refused",
     metadata: { host: hostname.slice(0, 253), reason: refusal.message },
   });
-  return new EgressRefusedError(refusal.message, { cause: refusal });
+  refusedEgress.add(refusal);
+  return refusal;
 }
 
 function pinnedAddressesFor(hostname: string): ResolvedAddress[] | undefined {
