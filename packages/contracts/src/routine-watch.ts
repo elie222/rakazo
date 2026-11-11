@@ -86,6 +86,8 @@ export const ROUTINE_WATCH_OUTCOMES = ["baseline", "unchanged", "changed", "fail
 export const RoutineWatchStateSchema = z.object({
   checkedAt: z.string(),
   outcome: z.enum(ROUTINE_WATCH_OUTCOMES),
+  /** An ongoing HTTP retry outage; absent after success or a permanent pause. */
+  retrying: z.boolean().optional(),
   fingerprint: z.string().nullable(),
   /**
    * files: path -> "size:mtime"; tracked items: identity -> their tracked fields and title.

@@ -809,6 +809,7 @@ export async function tickRoutineWatch(
                 watchState: {
                   checkedAt: now.toISOString(),
                   outcome: "failed",
+                  retrying: true,
                   fingerprint: previous?.fingerprint ?? null,
                   detail: error.message,
                 } satisfies RoutineWatchState,
@@ -818,7 +819,7 @@ export async function tickRoutineWatch(
       });
       if (deferred.count === 1) {
         await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
-        if (watch?.kind === "http" && previous?.outcome !== "failed") {
+        if (watch?.kind === "http" && previous?.retrying !== true) {
           await postRoutineWatchMessage(deps, {
             spaceId: routine.spaceId,
             ...target,

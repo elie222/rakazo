@@ -207,6 +207,7 @@ describe("tickRoutineWatch", () => {
         watchState: {
           checkedAt: expect.any(String),
           outcome: "failed",
+          retrying: true,
           fingerprint: "last-known",
           detail: "HTTPS check returned status 503.",
         },
@@ -246,6 +247,52 @@ describe("tickRoutineWatch", () => {
       new Date(),
     );
     expect(recovered).toMatchObject({ run: true, state: { outcome: "changed", detail: null } });
+    if (recovered.run) expect(recovered.state).not.toHaveProperty("retrying");
+  });
+
+  it("announces an HTTP outage after a permanently paused watch is resumed", async () => {
+    const { deps, routine, updateMany, messages } = setup(
+      {},
+      {
+        kind: "http",
+        url: "https://example.com/status",
+        everyMinutes: 5,
+      },
+    );
+    deps.http = {
+      fetch: async () => new Response("not found", { status: 404 }),
+      resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+    };
+    routine.watchState.fingerprint = "last-known";
+    await tickRoutineWatch(deps, routine, target, scheduledAt);
+    const paused = (
+      updateMany.mock.calls[0] as unknown as [
+        {
+          data: { active: boolean; watchState: unknown };
+        },
+      ]
+    )[0].data;
+    expect(paused.active).toBe(false);
+    expect(paused.watchState).not.toHaveProperty("retrying");
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.role).toBe("bot");
+    // Resuming retains the previous state. A new temporary outage still needs a notice.
+    deps.http.fetch = async () => new Response("temporary outage", { status: 503 });
+    await tickRoutineWatch(deps, { ...routine, watchState: paused.watchState }, target, new Date());
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.role).toBe("system");
+    expect(JSON.stringify(messages[1])).toContain("HTTPS check returned status 503.");
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          watchState: expect.objectContaining({
+            outcome: "failed",
+            retrying: true,
+            fingerprint: "last-known",
+          }),
+        }),
+      }),
+    );
   });
 
   it("records a quiet no-change check without a message and schedules the next", async () => {
