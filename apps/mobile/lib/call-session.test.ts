@@ -1884,6 +1884,8 @@ describe("mobile call session on a timer", () => {
 
     await tick(500);
     expect(subscribeThread).toHaveBeenCalledTimes(2);
+    // The feed already had a snapshot, and the refusal is permanent: the call ends.
+    expect(getSnapshot()).toBeNull();
     await tick(20_000);
     expect(subscribeThread).toHaveBeenCalledTimes(2);
     vi.mocked(rpc).mockReset();
