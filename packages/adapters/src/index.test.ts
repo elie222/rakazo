@@ -230,6 +230,7 @@ describe("builtin tools", () => {
     expect(offersAgentConnectionTools({ ...linked, trigger: "user" })).toBe(true);
     expect(offersAgentConnectionTools({ ...linked, trigger: "helper" })).toBe(false);
     expect(offersAgentConnectionTools({ ...linked, trigger: "tickets" })).toBe(false);
+    expect(offersAgentConnectionTools({ ...linked, trigger: "service" })).toBe(false);
     expect(
       offersAgentConnectionTools({ ...linked, crossSpaceCommunication: false, trigger: "user" }),
     ).toBe(false);
