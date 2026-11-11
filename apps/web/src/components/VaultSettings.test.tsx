@@ -342,13 +342,13 @@ describe("an item for chosen bots", () => {
     await click(trigger);
   }
 
-  it("names the chosen bots, and keeps one it doesn't show when another is added", async () => {
+  it("names the chosen bots, and offers no choice while one of them isn't shown", async () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener() {},
       removeEventListener() {},
     }));
-    const custom = { ...rows[3]!, allBots: false, botIds: ["bot-archived", "bot-1"] };
+    const custom = { ...rows[3]!, allBots: false, botIds: ["bot-unlisted", "bot-1"] };
     vault.list.mockResolvedValue([...rows.slice(0, 3), custom, rows[4]]);
     vault.put.mockResolvedValue(custom);
     await render();
@@ -356,15 +356,13 @@ describe("an item for chosen bots", () => {
     await vi.waitFor(() =>
       expect(byTestId("vault-item-access-detail").textContent).toBe("BotsAda"),
     );
+    // A chosen bot no list names can't be unticked or kept knowingly, so none is offered, and a
+    // save sends nothing about the bots: the choice is never widened or trimmed unseen.
     await click("vault-item-edit");
-    await openPicker();
-    await act(async () => menuItem("Grace")!.click());
+    expect(find("agent-access")).toBeNull();
+    await type(field("Value"), FAKE_VALUE);
     await click("vault-editor-save");
-    expect(vault.put.mock.lastCall?.[0]).toMatchObject({ allBots: false });
-    expect(vault.put.mock.lastCall?.[0].botIds.sort()).toEqual(["bot-1", "bot-2", "bot-archived"]);
-    // Saving without a change sends neither, so an older choice is never overwritten.
-    await click("vault-item-edit");
-    await click("vault-editor-save");
+    expect(vault.put).toHaveBeenCalledOnce();
     expect(vault.put.mock.lastCall?.[0]).not.toHaveProperty("allBots");
     expect(vault.put.mock.lastCall?.[0]).not.toHaveProperty("botIds");
   });

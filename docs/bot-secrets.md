@@ -194,9 +194,9 @@ helps the bot. If a saved login can't be read for now, the import stops there; i
 again later counts what was saved as already saved. Each login it adds is a new item that bots may use, like one
 you add yourself, and is audited as `credential.created`. Authenticator keys aren't imported; add
 one in the login's editor where a bot must sign in on its own. A file whose quotes are broken is
-not read at all, and neither is a KeePass 1.x export, whose backslash escapes CSV doesn't use, so
-no password is read differently from the export. Delete the export file afterwards: it
-holds your passwords unencrypted.
+not read at all, and neither is a KeePass 1.x export with a doubled backslash in a value, an escape
+CSV doesn't use, so no password is read differently from the export. Delete the export file
+afterwards: it holds your passwords unencrypted.
 
 A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.
 

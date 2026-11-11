@@ -259,21 +259,29 @@ it("shows a choice that isn't the default, and the latest use opening the list o
   expect(rows()).not.toContain("Helper | 2h ago");
 });
 
-it("limits an item to chosen bots, keeping one the list doesn't show, and only when changed", async () => {
+it("limits an item to chosen bots, only when changed, and offers no choice while one isn't shown", async () => {
   const bots = [
     { id: "bot-1", name: "Ada" },
     { id: "bot-2", name: "Grace" },
+    { id: "bot-old", name: "Old · Archived" },
   ];
-  const chosen = key({ allBots: false, botIds: ["bot-archived", "bot-1"] });
+  const chosen = key({ allBots: false, botIds: ["bot-old", "bot-1"] });
   const onSave = await edit(undefined, chosen, bots);
   expect(button("Chosen bots").getAttribute("aria-pressed")).toBe("true");
   await click(button("Grace"));
   await click(button("Save"));
   expect(onSave).toHaveBeenLastCalledWith(expect.anything(), undefined, {
     allBots: false,
-    botIds: ["bot-archived", "bot-1", "bot-2"],
+    botIds: ["bot-old", "bot-1", "bot-2"],
   });
   await edit(onSave, chosen, bots);
+  await click(button("Save"));
+  expect(onSave).toHaveBeenLastCalledWith(expect.anything(), undefined, undefined);
+  // A chosen bot the list can't name, as when archived bots couldn't be read, is never let go
+  // of unseen nor widened to every bot: no choice is offered, and a save sends nothing about them.
+  await edit(onSave, chosen, bots.slice(0, 2));
+  expect(button("Chosen bots")).toBeUndefined();
+  expect(button("All bots")).toBeUndefined();
   await click(button("Save"));
   expect(onSave).toHaveBeenLastCalledWith(expect.anything(), undefined, undefined);
   // Every bot by default; choosing none is a choice too.

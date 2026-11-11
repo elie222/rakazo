@@ -7,6 +7,7 @@ import {
   forgetBotSecret,
   LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
+  listBotSecrets,
   loginCodeClaim,
   relabelVaultItem,
   resolveLoginFill,
@@ -674,6 +675,7 @@ describeIntegration("reusable credential lifecycle", () => {
 
   it("limits an item to the owner's chosen bots in each Space, row-secured and cascaded", async () => {
     const seeded = await seedRun("vault-bots", "Use the key");
+    const secretStore = new EncryptedSecretStore(resolveEncryptionKey());
     const newBot = (cookie: string, space?: string) =>
       rpc<{ id: string }>(
         cookie,
@@ -712,10 +714,27 @@ describeIntegration("reusable credential lifecycle", () => {
       allBots: false,
       botIds: [there.id],
     });
-    expect(await inSecond({ allBots: true })).toMatchObject({ allBots: true });
+    expect(await inSecond({ allBots: true })).toMatchObject({ allBots: true, botIds: [] });
+    // A choice sent on its own limits the item there too, to those bots.
+    expect(await inSecond({ botIds: [there.id] })).toMatchObject({
+      allBots: false,
+      botIds: [there.id],
+    });
     expect(await rpc(seeded.cookie, "vault/list", {})).toEqual([
       expect.objectContaining({ allBots: false, botIds: [seeded.bot.id] }),
     ]);
+    // What each bot's run lists, under its Space's tenant: the chosen one sees it, no other.
+    const listed = (botId: string, spaceId = seeded.me.spaceId) =>
+      runAsTenant({ ...seeded.me, spaceId }, async () =>
+        (await listBotSecrets(handles.prisma, secretStore, { ...seeded.me, spaceId, botId })).map(
+          (entry) => entry.name,
+        ),
+      );
+    expect(await listed(seeded.bot.id)).toEqual([saved.name]);
+    expect(await listed(helper.id)).toEqual([]);
+    expect(await listed(there.id, second.id)).toEqual([saved.name]);
+    expect(await inSecond({ allBots: true })).toMatchObject({ allBots: true, botIds: [] });
+    expect(await listed(there.id, second.id)).toEqual([saved.name]);
     // Each Space's choices are row-secured to that Space and member. This database login is the
     // owner, which row security doesn't bind, so the policies themselves are checked.
     const policies = await db.$queryRaw<Array<{ tablename: string; qual: string }>>`

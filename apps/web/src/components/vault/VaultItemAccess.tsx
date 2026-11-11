@@ -19,7 +19,8 @@ export function useVaultBots(enabled: boolean, chosen: string[] = []) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const { data, isError } = useQuery({ ...queries.bots.list.queryOptions(), enabled });
-  // Archived bots are listed apart; without them, a chosen one stays chosen, unnamed.
+  // Archived bots are listed apart; without them, a chosen one can't be shown, so no choice is
+  // offered (`vaultAccessControls`) and the choice stays as saved.
   const archived = useQuery({
     ...queries.bots.listArchived.queryOptions(),
     enabled: enabled && chosen.length > 0,
@@ -68,17 +69,8 @@ export function VaultItemAccess({
   const [saved, setSaved] = useState(access && (access.allBots ? [] : access.botIds));
   if (!saved && access) setSaved(access.allBots ? [] : access.botIds);
   const bots = useVaultBots(Boolean(access), saved) ?? [];
-  const controls = vaultAccessControls({ kind, policy, access, bots: bots.length, note });
+  const controls = vaultAccessControls({ kind, policy, access, bots, note });
   if (!controls.policies.length && !controls.picker && !controls.note) return null;
-  // Bots chosen that this list doesn't show, such as archived ones, stay chosen.
-  const shown = new Set(bots.map((bot) => bot.id));
-  const choose = (next: AgentAccess) =>
-    onAccessChange({
-      allBots: next.allBots,
-      botIds: [
-        ...new Set([...next.botIds, ...(access?.botIds ?? []).filter((id) => !shown.has(id))]),
-      ],
-    });
   return (
     <div data-testid="vault-item-access" className="flex flex-wrap items-center gap-2">
       <span className="text-body-sm text-muted-foreground">{t`Bots`}</span>
@@ -111,7 +103,7 @@ export function VaultItemAccess({
           access={access}
           disabled={disabled}
           withOneBot
-          onChange={choose}
+          onChange={onAccessChange}
         />
       ) : null}
       {controls.note ? (

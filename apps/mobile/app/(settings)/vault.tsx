@@ -158,8 +158,8 @@ export default function Vault() {
     if (!editing || !canChooseBots) return;
     let current = true;
     // An archived bot the item is limited to is named so, as restoring it brings the choice
-    // back, and can be let go of. Archived bots are listed apart; without them, a chosen one
-    // stays chosen, unnamed.
+    // back, and can be let go of. Archived bots are listed apart; when they can't be read, a
+    // chosen one isn't shown, and the editor then offers no choice rather than lose it.
     const chosen = editing.item?.allBots === false ? (editing.item.botIds ?? []) : [];
     void Promise.all([
       rpc("bots/list"),

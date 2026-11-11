@@ -140,7 +140,11 @@ async function usableVaultFields(client: VaultClient, scope: BotSecretScope) {
 // Says nothing of the item, as a name the bot can't use may be taken by one it can't see.
 export const HIDDEN_ITEM = "That name can't be used. Use another name.";
 
-/** Which bots in this Space may use an item; each part left out stays as it is. */
+/**
+ * Which bots in this Space may use an item. `botIds` limits it to those bots; `allBots` true lets
+ * every bot use it and forgets the choice; `allBots` false alone keeps the bots chosen before.
+ * Left out entirely, nothing changes.
+ */
 export type VaultItemBots = { allBots?: boolean; botIds?: string[] };
 export const UNKNOWN_BOTS = "Choose from your bots in this Space";
 
@@ -157,12 +161,23 @@ async function saveItemBots(
 ) {
   if (!bots || scope.botId) return;
   const owner = { userId: scope.userId, spaceId: scope.spaceId };
-  if (bots.allBots) await tx.vaultCredentialLimit.deleteMany({ where: { ...owner, credentialId } });
-  else if (bots.allBots === false)
-    await tx.vaultCredentialLimit.createMany({
-      data: [{ ...owner, credentialId }],
-      skipDuplicates: true,
-    });
+  // A choice of bots is never kept without the limit it serves, so the two can't drift apart.
+  if (bots.allBots) {
+    await tx.vaultCredentialLimit.deleteMany({ where: { ...owner, credentialId } });
+    await tx.vaultCredentialBot.deleteMany({ where: { ...owner, credentialId } });
+    return;
+  }
+  if (bots.allBots === undefined && !bots.botIds) return;
+  const { count: limited } = await tx.vaultCredentialLimit.createMany({
+    data: [{ ...owner, credentialId }],
+    skipDuplicates: true,
+  });
+  // Newly limited, the item starts from no bots: rows an earlier save left behind on an
+  // unlimited item were never a choice, so they are cleared rather than brought back.
+  if (limited && !bots.botIds) {
+    await tx.vaultCredentialBot.deleteMany({ where: { ...owner, credentialId } });
+    return;
+  }
   if (!bots.botIds) return;
   const botIds = [...new Set(bots.botIds)];
   if (botIds.length) {
@@ -1264,8 +1279,11 @@ export async function listVaultItems(
       const preview = withPreview
         ? await itemPreview(secretStore, { id, ciphertext, auth: row.auth })
         : undefined;
-      const botIds = chosen.flatMap((entry) => (entry.credentialId === id ? [entry.botId] : []));
+      // A choice exists only while the item is limited: one left behind by an earlier save is none.
       const allBots = !limited.some((entry) => entry.credentialId === id);
+      const botIds = allBots
+        ? []
+        : chosen.flatMap((entry) => (entry.credentialId === id ? [entry.botId] : []));
       return { ...row, allBots, botIds, title: vaultItemTitle(row, preview), preview };
     }),
   );

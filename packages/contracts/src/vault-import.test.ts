@@ -121,14 +121,31 @@ describe("parseVaultCsv", () => {
     });
   });
 
-  it("refuses a KeePass 1.x export, whose backslash escapes would change a value", () => {
+  it("refuses a KeePass 1.x export only where its backslash escapes would change a value", () => {
     const csv =
       '"Account","Login Name","Password","Web Site","Comments"\n"Work","CORP\\\\bob","fake-pass","https://example.com",""';
     expect(parseVaultCsv(csv)).toEqual({ error: "unreadable" });
     // Also with its columns in another order, or another column such as a group.
     const grouped =
-      '"Group","Web Site","Account","Password","Login Name"\n"Work","https://example.com","Work","fake-pass","bob"';
+      '"Group","Web Site","Account","Password","Login Name"\n"Work","https://example.com","Work","fake-\\\\pass","bob"';
     expect(parseVaultCsv(grouped)).toEqual({ error: "unreadable" });
+    // The same layout with no doubled backslash reads the same either way, so it is read.
+    const plain =
+      '"Account","Login Name","Password","Web Site","Comments"\n"Work","bob","fake-pass","https://example.com",""\n"Home","CORP\\ann","fake-pass-2","https://home.example.com",""';
+    expect(parseVaultCsv(plain)).toEqual({
+      rows: [
+        { title: "Work", origin: "https://example.com", username: "bob", password: "fake-pass" },
+        {
+          title: "Home",
+          origin: "https://home.example.com",
+          username: "CORP\\ann",
+          password: "fake-pass-2",
+        },
+      ],
+      lines: [1, 2],
+      skipped: noneSkipped(),
+      problems: [],
+    });
   });
 
   it("saves a site written with a trailing dot under its usual address", () => {
@@ -246,11 +263,13 @@ describe("parseVaultCsv", () => {
       "A,https://a.example.com,ay,, fake-a ",
       "B,https://b.example.com,bee,fake-b,fake-other",
       "C,https://c.example.com,cee,,",
+      "D,https://d.example.com,dee,   ,",
     ].join("\n");
     expect(parseVaultCsv(csv)).toMatchObject({
       rows: [
         { origin: "https://a.example.com", password: " fake-a " },
         { origin: "https://b.example.com", password: "fake-b" },
+        { origin: "https://d.example.com", password: "   " },
       ],
       skipped: { noPassword: 1 },
       problems: [{ line: 3, label: "C", reason: "noPassword" }],

@@ -108,10 +108,9 @@ export function VaultItemEditor({
         kind,
         policy,
         access: bots ? access : undefined,
-        bots: bots?.length ?? 0,
+        bots: bots ?? [],
         note: botsNote,
       });
-  // Chosen bots this list doesn't show, such as archived ones, stay chosen.
   const toggleBot = (id: string) =>
     setAccess((prev) => ({
       ...prev,

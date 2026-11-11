@@ -36,8 +36,8 @@ export function vaultAccessControls(input: {
   policy: VaultPolicy;
   /** Which bots may use it; left out when the server, or this Space, can't limit it to chosen bots. */
   access?: VaultBots;
-  /** How many bots there are to choose from. */
-  bots: number;
+  /** The bots there are to choose from. */
+  bots: readonly { id: string }[];
   /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
   note?: string;
 }): { policies: VaultPolicy[]; picker: boolean; note: string | undefined } {
@@ -49,8 +49,14 @@ export function vaultAccessControls(input: {
           (option) => option !== "ask" || kind === "login" || policy === "ask",
         )
       : [],
-    // Blocked, no bot may use it at all; a Space without bots has nothing to choose from.
-    picker: Boolean(access) && policy !== "off" && bots > 0,
+    // Blocked, no bot may use it at all; a Space without bots has nothing to choose from. A chosen
+    // bot the list can't show (archived ones not read yet) would be let go of unseen, or read as
+    // none chosen, so nothing is chosen until every one is shown.
+    picker:
+      Boolean(access) &&
+      policy !== "off" &&
+      bots.length > 0 &&
+      (access?.allBots || access?.botIds.every((id) => bots.some((bot) => bot.id === id)) === true),
     // Said when the choice is limited, or no choice can be made; a blocked item needs neither.
     note: note && policy !== "off" && !access?.allBots ? note : undefined,
   };

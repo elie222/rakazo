@@ -1,4 +1,4 @@
-import type { BotSecretMetadata } from "@rakazo/contracts";
+import type { BotSecretMetadata, VaultPolicy } from "@rakazo/contracts";
 import { BLOCKED_ITEM_ANSWER, encodeLoginSecret, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { VaultBots } from "./vault.js";
@@ -106,47 +106,76 @@ describe("vaultAccessControls", () => {
   const note = "This limits only this Space's bots.";
 
   it("offers Allow and Block to any item but a contact, and Ask first to a login or while set", () => {
-    expect(vaultAccessControls({ kind: "login", policy: "allow", bots: 0 }).policies).toEqual([
+    expect(vaultAccessControls({ kind: "login", policy: "allow", bots: [] }).policies).toEqual([
       "allow",
       "ask",
       "off",
     ]);
-    expect(vaultAccessControls({ kind: "api_key", policy: "allow", bots: 0 }).policies).toEqual([
+    expect(vaultAccessControls({ kind: "api_key", policy: "allow", bots: [] }).policies).toEqual([
       "allow",
       "off",
     ]);
-    expect(vaultAccessControls({ kind: "card", policy: "ask", bots: 0 }).policies).toEqual([
+    expect(vaultAccessControls({ kind: "card", policy: "ask", bots: [] }).policies).toEqual([
       "allow",
       "ask",
       "off",
     ]);
-    expect(vaultAccessControls({ kind: "contact", policy: "allow", bots: 2 })).toEqual({
+    expect(
+      vaultAccessControls({ kind: "contact", policy: "allow", bots: [{ id: "bot-1" }] }),
+    ).toEqual({
       policies: [],
       picker: false,
       note: undefined,
     });
   });
 
-  it("picks bots only when there are some to choose and the item isn't blocked", () => {
-    const picker = (policy: "allow" | "ask" | "off", access?: VaultBots, bots = 2) =>
-      vaultAccessControls({ kind: "login", policy, access, bots }).picker;
-    expect(picker("allow", every)).toBe(true);
-    expect(picker("ask", some)).toBe(true);
-    expect(picker("off", some)).toBe(false);
-    expect(picker("allow", every, 0)).toBe(false);
-    expect(picker("allow", undefined)).toBe(false);
+  // The picker's states: a choice of bots exists only while the item is limited (the server lists
+  // none otherwise), and every bot of a choice must be shown before any choice is offered.
+  const listed = [{ id: "bot-1" }, { id: "bot-2" }];
+  const states: [string, VaultPolicy, VaultBots | undefined, { id: string }[], boolean][] = [
+    ["every bot, bots to choose from", "allow", every, listed, true],
+    ["a choice of shown bots", "ask", some, listed, true],
+    ["a choice of none", "allow", { allBots: false, botIds: [] }, listed, true],
+    ["blocked", "off", some, listed, false],
+    ["no bots to choose from", "allow", every, [], false],
+    ["a server that can't keep a choice", "allow", undefined, listed, false],
+    // Unshown: archived bots not read, or a bot of another member's list.
+    ["a chosen bot not shown", "allow", some, [{ id: "bot-2" }], false],
+    [
+      "a chosen bot of two not shown",
+      "allow",
+      { allBots: false, botIds: ["bot-1", "bot-3"] },
+      listed,
+      false,
+    ],
+    // Switched to Chosen in the editor, the choice is what was ticked there, all of them shown.
+    [
+      "every bot switched to a choice",
+      "allow",
+      { allBots: false, botIds: ["bot-2"] },
+      listed,
+      true,
+    ],
+  ];
+  it.each(states)("offers the picker for %s: %s", (_label, policy, access, bots, picker) => {
+    expect(vaultAccessControls({ kind: "login", policy, access, bots }).picker).toBe(picker);
   });
 
   it("says the note under chosen bots, or alone when none can be chosen, never for a blocked item", () => {
     const noted = (policy: "allow" | "ask" | "off", access?: VaultBots) =>
-      vaultAccessControls({ kind: "api_key", policy, access, bots: 1, note }).note;
+      vaultAccessControls({ kind: "api_key", policy, access, bots: [{ id: "bot-1" }], note }).note;
     expect(noted("allow", some)).toBe(note);
     expect(noted("allow", every)).toBeUndefined();
     expect(noted("off", some)).toBeUndefined();
     expect(noted("allow", undefined)).toBe(note);
     expect(noted("off", undefined)).toBeUndefined();
     expect(
-      vaultAccessControls({ kind: "api_key", policy: "allow", access: some, bots: 1 }).note,
+      vaultAccessControls({
+        kind: "api_key",
+        policy: "allow",
+        access: some,
+        bots: [{ id: "bot-1" }],
+      }).note,
     ).toBeUndefined();
   });
 });

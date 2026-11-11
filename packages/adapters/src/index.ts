@@ -30,6 +30,7 @@ export {
   LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
   listBotSecretMetadata,
+  listBotSecrets,
   listVaultItems,
   loginCodeClaim,
   newVaultItemName,

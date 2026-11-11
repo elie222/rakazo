@@ -146,13 +146,14 @@ export function fakeDatabase() {
       return { count: before - limits.length };
     }),
     createMany: vi.fn(async ({ data }: { data: Limit[] }) => {
-      for (const entry of data)
-        if (
+      const fresh = data.filter(
+        (entry) =>
           !limits.some(
             (saved) => saved.credentialId === entry.credentialId && saved.spaceId === entry.spaceId,
-          )
-        )
-          limits.push(entry);
+          ),
+      );
+      limits.push(...fresh);
+      return { count: fresh.length };
     }),
   };
   const vaultCredentialBot = {

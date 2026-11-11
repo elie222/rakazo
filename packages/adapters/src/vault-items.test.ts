@@ -478,7 +478,7 @@ describe("an item bots may not use", () => {
       auth: BotSecretDestination["auth"],
       value: string,
       policy?: VaultPolicy,
-      botIds?: string[],
+      bots?: string[] | VaultItemBots,
     ) =>
       storeBotSecret({
         prisma: db.prisma,
@@ -487,7 +487,7 @@ describe("an item bots may not use", () => {
         destination: { name, origin, auth },
         plaintext: value,
         policy,
-        ...(botIds ? { bots: { allBots: false, botIds } } : {}),
+        ...(bots ? { bots: Array.isArray(bots) ? { allBots: false, botIds: bots } : bots } : {}),
       });
     await store("site", site, { type: "login" }, login);
     await store("stripe", "https://api.example.test", api, "fake-key-1");
@@ -721,6 +721,69 @@ describe("an item bots may not use", () => {
     expect(db.assignments()).toEqual([]);
     expect(db.limits()).toEqual([]);
   });
+
+  // An item's bots in a Space are one of two states: every bot (no limit row and no chosen-bot
+  // rows) or limited to a set of chosen bots. A save moves between them as the table says; a
+  // chosen-bot row left behind on an unlimited item, as an earlier release's save could leave, is
+  // no choice: it is never listed, never limits, and is cleared when the item is next limited.
+  type BotsState = "every" | "leftover" | string[];
+  const transitions: [BotsState, VaultItemBots | undefined, BotsState][] = [
+    ["every", undefined, "every"],
+    ["every", { allBots: true }, "every"],
+    ["every", { allBots: true, botIds: ["bot-1"] }, "every"],
+    ["every", { allBots: false }, []],
+    ["every", { allBots: false, botIds: ["bot-2"] }, ["bot-2"]],
+    ["every", { botIds: ["bot-2"] }, ["bot-2"]],
+    ["every", { botIds: [] }, []],
+    ["leftover", undefined, "leftover"],
+    ["leftover", { allBots: true }, "every"],
+    ["leftover", { allBots: false }, []],
+    ["leftover", { allBots: false, botIds: ["bot-2"] }, ["bot-2"]],
+    ["leftover", { botIds: ["bot-2"] }, ["bot-2"]],
+    ["leftover", { botIds: [] }, []],
+    [["bot-1"], undefined, ["bot-1"]],
+    [["bot-1"], { allBots: true }, "every"],
+    [["bot-1"], { allBots: false }, ["bot-1"]],
+    [["bot-1"], { allBots: false, botIds: ["bot-2"] }, ["bot-2"]],
+    [["bot-1"], { botIds: ["bot-2"] }, ["bot-2"]],
+    [["bot-1"], { botIds: [] }, []],
+  ];
+  it.each(transitions)(
+    "moves an item's bots from %j with a save of %j to %j",
+    async (from, save, to) => {
+      const { db, store } = await vault();
+      const names = async (botId: string) =>
+        (await listBotSecrets(db.prisma, secretStore, { ...scope, botId })).map(
+          (item) => item.name,
+        );
+      const item = async () => (await listVaultItems(db.prisma, secretStore, scope, "new-key"))[0];
+      await store("new-key", "https://api.example.test", api, "fake-key-2");
+      const credentialId = db.rows().find((entry) => entry.name === "new-key")!.id;
+      const own = { userId: scope.userId, spaceId: scope.spaceId, credentialId };
+      if (Array.isArray(from))
+        await relabelVaultItem(db.prisma, scope, "new-key", {
+          bots: { allBots: false, botIds: from },
+        });
+      else if (from === "leftover")
+        await db.prisma.vaultCredentialBot.createMany({ data: [{ ...own, botId: "bot-1" }] });
+      // Saved with a new value or without one alike.
+      for (const write of [
+        () => relabelVaultItem(db.prisma, scope, "new-key", { bots: save }),
+        () => store("new-key", "https://api.example.test", api, "fake-key-3", undefined, save),
+      ]) {
+        await write();
+        const chosen = Array.isArray(to) ? to : [];
+        expect(await item()).toMatchObject({ allBots: !Array.isArray(to), botIds: chosen });
+        for (const botId of ["bot-1", "bot-2"])
+          expect((await names(botId)).includes("new-key")).toBe(
+            !Array.isArray(to) || chosen.includes(botId),
+          );
+        expect(db.assignments().map((entry) => entry.botId)).toEqual(
+          to === "leftover" ? ["bot-1"] : chosen,
+        );
+      }
+    },
+  );
 
   it("lets each member of a shared Space limit their own item to any of its bots, for their runs only", async () => {
     const { db } = await vault();

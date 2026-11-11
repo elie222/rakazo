@@ -813,7 +813,10 @@ export const VaultPutInput = settingsScopeInput.extend({
   title: VaultItemTitle.optional(),
   note: VaultItemNote.optional(),
   policy: VaultPolicy.optional(),
-  /** False limits the item to `botIds`, the owner's bots chosen in this Space. */
+  /**
+   * `botIds` limits the item in this Space to those of the owner's bots; `allBots` true lets every
+   * bot use it and forgets the choice. Both left out, the bots stay as they are.
+   */
   allBots: z.boolean().optional(),
   botIds: z.array(Id).max(100).optional(),
   /** A login's other sites; left as they are when omitted. */
@@ -888,7 +891,7 @@ export const BotSecretMetadata = z.object({
   policy: VaultPolicy.optional(),
   /** Both missing from an older server, which lets every bot use every item. */
   allBots: z.boolean().optional(),
-  /** The bots chosen in this Space. */
+  /** The bots chosen in this Space while `allBots` is false; none otherwise. */
   botIds: z.array(z.string()).optional(),
   /** Missing from an older server, which fills a login only on its own site. */
   alsoOn: z.array(z.string()).optional(),

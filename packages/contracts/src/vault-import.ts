@@ -139,10 +139,14 @@ export function parseVaultCsv(text: string): VaultCsv {
   const header = records[start] ?? [];
   const body = start < 0 ? [] : records.slice(start + 1);
   const keys = header.map((name) => name.toLowerCase().replace(/[^a-z0-9]/g, ""));
-  // KeePass 1.x escapes a backslash or quote with another backslash, which CSV doesn't, so an
-  // exported CORP\\bob would be saved with both. Refused rather than read differently; no other
-  // layout read here has all three of its columns.
-  if (["account", "loginname", "website"].every((name) => keys.includes(name)))
+  // KeePass 1.x escapes a backslash with another, which CSV doesn't, so an exported CORP\\bob
+  // would be saved with both. Refused rather than read differently, but only where a value has
+  // the doubled backslash that reads two ways; an escaped quote is already a stray quote above,
+  // and a file of this layout without either reads the same from any tool.
+  if (
+    ["account", "loginname", "website"].every((name) => keys.includes(name)) &&
+    body.some((record) => record.some((cell) => cell.includes("\\\\")))
+  )
     return { error: "unreadable" };
   const columns = Object.fromEntries(
     (Object.keys(COLUMNS) as Column[]).map((column) => [
