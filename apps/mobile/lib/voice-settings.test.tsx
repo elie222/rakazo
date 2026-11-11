@@ -50,6 +50,34 @@ vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknow
 vi.mock("../components/row-accessories", () => ({
   Checkmark: () => <span data-testid="checkmark" />,
 }));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    value,
+    onChange,
+    disabled,
+  }: {
+    disabled?: boolean;
+    choices: { key: string; label: string }[];
+    value: string;
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map((choice) => (
+        <button
+          key={choice.key}
+          type="button"
+          disabled={disabled}
+          aria-pressed={choice.key === value}
+          onClick={() => onChange(choice.key)}
+        >
+          {choice.label}
+          {choice.key === value ? <span data-testid="checkmark" /> : null}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
