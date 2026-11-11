@@ -92,24 +92,6 @@ describe("toComputerStatus", () => {
     });
   });
 
-  it("offers a restart only for a boot a dead worker left behind", () => {
-    const booting = {
-      kind: "e2b",
-      state: "booting",
-      scope: "team",
-      controlHolder: "none",
-      homeRevision: "r1",
-    };
-    const old = new Date(Date.now() - 60 * 60_000);
-    expect(toComputerStatus("bot-1", { ...booting, updatedAt: old }).bootStalled).toBe(true);
-    expect(toComputerStatus("bot-1", { ...booting, updatedAt: new Date() })).not.toHaveProperty(
-      "bootStalled",
-    );
-    expect(
-      toComputerStatus("bot-1", { ...booting, updatedAt: old, maintenanceId: "restart-1" }),
-    ).not.toHaveProperty("bootStalled");
-  });
-
   it("hides restart on desktop computers", () => {
     expect(
       toComputerStatus("bot-1", {

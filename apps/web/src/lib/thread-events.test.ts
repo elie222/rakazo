@@ -409,22 +409,19 @@ describe("computer event reduction", () => {
     expect(screenMissing({ ...options, screenUrlLoaded: true, state: "error" })).toBe(false);
   });
 
-  it("shows maintenance for an errored computer that is not booting, or a stalled boot", () => {
-    expect(computerPanelNeedsMaintenance({ state: "error" }, false)).toBe(true);
-    expect(computerPanelNeedsMaintenance({ state: "stopped" }, false)).toBe(false);
-    expect(computerPanelNeedsMaintenance({ state: "error" }, true)).toBe(false);
-    expect(computerPanelNeedsMaintenance({ state: "running" }, false)).toBe(false);
+  it("shows maintenance only for an errored computer that is not booting", () => {
+    expect(computerPanelNeedsMaintenance("error", false)).toBe(true);
+    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(false);
+    expect(computerPanelNeedsMaintenance("error", true)).toBe(false);
+    expect(computerPanelNeedsMaintenance("running", false)).toBe(false);
     expect(computerPanelNeedsMaintenance(undefined, false)).toBe(false);
-    expect(computerPanelNeedsMaintenance({ state: "booting", bootStalled: true }, true)).toBe(true);
   });
 
   it("hides side-panel maintenance while the computer overlay is open", () => {
     const panel = "computer";
     const booting = false;
     const showInSidePanel = (computerOpen: boolean) =>
-      panel === "computer" &&
-      !computerOpen &&
-      computerPanelNeedsMaintenance({ state: "error" }, booting);
+      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("error", booting);
 
     expect(showInSidePanel(false)).toBe(true);
     expect(showInSidePanel(true)).toBe(false);

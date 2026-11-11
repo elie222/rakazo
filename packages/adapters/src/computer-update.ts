@@ -19,7 +19,6 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
-  isAbandonedLifecycleClaim,
   replaceComputer,
 } from "./computer-lifecycle.js";
 
@@ -42,19 +41,6 @@ export class ComputerDiscardNotAllowedError extends Error {
   constructor() {
     super("Restart without saving is only available after saving fails");
   }
-}
-
-/** A boot or suspend claim a dead worker left behind, which only a restart clears. */
-export function stalledComputerClaim(computer: {
-  state: string;
-  updatedAt: Date;
-  maintenanceId?: string | null;
-}): boolean {
-  return (
-    !computer.maintenanceId &&
-    (computer.state === "booting" || computer.state === "suspending") &&
-    isAbandonedLifecycleClaim(computer.updatedAt)
-  );
 }
 
 export function computerUpdateView(row: {
@@ -163,10 +149,7 @@ export async function queueComputerUpdate(
       where: {
         id: computerId,
         maintenanceId: null,
-        // A boot or suspend a dead worker left behind can be restarted; a live one cannot.
-        ...(stalledComputerClaim(computer)
-          ? { state: computer.state, updatedAt: computer.updatedAt }
-          : { state: { notIn: ["booting", "suspending"] } }),
+        state: { notIn: ["booting", "suspending"] },
         controlHolder: { not: "user" },
         controlLeaseId: revokeLeaseId,
         executionLeases: { none: { expiresAt: { gt: new Date() } } },
@@ -741,8 +724,8 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (abandoned.count !== 1) return false;
-        // A booting or suspending claim under this reservation is this update's own or an
-        // abandoned one it took over. Unlike its worker, this cannot tell what the claim started
+        // Only this update can hold a booting or suspending claim under its reservation, and
+        // restart refuses both. Unlike its worker, this cannot tell what the claim started
         // from, so a machine still attached may be running or half destroyed: quarantine it,
         // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
         // claim ends as an error, as provisionComputer's failure write leaves a boot.

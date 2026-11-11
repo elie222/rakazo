@@ -676,15 +676,7 @@ describe("computer recovery preserves live work", () => {
     ).toBe("checkpoint");
   });
 
-  it("restarts a boot a dead worker left behind under its own reservation", async () => {
-    const { deps, row } = await fixture();
-    row.state = "booting";
-    row.maintenanceId = context.operationId;
-    const updated = await replaceComputer(deps, row.id, context);
-    expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
-  });
-
-  it("refuses a boot that no restart reserved", async () => {
+  it("refuses a computer that is still booting", async () => {
     const { deps, row } = await fixture();
     row.state = "booting";
     const destroy = vi.spyOn(deps.sandbox, "destroy");

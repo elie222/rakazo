@@ -117,7 +117,7 @@ export function ShellSidePanel({
                 {active &&
                 panel === "computer" &&
                 !computerOpen &&
-                computerPanelNeedsMaintenance(computer, booting) ? (
+                computerPanelNeedsMaintenance(computer?.state, booting) ? (
                   <ComputerMaintenanceActions
                     botId={active.id}
                     computer={computer}

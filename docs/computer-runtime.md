@@ -169,10 +169,8 @@ be stored or recorded, stops the restart and leaves the computer as it was with
 its live work; a stopped or suspended computer the save woke is stopped again.
 After a restart fails while saving, the person can choose to restart without
 saving, which restores the last saved workspace; the server refuses that choice
-unless the computer's latest restart failed while saving. Restart refuses a live
-boot or suspend, but takes over one older than an execution-lease TTL that a dead
-worker left behind; status reports such a boot as `bootStalled` so the apps offer
-Restart for it.
+unless the computer's latest restart failed while saving. Restart refuses a computer that is
+booting or suspending.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
