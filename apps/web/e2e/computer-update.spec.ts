@@ -84,6 +84,10 @@ test("restarting the computer shows durable background progress and failure retr
   await expect(dialog.getByRole("heading")).toHaveText("Restart failed");
   await captureScreenshot(page, testInfo, "computer-restart-save-failed");
   await dialog.getByRole("button", { name: "Restart without saving", exact: true }).click();
+  const confirmDiscard = page.getByRole("alertdialog");
+  await expect(confirmDiscard).toContainText("Changes since the last save are lost.");
+  await captureScreenshot(page, testInfo, "computer-restart-discard-confirm");
+  await confirmDiscard.getByRole("button", { name: "Restart without saving", exact: true }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Restarting Team Computer");
   expect(discardUnsaved).toBe(true);
   updates = [];

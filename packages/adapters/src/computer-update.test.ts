@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { replaceComputer } from "./computer-lifecycle.js";
 import {
+  ComputerDiscardNotAllowedError,
   performComputerUpdate,
   queueComputerUpdate,
   reconcileComputerUpdates,
@@ -308,6 +309,33 @@ describe("background computer maintenance", () => {
       "lease-1",
     );
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["no earlier restart", null],
+    ["a restart that failed after saving", { status: "failed", stage: "restoring" }],
+    ["a restart whose failed save was dismissed", { status: "dismissed", stage: "saving" }],
+  ])("refuses to restart without saving after %s", async (_case, last) => {
+    const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
+    harness.computerUpdate.findFirst.mockResolvedValue(last);
+
+    await expect(
+      queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user", { discardUnsaved: true }),
+    ).rejects.toBeInstanceOf(ComputerDiscardNotAllowedError);
+    expect(harness.computerUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("restarts without saving right after a failed save", async () => {
+    const harness = takeoverQueue({ controlHolder: "none", controlBotId: null });
+    harness.computerRow.controlLeaseId = null;
+    harness.computerUpdate.findFirst.mockResolvedValue({ status: "failed", stage: "saving" });
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1", "user", {
+      discardUnsaved: true,
+    });
+    expect(harness.computerUpdate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ discardUnsaved: true }),
+    });
   });
 
   it("leaves another member's takeover alone", async () => {
@@ -842,6 +870,7 @@ function takeoverQueue(
       return [updateRow];
     }),
     deleteMany: vi.fn(async () => ({ count: 1 })),
+    findFirst: vi.fn(async (): Promise<{ status: string; stage: string } | null> => null),
   };
   const prisma = {
     $queryRaw: vi.fn(async () => []),

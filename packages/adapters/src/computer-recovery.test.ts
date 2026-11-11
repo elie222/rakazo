@@ -676,6 +676,22 @@ describe("computer recovery preserves live work", () => {
     ).toBe("checkpoint");
   });
 
+  it("restarts a boot a dead worker left behind under its own reservation", async () => {
+    const { deps, row } = await fixture();
+    row.state = "booting";
+    row.maintenanceId = context.operationId;
+    const updated = await replaceComputer(deps, row.id, context);
+    expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
+  });
+
+  it("refuses a boot that no restart reserved", async () => {
+    const { deps, row } = await fixture();
+    row.state = "booting";
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, context)).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
   it("leaves a suspended computer and its live work alone when its save fails", async () => {
     const { deps, row, first } = await fixture();
     row.state = "suspended";
@@ -685,8 +701,14 @@ describe("computer recovery preserves live work", () => {
       throw error;
     });
     const destroy = vi.spyOn(deps.sandbox, "destroy");
+    const stop = vi.spyOn(deps.sandbox, "stop");
     await expect(replaceComputer(deps, row.id, context)).rejects.toBe(error);
     expect(destroy).not.toHaveBeenCalled();
+    // The save woke it; it goes back down to match its row.
+    expect(stop).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: first.providerRef }),
+      context,
+    );
     expect(row).toMatchObject({ state: "suspended", providerRef: first.providerRef });
     expect(new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context))).toBe(
       "live work",

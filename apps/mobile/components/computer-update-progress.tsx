@@ -5,7 +5,7 @@ import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { computerRestartFailedSaving, computerUpdateNeedsAttention } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { computerUpdates } from "../lib/computer-updates";
 import { useMobileTokens } from "../lib/native";
@@ -140,7 +140,20 @@ export function ComputerUpdateProgress() {
                 label={t`Restart without saving`}
                 prominence="destructive"
                 busy={busy}
-                onPress={() => restart(selected.botId, true)}
+                onPress={() =>
+                  Alert.alert(
+                    t`Restart without saving?`,
+                    t`Changes since the last save are lost.`,
+                    [
+                      { text: t`Cancel`, style: "cancel" },
+                      {
+                        text: t`Restart without saving`,
+                        style: "destructive",
+                        onPress: () => restart(selected.botId, true),
+                      },
+                    ],
+                  )
+                }
               />
             ) : null}
             <NativeActionButton

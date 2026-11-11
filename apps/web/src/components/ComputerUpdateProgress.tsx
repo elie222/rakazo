@@ -7,6 +7,7 @@ import { CheckCircle2, Circle, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { computerUpdates } from "../lib/computer-updates";
 import { LoadingState } from "./ai/primitives";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => void }) {
   const { t } = useLingui();
@@ -19,6 +20,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
   completed.current = onCompleted;
   const [error, setError] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   useEffect(() => computerUpdates.watch(), []);
   useEffect(() => {
     if (
@@ -165,7 +167,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 <Button
                   variant="destructive"
                   disabled={retrying}
-                  onClick={() => restart(selected.botId, true)}
+                  onClick={() => setConfirmDiscard(true)}
                 >
                   <Trans>Restart without saving</Trans>
                 </Button>
@@ -179,6 +181,18 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
           </DialogContent>
         ) : null}
       </Dialog>
+      <ConfirmDialog
+        open={confirmDiscard && selected !== undefined}
+        onCancel={() => setConfirmDiscard(false)}
+        title={<Trans>Restart without saving?</Trans>}
+        description={<Trans>Changes since the last save are lost.</Trans>}
+        confirmLabel={<Trans>Restart without saving</Trans>}
+        confirmDisabled={retrying}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          if (selected) restart(selected.botId, true);
+        }}
+      />
     </>
   );
 }

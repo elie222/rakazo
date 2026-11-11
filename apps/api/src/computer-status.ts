@@ -5,6 +5,7 @@ import {
   DISK_WARNING_PERCENT,
   diskUsedPercent,
   holdsUserControl,
+  stalledComputerClaim,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
@@ -72,6 +73,7 @@ export function toComputerStatus(
     diskDismissedPercent?: number | null;
     controlUserId?: string | null;
     userId?: string | null;
+    updatedAt?: Date;
   } | null,
   busyBotName: string | null = null,
   shared = false,
@@ -119,6 +121,15 @@ export function toComputerStatus(
     homeRevision: computer?.homeRevision ?? null,
     busyBotName,
     canRestart: computerSupportsRestart(kind),
+    ...(computer?.updatedAt &&
+    stalledComputerClaim({
+      state: computer.state,
+      updatedAt: computer.updatedAt,
+      maintenanceId: computer.maintenanceId,
+    }) &&
+    computer.state === "booting"
+      ? { bootStalled: true }
+      : {}),
     terminalAvailable: computerSupportsTerminal(kind),
     ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };

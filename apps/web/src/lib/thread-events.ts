@@ -89,10 +89,10 @@ export function computerPanelNeedsScreen(
 }
 
 export function computerPanelNeedsMaintenance(
-  state: ComputerStatus["state"] | undefined,
+  computer: Pick<ComputerStatus, "state" | "bootStalled"> | null | undefined,
   booting: boolean,
 ): boolean {
-  return !booting && state === "error";
+  return Boolean(computer?.bootStalled) || (!booting && computer?.state === "error");
 }
 
 export function reduceComputerStatus(

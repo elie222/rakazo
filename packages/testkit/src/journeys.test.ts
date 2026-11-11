@@ -281,6 +281,27 @@ describeJourneys("required product journeys", () => {
     expect(computer.controlLeaseId).toBeNull();
   });
 
+  it("refuses a direct restart without saving when no save has failed", async () => {
+    const cookie = await signup(app, `maintenance-discard-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Keeper",
+      description: "Keeps work",
+      instructions: "Help.",
+    });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const response = await raw(app, cookie, "computer/restart", {
+      botId: bot.id,
+      discardUnsaved: true,
+    });
+    expect(response.status).toBe(400);
+    expect(
+      await prisma.computerUpdate.count({
+        where: { computer: { bots: { some: { id: bot.id } } } },
+      }),
+    ).toBe(0);
+  });
+
   it("maintenance leaves a run waiting on control", async () => {
     const cookie = await signup(app, `maintenance-waiting-${stamp}@rakazo.test`, "Maintenance");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

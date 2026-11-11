@@ -40,6 +40,8 @@ export const ComputerStatusSchema = z.object({
   homeRevision: z.string().nullable(),
   busyBotName: z.string().nullable(),
   canRestart: z.boolean(),
+  /** True when a boot a dead worker left behind can only be cleared by a restart. */
+  bootStalled: z.boolean().optional(),
   terminalAvailable: z.boolean(),
   /** Set only while the user should see that the disk is nearly full. */
   diskFullPercent: z.number().int().min(0).max(100).optional(),

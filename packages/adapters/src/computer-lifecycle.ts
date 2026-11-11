@@ -75,7 +75,10 @@ const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
  * Older ones are abandoned: the worker died mid-transition, and Reset or a later
  * provision may reclaim them. Missing stamps fail closed (treated as live).
  */
-function isAbandonedLifecycleClaim(updatedAt: Date | null | undefined, now = Date.now()): boolean {
+export function isAbandonedLifecycleClaim(
+  updatedAt: Date | null | undefined,
+  now = Date.now(),
+): boolean {
   return updatedAt instanceof Date && now - updatedAt.getTime() >= BOOT_CLAIM_STALE_MS;
 }
 
@@ -1052,9 +1055,12 @@ export async function replaceComputer(
     }
   }
   if (hasActiveComputerControl(existing)) throw new ComputerBusyError();
-  // A boot or suspend in flight finishes first; provisioning and the idle sweep take over one a
-  // dead worker left behind.
-  if (existing.state === "booting" || existing.state === "suspending") {
+  // A boot or suspend in flight finishes first. Restart reserves one only once a dead worker left
+  // it behind, and nothing else boots or suspends the computer under that reservation.
+  if (
+    (existing.state === "booting" || existing.state === "suspending") &&
+    existing.maintenanceId !== context.operationId
+  ) {
     throw new ComputerBusyError();
   }
 
@@ -1071,6 +1077,10 @@ export async function replaceComputer(
         id: computerId,
         state: previousState,
         maintenanceId: existing.maintenanceId ?? null,
+        // CAS the booting/suspending stamp so a concurrent claim cannot be overwritten.
+        ...(previousState === "booting" || previousState === "suspending"
+          ? { updatedAt: existing.updatedAt }
+          : {}),
         executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
         OR: [
           { controlHolder: { not: "user" } },
@@ -1198,9 +1208,13 @@ export async function replaceComputer(
     const failedState =
       previousState === "quarantined"
         ? "quarantined"
-        : tornDown || broken
+        : tornDown || broken || previousState === "booting" || previousState === "suspending"
           ? "error"
           : previousState;
+    // Saving may have woken a computer that was down; put it back to match its row.
+    if (oldRef && !tornDown && (previousState === "suspended" || previousState === "stopped")) {
+      await deps.sandbox.stop(oldRef, context).catch(() => undefined);
+    }
     await deps.prisma.computer
       .updateMany({
         where: {

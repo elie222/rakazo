@@ -6,6 +6,7 @@ import {
   applyTeachingDesktopInput,
   COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
+  ComputerDiscardNotAllowedError,
   computerSupportsRestart,
   computerSupportsTerminal,
   computerUpdateView,
@@ -139,6 +140,8 @@ export function computerRoutes(ctx: RouterContext) {
         } catch (error) {
           if (error instanceof ComputerBusyError)
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          if (error instanceof ComputerDiscardNotAllowedError)
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
           throw error;
         }
       }),

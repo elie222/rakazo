@@ -93,8 +93,10 @@ export function createComputerUpdates(client: {
 }
 
 /** Whether to offer Restart; a restart in progress reports the computer as booting. */
-export function canOfferComputerRestart(computer: Pick<ComputerStatus, "canRestart" | "state">) {
-  return computer.canRestart && computer.state !== "booting";
+export function canOfferComputerRestart(
+  computer: Pick<ComputerStatus, "canRestart" | "state" | "bootStalled">,
+) {
+  return computer.canRestart && (computer.state !== "booting" || computer.bootStalled === true);
 }
 
 /** A restart that failed while saving can only go ahead by giving up the unsaved work. */

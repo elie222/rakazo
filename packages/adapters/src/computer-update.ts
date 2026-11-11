@@ -19,6 +19,7 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
+  isAbandonedLifecycleClaim,
   replaceComputer,
 } from "./computer-lifecycle.js";
 
@@ -35,6 +36,26 @@ const ABANDONED_MS = 60 * 60_000;
 // revoked: provider release returned, lease write still missing.
 const UNCONFIRMED_HANDBACK_STATUSES = ["reserving", "revoking"] as const;
 const PENDING_HANDBACK_STATUSES = ["reserving", "revoking", "revoked"] as const;
+
+/** A restart without saving was asked for when no save had just failed. */
+export class ComputerDiscardNotAllowedError extends Error {
+  constructor() {
+    super("Restart without saving is only available after saving fails");
+  }
+}
+
+/** A boot or suspend claim a dead worker left behind, which only a restart clears. */
+export function stalledComputerClaim(computer: {
+  state: string;
+  updatedAt: Date;
+  maintenanceId?: string | null;
+}): boolean {
+  return (
+    !computer.maintenanceId &&
+    (computer.state === "booting" || computer.state === "suspending") &&
+    isAbandonedLifecycleClaim(computer.updatedAt)
+  );
+}
 
 export function computerUpdateView(row: {
   id: string;
@@ -68,6 +89,16 @@ export async function queueComputerUpdate(
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
+    if (options.discardUnsaved) {
+      // Only a restart whose save just failed may give up the unsaved work.
+      const last = await tx.computerUpdate.findFirst({
+        where: { computerId },
+        orderBy: { createdAt: "desc" },
+        select: { status: true, stage: true },
+      });
+      if (last?.status !== "failed" || last.stage !== "saving")
+        throw new ComputerDiscardNotAllowedError();
+    }
     // A run bound to this takeover must keep it. Maintenance does not resume that run.
     if (
       computer.controlHolder === "user" &&
@@ -132,7 +163,10 @@ export async function queueComputerUpdate(
       where: {
         id: computerId,
         maintenanceId: null,
-        state: { notIn: ["booting", "suspending"] },
+        // A boot or suspend a dead worker left behind can be restarted; a live one cannot.
+        ...(stalledComputerClaim(computer)
+          ? { state: computer.state, updatedAt: computer.updatedAt }
+          : { state: { notIn: ["booting", "suspending"] } }),
         controlHolder: { not: "user" },
         controlLeaseId: revokeLeaseId,
         executionLeases: { none: { expiresAt: { gt: new Date() } } },
@@ -707,8 +741,8 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (abandoned.count !== 1) return false;
-        // Only this update can hold a booting or suspending claim under its reservation, and
-        // restart refuses both. Unlike its worker, this cannot tell what the claim started
+        // A booting or suspending claim under this reservation is this update's own or an
+        // abandoned one it took over. Unlike its worker, this cannot tell what the claim started
         // from, so a machine still attached may be running or half destroyed: quarantine it,
         // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
         // claim ends as an error, as provisionComputer's failure write leaves a boot.
