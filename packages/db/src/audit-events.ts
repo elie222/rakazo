@@ -27,10 +27,7 @@ export interface AuditEventInput {
     | { type: "system"; label?: string };
   /** The space acted in; its organization owns the event. */
   spaceId?: string | null;
-  /**
-   * The person whose own data the event names, such as their vault item. Where they are a guest,
-   * it goes to their own organization, as their billing does, not to the space's.
-   */
+  /** The person whose vault item the event names: the acting user, or the run's for a bot's use. */
   userId?: string;
   /** For a space that may already be gone. Without either, a user's event goes to each of their organizations. */
   organizationId?: string;
@@ -44,11 +41,14 @@ export interface AuditEventInput {
 }
 
 /**
- * What may be in an event about a vault item, the one place this is decided. An item is its
- * person's own unless the event says it is a Space's (`scope: "space"`). An event about one may
- * name it, its username or its site only in an organization of theirs: their own, or the space's
- * where they are a member. Where it can only land in one they are a guest of, or have left, it
- * keeps just these fields and no target label.
+ * Where an event about a vault item lands and what it says there, the one place this is decided,
+ * by who acts and where. Every vault item is its person's own, in their account's vault or in
+ * their own vault in a Space. An event in a space lands in the space's organization, naming the
+ * item, its username or its site only when the person is a full member there; otherwise that row
+ * keeps just these fields and no target label. A guest, or someone who has left, also gets the
+ * named row in the oldest organization they own, and an action of their own on an account vault
+ * item lands only there when they own one. Without a known vault scope it is treated as in the
+ * space.
  */
 const VAULT_TARGETS = new Set(["vault_credential", "bot_secret"]);
 const VAULT_FIELDS_FOR_OTHERS = new Set(["procedure", "kind", "scope", "tool"]);
@@ -117,11 +117,14 @@ async function auditRows(
         })
       : [],
   ]);
-  const owner = input.userId ?? personId;
-  const ownItem = VAULT_TARGETS.has(input.target?.type ?? "") && input.metadata?.scope !== "space";
+  // The person whose vault item it is (see VAULT_TARGETS), when the event is about one.
+  const owner =
+    VAULT_TARGETS.has(input.target?.type ?? "") && !input.organizationId
+      ? (input.userId ?? personId)
+      : undefined;
   // Whether that person is only a guest of the space's organization, or no longer in it.
   const outsider =
-    space && owner && !input.organizationId && (input.userId || ownItem)
+    space && owner
       ? await db.member
           .findUnique({
             where: {
@@ -131,25 +134,23 @@ async function auditRows(
           })
           .then((member) => !member || member.role === GUEST_ROLE)
       : false;
-  // A person's own event goes to one organization: the space's for its members, else, as for a
-  // guest or someone whose membership is gone mid-write, the oldest they own, so a shared space
-  // never sees it. Owning none, it stays with the space it happened in rather than being lost,
-  // without naming their vault item there.
   const personal =
-    input.userId && outsider
-      ? await ownedOrganizationId(db, input.userId).catch((error: unknown) => {
+    owner && outsider
+      ? await ownedOrganizationId(db, owner).catch((error: unknown) => {
           if (error instanceof IsolationError) return undefined;
           throw error;
         })
       : undefined;
-  const withheld = ownItem && outsider && !personal;
-  const organizations = input.organizationId
-    ? [input.organizationId]
-    : personal
-      ? [personal]
-      : space
-        ? [space.organizationId]
-        : memberships.map((member) => member.organizationId);
+  // Their own action on an account vault item happened in no space, so it is theirs alone.
+  const ownTrail = actor.type === "user" && input.metadata?.scope === "account" && personal;
+  const landings: { organizationId: string; withheld: boolean }[] = input.organizationId
+    ? [{ organizationId: input.organizationId, withheld: false }]
+    : space
+      ? [
+          ...(ownTrail ? [] : [{ organizationId: space.organizationId, withheld: outsider }]),
+          ...(personal ? [{ organizationId: personal, withheld: false }] : []),
+        ]
+      : memberships.map((member) => ({ organizationId: member.organizationId, withheld: false }));
   const row = {
     spaceId: bounded(input.spaceId, 128),
     spaceName: bounded(input.spaceName ?? space?.name, 200),
@@ -159,25 +160,31 @@ async function auditRows(
     action: input.action.slice(0, 128),
     targetType: bounded(input.target?.type, 64),
     targetId: bounded(input.target?.id, 200),
-    targetLabel: withheld
-      ? null
-      : bounded(input.target?.label ?? (actor.type === "user" ? null : user?.email), 200),
+    targetLabel: bounded(input.target?.label ?? (actor.type === "user" ? null : user?.email), 200),
     outcome: input.outcome ?? "success",
     runId: bounded(input.runId, 128),
     threadId: bounded(input.threadId, 128),
     ip: bounded(caller?.ip, 64),
     userAgent: bounded(caller?.userAgent, 512),
+    metadata: securityEventMetadata(input.metadata),
+    // One time for both rows of a guest's vault event, so its owner's activity lists it once.
+    ...(owner && landings.length > 1 ? { createdAt: new Date() } : {}),
+  };
+  const withheld = {
+    ...row,
+    targetLabel: null,
     metadata: securityEventMetadata(
-      withheld
-        ? Object.fromEntries(
-            Object.entries(input.metadata ?? {}).filter(([key]) =>
-              VAULT_FIELDS_FOR_OTHERS.has(key),
-            ),
-          )
-        : input.metadata,
+      Object.fromEntries(
+        Object.entries(input.metadata ?? {}).filter(([key]) => VAULT_FIELDS_FOR_OTHERS.has(key)),
+      ),
     ),
   };
-  return organizations.map((organizationId) => ({ ...row, organizationId }));
+  return landings.map((landing) => ({
+    ...(landing.withheld ? withheld : row),
+    // The shared space's name is its organization's; the person's own keeps only its id.
+    ...(landing.organizationId === personal ? { spaceName: null } : {}),
+    organizationId: landing.organizationId,
+  }));
 }
 
 function bounded(value: string | null | undefined, max: number): string | null {

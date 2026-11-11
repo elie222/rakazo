@@ -68,7 +68,7 @@ describe("recordAuditEvent", () => {
     ]);
   });
 
-  it("gives a person's own event once: to the space's organization for its members, else their own", async () => {
+  it("records a use in the space, named for a member, and for a guest in theirs", async () => {
     // space-1 belongs to org-1; a guest owns org-own, made before org-later.
     const roles: Record<string, string | undefined> = { owner: "owner", guest: "guest" };
     Object.assign(store.member, {
@@ -92,22 +92,28 @@ describe("recordAuditEvent", () => {
         target: { type: "vault_credential", id: "item-1", label: "chase-personal" },
         metadata: { name: "chase-personal", site: "https://bank.example.test" },
       });
+    const landed = () =>
+      store.rows.splice(0).map((row) => [row.organizationId, row.targetLabel ?? "withheld"]);
     await use("owner");
-    await use("guest");
-    // One whose membership is gone mid-write never lands in the space's organization, and the
-    // use is one row, in the oldest organization they own.
-    await use("departed");
-    expect(store.rows.map((row) => row.organizationId)).toEqual(["org-1", "org-own", "org-own"]);
-    // Owning none, the use stays in the space it happened in rather than being lost.
+    expect(landed()).toEqual([["org-1", "chase-personal"]]);
+    // One whose membership is gone mid-write counts as a guest: unnamed in the space's, and named,
+    // at the same time, in the oldest organization they own.
+    for (const person of ["guest", "departed"]) {
+      await use(person);
+      const [inSpace, own] = store.rows;
+      expect(inSpace?.createdAt).toEqual(own?.createdAt);
+      expect(landed()).toEqual([
+        ["org-1", "withheld"],
+        ["org-own", "chase-personal"],
+      ]);
+    }
+    // Owning none, the use stays in the space it happened in, unnamed, rather than being lost.
     store.member.findMany.mockResolvedValue([]);
     await use("guest");
     await use("departed");
-    expect(store.rows.map((row) => row.organizationId)).toEqual([
-      "org-1",
-      "org-own",
-      "org-own",
-      "org-1",
-      "org-1",
+    expect(landed()).toEqual([
+      ["org-1", "withheld"],
+      ["org-1", "withheld"],
     ]);
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
@@ -250,40 +256,76 @@ describe("security events in the audit log", () => {
         },
       }),
   };
-  // space-1 belongs to org-1. A person's own vault item may be named in their own organization,
-  // or in the space's where they are a member, but never in one where they are only a guest.
-  const situations = [
-    { who: "member", scope: "account", owns: true, lands: "org-1", named: true },
-    { who: "guest", scope: "account", owns: true, lands: "org-own", named: true },
-    { who: "guest", scope: "account", owns: false, lands: "org-1", named: false },
-    { who: "guest", scope: undefined, owns: true, lands: "org-1", named: false },
-    // A Space's item is the Space's, whoever acts on it.
-    { who: "guest", scope: "space", owns: true, lands: "org-1", named: true },
-  ] as const;
+  // space-1 belongs to org-1, and the person's own organization is org-own. Every vault item is its
+  // person's own, in their account's vault or theirs in the space; who acts and where decides.
+  const N = "named";
+  const W = "withheld";
+  const both = [
+    ["org-1", W],
+    ["org-own", N],
+  ];
+  const matrix: [string, "account" | "space" | undefined, string[][], string[][]][] = [
+    // Who acts, the item's vault, then the rows of an action of theirs (import, save, remove,
+    // reveal) and of a bot's use in a run of theirs.
+    ["member", "account", [["org-1", N]], [["org-1", N]]],
+    ["member", "space", [["org-1", N]], [["org-1", N]]],
+    ["member", undefined, [["org-1", N]], [["org-1", N]]],
+    // An account vault action of their own happened in no space; a use did.
+    ["guest owning an organization", "account", [["org-own", N]], both],
+    ["guest owning an organization", "space", both, both],
+    ["guest owning an organization", undefined, both, both],
+    ["guest owning none", "account", [["org-1", W]], [["org-1", W]]],
+    ["guest owning none", "space", [["org-1", W]], [["org-1", W]]],
+    ["guest owning none", undefined, [["org-1", W]], [["org-1", W]]],
+  ];
   it.each(
-    Object.keys(vaultEvents).flatMap((kind) =>
-      situations
-        // Only a save or a removal can leave its vault out, and a use is recorded for its owner.
-        .filter(({ scope }) => scope || kind === "save" || kind === "remove")
-        .filter(({ scope }) => !(kind === "use" && scope === "space"))
-        .map((situation) => ({ kind: kind as keyof typeof vaultEvents, ...situation })),
+    matrix.flatMap(([who, scope, action, use]) =>
+      Object.keys(vaultEvents).map((kind) => ({
+        kind: kind as keyof typeof vaultEvents,
+        who,
+        scope,
+        vault: scope ?? "unknown",
+        rows: kind === "use" ? use : action,
+        lands: (kind === "use" ? use : action).map((row) => row.join(" ")).join(", "),
+      })),
     ),
   )(
-    "$kind by a $who of an item in the $scope vault lands in $lands, named: $named",
-    async ({ kind, who, scope, owns, lands, named }) => {
+    "$kind by a $who of an item in the $vault vault: $lands",
+    async ({ kind, who, scope, rows }) => {
       Object.assign(store.member, {
-        findUnique: vi.fn(async () => ({ role: who === "guest" ? "guest" : "member" })),
-        findMany: vi.fn(async () => (owns ? [{ organizationId: "org-own", role: "owner" }] : [])),
+        findUnique: vi.fn(async () => ({ role: who === "member" ? "member" : "guest" })),
+        findMany: vi.fn(async () =>
+          who === "guest owning an organization"
+            ? [{ organizationId: "org-own", role: "owner" }]
+            : [],
+        ),
       });
       await vaultEvents[kind](scope);
-      expect(store.rows.map((row) => row.organizationId)).toEqual([lands]);
-      const stored = JSON.stringify(store.rows);
-      for (const text of ["chase-personal", "bank.example.test"]) {
-        if (named && (text === "chase-personal" ? kind !== "import" : kind === "use"))
-          expect(stored).toContain(text);
-        else expect(stored).not.toContain(text);
+      expect(store.rows.map((row) => row.organizationId)).toEqual(rows.map(([org]) => org));
+      for (const [index, [org, named]] of rows.entries()) {
+        const row = store.rows[index]!;
+        const text = JSON.stringify(row);
+        // The actor is kept either way.
+        expect(row.actorType).toBe(kind === "use" ? "bot" : "user");
+        // The shared space's name stays out of the person's own organization.
+        expect(row.spaceName).toBe(org === "org-own" ? null : "Acme");
+        if (org === "org-own") expect(text).not.toContain("Acme");
+        if (named === W) {
+          // Nothing that names the item anywhere in the row: no target label, and of its metadata
+          // only the kind, scope, tool and procedure.
+          expect(row.targetLabel).toBeNull();
+          for (const name of ["chase-personal", "bank.example.test"])
+            expect(text).not.toContain(name);
+          for (const key of Object.keys(row.metadata as object))
+            expect(["procedure", "kind", "scope", "tool"]).toContain(key);
+        } else {
+          // An import's event never carries the login's name; a use names it and its site.
+          if (kind !== "import") expect(text).toContain("chase-personal");
+          if (kind === "use") expect(row).toMatchObject({ targetLabel: "chase-personal" });
+          if (kind === "use") expect(text).toContain("bank.example.test");
+        }
       }
-      expect(store.rows[0]?.metadata).toMatchObject({ kind: expect.any(String) });
+      if (store.rows.length > 1) expect(store.rows[0]?.createdAt).toEqual(store.rows[1]?.createdAt);
     },
   );
 

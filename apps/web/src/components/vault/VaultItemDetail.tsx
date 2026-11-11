@@ -5,6 +5,7 @@ import {
   cardExpiry,
   commandVariableName,
   hasVaultAccess,
+  otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
 import { vaultPolicyLabels } from "@rakazo/i18n/vault";
@@ -190,7 +191,7 @@ export function VaultItemDetail({
     if (item.alsoOn?.length)
       rows.push(
         <DetailRow key="also-on" label={t`Also on`}>
-          {item.alsoOn.map((site) => new URL(site).host).join(", ")}
+          {otherSitesText(item.alsoOn)}
         </DetailRow>,
       );
     if (revealed && "fields" in revealed) {

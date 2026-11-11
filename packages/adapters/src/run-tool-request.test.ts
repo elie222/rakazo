@@ -281,6 +281,29 @@ describe("prepareToolRequest: a saved login that asks first", () => {
     expect(plain.args).toEqual({ actions: [fill("plain", "Password")] });
   });
 
+  it.each(["http://login.example.test", "not a site"])(
+    "asks nothing for a login saved at %s, which no fill types",
+    async (origin) => {
+      const { db, ctx, request, approval } = await setup();
+      // Saved under older rules or changed by hand: no approval could name it on replay.
+      db.rows().find((row) => row.name === "work")!.origin = origin;
+      const actions = [fill("work", "Password")];
+      const prepared = request({ actions });
+      expect(await prepareToolRequest(ctx() as never, prepared)).toBeUndefined();
+      expect(prepared.loginUse).toBeUndefined();
+      // A replay carrying an approval for it passes none on: the tool and the effect get only
+      // what was asked for.
+      const replay = request(
+        { actions, loginApproval: { ...approval, fields: ["Password"] } },
+        { nextApprovedTool: "browser_act" },
+      );
+      expect(await prepareToolRequest(ctx() as never, replay)).toBeUndefined();
+      expect(replay.loginUse).toBeUndefined();
+      expect(replay.args).toEqual({ actions });
+      expect(replay.effectRequest).toEqual({ actions });
+    },
+  );
+
   it("keeps an approval only for the replay of what the user approved", async () => {
     const { ctx, request, approval } = await setup();
     const actions = [fill("work", "Email"), fill("work", "Password")];

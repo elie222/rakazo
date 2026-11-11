@@ -123,8 +123,13 @@ function csvRecords(text: string): { records: string[][]; starts: number[] } | u
 
 const blank = (record: string[]) => record.every((value) => value.trim() === "");
 
-/** A row the import leaves out, as the review names it: never a username, password or key. */
-export type VaultImportProblem = { line: number; label: string; reason: VaultImportReason };
+/** A row the import leaves out, as the review names it: never a username, password or key. A
+ * repeat of an earlier row is named so until the server answers for that row. */
+export type VaultImportProblem = {
+  line: number;
+  label: string;
+  reason: VaultImportReason | "repeat";
+};
 
 export type VaultCsv =
   | {
@@ -292,7 +297,7 @@ export function newVaultImportRows(
     const id = key(row.origin, row.username);
     const of = sent.get(id);
     if (of !== undefined) {
-      plan.repeats.push({ line, label: importLabel(row), reason: "duplicate", of });
+      plan.repeats.push({ line, label: importLabel(row), reason: "repeat", of });
       continue;
     }
     const reason = known.has(id)
@@ -323,12 +328,14 @@ function importLabel(row: VaultImportRow): string {
 
 type VaultImportPlan = ReturnType<typeof newVaultImportRows>;
 
-// A repeat is left out as a duplicate. Once the server answered, a repeat of a login it saved is
-// already saved, and a repeat of one it turned down is turned down the same way.
+// Before the server answers, a repeat is just that. Once it answered, a repeat of a login it saved
+// is already saved, and a repeat of one it turned down is turned down the same way.
 function repeatAnswers(plan: Pick<VaultImportPlan, "repeats">, result?: VaultImportResult) {
   return plan.repeats.map(({ of, ...repeat }) => ({
     ...repeat,
-    reason: result?.notSaved.find(({ index }) => index === of)?.reason ?? repeat.reason,
+    reason: result
+      ? (result.notSaved.find(({ index }) => index === of)?.reason ?? "duplicate")
+      : repeat.reason,
   }));
 }
 
@@ -354,6 +361,7 @@ export type VaultImportCount =
   | "added"
   | "toAdd"
   | "duplicate"
+  | "repeat"
   | "notHttps"
   | "noPassword"
   | "full"
@@ -369,10 +377,15 @@ export function vaultImportCounts(
   result?: VaultImportResult,
 ): [VaultImportCount, number][] {
   const server = { ...(result?.skipped ?? noneSkipped()) };
-  for (const { reason } of repeatAnswers(plan, result)) server[reason]++;
+  let repeats = 0;
+  for (const { reason } of repeatAnswers(plan, result)) {
+    if (reason === "repeat") repeats++;
+    else server[reason]++;
+  }
   const counts: [VaultImportCount, number][] = [
     result ? ["added", result.added] : ["toAdd", plan.rows.length - plan.pastRoom],
     ["duplicate", plan.duplicate + server.duplicate],
+    ["repeat", repeats],
     ["notHttps", skipped.notHttps + server.notHttps],
     ["noPassword", skipped.noPassword + server.noPassword],
     // Before saving, a guess; after, what the server found had no room.

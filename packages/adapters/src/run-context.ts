@@ -372,7 +372,7 @@ export async function recordVaultUse(
     action: "credential.used",
     actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
     spaceId: ctx.run.spaceId,
-    // The vault is the run's person's own.
+    // The run's person, whose own the item is, in their account's vault or theirs in the Space.
     userId: ctx.run.userId,
     target: { type: "vault_credential", id: item.id, label: item.name },
     runId: ctx.runId,

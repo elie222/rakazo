@@ -1,7 +1,13 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { BotSecretMetadata, ContactFields, VaultUse } from "@rakazo/contracts";
-import { cardExpiry, commandVariableName, hasVaultAccess, vaultKind } from "@rakazo/contracts";
+import {
+  cardExpiry,
+  commandVariableName,
+  hasVaultAccess,
+  otherSitesText,
+  vaultKind,
+} from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -63,7 +69,7 @@ export function VaultItemSheet({
     };
     if (entry.auth.type === "login") {
       add(t`Site`, siteHost(entry.origin));
-      add(t`Also on`, entry.alsoOn?.map((site) => new URL(site).host).join(", "));
+      add(t`Also on`, otherSitesText(entry.alsoOn ?? []));
       add(t`Username`, preview?.username);
       list.push({ label: t`Password`, ...hidden });
       if (preview?.otp) list.push({ label: t`Authenticator key`, ...hidden });

@@ -524,9 +524,9 @@ function EditorForm({
                     placeholder: "https://login.example.com",
                   })
                 : null}
-              {otherSites === "not_https" ? (
+              {otherSites === "invalid" ? (
                 <p className="-mt-2 text-label text-destructive">
-                  <Trans>Enter each site as an HTTPS address.</Trans>
+                  <Trans>Enter each site as an HTTPS address a login can be saved for.</Trans>
                 </p>
               ) : otherSites === "too_many" ? (
                 <p className="-mt-2 text-label text-destructive">{t`Up to ${limit} sites.`}</p>

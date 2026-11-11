@@ -10,6 +10,8 @@ import type { VaultBots } from "./vault.js";
 import {
   secretAnswerRefusal,
   vaultAccessControls,
+  vaultBotChoices,
+  vaultBotsChoosable,
   vaultImportProblemList,
   vaultLoginSave,
   vaultSaveDrops,
@@ -263,5 +265,32 @@ describe("vaultAccessControls", () => {
         bots: [{ id: "bot-1" }],
       }).note,
     ).toBeUndefined();
+  });
+});
+
+describe("vaultBotChoices", () => {
+  const bot = (id: string, archivedAt: string | null = null) => ({ id, name: id, archivedAt });
+  const archivedName = (name: string) => `${name} (archived)`;
+  it.each([
+    ["the active bots", [bot("a"), bot("b")], [], [], ["a", "b"]],
+    ["an archived one the active list holds", [bot("a"), bot("b", "x")], [], ["b"], ["a"]],
+    ["an archived chosen one, marked", [bot("a")], [bot("b", "x")], ["b"], ["a", "b (archived)"]],
+    ["no archived one that isn't chosen", [bot("a")], [bot("b", "x")], [], ["a"]],
+    ["no archived one twice", [bot("a")], [bot("a", "x")], ["a"], ["a"]],
+  ])("offers %s", (_, bots, archived, chosen, names) => {
+    expect(vaultBotChoices(bots, archived, chosen, archivedName).map(({ name }) => name)).toEqual(
+      names,
+    );
+  });
+});
+
+describe("vaultBotsChoosable", () => {
+  it.each([
+    ["a vault not read yet", undefined, true],
+    ["an empty vault", [], true],
+    ["a server that lists an item's bots", [{}, { allBots: true }], true],
+    ["a server that lists none", [{}, {}], false],
+  ])("for %s: %s", (_, items, choosable) => {
+    expect(vaultBotsChoosable(items)).toBe(choosable);
   });
 });

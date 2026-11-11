@@ -8,16 +8,11 @@ import { purchaseCardSummary } from "./purchase-gate.js";
  * replay types exactly that card on exactly that site. `title` is what the approval card showed, and
  * `savedAt` is when the card was last saved, so one replaced while the approval waited is not typed.
  */
-export type VaultCardUse = {
-  kind?: "card";
-  card: string;
-  site: string;
-  title: string;
-  savedAt: string;
-};
+export type VaultCardUse = { card: string; site: string; title: string; savedAt: string };
 /**
- * A saved login that asks first, approved for one browser_act call: its `fields` on its own site,
- * as saved at `savedAt`. The approval card names it by `title`, never a username others could read.
+ * A saved login that asks first, approved for one browser_act call: its `fields` on one of its
+ * sites, as saved at `savedAt`. The approval card names it by `title`, never a username others
+ * could read.
  */
 export type VaultLoginUse = {
   kind: "login";
@@ -31,9 +26,8 @@ export type VaultLoginUse = {
 /** A card use as the persisted request holds it, or nothing when it is not one. */
 export function vaultCardUseOf(value: unknown): VaultCardUse | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { kind, card, site, title, savedAt } = value as Record<string, unknown>;
+  const { card, site, title, savedAt } = value as Record<string, unknown>;
   if (
-    (kind !== undefined && kind !== "card") ||
     !BotSecretName.safeParse(card).success ||
     !OneTimeCodeTarget.safeParse({ origin: site }).success ||
     typeof title !== "string" ||

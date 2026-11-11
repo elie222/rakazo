@@ -38,6 +38,7 @@ import {
   loginCommandName,
   ONE_TIME_CODE_MIN_LENGTH,
   OneTimeCodeTarget,
+  otherSiteOrigin,
   SecretHttpRequest,
   sameLoginFieldLabel,
   UNCHOSEN_ITEM_ANSWER,
@@ -1337,12 +1338,13 @@ function alsoOnField(auth: unknown, origin: string, alsoOn: readonly string[] | 
   if (alsoOn === undefined) return {};
   if (alsoOn.length && BotSecretAuth.safeParse(auth).data?.type !== "login")
     throw new Error(UNSUPPORTED_ACCESS);
-  const sites = alsoOn.map((site) =>
-    pageUrlOrigin(site.trim(), { allowUserinfo: false, maxLength: 2048 }),
-  );
-  // A wildcard host never equals the site a page is on, so it could never fill.
-  if (sites.some((site) => !site?.startsWith("https://") || site.includes("*")))
-    throw new Error("Invalid credential destination — every other site must be an HTTPS origin");
+  // The editors' own check, so a site they let through is never refused here.
+  const sites = alsoOn.map((site) => otherSiteOrigin(site.trim()));
+  if (sites.some((site) => !site))
+    throw new Error(
+      "Invalid credential destination — every other site must be an HTTPS address a login " +
+        "can be saved for",
+    );
   return { alsoOn: [...new Set(sites as string[])].filter((site) => site !== origin) };
 }
 

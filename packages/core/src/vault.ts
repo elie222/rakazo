@@ -68,6 +68,29 @@ export function vaultAccessControls(input: {
 }
 
 /**
+ * The bots an item's editor offers: the active ones, then each archived one it is limited to,
+ * named by `archivedName`, as restoring it brings the choice back and it can be let go of.
+ */
+export function vaultBotChoices<Bot extends { id: string; name: string; archivedAt?: unknown }>(
+  bots: readonly Bot[],
+  archived: readonly Bot[],
+  chosen: readonly string[],
+  archivedName: (name: string) => string,
+): Bot[] {
+  return [
+    ...bots.filter((bot) => !bot.archivedAt),
+    ...archived
+      .filter((bot) => chosen.includes(bot.id) && !bots.some((active) => active.id === bot.id))
+      .map((bot) => ({ ...bot, name: archivedName(bot.name) })),
+  ];
+}
+
+/** Whether items can be limited to chosen bots: yes unless the saved ones show the server can't. */
+export function vaultBotsChoosable(items: readonly { allBots?: boolean }[] | null | undefined) {
+  return !items?.length || items.some((item) => item.allBots !== undefined);
+}
+
+/**
  * A login's save as both apps' editors send it, or no save while what was typed can't be sent.
  * The key is checked before Save clears what was typed, so a typo is fixed without retyping.
  */

@@ -1,5 +1,5 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
@@ -312,8 +312,8 @@ export async function resolveToolRequest(
 }
 
 /**
- * The saved login that asks first this browser_act call fills: every field it fills, on its own
- * site, as saved now. A replay keeps the approval the user answered.
+ * The saved login that asks first this browser_act call fills: every field it fills, on the one
+ * of its sites it fills there, as saved now. A replay keeps the approval the user answered.
  */
 async function askingLoginUse(
   ctx: RunContext,
@@ -340,6 +340,9 @@ async function askingLoginUse(
     const url = ctx.state.pageUrl;
     const page = url && URL.canParse(url) ? new URL(url).origin : "";
     const site = item.alsoOn?.includes(page) ? page : item.origin;
+    // Saved where no approval can name, as under older rules, it is never typed: the fill refuses.
+    if (![item.origin, site].every((origin) => OneTimeCodeTarget.safeParse({ origin }).success))
+      continue;
     asking.push({
       kind: "login",
       login,

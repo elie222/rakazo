@@ -168,11 +168,12 @@ describe("authenticated secret requests", () => {
     expect(JSON.stringify(rows)).not.toContain(secret);
   });
 
-  it("records a use in the Space's organization for its members, and in a guest's own", async () => {
+  it("records a guest's use unnamed in the Space's organization and named in theirs", async () => {
     const { input } = await fixture();
     const rows: Array<Record<string, unknown>> = [];
-    // space-1 belongs to org-1. The run's person is first its owner, then a guest of a shared
-    // Space whose own organization is org-2.
+    // space-1 belongs to org-1 and keeps its own vault, which is the run's person's own there.
+    // They are first its owner, then a guest whose own organization is org-2. The audit-events
+    // table covers every actor, vault and event.
     let role = "owner";
     installAuditEventStore({
       auditEvent: { createMany: async ({ data }: { data: typeof rows }) => rows.push(...data) },
@@ -206,7 +207,12 @@ describe("authenticated secret requests", () => {
         } as never,
       );
     }
-    expect(rows.map((row) => row.organizationId)).toEqual(["org-1", "org-2"]);
+    expect(rows.map((row) => [row.organizationId, row.targetLabel])).toEqual([
+      ["org-1", destination.name],
+      ["org-1", null],
+      ["org-2", destination.name],
+    ]);
+    expect(JSON.stringify(rows[1])).not.toContain(destination.name);
   });
 
   it("starts the request deadline before loading the credential", async () => {

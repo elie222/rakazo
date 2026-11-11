@@ -904,10 +904,16 @@ describe("an older server", () => {
     }
     await type(field("Authenticator key"), "");
     await click(buttonIn(editor(), "Add other sites")!);
-    // Plain HTTP, and a wildcard no page's address can match.
-    for (const site of ["http://www.github.com", "https://*.github.com"]) {
+    // Plain HTTP, a wildcard no page's address can match, and a host no login may be saved for.
+    for (const site of [
+      "http://www.github.com",
+      "https://*.github.com",
+      "https://169.254.169.254",
+    ]) {
       await type(field("Also on"), site);
-      expect(editor()?.textContent).toContain("Enter each site as an HTTPS address.");
+      expect(editor()?.textContent).toContain(
+        "Enter each site as an HTTPS address a login can be saved for.",
+      );
       expect(buttonIn(editor(), "Save")!.disabled).toBe(true);
     }
     const many = Array.from({ length: 11 }, (_, index) => `https://s${index}.github.com`);
@@ -916,7 +922,9 @@ describe("an older server", () => {
     expect(buttonIn(editor(), "Save")!.disabled).toBe(true);
     expect(values[1]!.value).toBe(FAKE_VALUE);
     await type(field("Also on"), "https://www.github.com");
-    expect(editor()?.textContent).not.toContain("Enter each site as an HTTPS address.");
+    expect(editor()?.textContent).not.toContain(
+      "Enter each site as an HTTPS address a login can be saved for.",
+    );
     expect(buttonIn(editor(), "Save")!.disabled).toBe(false);
   });
 

@@ -19,7 +19,13 @@ import {
   vaultImportProblems,
   vaultKind,
 } from "@rakazo/contracts";
-import { vaultImportProblemLines, vaultImportText, vaultSaveNotice } from "@rakazo/i18n/vault";
+import { vaultBotChoices, vaultBotsChoosable } from "@rakazo/core";
+import {
+  vaultBotsNote,
+  vaultImportProblemLines,
+  vaultImportText,
+  vaultSaveNotice,
+} from "@rakazo/i18n/vault";
 import * as Clipboard from "expo-clipboard";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
@@ -158,8 +164,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     };
   }, [opened, rpc, scope]);
 
-  // Items can be limited to chosen bots unless the saved ones show this server can't.
-  const canChooseBots = !items?.length || items.some((item) => item.allBots !== undefined);
+  const canChooseBots = vaultBotsChoosable(items);
   // Read for each edit, so bots added or a Space's vault changed since are what it offers.
   const [picker, setPicker] = useState<{
     bots: MobileBot[];
@@ -183,14 +188,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       .then(([list, navigation, overrides, archived]) => {
         if (!current) return;
         setPicker({
-          bots: [
-            ...list.filter((bot) => !bot.archivedAt),
-            ...archived
-              .filter(
-                (bot) => chosen.includes(bot.id) && !list.some((active) => active.id === bot.id),
-              )
-              .map((bot) => ({ ...bot, name: `${bot.name} · ${t`Archived`}` })),
-          ],
+          bots: vaultBotChoices(list, archived, chosen, (name) => `${name} · ${t`Archived`}`),
           spaces: navigation?.spaces.length ?? 1,
           ownVault: Boolean(overrides?.includes("credentials")),
         });
@@ -200,11 +198,10 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       current = false;
     };
   }, [canChooseBots, editing, rpc, scope]);
-  const botsNote = picker?.ownVault
-    ? t`This Space keeps its own vault, so its bots can't use account items.`
-    : picker && picker.spaces > 1
-      ? t`This limits only this Space's bots. Your other Spaces choose for their own.`
-      : undefined;
+  const botsNote = vaultBotsNote({
+    ownVault: Boolean(picker?.ownVault),
+    otherSpaces: (picker?.spaces ?? 1) > 1,
+  });
 
   const startAdding = useCallback((kind: VaultKind) => {
     setOpened(null);

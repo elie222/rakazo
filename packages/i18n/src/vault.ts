@@ -36,6 +36,24 @@ export function vaultPolicyLabels(): Record<VaultPolicy, string> {
   };
 }
 
+/**
+ * Said under an account item's bots: that this Space can't use it, or, where there are other
+ * Spaces, that a choice covers only this one's bots.
+ */
+export function vaultBotsNote(space: { ownVault: boolean; otherSpaces: boolean }) {
+  if (space.ownVault)
+    return i18n._({
+      id: "This Space keeps its own vault, so its bots can't use account items.",
+      message: "This Space keeps its own vault, so its bots can't use account items.",
+    });
+  if (space.otherSpaces)
+    return i18n._({
+      id: "This limits only this Space's bots. Your other Spaces choose for their own.",
+      message: "This limits only this Space's bots. Your other Spaces choose for their own.",
+    });
+  return undefined;
+}
+
 function dropText(drop: VaultSaveDrop): string {
   switch (drop) {
     case "ask":
@@ -79,6 +97,8 @@ export function vaultImportText() {
     added: i18n._({ id: "Added", message: "Added" }),
     toAdd: i18n._({ id: "To add", message: "To add" }),
     duplicate: i18n._({ id: "Already saved", message: "Already saved" }),
+    // A row the file has twice, before the import says what became of the first.
+    repeat: i18n._({ id: "Repeated in the file", message: "Repeated in the file" }),
     notHttps: i18n._({ id: "Not on an HTTPS site", message: "Not on an HTTPS site" }),
     noPassword: i18n._({ id: "No password", message: "No password" }),
     full: i18n._({ id: "Vault full", message: "Vault full" }),
@@ -90,6 +110,7 @@ export function vaultImportText() {
       notHttps: labels.notHttps,
       noPassword: labels.noPassword,
       duplicate: labels.duplicate,
+      repeat: labels.repeat,
       invalid: labels.notSaved,
       limit: labels.full,
     },

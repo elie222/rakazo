@@ -52,7 +52,9 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   // Another site only fills over HTTPS: the editor says so, and Save waits.
   await editor.getByLabel("Also on", { exact: true }).fill("http://www.example.test");
   await expect(
-    editor.getByText("Enter each site as an HTTPS address.", { exact: true }),
+    editor.getByText("Enter each site as an HTTPS address a login can be saved for.", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "vault-also-on-https");

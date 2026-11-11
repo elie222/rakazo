@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { VaultKind, VaultPolicy } from "@rakazo/contracts";
 import { VaultPolicy as Policies } from "@rakazo/contracts";
-import { vaultAccessControls } from "@rakazo/core";
+import { vaultAccessControls, vaultBotChoices } from "@rakazo/core";
 import { vaultPolicyLabels } from "@rakazo/i18n/vault";
 import { ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -12,8 +12,8 @@ import { AgentAccessControl } from "../integrations/agent-access";
 
 /**
  * The owner's bots in this Space, which an item can be limited to; undefined until loaded, null
- * if they, or archived ones it is limited to, can't be read. An archived bot the item is limited to is named so, as restoring it
- * brings the choice back.
+ * if they, or archived ones it is limited to, can't be read. An archived bot the item is limited
+ * to is named so, as restoring it brings the choice back.
  */
 export function useVaultBots(enabled: boolean, chosen: string[] = []) {
   const { t } = useLingui();
@@ -33,14 +33,8 @@ export function useVaultBots(enabled: boolean, chosen: string[] = []) {
     if (archived.isError && data && chosen.some((id) => !data.some((bot) => bot.id === id)))
       return null;
   }
-  return (
-    data && [
-      ...data.filter((bot) => !bot.archivedAt),
-      ...(archived.data ?? [])
-        .filter((bot) => chosen.includes(bot.id) && !data.some((active) => active.id === bot.id))
-        .map((bot) => ({ ...bot, name: `${bot.name} · ${t`Archived`}` })),
-    ]
-  );
+  const archivedName = (name: string) => `${name} · ${t`Archived`}`;
+  return data && vaultBotChoices(data, archived.data ?? [], chosen, archivedName);
 }
 
 export function VaultItemAccess({

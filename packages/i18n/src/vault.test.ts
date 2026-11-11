@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import { afterEach, expect, it } from "vitest";
 import {
   secretAnswerErrorText,
+  vaultBotsNote,
   vaultImportProblemLines,
   vaultImportText,
   vaultPolicyLabels,
@@ -38,6 +39,19 @@ it("names each policy the same in both apps", () => {
   expect(vaultPolicyLabels()).toEqual({ allow: "Allow", ask: "Ask first", off: "Block" });
 });
 
+it.each([
+  [true, true, "This Space keeps its own vault, so its bots can't use account items."],
+  [true, false, "This Space keeps its own vault, so its bots can't use account items."],
+  [false, true, "This limits only this Space's bots. Your other Spaces choose for their own."],
+  [false, false, undefined],
+])(
+  "says under the bots, with its own vault %s and other Spaces %s: %s",
+  (ownVault, otherSpaces, note) => {
+    i18n.activate("en");
+    expect(vaultBotsNote({ ownVault, otherSpaces })).toBe(note);
+  },
+);
+
 it("names import results and unusable files", () => {
   i18n.activate("en");
   const text = vaultImportText();
@@ -45,6 +59,7 @@ it("names import results and unusable files", () => {
     added: "Added",
     toAdd: "To add",
     duplicate: "Already saved",
+    repeat: "Repeated in the file",
     notHttps: "Not on an HTTPS site",
     noPassword: "No password",
     full: "Vault full",
@@ -54,6 +69,7 @@ it("names import results and unusable files", () => {
     notHttps: "Not on an HTTPS site",
     noPassword: "No password",
     duplicate: "Already saved",
+    repeat: "Repeated in the file",
     invalid: "Not saved",
     limit: "Vault full",
   });

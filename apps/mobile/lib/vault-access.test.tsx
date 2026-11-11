@@ -595,7 +595,9 @@ it("says why a key or another site can't be saved, and keeps Save off", async ()
   await typeInto("Authenticator key", "");
   for (const site of ["http://www.shop.example.test", "https://*.shop.example.test"]) {
     await typeInto("Also on", site);
-    expect(container.textContent).toContain("Enter each site as an HTTPS address.");
+    expect(container.textContent).toContain(
+      "Enter each site as an HTTPS address a login can be saved for.",
+    );
     expect(button("Save").disabled).toBe(true);
   }
   await typeInto(

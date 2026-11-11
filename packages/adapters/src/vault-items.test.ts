@@ -412,11 +412,43 @@ describe("approving a saved login", () => {
 });
 
 describe("an item's uses, for its owner", () => {
+  // Rows written in one instant by one bot in one run and chat. A guest's use is an unnamed row
+  // and a named one; every use with its own site stays its own.
+  const unnamed = { kind: "login", scope: "space", tool: "browser_act" };
+  const on = (site: string) => ({ site: `https://${site}.example.test` });
+  it.each([
+    ["two uses on two sites", [on("a"), on("b")], ["a", "b"]],
+    ["a guest's use, written twice", [unnamed, on("a")], ["a"]],
+    ["a guest's use and another on another site", [unnamed, on("a"), on("b")], ["a", "b"]],
+    ["a use of a guest who owns no organization", [unnamed], [null]],
+  ])("lists %s", async (_, metadata, sites) => {
+    const db = await vaultWithCard();
+    const at = new Date("2026-11-05T10:00:00.000Z");
+    const rows = metadata.map((entry) => ({
+      createdAt: at,
+      actorId: "bot-1",
+      actorLabel: "Shopper",
+      runId: "run-1",
+      threadId: "thread-1",
+      metadata: entry,
+    }));
+    Object.assign(db.prisma, {
+      auditEvent: { findMany: async () => rows },
+      thread: { findMany: async () => [] },
+    });
+    const uses = await listVaultItemUses(db.prisma, scope, "visa");
+    expect(uses?.map(({ site }) => site && new URL(site).hostname.split(".")[0])).toEqual(sites);
+  });
+
   it("reads its latest uses by id, naming only the owner's chats, and nothing for another member", async () => {
     const db = await vaultWithCard();
     const visa = db.rows().find((row) => row.name === "visa")!;
     const use = { actorLabel: "Shopper" };
+    // A guest's use is written twice at once: unnamed in the space's organization, named in theirs.
+    const twice = { ...use, createdAt: new Date("2026-11-05T10:00:00.000Z"), threadId: "thread-1" };
     const events = vi.fn(async () => [
+      { ...twice, metadata: { kind: "card", scope: "account", tool: "browser_act" } },
+      { ...twice, metadata: { site: "https://shop.example.test" } },
       {
         ...use,
         createdAt: new Date("2026-11-04T10:00:00.000Z"),
@@ -429,6 +461,12 @@ describe("an item's uses, for its owner", () => {
     Object.assign(db.prisma, { auditEvent: { findMany: events }, thread: { findMany: threads } });
     expect(await listVaultItemUses(db.prisma, scope, "visa")).toEqual([
       {
+        at: "2026-11-05T10:00:00.000Z",
+        botName: "Shopper",
+        site: "https://shop.example.test",
+        chat: { title: "Shopper" },
+      },
+      {
         at: "2026-11-04T10:00:00.000Z",
         botName: "Shopper",
         site: "https://shop.example.test",
@@ -440,7 +478,8 @@ describe("an item's uses, for its owner", () => {
       expect.objectContaining({
         where: { targetType: "vault_credential", targetId: visa.id, action: "credential.used" },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: 20,
+        // Twice the uses listed, as a guest's use is two rows.
+        take: 40,
       }),
     );
     expect(threads).toHaveBeenCalledWith(
@@ -960,6 +999,12 @@ describe("a save that leaves out the authenticator key", () => {
     await save(rotated, "bot-1");
     expect(unreadable).toHaveBeenCalled();
     unreadable.mockRestore();
+    // Nor a login whose key no save accepts, such as one with a character too many.
+    const badKey = JSON.stringify({ fields, otp: `${TEST_KEY}G` });
+    const mistyped = vi.spyOn(rotated, "load").mockResolvedValueOnce(badKey);
+    await save(rotated, "bot-1");
+    expect(mistyped).toHaveBeenCalled();
+    mistyped.mockRestore();
     expect(
       await revealBotSecret({ prisma: db.prisma, secretStore: rotated, scope, name: "shop" }),
     ).toEqual({ fields });

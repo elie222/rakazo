@@ -98,7 +98,7 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
     }
   }
   if (event.userId && !NOT_AUDITED.has(event.type)) {
-    const { kind, runId, by, scope } = event.metadata;
+    const { kind, runId, by } = event.metadata;
     const userId = event.userId;
     await withSecurityRequest(
       { ip: event.ip ?? undefined, userAgent: event.userAgent ?? undefined },
@@ -115,8 +115,8 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
                 target: typeof kind === "string" ? { type: kind } : undefined,
               }),
           spaceId: event.spaceId,
-          // An account vault item is its person's own; see the vault rule in audit-events.ts.
-          userId: kind === "vault_credential" && scope === "account" ? userId : undefined,
+          // Every vault item is its person's own; see the vault rule in audit-events.ts.
+          userId: kind === "vault_credential" ? userId : undefined,
           runId: typeof runId === "string" ? runId : undefined,
           metadata: event.metadata,
         }),

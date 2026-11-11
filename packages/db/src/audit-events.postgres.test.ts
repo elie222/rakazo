@@ -17,6 +17,7 @@ describePostgres("audit events (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
   const organizationId = `audit-org-${suffix}`;
   const spaceId = `audit-space-${suffix}`;
+  const guestOrganizationId = `${organizationId}-guest`;
   let prisma: PrismaClient;
   let close: () => Promise<void>;
 
@@ -26,8 +27,9 @@ describePostgres("audit events (PostgreSQL)", () => {
     installAuditEventStore(prisma);
     close = async () => {
       installAuditEventStore(undefined);
-      await prisma.auditEvent.deleteMany({ where: { organizationId } });
-      await prisma.organization.deleteMany({ where: { id: organizationId } });
+      const organizations = [organizationId, guestOrganizationId];
+      await prisma.auditEvent.deleteMany({ where: { organizationId: { in: organizations } } });
+      await prisma.organization.deleteMany({ where: { id: { in: organizations } } });
       await prisma.user.deleteMany({ where: { id: { startsWith: `audit-user-${suffix}` } } });
       await db.prisma.$disconnect();
       await db.pool.end();
@@ -117,5 +119,59 @@ describePostgres("audit events (PostgreSQL)", () => {
     expect(await reader("admin")).toBe(organizationId);
     expect(await reader("member")).toBeNull();
     expect(await reader("stranger")).toBeNull();
+  });
+
+  it("writes a guest's use unnamed in the space's organization and named in theirs", async () => {
+    const guest = `audit-user-${suffix}-guest`;
+    const shared = `${spaceId}-shared`;
+    const item = `audit-item-${suffix}`;
+    await prisma.user.create({
+      data: { id: guest, name: "guest", email: `guest-${suffix}@example.test` },
+    });
+    await prisma.organization.create({
+      data: {
+        id: guestOrganizationId,
+        name: "Own",
+        slug: guestOrganizationId,
+        createdAt: new Date(),
+      },
+    });
+    await prisma.member.createMany({
+      data: [
+        { id: `${guest}-own`, organizationId: guestOrganizationId, userId: guest, role: "owner" },
+        { id: `${guest}-guest`, organizationId, userId: guest, role: "guest" },
+      ].map((member) => ({ ...member, createdAt: new Date() })),
+    });
+    await prisma.space.createMany({
+      data: [
+        { id: shared, organizationId, name: "Shared" },
+        // Their own organization, live with its default space.
+        { id: `${shared}-own`, organizationId: guestOrganizationId, name: "Home", isDefault: true },
+      ],
+    });
+    // Their own login, in their own vault in the space.
+    await recordAuditEvent({
+      action: "credential.used",
+      actor: { type: "bot", id: `audit-bot-${suffix}`, label: "Researcher" },
+      spaceId: shared,
+      userId: guest,
+      target: { type: "vault_credential", id: item, label: "chase-personal" },
+      metadata: { tool: "browser_act", scope: "space", name: "chase-personal", kind: "login" },
+    });
+    const rows = await prisma.auditEvent.findMany({
+      where: { targetId: item },
+      orderBy: { organizationId: "asc" },
+    });
+    expect(rows.map((row) => [row.organizationId, row.targetLabel])).toEqual([
+      [organizationId, null],
+      [guestOrganizationId, "chase-personal"],
+    ]);
+    expect(JSON.stringify(rows[0])).not.toContain("chase-personal");
+    expect(rows[0]?.createdAt).toEqual(rows[1]?.createdAt);
+    // Their own organization keeps the space's id, never its name.
+    expect(rows.map((row) => [row.spaceId, row.spaceName])).toEqual([
+      [shared, "Shared"],
+      [shared, null],
+    ]);
   });
 });

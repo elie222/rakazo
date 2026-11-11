@@ -314,13 +314,14 @@ export type AuthenticatorKey = {
   period: number;
 };
 
-/**
- * An authenticator key as people paste it: a base32 secret, spaces and case ignored, or an
- * otpauth://totp link, whose algorithm, digits and period are kept. Undefined when it is neither.
- */
 export const AUTHENTICATOR_KEY_UNREADABLE = "This authenticator key can't be read.";
 const AUTHENTICATOR_KEY_MAX_LENGTH = 1024;
 
+/**
+ * An authenticator key as people paste it: a base32 secret, spaces, dashes and case ignored, or an
+ * otpauth://totp link, whose algorithm, digits and period are kept. Undefined when it is neither,
+ * or when its secret can't be whole bytes.
+ */
 export function authenticatorKey(text: string): AuthenticatorKey | undefined {
   // The longest a login keeps, so every check that accepts a key also saves it.
   if (text.trim().length > AUTHENTICATOR_KEY_MAX_LENGTH) return undefined;
@@ -343,7 +344,14 @@ export function authenticatorKey(text: string): AuthenticatorKey | undefined {
     // What authenticator apps show, so a code typed here is the one the site expects.
     if (![6, 8].includes(options.digits) || ![30, 60].includes(options.period)) return undefined;
   }
-  secret = secret.replace(/[\s-]/g, "").replace(/=+$/, "").toUpperCase();
+  secret = secret.replace(/[\s-]/g, "").toUpperCase();
+  const padding = secret.length - secret.replace(/=+$/, "").length;
+  secret = secret.slice(0, secret.length - padding);
+  // A key is whole bytes: 1, 3 or 6 characters past a group of eight never are, and padding,
+  // when there is any, fills the last group exactly. Otherwise a mistyped key gives wrong codes.
+  const remainder = secret.length % 8;
+  if ([1, 3, 6].includes(remainder) || (padding > 0 && padding !== (8 - remainder) % 8))
+    return undefined;
   return /^[A-Z2-7]{16,256}$/.test(secret) ? { ...options, secret } : undefined;
 }
 

@@ -978,7 +978,7 @@ describe("a login saved for more than one site", () => {
         plaintext,
         alsoOn: ["https://www.example.test@evil.test"],
       }),
-    ).rejects.toThrow("every other site must be an HTTPS origin");
+    ).rejects.toThrow("every other site must be an HTTPS address a login can be saved for");
     const bot = { ...scope, botId: "b1" };
     const save = (alsoOn?: string[]) =>
       storeBotSecret({

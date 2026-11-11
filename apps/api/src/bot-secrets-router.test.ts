@@ -770,10 +770,12 @@ describe("vault router", () => {
     expect((await call("vault/put", { destination: login, alsoOn: [] })).body.json).toMatchObject({
       alsoOn: [],
     });
+    // A cloud metadata host too, as no login may be saved for one.
     for (const alsoOn of [
       ["http://www.shop.example.test"],
       ["https://u:p@shop.example.test"],
       ["https://*.shop.example.test"],
+      ["https://169.254.169.254"],
     ])
       expect((await call("vault/put", { destination: login, alsoOn })).status).toBe(400);
     const key = { destination, value: FAKE_VALUE, alsoOn: ["https://www.portal.example.test"] };

@@ -13,8 +13,9 @@ import {
   VAULT_KINDS,
   vaultKind,
 } from "@rakazo/contracts";
+import { vaultBotsChoosable } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { vaultSaveNotice } from "@rakazo/i18n/vault";
+import { vaultBotsNote, vaultSaveNotice } from "@rakazo/i18n/vault";
 import {
   Button,
   DropdownMenu,
@@ -61,7 +62,8 @@ export function VaultSettings({
   const queryClient = useQueryClient();
   const list = queries.vault.list.queryOptions({ input: { scope } });
   const listQuery = useQuery({ ...list, refetchOnMount: "always" });
-  // Bots are chosen in the Space they're in, and a Space with its own vault never uses the account's.
+  // Bots are chosen in the Space they're in, and a Space with its own vault never uses the
+  // account's.
   const overrides = useQuery({
     ...queries.spaceSettings.overrides.queryOptions(),
     enabled: scope === "account",
@@ -70,11 +72,10 @@ export function VaultSettings({
   const ownVault = scope === "account" && Boolean(overrides.data?.includes("credentials"));
   // Until that's known, an account item offers no bots, so no choice is saved the Space can't use.
   const noBots = ownVault || (scope === "account" && !overrides.isSuccess);
-  const botsNote = ownVault
-    ? t`This Space keeps its own vault, so its bots can't use account items.`
-    : scope === "account" && !noBots && otherSpaces
-      ? t`This limits only this Space's bots. Your other Spaces choose for their own.`
-      : undefined;
+  const botsNote = vaultBotsNote({
+    ownVault,
+    otherSpaces: scope === "account" && !noBots && otherSpaces,
+  });
   const items = listQuery.data;
   const { one, many } = useVaultKindLabels();
   const subtitle = useVaultSubtitle();
@@ -252,11 +253,7 @@ export function VaultSettings({
   const newItem = (kind: VaultKind): Editing => ({
     kind,
     mode: "new",
-    ...(items?.length && items.every((item) => item.allBots === undefined)
-      ? {}
-      : {
-          initial: { access: { allBots: true, botIds: [] } },
-        }),
+    ...(vaultBotsChoosable(items) ? { initial: { access: { allBots: true, botIds: [] } } } : {}),
   });
 
   const contacts = (items ?? []).flatMap((item) =>
