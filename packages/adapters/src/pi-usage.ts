@@ -350,7 +350,9 @@ export function observedPiStream(
   const reported: ReportedUsageFields = new Set();
   const normalizeUsage = (usage?: Usage) => {
     const normalized = normalizePiUsage(usage, model, reported);
-    return !observer && maximumModelCallCost(model.cost, 1, 1) === undefined
+    return !observer &&
+      normalized.costUsd == null &&
+      maximumModelCallCost(model.cost, 1, 1) === undefined
       ? { ...normalized, costUsd: 0, costSource: null, pricingVersion: null }
       : normalized;
   };

@@ -60,36 +60,44 @@ async function run(usage?: object) {
 }
 
 describe("Pi usage accounting", () => {
-  it("records zero cost for an unpriced call on a member key", async () => {
-    const sink = vi.fn();
-    const stream = observedPiStream(
-      builtinModels(),
-      { ...model, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
-      { messages: [] },
-      {
-        apiKey: "fixture-personal-key",
-        fetch: async () =>
-          new Response(sse({ prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }), {
-            headers: { "content-type": "text/event-stream" },
-          }),
-      },
-      vi.fn(),
-      undefined,
-      undefined,
-      { recordUsage: sink },
-    );
-    for await (const _event of stream) {
-    }
-    expect((await stream.result()).stopReason).toBe("stop");
-    expect(sink).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "usage",
-        inputTokens: 10,
-        outputTokens: 2,
-        costUsd: 0,
-      }),
-    );
-  });
+  it.each([
+    { cost: undefined, costUsd: 0, costSource: null },
+    { cost: 0, costUsd: 0, costSource: "provider-reported" },
+    { cost: 0.00012, costUsd: 0.00012, costSource: "provider-reported" },
+  ])(
+    "records an unpriced call on a member key with reported cost $cost",
+    async ({ cost, costUsd, costSource }) => {
+      const sink = vi.fn();
+      const stream = observedPiStream(
+        builtinModels(),
+        { ...model, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+        { messages: [] },
+        {
+          apiKey: "fixture-personal-key",
+          fetch: async () =>
+            new Response(sse({ prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, cost }), {
+              headers: { "content-type": "text/event-stream" },
+            }),
+        },
+        vi.fn(),
+        undefined,
+        undefined,
+        { recordUsage: sink },
+      );
+      for await (const _event of stream) {
+      }
+      expect((await stream.result()).stopReason).toBe("stop");
+      expect(sink).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "usage",
+          inputTokens: 10,
+          outputTokens: 2,
+          costUsd,
+          costSource,
+        }),
+      );
+    },
+  );
   it.each([false, true])(
     "acknowledges a producer sink only after successful accounting (fails=%s)",
     async (fails) => {
