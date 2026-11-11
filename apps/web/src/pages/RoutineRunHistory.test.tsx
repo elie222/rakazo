@@ -265,7 +265,15 @@ it("opens a silent run's steps and reply in place instead of linking to the chat
             mimeType: "text/csv",
             size: 10,
           },
-          { kind: "text", text: "Archived **3** done tickets." },
+          {
+            kind: "subagent",
+            agentId: "helper-1",
+            name: "Researcher",
+            task: "Check the board",
+            status: "completed",
+            result: "Three tickets are done.",
+          },
+          { kind: "text", text: "Archived **3** done tickets. See [Plan](page:page-1)." },
         ],
       },
     ]),
@@ -284,6 +292,11 @@ it("opens a silent run's steps and reply in place instead of linking to the chat
     expect(reply?.textContent).toContain("Archived 3 done tickets.");
     expect(reply?.textContent).toContain("2 tools");
     expect(reply?.textContent).toContain("board.csv");
+    // A helper's result shows as the chat shows it, and a page link opens the page.
+    expect(reply?.textContent).toContain("Researcher");
+    expect(
+      [...(reply?.querySelectorAll("button") ?? [])].some((node) => node.textContent === "Plan"),
+    ).toBe(true);
   } finally {
     await view.close();
   }

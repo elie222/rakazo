@@ -36,6 +36,22 @@ describe("a silent run's reply on mobile", () => {
     ).toBe("board.csv\n\nWeekly board\n\nDone.");
   });
 
+  it("names a helper with what it found", () => {
+    expect(
+      routineRunReplyText([
+        {
+          kind: "subagent",
+          agentId: "h1",
+          name: "Researcher",
+          task: "Find the prices",
+          status: "completed",
+          result: "Found **3** prices.",
+        },
+        { kind: "text", text: "Done." },
+      ] as never),
+    ).toBe("Researcher: Found 3 prices.\n\nDone.");
+  });
+
   it("is empty for a run that kept no reply", () => {
     expect(routineRunReplyText(undefined)).toBe("");
     expect(routineRunReplyText([])).toBe("");

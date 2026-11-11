@@ -6,6 +6,7 @@ import {
   isTicketRunTrigger,
   redactSecrets,
   resolveBotAddress,
+  SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
 import {
   connectAgent,
@@ -209,6 +210,9 @@ export const messagingTools: ToolHandlers = {
     ) {
       return call.finish({ error: "Calls require a one-to-one chat." });
     }
+    // A call rings the person and posts in the chat, which a silent routine keeps quiet.
+    if (run.trigger === SILENT_ROUTINE_TRIGGER)
+      return call.finish({ error: "A silent routine can't call; ask when you need the person." });
     return call.finish(
       await requestUserCall(deps, run, {
         reason: String(args.reason ?? ""),

@@ -1,11 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
-import {
-  CARD_TITLE_ESCAPED_CHARACTERS,
-  containsSecret,
-  redactSecrets,
-  SILENT_ROUTINE_TRIGGER,
-} from "@rakazo/core";
+import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
 import { isUniqueViolation } from "@rakazo/db";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
@@ -317,10 +312,9 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
   try {
     // A routine speaks only through its final reply, which may be silence, so refreshing a
-    // page it already showed posts no card; its first save still does. A silent routine posts
-    // none: its run history keeps the reply.
-    if (run.trigger !== SILENT_ROUTINE_TRIGGER && (!page || run.trigger !== "routine"))
-      await publishMessage(deps, run, "bot", [block]);
+    // page it already showed posts no card; its first save still does. A silent routine's card
+    // goes to its run history instead of the chat.
+    if (!page || run.trigger !== "routine") await publishMessage(deps, run, "bot", [block]);
   } catch (error) {
     // The page is saved; only its card in the chat is missing, so the bot can still link it.
     return {

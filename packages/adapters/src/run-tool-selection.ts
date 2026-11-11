@@ -188,10 +188,10 @@ export function selectBuiltinToolsForRun(options: {
           "generate_image",
           "generate_video",
         ].includes(tool.name)) &&
-      // A silent routine keeps its chat quiet: it can't message the person there, and a video,
-      // which arrives after the run with a turn of its own, would post there.
+      // A silent routine keeps its chat quiet: it can't message or call the person there, and a
+      // video, which arrives after the run with a turn of its own, would post there.
       (options.trigger !== SILENT_ROUTINE_TRIGGER ||
-        !["message_user", "generate_video"].includes(tool.name)) &&
+        !["message_user", "call_user", "generate_video"].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&

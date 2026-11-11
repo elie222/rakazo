@@ -24,8 +24,10 @@ import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { PageBlockCard } from "../components/pages/PageBlockCard";
+import { SubagentCard } from "../components/SubagentCard";
 import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
 import type { ArtifactTarget } from "../lib/artifact-open";
+import { useOpenPage } from "../lib/pages";
 import { useSpaceQueries } from "../lib/query";
 import { toolStepCount } from "../lib/tool-activity-view";
 import { statusLabel, statusTone } from "./ActivityList";
@@ -163,10 +165,11 @@ function RunRow({ run }: { run: RoutineRun }) {
 }
 
 /**
- * What a silent run would have posted: its steps, files, charts, pages and reply, as the chat
- * shows them.
+ * What a silent run would have posted: its steps, helpers, files, charts, pages and reply, as the
+ * chat shows them.
  */
 function RunReply({ blocks, target }: { blocks: readonly MessageBlock[]; target: ArtifactTarget }) {
+  const openPage = useOpenPage();
   return (
     <div
       data-testid="routine-run-reply"
@@ -184,7 +187,11 @@ function RunReply({ blocks, target }: { blocks: readonly MessageBlock[]; target:
             <ToolSteps steps={block.steps} />
           </ToolActivityDisclosure>
         ) : block.kind === "text" ? (
-          <ChatMarkdown key={index}>{block.text}</ChatMarkdown>
+          <ChatMarkdown key={index} onOpenPage={openPage}>
+            {block.text}
+          </ChatMarkdown>
+        ) : block.kind === "subagent" ? (
+          <SubagentCard key={index} block={block} />
         ) : block.kind === "page" ? (
           <PageBlockCard key={index} block={block} updated={false} />
         ) : block.kind === "chart" ? (

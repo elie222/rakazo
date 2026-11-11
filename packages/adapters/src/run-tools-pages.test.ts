@@ -81,14 +81,20 @@ describe("save_page", () => {
     expect(result.error).toContain("[Plan](page:page-1)");
   });
 
-  it("posts no card for a page a silent routine saves, new or not", async () => {
+  it("hands a silent routine's page card to publishMessage, which keeps it for run history", async () => {
     const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Plan" })) } };
+    const ctx = context(tx, undefined, [], false, "silent_routine");
     const result = (await pageTools.save_page!(
-      context(tx, undefined, [], false, "silent_routine"),
+      ctx,
       call({ title: "Plan", source: source("Plan") }),
     )) as Record<string, unknown>;
     expect(result).toMatchObject({ pageId: "page-1", version: 1, title: "Plan" });
-    expect(publishMessage).not.toHaveBeenCalled();
+    expect(publishMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ trigger: "silent_routine" }),
+      "bot",
+      [expect.objectContaining({ kind: "page", pageId: "page-1" })],
+    );
   });
 
   it("taints the run when it reads a page's stored source, but not when it saves one", async () => {

@@ -837,16 +837,13 @@ async function finalizeRunOnce(
       firstResponse = response.firstResponse;
     }
     if (input.outcome === "completed" && input.heldReply?.length) {
-      await appendEventInTransaction(tx, {
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: RUN_REPLY_EVENT,
-        runId: input.runId,
-        payload: {
-          blocks: completedRunBlocks(input.heldReply, writableRun?.startedAt ?? null, now),
-        },
-      });
+      await appendEventInTransaction(
+        tx,
+        runReplyEvent(
+          { ...input, id: input.runId },
+          completedRunBlocks(input.heldReply, writableRun?.startedAt ?? null, now),
+        ),
+      );
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
@@ -877,6 +874,23 @@ async function finalizeRunOnce(
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId, firstResponse };
   }, FINALIZE_TRANSACTION_OPTIONS);
+}
+
+/** A silent routine's reply, kept as a run event for its run history instead of the chat. */
+export function runReplyEvent(
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  blocks: unknown[],
+  lease?: RunLease,
+): AppendEventInput {
+  return {
+    spaceId: run.spaceId,
+    threadId: run.threadId,
+    botId: run.botId,
+    runId: run.id,
+    type: RUN_REPLY_EVENT,
+    payload: { blocks },
+    ...(lease ? { lease } : {}),
+  };
 }
 
 export async function appendEventInTransaction(

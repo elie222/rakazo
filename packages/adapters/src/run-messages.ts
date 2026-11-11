@@ -2,7 +2,6 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   callIdFromClientNonce,
   isBackgroundRunTrigger,
-  RUN_REPLY_EVENT,
   redactSecrets,
   SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
@@ -10,6 +9,7 @@ import type { Prisma, RunLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  runReplyEvent,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -42,15 +42,7 @@ export function holdRunReplyInTransaction(
   blocks: MessageBlock[],
   lease?: RunLease,
 ) {
-  return appendEventInTransaction(tx, {
-    spaceId: run.spaceId,
-    threadId: run.threadId,
-    botId: run.botId,
-    runId: run.id,
-    type: RUN_REPLY_EVENT,
-    payload: { blocks },
-    lease,
-  });
+  return appendEventInTransaction(tx, runReplyEvent(run, blocks, lease));
 }
 
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
@@ -98,17 +90,9 @@ export async function publishMessage(
     // run history instead; ticket work reports on the board.
     const held = blocks.filter((block) => !reachesChat(block));
     if (run.trigger === SILENT_ROUTINE_TRIGGER && role === "bot" && held.length) {
-      await deps.events.append({
-        spaceId: run.spaceId,
-        threadId: run.threadId,
-        botId: run.botId,
-        runId: run.id,
-        type: RUN_REPLY_EVENT,
-        payload: { blocks: held },
-        // Under the attempt's lease like the chat's own writes, so a superseded attempt can't
-        // add to the history twice.
-        lease,
-      });
+      // Under the attempt's lease like the chat's own writes, so a superseded attempt can't
+      // add to the history twice.
+      await deps.events.append(runReplyEvent(run, held, lease));
     }
     blocks = blocks.filter(reachesChat);
     if (blocks.length === 0 && !stoppedHelper) return null;
