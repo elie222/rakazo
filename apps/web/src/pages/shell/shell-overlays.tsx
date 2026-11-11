@@ -6,6 +6,7 @@ import type {
   SpaceMemoryConfig,
   UsageSummary,
 } from "@rakazo/contracts";
+import { quietHoursSave } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
@@ -200,13 +201,10 @@ export function SettingsOverlays({
           }}
           quietHours={bootstrapMe?.quietHours}
           onQuietHoursChange={async (quietHours) => {
-            // The hours are read in the account's timezone. Settings shows this device's while
-            // none is saved, so the same save keeps it.
-            const timezone = quietHours && !bootstrapMe?.timezone ? localTimezone() : undefined;
-            const nextMe = await rpc.preferences.update({
-              quietHours,
-              ...(timezone ? { timezone } : {}),
-            });
+            // Settings shows this device's timezone while none is saved, so the save keeps it.
+            const save = quietHoursSave(quietHours, bootstrapMe?.timezone, localTimezone());
+            if (!save) throw new Error("No timezone to read quiet hours in");
+            const nextMe = await rpc.preferences.update(save);
             setBootstrapMe((prev) =>
               prev
                 ? {

@@ -5,9 +5,9 @@ import {
   accountDisplay,
   DEFAULT_QUIET_HOURS,
   displayName,
-  localizedClock,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  quietHourChoices,
 } from "@rakazo/core";
 import {
   Button,
@@ -867,8 +867,6 @@ function SettingsPasswordInput({
   );
 }
 
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-
 /** One end of the quiet hours, on the hour; the other end's hour isn't offered. */
 function QuietHourSelect({
   label,
@@ -893,9 +891,9 @@ function QuietHourSelect({
       onChange={(event) => onChange(Number(event.target.value))}
       className="w-28"
     >
-      {HOURS.filter((hour) => hour !== other).map((hour) => (
+      {quietHourChoices(other, locale).map(({ hour, label }) => (
         <NativeSelectOption key={hour} value={String(hour)}>
-          {localizedClock(`${hour}:00`, locale)}
+          {label}
         </NativeSelectOption>
       ))}
     </NativeSelect>

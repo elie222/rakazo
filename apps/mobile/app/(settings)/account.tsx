@@ -9,7 +9,8 @@ import {
   DEFAULT_QUIET_HOURS,
   displayName,
   formatTimeUntil,
-  localizedClock,
+  quietHourChoices,
+  quietHoursSave,
 } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import type { Href } from "expo-router";
@@ -172,10 +173,14 @@ export default function Account() {
   const savedTimezone = useRef<string | null | undefined>(undefined);
   savedTimezone.current = me?.timezone;
 
+  const quietHoursSaving = useRef(false);
+
   /** A fresh read of the account, which is also the quiet hours' new baseline between saves. */
   function refreshedMe(next: MobileMe) {
-    setMe(next);
-    if (next.quietHours !== undefined) quietHoursQueue.current?.reset(next.quietHours);
+    // A save in flight owns the hours shown; a read that overlaps it may predate it.
+    const saving = quietHoursSaving.current;
+    setMe((current) => (saving && current ? { ...next, quietHours: current.quietHours } : next));
+    if (!saving && next.quietHours !== undefined) quietHoursQueue.current?.reset(next.quietHours);
   }
   const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
@@ -466,15 +471,13 @@ export default function Account() {
       onChange: (quietHours) =>
         setMe((current) => (current ? { ...current, quietHours } : current)),
       equals: (a, b) => a?.start === b?.start && a?.end === b?.end,
+      onSavingChange: (saving) => {
+        quietHoursSaving.current = saving;
+      },
       save: async (quietHours) => {
-        // The hours are read in the account's timezone; an account without one takes this
-        // device's in the same save, and none at all would read them in UTC.
-        const timezone = quietHours && !savedTimezone.current ? deviceTimeZone() : undefined;
-        if (quietHours && !savedTimezone.current && !timezone) throw new Error("No timezone");
-        const next = await rpc("preferences/update", {
-          quietHours,
-          ...(timezone ? { timezone } : {}),
-        });
+        const save = quietHoursSave(quietHours, savedTimezone.current, deviceTimeZone());
+        if (!save) throw new Error("No timezone to read quiet hours in");
+        const next = await rpc("preferences/update", save);
         savedTimezone.current = next.timezone;
         setMe((current) => (current ? { ...current, timezone: next.timezone ?? null } : current));
       },
@@ -1018,8 +1021,6 @@ export default function Account() {
   );
 }
 
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-
 /** One end of the quiet hours, on the hour; the other end's hour isn't offered. */
 function QuietHourPicker({
   label,
@@ -1038,9 +1039,9 @@ function QuietHourPicker({
     <MenuPicker
       label={label}
       value={String(value)}
-      choices={HOURS.filter((hour) => hour !== other).map((hour) => ({
+      choices={quietHourChoices(other, locale).map(({ hour, label }) => ({
         key: String(hour),
-        label: localizedClock(`${hour}:00`, locale),
+        label,
       }))}
       onChange={(key) => onChange(Number(key))}
     />

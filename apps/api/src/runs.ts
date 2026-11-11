@@ -85,8 +85,8 @@ export async function listSpaceRuns(
   actor: Actor,
   filter: "active" | "recent",
 ): Promise<RunActivityRow[]> {
-  // Quiet hours that can't be read leave the list as it was rather than failing it.
-  const quiet = await membersInQuietHours(prisma, [actor.userId]).then(
+  // Read alongside the runs. Quiet hours that can't be read leave the list as it was.
+  const quietLookup = membersInQuietHours(prisma, [actor.userId]).then(
     (members) => members.has(actor.userId),
     (error: unknown) => {
       getLogger().error("quiet hours lookup", error);
@@ -120,6 +120,7 @@ export async function listSpaceRuns(
         : [{ completedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
   });
 
+  const quiet = await quietLookup;
   return rows.map((row) => ({
     runId: row.id,
     botId: row.botId,
