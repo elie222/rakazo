@@ -5,6 +5,7 @@ import {
   messageUnreadFor,
   payloadAuthor,
   plainTextFromMarkdown,
+  TAKEOVER_COMPUTER_PENDING_STATE,
 } from "@rakazo/core";
 import { i18n } from "./i18n";
 
@@ -54,6 +55,22 @@ export type BrowserNotificationContext = {
   meId?: string;
 };
 
+/** The takeover alert already announces this card, so the message must not announce it again. */
+function pendingTakeoverOnly(event: Pick<ProductEvent, "type" | "payload">): boolean {
+  if (event.type !== "thread.message.created") return false;
+  const blocks = event.payload.blocks;
+  if (!Array.isArray(blocks) || blocks.length === 0) return false;
+  return blocks.every(
+    (block) =>
+      !!block &&
+      typeof block === "object" &&
+      "kind" in block &&
+      block.kind === "computer" &&
+      "state" in block &&
+      block.state === TAKEOVER_COMPUTER_PENDING_STATE,
+  );
+}
+
 export function shouldNotifyBrowser(
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "payload">,
   context: BrowserNotificationContext,
@@ -61,7 +78,8 @@ export function shouldNotifyBrowser(
   const notifiable =
     (event.type === "thread.message.created" &&
       messageUnreadFor(event.payload, context.meId) &&
-      (event.payload.role === "bot" || memberMessageAlerts(event.payload))) ||
+      (event.payload.role === "bot" || memberMessageAlerts(event.payload)) &&
+      !pendingTakeoverOnly(event)) ||
     event.type === "run.failed" ||
     event.type === "run.cancelled";
   return (

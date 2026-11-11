@@ -1,3 +1,4 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BrowserNotificationApi,
@@ -112,6 +113,31 @@ describe("browser notifications", () => {
       title: "Chief",
       body: "Ada Owner: Saturday works",
     });
+  });
+
+  it("stays quiet for a message that only asks for the computer", () => {
+    const card = {
+      kind: "computer",
+      state: TAKEOVER_COMPUTER_PENDING_STATE,
+      text: "Sign in to continue.",
+    };
+    expect(
+      shouldNotifyBrowser(event({ payload: { role: "bot", blocks: [card] } }), context()),
+    ).toBe(false);
+    expect(
+      shouldNotifyBrowser(
+        event({ payload: { role: "bot", blocks: [card, { kind: "text", text: "Also this." }] } }),
+        context(),
+      ),
+    ).toBe(true);
+    expect(
+      shouldNotifyBrowser(
+        event({
+          payload: { role: "bot", blocks: [{ kind: "computer", state: "Done", text: "Back." }] },
+        }),
+        context(),
+      ),
+    ).toBe(true);
   });
 
   it("puts the bot message in the native notification", () => {

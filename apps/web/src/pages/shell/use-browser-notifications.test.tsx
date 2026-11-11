@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
 import type { Bot, ChatAlert } from "@rakazo/contracts";
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -243,6 +244,37 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(focus).toHaveBeenCalled();
     expect(openChat).toHaveBeenCalledWith({ botId: "bot-b", groupId: "group-g" });
     expect(notification!.closed).toBe(true);
+  });
+
+  it("announces a takeover once when the open chat is in the background", async () => {
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-takeover-card",
+      type: "thread.message.created" as const,
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {
+        role: "bot" as const,
+        blocks: [
+          {
+            kind: "computer",
+            state: TAKEOVER_COMPUTER_PENDING_STATE,
+            text: "Sign in to continue.",
+          },
+        ],
+      },
+    };
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    await send({
+      kind: "takeover",
+      title: "Scout needs you on the screen",
+      body: "Sign in to continue.",
+    });
+    expect(shown()).toEqual([
+      ["Scout needs you on the screen", "Sign in to continue.", "thread-b:takeover"],
+    ]);
   });
 
   it("closes the open chat's notifications when the shell unmounts", async () => {
