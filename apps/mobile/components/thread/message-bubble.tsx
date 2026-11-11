@@ -452,7 +452,12 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   {askBlock.detail}
                 </Text>
               ) : null}
-              {askBlock.status === "answered" ? (
+              {askBlock.status === "answered" &&
+              !isApprovalAskBlock(askBlock) &&
+              !askBlock.instructionUpdate &&
+              !askBlock.actions.some(
+                (action) => action.id === askBlock.answer,
+              ) ? null : askBlock.status === "answered" ? (
                 <Text
                   {...actionProps}
                   style={{

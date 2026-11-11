@@ -184,6 +184,13 @@ async function render(
   return container.querySelector("span")!;
 }
 
+it("keeps an answered question without repeating the user's reply or leaving answer controls", async () => {
+  await render({ status: "answered", answer: "Help with my project" });
+  expect(container.textContent).toBe(longTitle);
+  expect(container.querySelector("input")).toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+});
+
 it("caps a secret card's title at two lines and leaves question titles whole", async () => {
   const login = await render({
     input: "secret",

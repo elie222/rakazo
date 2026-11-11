@@ -269,7 +269,7 @@ export function AskBlock({
       {ask.detail && (!secretInput || ask.oneTimeCode) ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}
-      {answered ? (
+      {answered && !secretInput ? null : answered ? (
         <Text
           style={{
             // Dismissed reads like a declined approval, not a success.
@@ -279,7 +279,7 @@ export function AskBlock({
             ...(secretInput ? { marginTop: 12 } : null),
           }}
         >
-          {secretInput ? answeredLabel : t`Answered: ${ph({ answer: ask.answer ?? t`Done` })}`}
+          {answeredLabel}
         </Text>
       ) : canAnswer && ownerOnly ? null : canAnswer ? (
         <>

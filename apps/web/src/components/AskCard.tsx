@@ -158,8 +158,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
     !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
-  // An edited draft is shown in the user's words, so the card reads as answered. A typed reply to
-  // options already shows as the user's message, so it only dims them.
+  // Typed replies already have their own message; the question must not repeat them.
   const typedAnswer =
     answered &&
     !optionQuestion &&
@@ -296,14 +295,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
             </OptionRow>
           ))}
         </div>
-      ) : typedAnswer ? (
-        <blockquote
-          data-testid="ask-answer"
-          className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-body-lg leading-[1.5] text-muted-foreground"
-        >
-          {typedAnswer}
-        </blockquote>
-      ) : answered ? (
+      ) : typedAnswer ? null : answered ? (
         <div className="mt-3.5 flex items-center gap-1.5 text-body font-medium text-muted-foreground">
           {displayedAnswer === "deny" ||
           approvalActions?.find((action) => action.id === displayedAnswer)?.outcome ===

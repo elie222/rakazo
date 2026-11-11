@@ -722,10 +722,10 @@ it("offers Save to Vault only on login cards", async () => {
   expect(container.textContent).not.toContain("Save to Vault");
 });
 
-it("quotes an edited reply and marks a sent draft", async () => {
+it("leaves a typed reply in its message and marks a sent draft", async () => {
   const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
   await render(block);
-  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).not.toContain("Tuesday");
   expect(container.textContent).not.toContain("Answered");
 
   await render({ ...block, answer: "approved" });
