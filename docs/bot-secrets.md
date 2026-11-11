@@ -65,6 +65,8 @@ A command variable is redacted from command output in its plain, base64 and URL-
 
 Command variables are managed in the same Vault as other reusable credentials. The request card a bot opens in a thread shows a command variable's variable name in place of a site.
 
+Each variable a command is sent with is recorded as a use of it (`credential.used` in the [audit log](./self-host-audit-log.md#what-is-recorded)) and listed in its item's activity: once per variable each time a run starts or resumes, however many commands that run then runs, and once per variable for each check of a [routine](./routines.md#when-something-changes) that watches a command. The record never holds the value, and has no site, since a shell is not one. A command that is refused, or that never reaches the computer, is not a use, and neither is a run reading the variables when it starts in order to hide them from its output. A variable a bot may not use (see Managing the vault) is neither exported to its commands nor recorded.
+
 ## Saved website logins
 
 When you want a bot to sign in to a website by itself, ask it to save the login. It calls `request_secret` with `"auth": {"type": "login"}`, the origin of the sign-in page, and the labels of the values the site signs in with:
@@ -143,7 +145,7 @@ Every call that types a saved card asks the person first, naming the card and th
 
 ## Contacts
 
-A contact is a name, address, phone or email, the user's own or someone else's, such as `home`, `mom` or `office`. A bot asks for one with `request_secret` and auth `{ "type": "contact" }`, with no origin. A contact is not secret from the bot: `list_secrets` returns its fields, and the bot types them like any other text. It is still encrypted at rest.
+A contact is a name, address, phone or email, the user's own or someone else's, such as `home`, `mom` or `office`. A bot asks for one with `request_secret` and auth `{ "type": "contact" }`, with no origin. A contact is not secret from the bot: `list_secrets` returns its fields, and the bot types them like any other text, so a contact has no uses to record or list. It is still encrypted at rest.
 
 ## Managing the vault
 
@@ -198,9 +200,11 @@ you add yourself, and is audited as `credential.created`. As with every vault ev
 Space's organization names the login only when you are a full member of it. A guest's full record
 of an item in their account vault goes to the organization they own; one in the Space's vault is
 recorded only in the Space (see the [audit log](./self-host-audit-log.md#what-is-recorded)). An
-item's activity lists each use, and a guest sees a use in a shared Space without its site where
-only the unnamed record exists: a use of an item in the Space's vault, or any use when they own no
-organization. Authenticator keys aren't imported; add
+item's activity lists each use: a login, card or code a page may have typed, an API key a request
+may have carried, and a command variable a shell command was sent with. A guest sees a use in a
+shared Space without its site where only the unnamed record exists: a use of an item in the
+Space's vault, or any use when they own no organization. A command variable's use never has a
+site. Authenticator keys aren't imported; add
 one in the login's editor where a bot must sign in on its own. A file whose quotes are broken is
 not read at all, so no password is read differently from the export. Delete the export file
 afterwards: it holds your passwords unencrypted.

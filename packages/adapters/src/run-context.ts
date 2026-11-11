@@ -14,7 +14,7 @@ import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
-import { dropRunTurnCheckpoint, recordAuditEvent, saveRunTurnCheckpoint } from "@rakazo/db";
+import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type {
   ApprovalPausedToolResult,
@@ -48,6 +48,7 @@ import type { LoopGuardStreak } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
 import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { recordVaultItemUse } from "./vault-activity.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
 
@@ -358,33 +359,27 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
 }
 
 // Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes
-// the run, but a login typed on another of its sites shows there too.
+// the run, but a login typed on another of its sites shows there too. A command variable goes to
+// the bot's shell, which is no site, so it is once per item however many commands get it.
 export async function recordVaultUse(
   ctx: RunContext,
   tool: string,
   item: VaultItemUse,
-  site: string,
+  site?: string,
 ) {
-  const use = JSON.stringify([item.id, site]);
+  const use = JSON.stringify([item.id, site ?? null]);
   if (ctx.state.vaultUses.has(use)) return;
   ctx.state.vaultUses.add(use);
-  await recordAuditEvent({
-    action: "credential.used",
-    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
+  await recordVaultItemUse({
+    bot: ctx.bot,
     spaceId: ctx.run.spaceId,
-    // The run's person, whose vault holds the item: it decides whether the Space's row names it.
-    // Only an account item's use also goes to their own organization (audit-events.ts).
+    // The run's person, whose vault holds the item.
     userId: ctx.run.userId,
-    target: { type: "vault_credential", id: item.id, label: item.name },
     runId: ctx.runId,
     threadId: ctx.thread.id,
-    metadata: {
-      tool,
-      scope: item.spaceId ? "space" : "account",
-      name: item.name,
-      kind: item.kind,
-      site,
-    },
+    tool,
+    item,
+    site,
   });
 }
 

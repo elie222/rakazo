@@ -241,10 +241,6 @@ function commandRedactionForms(value: string): string[] {
   return forms;
 }
 
-export function commandCredentialRedactions(environment: Record<string, string>): string[] {
-  return [...new Set(Object.values(environment).flatMap(commandRedactionForms))];
-}
-
 function credentialHeader(destination: BotSecretDestination, plaintext: string) {
   // A login is only typed into its site, a command variable only reaches shell commands, and a
   // card or contact is only typed into pages.
@@ -318,79 +314,67 @@ export function botSecretToolView(row: { name: string; origin: string; auth: unk
   };
 }
 
-const commandRowFields = { id: true, name: true, auth: true, ciphertext: true } as const;
+const commandRowFields = {
+  id: true,
+  name: true,
+  spaceId: true,
+  auth: true,
+  ciphertext: true,
+} as const;
 
 /** Each command variable of these rows, decrypted once; one that can't be read has no value. */
 async function readCommandVariables(
   secretStore: Pick<SecretStore, "load">,
-  rows: { id: string; name: string; auth: unknown; ciphertext: string }[],
+  rows: { id: string; name: string; spaceId: string | null; auth: unknown; ciphertext: string }[],
 ) {
-  const variables: { id: string; variable: string; value?: string }[] = [];
+  const variables: { item: VaultItemUse; variable: string; value?: string }[] = [];
   for (const row of rows) {
     if (!isCommandCredential(row.auth)) continue;
     const variable = commandVariableName(row.name);
     if (commandVariableProblem(variable)) continue;
+    const item = { id: row.id, name: row.name, spaceId: row.spaceId, kind: "command" };
     try {
-      variables.push({
-        id: row.id,
-        variable,
-        value: await secretStore.load(row.ciphertext, row.id),
-      });
+      variables.push({ item, variable, value: await secretStore.load(row.ciphertext, row.id) });
     } catch {
       // One unreadable value must not stop every shell command; the variable is left unset.
-      variables.push({ id: row.id, variable });
+      variables.push({ item, variable });
     }
   }
   return variables;
 }
 
+/** What a command gets: its variables, and the items they came from, without their values. */
 function commandEnvironment(
-  variables: { variable: string; value?: string }[],
+  variables: { item: VaultItemUse; variable: string; value?: string }[],
   unsetVariables?: Set<string>,
-): Record<string, string> {
-  const environment: Record<string, string> = {};
-  for (const { variable, value } of variables) {
+): { env: Record<string, string>; used: VaultItemUse[] } {
+  const env: Record<string, string> = {};
+  const from = new Map<string, VaultItemUse>();
+  for (const { item, variable, value } of variables) {
     if (value === undefined) unsetVariables?.add(variable);
-    else if (value && !value.includes("\0")) environment[variable] = value;
+    else if (value && !value.includes("\0")) {
+      env[variable] = value;
+      from.set(variable, item);
+    }
   }
-  return environment;
-}
-
-/**
- * Decrypt this bot's command variables for one shell command. Loaded per command so an added,
- * replaced, or removed value applies to the next command. The values must never be logged or
- * returned; callers register them for redaction before the command runs.
- */
-export async function loadBotCommandEnvironment(
-  prisma: PrismaClient,
-  secretStore: Pick<SecretStore, "load">,
-  scope: BotSecretScope,
-  unsetVariables?: Set<string>,
-): Promise<Record<string, string>> {
-  const rows = await prisma.vaultCredential.findMany({
-    where: await usableVaultFields(prisma, scope),
-    select: commandRowFields,
-    orderBy: { name: "asc" },
-  });
-  return commandEnvironment(await readCommandVariables(secretStore, rows), unsetVariables);
+  return { env, used: [...from.values()] };
 }
 
 /**
  * This bot's command variables, and the values to redact: also those it may no longer use, as
  * an earlier run may have written one out. A value is exported only from the read that found the
  * bot may use it, so an item replaced and blocked between the two reads never leaks its new value.
- * Each stored value is decrypted once.
+ * Each stored value is decrypted once. The values must never be logged or returned; callers
+ * register the redactions before a command runs. `used` names the items whose values are in
+ * `env`, from that same read and without the values, for the caller to record once a command has
+ * them: loading alone, as a run does at its start to hide the values, is no use.
  */
 export async function loadCommandVariables(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
   scope: BotSecretScope,
   unsetVariables?: Set<string>,
-): Promise<{ env: Record<string, string>; redactions: string[] }> {
-  if (!scope.botId) {
-    const env = await loadBotCommandEnvironment(prisma, secretStore, scope, unsetVariables);
-    return { env, redactions: commandCredentialRedactions(env) };
-  }
+): Promise<{ env: Record<string, string>; used: VaultItemUse[]; redactions: string[] }> {
   const { botId: _, ...owner } = scope;
   const [usable, rows] = await Promise.all([
     prisma.vaultCredential.findMany({
@@ -411,7 +395,7 @@ export async function loadCommandVariables(
     rows.filter((row) => !read.has(`${row.id}\0${row.ciphertext}`)),
   );
   return {
-    env: commandEnvironment(exported, unsetVariables),
+    ...commandEnvironment(exported, unsetVariables),
     // Encoded forms too, as secret_request does, so an accidental `base64` or URL-encoding of a
     // value is still redacted from command output.
     // Every value, not one per variable: an item's old and new value share its variable.
@@ -428,23 +412,23 @@ export async function loadCommandVariables(
 /**
  * The environment for one shell command: the command variables of the vault this Space uses,
  * loaded fresh. The values are handed to `registerRedactions` before this returns, so the
- * command's output is redacted.
+ * command's output is redacted. The caller records `used` once the command is sent with them.
  */
 export async function shellCommandEnvironment(input: {
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
   scope: BotSecretScope;
   registerRedactions: (values: string[]) => void;
-}): Promise<{ env: Record<string, string>; unsetEnv: string[] }> {
+}): Promise<{ env: Record<string, string>; unsetEnv: string[]; used: VaultItemUse[] }> {
   const unsetVariables = new Set<string>();
-  const { env, redactions } = await loadCommandVariables(
+  const { env, used, redactions } = await loadCommandVariables(
     input.prisma,
     input.secretStore,
     input.scope,
     unsetVariables,
   );
   input.registerRedactions(redactions);
-  return { env, unsetEnv: [...unsetVariables] };
+  return { env, unsetEnv: [...unsetVariables], used };
 }
 
 /** Another command credential of this bot that is exported as the same variable. */
@@ -1439,7 +1423,13 @@ export async function forgetBotSecret(prisma: PrismaClient, scope: BotSecretScop
   });
 }
 
-// For the audit log; never the value.
+/**
+ * An item whose value the vault gave a bot, for the audit log; never the value. A use is recorded
+ * where a value leaves for a page (resolveLoginFill, resolveVaultCardFill), a site
+ * (requestWithBotSecret) or a shell command (shellCommandEnvironment), once it may have got there.
+ * Reading a value only to hide it from output, to show it to its owner, or to compare it inside
+ * the vault is no use; nor is a contact, which a bot reads in full as ordinary text.
+ */
 export type VaultItemUse = { id: string; name: string; spaceId: string | null; kind: string };
 
 /** Credentials are resolved only inside this destination-bound HTTP boundary. */

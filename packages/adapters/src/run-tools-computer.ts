@@ -361,6 +361,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
               const { text, origin, claim, restore } = resolved;
+              // A code the person entered for this run was never in the vault: no item, no use.
               return { text, origin, claim, restore };
             },
             resolvePayTokenFill: async (step) => {
@@ -534,6 +535,8 @@ export const computerTools: ToolHandlers = {
         (usesNativeShell(computer.kind)
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
+      // The computer is sent the command with its variables here, so each is a use from then on,
+      // recorded once the command answers, fails or runs on. One stopped before this got none.
       const observed = await observeShellCommand(
         deps.sandbox.execute(
           computer,
@@ -567,7 +570,9 @@ export const computerTools: ToolHandlers = {
             if (output) publishRunning(output);
           },
         },
-      );
+      ).finally(async () => {
+        for (const item of commandEnvironment.used) await recordVaultUse(ctx, name, item);
+      });
       if (observed.completion) {
         const completion = observed.completion.then(async (final) => {
           clearPublishTimer();

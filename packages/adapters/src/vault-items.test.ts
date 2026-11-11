@@ -18,7 +18,6 @@ import {
   HIDDEN_ITEM,
   listBotSecrets,
   listVaultItems,
-  loadBotCommandEnvironment,
   loadCommandVariables,
   loadLoginPasswordRedactions,
   newVaultItemName,
@@ -412,25 +411,37 @@ describe("approving a saved login", () => {
 });
 
 describe("an item's uses, for its owner", () => {
-  // Rows written in one instant by one bot in one run and chat. A guest's use of an account item
-  // is an unnamed row and a named one; every use with its own site stays its own.
-  const unnamed = { kind: "login", scope: "space", tool: "browser_act" };
-  const on = (site: string) => ({ site: `https://${site}.example.test` });
+  // Rows as the audit log writes them, in one instant by one bot in one run and chat: a full row
+  // names the item, an unnamed one doesn't. A guest's use of an account item is one of each.
+  const unnamed = {
+    targetLabel: null,
+    metadata: { kind: "login", scope: "account", tool: "browser_act" },
+  };
+  const on = (site: string) => ({
+    targetLabel: "visa",
+    metadata: { name: "visa", site: `https://${site}.example.test` },
+  });
+  // A command variable goes to the bot's shell, so neither of its rows has a site.
+  const shell = { targetLabel: "visa", metadata: { name: "visa", kind: "command", tool: "shell" } };
   it.each([
     ["two uses on two sites", [on("a"), on("b")], ["a", "b"]],
     ["a guest's use of an account item, written twice", [unnamed, on("a")], ["a"]],
     ["a guest's use and another on another site", [unnamed, on("a"), on("b")], ["a", "b"]],
     ["a guest's use of a Space vault item, its one unnamed row", [unnamed], [null]],
-  ])("lists %s", async (_, metadata, sites) => {
+    ["a use in a shell, which has no site", [shell], [null]],
+    ["a guest's use in a shell, written twice with no site", [unnamed, shell], [null]],
+    ["two uses in a shell", [shell, shell], [null, null]],
+    ["two guest uses in a shell", [unnamed, shell, shell, unnamed], [null, null]],
+  ])("lists %s", async (_, written, sites) => {
     const db = await vaultWithCard();
     const at = new Date("2026-11-05T10:00:00.000Z");
-    const rows = metadata.map((entry) => ({
+    const rows = written.map((row) => ({
       createdAt: at,
       actorId: "bot-1",
       actorLabel: "Shopper",
       runId: "run-1",
       threadId: "thread-1",
-      metadata: entry,
+      ...row,
     }));
     Object.assign(db.prisma, {
       auditEvent: { findMany: async () => rows },
@@ -446,16 +457,22 @@ describe("an item's uses, for its owner", () => {
     const use = { actorLabel: "Shopper" };
     // A guest's use of an account item is written twice: unnamed in the space's, named in theirs.
     const twice = { ...use, createdAt: new Date("2026-11-05T10:00:00.000Z"), threadId: "thread-1" };
+    const named = { targetLabel: "visa", metadata: { site: "https://shop.example.test" } };
     const events = vi.fn(async () => [
-      { ...twice, metadata: { kind: "card", scope: "account", tool: "browser_act" } },
-      { ...twice, metadata: { site: "https://shop.example.test" } },
+      {
+        ...twice,
+        targetLabel: null,
+        metadata: { kind: "card", scope: "account", tool: "browser_act" },
+      },
+      { ...twice, ...named },
+      { ...use, createdAt: new Date("2026-11-04T10:00:00.000Z"), threadId: "thread-1", ...named },
       {
         ...use,
-        createdAt: new Date("2026-11-04T10:00:00.000Z"),
-        threadId: "thread-1",
-        metadata: { site: "https://shop.example.test" },
+        createdAt: new Date("2026-11-03T10:00:00.000Z"),
+        threadId: "other",
+        targetLabel: null,
+        metadata: {},
       },
-      { ...use, createdAt: new Date("2026-11-03T10:00:00.000Z"), threadId: "other", metadata: {} },
     ]);
     const threads = vi.fn(async () => [{ id: "thread-1", bot: { name: "Shopper" } }]);
     Object.assign(db.prisma, { auditEvent: { findMany: events }, thread: { findMany: threads } });
@@ -562,7 +579,7 @@ describe("an item bots may not use", () => {
           signal: new AbortController().signal,
           remote,
         }),
-      env: () => loadBotCommandEnvironment(db.prisma, secretStore, bot),
+      env: async () => (await loadCommandVariables(db.prisma, secretStore, bot)).env,
     };
     const ctx = {
       deps: { prisma: db.prisma, secretStore },

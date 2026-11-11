@@ -258,7 +258,18 @@ describe("security events in the audit log", () => {
           site: "https://bank.example.test",
         },
       }),
+    // A command variable a shell command was sent with: a use that has no site.
+    shell: (scope?: "account" | "space") =>
+      recordAuditEvent({
+        action: "credential.used",
+        actor: { type: "bot", id: "bot-1", label: "Researcher" },
+        spaceId: "space-1",
+        userId: "person",
+        target: { type: "vault_credential", id: "item-1", label: "chase-personal" },
+        metadata: { tool: "shell", scope, name: "chase-personal", kind: "command" },
+      }),
   };
+  const uses = ["use", "shell"];
   // space-1 belongs to org-1, and the person's own organization is org-own. An account vault item
   // is its person's own; a Space vault item, or one whose vault isn't said, is recorded only in
   // the Space's organization, named there only for a full member of it.
@@ -270,7 +281,7 @@ describe("security events in the audit log", () => {
   ];
   const matrix: [string, "account" | "space" | undefined, string[][], string[][]][] = [
     // Who acts, the item's vault, then the rows of an action of theirs (import, save, remove,
-    // reveal) and of a bot's use in a run of theirs.
+    // reveal) and of a bot's use in a run of theirs, on a site or in a shell.
     ["member", "account", [["org-1", N]], [["org-1", N]]],
     ["member", "space", [["org-1", N]], [["org-1", N]]],
     ["member", undefined, [["org-1", N]], [["org-1", N]]],
@@ -290,8 +301,8 @@ describe("security events in the audit log", () => {
         who,
         scope,
         vault: scope ?? "unknown",
-        rows: kind === "use" ? use : action,
-        lands: (kind === "use" ? use : action).map((row) => row.join(" ")).join(", "),
+        rows: uses.includes(kind) ? use : action,
+        lands: (uses.includes(kind) ? use : action).map((row) => row.join(" ")).join(", "),
       })),
     ),
   )(
@@ -314,7 +325,7 @@ describe("security events in the audit log", () => {
         const row = store.rows[index]!;
         const text = JSON.stringify(row);
         // The actor is kept either way.
-        expect(row.actorType).toBe(kind === "use" ? "bot" : "user");
+        expect(row.actorType).toBe(uses.includes(kind) ? "bot" : "user");
         // The shared space's name stays out of the person's own organization.
         expect(row.spaceName).toBe(org === "org-own" ? null : "Acme");
         if (org === "org-own") expect(text).not.toContain("Acme");
@@ -329,7 +340,7 @@ describe("security events in the audit log", () => {
         } else {
           // An import's event never carries the login's name; a use names it and its site.
           if (kind !== "import") expect(text).toContain("chase-personal");
-          if (kind === "use") expect(row).toMatchObject({ targetLabel: "chase-personal" });
+          if (uses.includes(kind)) expect(row).toMatchObject({ targetLabel: "chase-personal" });
           if (kind === "use") expect(text).toContain("bank.example.test");
         }
       }

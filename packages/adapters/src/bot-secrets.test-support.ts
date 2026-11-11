@@ -1,5 +1,31 @@
 import type { PrismaClient } from "@rakazo/db";
+import { installAuditEventStore } from "@rakazo/db";
 import { vi } from "vitest";
+
+/**
+ * An audit log that keeps the rows written to it. space-1 belongs to org-1, where the person a
+ * vault event is about is a member, or only a guest whose own organization is org-own. A failing
+ * one refuses every write. Callers uninstall it with `installAuditEventStore(undefined)`.
+ */
+export function fakeAuditLog(role: "member" | "guest" = "member", failing = false) {
+  const rows: Array<Record<string, unknown>> = [];
+  installAuditEventStore({
+    auditEvent: {
+      createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        if (failing) throw new Error("the audit log is down");
+        // The time the table gives a row written without one.
+        rows.push(...data.map((row) => ({ createdAt: new Date(), ...row })));
+        return { count: data.length };
+      },
+    },
+    space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+    member: {
+      findUnique: async () => ({ role }),
+      findMany: async () => [{ organizationId: "org-own", role: "owner" }],
+    },
+  } as never);
+  return rows;
+}
 
 // No database is available offline, so these run against an in-memory stand-in for the
 // vault_credentials table. Encryption, validation, and redaction are the real implementations.

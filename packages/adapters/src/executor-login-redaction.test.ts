@@ -1,7 +1,8 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
 import { encodeLoginSecret } from "@rakazo/contracts";
+import { installAuditEventStore } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fakeDatabase } from "./bot-secrets.test-support.js";
+import { fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -281,6 +282,7 @@ async function runAfterFill(
 
 afterEach(() => {
   vi.restoreAllMocks();
+  installAuditEventStore(undefined);
 });
 
 describe("saved API keys in a later run", () => {
@@ -302,6 +304,26 @@ describe("command variables in a later run", () => {
     const text = JSON.stringify(toolResults);
     expect(text).toContain("token=[redacted]");
     expect(text).not.toContain("fake-cli-token");
+  });
+
+  it("is used once a shell command has it, not when the run starts and hides it", async () => {
+    const rows = fakeAuditLog();
+    const used = () => rows.filter((row) => row.action === "credential.used");
+    await runAfterFill([{ name: "read_file", args: { path: "out.txt" } }]);
+    expect(used()).toEqual([]);
+    await runAfterFill([
+      { name: "shell", args: { command: "deploy" } },
+      { name: "shell", args: { command: "deploy again" } },
+    ]);
+    expect(used()).toEqual([
+      expect.objectContaining({
+        actorId: "bot-1",
+        targetId: "command-1",
+        targetLabel: "cli-token",
+        runId: "run-2",
+        metadata: { tool: "shell", scope: "space", name: "cli-token", kind: "command" },
+      }),
+    ]);
   });
 });
 

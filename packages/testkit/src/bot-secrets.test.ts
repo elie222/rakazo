@@ -463,6 +463,94 @@ describeIntegration("reusable credential lifecycle", () => {
     ).rejects.toThrow("vault/put failed (404)");
   });
 
+  it("lists a command variable as used once a run's shell command has it, not before", async () => {
+    const title = "Executor vault-shell-use";
+    const seeded = await seedRun("vault-shell-use", "Deploy");
+    const saved = await rpc<{ name: string }>(seeded.cookie, "vault/put", {
+      destination: { origin: "", auth: { type: "command" } },
+      value: "fake-deploy-token-1",
+      title: "Deploy token",
+    });
+    const item = await db.vaultCredential.findFirstOrThrow({
+      where: { userId: seeded.me.userId, name: saved.name },
+    });
+    let calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const runtime = vi
+      .spyOn(ScriptedAgentRuntime.prototype, "run")
+      .mockImplementation(async function* (request): AsyncIterable<AgentRuntimeEvent> {
+        for (const [index, call] of calls.entries()) {
+          yield { type: "tool", ...call, executionId: `${request.runId}:${index}` };
+        }
+        yield { type: "done", text: "Done" };
+      });
+    const finish = async (runId: string) => {
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.continueRun(runId, "test-worker"),
+      );
+      await vi.waitFor(
+        async () => {
+          expect(await db.run.findUniqueOrThrow({ where: { id: runId } })).toMatchObject({
+            status: "completed",
+            error: null,
+          });
+        },
+        { timeout: 15_000 },
+      );
+    };
+    const uses = () =>
+      db.auditEvent.findMany({ where: { action: "credential.used", targetId: item.id } });
+    try {
+      // Every run reads the variable when it starts, to hide it from what it shows.
+      await finish(seeded.run.id);
+      expect(await uses()).toEqual([]);
+      calls = ["echo deploy", "echo again"].map((command) => ({
+        name: "shell",
+        args: { command },
+      }));
+      const task = await db.task.create({
+        data: {
+          userId: seeded.me.userId,
+          spaceId: seeded.me.spaceId,
+          botId: seeded.bot.id,
+          threadId: seeded.thread.id,
+          prompt: "Deploy",
+          status: "queued",
+        },
+      });
+      const run = await db.run.create({
+        data: {
+          userId: seeded.me.userId,
+          spaceId: seeded.me.spaceId,
+          botId: seeded.bot.id,
+          threadId: seeded.thread.id,
+          taskId: task.id,
+          trigger: "user",
+          status: "queued",
+        },
+      });
+      await finish(run.id);
+      // Both commands got it, which is one use of it in the run, with no site.
+      const used = await uses();
+      expect(used).toEqual([
+        expect.objectContaining({
+          actorType: "bot",
+          actorId: seeded.bot.id,
+          targetType: "vault_credential",
+          targetLabel: saved.name,
+          runId: run.id,
+          threadId: seeded.thread.id,
+          metadata: { tool: "shell", scope: "account", name: saved.name, kind: "command" },
+        }),
+      ]);
+      expect(JSON.stringify(used)).not.toContain("fake-deploy-token-1");
+      expect(await rpc(seeded.cookie, "vault/activity", { name: saved.name })).toEqual([
+        { at: expect.any(String), botName: title, site: null, chat: { title } },
+      ]);
+    } finally {
+      runtime.mockRestore();
+    }
+  });
+
   it("lets only one of two overlapping imports add a login for the same site and username", async () => {
     const seeded = await seedRun("vault-import-race", "Sign in");
     const row = {

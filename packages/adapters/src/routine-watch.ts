@@ -30,6 +30,7 @@ import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-su
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
+import { recordVaultItemUse } from "./vault-activity.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -468,6 +469,9 @@ async function readComputer(
     const argv = shellEnvironment
       ? nativeShellCommandArgv(watch.command ?? "", shellEnvironment)
       : ["sh", "-lc", watch.command ?? ""];
+    // The computer is sent the check with its variables here, so each is a use from then on,
+    // recorded once the check ends, however it ends; a check refused or stopped before this got
+    // none. It has no run or chat, and the audit log never throws, so the check never fails on it.
     const result = await run(
       deps,
       computer,
@@ -478,7 +482,17 @@ async function readComputer(
         env: Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
         unsetEnv: commandEnvironment.unsetEnv,
       },
-    );
+    ).finally(async () => {
+      for (const item of commandEnvironment?.used ?? [])
+        await recordVaultItemUse({
+          bot,
+          spaceId: routine.spaceId,
+          // The routine's owner, whose vault the check reads.
+          userId: routine.userId,
+          tool: "routine_watch",
+          item,
+        });
+    });
     const revealed = [...secrets];
     const stderr = redactSecrets(result.stderr, revealed);
     if (result.code !== 0) {
