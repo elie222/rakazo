@@ -9,7 +9,16 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
-import { Alert, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  Alert,
+  AppState,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { rpc } from "../lib/api";
 import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
@@ -28,7 +37,6 @@ const styles = StyleSheet.create({
   body: { marginTop: 2 },
   preview: {
     aspectRatio: 16 / 10,
-    backgroundColor: "black",
     borderRadius: 10,
     marginTop: 12,
     width: "100%",
@@ -155,7 +163,11 @@ export function ComputerCard({
                 resizeMode="contain"
                 style={[
                   styles.preview,
-                  { borderColor: tokens.border, borderWidth: StyleSheet.hairlineWidth },
+                  {
+                    backgroundColor: tokens.background,
+                    borderColor: tokens.border,
+                    borderWidth: StyleSheet.hairlineWidth,
+                  },
                 ]}
               />
             </Pressable>
@@ -198,7 +210,7 @@ export function ComputerCard({
   );
 }
 
-/** A still of the bot's screen while the card waits. */
+/** A still of the bot's screen while the card waits, read again when the app returns. */
 function useComputerPreview(botId: string | undefined, runId: string | undefined) {
   const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
@@ -206,13 +218,19 @@ function useComputerPreview(botId: string | undefined, runId: string | undefined
     setImage(null);
     if (!botId) return;
     let live = true;
-    rpc("computer/preview", { botId, runId })
-      .then((result) => {
-        if (live) setImage(result.image);
-      })
-      .catch(() => undefined);
+    const load = () =>
+      rpc("computer/preview", { botId, runId })
+        .then((result) => {
+          if (live) setImage(result.image);
+        })
+        .catch(() => undefined);
+    void load();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void load();
+    });
     return () => {
       live = false;
+      subscription.remove();
     };
   }, [botId, runId]);
   return image;
