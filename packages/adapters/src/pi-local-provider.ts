@@ -6,6 +6,7 @@ import { Agent, EnvHttpProxyAgent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
 import { MODEL_STREAM_AGENT_TIMEOUTS } from "./pi-runtime-limits.js";
+import { splitLeadingThinkBlock } from "./pi-think-tags.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 /**
@@ -100,9 +101,13 @@ function localApi(): ProviderStreams {
   const api = openAICompletionsApi();
   return {
     stream: (model, context, options) =>
-      api.stream(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      splitLeadingThinkBlock(
+        api.stream(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      ),
     streamSimple: (model, context, options) =>
-      api.streamSimple(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      splitLeadingThinkBlock(
+        api.streamSimple(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      ),
   };
 }
 
