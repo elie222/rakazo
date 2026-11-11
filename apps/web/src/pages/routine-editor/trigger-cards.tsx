@@ -80,6 +80,7 @@ export function WatchTriggerCard({
           }
         >
           <NativeSelectOption value="files">{t`Files or folders on the computer`}</NativeSelectOption>
+          <NativeSelectOption value="http">{t`An HTTPS endpoint`}</NativeSelectOption>
           <NativeSelectOption value="command">{t`A command's output`}</NativeSelectOption>
           <NativeSelectOption value="tool">{t`An integration tool`}</NativeSelectOption>
         </NativeSelect>
@@ -95,9 +96,19 @@ export function WatchTriggerCard({
         {watch.kind === "command" ? (
           <Input
             aria-label={t`Command`}
-            placeholder="curl -s https://example.com/status"
+            placeholder="cat reports/status.json"
             value={watch.command}
             onChange={(e) => onChange({ ...watch, command: e.target.value })}
+            className="font-mono text-body-sm"
+          />
+        ) : null}
+        {watch.kind === "http" ? (
+          <Input
+            aria-label={t`HTTPS URL`}
+            type="url"
+            placeholder="https://example.com/status"
+            value={watch.url}
+            onChange={(e) => onChange({ ...watch, url: e.target.value })}
             className="font-mono text-body-sm"
           />
         ) : null}

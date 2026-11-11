@@ -41,3 +41,25 @@ describe("watchFromDraft", () => {
     expect(watchFromDraft({ ...emptyWatchDraft(), kind: "command" })).toHaveProperty("error");
   });
 });
+
+it("saves an HTTPS watch with its URL and tracked fields", () => {
+  expect(
+    watchFromDraft({
+      ...emptyWatchDraft(),
+      kind: "http",
+      url: " https://example.com/status ",
+      track: "id, updatedAt",
+    }),
+  ).toEqual({
+    watch: {
+      kind: "http",
+      url: "https://example.com/status",
+      track: ["id", "updatedAt"],
+      everyMinutes: 15,
+      loud: false,
+    },
+  });
+  expect(
+    watchFromDraft({ ...emptyWatchDraft(), kind: "http", url: "http://localhost" }),
+  ).toHaveProperty("error");
+});

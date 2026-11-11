@@ -30,6 +30,8 @@ import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-su
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
+import type { SafeWebFetchOptions } from "./web-ssrf.js";
+import { fetchSafeHttpRequest } from "./web-ssrf.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -62,6 +64,8 @@ export type RoutineWatchDeps = {
   /** Decrypts Vault credentials. Absent, a command watch runs without them. */
   secretStore?: SecretStore;
   paymentWallet?: PaymentWalletProvider | null;
+  /** HTTP transport and DNS boundary; destination checks and limits always stay enabled. */
+  http?: Pick<SafeWebFetchOptions, "fetch" | "resolveHostname">;
 };
 
 export type RoutineWatchTarget = {
@@ -105,6 +109,8 @@ export function nextRoutineWatchAt(watch: Pick<RoutineWatch, "everyMinutes">, fr
 export function describeRoutineWatch(watch: RoutineWatch): string {
   if (watch.kind === "files") return (watch.paths ?? []).join(", ");
   if (watch.kind === "command") return `\`${watch.command ?? ""}\``;
+  // A status URL can contain an access token, so do not copy it into messages.
+  if (watch.kind === "http") return "HTTPS endpoint";
   return watch.tool ?? "";
 }
 
@@ -117,9 +123,11 @@ export async function checkRoutineWatch(
   if (!watch) throw new RoutineWatchError("The change trigger's settings are not valid.");
   const previous = parseRoutineWatchState(routine.watchState);
   const reading =
-    watch.kind === "tool"
-      ? await readTool(deps, routine, watch)
-      : await readComputer(deps, routine, watch);
+    watch.kind === "http"
+      ? await readHttp(deps, watch)
+      : watch.kind === "tool"
+        ? await readTool(deps, routine, watch)
+        : await readComputer(deps, routine, watch);
   return compareReading(previous, reading, now);
 }
 
@@ -131,6 +139,39 @@ type Reading = {
   /** Hidden from a change description, which can name items from the last reading. */
   secrets?: readonly string[];
 };
+
+/** A structured public GET, never a shell command or an authenticated server session. */
+async function readHttp(deps: RoutineWatchDeps, watch: RoutineWatch): Promise<Reading> {
+  let response: Awaited<ReturnType<typeof fetchSafeHttpRequest>>;
+  try {
+    response = await fetchSafeHttpRequest(
+      watch.url!,
+      { method: "GET" },
+      {
+        ...deps.http,
+        allowedPorts: [443],
+        timeoutMs: 15_000,
+        maxBytes: 1_000_000,
+      },
+    );
+  } catch {
+    // Transport errors can include the URL, which can carry a token in its path or query.
+    throw new RoutineWatchError("Could not check the HTTPS endpoint.");
+  }
+  if (response.status < 200 || response.status >= 300)
+    throw new RoutineWatchError(`HTTPS check returned status ${response.status}.`);
+  if (response.truncated) throw new RoutineWatchError("HTTPS check response is too large.");
+  const text = new TextDecoder().decode(response.body);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    if (watch.track) throw new RoutineWatchError("Tracked HTTP fields require a JSON response.");
+    return { fingerprint: sha256(text), detail: clip(text) || null };
+  }
+  if (watch.track) return readItems(data, watch.track);
+  return { fingerprint: sha256(stableStringify(data)), detail: clip(text) || null };
+}
 
 /** Pure: decides baseline / unchanged / changed and describes the change. */
 export function compareReading(

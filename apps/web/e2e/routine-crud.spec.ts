@@ -493,3 +493,34 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
   });
   await captureScreenshot(page, testInfo, "routine-watch-10-saved-list");
 });
+
+test("an HTTPS change trigger saves and reopens", async ({ page }, testInfo) => {
+  await signup(page, `http-watch-${Date.now()}@rakazo.test`, "password12", "Routine Watch");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await openBotPanelTab(page, "Routines");
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Status watch");
+  await page.locator("label:has-text('Instruction') textarea").fill("Report what changed.");
+  // Keep this saved watch inactive: no real endpoint is contacted by the offline UI test.
+  await page.getByRole("switch", { name: "Active", exact: true }).click();
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "When something changes" }).click();
+  const card = page.getByTestId("routine-watch-card");
+  await card.getByRole("combobox", { name: "What to watch" }).selectOption("http");
+  await card.getByRole("textbox", { name: "HTTPS URL" }).fill("https://example.com/status");
+  await card.getByRole("spinbutton", { name: "Check every" }).fill("5");
+  await captureScreenshot(page, testInfo, "routine-http-watch");
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({
+    active: false,
+    crons: [],
+    watch: { kind: "http", url: "https://example.com/status", everyMinutes: 5 },
+  });
+  const [saved] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(saved?.watch).toMatchObject({ kind: "http", url: "https://example.com/status" });
+  await page.getByRole("button", { name: /Status watch/ }).click();
+  await expect(card.getByRole("combobox", { name: "What to watch" })).toHaveValue("http");
+  await expect(card.getByRole("textbox", { name: "HTTPS URL" })).toHaveValue(
+    "https://example.com/status",
+  );
+});

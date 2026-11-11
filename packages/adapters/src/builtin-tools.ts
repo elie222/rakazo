@@ -159,11 +159,12 @@ const scheduleTimingSpecs = {
   watch: {
     type: "object",
     description:
-      'Run only when something changes, checked without a model every everyMinutes (5 to 1440, default 15); send no cron, every or startAt with it. kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+      'Run only when something changes, checked without a model every everyMinutes (5 to 1440, default 15); send no cron, every or startAt with it. kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. kind http: a public HTTPS url checked with GET, no custom headers, credentials, body, or redirects. Prefer tool or http for network checks: neither needs a computer; files and command start the computer. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
     properties: {
-      kind: { type: "string", enum: ["files", "command", "tool"] },
+      kind: { type: "string", enum: ["files", "command", "tool", "http"] },
       paths: { type: "array", items: { type: "string" } },
       command: { type: "string" },
+      url: { type: "string" },
       tool: { type: "string" },
       args: { type: "object" },
       track: {

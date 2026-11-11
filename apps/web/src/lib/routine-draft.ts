@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { Routine, RoutineWatch, RoutineWatchInput } from "@rakazo/contracts";
-import { ROUTINE_WATCH_DEFAULT_MINUTES } from "@rakazo/contracts";
+import { ROUTINE_WATCH_DEFAULT_MINUTES, RoutineWatchSchema } from "@rakazo/contracts";
 import type { RoutineDraft } from "@rakazo/core";
 import { draftFromRoutine, emptyRoutineDraft, isOneShotRoutineCrons } from "@rakazo/core";
 import { modelOptionKey } from "./model-catalog";
@@ -39,6 +39,7 @@ export type RoutineWatchDraft = {
   /** One path per line. */
   paths: string;
   command: string;
+  url: string;
   tool: string;
   /** JSON object of arguments for the tool. */
   args: string;
@@ -53,6 +54,7 @@ export function emptyWatchDraft(): RoutineWatchDraft {
     kind: "files",
     paths: "",
     command: "",
+    url: "",
     tool: "",
     args: "{}",
     track: "",
@@ -67,6 +69,7 @@ function watchDraftFromRoutine(watch: RoutineWatch | null): RoutineWatchDraft | 
     kind: watch.kind,
     paths: (watch.paths ?? []).join("\n"),
     command: watch.command ?? "",
+    url: watch.url ?? "",
     tool: watch.tool ?? "",
     args: JSON.stringify(watch.args ?? {}),
     track: (watch.track ?? []).join(", "),
@@ -96,6 +99,11 @@ export function watchFromDraft(
   if (draft.kind === "command") {
     if (!draft.command.trim()) return { error: t`Add a command to run` };
     return { watch: { ...base, command: draft.command.trim(), ...track } };
+  }
+  if (draft.kind === "http") {
+    const parsed = RoutineWatchSchema.safeParse({ ...base, url: draft.url.trim(), ...track });
+    if (!parsed.success) return { error: t`Enter an HTTPS URL` };
+    return { watch: parsed.data };
   }
   if (!draft.tool.trim()) return { error: t`Pick a tool to check` };
   let args: unknown;
