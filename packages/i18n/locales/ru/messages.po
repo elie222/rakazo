@@ -1294,14 +1294,11 @@ msgstr "Разрешить один раз"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "Разрешите Rakazo использовать распознавание речи и микрофон в Системных настройках."
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "Разрешите распознавание речи в Настройках или подключите голосового провайдера с расшифровкой."
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "Разрешите распознавание речи в Настройках или подключите ElevenLabs, OpenAI или Fish Audio."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -3303,6 +3300,7 @@ msgstr "Не удалось покинуть пространство"
 msgid "Could not load"
 msgstr "Не удалось загрузить"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "Не удалось загрузить активность"
@@ -3534,6 +3532,7 @@ msgstr "Не удалось воспроизвести тестовый клип
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "Не удалось воспроизвести этот клип."
 
@@ -6968,6 +6967,7 @@ msgstr "Нет строк"
 msgid "No runs match these filters."
 msgstr "Нет запусков, соответствующих этим фильтрам."
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"

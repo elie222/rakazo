@@ -1294,14 +1294,11 @@ msgstr "允许一次"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr "请在系统设置中允许 Rakazo 使用语音识别和麦克风。"
 
+#: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
+#: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
 msgstr "请在设置中允许语音识别，或连接支持转写的语音服务。"
-
-#: apps/mobile/lib/call-session.ts
-#: apps/mobile/lib/thread-voice.ts
-msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr "请在“设置”中允许语音识别，或连接 ElevenLabs、OpenAI 或 Fish Audio。"
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -3303,6 +3300,7 @@ msgstr "无法退出空间"
 msgid "Could not load"
 msgstr "无法加载"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Could not load activity"
 msgstr "无法加载动态"
@@ -3534,6 +3532,7 @@ msgstr "无法播放测试片段"
 
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
+#: apps/web/src/lib/tts.ts
 msgid "Could not play that clip."
 msgstr "无法播放该音频。"
 
@@ -6968,6 +6967,7 @@ msgstr "无行"
 msgid "No runs match these filters."
 msgstr "没有符合筛选的运行记录。"
 
+#: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/ActivityList.tsx
 msgid "No runs yet"
