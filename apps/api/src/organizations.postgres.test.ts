@@ -696,6 +696,33 @@ describePostgres("organizations (PostgreSQL)", () => {
     expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
   });
 
+  it("takes over an account deletion's lapsed claim, keeping it when billing fails", async () => {
+    const ada = await signup();
+    const work = await client(ada).organizations.create({ name: "Work" });
+    await subscribe(asUser(ada, work.id));
+    // An account deletion that stalled after claiming the Space.
+    await system.space.updateMany({
+      where: { organizationId: work.id },
+      data: {
+        deletionClaimId: `account-deletion:${ada.userId}`,
+        deletingAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+    vi.spyOn(emulator, "cancelCustomerSubscriptions").mockRejectedValueOnce(
+      new Error("billing unavailable"),
+    );
+
+    await expect(client(ada).organizations.remove({ organizationId: work.id })).rejects.toThrow(
+      "billing unavailable",
+    );
+
+    expect(await system.space.findUnique({ where: { id: work.id } })).toMatchObject({
+      deletingAt: expect.any(Date),
+      deletionClaimId: expect.stringContaining(`organization-deletion:${work.id}:`),
+    });
+    expect((await client(ada).organizations.list()).organizations).toHaveLength(1);
+  });
+
   it("deletes the organization with its last Space, so no crash leaves it without its claim", async () => {
     const ada = await signup();
     const work = await client(ada).organizations.create({ name: "Work" });
