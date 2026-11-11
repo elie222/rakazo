@@ -431,7 +431,11 @@ describe("thread cards", () => {
     ]);
   });
 
-  function renderAsk(ask: Partial<Extract<MessageBlock, { kind: "ask" }>>, canAnswer: boolean) {
+  function renderAsk(
+    ask: Partial<Extract<MessageBlock, { kind: "ask" }>>,
+    canAnswer: boolean,
+    separateAnswer?: string,
+  ) {
     const message = {
       id: "message-1",
       role: "bot",
@@ -455,6 +459,7 @@ describe("thread cards", () => {
           bots={[]}
           message={message}
           canAnswer={canAnswer}
+          separateAnswer={separateAnswer}
           onAnswer={async () => undefined}
           actionProps={{}}
         />,
@@ -486,6 +491,14 @@ describe("thread cards", () => {
       expect(container.querySelectorAll("button").length).toBe(doubleTapSurface ? 0 : 1);
     },
   );
+
+  it("keeps a custom choice answer unless a separate user message displays it", () => {
+    const ask = { status: "answered" as const, answer: "A different plan" };
+    expect(renderAsk(ask, false)?.textContent).toContain("A different plan");
+    expect(renderAsk(ask, false, "A different plan")?.textContent).not.toContain(
+      "A different plan",
+    );
+  });
 
   // The iOS message menu hosts each bubble without a definite width, so a percentage width
   // resolves against the card's own cap instead of the message column and overflows the screen.

@@ -168,12 +168,14 @@ async function render(
   ask: Record<string, unknown>,
   onAnswer: () => Promise<void> = async () => undefined,
   onDismiss: () => Promise<void> = async () => undefined,
+  separateAnswer?: string,
 ) {
   await act(async () =>
     root.render(
       <AskBlock
         ask={{ kind: "ask", text: longTitle, status: "pending", ...ask } as Ask}
         canAnswer
+        separateAnswer={separateAnswer}
         canDismiss
         onAnswer={onAnswer}
         onDismiss={onDismiss}
@@ -186,6 +188,13 @@ async function render(
 
 it("keeps an answered question without repeating the user's reply or leaving answer controls", async () => {
   await render({ status: "answered", answer: "Help with my project" });
+  expect(container.textContent).toContain("Help with my project");
+  await render(
+    { status: "answered", answer: "Help with my project" },
+    undefined,
+    undefined,
+    "Help with my project",
+  );
   expect(container.textContent).toBe(longTitle);
   expect(container.querySelector("input")).toBeNull();
   expect(container.querySelector("button")).toBeNull();

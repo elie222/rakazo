@@ -54,6 +54,7 @@ import { MessageHoverActions } from "./message-hover-actions";
 export const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
+  separateAnswer,
   canDismiss,
   message,
   meId,
@@ -87,6 +88,7 @@ export const MessageView = memo(function MessageView({
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
+  separateAnswer?: string;
   canDismiss: boolean;
   message: ThreadMessage;
   /** The signed-in person; anyone else's message is named and set apart. */
@@ -636,6 +638,7 @@ export const MessageView = memo(function MessageView({
               <div key={i} className="relative w-full min-w-0">
                 <AskCard
                   block={block}
+                  separateAnswer={separateAnswer}
                   canAnswer={canAnswer}
                   canDismiss={canDismiss}
                   onAnswer={(text, fields, remember) =>

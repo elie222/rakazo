@@ -13,9 +13,18 @@ const messageRenders = vi.hoisted(() => new Map<string, number>());
 vi.mock("./message-view", async () => {
   const { createElement, memo } = await import("react");
   return {
-    MessageView: memo(function MessageView({ message }: { message: { id: string } }) {
+    MessageView: memo(function MessageView({
+      message,
+      separateAnswer,
+    }: {
+      message: { id: string };
+      separateAnswer?: string;
+    }) {
       messageRenders.set(message.id, (messageRenders.get(message.id) ?? 0) + 1);
-      return createElement("div", { "data-testid": `message-${message.id}` });
+      return createElement("div", {
+        "data-testid": `message-${message.id}`,
+        "data-separate-answer": separateAnswer,
+      });
     }),
   };
 });
@@ -162,4 +171,30 @@ it("redraws a page card's reply only when a newer card supersedes it", () => {
 
   act(() => root.render(<Host messages={[...earlier, card("card-2", 2)]} />));
   expect(messageRenders.get("reply")).toBe(2);
+});
+
+it("only marks a question's answer as repeated while its user message is visible", () => {
+  const question: ThreadMessage = {
+    ...message("question", ""),
+    blocks: [{ kind: "ask", text: "What next?", status: "answered", answer: "Build a plan" }],
+  };
+  const reply: ThreadMessage = { ...message("reply", "Build a plan"), role: "user", seq: 2 };
+  act(() => root.render(<Host messages={[question]} />));
+  expect(
+    container
+      .querySelector('[data-testid="message-question"]')
+      ?.getAttribute("data-separate-answer"),
+  ).toBeNull();
+  act(() => root.render(<Host messages={[question, reply]} />));
+  expect(
+    container
+      .querySelector('[data-testid="message-question"]')
+      ?.getAttribute("data-separate-answer"),
+  ).toBe("Build a plan");
+  act(() => root.render(<Host messages={[question]} />));
+  expect(
+    container
+      .querySelector('[data-testid="message-question"]')
+      ?.getAttribute("data-separate-answer"),
+  ).toBeNull();
 });

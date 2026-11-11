@@ -80,6 +80,7 @@ type MessageRowProps = {
   readOnly: boolean;
   onCall: boolean;
   canAnswer: boolean;
+  separateAnswer?: string;
   canDismiss: boolean;
   highlighted: boolean;
   separator: boolean;
@@ -119,6 +120,7 @@ export const MessageRow = memo(function MessageRow({
   readOnly,
   onCall,
   canAnswer,
+  separateAnswer,
   canDismiss,
   highlighted,
   separator,
@@ -448,6 +450,7 @@ export const MessageRow = memo(function MessageRow({
                 bots={bots}
                 members={members}
                 canAnswer={canAnswer}
+                separateAnswer={separateAnswer}
                 canDismiss={canDismiss}
                 onAnswer={actions.answer}
                 onOpenBot={actions.openBot}

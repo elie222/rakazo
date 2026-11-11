@@ -212,6 +212,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   message,
   members,
   canAnswer,
+  separateAnswer,
   canDismiss,
   onAnswer,
   onOpenComputer,
@@ -235,6 +236,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   message: MobileMessage;
   members?: MobileSnapshot["members"];
   canAnswer: boolean;
+  separateAnswer?: string;
   canDismiss: boolean;
   onAnswer: (
     message: MobileMessage,
@@ -282,6 +284,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       <View style={{ gap: 8, width: "100%" }}>
         <AskBlock
           ask={ask}
+          separateAnswer={separateAnswer}
           actionProps={actionProps}
           canAnswer={canAnswer}
           canDismiss={canDismiss}
@@ -455,9 +458,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               {askBlock.status === "answered" &&
               !isApprovalAskBlock(askBlock) &&
               !askBlock.instructionUpdate &&
-              !askBlock.actions.some(
-                (action) => action.id === askBlock.answer,
-              ) ? null : askBlock.status === "answered" ? (
+              separateAnswer &&
+              askBlock.answer?.trim() === separateAnswer ? null : askBlock.status === "answered" ? (
                 <Text
                   {...actionProps}
                   style={{

@@ -23,6 +23,7 @@ import type { MessageActionProps } from "./message-bubble";
 export function AskBlock({
   ask,
   canAnswer,
+  separateAnswer,
   canDismiss,
   onAnswer,
   onDismiss,
@@ -30,6 +31,7 @@ export function AskBlock({
 }: {
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
+  separateAnswer?: string;
   canDismiss: boolean;
   onAnswer: (
     answer: string,
@@ -269,7 +271,10 @@ export function AskBlock({
       {ask.detail && (!secretInput || ask.oneTimeCode) ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}
-      {answered && !secretInput ? null : answered ? (
+      {answered &&
+      !secretInput &&
+      separateAnswer &&
+      ask.answer?.trim() === separateAnswer ? null : answered ? (
         <Text
           style={{
             // Dismissed reads like a declined approval, not a success.
@@ -279,7 +284,7 @@ export function AskBlock({
             ...(secretInput ? { marginTop: 12 } : null),
           }}
         >
-          {answeredLabel}
+          {secretInput ? answeredLabel : t`Answered: ${ph({ answer: ask.answer ?? t`Done` })}`}
         </Text>
       ) : canAnswer && ownerOnly ? null : canAnswer ? (
         <>

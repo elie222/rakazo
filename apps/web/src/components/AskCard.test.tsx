@@ -68,10 +68,18 @@ async function render(
     fields?: LoginFieldInput[],
     remember?: false,
   ) => Promise<void> = async () => undefined,
+  separateAnswer?: string,
 ) {
   await act(async () =>
     root.render(
-      <AskCard block={block} canAnswer canDismiss onAnswer={onAnswer} onDismiss={onDismiss} />,
+      <AskCard
+        block={block}
+        separateAnswer={separateAnswer}
+        canAnswer
+        canDismiss
+        onAnswer={onAnswer}
+        onDismiss={onDismiss}
+      />,
     ),
   );
 }
@@ -725,6 +733,8 @@ it("offers Save to Vault only on login cards", async () => {
 it("leaves a typed reply in its message and marks a sent draft", async () => {
   const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
   await render(block);
+  expect(container.textContent).toContain("Tuesday");
+  await render(block, undefined, undefined, "Tuesday");
   expect(container.textContent).not.toContain("Tuesday");
   expect(container.textContent).not.toContain("Answered");
 

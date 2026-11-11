@@ -6,6 +6,7 @@ import {
   groupVoiceChats,
   memberName,
   otherAuthor,
+  separateAskAnswers,
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
@@ -104,6 +105,7 @@ export function useThreadRows({
   const { t } = useLingui();
   const locale = useUiLocale();
   const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;
+  const separateAnswers = useMemo(() => separateAskAnswers(visibleMessages), [visibleMessages]);
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
@@ -148,6 +150,7 @@ export function useThreadRows({
         <MessageRow
           key={message.id}
           message={message}
+          separateAnswer={separateAnswers.get(message.id)}
           actions={rowActions}
           botId={botId}
           bubbleBotId={botId ?? snap?.members?.[0]?.botId ?? ""}
@@ -192,6 +195,7 @@ export function useThreadRows({
     },
     [
       messagesById,
+      separateAnswers,
       showBotSenderName,
       snap?.members,
       snap?.activeRuns,
