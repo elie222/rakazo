@@ -37,7 +37,7 @@ export async function sandboxAllowancePlan(
   prisma: PrismaClient,
   organizationId: string,
   now = new Date(),
-): Promise<{ limitCents: number; since: Date } | null> {
+): Promise<{ limitCents: number; since: Date; resetsAt: Date | null } | null> {
   const [settings, organization] = await Promise.all([
     prisma.deploymentSettings.findUnique({
       where: { id: "default" },
@@ -53,6 +53,7 @@ export async function sandboxAllowancePlan(
             status: true,
             cancelAtPeriodEnd: true,
             currentPeriodStartsAt: true,
+            currentPeriodEndsAt: true,
             byokInterval: true,
             byokTier: true,
             byokPriceCents: true,
@@ -83,7 +84,11 @@ export async function sandboxAllowancePlan(
       _min: { appliedAt: true },
     });
     if (granted._sum.creditCents && granted._min.appliedAt)
-      return { limitCents: creditShare(granted._sum.creditCents), since: granted._min.appliedAt };
+      return {
+        limitCents: creditShare(granted._sum.creditCents),
+        since: granted._min.appliedAt,
+        resetsAt: null,
+      };
   }
   const limitCents =
     billing?.status === "trialing"
@@ -93,7 +98,21 @@ export async function sandboxAllowancePlan(
       : tier
         ? BYOK_TIERS[tier].computerAllowanceCents
         : creditShare(billing?.creditAmountCents ?? 0);
-  return { limitCents, since };
+  const periodEnd = live ? billing?.currentPeriodEndsAt : null;
+  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const nextAnniversary =
+    periodStart && billing?.byokInterval === "year"
+      ? monthlyAnniversary(periodStart, monthsBetween(periodStart, since) + 1)
+      : null;
+  const reset = nextAnniversary ?? periodEnd ?? nextMonth;
+  const resetsAt =
+    billing?.status === "trialing" ||
+    reset <= now ||
+    (live && periodEnd != null && periodEnd <= now) ||
+    (live && billing?.cancelAtPeriodEnd && (!periodEnd || reset >= periodEnd))
+      ? null
+      : reset;
+  return { limitCents, since, resetsAt };
 }
 
 /**
@@ -120,22 +139,30 @@ export async function planComputerSize(
   return tier ? BYOK_TIERS[tier].computerSize : "standard";
 }
 
-/** The latest monthly anniversary of `start` at or before `now`, on a shorter month's last day. */
+/** Months between two UTC calendar months, without rounding partial months. */
+function monthsBetween(start: Date, end: Date): number {
+  return (
+    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth()
+  );
+}
+
+/** Always shift from the original anchor, so February does not move a January 31 renewal. */
+function monthlyAnniversary(start: Date, months: number): Date {
+  const shifted = new Date(start);
+  shifted.setUTCDate(1);
+  shifted.setUTCMonth(start.getUTCMonth() + months);
+  const lastDay = new Date(
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  shifted.setUTCDate(Math.min(start.getUTCDate(), lastDay));
+  return shifted;
+}
+
+/** The latest monthly anniversary of start at or before now. */
 function latestMonthlyAnniversary(start: Date, now: Date): Date {
-  const monthsLater = (months: number) => {
-    const shifted = new Date(start);
-    shifted.setUTCDate(1);
-    shifted.setUTCMonth(start.getUTCMonth() + months);
-    const lastDay = new Date(
-      Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0),
-    ).getUTCDate();
-    shifted.setUTCDate(Math.min(start.getUTCDate(), lastDay));
-    return shifted;
-  };
-  const months =
-    (now.getUTCFullYear() - start.getUTCFullYear()) * 12 + now.getUTCMonth() - start.getUTCMonth();
-  const anniversary = monthsLater(months);
-  return anniversary <= now ? anniversary : monthsLater(months - 1);
+  const months = monthsBetween(start, now);
+  const anniversary = monthlyAnniversary(start, months);
+  return anniversary <= now ? anniversary : monthlyAnniversary(start, months - 1);
 }
 
 /**
