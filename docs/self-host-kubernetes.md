@@ -67,6 +67,19 @@ both owner email values. Keep API, web and screen paths on the same HTTPS origin
 `SIGNUPS_ENABLED=false` closes public registration; the bootstrap Job will create
 the first account without opening it temporarily.
 
+Account email is off by default (`EMAIL_PROVIDER=none`). If you enable SMTP using
+[sign-in and accounts](./self-host-accounts.md), credentials alone are not enough:
+the worker's external egress currently allows only TCP 80/443. Before enabling it,
+add a separate egress rule to `rakazo-worker` in `network-policy.yaml` for your mail
+server's destination IP/CIDR and the TCP port in `SMTP_URL` (for example, 465).
+Keep the destination and port in the same rule; do not remove the existing private
+network exclusions or allow every port. For an in-cluster mail server, use its
+namespace/Pod selectors instead. Standard NetworkPolicy cannot select a hostname,
+so keep the destination rule in sync if the mail server's addresses change.
+Put `SMTP_URL` in `secrets.env`, set the nonsecret email settings in `config.env`,
+apply the foundation phase below and restart the worker after configuration changes.
+Request a password-reset email and confirm actual receipt before relying on recovery.
+
 The controller also needs to reach the cluster API. Inspect its actual endpoint:
 
 ```sh

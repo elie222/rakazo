@@ -69,6 +69,18 @@ cp migration.env.example migration.env
 `SIGNUPS_ENABLED=false`는 공개 가입을 닫아 둡니다. 첫 계정은 잠시 가입을
 열지 않고 초기 계정 생성 Job으로 만듭니다.
 
+기본값은 메일 발송을 끈 상태입니다(`EMAIL_PROVIDER=none`).
+[계정 안내](../self-host-accounts.md)에 따라 SMTP를 켜더라도 인증값만 넣으면
+메일이 나가지 않습니다. worker의 외부 통신은 TCP 80/443만 허용하기 때문입니다.
+먼저 `network-policy.yaml`의 `rakazo-worker`에 메일 서버의 목적지 IP/CIDR과
+`SMTP_URL`의 TCP 포트(예: 465)를 함께 지정하는 별도 egress 규칙을 추가하세요.
+기존 사설망 차단을 없애거나 모든 포트를 열지 않습니다. 클러스터 내부 메일 서버라면
+해당 namespace/Pod 선택자를 사용합니다. 표준 NetworkPolicy는 호스트 이름으로
+목적지를 선택할 수 없으므로 서버 주소가 바뀌면 규칙도 갱신해야 합니다.
+`SMTP_URL`은 `secrets.env`에, 비밀이 아닌 메일 설정은 `config.env`에 넣습니다.
+아래 foundation 단계를 적용하고 설정 변경 뒤 worker를 재시작하세요.
+비밀번호 재설정 메일을 요청해 실제 수신까지 확인한 뒤 복구 수단으로 사용합니다.
+
 이번에는 API와 worker가 Kubernetes에 요청할 주소를 확인합니다.
 
 ```sh
