@@ -178,6 +178,33 @@ describe("vault values under the envelope keys", () => {
       await f.close();
     }
   });
+
+  it("counts an item deleted with its member after it was listed as changed, not failed", async () => {
+    const f = await fixture();
+    try {
+      const gone = { id: "vault", recordId: "vault", label: "vaultCredential", ref: "rkz1:k:x" };
+      // Its vault's key was shredded with the member, so the item no longer opens; it is only
+      // a failure while the item is still there.
+      const open = async () => {
+        throw new Error("Vault item names a key that no longer exists");
+      };
+      const repository: SecretMigrationRepository = {
+        ...f.repository,
+        async *rows() {
+          yield { ...gone, open };
+        },
+      };
+      const run = () =>
+        migrateSecrets(repository, f.encrypted, f.remote, context, { direction: "forward" });
+      f.rows.push(gone);
+      expect(await run()).toMatchObject({ failed: 1, concurrent: 0 });
+      f.rows.pop();
+      expect(await run()).toMatchObject({ failed: 0, concurrent: 1 });
+      expect(f.fake.values.size).toBe(0);
+    } finally {
+      await f.close();
+    }
+  });
 });
 
 describe("legacy credential upgrade", () => {

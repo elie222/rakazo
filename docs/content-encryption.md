@@ -171,7 +171,8 @@ Does not protect against:
    as it was and reported as failed, with the step that failed and the kind of
    error (never its value or a key). `--dry-run` reads every item but creates
    no key. A vault key is created only while its member or Space exists, so a
-   deletion during `migrate` leaves no key behind. Run it where `DATA_DIR` is
+   deletion during `migrate` leaves no key behind, and the items deleted with
+   them count as changed concurrently, not failed. Run it where `DATA_DIR` is
    mounted so artifacts are encrypted too.
 
    The `vault_credentials` line of `status` counts every vault item not yet

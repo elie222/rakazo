@@ -543,6 +543,105 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     }
   });
 
+  it.each([
+    ["migrate", "encrypt", "first run"],
+    ["migrate", "encrypt", "second run"],
+    ["decrypt", "decrypt", "second run"],
+    ["reencrypt", "reencrypt", "rotated"],
+  ] as const)(
+    "counts a member's items deleted with them after %s listed them as changed, not failed (%s, %s)",
+    async (_command, mode, state) => {
+      const goneAddress = `vault-gone-${randomUUID()}@rakazo.test`;
+      const doomed = await runAsSystem("vault deletion fixture", () =>
+        provisionMessagingIdentity(
+          sealing.prisma,
+          { provider: "email", address: goneAddress },
+          { signupsEnabled: undefined, signupAllowlist: undefined },
+        ),
+      );
+      const remove = async () => {
+        await system.messagingIdentity.deleteMany({ where: { address: goneAddress } });
+        await system.organization.deleteMany({ where: { id: doomed.spaceId } });
+        await system.user.deleteMany({ where: { id: doomed.userId } });
+      };
+      // The command's own process, which has none of the member's keys cached.
+      const command = createDb(url!, { keyProvider, encryptContent: true });
+      try {
+        const vault = `user:${doomed.userId}`;
+        for (const name of ["one", "two"])
+          await runAsTenant(doomed, () =>
+            storeBotSecret({
+              prisma: plain.prisma,
+              secretStore,
+              scope: doomed,
+              destination: { ...login, name } as BotSecretDestination,
+              plaintext: value(`fake-${name}-password`),
+            }),
+          );
+        const migrate = (
+          prisma: typeof sealing.prisma,
+          mode: "encrypt" | "decrypt" | "reencrypt",
+        ) =>
+          runAsSystem("vault values migration", () =>
+            migrateVaultValues(prisma, secretStore, { ...context, ...doomed }, { mode }),
+          );
+        if (state !== "first run") await migrate(sealing.prisma, "encrypt");
+        if (state === "rotated")
+          await runAsSystem("vault rotation", () =>
+            contentEncryptionOf(sealing.prisma)!.ring.rotate(vault),
+          );
+        // The member is deleted once their items are listed, before the first is rewritten.
+        let deleted = false;
+        const listing = new Proxy(command.prisma, {
+          get(target, key) {
+            const value = Reflect.get(target, key);
+            if (key !== "vaultCredential")
+              return typeof value === "function" ? value.bind(target) : value;
+            return new Proxy(target.vaultCredential, {
+              get(delegate, method) {
+                const fn = Reflect.get(delegate, method);
+                if (method !== "findMany") return typeof fn === "function" ? fn.bind(delegate) : fn;
+                return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                  const batch = (await Reflect.apply(fn, delegate, [args])) as { userId: string }[];
+                  if (!deleted && batch.some((row) => row.userId === doomed.userId)) {
+                    deleted = true;
+                    await remove();
+                  }
+                  return batch;
+                };
+              },
+            });
+          },
+        });
+        const items = (
+          await system.vaultCredential.findMany({ where: { userId: doomed.userId } })
+        ).map((row) => row.id);
+        // Other suites may share the database, so only this member's items are checked.
+        const reported: string[] = [];
+        await runAsSystem("vault values migration", () =>
+          migrateVaultValues(
+            listing,
+            secretStore,
+            { ...context, ...doomed },
+            {
+              mode,
+              report: (row, status, reason) => {
+                if (items.includes(row.id)) reported.push(`${status}${reason ? ` ${reason}` : ""}`);
+              },
+            },
+          ),
+        );
+        expect(reported).toEqual(["concurrent", "concurrent"]);
+        expect(await system.vaultCredential.count({ where: { userId: doomed.userId } })).toBe(0);
+        expect(await system.spaceKey.findMany({ where: { spaceId: vault } })).toEqual([]);
+      } finally {
+        await remove();
+        await command.prisma.$disconnect();
+        await command.pool.end();
+      }
+    },
+  );
+
   it("keeps rotating vault keys past a member deleted after they were listed", async () => {
     const addresses = [0, 1].map(() => `vault-rotate-gone-${randomUUID()}@rakazo.test`);
     const [doomed, kept] = await runAsSystem("vault rotation fixture", () =>

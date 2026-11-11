@@ -853,10 +853,34 @@ describe("moving vault values to the envelope keys", () => {
       db.deleteOwner("user:user-1");
       await db.prisma.vaultCredential.deleteMany({ where: { userId: "user-1" } });
     });
-    // Only the damaged item, which fails before it needs a key, is reported as failed.
-    expect(await db.migrate()).toMatchObject({ migrated: 0, concurrent: 2, failed: 1 });
-    expect([...db.reasons.keys()]).toEqual([broken]);
+    // The damaged item went with them too, so there is nothing left to report.
+    expect(await db.migrate()).toMatchObject({ migrated: 0, concurrent: 3, failed: 0 });
+    expect(db.reasons.has(broken)).toBe(false);
     expect(db.keys).toEqual([]);
+  });
+
+  it("counts items under their key deleted with their member during migrate as changed", async () => {
+    const db = encryptedDatabase();
+    await save(db, login, loginValue());
+    await save(db, card, JSON.stringify(fakeCard));
+    await db.migrate();
+    // Another run, in its own process: the keys it needs to read the items are shredded with
+    // the member before it reaches them.
+    db.ring.clear();
+    between(db, async () => {
+      db.deleteOwner("user:user-1");
+      await db.prisma.vaultCredential.deleteMany({ where: { userId: "user-1" } });
+    });
+    expect(await db.migrate()).toMatchObject({ verified: 0, concurrent: 2, failed: 0 });
+    expect(db.reasons.size).toBe(0);
+  });
+
+  it("still reports an unreadable item when it cannot tell whether the item is gone", async () => {
+    const db = await mixedVault();
+    const broken = row(db, "broken").id;
+    vi.spyOn(db.prisma.vaultCredential, "count").mockRejectedValue(new Error("connection lost"));
+    expect(await db.migrate()).toMatchObject({ migrated: 2, concurrent: 0, failed: 1 });
+    expect([...db.reasons.keys()]).toEqual([broken]);
   });
 
   it.each(["reencrypt", "rotate --reencrypt"])(
@@ -1001,6 +1025,12 @@ describe("moving vault values to the envelope keys", () => {
         db.deleteOwner(vault);
         await db.prisma.vaultCredential.deleteMany({ where: { userId: "user-1" } });
       },
+      // The command runs in its own process, which has no key cached.
+      "owner deleted mid-run, key not cached": async (db) => {
+        db.ring.clear();
+        db.deleteOwner(vault);
+        await db.prisma.vaultCredential.deleteMany({ where: { userId: "user-1" } });
+      },
       "saved concurrently": (db) => save(db, login, loginValue("fake-password-2")),
     };
 
@@ -1060,6 +1090,7 @@ describe("moving vault values to the envelope keys", () => {
       infisical: all("verified: unchanged"),
       unreadable: all("failed: unchanged"),
       "owner deleted mid-run": all("concurrent: deleted"),
+      "owner deleted mid-run, key not cached": all("concurrent: deleted"),
       "saved concurrently": {
         // Migrate still creates the vault's key; its next run moves the item.
         migrate: "concurrent: old format, the save, first key created",

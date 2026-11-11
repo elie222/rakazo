@@ -109,9 +109,9 @@ function failureReason(step: string, error: unknown) {
  * key, after which new saves in that vault use it too; `reencrypt` moves only items under an
  * older version of their vault's key to its newest, creating no key; `decrypt` writes them
  * back, before rolling back to a release that cannot read it. Each row is a compare-and-set on its
- * value and date, so a concurrent save wins; a row that cannot be read or verified stays as it
- * was and is reported with the reason, as is an item already under a vault key that does not
- * open. Values in an external store stay there. Safe to interrupt and rerun. Each vault's newest
+ * value and date, so a concurrent save wins, as does a deletion; a row that cannot be read or
+ * verified stays as it was and is reported with the reason, as is an item already under a vault
+ * key that does not open. Values in an external store stay there. Safe to interrupt and rerun. Each vault's newest
  * key comes from the database, not this process's cache, since another process may have rotated it.
  */
 export async function migrateVaultValues(
@@ -223,8 +223,17 @@ export async function migrateVaultValues(
         status = count === 1 ? "migrated" : "concurrent";
       } catch (error) {
         context.signal.throwIfAborted();
-        // Its member or Space was deleted meanwhile, and the item with it.
-        if (error instanceof VaultKeyOwnerGoneError) status = "concurrent";
+        // Its member or Space was deleted meanwhile, and the item with it: its vault's keys are
+        // shredded too, so a read of the item fails, which is no fault of the item. Whether the
+        // item is still there decides; when that cannot be read, the failure stands.
+        const gone =
+          error instanceof VaultKeyOwnerGoneError ||
+          (await prisma.vaultCredential.count({ where: { id: row.id } }).then(
+            (count) => count === 0,
+            () => false,
+          ));
+        context.signal.throwIfAborted();
+        if (gone) status = "concurrent";
         else {
           counts.failed++;
           options.report?.(row, "failed", failureReason(step, error));

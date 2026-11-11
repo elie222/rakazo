@@ -136,8 +136,14 @@ export async function migrateSecrets(
           /* Keep the write until its persistence outcome can be verified. */
         }
       }
-      counts.failed++;
-      options.report?.(row, "failed");
+      // A row deleted or replaced before it was read, as a vault item is when its member is
+      // deleted, which shreds the key that opens it, is no failure of the move. When that cannot
+      // be checked, the failure stands.
+      const stillStored =
+        written !== undefined || (await repository.referenced(row.ref).catch(() => true));
+      const status = stillStored ? "failed" : "concurrent";
+      counts[status]++;
+      options.report?.(row, status);
       if (context.signal.aborted) break;
     }
   }
