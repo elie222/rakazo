@@ -206,7 +206,7 @@ export const PRICING_COMPARISON = {
     { feature: "Integrations and MCP", cells: included(true) },
     {
       feature: "Bot computer",
-      hint: "A computer your bot can use to run code, edit files, and browse. Time only counts while it's on, and it sleeps when idle. Most tasks don't need one.",
+      hint: "A computer your bot can use to run code, edit files, and browse.",
       cells: [
         "Unlimited",
         ...TIERS.map(tierComputerCell),
