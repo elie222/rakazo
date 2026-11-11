@@ -111,8 +111,20 @@ it("ends an active call on the server before changing the password", async () =>
   type("Confirm password", "new-password");
   const button = container.querySelector<HTMLButtonElement>("button")!;
   expect(button.disabled).toBe(false);
+  // The hang-up is still in flight: the password must not change before it settles.
+  let hangUp!: () => void;
+  session.endCallBeforeSessionEnd.mockImplementationOnce(async () => {
+    session.order.push("threads/endCall");
+    await new Promise<void>((resolve) => {
+      hangUp = resolve;
+    });
+  });
   await act(async () => {
     button.click();
+  });
+  expect(session.changePassword).not.toHaveBeenCalled();
+  await act(async () => {
+    hangUp();
   });
   expect(session.order).toEqual(["threads/endCall", "change-password"]);
   expect(session.endCallBeforeSessionEnd).toHaveBeenCalledOnce();
