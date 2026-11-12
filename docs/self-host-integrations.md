@@ -159,6 +159,9 @@ bot, and the per-room listening settings belong to Slack team conversations only
 run `/setprivacy` on the bot and choose **Disable** (or make it a group admin), or the bot only
 receives group messages that mention it. Broadcast channel posts never start runs. For Lark,
 create a custom app with the Bot capability and subscribe it to `im.message.receive_v1`.
+Grant `im:message.reactions:write_only` so an incoming message gets a working reaction while its
+reply is pending. The reaction is removed after delivery, failure or cancellation, or after ten
+minutes if the run never settles.
 
 People link a chat app to their account from **Messaging** settings. `MESSAGING_OPEN_SIGNUP=true`
 instead gives unknown senders their own chat-only accounts, whose runs use the deployment model.

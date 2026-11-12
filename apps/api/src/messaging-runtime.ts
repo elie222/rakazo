@@ -347,7 +347,7 @@ export async function startMessagingRuntime({
       messagingStopped = true;
       clearMessagingRetryDelay?.();
       clearTeamChatRetryDelay?.();
-      receipts.stop();
+      await receipts.stop();
       pendingTeamChatInbound.reject(new Error("Team chat bridge stopped before startup"));
       // Cancel in-flight start() before awaiting the retry task so stop() cannot
       // sit on DB/reconcile work that bridge.start() is still running.

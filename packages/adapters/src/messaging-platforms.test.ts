@@ -384,7 +384,7 @@ describe("messagingPlatformsFromEnv", () => {
       receipt: null,
       files: true,
     });
-    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: "typing" });
     expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
   });
 });

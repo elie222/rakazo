@@ -592,9 +592,13 @@ export interface MessagingSurface {
   openDirectThread(provider: string, address: string, context: AdapterContext): Promise<string>;
   /**
    * Best-effort receipt for inbound message `handle`. Never gates delivery;
-   * no-ops on platforms without a receipt.
+   * no-ops on platforms without a receipt. A temporary receipt returns its cleanup.
    */
-  acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void>;
+  acknowledge(
+    threadId: string,
+    handle: string,
+    context: AdapterContext,
+  ): Promise<void | (() => Promise<void>)>;
   /**
    * Up to `limit` messages posted in a thread before the `before` handle,
    * oldest first, normalized like inbound events. Absent when no platform can.
