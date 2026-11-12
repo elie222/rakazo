@@ -72,6 +72,7 @@ const SIGN_IN_ROW_RETENTION_MS = 60 * 60 * 1000;
 const SIGN_IN_LEASE_MS = 30_000;
 export const SIGN_IN_LEASE_RENEW_MS = 10_000;
 const SAVE_WAIT_POLL_MS = 250;
+const OUTCOME_WRITE_ATTEMPTS = 3;
 const SIGN_IN_NOT_FOUND = "Sign-in session not found. Start sign-in again.";
 const SIGN_IN_INTERRUPTED = "Sign-in was interrupted. Start sign-in again.";
 const SIGN_IN_SAVE_FAILED = "Could not save the sign-in. Try again.";
@@ -1056,15 +1057,23 @@ export class PiOAuthLogins<T = unknown> {
   ): Promise<void> {
     const handoff = this.handoff;
     if (!handoff || !session.stored) return;
-    try {
-      await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
-        handoff.prisma.modelOAuthSession.updateMany({
-          where: { ...rowOf(session), ...(from ? { status: from } : {}) },
-          data: { ...outcome, leaseExpiresAt: null },
-        }),
-      );
-    } catch (error) {
-      getLogger().error("model sign-in outcome not stored", error);
+    // A credential already saved must not read as interrupted over one failed write.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+          handoff.prisma.modelOAuthSession.updateMany({
+            where: { ...rowOf(session), ...(from ? { status: from } : {}) },
+            data: { ...outcome, leaseExpiresAt: null },
+          }),
+        );
+        return;
+      } catch (error) {
+        if (attempt >= OUTCOME_WRITE_ATTEMPTS) {
+          getLogger().error("model sign-in outcome not stored", error);
+          return;
+        }
+        await sleep(SAVE_WAIT_POLL_MS * attempt);
+      }
     }
   }
 
@@ -1259,14 +1268,13 @@ export class PiOAuthLogins<T = unknown> {
           await handoff.prisma.modelOAuthSession.deleteMany({
             where: { ...where, status: { not: "saving" } },
           });
-          // A save under way on another process lands before the caller removes the connection.
-          const deadline = Date.now() + SIGN_IN_LEASE_MS;
+          // A save under way on another process lands before the caller removes the
+          // connection. Its process renews the lease until the save settles, or stops.
           while (
-            Date.now() < deadline &&
-            (await handoff.prisma.modelOAuthSession.findFirst({
+            await handoff.prisma.modelOAuthSession.findFirst({
               where: { ...where, status: "saving", leaseExpiresAt: { gt: new Date() } },
               select: { id: true },
-            }))
+            })
           ) {
             await sleep(SAVE_WAIT_POLL_MS);
           }
@@ -1313,17 +1321,25 @@ export class PiOAuthLogins<T = unknown> {
   async abortAll(): Promise<void> {
     const sessions = [...this.pending.values()];
     const interrupted = sessions.filter((session) => session.lease && session.state === "pending");
+    // A save under way finishes and records its outcome before the database closes.
+    const saving = sessions.flatMap((session) =>
+      session.state === "finalizing" && session.finishing ? [session.finishing] : [],
+    );
+    for (const session of sessions) {
+      if (session.state === "finalizing") continue;
+      this.detachSession(session);
+      session.abort.abort();
+    }
+    await Promise.all([
+      ...saving,
+      ...interrupted.map((session) =>
+        this.writeOutcome(session, { status: "failed", error: SIGN_IN_INTERRUPTED }, "pending"),
+      ),
+    ]);
     for (const session of sessions) {
       this.detachSession(session);
       session.abort.abort();
     }
-    this.pending.clear();
-    this.activeByScope.clear();
-    await Promise.all(
-      interrupted.map((session) =>
-        this.writeOutcome(session, { status: "failed", error: SIGN_IN_INTERRUPTED }, "pending"),
-      ),
-    );
   }
 }
 

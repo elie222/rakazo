@@ -74,8 +74,10 @@ export function modelsRoutes(ctx: RouterContext) {
     (actor: Actor): PiOAuthPersist<ModelCredential> =>
     async (login) => {
       try {
+        // Read before the save: it only counts a member's first connection.
+        const record = await firstModelConnectAnalytics(deps, actor, "oauth");
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
-        return await persistModelCredential(
+        const saved = await persistModelCredential(
           deps,
           actor,
           {
@@ -95,6 +97,8 @@ export function modelsRoutes(ctx: RouterContext) {
           },
           codexCatalog,
         );
+        record(login.provider, { name: "model_connected" });
+        return saved;
       } catch (error) {
         // The member is told why a save was refused; anything else is reported generically.
         if (error instanceof ORPCError) throw new ModelSignInError(error.message);
@@ -393,12 +397,12 @@ export function modelsRoutes(ctx: RouterContext) {
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
-        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
         if (result.status === "error") {
+          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
-        record(result.provider, { name: "model_connected" });
+        // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {

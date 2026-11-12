@@ -2739,6 +2739,30 @@ describe("PiOAuthLogins across API processes", () => {
     expect(save.saved).toEqual(["access-token"]);
   });
 
+  it("lets a save under way finish before shutdown completes", async () => {
+    const { rows, store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    const save = gatedPersist();
+    const started = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: save.persist,
+    });
+    a.answer();
+    await save.started;
+
+    let shutDown = false;
+    const shuttingDown = a.logins.abortAll().then(() => {
+      shutDown = true;
+    });
+    await flushMicrotasks();
+    expect(shutDown).toBe(false);
+    expect(save.signals[0]?.aborted).toBe(false);
+    save.release();
+    await shuttingDown;
+    expect(rows.get(started.loginId)?.status).toBe("connected");
+  });
+
   it("leaves another connection's sign-in running when one connection is disconnected", async () => {
     const { rows, store } = handoffStore();
     const a = deviceCodeProcess(store);
