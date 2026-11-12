@@ -65,14 +65,16 @@ export async function sandboxAllowancePlan(
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
   const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));
-  const periodStart = live ? billing?.currentPeriodStartsAt : null;
-  const since =
-    periodStart && periodStart <= now
-      ? // A yearly plan's allowance still renews monthly, on the day its period began.
-        billing?.byokInterval === "year"
-        ? latestMonthlyAnniversary(periodStart, now)
-        : periodStart
-      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const periodStart =
+    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
+      ? billing.currentPeriodStartsAt
+      : null;
+  const since = periodStart
+    ? // A yearly plan's allowance still renews monthly, on the day its period began.
+      billing?.byokInterval === "year"
+      ? latestMonthlyAnniversary(periodStart, now)
+      : periodStart
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const tier = byokTierOf(organization?.modelCredits?.mode, billing);
   const creditShare = (cents: number) =>
     Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
@@ -104,7 +106,7 @@ export async function sandboxAllowancePlan(
     periodStart && billing?.byokInterval === "year"
       ? monthlyAnniversary(periodStart, monthsBetween(periodStart, since) + 1)
       : null;
-  const reset = nextAnniversary ?? periodEnd ?? nextMonth;
+  const reset = periodStart ? (nextAnniversary ?? periodEnd ?? nextMonth) : nextMonth;
   const resetsAt =
     limitCents <= 0 ||
     (!tier && !live) ||
