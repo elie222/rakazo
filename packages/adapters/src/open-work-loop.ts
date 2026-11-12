@@ -1,4 +1,4 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
+import { runContinueJob, type JobPublisher } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, OPEN_WORK_LOOP_TRIGGER, isBackgroundRunTrigger } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -81,7 +81,7 @@ type ScheduleInput = {
 
 export type OpenWorkLoopDeps = {
   prisma: PrismaClient;
-  jobs: { enqueue: (job: { name: string; payload: { runId: string } }) => Promise<unknown> };
+  jobs: Pick<JobPublisher, "enqueue">;
 };
 
 /**
