@@ -44,7 +44,7 @@ describe("listSpaceGroupsForSpaces", () => {
           replyQuote: null,
           runId: null,
           clientNonce: null,
-          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          createdAt: new Date("2026-08-22T10:00:00.000Z"),
         },
       ]),
     } as unknown as PrismaClient);
@@ -69,13 +69,59 @@ describe("listSpaceGroupsForSpaces", () => {
         preview: "Escalation pending",
         unread: true,
         snoozedUntil: "2026-08-21T09:00:00.000Z",
-        updatedAt: "2026-08-20T00:00:00.000Z",
+        // The newest message's time, not the group row's.
+        updatedAt: "2026-08-22T10:00:00.000Z",
       },
     ]);
     const query = findMany.mock.calls[0]![0];
     expect(query.select).not.toHaveProperty("userId");
     expect(query.select).not.toHaveProperty("archivedAt");
     expect(query.select).not.toHaveProperty("createdAt");
+  });
+
+  it("orders groups by their newest message, not by the group row", async () => {
+    const group = (id: string, day: string) => ({
+      id,
+      spaceId: "workspace-2",
+      name: id,
+      pinned: false,
+      sectionId: null,
+      updatedAt: new Date(day),
+      thread: { id: `thread-${id}`, reads: [] },
+      members: [
+        { bot: { id: "bot-1", name: "Triage", color: "#111", runs: [] } },
+        { bot: { id: "bot-2", name: "Responder", color: "#222", runs: [] } },
+      ],
+    });
+    const message = (id: string, at: string) => ({
+      id: `message-${id}`,
+      threadId: `thread-${id}`,
+      seq: 1,
+      role: "user",
+      blocks: [{ kind: "text", text: id }],
+      botId: null,
+      replyToMessageId: null,
+      replyQuote: null,
+      runId: null,
+      clientNonce: null,
+      createdAt: new Date(at),
+    });
+    // The query returns "renamed" first because its row moved last, but "replied" has the newer message.
+    const repos = createGroupRepos({
+      chatGroup: {
+        findMany: vi.fn(async () => [
+          group("renamed", "2026-08-25T00:00:00.000Z"),
+          group("replied", "2026-08-01T00:00:00.000Z"),
+        ]),
+      },
+      $queryRaw: vi.fn(async () => [
+        message("renamed", "2026-08-02T00:00:00.000Z"),
+        message("replied", "2026-08-20T00:00:00.000Z"),
+      ]),
+    } as unknown as PrismaClient);
+
+    const listed = await repos.listSpaceGroupsForSpaces(["workspace-2"], "user-1");
+    expect(listed.map((item) => item.id)).toEqual(["replied", "renamed"]);
   });
 });
 

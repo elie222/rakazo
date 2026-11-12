@@ -31,7 +31,7 @@ type GroupRecord = {
   thread: {
     id: string;
     reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
-    messages: Array<{ blocks: unknown }>;
+    messages: Array<{ blocks: unknown; createdAt: Date }>;
   } | null;
   members: Array<{
     bot: {
@@ -50,7 +50,7 @@ type SpaceGroupRecord = Pick<
 > & {
   thread: {
     reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
-    messages: Array<{ blocks: unknown }>;
+    messages: Array<{ blocks: unknown; createdAt: Date }>;
   } | null;
 };
 
@@ -64,6 +64,7 @@ function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
   }));
 }
 
+// Roster rows sort and show the newest message's time; the group row also moves on renames and pins.
 function mapGroup(group: GroupRecord): Group {
   if (!group.thread) throw new IsolationError("Group is missing its thread");
   const preview = previewFromBlocks(group.thread.messages[0]?.blocks);
@@ -79,9 +80,16 @@ function mapGroup(group: GroupRecord): Group {
     preview,
     unread: unreadFor(group.thread),
     snoozedUntil: snoozedUntilFor(group.thread),
-    updatedAt: group.updatedAt.toISOString(),
+    updatedAt: (group.thread.messages[0]?.createdAt ?? group.updatedAt).toISOString(),
     createdAt: group.createdAt.toISOString(),
   };
+}
+
+// The query orders by the group row; re-sort by the roster time the mappers expose so the two agree.
+function byRosterTime<T extends { pinned: boolean; updatedAt: string }>(groups: T[]): T[] {
+  return groups.sort(
+    (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
 
 function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
@@ -96,7 +104,7 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
     preview: previewFromBlocks(group.thread.messages[0]?.blocks),
     unread: unreadFor(group.thread),
     snoozedUntil: snoozedUntilFor(group.thread),
-    updatedAt: group.updatedAt.toISOString(),
+    updatedAt: (group.thread.messages[0]?.createdAt ?? group.updatedAt).toISOString(),
   };
 }
 
@@ -332,9 +340,11 @@ export function createGroupRepos(prisma: PrismaClient) {
       }),
       1,
     );
-    return groups
-      .filter((group) => hasMinimumActiveMembers(group.members))
-      .map((group) => mapSpaceGroup(group));
+    return byRosterTime(
+      groups
+        .filter((group) => hasMinimumActiveMembers(group.members))
+        .map((group) => mapSpaceGroup(group)),
+    );
   }
 
   /**
@@ -357,13 +367,15 @@ export function createGroupRepos(prisma: PrismaClient) {
       }),
       1,
     );
-    return groups
-      .filter(
-        (group) =>
-          group.archivedAt !== null ||
-          !hasMinimumActiveMembers(group.members.filter((member) => !member.bot.archivedAt)),
-      )
-      .map((group) => mapGroup(group as GroupRecord));
+    return byRosterTime(
+      groups
+        .filter(
+          (group) =>
+            group.archivedAt !== null ||
+            !hasMinimumActiveMembers(group.members.filter((member) => !member.bot.archivedAt)),
+        )
+        .map((group) => mapGroup(group as GroupRecord)),
+    );
   }
 
   return {
@@ -381,9 +393,11 @@ export function createGroupRepos(prisma: PrismaClient) {
         }),
         1,
       );
-      return groups
-        .filter((group) => hasMinimumActiveMembers(group.members))
-        .map((group) => mapGroup(group as GroupRecord));
+      return byRosterTime(
+        groups
+          .filter((group) => hasMinimumActiveMembers(group.members))
+          .map((group) => mapGroup(group as GroupRecord)),
+      );
     },
 
     listSpaceGroupsForSpaces,

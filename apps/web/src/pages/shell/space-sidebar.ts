@@ -7,6 +7,7 @@ type SidebarChat = {
   pinned: boolean;
   sectionId: string | null;
   snoozedUntil?: string | null;
+  updatedAt: string;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -44,6 +45,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
   query: string,
   labels?: { pinned: string; unassigned: string },
   now = Date.now(),
+  order: "sections" | "activity" = "sections",
 ) {
   const needle = query.toLowerCase();
   const showSpaceNames = spaces.length > 1;
@@ -52,27 +54,40 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     needle
       ? `${chat.name} ${chat.preview ?? ""}`.toLowerCase().includes(needle)
       : !chatSnoozed(chat, now);
+  const byActivity = order === "activity";
   return spaces.flatMap((space) => {
+    // Activity order hides sections and lists every chat by its last message, newest first.
+    const botSections = byActivity ? [] : space.botSections;
     const visibleBots = space.bots.filter(listed);
     const visibleGroups = space.groups.filter(listed);
+    const items = [
+      ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
+      ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
+    ];
+    // Pinned chats keep their hand-picked order; only the rest follow activity.
+    const ordered = byActivity
+      ? [
+          ...items.filter((item) => item.chat.pinned),
+          ...items
+            .filter((item) => !item.chat.pinned)
+            .sort((a, b) => b.chat.updatedAt.localeCompare(a.chat.updatedAt)),
+        ]
+      : items;
     const grouped = groupBotsForSidebar(
-      [
-        ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
-        ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
-      ].map((item) => ({
+      ordered.map((item) => ({
         ...item,
         id: item.chat.id,
         pinned: item.chat.pinned,
-        sectionId: item.chat.sectionId,
+        sectionId: byActivity ? null : item.chat.sectionId,
         woke: chatWoke(item.chat, now),
       })),
-      space.botSections,
+      botSections,
       { labels },
     );
     // Keep destinations visible after their last bot is dragged out. Search
     // still hides empty lists, and spaces without sections keep their old layout.
-    if (!needle && space.botSections.length > 0 && grouped.length > 0) {
-      for (const section of space.botSections) {
+    if (!needle && botSections.length > 0 && grouped.length > 0) {
+      for (const section of botSections) {
         const key = `section:${section.id}`;
         if (!grouped.some((group) => group.key === key)) {
           grouped.push({ key, title: section.name, bots: [] });
@@ -83,15 +98,17 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       }
       const order = [
         "pinned",
-        ...space.botSections.map((section) => `section:${section.id}`),
+        ...botSections.map((section) => `section:${section.id}`),
         "unassigned",
       ];
       grouped.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     }
+    // The activity list gets its own key, so a collapsed Unassigned in Sections order never hides it.
+    const groupKey = (key: string) => (byActivity && key === "unassigned" ? "recent" : key);
     const sections = grouped.map((group, index) => ({
       ...group,
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
-      key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
+      key: showSpaceNames ? `space:${space.id}:${groupKey(group.key)}` : groupKey(group.key),
       // A header holding the space menu is never blank, even for the only space.
       title: showSpaceNames ? space.name : index === 0 && !group.title ? space.name : group.title,
       subtitle: showSpaceNames && group.title ? group.title : undefined,
@@ -109,7 +126,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     // renamed or deleted after their last chat leaves.
     const emptySections = needle
       ? []
-      : space.botSections.map((section) => ({
+      : botSections.map((section) => ({
           key: showSpaceNames ? `space:${space.id}:section:${section.id}` : `section:${section.id}`,
           title: showSpaceNames ? space.name : section.name,
           subtitle: showSpaceNames ? section.name : undefined,
