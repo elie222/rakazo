@@ -98,6 +98,48 @@ dbTests("operator bot email policy command", { timeout: 120_000 }, () => {
     }
   });
 
+  it("refuses a grant when the selected account changes email before its lock is acquired", async () => {
+    const prisma = asSystem(db.prisma);
+    const userId = randomUUID();
+    const email = `${userId}@example.test`;
+    await prisma.user.create({ data: { id: userId, name: "Fixture", email } });
+    let pending: Promise<{ error?: { stderr: string }; stdout?: string }> | undefined;
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "user" WHERE id=${userId} FOR UPDATE`;
+          // The first lookup can read the old email, but the command must then wait on our lock.
+          pending = command("allow", email, "reports@example.test").catch((error) => ({ error }));
+          await expect
+            .poll(
+              async () => {
+                const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+            SELECT count(*) AS waiting FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query LIKE 'SELECT id FROM "user"%FOR UPDATE%'`;
+                return Number(row!.waiting);
+              },
+              { timeout: 30_000 },
+            )
+            .toBeGreaterThan(0);
+          await tx.user.update({ where: { id: userId }, data: { email: `changed-${email}` } });
+        },
+        { timeout: 40_000 },
+      );
+      const result = await pending!;
+      expect(result.error?.stderr).toContain("Account email changed while waiting");
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).botEmailAllowedRecipients,
+      ).toEqual([]);
+      expect(
+        await prisma.securityEvent.count({ where: { userId, type: "bot_email.policy.changed" } }),
+      ).toBe(0);
+    } finally {
+      await pending;
+      await prisma.user.delete({ where: { id: userId } });
+    }
+  });
+
   it("rejects invalid policy arguments", async () => {
     for (const args of [
       ["limit", "fixture@example.test", "-1"],

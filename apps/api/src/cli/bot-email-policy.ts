@@ -41,7 +41,12 @@ try {
         botEmailRepliesEnabled: true,
         botEmailAllowedRecipients: true,
       } as const;
-      const previous = await tx.user.findUniqueOrThrow({ where: { id: userId }, select });
+      const previous = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { ...select, email: true },
+      });
+      if (previous.email.toLowerCase() !== address.trim().toLowerCase())
+        throw new Error("Account email changed while waiting; no policy change was applied");
       const policy =
         action === "status"
           ? previous
