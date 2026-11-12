@@ -403,49 +403,49 @@ describe("T3 Code environments connected as MCP servers", () => {
     ).toHaveLength(mutations);
   });
 
-  it.each(["bot-1", "bot-2"])(
-    "refuses a cross-bot follow-up when only %s retains permission",
-    async (allowedBot) => {
-      const row = server("t3", {
-        allBots: false,
-        assignments: [{ botId: allowedBot, allowAllTools: true, allowedTools: [] }],
-      });
-      const f = fakes([row]);
-      const updateMany = vi.fn();
-      const prisma = {
-        ...f.prisma,
-        cloudAgent: {
-          findFirst: vi
-            .fn()
-            .mockResolvedValue({
-              id: "agent",
-              providerKey: "mcp:t3",
-              botId: "bot-1",
-              status: "finished",
-              remoteId: "remote",
-            }),
-          updateMany,
-        },
-      } as unknown as PrismaClient;
-      const enqueue = vi.fn();
-      const result = await executeCloudAgentTool(
-        {
-          prisma,
-          jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
-          events: { notify: vi.fn() },
-          cloudAgent: { key: "deployment", spaceId: actor.spaceId } as CloudAgentConnection,
-          userCloudAgents: new T3CodeConnections(prisma, f.oauth, f.transport),
-        },
-        { ...ctx, botId: "bot-2" },
-        { id: "run", threadId: "chat" },
-        "cloud_agent_reply",
-        { id: "agent", prompt: "Follow up" },
-      );
-      expect(result).toEqual({ error: "Unknown cloud agent." });
-      expect(updateMany).not.toHaveBeenCalled();
-      expect(enqueue).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    { allowedBots: [] },
+    { allowedBots: ["bot-1"] },
+    { allowedBots: ["bot-2"] },
+    { allowedBots: ["bot-1", "bot-2"] },
+  ])("refuses cross-bot follow-ups with permissions $allowedBots", async ({ allowedBots }) => {
+    const row = server("t3", {
+      allBots: false,
+      assignments: allowedBots.map((botId) => ({ botId, allowAllTools: true, allowedTools: [] })),
+    });
+    const f = fakes([row]);
+    const updateMany = vi.fn();
+    const prisma = {
+      ...f.prisma,
+      cloudAgent: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "agent",
+          providerKey: "mcp:t3",
+          botId: "bot-1",
+          status: "finished",
+          remoteId: "remote",
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn();
+    const result = await executeCloudAgentTool(
+      {
+        prisma,
+        jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
+        events: { notify: vi.fn() },
+        cloudAgent: { key: "deployment", spaceId: actor.spaceId } as CloudAgentConnection,
+        userCloudAgents: new T3CodeConnections(prisma, f.oauth, f.transport),
+      },
+      { ...ctx, botId: "bot-2" },
+      { id: "run", threadId: "chat" },
+      "cloud_agent_reply",
+      { id: "agent", prompt: "Follow up" },
+    );
+    expect(result).toEqual({ error: "Unknown cloud agent." });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 
   it("drops a rejected token so the server asks for a reconnect", async () => {
     const emulator = new T3McpEmulator();

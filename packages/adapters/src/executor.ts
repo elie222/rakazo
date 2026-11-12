@@ -1278,7 +1278,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 },
                 select: { id: true },
               })
-              .catch(() => null)),
+              .catch((error: unknown) => {
+                getLogger().warn("cloud_agent.cleanup_lookup_failed", { error });
+                return null;
+              })),
         );
         const builtins = [
           ...selectBuiltinToolsForRun({

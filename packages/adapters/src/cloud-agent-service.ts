@@ -164,15 +164,18 @@ export async function executeCloudAgentTool(
     if (!owned) return { error: "Unknown cloud agent." };
     agent = owned;
     if (name === "cloud_agent_reply") {
-      if (
-        agent.providerKey.startsWith(USER_CLOUD_AGENT_KEY_PREFIX) &&
-        !(await deps.userCloudAgents?.forKey(agent.providerKey, {
-          spaceId: context.spaceId,
-          userId: context.userId,
-          botIds: [context.botId, agent.botId],
-        }))
-      )
-        return { error: "Unknown cloud agent." };
+      if (agent.providerKey.startsWith(USER_CLOUD_AGENT_KEY_PREFIX)) {
+        // A follow-up stays with the bot whose identity the worker will reauthorize.
+        if (
+          agent.botId !== context.botId ||
+          !(await deps.userCloudAgents?.forKey(agent.providerKey, {
+            spaceId: context.spaceId,
+            userId: context.userId,
+            botIds: [context.botId],
+          }))
+        )
+          return { error: "Unknown cloud agent." };
+      }
 
       if (
         agent.status === "running" ||
