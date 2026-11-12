@@ -16,8 +16,11 @@ export function reserveBotEmailSend(
   const since = new Date(now.getTime() - DAY_MS);
   return runAsSystem(REASON, () =>
     prisma.$transaction(async (tx) => {
+      // Previous-release workers use this lock; keep coordinating during rolling deploys.
       await tx.$queryRaw`
-        SELECT id FROM "user" WHERE id=${send.userId} FOR UPDATE`;
+        SELECT pg_advisory_xact_lock(hashtextextended(${`bot-email-send:${send.userId}`}, 0))::text AS "lock"`;
+      await tx.$queryRaw`
+        SELECT id FROM "user" WHERE id=${send.userId} FOR NO KEY UPDATE`;
       const owner = await tx.user.findUnique({
         where: { id: send.userId },
         select: {

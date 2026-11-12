@@ -116,7 +116,7 @@ dbTests("operator bot email policy command", { timeout: 120_000 }, () => {
                 const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
             SELECT count(*) AS waiting FROM pg_stat_activity
             WHERE datname = current_database() AND wait_event_type = 'Lock'
-              AND query LIKE 'SELECT id FROM "user"%FOR UPDATE%'`;
+              AND query LIKE 'SELECT id FROM "user"%FOR NO KEY UPDATE%'`;
                 return Number(row!.waiting);
               },
               { timeout: 30_000 },

@@ -148,6 +148,8 @@ resets usage. Reservations from before recipient accounting, including overlappi
 workers, count as ten deliveries until they leave the rolling window because their recipient
 counts are unknown. An account must have a verified email and be active. By default bots can
 send only to that verified owner address, including scheduled reports.
+When upgrading, drain previous-release workers before enabling bot sending; they still enforce
+their previous policy until they finish.
 
 An operator can enable replies to authenticated incoming senders and raise the allowance using
 the API container's CLI:
@@ -165,8 +167,10 @@ node dist/cli/bot-email-policy.js limit owner@example.test 0
 Zero pauses all bot sending. Changes are recorded in the security audit log, including whether
 anything changed and the canonical recipient for `allow` and `deny`. These recipient identifiers
 remain in the protected database audit and follow its retention policy. No user or bot tool
-can raise the allowance or enable external replies. Reply access permits only the authenticated
-From address of an incoming message received in the last 30 days, identified by `inReplyTo`.
+can raise the allowance or enable external replies. This is an account-wide operator policy;
+changes are not copied into organization audit logs, where unrelated organization admins could
+read them. Reply access permits only the authenticated From address of an incoming message
+received in the last 30 days, identified by `inReplyTo`.
 It does not permit arbitrary recipients, reply-all, or recipients from a Reply-To header.
 Use `allow` only for recipients whose consent has been reviewed, such as a report destination
 that differs from the account login. `deny` removes that exception.

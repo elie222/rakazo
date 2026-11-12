@@ -35,7 +35,7 @@ try {
       });
       if (matches.length !== 1) throw new Error("No single account has that email");
       const userId = matches[0]!.id;
-      await tx.$queryRaw`SELECT id FROM "user" WHERE id=${userId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "user" WHERE id=${userId} FOR NO KEY UPDATE`;
       const select = {
         botEmailDailyLimit: true,
         botEmailRepliesEnabled: true,

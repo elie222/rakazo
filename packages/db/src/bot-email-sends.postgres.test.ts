@@ -96,6 +96,34 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
     expect(await reserve("new-bot", "new-space")).toBe("limit");
   });
 
+  it("waits for a previous-release reservation before checking the allowance", async () => {
+    let pending: ReturnType<typeof reserve> | undefined;
+    try {
+      await asSystem(prisma).$transaction(
+        async (tx) => {
+          await tx.$queryRaw`
+            SELECT pg_advisory_xact_lock(hashtextextended(${`bot-email-send:${userId}`}, 0))::text AS "lock"`;
+          pending = reserve("new-worker", "space");
+          await expect
+            .poll(async () => {
+              const [row] = await asSystem(prisma).$queryRaw<{ waiting: bigint }[]>`
+                SELECT count(*) AS waiting FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock'
+                  AND query LIKE '%SELECT pg_advisory_xact_lock(hashtextextended(%'`;
+              return Number(row?.waiting ?? 0);
+            })
+            .toBeGreaterThan(0);
+          // This is the previous writer: no recipientCount field in its insert.
+          await tx.botEmailSend.create({ data: { userId, botId: "old-worker" } });
+        },
+        { timeout: 15_000 },
+      );
+      expect(await pending).toBe("limit");
+    } finally {
+      await pending;
+    }
+  });
+
   it("charges every recipient and refuses a send that would exceed the allowance", async () => {
     await asSystem(prisma).user.update({
       where: { id: userId },
