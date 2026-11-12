@@ -116,6 +116,24 @@ describe("managedAppFor", () => {
     ).toEqual({ name: "ЗАМЕТКИ", slug: "notes" });
   });
 
+  it("matches canonically equivalent accented names without dropping the accent", () => {
+    const apps = [{ name: "ά", slug: "accented" }];
+    expect(managedAppFor(entry({ name: "plugin", displayName: "α\u0301" }), apps)).toBe(apps[0]);
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "ά" }), [
+        { name: "α\u0301", slug: "accented" },
+      ]),
+    ).toEqual({ name: "α\u0301", slug: "accented" });
+    expect(managedAppFor(entry({ name: "plugin", displayName: "α" }), apps)).toBeUndefined();
+  });
+
+  it("matches Greek sigma case variants", () => {
+    const apps = [{ name: "ΟΣ", slug: "greek" }];
+    for (const displayName of ["Οσ", "οσ", "ος"]) {
+      expect(managedAppFor(entry({ name: "plugin", displayName }), apps)).toBe(apps[0]);
+    }
+  });
+
   it("does not match empty, punctuation-only or emoji-only keys", () => {
     const apps = [{ name: "!!!", slug: "calendar" }];
     for (const displayName of ["", "---", "📒"]) {
