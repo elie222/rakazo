@@ -11,7 +11,7 @@ export type RosterChange = { spaceIds?: readonly string[]; userIds?: readonly st
 export type RosterScope = { spaceIds: readonly string[]; threadIds: readonly string[] };
 
 /** A streaming reply changes its chat often; the sidebar refetches at most this often. */
-export const ROSTER_SIGNAL_SPACING_MS = 3_000;
+export const ROSTER_SIGNAL_SPACING_MS = 10_000;
 const IDLE_WAIT_MS = 60_000;
 
 const spaceTopic = (spaceId: string) => `roster-space:${spaceId}`;
