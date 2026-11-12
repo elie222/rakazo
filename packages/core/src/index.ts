@@ -6,6 +6,7 @@ export * from "./ai-consent.js";
 export * from "./answerable-ask.js";
 export * from "./app-connect.js";
 export * from "./artifact-sandbox.js";
+export * from "./ask-replies.js";
 export * from "./async.js";
 export * from "./attachments.js";
 export * from "./avatar-clips.js";
