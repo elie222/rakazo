@@ -8,6 +8,16 @@ type Message = {
   blocks: readonly MessageBlock[];
 };
 
+/** A conversational question, separate from permission and protected-input requests. */
+export function isQuestionAskBlock(block: MessageBlock): boolean {
+  return (
+    block.kind === "ask" &&
+    !isSecretAskBlock(block) &&
+    !block.approvalEffectId &&
+    !block.instructionUpdate
+  );
+}
+
 /** Answers linked by the server to a user message currently visible in the transcript. */
 export function separateAskAnswers(
   messages: readonly Message[],
@@ -19,12 +29,10 @@ export function separateAskAnswers(
     for (const block of message.blocks) {
       if (
         block.kind !== "ask" ||
+        !isQuestionAskBlock(block) ||
         block.status !== "answered" ||
         !block.answerMessageId ||
         !block.answer ||
-        isSecretAskBlock(block) ||
-        block.approvalEffectId ||
-        block.instructionUpdate ||
         resolveAskChoice(block.answer, block.actions)
       )
         continue;

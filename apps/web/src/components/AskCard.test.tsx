@@ -975,3 +975,18 @@ it("draws a payment's order as a receipt in place of the text detail", async () 
   ).toEqual(["Total$20.00"]);
   expect(container.textContent).toContain("Read from the page, not checked");
 });
+
+it("leaves plain questions to the composer and dims the question after answering", async () => {
+  const block: AskBlock = { kind: "ask", text: "Which city?", status: "pending" };
+  await render(block);
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.querySelector("input")).toBeNull();
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(false);
+  await render({ ...block, status: "answered", answer: "Paris" }, undefined, undefined, true);
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(true);
+  expect(container.textContent).not.toContain("Paris");
+});

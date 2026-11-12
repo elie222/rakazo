@@ -191,6 +191,7 @@ it("keeps an answered question without repeating the user's reply or leaving ans
   expect(container.textContent).toContain("Help with my project");
   await render({ status: "answered", answer: "Help with my project" }, undefined, undefined, true);
   expect(container.textContent).toBe(longTitle);
+  expect(container.querySelector("span")?.dataset.color).toBe("muted");
   expect(container.querySelector("input")).toBeNull();
   expect(container.querySelector("button")).toBeNull();
 });
@@ -439,9 +440,10 @@ it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved"
   expect(state("Sent")?.dataset.color).toBe("success");
 });
 
-it("offers Dismiss only on secret cards", async () => {
+it("leaves ordinary question answers to the composer", async () => {
   await render({});
-  expect(buttons()).toEqual(["Send answer"]);
+  expect(buttons()).toEqual([]);
+  expect(container.querySelector("input")).toBeNull();
 });
 
 it("dismisses a login card directly without opening the sheet", async () => {

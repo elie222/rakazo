@@ -107,8 +107,23 @@ vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios }: { ios: string }) => <i data-symbol={ios} />,
 }));
 vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress?: () => void }) => (
-    <button type="button" onClick={onPress}>
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+    selected,
+  }: {
+    label: string;
+    onPress?: () => void;
+    disabled?: boolean;
+    selected?: boolean;
+  }) => (
+    <button
+      type="button"
+      onClick={onPress}
+      disabled={disabled}
+      aria-pressed={selected || undefined}
+    >
       {label}
     </button>
   ),
@@ -506,9 +521,13 @@ describe("thread cards", () => {
   });
 
   it("keeps a selected choice summary even when the user message repeats its id", () => {
-    expect(renderAsk({ status: "answered", answer: "yes" }, false, "yes")?.textContent).toContain(
-      "Answered: Yes",
-    );
+    const card = renderAsk({ status: "answered", answer: "yes" }, false, "yes");
+    expect(card?.textContent).toContain("Yes");
+    expect(card?.textContent).not.toContain("Answered:");
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(buttons[0]?.getAttribute("aria-pressed")).toBe("true");
   });
 
   // The iOS message menu hosts each bubble without a definite width, so a percentage width
