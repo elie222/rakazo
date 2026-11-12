@@ -46,6 +46,8 @@ import {
 } from "./mac-runtime.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
+/** Phases between `up-start` and a stop or failure, while the stack runs or restarts. */
+const ACTIVE_PHASES = new Set<string>(["starting", "waiting-healthy", "ready"]);
 export const NATIVE_PORTS_FILE = ".native-ports";
 /** The database VM, its network and its volume; computers are `rakazo-<uuid>` with a bot label. */
 export const DATABASE_CONTAINER = "rakazo-postgres";
@@ -363,9 +365,11 @@ export class NativeStackController extends StackLifecycle {
   }
 
   /** Processes stop with the app, so only ones this session still runs need the off-switch.
-   * From `up-start` on, Postgres may start before the next phase change rebuilds the menu. */
+   * From `up-start` until a stop or failure, the stack is up or coming back: Postgres may
+   * start before the next phase change, and a crashed service waits out its restart delay
+   * with no phase change at all. */
   managedStackRunning(): boolean {
-    return this.hasProcesses() || this.current.phase === "starting";
+    return this.hasProcesses() || ACTIVE_PHASES.has(this.current.phase);
   }
 
   /** Only processes this app started count: an orphan from a crashed launch is replaced. */

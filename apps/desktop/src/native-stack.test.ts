@@ -571,6 +571,21 @@ describe("NativeStackController", () => {
     await expect(controller.stop()).resolves.toMatchObject({ phase: "idle" });
   });
 
+  it("keeps the stop item while every service waits to restart", async () => {
+    const { deps, children } = harness();
+    const controller = new NativeStackController(deps);
+    await controller.start();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    for (const child of children) child.exit();
+    await vi.advanceTimersByTimeAsync(0);
+    // Nothing runs during the backoff, but the stack is still up and will come back.
+    expect(controller.hasProcesses()).toBe(false);
+    expect(controller.managedStackRunning()).toBe(true);
+    vi.useRealTimers();
+    await controller.stop();
+    expect(controller.managedStackRunning()).toBe(false);
+  });
+
   it("restarts a crashed service with growing delays once the stack is up", async () => {
     const { deps, byName } = harness();
     const controller = new NativeStackController(deps);
