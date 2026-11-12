@@ -1,8 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import { runWithIdentityConfirmation } from "@rakazo/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
 import { confirmIdentity, fetchAccountSecurity, requestIdentityCode } from "../lib/api-auth";
-import { useI18n } from "../lib/i18n";
 import type { IdentityMethod } from "../lib/identity-confirmation";
 import { confirmIdentityOnDevice, NEW_CODE } from "../lib/identity-confirmation";
 import { continueWithSso } from "../lib/sso";
@@ -23,11 +23,11 @@ type Field = {
  * once. iOS uses system prompts; render `identityDialog` for the Android field.
  */
 export function useIdentityConfirmation() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [field, setField] = useState<Field | null>(null);
   const [value, setValue] = useState("");
   const pending = useRef<Field | null>(null);
-  const title = t("Confirm it's you");
+  const title = t`Confirm it's you`;
 
   const ask = useCallback(
     (kind: Field["kind"], error: string | null) =>
@@ -37,11 +37,11 @@ export function useIdentityConfirmation() {
             title,
             error ?? undefined,
             [
-              { text: t("Cancel"), style: "cancel", onPress: () => resolve(null) },
+              { text: t`Cancel`, style: "cancel", onPress: () => resolve(null) },
               ...(kind === "code"
-                ? [{ text: t("Email me a code"), onPress: () => resolve(NEW_CODE) }]
+                ? [{ text: t`Email me a code`, onPress: () => resolve(NEW_CODE) }]
                 : []),
-              { text: t("Continue"), onPress: (entered?: string) => resolve(entered ?? null) },
+              { text: t`Continue`, onPress: (entered?: string) => resolve(entered ?? null) },
             ],
             kind === "password" ? "secure-text" : "plain-text",
             "",
@@ -66,10 +66,10 @@ export function useIdentityConfirmation() {
           undefined,
           [
             ...methods.map((method) => ({
-              text: method === "sso" ? t("Sign in again") : t("Email me a code"),
+              text: method === "sso" ? t`Sign in again` : t`Email me a code`,
               onPress: () => resolve(method),
             })),
-            { text: t("Cancel"), style: "cancel" as const, onPress: () => resolve(null) },
+            { text: t`Cancel`, style: "cancel" as const, onPress: () => resolve(null) },
           ],
           { cancelable: true, onDismiss: () => resolve(null) },
         );
@@ -87,7 +87,7 @@ export function useIdentityConfirmation() {
           reauthenticate: () => continueWithSso("reauthenticate"),
           choose,
           ask,
-          errorText: (error) => errorText(error, t("Could not continue")),
+          errorText: (error) => errorText(error, t`Could not continue`),
         }),
       ),
     [ask, choose, t],
@@ -105,8 +105,8 @@ export function useIdentityConfirmation() {
     identityDialog: field ? (
       <TextFieldDialog
         title={title}
-        label={field.kind === "password" ? t("Password") : t("Code")}
-        submitLabel={t("Continue")}
+        label={field.kind === "password" ? t`Password` : t`Code`}
+        submitLabel={t`Continue`}
         value={value}
         error={field.error}
         saving={false}
@@ -126,7 +126,7 @@ export function useIdentityConfirmation() {
         }
         extraAction={
           field.kind === "code"
-            ? { label: t("Email me a code"), onPress: () => settle(NEW_CODE) }
+            ? { label: t`Email me a code`, onPress: () => settle(NEW_CODE) }
             : undefined
         }
         onChange={setValue}

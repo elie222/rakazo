@@ -1,5 +1,5 @@
+import { BOT_COLORS } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { BOT_AVATAR_COLORS } from "./bot-avatar-colors.js";
 import { seededLogoAvatarColor } from "./logo-avatar-traits.js";
 
 describe("seeded logo colours", () => {
@@ -17,7 +17,7 @@ describe("seeded logo colours", () => {
     const colors = new Set(
       Array.from({ length: 1000 }, (_, index) => seededLogoAvatarColor(`bot-${index}`)),
     );
-    expect(colors).toEqual(new Set(BOT_AVATAR_COLORS));
+    expect(colors).toEqual(new Set(BOT_COLORS));
   });
 
   it("preserves a saved colour and leaves seeded motion parameters unchanged", () => {

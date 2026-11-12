@@ -9,7 +9,7 @@ test("changing language updates settings overflow without resizing", async ({ pa
   // Below the desktop breakpoint, where the section list scrolls sideways.
   await page.setViewportSize({ width: 640, height: 700 });
   const nav = settings.getByTestId("settings-nav");
-  const next = settings.getByRole("button", { name: "Next settings sections" });
+  const next = settings.getByRole("button", { name: "Nächste Einstellungsbereiche" });
   const overflow = () => nav.evaluate((node) => node.scrollWidth - node.clientWidth);
   const english = await overflow();
 
@@ -169,6 +169,10 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
+  const voice = settings.getByTestId("voice-settings");
+  await voice.getByLabel("Provider", { exact: true }).selectOption("xai");
+  await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);

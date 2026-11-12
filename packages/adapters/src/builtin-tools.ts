@@ -11,6 +11,7 @@ import {
   FLEET_TOOL_NAMES,
   GenerateSecretInput,
   HISTORY_QUERIES_MAX_BYTES,
+  HISTORY_SEARCH_KINDS,
   LOGIN_FIELD_LIMIT,
   PAID_REQUEST_METHODS,
   PURCHASE_CARD_FIELDS,
@@ -27,6 +28,7 @@ import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 import { SCHEDULE_TIMING_FIELDS } from "./schedule-tools.js";
+import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
@@ -158,18 +160,19 @@ const scheduleTimingSpecs = {
   watch: {
     type: "object",
     description:
-      'Run only when something changes, checked without a model every everyMinutes (5 to 1440, default 15); send no cron, every or startAt with it. kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+      'Run when something changes; quiet checks use no model. everyMinutes: 5–1440 (default 15). Do not combine watch with cron/every/startAt. files: computer paths. command: shell command in your folder, repeated without per-run approval; compare its output. tool: read-only connected tool + args. http: public HTTPS url, GET only; no headers, auth, body or redirects. Prefer tool/http for network checks: no computer; files/command wake it. Watch one named resource, not a whole account. For JSON lists, track names the identity then changed fields: mail search ["id"], Drive folder ["id","modifiedTime"], ClickUp list ["id","date_updated"].',
     properties: {
-      kind: { type: "string", enum: ["files", "command", "tool"] },
+      kind: { type: "string", enum: ["files", "command", "tool", "http"] },
       paths: { type: "array", items: { type: "string" } },
       command: { type: "string" },
+      url: { type: "string" },
       tool: { type: "string" },
       args: { type: "object" },
       track: {
         type: "array",
         items: { type: "string" },
         description:
-          "For a JSON result: the field naming each item, then the fields whose change counts. Everything else is ignored, and the run is told which items are new, updated or gone.",
+          "For JSON: identity field, then fields whose changes count. Other fields are ignored. HTTP watches detect changes only; other kinds can name changed items.",
       },
       everyMinutes: { type: "number" },
       loud: {
@@ -839,6 +842,39 @@ export const builtinAgentTools: ConnectorTool[] = [
     readOnly: true,
   },
   {
+    name: "service_search",
+    description:
+      "Find a paid data service by the job it does: map places, search results, work emails, people and company profiles, social posts, SEO and backlink data. Returns service ids, prices in USD per call, and params. Then call one with service_call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The job, for example 'find a work email'." },
+      },
+      required: ["query"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "service_call",
+    description:
+      "Call a service from service_search. Charges what the service bills, about its listed price. Put each param where its params list it: query or body. Don't repeat a call that answered; found emails and phone numbers are best matches, not confirmed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        service: { type: "string", description: "Service id from service_search." },
+        query: { type: "object", description: "Params listed under query." },
+        body: { type: "object", description: "Params listed under body." },
+        max_cost_usd: {
+          type: "number",
+          description:
+            "Most this call may cost in USD, at most 2. Shown to the person approving it.",
+        },
+      },
+      required: ["service", "max_cost_usd"],
+    },
+    readOnly: false,
+  },
+  {
     name: "cloud_agent_launch",
     description:
       "Launch a remote cloud coding agent on a connected repository. Returns immediately with a tracking id and status; the agent link appears when launched. Opens a PR when openPr is true. Not the bot computer.",
@@ -972,7 +1008,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "search_history",
     description:
-      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. Provide exactly one of query or queries. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
+      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -981,10 +1017,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           minLength: 1,
           maxLength: 500,
           description:
-            "Single keyword search. Provide query or queries, never both; one is required.",
+            "Single keyword search. Provide query or queries, never both; one is required unless kinds is set.",
         },
         queries: {
-          description: `Keyword variants instead of query. Provide query or queries, never both; one is required. Combined normalized JSON must fit within ${HISTORY_QUERIES_MAX_BYTES} UTF-8 bytes.`,
+          description: `Keyword variants instead of query. Provide query or queries, never both; one is required unless kinds is set. Combined normalized JSON must fit within ${HISTORY_QUERIES_MAX_BYTES} UTF-8 bytes.`,
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 500 },
           minItems: 1,
@@ -994,11 +1030,14 @@ export const builtinAgentTools: ConnectorTool[] = [
         botId: { type: "string" },
         kinds: {
           description:
-            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, or bot text replies.",
+            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, bot text replies, or replies that used tools (tool_work). Without query, lists the newest of them.",
           type: "array",
-          items: { type: "string", enum: ["bot_messages", "user_messages", "bot_replies"] },
+          items: {
+            type: "string",
+            enum: [...HISTORY_SEARCH_KINDS],
+          },
           minItems: 1,
-          maxItems: 3,
+          maxItems: HISTORY_SEARCH_KINDS.length,
         },
         offset: {
           type: "integer",
@@ -1027,6 +1066,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "object",
           properties: { queries: { type: "array", items: { type: "string" } } },
           required: ["queries"],
+        },
+        {
+          type: "object",
+          properties: { kinds: { type: "array" }, query: false, queries: false },
+          required: ["kinds"],
         },
       ],
     },
@@ -1226,13 +1270,21 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short title for the item." },
+        title: {
+          type: "string",
+          maxLength: SCRATCHPAD_TITLE_MAX_LENGTH,
+          description: "Short title for the item.",
+        },
         status: {
           type: "string",
           enum: ["open", "parked", "done"],
           description: "Defaults to open.",
         },
-        notes: { type: "string", description: "Optional notes." },
+        notes: {
+          type: "string",
+          maxLength: SCRATCHPAD_NOTES_MAX_LENGTH,
+          description: "Optional notes.",
+        },
       },
       required: ["title"],
     },
@@ -1244,9 +1296,13 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         itemId: { type: "string" },
-        title: { type: "string" },
+        title: { type: "string", maxLength: SCRATCHPAD_TITLE_MAX_LENGTH },
         status: { type: "string", enum: ["open", "parked", "done"] },
-        notes: { type: "string" },
+        notes: {
+          type: "string",
+          maxLength: SCRATCHPAD_NOTES_MAX_LENGTH,
+          description: "Replaces the current notes.",
+        },
       },
       required: ["itemId"],
     },
@@ -1799,7 +1855,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target bot when bot_id is omitted.",
         },
-        message: { type: "string", description: "What to send." },
+        message: {
+          type: "string",
+          description: "What to send. Send code, logs or other long content as files instead.",
+        },
         files: {
           type: "array",
           items: { type: "string" },
@@ -1833,7 +1892,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target member when bot_id is omitted.",
         },
-        message: { type: "string", description: "What the receiving bot should do next." },
+        message: {
+          type: "string",
+          description:
+            "What the receiving bot should do next. Send code, logs or other long content as files instead.",
+        },
         files: {
           type: "array",
           items: { type: "string" },

@@ -238,10 +238,22 @@ describe("keyless HTTP web provider", () => {
     ["unclosed titles", "<title>".repeat(40_000)],
     ["unclosed styles", "<style>".repeat(40_000)],
     ["whitespace runs", `<p>a${" ".repeat(60_000)}b</p>`],
+    [
+      "nested elements",
+      '<div><div><span><i></i></span><a href="/">x</a></div></div>'.repeat(5_000),
+    ],
   ])("extracts a page full of %s in linear time", (_name, html) => {
     const started = performance.now();
     extractReadableText(html, "https://example.test/");
     expect(performance.now() - started).toBeLessThan(1_500);
+  });
+
+  it("keeps the text of a page too large for article extraction", () => {
+    const html = `<html><head><title>Big</title></head><body><nav>Menu</nav>${"<div><span>row</span></div>".repeat(6_000)}<p>Closing paragraph</p></body></html>`;
+    const page = extractReadableText(html, "https://example.test/");
+    expect(page.title).toBe("Big");
+    expect(page.text).toContain("Menu");
+    expect(page.text).toContain("Closing paragraph");
   });
 
   it("parses HTML search results with a cap", () => {

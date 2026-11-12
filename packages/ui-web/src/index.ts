@@ -1,6 +1,6 @@
 export { AppMarkStack } from "./app-mark-stack.js";
 export {
-  BOT_AVATAR_COLORS,
+  BOT_COLORS,
   BOT_MASCOT_SHAPES,
   BotAvatar,
   BotShapePreview,
@@ -35,6 +35,7 @@ export * from "./components/ui/list-search-input";
 export * from "./components/ui/native-select.js";
 export * from "./components/ui/option-select.js";
 export * from "./components/ui/popover.js";
+export * from "./components/ui/progress.js";
 export * from "./components/ui/radio-group.js";
 export * from "./components/ui/scroll-area.js";
 export * from "./components/ui/select.js";

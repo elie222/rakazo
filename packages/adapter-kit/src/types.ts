@@ -6,6 +6,7 @@ import type {
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
+  VoiceAccountErrorCode,
 } from "@rakazo/contracts";
 
 export interface AdapterContext {
@@ -790,6 +791,8 @@ export interface VoiceCapabilities {
 export interface VoiceVerifyResult {
   ok: boolean;
   message?: string;
+  /** Set when the provider refused the account, as a request with the key would be. */
+  code?: VoiceAccountErrorCode;
 }
 
 export interface VoiceSynthesizeRequest {
@@ -899,8 +902,12 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
-  /** Verified sender metadata. Avatar is a bounded JPEG thumbnail, base64 encoded. */
-  sender?: { botId: string; name: string; avatar?: string };
+  /**
+   * Verified sender metadata. `avatar` is a bounded thumbnail at most 96px, base64 encoded;
+   * `avatarLarge` is the same drawing at up to 120px for devices that draw the sender larger
+   * than Android's 96px limit, when one fits the payload budget.
+   */
+  sender?: { botId: string; name: string; avatar?: string; avatarLarge?: string };
   kind: "completion" | "failure" | "help" | "takeover";
   title: string;
   body: string;

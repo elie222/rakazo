@@ -138,6 +138,8 @@ function simulateRun(
     cacheTracker?: ContextCacheTracker;
     tick?: () => void;
     systemPrompt?: (step: number) => string;
+    /** The model's reasoning carries no signature, as from OpenAI-compatible providers. */
+    unsigned?: boolean;
   } = {},
 ) {
   const policy = createRuntimeContextPolicy(input, undefined, {
@@ -172,7 +174,9 @@ function simulateRun(
         {
           type: "thinking",
           thinking: `Plan step ${index}`,
-          thinkingSignature: prefixSignature(context, context.messages.length),
+          ...(options.unsigned
+            ? {}
+            : { thinkingSignature: prefixSignature(context, context.messages.length) }),
         },
         { type: "toolCall", id, name: step.tool, arguments: {} },
       ],
@@ -337,6 +341,22 @@ describe("append-only run transcript", () => {
     expect(sent.map(imageCount)).toEqual([0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 2]);
     expect(rewrites(sent)).toEqual([6, 10]);
     for (const context of sent) expect(staleThinking(context)).toEqual([]);
+  });
+
+  it("keeps unsigned thinking through a rebuild", () => {
+    const input = request({
+      contextStrategy: "retrieval",
+      model: { provider: "synthetic-provider", id: "synthetic-model", contextWindow: 40_000 },
+    });
+    const steps: Step[] = Array.from({ length: 18 }, (_, index) => ({
+      tool: "shell" as const,
+      text: `output ${index} ${"synthetic shell output ".repeat(433)}`,
+    }));
+    const sent = simulateRun(input, steps, { unsigned: true });
+    const [first] = rewrites(sent);
+    expect(first).toBeDefined();
+    // Nothing the model wrote can be rejected, so the rebuild drops none of it.
+    expect(thinkingCount(sent[first!]!)).toBe(thinkingCount(sent[first! - 1]!) + 1);
   });
 
   it("rebuilds a browsing run only when dropping stale pages pays for the broken cache", () => {

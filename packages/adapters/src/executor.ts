@@ -115,6 +115,7 @@ import {
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
+import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
@@ -220,7 +221,7 @@ import {
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
-import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
@@ -248,6 +249,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
+  const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
   const cloudAgent = executorDeps.cloudAgent;
@@ -1241,6 +1243,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           botUserId: bot.userId,
         });
         let userComputer: UserComputerState;
+        let userComputerShell = false;
         let userComputerScreen = false;
         if (
           userComputerOwnerId &&
@@ -1250,6 +1253,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
           if (device) {
             userComputer = "connected";
+            userComputerShell = !device.screenOnly;
             // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
             userComputerScreen = device.platform === "darwin" || device.platform === "win32";
           } else userComputer = "offline";
@@ -1269,6 +1273,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+            paidServicesEnabled: Boolean(paidServices),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
@@ -1279,7 +1284,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               : bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
-            userComputer: userComputer === "connected",
+            userComputer: userComputerShell,
             userComputerScreen,
             emailInbox,
             emailClaimable:
@@ -1351,6 +1356,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const dockerToolInstruction = dockerComputerToolInstruction(
           computerKind,
           disabledBuiltinTools,
+          new Set(tools.map((tool) => tool.name)),
         );
         const hostEnvironment =
           computerKind && usesNativeShell(computerKind)
@@ -1435,7 +1441,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const ctx: RunContext = {
           deps,
-          providers: { web, mediaGeneration, browser, cloudAgent },
+          providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
           run,
           runId,
           workerId,
@@ -1558,9 +1564,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             savedComputerMode?.mode,
           );
           if (checkpointModelResolver && !turnCheckpoint)
-            throw new Error(
-              "Pinned computer mode checkpoint cannot resume with the available tools",
-            );
+            throw new Error("Pinned computer mode checkpoint cannot be restored");
         }
         const approvalContinuation = turnCheckpoint
           ? undefined
@@ -1926,6 +1930,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   effects.restoredPending = undefined;
                 if (!completion.paused)
                   effects.pendingTurnCheckpoints.delete(completion.executionId);
+                const outcome = toolCompletionOutcome(completion);
+                if (outcome) state.reply.toolOutcomes.set(completion.executionId, outcome);
                 const audited = appendToolCompletionAudit(
                   deps,
                   {

@@ -4387,7 +4387,11 @@ describe("computer terminal and file transfer", () => {
     controlBotId: "bot-1",
   };
 
-  function setup(computer: Record<string, unknown> = {}, maxUploadSizeBytes?: number) {
+  function setup(
+    computer: Record<string, unknown> = {},
+    maxUploadSizeBytes?: number,
+    home?: LocalAgentHomeStore,
+  ) {
     const sandbox = {
       execute: vi.fn(async function* () {
         yield { type: "exit" as const, code: 0 };
@@ -4429,6 +4433,7 @@ describe("computer terminal and file transfer", () => {
     const deps = {
       prisma,
       sandbox,
+      home,
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       env: {
         maxUploadSizeBytes,
@@ -4651,6 +4656,19 @@ describe("computer terminal and file transfer", () => {
       status: 200,
       body: { json: { path: "notes.txt", content: "hello" } },
     });
+  });
+
+  it("answers 404 when a stopped computer's file is gone", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-computer-read-"));
+    try {
+      const { call } = setup({ state: "stopped" }, undefined, new LocalAgentHomeStore(root));
+      await expect(call("readFile", { path: "gone.json" })).resolves.toMatchObject({
+        status: 404,
+        body: { json: { message: "file not found" } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("downloads bytes from a running computer", async () => {
@@ -9400,11 +9418,11 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [],
           members: [{ botId: "bot-1" }],
-          thread: { id: "thread-1" },
         }),
         delete: vi.fn(async () => {
           calls.push("delete group");
@@ -9520,11 +9538,11 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
           members: [{ botId: "bot-1" }],
-          thread: { id: "thread-1" },
         }),
         delete: vi.fn(async () => undefined),
       },

@@ -17,10 +17,10 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "./account-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
+import { watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 /** One owner and their first two organizations, each addressed through its own space. */
 async function ownerWithOrganizations(prisma: PrismaClient, stamp: string, name: string) {
@@ -675,13 +675,18 @@ dbTests("own-key trial hold lifecycle", () => {
   it("serializes overlapping checkout attempts of one organization under its lease", async () => {
     const owner = await ownerWith("overlap");
     const provider = new GatedFailingByokEmulator(`hold-overlap-${stamp}`);
-    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const watched = watchCheckoutLeaseClaims(prisma);
+    const service = createBillingService({
+      prisma: watched.prisma,
+      provider,
+      webOrigin: "https://example.test",
+    });
     const first = service.selectFunding(owner.first.actor, "byok");
     await provider.byokCallStarted; // The first attempt holds the lease, at the provider.
     const second = service.selectFunding(owner.first.actor, "byok");
     // Both attempts fail at the provider; before the fix the second reserved its hold while
     // the first was still creating its session, and their rollbacks resurrected it.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await watched.leaseRefused; // The second attempt is queued behind the first.
     provider.failAndUngate();
     await expect(first).rejects.toThrow("provider unavailable");
     await expect(second).rejects.toThrow("provider unavailable");

@@ -10,10 +10,11 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
+import { PlanUsageRows, useUsageHint } from "../../components/PlanUsage";
 import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
@@ -35,6 +36,19 @@ export function focusSidebarSearch() {
     input?.focus();
     input?.select();
   });
+}
+
+/**
+ * Chromium keeps the top fade drawn when collapsing sections shrinks a scrolled list until it no
+ * longer scrolls; replaying the fade's scroll-driven animations lets it settle at the top.
+ */
+function resetFadeWhenUnscrollable(event: UIEvent<HTMLDivElement>) {
+  const list = event.currentTarget;
+  if (list.scrollHeight > list.clientHeight) return;
+  for (const animation of list.getAnimations()) {
+    animation.cancel();
+    animation.play();
+  }
 }
 
 type User = { name?: string | null; email?: string; image?: string | null };
@@ -235,7 +249,10 @@ export function ShellSidebar({
             ) : null}
           </InputGroup>
         )}
-        <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div
+          onScroll={resetFadeWhenUnscrollable}
+          className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
+        >
           {showSpaceSearch && !mini ? (
             <SpaceSearchResults
               hits={searchHits}
@@ -244,41 +261,38 @@ export function ShellSidebar({
               onRetry={retrySearch}
               onSelect={(hit) => jumpToSearchHit(hit)}
             />
+          ) : activityMode && !mini ? (
+            <ActivityList
+              bots={bots}
+              groups={groups}
+              toggledSections={collapsedSidebarSections}
+              onToggleSection={toggleSidebarSection}
+              onOpenBot={(bot) => {
+                setMobileOpen(false);
+                navigate(`/app/${bot.id}`);
+              }}
+              onOpenGroup={(group) => {
+                setMobileOpen(false);
+                navigate(`/app/g/${group.id}`);
+              }}
+              filters={activityFilters}
+              onFiltersChange={setActivityFilters}
+              filtersExpanded={activityFiltersExpanded}
+              filtersId={activityFiltersId}
+              onOpenRun={(run) => {
+                setMobileOpen(false);
+                if (run.groupId) navigate(`/app/g/${run.groupId}`);
+                else navigate(`/app/${run.botId}`);
+              }}
+            />
           ) : (
-            <>
-              {activityMode && !mini ? (
-                <ActivityList
-                  bots={bots}
-                  groups={groups}
-                  toggledSections={collapsedSidebarSections}
-                  onToggleSection={toggleSidebarSection}
-                  onOpenBot={(bot) => {
-                    setMobileOpen(false);
-                    navigate(`/app/${bot.id}`);
-                  }}
-                  onOpenGroup={(group) => {
-                    setMobileOpen(false);
-                    navigate(`/app/g/${group.id}`);
-                  }}
-                  filters={activityFilters}
-                  onFiltersChange={setActivityFilters}
-                  filtersExpanded={activityFiltersExpanded}
-                  filtersId={activityFiltersId}
-                  onOpenRun={(run) => {
-                    setMobileOpen(false);
-                    if (run.groupId) navigate(`/app/g/${run.groupId}`);
-                    else navigate(`/app/${run.botId}`);
-                  }}
-                />
-              ) : null}
-              {roster}
-            </>
+            roster
           )}
         </div>
         {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
         <div
           className={
-            mini
+            mini || activityMode
               ? "hidden"
               : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
           }
@@ -341,6 +355,7 @@ function ShellSidebarFooter({
     new Date(billing.byokFreeUntil) > new Date()
       ? billing.byokFreeUntil
       : null;
+  const usage = useUsageHint();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const referral = billing?.referral;
@@ -409,6 +424,12 @@ function ShellSidebarFooter({
         onSettings={() => {
           setMenuOpen(false);
           openSettings("general");
+        }}
+        usage={usage}
+        usageDetails={<PlanUsageRows />}
+        onUsage={() => {
+          setMenuOpen(false);
+          openSettings("usage");
         }}
         onInvite={
           referral

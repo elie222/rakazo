@@ -49,6 +49,7 @@ export function lazyOverlay<Props extends { onClose: () => void }>(
   load: () => Promise<ComponentType<Props>>,
 ) {
   const Overlay = lazyComponent(load);
+  // biome-ignore lint/correctness/noComponentHookFactories: called once per overlay at module scope, like lazy().
   return function LazyOverlay(props: Props) {
     return (
       <ErrorBoundary

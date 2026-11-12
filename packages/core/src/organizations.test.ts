@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { organizationLandingSpaceId, organizationOfSpace } from "./organizations.js";
+import {
+  canDeleteOrganization,
+  organizationLandingSpaceId,
+  organizationOfSpace,
+} from "./organizations.js";
 
 const work = {
   id: "org-work",
@@ -29,5 +33,14 @@ describe("organizationOfSpace", () => {
     expect(organizationOfSpace([work, home], "b2")).toBe(home);
     expect(organizationOfSpace([work, home], "elsewhere")).toBeUndefined();
     expect(organizationOfSpace([work, home], null)).toBeUndefined();
+  });
+});
+
+describe("canDeleteOrganization", () => {
+  it("lets an owner delete one while they own another", () => {
+    const shared = { ...home, id: "org-shared", canManage: false };
+    expect(canDeleteOrganization([work, home], home)).toBe(true);
+    expect(canDeleteOrganization([work, shared], work)).toBe(false);
+    expect(canDeleteOrganization([work, home, shared], shared)).toBe(false);
   });
 });

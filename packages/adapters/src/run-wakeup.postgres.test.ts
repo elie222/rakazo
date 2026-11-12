@@ -22,8 +22,7 @@ import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("direct run dispatch (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;

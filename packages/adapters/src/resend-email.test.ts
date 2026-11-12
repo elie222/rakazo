@@ -1,3 +1,4 @@
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { ResendEmailProvider } from "./resend-email.js";
 
@@ -96,9 +97,26 @@ describe("ResendEmailProvider", () => {
         { status: 422 },
       ),
     );
-    await expect(provider(request).send(message)).rejects.toThrow(
+    const delivery = provider(request).send(message);
+    await expect(delivery).rejects.toThrow(
       /^Resend email request failed \(HTTP 422: validation_error: Invalid `to` field: <address>\)$/,
     );
+    await expect(delivery).rejects.toBeInstanceOf(EmailRecipientRejectedError);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat other validation errors as a refused recipient", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { statusCode: 422, name: "validation_error", message: "Invalid `from` field." },
+          { status: 422 },
+        ),
+      );
+    const delivery = provider(request).send(message);
+    await expect(delivery).rejects.toThrow(/HTTP 422/);
+    await expect(delivery).rejects.not.toBeInstanceOf(EmailRecipientRejectedError);
   });
 
   it("does not read an oversized error body", async () => {

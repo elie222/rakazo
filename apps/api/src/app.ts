@@ -14,6 +14,7 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -72,6 +73,7 @@ import {
   userDeviceInternalAddress,
   verifyModelServesAgents,
   WorkActivities,
+  withHostComputerScreen,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
@@ -365,10 +367,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     ticketBoardEnabled,
   });
+  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...sandboxProviderOptionsFromEnv(),
+      ...hostComputer,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
       e2bApiKey: env.e2bApiKey,
@@ -417,8 +420,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  const onEmailError = (error: unknown) =>
-    getLogger().error("transactional email delivery failed", error);
+  const emailErrorLogger = (message: string) => (error: unknown) => {
+    if (error instanceof EmailRecipientRejectedError) {
+      getLogger().warn(message, { "error.message": error.message });
+    } else getLogger().error(message, error);
+  };
+  const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
   const billingProvider: BillingProvider | undefined =
     billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
@@ -517,13 +524,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
                 email,
                 origin: env.authUrl,
                 secret: env.authSecret,
-                onError: (error) => getLogger().error("welcome email delivery failed", error),
+                onError: emailErrorLogger("welcome email delivery failed"),
               },
               userId,
               headers,
             )
         : undefined,
-    extraOrigins: MOBILE_AUTH_ORIGINS,
+    extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
       // Billing cancels inside, after the account's spaces are claimed and before anything is
@@ -622,7 +629,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     email,
     messaging,
     cloudAgent,
-    userDevices: userDevicesOverride ?? userDevices,
+    userDevices:
+      userDevicesOverride ??
+      withHostComputerScreen(userDevices, {
+        prisma,
+        sandboxKind: env.sandboxProvider,
+        url: hostComputer.hostComputerUrl,
+        token: hostComputer.hostComputerToken,
+      }),
     paymentWallet,
     shutdownSignal: shutdown.signal,
     now,
@@ -1135,16 +1149,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
 
 export function isTrustedOrigin(
   origin: string,
-  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">,
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
 ) {
   if (!origin) return true;
   if (origin.startsWith("rakazo://")) return true;
   return new Set(trustedRequestOrigins(env)).has(origin);
 }
 
-export function trustedRequestOrigins(env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">) {
+export function trustedRequestOrigins(
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
+) {
   return buildTrustedOrigins({
     origins: [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS],
+    // Exactly as configured, like Better Auth's extraOrigins: no loopback twins.
+    extraOrigins: env.extraAuthOrigins,
     requestOrigins: true,
   });
 }

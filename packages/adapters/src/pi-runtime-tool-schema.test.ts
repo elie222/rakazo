@@ -12,6 +12,7 @@ import {
   parametersFor,
   prepareFleetArguments,
 } from "./pi-runtime-tool-parameters.js";
+import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 
 describe("jsonSchemaParameters", () => {
   it("uses a connected delete_bot schema instead of local archival parameters", () => {
@@ -36,7 +37,9 @@ describe("jsonSchemaParameters", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
     const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
     for (const field of ["query", "queries"]) {
-      expect(wire.properties[field].description).toContain("never both; one is required");
+      expect(wire.properties[field].description).toContain(
+        "never both; one is required unless kinds is set",
+      );
     }
     expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
     expect(wire).not.toHaveProperty("oneOf");
@@ -45,6 +48,9 @@ describe("jsonSchemaParameters", () => {
     expect(() =>
       parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
     ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { kinds: ["tool_work"] })).toEqual({
+      kinds: ["tool_work"],
+    });
     expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
       queries: ["a"],
     });
@@ -56,6 +62,10 @@ describe("jsonSchemaParameters", () => {
     ["ticket_update", "title", TICKET_TITLE_MAX_LENGTH, { id: "t1" }],
     ["ticket_update", "description", TICKET_DESCRIPTION_MAX_LENGTH, { id: "t1" }],
     ["ticket_comment", "body", TICKET_COMMENT_MAX_LENGTH, { id: "t1", body: "Ready" }],
+    ["scratchpad_add", "title", SCRATCHPAD_TITLE_MAX_LENGTH, { title: "Ship" }],
+    ["scratchpad_add", "notes", SCRATCHPAD_NOTES_MAX_LENGTH, { title: "Ship" }],
+    ["scratchpad_update", "title", SCRATCHPAD_TITLE_MAX_LENGTH, { itemId: "s1" }],
+    ["scratchpad_update", "notes", SCRATCHPAD_NOTES_MAX_LENGTH, { itemId: "s1" }],
   ] as const)("preserves the %s %s length limit on the model wire", (name, field, limit, base) => {
     const tool = builtinAgentTools.find((entry) => entry.name === name)!;
     const wire = JSON.parse(JSON.stringify(parametersFor(tool)));

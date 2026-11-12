@@ -5,8 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("space search with CONTENT_ENCRYPTION on and off (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
@@ -92,6 +91,21 @@ describePostgres("space search with CONTENT_ENCRYPTION on and off (PostgreSQL)",
           "the capybara roadmap",
         ]);
         expect(await snippets(db.prisma, "plan")).toEqual([]);
+      }
+    }));
+
+  it("never returns a delivery, plaintext or encrypted", () =>
+    system(async () => {
+      for (const db of [off, on]) {
+        await createThreadMessage(db.prisma, {
+          threadId,
+          role: "user",
+          blocks: [{ kind: "delivery" }, { kind: "text", text: "wombat lead payload" }],
+        });
+      }
+      await say(on.prisma, "the wombat summary");
+      for (const db of [on, off]) {
+        expect(await snippets(db.prisma, "wombat")).toEqual(["the wombat summary"]);
       }
     }));
 });

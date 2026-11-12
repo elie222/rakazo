@@ -17,6 +17,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  normalizeRunError,
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -69,6 +70,7 @@ import {
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
+  withReplyToolOutcomes,
 } from "./run-progress.js";
 import {
   completionMessageSegments,
@@ -89,15 +91,22 @@ import {
 } from "./silent-reply.js";
 import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
-import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
+import {
+  appendToolCompletionAudit,
+  logLoopGuardStop,
+  toolCompletionFromResult,
+  toolCompletionOutcome,
+} from "./tool-completion-audit.js";
 import {
   advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
+  loopGuardStop,
   loopGuardStopText,
   MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
   overLimitStopText,
   toolResultFingerprint,
 } from "./tool-loop.js";
+import type { ToolRefusal } from "./tool-refusal.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -510,7 +519,14 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
-  reply.pendingToolNames.push(...(stepNames.length > 0 ? stepNames : [event.name]));
+  const callSteps = stepNames.length > 0 ? stepNames : [event.name];
+  reply.pendingToolNames.push(...callSteps);
+  reply.toolCalls.push(
+    ...callSteps.map((name) => ({
+      label: humanizeToolName(name),
+      executionId: event.executionId,
+    })),
+  );
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
   const heldNote =
     event.name === "message_user" || event.name === "ask_user"
@@ -541,9 +557,16 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     previousResult,
     event.response,
   );
+  // The refusal the previous call of the streak got, read before this call can add its own.
+  const previousRefusal = streak.executionId
+    ? ctx.state.toolRefusals?.get(streak.executionId)
+    : undefined;
   // A call from the same response as the streak's last one leaves it as it was.
   if (loopGuard.streak !== streak) {
-    if (streak.executionId) toolResults.delete(streak.executionId);
+    if (streak.executionId) {
+      toolResults.delete(streak.executionId);
+      ctx.state.toolRefusals?.delete(streak.executionId);
+    }
     ctx.state.toolCallStreak = { ...loopGuard.streak, executionId: event.executionId };
   }
   ctx.state.overLimitActionCalls = advanceOverLimitActionCalls(
@@ -555,7 +578,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     loopGuard.stuck ||
     ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
   ) {
-    await stopStuckToolLoop(ctx, event.name);
+    // An action-limit stop is not about the previous call, which may be another tool's.
+    await stopStuckToolLoop(ctx, event.name, loopGuard.stuck ? previousRefusal : undefined);
     return true;
   }
   if (!ctx.scripted) return false;
@@ -564,21 +588,16 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   try {
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
     toolResults.set(event.executionId, toolResultFingerprint(result));
-    await appendToolCompletionAudit(
-      deps,
-      audit,
-      toolCompletionFromResult(
-        {
-          name: event.name,
-          executionId: event.executionId,
-          durationMs: Date.now() - startedAt,
-        },
-        result,
-      ),
-      ctx.secrets,
+    const completion = toolCompletionFromResult(
+      { name: event.name, executionId: event.executionId, durationMs: Date.now() - startedAt },
+      result,
     );
+    const outcome = toolCompletionOutcome(completion);
+    if (outcome) reply.toolOutcomes.set(event.executionId, outcome);
+    await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
     return isToolPauseResult(result);
   } catch (error) {
+    reply.toolOutcomes.set(event.executionId, "failed");
     await appendToolCompletionAudit(
       deps,
       audit,
@@ -595,7 +614,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
 }
 
 /** The model keeps repeating the same call: finish the run with what it has and say why. */
-async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
+async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: ToolRefusal) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   const { reply } = ctx.state;
   // Otherwise the model keeps calling tools while the stop is saved. The run's own signal stays
@@ -603,6 +622,8 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
+  // Calls that had not finished when the loop was stopped never ran to the end.
+  reply.messageSegments = withReplyToolOutcomes(reply, "stopped");
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
   if (reply.messageSegments.length > 0) {
     await publishMessage(deps, run, "bot", redactBlocks(reply.messageSegments, ctx.secrets));
@@ -629,6 +650,24 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
   });
   if (!stopped) return;
+  const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
+  logLoopGuardStop(
+    {
+      spaceId: run.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+      runId,
+      trigger: run.trigger,
+    },
+    {
+      tool: toolName,
+      reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
+      count: stoppedForOverLimit ? overLimit : loopGuardStop(ctx.state.toolCallStreak).count,
+      failures: ctx.state.toolCallStreak.failures ?? 0,
+      ...(refusal ? { refusal } : {}),
+    },
+    ctx.secrets,
+  );
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
@@ -808,6 +847,7 @@ export async function completeRun(ctx: RunContext) {
     reply.currentTextSegment = reply.assembled;
   }
   flushPendingTools(reply);
+  reply.messageSegments = withReplyToolOutcomes(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.
   // A member a group message named nobody for may end silently with the sentinel, a placeholder
@@ -969,6 +1009,15 @@ export function handoffEndedTurn(state: Pick<RunState, "handedOff">, error: unkn
   );
 }
 
+/**
+ * Groups failures by provider and the kind and status the provider reported, never by message
+ * text, which quotes ids and user content.
+ */
+function runFailureFingerprint(provider: string, message: string): string[] {
+  const { kind, status } = normalizeRunError(message);
+  return ["run.failed", provider || "unknown", kind ?? "unclassified", String(status ?? "none")];
+}
+
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */
 export async function failRun(
   ctx: RunContext,
@@ -1054,6 +1103,7 @@ export async function failRun(
       {
         "run.outcome": "failed",
         ...model.active,
+        "error.fingerprint": runFailureFingerprint(model.active["model.provider"], message),
       },
     );
   }

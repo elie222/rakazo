@@ -267,6 +267,8 @@ export function describeToolActivity(
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
+  if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
+  if (toolName === "service_call") return `Using service: ${detail(record.service)}`;
   if (toolName === "skill_read")
     return record.file
       ? `Reading ${detail(record.file)} from ${detail(record.name)}`
@@ -468,7 +470,8 @@ function toAgentTool(
           description: raw.description ? String(raw.description) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
-          computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
+          // Left out means Team; an empty string would fail the mode's enum.
+          ...(raw.computer_mode ? { computer_mode: String(raw.computer_mode) } : {}),
         };
       }
       if (tool.name === "update_bot" || FLEET_TOOL_NAMES.some((name) => name === tool.name)) {

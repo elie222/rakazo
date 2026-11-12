@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { APP_LOCALE_LABELS, reportUiLocale } from "@rakazo/core";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
@@ -5,7 +6,7 @@ import { Checkmark } from "../../components/row-accessories";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { currentApiBase, rpc, selectedSpaceId } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
-import { getActiveUiLocale, setUiLocale, useI18n } from "../../lib/i18n";
+import { getActiveUiLocale, setUiLocale, useUiLocale } from "../../lib/i18n";
 import { resumeLiveNotifications } from "../../lib/live-notifications";
 import { native, useThemedStyles } from "../../lib/native";
 import { loadSessionToken } from "../../lib/session";
@@ -15,7 +16,8 @@ import { UI_LOCALES } from "../../lib/ui-locale";
 
 export default function Language() {
   const sideInsets = useSideInsets();
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const styles = useThemedStyles(createStyles);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export default function Language() {
         ).catch(() => undefined);
       })
       .catch(() => {
-        setError(t("Could not change language"));
+        setError(t`Could not change language`);
       })
       .finally(() => setSaving(false));
   }
@@ -50,7 +52,7 @@ export default function Language() {
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <SettingsGroup accessibilityLabel={t("Language")}>
+      <SettingsGroup accessibilityLabel={t`Language`}>
         {UI_LOCALES.map((code) => {
           const selected = code === locale;
           const label = APP_LOCALE_LABELS[code];

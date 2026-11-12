@@ -1,17 +1,17 @@
+import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument, ScratchpadItem } from "@rakazo/contracts";
 import { isEmptyBotMemory } from "@rakazo/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 
 export function BotContextCards({ botId }: { botId: string }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const tokens = useMobileTokens();
   const [work, setWork] = useState<ScratchpadItem[]>([]);
@@ -60,12 +60,12 @@ export function BotContextCards({ botId }: { botId: string }) {
             }}
           >
             <Text accessibilityRole="header" style={heading}>
-              {t("Open work")}
+              {t`Open work`}
             </Text>
             <ProfileEditDialog
               value=""
-              label={t("Add open work")}
-              editLabel={t("Add open work")}
+              label={t`Add open work`}
+              editLabel={t`Add open work`}
               maxLength={200}
               icon="plus"
               onCommit={async (title) => {
@@ -89,7 +89,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 style={{ minHeight: 44, flexDirection: "row", gap: 12, alignItems: "center" }}
               >
                 <Pressable
-                  accessibilityLabel={`${t("Complete")} ${item.title}`}
+                  accessibilityLabel={`${t`Complete`} ${item.title}`}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: false }}
                   hitSlop={11}
@@ -131,7 +131,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 onPress={() => setAllWork(true)}
                 style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
               >
-                <Text style={{ color: tokens.mutedForeground }}>{t("Show more")}</Text>
+                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -140,7 +140,7 @@ export function BotContextCards({ botId }: { botId: string }) {
       {docs.length ? (
         <View style={{ marginTop: 24 }}>
           <Text accessibilityRole="header" style={[heading, { marginBottom: 8 }]}>
-            {t("Memory")}
+            {t`Memory`}
           </Text>
           <View style={card}>
             {(allDocs ? docs : docs.slice(0, 5)).map((doc) => (
@@ -176,7 +176,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 onPress={() => setAllDocs(true)}
                 style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
               >
-                <Text style={{ color: tokens.mutedForeground }}>{t("Show more")}</Text>
+                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
               </Pressable>
             ) : null}
           </View>

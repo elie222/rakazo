@@ -13,8 +13,13 @@ vi.mock("@lingui/react/macro", () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values),
   }),
 }));
+const favicon = vi.hoisted(() => ({ icon: null as string | null, asked: [] as string[] }));
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  useLinkFavicon: (href: string) => {
+    if (href) favicon.asked.push(href);
+    return { icon: href ? favicon.icon : null, unusable: () => undefined };
+  },
 }));
 const { rpc, spaceRpc } = vi.hoisted(() => {
   const client = () => ({
@@ -63,10 +68,18 @@ async function render(
     fields?: LoginFieldInput[],
     remember?: false,
   ) => Promise<void> = async () => undefined,
+  answerIsSeparate?: boolean,
 ) {
   await act(async () =>
     root.render(
-      <AskCard block={block} canAnswer canDismiss onAnswer={onAnswer} onDismiss={onDismiss} />,
+      <AskCard
+        block={block}
+        answerIsSeparate={answerIsSeparate}
+        canAnswer
+        canDismiss
+        onAnswer={onAnswer}
+        onDismiss={onDismiss}
+      />,
     ),
   );
 }
@@ -201,6 +214,37 @@ const loginCard: AskBlock = {
   loginFields: ["ID number", "Phone number", "PIN"],
   status: "pending",
 };
+
+it("marks a login with its site's icon, or else the first letter of the site's own name", async () => {
+  favicon.asked = [];
+  await render({
+    ...loginCard,
+    credential: { ...loginCard.credential!, origin: "https://app.example.com" },
+  });
+  const card = () => container.querySelector('[data-testid="secret-ask-card"]')!;
+  expect(favicon.asked).toContain("https://app.example.com");
+  expect(card().querySelector("img")).toBeNull();
+  expect(card().querySelector("span[aria-hidden]")?.textContent).toBe("E");
+  favicon.icon = "data:image/png;base64,AAAA";
+  try {
+    await render({ ...loginCard });
+    expect(card().querySelector("img")?.getAttribute("src")).toBe(favicon.icon);
+  } finally {
+    favicon.icon = null;
+  }
+});
+
+it("letters an IPv6 login by its first digit, not a bracket", async () => {
+  await render({ ...loginCard, credential: { ...loginCard.credential!, origin: "https://[::1]" } });
+  const tile = container.querySelector('[data-testid="secret-ask-card"] span[aria-hidden]');
+  expect(tile?.textContent).toBe("1");
+});
+
+it("asks for no site icon on a card that is not a login", async () => {
+  favicon.asked = [];
+  await render(secretCard);
+  expect(favicon.asked).toEqual([]);
+});
 
 /** The dialog a login, card or contact card opens; it renders outside the card. */
 function dialog() {
@@ -686,10 +730,12 @@ it("offers Save to Vault only on login cards", async () => {
   expect(container.textContent).not.toContain("Save to Vault");
 });
 
-it("quotes an edited reply and marks a sent draft", async () => {
+it("leaves a typed reply in its message and marks a sent draft", async () => {
   const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
   await render(block);
-  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).toContain("Tuesday");
+  await render(block, undefined, undefined, true);
+  expect(container.textContent).not.toContain("Tuesday");
   expect(container.textContent).not.toContain("Answered");
 
   await render({ ...block, answer: "approved" });
@@ -928,4 +974,19 @@ it("draws a payment's order as a receipt in place of the text detail", async () 
     [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
   ).toEqual(["Total$20.00"]);
   expect(container.textContent).toContain("Read from the page, not checked");
+});
+
+it("leaves plain questions to the composer and dims the question after answering", async () => {
+  const block: AskBlock = { kind: "ask", text: "Which city?", status: "pending" };
+  await render(block);
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.querySelector("input")).toBeNull();
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(false);
+  await render({ ...block, status: "answered", answer: "Paris" }, undefined, undefined, true);
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(true);
+  expect(container.textContent).not.toContain("Paris");
 });

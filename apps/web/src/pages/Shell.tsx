@@ -19,7 +19,6 @@ import {
   groupBotsForSidebar,
   isActive,
   isRunWorking,
-  memberName,
   newClientId,
   otherAuthor,
   workingRoutineName,
@@ -89,6 +88,7 @@ import { SidebarRoster } from "./shell/sidebar-roster";
 import { SnoozedChats } from "./shell/snoozed-chats";
 import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { Transcript } from "./shell/transcript";
+import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/transcript-member-name";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { useChatRead } from "./shell/use-chat-read";
 import { useChatSnooze } from "./shell/use-chat-snooze";
@@ -158,6 +158,7 @@ function SpaceShell() {
   const {
     groups,
     setGroups,
+    groupsRef,
     bots,
     setBots,
     botsRef,
@@ -427,7 +428,7 @@ function SpaceShell() {
     return true;
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
-  useSpaceBootstrap({
+  const rosterSignals = useSpaceBootstrap({
     rpc,
     roster,
     thread,
@@ -455,6 +456,8 @@ function SpaceShell() {
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
       },
       meId: userId,
+      groupsRef,
+      roster: rosterSignals,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
@@ -525,14 +528,19 @@ function SpaceShell() {
     messageProviders: messagingProviders,
   });
   // Until this visit's read lands, a bot shows the routines and skills it had last time.
+  const cachedRoutines =
+    inGroup || !active || thread.routinesBotId === active.id
+      ? undefined
+      : queryClient.getQueryData(queries.routines.list.queryKey({ input: { botId: active.id } }));
   const activeRoutines =
     inGroup || !active
       ? []
       : thread.routinesBotId === active.id
         ? thread.routines
-        : (queryClient.getQueryData(
-            queries.routines.list.queryKey({ input: { botId: active.id } }),
-          ) ?? []);
+        : (cachedRoutines ?? []);
+  // A bot opened for the first time has no routines to show yet, which is not the same as none.
+  const routinesLoaded =
+    !active || inGroup || thread.routinesBotId === active.id || cachedRoutines !== undefined;
   const activeTaughtSkills = !active
     ? []
     : thread.taughtSkillsBotId === active.id
@@ -636,8 +644,14 @@ function SpaceShell() {
     };
   });
   const resolveTranscriptMemberName = useCallback(
-    (botId: string | undefined) => memberName(transcriptMembers, botId),
-    [transcriptMembers],
+    (botId: string | undefined) =>
+      groupTranscriptMemberName({
+        botId,
+        members: transcriptMembers,
+        bots,
+        archivedBots,
+      }),
+    [archivedBots, bots, transcriptMembers],
   );
   const { composerMentionTargets, footerLogos, setFooterLogos } = useComposerMentions({
     rpc,
@@ -1123,6 +1137,7 @@ function SpaceShell() {
               callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
+              onReleaseComputer={computerControls.onReleaseComputer}
               onOpenImportSetup={openImportSetup}
               rpc={rpc}
             />
@@ -1279,6 +1294,7 @@ function SpaceShell() {
         routinesPanel={
           <RoutineList
             routines={activeRoutines}
+            loaded={routinesLoaded}
             runningRoutineId={
               snapshot?.run && isActive(snapshot.run.status)
                 ? (snapshot.run.routineId ?? undefined)

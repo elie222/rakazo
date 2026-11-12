@@ -225,7 +225,8 @@ export interface DesktopLocalStackState {
   imageTag: string;
 }
 
-export type DesktopSetupLink = "docker-desktop" | "orbstack" | "docker-engine";
+/** The official Docker download for this platform (an installer, or Linux install docs). */
+export type DesktopSetupLink = "docker-download";
 
 /**
  * Bridge exposed only to the first-run setup window. The app window keeps the
@@ -240,7 +241,7 @@ export interface RakazoSetup {
   test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
   quit: () => Promise<void>;
-  /** Opens one of the Docker install pages in the system browser. */
+  /** Opens the Docker download in the system browser; the person runs the installer. */
   openLink: (link: DesktopSetupLink) => Promise<void>;
   /** The Docker Compose stack this app installs and runs for mode `new`. */
   stack: {

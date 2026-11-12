@@ -20,8 +20,7 @@ import { createThreadMessage, createThreadMessageInTransaction } from "./message
 import { runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const masterA = { id: "test-a", key: randomBytes(32) };
 const masterB = { id: "test-b", key: randomBytes(32) };

@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { UsageOperationKind } from "@rakazo/adapter-kit";
-import { resolveBotWorkspacePath } from "@rakazo/adapters";
+import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { ExportManifest } from "@rakazo/contracts";
 import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
@@ -24,7 +24,7 @@ import type { RouterContext } from "./context.js";
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
 export function contentRoutes(ctx: RouterContext) {
-  const { deps, repos, favicons, groupRepos, authed } = ctx;
+  const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
   return {
     artifacts: {
       list: authed.artifacts.list.handler(async ({ context, input }) => {
@@ -143,6 +143,15 @@ export function contentRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
+      limits: authed.usage.limits.handler(({ context }) =>
+        readMemberPlanLimits(
+          deps.prisma,
+          deps.secrets,
+          context.actor.userId,
+          deps.planLimits ?? planLimitsReader,
+          (secretId, provider) => refreshExpiredCredential(context.actor, secretId, provider),
+        ),
+      ),
       summary: authed.usage.summary.handler(async ({ context }) => {
         const where = { spaceId: context.actor.spaceId, userId: context.actor.userId };
         const sums = {

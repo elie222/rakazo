@@ -403,6 +403,27 @@ describe("portable plugin parser", () => {
       ).mcpServers,
     ).toEqual([]);
   });
+  it("skips servers that work only in a catalog vendor's own app", () => {
+    const plugin = (server: Record<string, unknown>) =>
+      parsePluginDirectory({
+        files: [
+          { path: ".cursor-plugin/plugin.json", content: JSON.stringify({ name: "drive" }) },
+          { path: "mcp.json", content: JSON.stringify({ mcpServers: { drive: server } }) },
+        ],
+        resolvedSha: SHA,
+      });
+    for (const server of [
+      { type: "http", url: "https://api.cursor.com/rest-mcp/google-drive/mcp" },
+      { type: "http", url: "https://relay.cursor.sh./mcp" },
+      { type: "http", url: "https://example.test/mcp", headers: { "x-cursor-auth": "token" } },
+      { type: "http", url: "https://example.test/mcp", auth: { CLIENT_ID: "vendor-app" } },
+    ]) {
+      const parsed = plugin(server);
+      expect(parsed.mcpServers).toEqual([]);
+      expect(parsed.skipped).toEqual([expect.objectContaining({ kind: "mcp_invalid" })]);
+    }
+    expect(plugin({ type: "http", url: "https://notcursor.com/mcp" }).mcpServers).toHaveLength(1);
+  });
 });
 
 describe("GitHub acquisition", () => {

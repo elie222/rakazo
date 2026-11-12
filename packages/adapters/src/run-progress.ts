@@ -1,5 +1,6 @@
 import { messagingProgressJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import {
   appendTextSegment,
   appendToolCallSegment,
@@ -10,6 +11,7 @@ import {
   noteLastToolStep,
   redactSecrets,
   redactSecretsAfter,
+  withToolStepOutcomes,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -64,6 +66,8 @@ export async function createReplyState(
     narrationSoFar: "",
     narrationStatusShowing: false,
     pendingToolNames: [],
+    toolCalls: [],
+    toolOutcomes: new Map(),
     pendingProgress: "",
     lastProgressAt: 0,
     hasStreamedText: false,
@@ -176,6 +180,23 @@ export function flushPendingTools(reply: ReplyState) {
     reply.messageSegments = appendToolCallSegment(reply.messageSegments, name);
   }
   reply.pendingToolNames = [];
+}
+
+/**
+ * The reply's steps with how each call ended. Calls with no result yet count as `unfinished`
+ * when given (a stopped run), otherwise they carry no outcome.
+ */
+export function withReplyToolOutcomes(
+  reply: ReplyState,
+  unfinished?: ToolStepOutcome,
+): MessageBlock[] {
+  return withToolStepOutcomes(
+    reply.messageSegments,
+    reply.toolCalls.map(({ label, executionId }) => ({
+      label,
+      outcome: reply.toolOutcomes.get(executionId) ?? unfinished,
+    })),
+  );
 }
 
 export function tryFlushPendingTools(reply: ReplyState) {

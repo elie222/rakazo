@@ -12,6 +12,7 @@ import {
   findModelCredential,
   findModelCredentialById,
   GUEST_ROLE,
+  modelCredentialProviderFilter,
   organizationForMember,
 } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -924,7 +925,7 @@ export function pinnedModelCredentialError(
 
 /**
  * A server key is available only to a funded organization and only for its configured provider.
- * Outside credits mode a balance still pays until the member connects that provider themselves.
+ * A personal connection takes precedence over hosted credits in every funding mode.
  */
 export async function hasHostedModelCredits(
   prisma: PrismaClient,
@@ -952,10 +953,9 @@ export async function hasHostedModelCredits(
           select: { mode: true, balanceMicros: true },
         })
       : null;
-  if (credits?.mode === "credits") return true;
-  if (!credits || credits.balanceMicros <= 0n) return false;
+  if (credits?.mode !== "credits" && (!credits || credits.balanceMicros <= 0n)) return false;
   return !(await prisma.userModelCredential.findFirst({
-    where: { userId: scope.userId, provider },
+    where: { userId: scope.userId, provider: modelCredentialProviderFilter(provider) },
     select: { id: true },
   }));
 }

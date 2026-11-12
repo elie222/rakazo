@@ -31,6 +31,7 @@ import {
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   teamComputerUserId,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -315,25 +316,16 @@ export async function archiveBot(
     }),
     deps.prisma.run.findMany({
       where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
-      select: { id: true },
+      select: { id: true, taskId: true, userId: true, spaceId: true },
     }),
     deps.prisma.routine.findMany({
       where: { botId: bot.id, active: true },
       select: { id: true },
     }),
   ]);
-  const runIds = activeRuns.map((run) => run.id);
   const now = new Date();
-  await deps.prisma.$transaction(async (tx) => {
-    await tx.run.updateMany({
-      where: { id: { in: runIds } },
-      data: { status: "cancelled", completedAt: now },
-    });
-    await clearEndedRunState(tx, runIds);
-    await tx.task.updateMany({
-      where: { runs: { some: { id: { in: runIds } } } },
-      data: { status: "cancelled" },
-    });
+  const cancelledRuns = await deps.prisma.$transaction(async (tx) => {
+    const cancelled = await cancelRunsInTransaction(tx, activeRuns, now);
     await tx.routine.updateMany({
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
@@ -355,9 +347,10 @@ export async function archiveBot(
       where: { id: bot.id },
       data: { archivedAt: bot.archivedAt ?? now, pinned: false },
     });
+    return cancelled;
   });
   await Promise.allSettled([
-    ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
+    ...cancelledRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
   await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
@@ -427,6 +420,7 @@ export async function destroyBot(
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
   await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
+  // Deleting the bot deletes its thread, so this waits out snapshot reads holding that row.
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
@@ -495,7 +489,7 @@ export async function destroyBot(
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if (!deletion) return;
   await Promise.allSettled(
@@ -536,6 +530,43 @@ export async function destroyBot(
   if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
 }
 
+type DissolvableGroup = {
+  members: ReadonlyArray<{ botId: string; bot: { archivedAt: Date | null } }>;
+};
+
+/**
+ * Groups left with fewer than two active bots once `botId` is gone.
+ * Removal and its preview both decide here, so the warning names what the delete removes.
+ */
+function groupsDissolvedByRemovingBot<T extends DissolvableGroup>(
+  groups: readonly T[],
+  botId: string,
+): T[] {
+  return groups.filter((group) => {
+    const activeMembersAfterDeletion = group.members.filter(
+      (member) => member.botId !== botId && member.bot.archivedAt === null,
+    ).length;
+    return activeMembersAfterDeletion < GROUP_MEMBER_MIN;
+  });
+}
+
+/** The groups `destroyBot` dissolves for this bot, as `{ id, name }`. Read-only. */
+export async function groupsRemovedByDeletingBot(prisma: PrismaClient, botId: string) {
+  const groups = await prisma.chatGroup.findMany({
+    where: { members: { some: { botId } } },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      members: { select: { botId: true, bot: { select: { archivedAt: true } } } },
+    },
+  });
+  return groupsDissolvedByRemovingBot(groups, botId).map((group) => ({
+    id: group.id,
+    name: group.name,
+  }));
+}
+
 async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) {
   await tx.$queryRaw<Array<{ id: string }>>`
     SELECT groups.id
@@ -554,15 +585,9 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
       thread: { select: { id: true } },
     },
   });
-  const dissolvedGroupIds: string[] = [];
-  for (const group of affectedGroups) {
-    const activeMembersAfterDeletion = group.members.filter(
-      (member) => member.botId !== botId && member.bot.archivedAt === null,
-    ).length;
-    if (activeMembersAfterDeletion < GROUP_MEMBER_MIN) {
-      dissolvedGroupIds.push(group.id);
-    }
-  }
+  const dissolvedGroupIds = groupsDissolvedByRemovingBot(affectedGroups, botId).map(
+    (group) => group.id,
+  );
   const dissolvedGroupIdSet = new Set(dissolvedGroupIds);
   const dissolvedThreadIds = affectedGroups
     .filter((group) => dissolvedGroupIdSet.has(group.id))
@@ -706,11 +731,13 @@ async function sharedTeamComputer(
 const REMOTE_TEAM_SANDBOX_KINDS = new Set([
   "e2b",
   "novita",
+  "instabox",
   "daytona",
   "boat",
   "createos",
   "kubernetes",
   "incus",
+  "local-vm",
 ]);
 
 /**

@@ -83,4 +83,27 @@ describe("thinking signatures bound to a different conversation", () => {
     const plain = [{ role: "user", content: "hi", timestamp: 0 }] as TranscriptContext["messages"];
     expect(withoutThinkingFrom(plain, 0)).toBe(plain);
   });
+
+  it("keeps thinking that carries no signature", () => {
+    const assistant = (...thinking: object[]) =>
+      ({
+        role: "assistant",
+        content: [...thinking, { type: "text", text: "reply" }],
+        timestamp: 0,
+      }) as unknown as TranscriptContext["messages"][number];
+    const messages = [
+      assistant({ type: "thinking", thinking: "bare" }),
+      assistant({ type: "thinking", thinking: "field", thinkingSignature: "reasoning_content" }),
+      assistant({ type: "thinking", thinking: "signed", thinkingSignature: "EqQBCkYI" }),
+      assistant({ type: "thinking", thinking: "", thinkingSignature: "x", redacted: true }),
+    ];
+    const kept = withoutThinkingFrom(messages, 0).map((message) =>
+      message.role === "assistant"
+        ? message.content.filter((part) => part.type === "thinking").map((part) => part.thinking)
+        : [],
+    );
+    expect(kept).toEqual([["bare"], ["field"], [], []]);
+    const unsigned = messages.slice(0, 2);
+    expect(withoutThinkingFrom(unsigned, 0)).toBe(unsigned);
+  });
 });

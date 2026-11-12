@@ -11,10 +11,6 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox }));
 vi.mock("react-native", () => ({ Alert: { alert } }));
-vi.mock("./i18n", () => ({
-  t: (message: string, values?: { name: string }) =>
-    message.replace("{name}", values?.name ?? "{name}"),
-}));
 vi.mock("./user-error", () => ({ errorText: () => "Try again." }));
 
 import { confirmDeleteBot, confirmDeleteGroup, restoreArchivedBot } from "./bot-lifecycle";

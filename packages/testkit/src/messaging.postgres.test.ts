@@ -17,7 +17,7 @@ process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
-const describeMessaging = hasDb ? describe.sequential : describe.skip;
+const describeMessaging = hasDb ? describe : describe.skip;
 
 type App = {
   request: (input: string | Request, init?: RequestInit) => Response | Promise<Response>;

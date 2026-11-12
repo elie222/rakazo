@@ -65,7 +65,6 @@ vi.mock("./call-session", () => ({
   startCall: fake.startCall,
   subscribe: () => () => {},
 }));
-vi.mock("./i18n", () => ({ t: (value: string) => value }));
 vi.mock("./push", () => ({ registerCallPushToken: vi.fn() }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./session", () => ({
@@ -105,6 +104,8 @@ function deferred<T>() {
 }
 let stop: (() => void) | undefined;
 beforeEach(() => {
+  // Retry and reconnect waits are jittered; pin them to their unjittered values.
+  vi.spyOn(Math, "random").mockReturnValue(0);
   vi.useFakeTimers();
   fake.generation = 1;
   fake.locked = false;
