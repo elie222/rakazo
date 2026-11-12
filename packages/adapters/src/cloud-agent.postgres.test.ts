@@ -856,7 +856,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
           executeCloudAgentTool(
             {
               ...deps,
-              cloudAgent: await cloudAgentForActor(deps, actor),
+              cloudAgent: await cloudAgentForActor(deps, { ...actor, botIds: [h.bot.id] }),
               deployment: h.connection,
             },
             { ...h.context, operationId: randomUUID() },
@@ -962,7 +962,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
 
     it("launches, follows, reconciles and cancels an agent through the connection", async () => {
       const { h, actor, t3, deps, tool, launch, poll } = await connected();
-      const server = await connectServer(actor);
+      const server = await connectServer(actor, { allBots: true });
       const id = await launch();
       expect(await h.state(id)).toMatchObject({ providerKey: `mcp:${server.id}` });
       h.enqueue.mockClear();
@@ -991,7 +991,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const { h, actor, t3, tool, launch, poll } = await connected();
-        await connectServer(actor);
+        await connectServer(actor, { allBots: true });
         const id = await launch({ repository: "https://github.com/example/demo" });
         await poll(id);
         // Stopped while T3 Code set up its worktree, the thread holds what is sent next.
@@ -1013,9 +1013,47 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       }
     });
 
+    it.each([
+      ["launch", "remove"],
+      ["launch", "restrict"],
+      ["reply", "remove"],
+      ["reply", "restrict"],
+    ])("rejects a queued %s after permissions change by %s", async (operation, revoke) => {
+      const { h, actor, t3, tool, launch, poll } = await connected();
+      const server = await connectServer(actor);
+      const assignment = await runAsSystem("test fixture", () =>
+        prisma.botMcpServer.create({
+          data: { ...actor, botId: h.bot.id, serverId: server.id, allowAllTools: true },
+        }),
+      );
+      const id = await launch();
+      if (operation === "reply") {
+        await poll(id);
+        t3.complete((await h.state(id)).remoteId!);
+        await poll(id);
+        expect(await tool("reply", { id, prompt: "Continue" })).toMatchObject({ id });
+      }
+      await runAsSystem("test fixture", async () => {
+        if (revoke === "remove") await prisma.botMcpServer.delete({ where: { id: assignment.id } });
+        else
+          await prisma.botMcpServer.update({
+            where: { id: assignment.id },
+            data: { allowAllTools: false, allowedTools: ["t3_thread_read"] },
+          });
+      });
+      const calls = t3.calls.length;
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "expired", nextPollAt: null });
+      expect(t3.calls).toHaveLength(calls);
+      expect(await tool("reply", { id, prompt: "Restart" })).toEqual({
+        error: "Unknown cloud agent.",
+      });
+      expect(await tool("status", { id })).toMatchObject({ id, status: "expired" });
+    });
+
     it("ends the card as expired once T3 Code refuses the token or the server is removed", async () => {
       const { h, actor, t3, launch, poll, forActor } = await connected();
-      await connectServer(actor);
+      await connectServer(actor, { allBots: true });
       const id = await launch();
       await poll(id);
       t3.token = "revoked";
@@ -1025,7 +1063,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       // The token is dropped, so MCP servers list it as needing a reconnect.
       expect((await forActor())!.key).toBe(h.connection.key);
       t3.token = T3_TOKEN;
-      const removed = await connectServer(actor);
+      const removed = await connectServer(actor, { allBots: true });
       const next = await launch();
       expect(await h.state(next)).toMatchObject({ providerKey: `mcp:${removed.id}` });
       await runAsSystem("test fixture", () =>
