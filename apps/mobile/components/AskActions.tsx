@@ -119,7 +119,9 @@ export function AskActions({
               prominence={emphasized ? "primary" : "secondary"}
               fill={!approval}
               selected={
-                !approval && resolveAskChoice(selectedAnswer ?? "", actions)?.id === action.id
+                approval || selectedAnswer === undefined
+                  ? undefined
+                  : resolveAskChoice(selectedAnswer, actions)?.id === action.id
               }
               align={approval ? "center" : "start"}
               disabled={disabled || submitting}

@@ -94,6 +94,7 @@ vi.mock("../components/native-action-button", async () => {
       onPress,
       disabled,
       prominence = "primary",
+      selected,
       fill,
       style,
     }: {
@@ -101,6 +102,7 @@ vi.mock("../components/native-action-button", async () => {
       onPress: () => void;
       disabled?: boolean;
       prominence?: string;
+      selected?: boolean;
       fill?: boolean;
       style?: CSSProperties;
     }) =>
@@ -111,6 +113,7 @@ vi.mock("../components/native-action-button", async () => {
           onClick: onPress,
           disabled,
           "data-prominence": prominence,
+          "data-selected": selected?.toString(),
           "data-fill": fill,
           style,
         },
@@ -699,3 +702,52 @@ it.each([undefined, "pending", "answered"] as const)(
     expect(layout.menuFullWidth).toBe(status !== "answered");
   },
 );
+
+it("keeps pending approvals primary without adding a selection state", async () => {
+  const { AskActions } = await import("../components/AskActions");
+  await act(async () =>
+    root.render(
+      <AskActions
+        approval
+        actions={[
+          { id: "allow", label: "Allow once" },
+          { id: "always", label: "Always allow" },
+          { id: "deny", label: "Deny" },
+        ]}
+        onAnswer={async () => undefined}
+      />,
+    ),
+  );
+  const actions = [...container.querySelectorAll("button")];
+  expect(actions.map((button) => button.getAttribute("data-prominence"))).toEqual([
+    "primary",
+    "primary",
+    "secondary",
+  ]);
+  expect(actions.map((button) => button.getAttribute("data-selected"))).toEqual([null, null, null]);
+});
+
+it("only marks question options selected after an answer exists", async () => {
+  const { AskActions } = await import("../components/AskActions");
+  const actions = [
+    { id: "first", label: "First" },
+    { id: "second", label: "Second" },
+  ];
+  for (const selectedAnswer of [undefined, "first"]) {
+    await act(async () =>
+      root.render(
+        <AskActions
+          approval={false}
+          actions={actions}
+          selectedAnswer={selectedAnswer}
+          onAnswer={async () => undefined}
+        />,
+      ),
+    );
+    expect(
+      [...container.querySelectorAll("button")].map((button) =>
+        button.getAttribute("data-selected"),
+      ),
+    ).toEqual(selectedAnswer ? ["true", "false"] : [null, null]);
+  }
+});
