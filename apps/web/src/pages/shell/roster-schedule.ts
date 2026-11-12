@@ -8,11 +8,18 @@ export const ROSTER_SAFETY_POLL_MS = 60_000;
 /** Re-reads the roster on each server signal, and by poll only while signals are down or quiet. */
 export function createRosterSchedule(refresh: () => void, now = Date.now) {
   let live = false;
+  let opened = false;
   let lastRead = Number.NEGATIVE_INFINITY;
   const signals: RosterSignals = {
     changed() {
       live = true;
       lastRead = now();
+      // The stream's opening signal arrives alongside the page's own first load, and a refresh
+      // racing that load can redirect away from a chat it is still opening.
+      if (!opened) {
+        opened = true;
+        return;
+      }
       refresh();
     },
     lost() {

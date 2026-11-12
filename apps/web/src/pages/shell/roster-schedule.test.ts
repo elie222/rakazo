@@ -27,20 +27,22 @@ describe("createRosterSchedule", () => {
   it("re-reads on each signal and polls only as a safety net while signals are live", () => {
     const { refresh, roster, advance } = schedule();
     roster.signals.changed();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
     advance(ROSTER_SAFETY_POLL_MS - ROSTER_POLL_MS);
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
     roster.signals.changed();
-    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
     advance(ROSTER_SAFETY_POLL_MS);
-    expect(refresh).toHaveBeenCalledTimes(3);
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 
-  it("returns to the old cadence when the signals drop", () => {
+  it("returns to the old cadence when the signals drop, and re-reads when they come back", () => {
     const { refresh, roster, advance } = schedule();
     roster.signals.changed();
     roster.signals.lost();
     advance(ROSTER_POLL_MS * 2);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    roster.signals.changed();
     expect(refresh).toHaveBeenCalledTimes(3);
   });
 });
