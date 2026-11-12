@@ -48,9 +48,14 @@ export function resolvePersonaColorDef(
   return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
 }
 
+/** Enough for white text while keeping the bubble close to the avatar's color. */
+const BUBBLE_TEXT_CONTRAST = 3;
+const LIGHT_TEXT = "#FFFFFF";
+
 /**
- * Your messages in a bot's chat wear that bot's exact avatar color under white text. Photo and
- * white avatars keep the neutral bubble.
+ * Your messages in a bot's chat wear that bot's color under white text, deepened only as far as
+ * 3:1 contrast so the bubble still matches the avatar. The color darkens in OKLCH so it keeps its
+ * hue and saturation instead of turning muddy. Photo and white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
   avatarValue: string,
@@ -60,7 +65,50 @@ export function chatUserBubbleColors(
   if (parsed.kind === "image") return undefined;
   const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
   if (def.id === "white") return undefined;
-  return { background: `#${expandHex(def.hex)}`.toUpperCase(), foreground: "#FFFFFF" };
+  let background = `#${expandHex(def.hex)}`.toUpperCase();
+  const [lightness, chroma, hue] = hexToOklch(background);
+  for (let l = lightness; contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST; ) {
+    l -= 0.01;
+    background = oklchToHex(l, chroma, hue);
+  }
+  return { background, foreground: LIGHT_TEXT };
+}
+
+function hexToOklch(hex: string): [number, number, number] {
+  const c = expandHex(hex);
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = (Number.parseInt(c.substring(offset, offset + 2), 16) || 0) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return [lightness, Math.hypot(a, bb), Math.atan2(bb, a)];
+}
+
+function oklchToHex(lightness: number, chroma: number, hue: number): string {
+  const a = chroma * Math.cos(hue);
+  const b = chroma * Math.sin(hue);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+  return `#${linear
+    .map((value) => {
+      const v = Math.min(1, Math.max(0, value));
+      const srgb = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+      return Math.round(srgb * 255)
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("")}`.toUpperCase();
 }
 
 /**
