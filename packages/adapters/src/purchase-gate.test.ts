@@ -174,6 +174,38 @@ describe("purchase detection for the page tools", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
+  it("keeps desktop recovery available without clearing unverified presses", async () => {
+    const check = vi.fn(async () => ({
+      purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" as const },
+    }));
+    const ctx = contextWith(check);
+    const prepare = async (actions: unknown[]) => {
+      const request = { name: "computer_act", args: { actions } } as unknown as ToolRequest;
+      const result = await prepareToolRequest(ctx, request);
+      expect(request.purchase).toBeUndefined();
+      expect(request.fleetSummary).toBeUndefined();
+      return result;
+    };
+    // Escape can dismiss a blocking dialog; focus and scrolling can restore an inspectable page.
+    for (const action of [
+      { kind: "key", key: "Escape" },
+      { kind: "focus" },
+      { kind: "scroll", direction: "up", amount: 100 },
+    ]) {
+      expect(await prepare([action])).toBeUndefined();
+    }
+    expect(check).not.toHaveBeenCalled();
+    for (const action of [
+      { kind: "click", x: 10, y: 10 },
+      { kind: "key", key: "Return" },
+    ]) {
+      expect(await prepare([action])).toEqual({
+        error: expect.stringContaining("nothing was pressed"),
+      });
+    }
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
   it("presses an approved desktop purchase only while the page still shows what the card did", async () => {
     let now: typeof found | null = found;
     const ctx = contextWith(vi.fn(async () => ({ purchase: now })));
@@ -190,8 +222,10 @@ describe("purchase detection for the page tools", () => {
     expect(await replay(approval)).toEqual(changed);
     now = null;
     expect(await replay(approval)).toEqual(changed);
-    // A card that named nothing, because the check failed, has nothing to compare.
-    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toBeUndefined();
+    // An old approval from a failed inspection cannot authorize an unchecked press.
+    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toEqual({
+      error: expect.stringContaining("The page could not be verified"),
+    });
   });
 
   it("shows no card only where this run typed an approved wallet card or token, and still approves the click", async () => {

@@ -15,6 +15,7 @@ import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
 import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
+import { ComputerBrowserProvider } from "./computer-browser.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { fakeSpendingPrisma } from "./fake-spending.js";
@@ -4123,7 +4124,7 @@ describe("a click that completes a purchase on a website", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
-  it("asks when the check fails, and approves no click by itself", async () => {
+  it("returns an inspection error without a payment prompt or a click when the check fails", async () => {
     const page = pageBrowser();
     page.provider.purchaseCheck = async () => {
       throw new Error("Page browser timed out");
@@ -4132,9 +4133,64 @@ describe("a click that completes a purchase on a website", () => {
     f.setCalls([payCall()]);
     await f.run();
     expect(page.acts).toEqual([]);
-    expect(isApprovalPausedResult(f.results[0])).toBe(true);
-    const [{ blocks }] = f.pauseRunForInput.mock.calls[0] as unknown as [{ blocks: unknown[] }];
-    expect(blocks[0]).toMatchObject({ text: "Complete a payment on this page?" });
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("nothing was pressed") });
+    expect(isApprovalPausedResult(f.results[0])).toBe(false);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    // A fresh successful inspection lets the bot resume ordinary work without user approval.
+    page.provider.purchaseCheck = async () => ({ purchase: null });
+    f.setCalls([payCall(undefined, "call-retry")]);
+    await f.run();
+    expect(page.acts).toHaveLength(1);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("refuses an old approval that could not name a verified purchase", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider, skipApprovals: true });
+    f.setCalls([payCall()]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    f.effects[0]!.request = {
+      actions: pay,
+      purchaseApproval: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+    };
+    f.setCalls([payCall(undefined, "old-approval")]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({ error: expect.stringContaining("nothing was pressed") });
+    expect(page.acts).toEqual([]);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "Page crashed",
+    "No unambiguous visible browser tab. Use desktop tools to select a tab.",
+    'A confirm dialog is open on the screen: "Delete this?"',
+    "Page browser timed out; the page may be busy or blocked by a dialog. Inspect the screen before continuing.",
+    "Page browser is not attached to this computer's Chrome.",
+    "unknown command: purchase_check",
+  ])("returns recoverable errors for %s in both approval modes", async (error) => {
+    for (const skipApprovals of [false, true]) {
+      const page = pageBrowser();
+      const liveDriver = vi.fn(async () => ({
+        ok: false,
+        error,
+        fallback: "computer_act" as const,
+      }));
+      const browser = new ComputerBrowserProvider({ liveDriver });
+      page.provider.purchaseCheck = browser.purchaseCheck.bind(browser);
+      const f = fixture({ builtin: true, browser: page.provider, skipApprovals });
+      for (const executionId of ["failed-click-1", "failed-click-2"]) {
+        f.setCalls([payCall({ actions: [{ kind: "click", ref: "e2" }] }, executionId)]);
+        await f.run();
+        expect(f.results.at(-1)).toEqual({
+          error: expect.stringContaining("The page could not be verified"),
+        });
+      }
+      expect(page.acts).toEqual([]);
+      expect(f.effects).toEqual([]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(liveDriver.mock.calls.length).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it("refuses it in a webhook run, which has nobody to ask", async () => {

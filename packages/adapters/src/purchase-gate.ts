@@ -158,7 +158,7 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
   let disturbed = false;
   let unplaced = false;
   // A focus that opens a URL brings up a page this check cannot see beforehand: a click or key after it
-  // asks whatever the page looks like now, even when no tab is showing yet.
+  // cannot be verified against the page that is showing now.
   let opened = false;
   let unchecked = false;
   let pointer: { x: number; y: number } | undefined;
@@ -213,8 +213,7 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
 
 /**
  * Ask the page browser whether this call's clicks, or its click or key on the screen, would complete
- * a purchase. A browser that cannot tell (an older computer image, no page open) answers none, and
- * browser_act still refuses an unapproved purchase click itself when its browser knows how.
+ * a purchase. A failed inspection returns an unknown purchase so the executor blocks the press.
  */
 export async function detectPurchase(
   ctx: RunContext,
@@ -245,7 +244,7 @@ export async function detectPurchase(
     ));
   } catch (error) {
     ctx.context.signal.throwIfAborted();
-    getLogger().warn("purchase check failed, asking", {
+    getLogger().warn("purchase check failed", {
       errorName: error instanceof Error ? error.name : typeof error,
     });
     found = { ...unchecked, steps: [] };

@@ -2213,6 +2213,8 @@ describe("BoatSandboxProvider", () => {
       error: "CDP not ready on port 9241: refused",
     });
 
+    // Desktop observation remains available, but an unsupported inspection cannot clear a click.
+    await expect(provider.observe(computer, context)).resolves.toMatchObject({ width: 1280 });
     // An older computer image refuses a command it does not know with exit 2.
     api.withInput = () => ({
       exitCode: 2,
@@ -2228,7 +2230,9 @@ describe("BoatSandboxProvider", () => {
         { desktop: true, enter: false, points: [{ x: 10, y: 10 }], unplaced: false },
         context,
       ),
-    ).resolves.toEqual({ purchase: null });
+    ).resolves.toEqual({
+      purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+    });
 
     api.withInput = () => ({ exitCode: 1, stdout: "Traceback" });
     await expect(
