@@ -279,22 +279,20 @@ export const messagingTools: ToolHandlers = {
       : { ok: true };
     if (reply.midTurnUserTexts.at(-1) === text) return call.finish(result);
     // An update that can't be a chat message yet is shown as the working line, so the bot has
-    // nothing to resend. It becomes the reply if the bot writes none.
+    // nothing to resend. As the bot's latest word, it becomes the reply if the bot writes none.
     if (
       ctx.replyMode === "chat" &&
       !canPublishDurableProgress(reply) &&
       !canPostLongTaskHeadsUp(ctx)
     ) {
+      reply.workingNotes.length = 0;
       reply.lastDiscardedMidTurnNarration = text;
       await showNarrationStatus(ctx, text);
       return call.finish(result);
     }
     await publishInterimMessage(ctx, text, true);
     // The person already has this message; notes written before it are no longer a missing answer.
-    if (ctx.replyMode === "messages") {
-      reply.workingNotes.length = 0;
-      reply.lastDiscardedMidTurnNarration = "";
-    }
+    if (ctx.replyMode === "messages") reply.workingNotes.length = 0;
     return call.finish(result);
   },
   async message_bot(ctx, call) {

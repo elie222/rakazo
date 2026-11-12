@@ -848,6 +848,25 @@ describe("notes that can't be posted as messages", () => {
     });
   });
 
+  it("prefers that update over a note written before it", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtime: async function* (request) {
+        yield { type: "text", text: "Looking it up." };
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-1" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-1");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(finalText(finalizeRun)).toBe("The total is 4.");
+    expect(stepNotes(finalizeRun)).toEqual(["Looking it up."]);
+  });
+
+  it("does not reply with an update it couldn't post once a later one was posted", async () => {
+    expect(
+      await updateTurn(["Starting.", "The total is 4."], { steerAt: 1, final: "" }),
+    ).toMatchObject({ sent: ["The total is 4."], reply: "" });
+  });
+
   it("does not post the same update twice in a row", async () => {
     const longTurn = new Date(Date.now() - 120_000);
     expect(

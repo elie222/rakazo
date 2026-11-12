@@ -155,6 +155,8 @@ export async function publishInterimMessage(ctx: RunContext, text: string, markU
   );
   reply.midTurnUserTexts.push(text);
   reply.publishedMidTurnUserMessage = true;
+  // Text held back earlier is older than what the person now has, so it is no reply.
+  reply.lastDiscardedMidTurnNarration = "";
   if (run.trigger === "messaging" && !ctx.source.channelId) {
     await deps.jobs.enqueue(messagingProgressJob(run.id)).catch((error) => {
       getLogger().error("messaging progress enqueue error", error);
