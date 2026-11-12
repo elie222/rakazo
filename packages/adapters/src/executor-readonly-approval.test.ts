@@ -2169,6 +2169,30 @@ describe("own settings through update_bot", () => {
       expect.objectContaining({ data: { autoSpeak: true } }),
     );
   });
+  it("refuses reflection when a channel run emits a tool it was not offered", async () => {
+    const reflect = vi.fn(async () => ({ ok: true as const, value: "Private bot context" }));
+    const f = fixture({
+      builtin: true,
+      trigger: "messaging",
+      sourceRole: "user",
+      memoryProvider: {
+        describe: () => ({ capabilities: { recall: true, save: true } }),
+        reflect,
+        recall: vi.fn(async () => ({ ok: true, value: [] })),
+      },
+    });
+    f.prisma.message.findUnique.mockResolvedValue({
+      role: "user",
+      blocks: [{ kind: "channel_message", channelId: "channel-1" }],
+    } as never);
+    f.setCalls([
+      { name: "reflect_memory", args: { query: "private context" }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.offeredTools()).not.toContain("reflect_memory");
+    expect(reflect).not.toHaveBeenCalled();
+    expect(f.results[0]).toMatchObject({ error: expect.any(String) });
+  });
   it("keeps the model once outside content entered the run", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.claimedOutsideSteering(true);

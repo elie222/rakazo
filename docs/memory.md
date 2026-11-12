@@ -42,7 +42,7 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   own chats, group chats, and messages between bots) unless you turn off **Learn from
   conversations**. Cleanup requests share a ten-second deadline. Learning and chat-clear cleanup are
   best effort: provider outages or writes still pending after the polling window can leave gaps or
-  stale memories. Disconnecting or changing
+  stale memories. If a submission response is uncertain, cleanup checks continue through the bounded window; unchanged conversations require only a local generation check, without resolving provider credentials. A later refusal does not prove an earlier attempt stored nothing. Disconnecting or changing
   the connection stops cleanup on the old service; it does not delete data there. Bots can't forget a
   single memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks only through explicit recall, never automatic context, and never write to them. Names beginning with

@@ -150,6 +150,11 @@ async function dispatchTool(
       ),
     );
   }
+  if (Object.hasOwn(memoryTools, name) && !ctx.tools.offered.some((tool) => tool.name === name)) {
+    return refuse(
+      refusal("memory_tool_unavailable", "This memory tool is unavailable in this run."),
+    );
+  }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return refuse(
       refusal("page_browser_unavailable", "Page browser is unavailable on this computer."),

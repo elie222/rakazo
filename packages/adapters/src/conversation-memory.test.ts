@@ -414,16 +414,41 @@ describe("retainRunConversation", () => {
   });
 
   it("does not clean up an unconfirmed submission through a replacement connection", async () => {
-    const { deps, provider } = harness();
+    const { deps, provider, prisma } = harness();
     provider.retainConversation.mockRejectedValueOnce(new Error("lost response"));
     await expect(retainRunConversation(deps, "run-1")).rejects.toThrow("lost response");
     const guard = deps.jobs.enqueue.mock.calls[0]![0];
     if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
     Object.assign(provider, { connectionIdentity: "replacement-connection" });
+    prisma.thread.findUnique.mockResolvedValue(null as never);
     await expect(
       settleRetainedConversation(deps, "run-1", guard.payload.pending!),
     ).resolves.toEqual({ settled: true });
     expect(provider.purgeHistory).not.toHaveBeenCalled();
+  });
+
+  it("checks only local thread state for unconfirmed writes until cleanup is needed", async () => {
+    const { deps, provider, prisma } = harness();
+    provider.retainConversation.mockRejectedValueOnce(new Error("lost response"));
+    await expect(retainRunConversation(deps, "run-1")).rejects.toThrow("lost response");
+    const guard = deps.jobs.enqueue.mock.calls[0]![0];
+    if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
+    vi.mocked(deps.memoryProviders.resolve).mockClear();
+    await expect(
+      settleRetainedConversation(deps, "run-1", guard.payload.pending!),
+    ).resolves.toEqual({ settled: false });
+    expect(deps.memoryProviders.resolve).not.toHaveBeenCalled();
+    expect(provider.retainedConversationSettled).not.toHaveBeenCalled();
+    expect(provider.purgeHistory).not.toHaveBeenCalled();
+    prisma.thread.findUnique.mockResolvedValue(null as never);
+    await expect(
+      settleRetainedConversation(deps, "run-1", guard.payload.pending!),
+    ).resolves.toEqual({ settled: false });
+    expect(deps.memoryProviders.resolve).toHaveBeenCalledOnce();
+    expect(provider.purgeHistory).toHaveBeenCalledWith(
+      { botId: "bot-1", threadId: "thread-1", generations: [3] },
+      expect.objectContaining({ spaceId: "space-1" }),
+    );
   });
 
   it("sends the person's words and the replies with names, scope and generation", async () => {

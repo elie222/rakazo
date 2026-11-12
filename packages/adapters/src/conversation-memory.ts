@@ -347,6 +347,15 @@ export async function settleRetainedConversation(
   runId: string,
   pending: PendingTurn,
 ): Promise<{ settled: boolean }> {
+  if (pending.unconfirmed) {
+    // An ambiguous write only needs remote cleanup after clear/deletion. Avoid resolving
+    // credentials or contacting the service while its original conversation still exists.
+    const thread = await deps.prisma.thread.findUnique({
+      where: { id: pending.source.threadId },
+      select: { historyCompactionGeneration: true },
+    });
+    if (thread?.historyCompactionGeneration === pending.generation) return { settled: false };
+  }
   const found = await retainedRunProvider(deps, runId, pending);
   if (!found) return { settled: true };
   const { run, provider } = found;
