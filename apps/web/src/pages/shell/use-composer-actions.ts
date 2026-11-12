@@ -387,8 +387,11 @@ export function useComposerActions({
       };
       // Keep the draft cleared once the submission is confirmed accepted.
       let accepted = false;
+      // Counted once, whether the send makes no message by design or fails.
+      let unsentCounted = false;
       try {
         if (!plan.shouldSend) {
+          unsentCounted = true;
           setUnsentCount((count) => count + 1);
           if (plan.shouldRunRoutines) {
             await rpc.threads.sendWithRoutines({
@@ -508,7 +511,7 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
-        if (!accepted) setUnsentCount((count) => count + 1);
+        if (!accepted && !unsentCounted) setUnsentCount((count) => count + 1);
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
         const confirmation = isConfirmation && draftEdits.current === editsAtSend;

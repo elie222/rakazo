@@ -91,6 +91,22 @@ describe("createStatusLineWriter", () => {
     expect(prompts[0]).not.toContain("sk-resolved-secret");
   });
 
+  it("treats a failure reported in the final text as no answer", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { deps: d, models } = deps((model) =>
+      model === "small-a" ? "Unknown model small-a" : "Checking availability",
+    );
+    const writer = await createStatusLineWriter(d, scope, []);
+    const line = await writer?.step(
+      "Is it in stock?",
+      "Running: curl …",
+      new AbortController().signal,
+    );
+    expect(line).toBe("Checking availability");
+    expect(models).toEqual(["small-a", "small-b"]);
+    warn.mockRestore();
+  });
+
   it("stops at the first model that writes a status", async () => {
     const { deps: d, models } = deps(() => "Reading your question\nLooking up prices");
     const writer = await createStatusLineWriter(d, scope, []);

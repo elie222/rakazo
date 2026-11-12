@@ -319,12 +319,11 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
   // With a status model, a step's technical line is worded for the person instead of shown.
-  if (event.activity && ctx.statusLive?.active() && event.text.trim()) {
-    if (event.modelStatus) ctx.statusLive?.supersede();
-    else {
-      ctx.statusLive?.step(redactSecrets(event.text, ctx.secrets));
-      return;
-    }
+  // The model's own status ends the opening rotation, even before the status model is known.
+  if (event.activity && event.modelStatus) ctx.statusLive?.supersede();
+  else if (event.activity && ctx.statusLive?.active() && event.text.trim()) {
+    ctx.statusLive.step(redactSecrets(event.text, ctx.secrets));
+    return;
   }
   // Flush batched text deltas first so an activity line cannot land
   // ahead of text the model streamed before the tool call.

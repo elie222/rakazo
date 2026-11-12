@@ -159,7 +159,11 @@ export async function createStatusLineWriter(
           /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())
         )
           problem = event.text.trim();
-        if (event.type === "done" && event.text) text = event.text;
+        if (event.type === "done" && event.text) {
+          if (/^(?:I hit a problem:|Unknown model )/i.test(event.text.trim()))
+            problem = event.text.trim();
+          else text = event.text;
+        }
       }
       if (problem || !text.trim()) {
         // biome-ignore lint/suspicious/noConsole: One sanitized status-line diagnostic.

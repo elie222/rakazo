@@ -384,13 +384,14 @@ function toAgentTool(
 /** Tools whose own text is what the person reads, so a status line would only repeat it. */
 const STATUSLESS_TOOLS = new Set(["message_user", "ask_user", "request_secret"]);
 
-export const STEP_STATUS_FIELD = "status";
+/** Named apart from any argument a tool may already call `status`. */
+export const STEP_STATUS_FIELD = "live_status";
 
 const STEP_STATUS_DESCRIPTION =
   "Two to five words, in the person's language, saying what this call does for them, shown live while it runs (for example “Checking availability”). Not passed to the tool.";
 
 /**
- * Offers the model a `status` field on the tool, the line the thread shows while the call runs.
+ * Offers the model a `live_status` field on the tool, the line the thread shows while the call runs.
  * It is taken out before the tool's own argument handling, so the tool never sees it.
  */
 function withStepStatusField(agentTool: AgentTool): AgentTool {
@@ -876,7 +877,7 @@ export interface EventQueue {
 }
 
 export interface ToolHost {
-  /** Tools offered the added `status` field, by the name the model calls them. */
+  /** Tools offered the added `live_status` field, by the name the model calls them. */
   narratedTools?: Set<string>;
   /** The status the model gave each call, by Pi tool call id, read from its raw arguments. */
   stepStatuses?: Map<string, string>;

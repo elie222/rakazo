@@ -8,7 +8,7 @@ import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength, openingAcknowledgementEnabled } from "./user-progress.js";
 
 const LIVE_NARRATION_GUIDANCE =
-  "When answering needs tool calls, first write one short sentence in the person's language saying what you are about to do (for example “I'll check whether a date was announced.”); it is posted at once so they know you are on it. Skip it when you can answer without tools. After that, do not write text between tool calls; instead fill each tool call's status field with two to five words, in the person's language, saying what that call does (for example “Checking availability”). It is shown as a live status line, never as a message, and does not count as a progress update. Beyond that, send progress updates only when the work will take minutes — long computer tasks or multi-step jobs.";
+  "When answering needs tool calls, first write one short sentence in the person's language saying what you are about to do (for example “I'll check whether a date was announced.”); it is posted at once so they know you are on it. Skip it when you can answer without tools. After that, do not write text between tool calls; instead fill each tool call's live_status field with two to five words, in the person's language, saying what that call does (for example “Checking availability”). It is shown as a live status line, never as a message, and does not count as a progress update. Beyond that, send progress updates only when the work will take minutes — long computer tasks or multi-step jobs.";
 
 const QUIET_START_GUIDANCE =
   "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting.";
