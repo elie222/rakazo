@@ -1121,7 +1121,7 @@ const observeToolWork =
     };
   };
 /** A longer chat where most replies did their work with tools, as production chats that copied did. */
-export const TOOL_HEAVY_FIXTURE_VERSION = "recall-tool-heavy-v3";
+export const TOOL_HEAVY_FIXTURE_VERSION = "recall-tool-heavy-v4";
 const ok = (count = 1) => ({ succeeded: count });
 const TOOL_HEAVY_WORK: Array<{
   ask: string;
@@ -1183,7 +1183,7 @@ const TOOL_HEAVY_WORK: Array<{
   {
     ask: "Take a screenshot of what your browser is showing.",
     steps: [{ label: "Computer observe", count: 1, outcomes: ok() }],
-    text: "It shows the Python downloads page, still open from earlier.",
+    text: "It shows example.com, the page I opened to check the browser after reading the downloads page.",
   },
   {
     ask: "Is git installed on your computer?",
@@ -1257,7 +1257,7 @@ const UPTIME_COMPUTER: ComputerScript = {
     ...HOME,
     ...CHROMIUM,
   ],
-  screen: { title: "Python Releases - Chromium", dark: false },
+  screen: { title: "Example Domain - Chromium", dark: false },
 };
 function toolHeavyFixture(): HistoryFixture {
   // Each tool exchange is followed by one small-talk exchange: 48 messages in all.
@@ -1568,7 +1568,8 @@ function recallCaseFromFile(entry: RecallFileCase): EvalCase {
       ...HOME,
       ...CHROMIUM,
     ],
-    screen: entry.computer?.screen ?? { title: "New Tab - Chromium", dark: false },
+    // The screenshot is a capture of example.com, so the window title says so too.
+    screen: entry.computer?.screen ?? { title: "Example Domain - Chromium", dark: false },
   };
   const { expect } = entry;
   return {
