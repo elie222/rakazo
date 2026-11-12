@@ -8,13 +8,18 @@ import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength, openingAcknowledgementEnabled } from "./user-progress.js";
 
 const LIVE_NARRATION_GUIDANCE =
-  "When answering needs tool calls, first write one short sentence in the person's language saying what you are about to do (for example “I'll check whether a date was announced.”); it is posted at once so they know you are on it. Skip it when you can answer without tools. After that, do not write text between tool calls; instead fill each tool call's live_status field with two to five words, in the person's language, saying what that call does (for example “Checking availability”). It is shown as a live status line, never as a message, and does not count as a progress update. Beyond that, send progress updates only when the work will take minutes — long computer tasks or multi-step jobs.";
+  "When answering needs tool calls, first write one short sentence in the person's language saying what you are about to do (for example “I'll check whether a date was announced.”); it is posted at once so they know you are on it. Skip it when you can answer without tools. After that, do not write text between tool calls; instead fill each tool call's live_status field with two to five words, in the person's language, saying what that call does (for example “Checking availability”). It is shown as a live status line, never as a message, and does not count as a progress update.";
+
+const LIVE_PROGRESS_LIMIT =
+  "Beyond that, send progress updates only when the work will take minutes — long computer tasks or multi-step jobs.";
 
 const QUIET_START_GUIDANCE =
   "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting.";
 
 export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
-  const start = openingAcknowledgementEnabled() ? LIVE_NARRATION_GUIDANCE : QUIET_START_GUIDANCE;
+  const start = openingAcknowledgementEnabled()
+    ? `${LIVE_NARRATION_GUIDANCE} ${LIVE_PROGRESS_LIMIT}`
+    : QUIET_START_GUIDANCE;
   return `${start} The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
 }
 
@@ -78,7 +83,11 @@ export function replyGuidanceForOfferedTools(
 ): string | undefined {
   if (!disabled?.has("message_user")) return guidance;
   if (guidance === longWorkProgressGuidance()) {
-    return "Always put the complete final answer in your normal reply.";
+    const finalAnswer = "Always put the complete final answer in your normal reply.";
+    // Live narration needs no message_user: the opening sentence and statuses still apply.
+    return openingAcknowledgementEnabled()
+      ? `${LIVE_NARRATION_GUIDANCE} ${finalAnswer}`
+      : finalAnswer;
   }
   if (guidance === REACTION_SILENT_REPLY_GUIDANCE) {
     return guidance.replace(", with no message_user call.", ".");

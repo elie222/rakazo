@@ -60,7 +60,7 @@ describe("sentMessageEntrances", () => {
     expect(result).toEqual({ entering: [], pendingSends: [] });
   });
 
-  it("gives each send at most one message", () => {
+  it("gives each send at most one message, the newest", () => {
     const result = sentMessageEntrances({
       messages: [mine("a"), mine("b"), mine("c")],
       seenIds: new Set(["a"]),
@@ -68,7 +68,7 @@ describe("sentMessageEntrances", () => {
       meId: "me",
       now: 1_500,
     });
-    expect(result).toEqual({ entering: ["b"], pendingSends: [] });
+    expect(result).toEqual({ entering: ["c"], pendingSends: [] });
   });
 
   it("leaves the send to its own text when the same person writes from another tab", () => {
@@ -84,5 +84,20 @@ describe("sentMessageEntrances", () => {
       now: 1_500,
     });
     expect(result).toEqual({ entering: ["c"], pendingSends: [] });
+  });
+
+  it("animates the new message, not an older one with the same text in a late snapshot", () => {
+    const result = sentMessageEntrances({
+      messages: [
+        { id: "old", role: "user", author: { id: "me" }, text: "Thanks" },
+        { id: "b", role: "bot" },
+        { id: "new", role: "user", author: { id: "me" }, text: "Thanks" },
+      ],
+      seenIds: new Set(),
+      pendingSends: [{ sentAt: 1_000, text: "Thanks" }],
+      meId: "me",
+      now: 1_500,
+    });
+    expect(result).toEqual({ entering: ["new"], pendingSends: [] });
   });
 });

@@ -53,15 +53,28 @@ export function sentMessageEntrances({
   messages.forEach((message, index) => {
     if (seenIds.has(message.id)) lastSeen = index;
   });
-  for (const message of messages.slice(lastSeen + 1)) {
-    if (!pending.length) break;
-    if (seenIds.has(message.id) || message.role !== "user") continue;
-    if (meId && message.author && message.author.id !== meId) continue;
+  // Your new messages after it. A snapshot that arrives while the chat loads can still carry
+  // older ones, so each send claims the newest message that matches it.
+  const candidates = messages
+    .slice(lastSeen + 1)
+    .filter(
+      (message) =>
+        !seenIds.has(message.id) &&
+        message.role === "user" &&
+        !(meId && message.author && message.author.id !== meId),
+    );
+  const stillPending: PendingSend[] = [];
+  for (const send of pending) {
     // The same person writing from another tab sends other text, so it does not claim the send.
-    const send = pending[0]!;
-    if (send.text !== undefined && (message.text ?? "") !== send.text) continue;
-    pending.shift();
-    entering.push(message.id);
+    const index = candidates.findLastIndex(
+      (message) => send.text === undefined || (message.text ?? "") === send.text,
+    );
+    if (index < 0) {
+      stillPending.push(send);
+      continue;
+    }
+    entering.push(candidates[index]!.id);
+    candidates.splice(index, 1);
   }
-  return { entering, pendingSends: pending };
+  return { entering, pendingSends: stillPending };
 }

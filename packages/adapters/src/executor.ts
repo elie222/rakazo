@@ -799,13 +799,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // A status model, when the member chose one, writes the working line's statuses. It
         // starts now, so its opening statuses are ready while the rest of the run sets up.
         const statusRequestText = turnBlocks ? messageBlocksText(turnBlocks).trim() : "";
+        const groupReplyOptional =
+          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         // A group member a message named nobody may stay silent, so it shows nothing early.
         const statusLinesWanted =
           openingAcknowledgementEnabled() &&
           runPromotesMidTurnNarration(run.trigger) &&
           isConversationalRun(run.trigger) &&
           !runAllowsSilentEmpty(run.trigger) &&
-          !(Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional);
+          !groupReplyOptional;
         // Set up in the background: the run never waits on the status model. Its statuses
         // show as soon as they are ready, not once the run has finished setting up.
         const statusLinesSetup = statusLinesWanted
@@ -871,8 +873,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const currentRunRequiresImageInput = confirmedRunImages.length > 0;
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
-        const groupReplyOptional =
-          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
