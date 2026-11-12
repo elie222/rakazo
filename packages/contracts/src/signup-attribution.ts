@@ -7,9 +7,10 @@ export const SignupSurface = z.enum(["web", "desktop", "ios", "android"]);
 // Campaign labels only: never URLs, query strings, email addresses, or click identifiers.
 const campaignLabel = z
   .string()
+  .trim()
   .min(1)
   .max(100)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._~-]*$/);
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9 ._~-]*$/);
 export const SignupAttribution = z
   .object({
     surface: SignupSurface.optional(),

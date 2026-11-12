@@ -8,7 +8,7 @@ import { createAuthClient } from "better-auth/react";
 import { desktopBridge } from "./desktop";
 
 const signupSurface = desktopBridge() ? "desktop" : "web";
-if (typeof window !== "undefined") rememberSignupAttribution(window, signupSurface);
+if (typeof window !== "undefined") rememberSignupAttribution(window);
 
 export const authClient: ReactAuthClient<{
   // An uninstantiated generic resolves to `any`, which would erase every plugin's actions.

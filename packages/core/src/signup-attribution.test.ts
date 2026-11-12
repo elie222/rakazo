@@ -23,15 +23,39 @@ function browser(href: string, referrer = "") {
 }
 
 describe("signup acquisition", () => {
+  it("retains campaign names with URL-encoded spaces through server parsing", () => {
+    const page = browser(
+      "https://example.com/?utm_campaign=Spring+Sale&utm_content=Black%20Friday",
+    );
+    rememberSignupAttribution(page);
+    expect(signupAttributionFromHeaders(new Headers({ cookie: page.document.cookie }))).toEqual({
+      utmCampaign: "Spring Sale",
+      utmContent: "Black Friday",
+    });
+  });
+  it("does not renew the first touch when the visitor returns to sign up", () => {
+    const page = browser("https://example.com/?utm_source=community");
+    rememberSignupAttribution(page);
+    page.location.href = "https://app.example.com/sign-in";
+    rememberSignupAttribution(page);
+    expect(
+      signupAttributionFromHeaders(
+        new Headers({ cookie: page.document.cookie, [SIGNUP_SURFACE_HEADER]: "desktop" }),
+      ),
+    ).toEqual({
+      utmSource: "community",
+      surface: "desktop",
+    });
+    expect(page.writes).toHaveLength(1);
+  });
   it("keeps shared-hosting tenants separate for cookies and referrers", () => {
     const page = browser(
       "https://app.example.github.io/?utm_source=community",
       "https://other.github.io/",
     );
-    rememberSignupAttribution(page, "web");
+    rememberSignupAttribution(page);
     expect(page.writes[0]).toContain("; Domain=example.github.io");
     expect(signupAttributionFromCookie(page.document.cookie)).toEqual({
-      surface: "web",
       utmSource: "community",
       referringDomain: "other.github.io",
     });
@@ -46,16 +70,15 @@ describe("signup acquisition", () => {
     expect(page.writes[0]).toContain("; Secure");
     page.location.href = "https://app.example.com/sign-in?utm_source=other";
     page.document.referrer = "https://example.com/";
-    rememberSignupAttribution(page, "web");
+    rememberSignupAttribution(page);
     expect(signupAttributionFromCookie(page.document.cookie)).toEqual({
-      surface: "web",
       utmSource: "newsletter",
       utmCampaign: "launch",
       referringDomain: "search.example.test",
     });
     expect(page.document.cookie).not.toContain("private");
-    rememberSignupAttribution(page, "web");
-    expect(page.writes).toHaveLength(2);
+    rememberSignupAttribution(page);
+    expect(page.writes).toHaveLength(1);
   });
 
   it("drops invalid campaign values and internal referrers, retaining valid fields", () => {
@@ -63,21 +86,19 @@ describe("signup acquisition", () => {
       `https://app.example.com/?utm_source=person%40example.test&utm_medium=email&utm_campaign=${"a".repeat(101)}&utm_term=https%3A%2F%2Fexample.test`,
       "https://example.com/",
     );
-    rememberSignupAttribution(page, "desktop");
+    rememberSignupAttribution(page);
     expect(signupAttributionFromCookie(page.document.cookie)).toEqual({
-      surface: "desktop",
       utmMedium: "email",
     });
   });
 
   it("allows a direct visit to acquire its first campaign later", () => {
     const page = browser("http://localhost:3000/sign-in");
-    rememberSignupAttribution(page, "web");
-    expect(page.writes[0]).not.toContain("Domain=");
+    rememberSignupAttribution(page);
+    expect(page.writes).toHaveLength(0);
     page.location.href += "?utm_source=community";
-    rememberSignupAttribution(page, "web");
+    rememberSignupAttribution(page);
     expect(signupAttributionFromCookie(page.document.cookie)).toEqual({
-      surface: "web",
       utmSource: "community",
     });
   });
@@ -103,6 +124,6 @@ describe("signup acquisition", () => {
         throw new Error("blocked");
       },
     });
-    expect(() => rememberSignupAttribution(page, "web")).not.toThrow();
+    expect(() => rememberSignupAttribution(page)).not.toThrow();
   });
 });

@@ -11,7 +11,6 @@ import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { clientUpdates } from "./lib/client-update";
-import { desktopBridge } from "./lib/desktop";
 import { webLogoAvatarActivity } from "./lib/logo-avatar-activity";
 import { reportCaughtReactError } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
@@ -56,7 +55,7 @@ function ClientUpdateOnNavigate() {
 function SignupAttributionOnNavigate() {
   const { pathname, search } = useLocation();
   useLayoutEffect(() => {
-    rememberSignupAttribution(window, desktopBridge() ? "desktop" : "web");
+    rememberSignupAttribution(window);
   }, [pathname, search]);
   return null;
 }
