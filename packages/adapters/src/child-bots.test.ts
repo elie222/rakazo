@@ -2181,6 +2181,100 @@ describe("destroyBot", () => {
 });
 
 describe("archiveBot", () => {
+  it.each(["completed", "failed", "cancelled"])(
+    "preserves a run that becomes %s after the active-run snapshot",
+    async (terminalStatus) => {
+      const endedAt = new Date("2026-08-16T12:00:00.000Z");
+      const finished = {
+        id: "finished-run",
+        taskId: "finished-task",
+        userId: "user-1",
+        spaceId: "workspace-1",
+        status: terminalStatus,
+        completedAt: endedAt,
+      };
+      const active = {
+        id: "active-run",
+        taskId: "active-task",
+        userId: "user-1",
+        spaceId: "workspace-1",
+        status: "running",
+        completedAt: null as Date | null,
+      };
+      const runs = [finished, active];
+      const updateRuns = vi.fn(async ({ where, data }) => {
+        const matched = runs.filter(
+          (run) =>
+            where.id.in.includes(run.id) && (!where.status || where.status.in.includes(run.status)),
+        );
+        for (const run of matched) Object.assign(run, data);
+        return matched.map(({ id }) => ({ id }));
+      });
+      const updateTask = vi.fn().mockResolvedValue({ count: 1 });
+      const updateAttempt = vi.fn().mockResolvedValue({ count: 1 });
+      const clearCheckpoints = vi.fn().mockResolvedValue({ count: 1 });
+      const tx = {
+        run: {
+          updateMany: updateRuns,
+          updateManyAndReturn: updateRuns,
+          findMany: vi.fn(async ({ where }) => runs.filter((run) => where.id.in.includes(run.id))),
+        },
+        task: { updateMany: updateTask },
+        attempt: { updateMany: updateAttempt },
+        externalEffect: { deleteMany: clearCheckpoints },
+        message: { findMany: vi.fn().mockResolvedValue([]) },
+        secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        routine: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        bot: { update: vi.fn().mockResolvedValue({}) },
+      };
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      const prisma = {
+        computer: { findUnique: vi.fn().mockResolvedValue(null) },
+        // Both runs were active when selected, but the first has ended before the transaction.
+        run: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue(
+              runs.map(({ id, taskId, userId, spaceId }) => ({ id, taskId, userId, spaceId })),
+            ),
+        },
+        routine: { findMany: vi.fn().mockResolvedValue([{ id: "routine-1" }]) },
+        $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      await archiveBot(
+        {
+          prisma,
+          sandbox: {} as SandboxProvider,
+          home: {} as AgentHomeStore,
+          jobs: { cancel } as unknown as JobPublisher,
+        },
+        { id: "bot-1", spaceId: "workspace-1", userId: "user-1", name: "Scout", archivedAt: null },
+        context,
+      );
+      expect(finished.status).toBe(terminalStatus);
+      expect(finished.completedAt).toBe(endedAt);
+      expect(active.status).toBe("cancelled");
+      expect(updateTask).toHaveBeenCalledExactlyOnceWith({
+        where: { id: { in: ["active-task"] } },
+        data: { status: "cancelled" },
+      });
+      expect(updateAttempt).toHaveBeenCalledExactlyOnceWith({
+        where: { runId: { in: ["active-run"] }, status: "running" },
+        data: { status: "cancelled", finishedAt: expect.any(Date) },
+      });
+      expect(clearCheckpoints).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ runId: { in: ["active-run"] } }),
+        }),
+      );
+      expect(cancel.mock.calls).toEqual([["run:active-run"], ["routine:routine-1"]]);
+      expect(tx.bot.update).toHaveBeenCalled();
+      expect(tx.routine.updateMany).toHaveBeenCalled();
+    },
+  );
+
   it("stops work and routines while preserving the bot", async () => {
     const updateBot = vi.fn().mockResolvedValue({});
     const disableRoutines = vi.fn().mockResolvedValue({ count: 2 });
@@ -2192,11 +2286,16 @@ describe("archiveBot", () => {
         message: { findMany: vi.fn(async () => []) },
         ...groupCleanup,
         run: {
-          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          updateManyAndReturn: vi
+            .fn()
+            .mockResolvedValue([
+              { id: "run-1", taskId: "task-1", userId: "user-1", spaceId: "workspace-1" },
+            ]),
           findMany: vi
             .fn()
             .mockResolvedValue([{ id: "run-1", userId: "user-1", spaceId: "workspace-1" }]),
         },
+        attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: deleteSecrets },
         routine: { updateMany: disableRoutines },
@@ -2215,7 +2314,13 @@ describe("archiveBot", () => {
         }),
       },
       computer: { findUnique: vi.fn().mockResolvedValue(null) },
-      run: { findMany: vi.fn().mockResolvedValue([{ id: "run-1" }]) },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "run-1", taskId: "task-1", userId: "user-1", spaceId: "workspace-1" },
+          ]),
+      },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
