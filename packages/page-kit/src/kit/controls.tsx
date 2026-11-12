@@ -1,6 +1,6 @@
 import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { openViaHost } from "./inline.js";
 import { useWords } from "./labels.js";
 
@@ -143,22 +143,35 @@ export function CopyButton({
   variant?: "quiet" | "primary";
 }) {
   const words = useWords();
+  const name = text(label);
+  const content = text(value) || name;
+  const request = useRef(0);
   const [state, setState] = useState<"idle" | "copied" | "blocked">("idle");
+  useEffect(() => {
+    setState("idle");
+    return () => {
+      request.current += 1;
+    };
+  }, [content, name]);
   useEffect(() => {
     if (state !== "copied") return;
     const timer = setTimeout(() => setState("idle"), 1600);
     return () => clearTimeout(timer);
   }, [state]);
-  const name = text(label);
   if (!name) return null;
-  const content = text(value) || name;
   return (
     <>
       <button
         type="button"
         className="rk-button"
         data-variant={variant === "primary" ? "primary" : undefined}
-        onClick={() => void copyText(content).then((ok) => setState(ok ? "copied" : "blocked"))}
+        onClick={() => {
+          const id = ++request.current;
+          setState("idle");
+          void copyText(content).then((ok) => {
+            if (request.current === id) setState(ok ? "copied" : "blocked");
+          });
+        }}
       >
         {state === "copied" ? text(copiedLabel) || words.t("copied") : name}
       </button>
