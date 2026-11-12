@@ -20,6 +20,7 @@ import {
   HINDSIGHT_PURGE_TIMEOUT_MS,
   HINDSIGHT_RECALL_TIMEOUT_MS,
   HINDSIGHT_STATUS_TIMEOUT_MS,
+  HINDSIGHT_WRITE_TIMEOUT_MS,
   hindsightBankExists,
   hindsightOperationStatus,
   listHindsightDocumentIdsByTag,
@@ -539,7 +540,11 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     if (request.source.kind === "history") return { ok: true, value: undefined };
     const content = request.content.trim();
     if (!content) return { ok: false, error: "Hindsight save skipped: memory content is empty." };
-    const connection = await this.connectionForRequest(context.signal);
+    const signal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(HINDSIGHT_WRITE_TIMEOUT_MS),
+    ]);
+    const connection = await this.connectionForRequest(signal);
     if (!connection.ok) return connection;
     const item = {
       content: truncateUtf8(content, MAX_CONTENT_BYTES),
@@ -561,7 +566,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
           async: false,
           operation_id: operationUuid(`rakazo-save:${bank}:${context.operationId}:${fact}`),
         },
-        context.signal,
+        signal,
       );
     // Both writes reuse stable operation IDs, so a failed shared save can be retried safely.
     const first = await write(own!);
@@ -576,8 +581,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   /**
    * Appends the turn to its conversation's document in each write bank. `pending` lists the
    * operations to wait on; submitting again replays the same operations. A failing own bank
-   * fails the call before the team bank is touched. Conversation learning is best effort; a
-   * failed team write is logged without discarding the own-bank operation needing cleanup.
+   * fails the call before the team bank is touched. Any failed bank fails the attempt so the
+   * job can retry with the same operation IDs. Pre-submission recovery covers partial writes.
    */
   private async retainTurn(
     request: SemanticMemoryConversationRequest,
@@ -586,7 +591,11 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const turns = request.turns.filter((turn) => turn.content.trim());
     const last = turns.at(-1);
     if (!last) return { ok: true, value: {} };
-    const connection = await this.connectionForRequest(context.signal);
+    const signal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(HINDSIGHT_WRITE_TIMEOUT_MS),
+    ]);
+    const connection = await this.connectionForRequest(signal);
     if (!connection.ok) return connection;
     const session = sessionId(request.threadId, request.generation, request.botId);
     const item = {
@@ -614,7 +623,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
           connection.value,
           bank,
           { items: [stored], async: true, operation_id: operationId },
-          context.signal,
+          signal,
         );
         return retained.ok ? { ok: true, value: operationId } : retained;
       };
@@ -633,12 +642,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const operations: PendingOperation[] = [{ bank: own!, operationId: first.value }];
     for (const bank of extra) {
       const written = await write(bank);
-      if (written.ok) operations.push({ bank, operationId: written.value, team: true });
-      else
-        getLogger().warn("Hindsight could not learn a turn in the shared bank", {
-          bank,
-          error: written.error,
-        });
+      if (!written.ok) return { ok: false, error: written.error };
+      operations.push({ bank, operationId: written.value, team: true });
     }
     return { ok: true, value: { pending: JSON.stringify(operations) } };
   }

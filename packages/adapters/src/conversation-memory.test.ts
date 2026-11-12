@@ -882,6 +882,12 @@ describe("retainRunConversation", () => {
     await expect(retainRunConversation(deps, "run-1")).rejects.toThrow(
       "memory request failed: 503",
     );
+    // A refused shared submission can still have written to its own bank.
+    expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
+    const guard = deps.jobs.enqueue.mock.calls[0]![0];
+    if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
+    expect(guard.payload.pending).toMatchObject({ unconfirmed: true });
+    expect(deps.jobs.cancel).not.toHaveBeenCalled();
   });
 });
 

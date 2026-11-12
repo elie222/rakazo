@@ -8,6 +8,7 @@ import {
   listHindsightDocumentIdsByTag,
   probeHindsightKey,
   recallHindsight,
+  retainHindsight,
 } from "./hindsight-client.js";
 
 const config: HindsightConnectionConfig = {
@@ -74,6 +75,13 @@ describe("Hindsight client", () => {
     const fetch = vi.fn(async () => Response.json({ status: "pending" }));
     await hindsightOperationStatus({ ...config, fetch }, "bank", "operation");
     expect(timeout.mock.calls).toEqual([[10_000]]);
+  });
+
+  it("bounds writes independently of the long reflection timeout", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetch = vi.fn(async () => Response.json({ success: true }));
+    await retainHindsight({ ...config, fetch }, "bank", { items: [], async: false });
+    expect(timeout.mock.calls).toEqual([[30_000]]);
   });
 
   it("reads a bank nothing was retained to as empty", async () => {

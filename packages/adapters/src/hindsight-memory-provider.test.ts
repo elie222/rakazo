@@ -755,13 +755,65 @@ describe("Hindsight conversations", () => {
     expect(fake.requests.some((request) => request.bank === TEAM_BANK)).toBe(false);
   });
 
-  it("settles a turn stored in its own bank when the team bank refuses it", async () => {
-    const fake = hindsightFake({ failWrites: [TEAM_BANK] });
+  it("retries both banks with stable IDs when a shared turn is only partially submitted", async () => {
+    const failing = [TEAM_BANK];
+    const fake = hindsightFake({ failWrites: failing });
+    const memory = provider(fake.fetch);
     await expect(
-      retainAndCheck(provider(fake.fetch), { ...turn, scope: "shared" }),
-    ).resolves.toEqual({ ok: true, value: { settled: true } });
+      memory.retainConversation!({ ...turn, scope: "shared" }, context),
+    ).resolves.toEqual({
+      ok: false,
+      error: "Hindsight request failed: 500",
+    });
+    failing.length = 0;
+    await expect(retainAndCheck(memory, { ...turn, scope: "shared" })).resolves.toEqual({
+      ok: true,
+      value: { settled: true },
+    });
+    const ids = writes(fake.requests).map((request) => request.body?.operation_id);
+    expect(ids[2]).toBe(ids[0]);
+    expect(ids[3]).toBe(ids[1]);
     expect(fake.documents.get(OWN_BANK)?.has(SESSION)).toBe(true);
+    expect(fake.documents.get(TEAM_BANK)?.has(SESSION)).toBe(true);
   });
+
+  it.each(["save", "retain"] as const)(
+    "shares one write deadline across own and shared banks for %s",
+    async (operation) => {
+      const deadline = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+      const signals: AbortSignal[] = [];
+      const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const signal = init!.signal!;
+        signals.push(signal);
+        if (signals.length === 1) return Response.json({ success: true });
+        deadline.abort(new Error("write deadline"));
+        signal.throwIfAborted();
+        throw new Error("shared write outlived deadline");
+      });
+      try {
+        const memory = provider(fetch);
+        const result =
+          operation === "save"
+            ? await memory.save(
+                {
+                  content: "Prefers tea.",
+                  botId: "bot-1",
+                  scope: "shared",
+                  source: { kind: "durable" },
+                },
+                context,
+              )
+            : await memory.retainConversation!({ ...turn, scope: "shared" }, context);
+        expect(result).toMatchObject({ ok: false });
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(signals.every((signal) => signal.aborted)).toBe(true);
+        expect(timeout.mock.calls).toEqual([[30_000], [30_000], [30_000]]);
+      } finally {
+        timeout.mockRestore();
+      }
+    },
+  );
 
   it("stores a turn with only the person's words", async () => {
     const fake = hindsightFake();
@@ -1151,7 +1203,7 @@ describe("Hindsight connection", () => {
     }
   });
 
-  it.each(["recall", "purge", "settlement"] as const)(
+  it.each(["recall", "purge", "settlement", "save", "retain"] as const)(
     "includes stalled DNS in the %s deadline",
     async (operation) => {
       const deadline = new AbortController();
@@ -1171,27 +1223,64 @@ describe("Hindsight connection", () => {
         true,
       );
       try {
-        const pending =
-          operation === "recall"
-            ? memory.recall(
-                { query: "context", botId: "bot-1", scope: "isolated", limit: 5 },
-                context,
-              )
-            : operation === "purge"
-              ? memory.purgeHistory(
-                  { botId: "bot-1", threadId: "thread-1", generations: [3] },
-                  context,
-                )
-              : memory.retainedConversationSettled(
-                  JSON.stringify([
-                    { bank: OWN_BANK, operationId: "00000000-0000-4000-8000-000000000000" },
-                  ]),
-                  context,
-                );
+        const operations = {
+          recall: () =>
+            memory.recall(
+              { query: "context", botId: "bot-1", scope: "isolated", limit: 5 },
+              context,
+            ),
+          purge: () =>
+            memory.purgeHistory(
+              { botId: "bot-1", threadId: "thread-1", generations: [3] },
+              context,
+            ),
+          save: () =>
+            memory.save(
+              {
+                content: "Prefers tea.",
+                botId: "bot-1",
+                scope: "isolated",
+                source: { kind: "durable" },
+              },
+              context,
+            ),
+          retain: () =>
+            memory.retainConversation!(
+              {
+                botId: "bot-1",
+                botName: "Ada",
+                userName: "Sam",
+                scope: "isolated",
+                threadId: "thread-1",
+                generation: 3,
+                runId: "run-1",
+                conversation: "direct",
+                turns: [
+                  { role: "user", content: "Prefers tea.", timestamp: "2026-11-11T10:00:00.000Z" },
+                ],
+              },
+              context,
+            ),
+          settlement: () =>
+            memory.retainedConversationSettled(
+              JSON.stringify([
+                { bank: OWN_BANK, operationId: "00000000-0000-4000-8000-000000000000" },
+              ]),
+              context,
+            ),
+        };
+        const pending = operations[operation]();
         expect(resolveHostname).toHaveBeenCalledOnce();
         deadline.abort(new Error("operation deadline"));
         await expect(pending).resolves.toMatchObject({ ok: false });
-        expect(timeout).toHaveBeenNthCalledWith(1, operation === "recall" ? 15_000 : 10_000);
+        expect(timeout).toHaveBeenNthCalledWith(
+          1,
+          operation === "recall"
+            ? 15_000
+            : operation === "save" || operation === "retain"
+              ? 30_000
+              : 10_000,
+        );
         expect(fetch).not.toHaveBeenCalled();
       } finally {
         timeout.mockRestore();

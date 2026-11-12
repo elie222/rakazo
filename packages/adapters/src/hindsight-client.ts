@@ -14,6 +14,8 @@ export const HINDSIGHT_RECALL_TIMEOUT_MS = 15_000;
 export const HINDSIGHT_PURGE_TIMEOUT_MS = 10_000;
 /** Polling operation metadata does not run the provider's LLM. */
 export const HINDSIGHT_STATUS_TIMEOUT_MS = 10_000;
+/** Fact extraction writes have a bounded budget separate from long-form reflection. */
+export const HINDSIGHT_WRITE_TIMEOUT_MS = 30_000;
 const MAX_HINDSIGHT_RESPONSE_BYTES = 1024 * 1024;
 
 export interface HindsightConnectionConfig extends LocalServiceConnection {
@@ -150,6 +152,7 @@ export async function retainHindsight(
     await hindsightRequest(config, `${bankPath(bank)}/memories`, body, {
       signal,
       reportStatus: true,
+      timeoutMs: HINDSIGHT_WRITE_TIMEOUT_MS,
     }),
   );
 }
