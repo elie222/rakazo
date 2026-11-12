@@ -65,38 +65,32 @@ function excerpt(text: string, max: number): string {
 
 /**
  * Cuts oversized group messages, then keeps the newest that fit the transcript cap. This run's
- * replies are always kept.
+ * replies take at most half of it, newest first, so long replies never crowd out what the room
+ * said; everyone else's messages get the rest.
  */
 function capGroupWindow(messages: SaidMessage[]): SaidMessage[] {
-  const withText = messages.map((message) => {
-    const text = conversationText(message.blocks);
-    return {
-      ...message,
-      text: { ...text, content: excerpt(text.content, MAX_GROUP_MESSAGE_CHARS) },
-    };
-  });
-  let budget =
-    MAX_GROUP_WINDOW_CHARS -
-    withText
-      .filter((message) => message.role === "assistant")
-      .reduce((sum, message) => sum + message.text.content.length, 0);
-  const newestFirst = [...withText].sort((a, b) => b.seq - a.seq);
-  const kept: SaidMessage[] = [];
-  let full = false;
-  for (const message of newestFirst) {
-    if (message.role === "assistant") {
+  const newestFirst = messages
+    .map((message) => {
+      const text = conversationText(message.blocks);
+      return {
+        ...message,
+        text: { ...text, content: excerpt(text.content, MAX_GROUP_MESSAGE_CHARS) },
+      };
+    })
+    .sort((a, b) => b.seq - a.seq);
+  const keepNewest = (role: SaidMessage["role"], budget: number) => {
+    const kept: SaidMessage[] = [];
+    let used = 0;
+    for (const message of newestFirst) {
+      if (message.role !== role) continue;
+      if (used + message.text.content.length > budget) break;
+      used += message.text.content.length;
       kept.push(message);
-      continue;
     }
-    if (full) continue;
-    if (message.text.content.length > budget) {
-      full = true;
-      continue;
-    }
-    budget -= message.text.content.length;
-    kept.push(message);
-  }
-  return kept;
+    return { kept, used };
+  };
+  const replies = keepNewest("assistant", MAX_GROUP_WINDOW_CHARS / 2);
+  return [...replies.kept, ...keepNewest("user", MAX_GROUP_WINDOW_CHARS - replies.used).kept];
 }
 
 type ReceivedBotMessage = Extract<MessageBlock, { kind: "bot_message_received" }>;
@@ -107,53 +101,106 @@ function receivedBotMessage(blocks: unknown): ReceivedBotMessage | undefined {
   );
 }
 
+/** The bot whose memory another bot's words would enter. */
+export type WordsReceiver = { spaceId: string; userId: string };
+
+/** Whether a bot shares the receiver's Space and owner; any other bot's words are outside text. */
+function receiverOwns(bot: { spaceId: string; userId: string }, receiver: WordsReceiver) {
+  return bot.spaceId === receiver.spaceId && bot.userId === receiver.userId;
+}
+
 /**
- * Of these runs, the ones that never read outside content. Another bot's words from a run that did
- * may repeat that outside text, which would come back later as this bot's trusted memory.
+ * Of the runs that wrote other bots' group replies, the ones whose words the receiver may treat
+ * as its own trusted memory: the run's bot is in the receiver's Space and has its owner, and the
+ * run completed without taking in outside content. A group reply is written when its run
+ * finalizes, and the flag is final only then, so a running, waiting, failed or cancelled run is
+ * not trusted, and neither is a run that can't be found.
  */
-async function runsWithoutOutsideContent(
+async function trustedBotRuns(
   prisma: PrismaClient,
+  receiver: WordsReceiver,
   runIds: readonly string[],
 ): Promise<Set<string>> {
   if (!runIds.length) return new Set();
   const runs = await prisma.run.findMany({
     where: { id: { in: [...new Set(runIds)] } },
-    select: { id: true, readOutsideContent: true },
+    select: {
+      id: true,
+      status: true,
+      readOutsideContent: true,
+      bot: { select: { spaceId: true, userId: true } },
+    },
   });
-  return new Set(runs.filter((run) => !run.readOutsideContent).map((run) => run.id));
-}
-
-/**
- * The run that sent a received bot message: the received block points at the sender's own copy
- * of the message, which belongs to the sending run.
- */
-async function senderRunIds(
-  prisma: PrismaClient,
-  received: readonly ReceivedBotMessage[],
-): Promise<Map<string, string>> {
-  const outboundIds = [
-    ...new Set(
-      received.flatMap((block) => (block.returnToMessageId ? [block.returnToMessageId] : [])),
-    ),
-  ];
-  if (!outboundIds.length) return new Map();
-  const outbound = await prisma.message.findMany({
-    where: { id: { in: outboundIds } },
-    select: { id: true, runId: true },
-  });
-  return new Map(
-    outbound.flatMap((message) => (message.runId ? [[message.id, message.runId] as const] : [])),
+  return new Set(
+    runs
+      .filter(
+        (run) =>
+          run.status === "completed" && !run.readOutsideContent && receiverOwns(run.bot, receiver),
+      )
+      .map((run) => run.id),
   );
 }
 
-/** Whether this received bot message came from a run that never read outside content. */
-async function trustedSenderRun(
+/**
+ * Of these messages other bots sent the receiver, the ones it may treat as its own trusted
+ * memory: the sending bot is in the receiver's Space and has its owner, and the sending run had
+ * taken in no outside content when it sent the message (`senderClean`). A message can only repeat
+ * what its run read before sending it, so that snapshot is exact. A message without the marker,
+ * including any sent before it existed, is not trusted.
+ */
+async function trustedReceivedMessages(
   prisma: PrismaClient,
+  receiver: WordsReceiver,
+  received: readonly ReceivedBotMessage[],
+): Promise<Set<ReceivedBotMessage>> {
+  const clean = received.filter((block) => block.senderClean === true);
+  if (!clean.length) return new Set();
+  const senders = await prisma.bot.findMany({
+    where: { id: { in: [...new Set(clean.map((block) => block.fromBotId))] } },
+    select: { id: true, spaceId: true, userId: true },
+  });
+  const owned = new Set(
+    senders.filter((sender) => receiverOwns(sender, receiver)).map((sender) => sender.id),
+  );
+  return new Set(clean.filter((block) => owned.has(block.fromBotId)));
+}
+
+/** Whether the receiver may trust this message another bot sent it; see trustedReceivedMessages. */
+export async function receivedBotMessageTrusted(
+  prisma: PrismaClient,
+  receiver: WordsReceiver,
   received: ReceivedBotMessage,
 ): Promise<boolean> {
-  if (!received.returnToMessageId) return false;
-  const runId = (await senderRunIds(prisma, [received])).get(received.returnToMessageId);
-  return Boolean(runId && (await runsWithoutOutsideContent(prisma, [runId])).has(runId));
+  return (await trustedReceivedMessages(prisma, receiver, [received])).has(received);
+}
+
+/**
+ * Whether the bot message that started a run may carry outside content: the bot whose chat it
+ * arrived in may not trust it (see trustedReceivedMessages).
+ */
+export async function botMessageFromOutsideContent(
+  prisma: PrismaClient,
+  sourceMessageId: string,
+): Promise<boolean> {
+  const source = await prisma.message.findUnique({
+    where: { id: sourceMessageId },
+    select: {
+      blocks: true,
+      thread: { select: { spaceId: true, bot: { select: { userId: true } } } },
+    },
+  });
+  const received = source ? receivedBotMessage(source.blocks) : undefined;
+  if (!source || !received) return false;
+  // Bot messages arrive in the receiving bot's own chat.
+  const owner = source.thread.bot?.userId;
+  return (
+    !owner ||
+    !(await receivedBotMessageTrusted(
+      prisma,
+      { spaceId: source.thread.spaceId, userId: owner },
+      received,
+    ))
+  );
 }
 
 /**
@@ -187,7 +234,9 @@ export async function answeredSteeringMessageIds(
   }
 }
 
-export type RetainTurnResult = { pending?: { token: string; generation: number } };
+type RetainDeps = { prisma: PrismaClient; memoryProviders: MemoryProviderResolver };
+
+export type RetainTurnResult = { pending?: { token?: string; generation: number } };
 
 /**
  * Sends one finished turn of a bot's conversation to the Space's memory provider. In the bot's
@@ -195,13 +244,14 @@ export type RetainTurnResult = { pending?: { token: string; generation: number }
  * replies. In a group chat: everything the room said since the bot last replied, and the replies.
  * `withoutReplies` leaves this run's replies out: the run took in outside content, and its replies
  * could carry that text into trusted memory. People's and other bots' words are still learned,
- * except words from another bot's run that read outside content.
+ * except other bots' words this bot may not trust (see trustedReceivedMessages and
+ * trustedBotRuns).
  *
- * `pending` means the provider is still storing the turn: poll `settleRetainedConversation`
- * with it so a clear that lands meanwhile is purged once it settles.
+ * `pending` means the provider is still storing the turn, or a clear landed meanwhile and its
+ * purge failed: poll `settleRetainedConversation` with it so the clear is purged once it settles.
  */
 export async function retainRunConversation(
-  deps: { prisma: PrismaClient; memoryProviders: MemoryProviderResolver },
+  deps: RetainDeps,
   runId: string,
   answeredMessageIds: readonly string[] = [],
   options: { withoutReplies?: boolean } = {},
@@ -255,18 +305,13 @@ export async function retainRunConversation(
     }),
   ]);
   // A cleared thread no longer has the message the turn answered.
-  if (!source) return done;
-  // Another owner's bot, or a bot in another Space, is outside text: learning its words would let
-  // them come back later as this bot's own trusted memory.
+  if (!source || !bot) return done;
+  const receiver: WordsReceiver = { spaceId: run.spaceId, userId: bot.userId };
+  // Another bot's untrusted words (see trustedReceivedMessages) would come back later as this
+  // bot's own trusted memory. In a group chat the window below drops just that message.
   const received = receivedBotMessage(source.blocks);
-  if (received) {
-    const sender = await deps.prisma.bot.findUnique({
-      where: { id: received.fromBotId },
-      select: { spaceId: true, userId: true },
-    });
-    if (!sender || sender.spaceId !== run.spaceId || sender.userId !== bot?.userId) return done;
-    // In a group chat the window below drops just that message.
-    if (!inGroup && !(await trustedSenderRun(deps.prisma, received))) return done;
+  if (received && !inGroup && !(await receivedBotMessageTrusted(deps.prisma, receiver, received))) {
+    return done;
   }
   const author = await loadMessageAuthor(deps.prisma, source.authorUserId ?? run.userId);
   // Interim progress beats are status narration, and a partial reply was cut off by an error.
@@ -280,7 +325,7 @@ export async function retainRunConversation(
     // The window ends at this run's last reply, so a run that never replied has no turn.
     const lastReply = kept.at(-1);
     if (!lastReply) return done;
-    const room = await groupWindow(deps.prisma, run, source.seq, lastReply.seq);
+    const room = await groupWindow(deps.prisma, run, receiver, source.seq, lastReply.seq);
     said.push(
       ...capGroupWindow(
         options.withoutReplies ? room.filter((message) => message.role !== "assistant") : room,
@@ -292,18 +337,14 @@ export async function retainRunConversation(
       const block = receivedBotMessage(message.blocks);
       return block ? [block] : [];
     });
-    const steeredSenders = await senderRunIds(deps.prisma, steeredReceived);
-    const trustedSteered = await runsWithoutOutsideContent(deps.prisma, [
-      ...steeredSenders.values(),
-    ]);
+    const trustedSteered = await trustedReceivedMessages(deps.prisma, receiver, steeredReceived);
     said.push(
       { ...source, role: "user" },
       ...steered
         .filter((message) => {
           if (message.id === source.id) return false;
           const block = receivedBotMessage(message.blocks);
-          const senderRun = block?.returnToMessageId && steeredSenders.get(block.returnToMessageId);
-          return !block || Boolean(senderRun && trustedSteered.has(senderRun));
+          return !block || trustedSteered.has(block);
         })
         .map((message) => ({ ...message, role: "user" as const })),
       ...(options.withoutReplies
@@ -343,9 +384,9 @@ export async function retainRunConversation(
   const result = await provider.retainConversation(
     {
       botId: run.botId,
-      botName: bot?.name || "the assistant",
+      botName: bot.name || "the assistant",
       userName: author?.name || "the user",
-      scope: effectiveMemoryScope(bot?.memoryScope ?? null, configured.defaultScope),
+      scope: effectiveMemoryScope(bot.memoryScope, configured.defaultScope),
       threadId: run.threadId,
       conversation: thread.groupId ? "group" : "direct",
       generation,
@@ -357,34 +398,72 @@ export async function retainRunConversation(
   // Retrying is safe: the provider makes a repeated turn a no-op.
   if (!result.ok) throw new Error(result.error);
   if (result.value.pending) return { pending: { token: result.value.pending, generation } };
-  await purgeIfCleared(deps.prisma, provider, run, generation, context);
-  return {};
+  try {
+    await purgeIfCleared(deps.prisma, provider, run, generation, context);
+  } catch (error) {
+    // A retry would rebuild the turn from messages the clear deleted, and skip it: hand back the
+    // stored generation so a later check purges it.
+    getLogger().error("memory.retain-turn could not purge a cleared conversation", error);
+    return { pending: { generation } };
+  }
+  return done;
 }
 
 /**
  * Whether a turn the provider was still storing is stored now. Once it is, a clear that landed
- * meanwhile is purged. Runs outlive a clear, so this works after the turn's messages are gone.
+ * meanwhile is purged; a failed purge throws so the check runs again. Without a token the turn
+ * is already stored and only the purge is left. Runs outlive a clear, so this works after the
+ * turn's messages are gone.
  */
 export async function settleRetainedConversation(
-  deps: { prisma: PrismaClient; memoryProviders: MemoryProviderResolver },
+  deps: RetainDeps,
   runId: string,
-  pending: { token: string; generation: number },
+  pending: { token?: string; generation: number },
 ): Promise<{ settled: boolean }> {
-  const run = await deps.prisma.run.findUnique({
-    where: { id: runId },
-    select: { id: true, spaceId: true, botId: true, threadId: true, userId: true },
-  });
-  if (!run) return { settled: true };
-  const provider = (await deps.memoryProviders.resolve(run.spaceId))?.provider;
-  if (!provider) return { settled: true };
+  const found = await retainedRunProvider(deps, runId);
+  if (!found) return { settled: true };
+  const { run, provider } = found;
   const context = retainContext(run);
-  if (provider.retainedConversationSettled) {
+  if (pending.token && provider.retainedConversationSettled) {
     const result = await provider.retainedConversationSettled(pending.token, context);
     if (!result.ok) throw new Error(result.error);
     if (!result.value.settled) return { settled: false };
   }
   await purgeIfCleared(deps.prisma, provider, run, pending.generation, context);
   return { settled: true };
+}
+
+/**
+ * Stops waiting for a turn the provider never finished storing. If the chat was cleared
+ * meanwhile, purge its generation once more: the write may have landed after the clear's purge.
+ * Best effort, since nothing checks again after this.
+ */
+export async function abandonRetainedConversation(
+  deps: RetainDeps,
+  runId: string,
+  pending: { generation: number },
+): Promise<void> {
+  try {
+    const found = await retainedRunProvider(deps, runId);
+    if (!found) return;
+    const { run, provider } = found;
+    await purgeIfCleared(deps.prisma, provider, run, pending.generation, retainContext(run));
+  } catch (error) {
+    getLogger().error("memory.retain-turn could not purge a cleared conversation", error);
+  }
+}
+
+async function retainedRunProvider(
+  deps: RetainDeps,
+  runId: string,
+): Promise<{ run: RetainRun; provider: SemanticMemoryProvider } | undefined> {
+  const run = await deps.prisma.run.findUnique({
+    where: { id: runId },
+    select: { id: true, spaceId: true, botId: true, threadId: true, userId: true },
+  });
+  if (!run) return undefined;
+  const provider = (await deps.memoryProviders.resolve(run.spaceId))?.provider;
+  return provider ? { run, provider } : undefined;
 }
 
 type RetainRun = { id: string; spaceId: string; botId: string; threadId: string; userId: string };
@@ -404,7 +483,7 @@ function retainContext(run: RetainRun) {
 
 /**
  * A clear can commit and purge while a turn is being stored; purge again so the late write cannot
- * leave cleared conversation data behind.
+ * leave cleared conversation data behind. Throws when the purge fails, so the caller retries.
  */
 async function purgeIfCleared(
   prisma: PrismaClient,
@@ -418,18 +497,12 @@ async function purgeIfCleared(
     select: { historyCompactionGeneration: true },
   });
   if (latest?.historyCompactionGeneration === generation) return;
-  try {
-    const removed = await provider.purgeHistory(
-      { botId: run.botId, threadId: run.threadId, generations: [generation] },
-      context,
-    );
-    if (!removed.ok) {
-      getLogger().error(
-        `memory.retain-turn could not purge a cleared conversation: ${removed.error}`,
-      );
-    }
-  } catch (error) {
-    getLogger().error("memory.retain-turn could not purge a cleared conversation", error);
+  const removed = await provider.purgeHistory(
+    { botId: run.botId, threadId: run.threadId, generations: [generation] },
+    context,
+  );
+  if (!removed.ok) {
+    throw new Error(`memory.retain-turn could not purge a cleared conversation: ${removed.error}`);
   }
 }
 
@@ -440,6 +513,7 @@ async function purgeIfCleared(
 async function groupWindow(
   prisma: PrismaClient,
   run: { id: string; botId: string; threadId: string },
+  receiver: WordsReceiver,
   sourceSeq: number,
   lastReplySeq: number,
 ): Promise<SaidMessage[]> {
@@ -480,26 +554,32 @@ async function groupWindow(
         // This bot's words from another run belong to that run's turn.
         (message.botId !== run.botId || message.runId === run.id)),
   );
-  // Another bot's words are learned only from a run that never read outside content: that text
-  // would otherwise come back later as this bot's trusted memory.
+  // Another bot's words are learned only when this bot may trust them: its group replies by
+  // their runs (see trustedBotRuns), messages it sent this bot by their marker.
   const received = said.flatMap((message) => {
     const block = message.role === "user" ? receivedBotMessage(message.blocks) : undefined;
     return block ? [block] : [];
   });
-  const senders = await senderRunIds(prisma, received);
-  const trusted = await runsWithoutOutsideContent(prisma, [
-    ...said.flatMap((message) =>
-      message.role === "bot" && message.botId !== run.botId && message.runId ? [message.runId] : [],
+  const [trustedRuns, trustedReceived] = await Promise.all([
+    trustedBotRuns(
+      prisma,
+      receiver,
+      said.flatMap((message) =>
+        message.role === "bot" && message.botId !== run.botId && message.runId
+          ? [message.runId]
+          : [],
+      ),
     ),
-    ...senders.values(),
+    trustedReceivedMessages(prisma, receiver, received),
   ]);
   const messages = said.filter((message) => {
     if (message.role === "bot") {
-      return message.botId === run.botId || Boolean(message.runId && trusted.has(message.runId));
+      return (
+        message.botId === run.botId || Boolean(message.runId && trustedRuns.has(message.runId))
+      );
     }
     const block = receivedBotMessage(message.blocks);
-    const senderRun = block?.returnToMessageId && senders.get(block.returnToMessageId);
-    return !block || Boolean(senderRun && trusted.has(senderRun));
+    return !block || trustedReceived.has(block);
   });
   const otherBotIds = [
     ...new Set(

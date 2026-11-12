@@ -50,7 +50,8 @@ creates a bank per bot (`rakazo-<space id>-<bot id>`) and, for the Shared scope,
 want them. Rakazo sends each finished turn (unless **Learn from conversations** is off) and the
 facts bots save; banks under **Recall from banks** are only read. A bank under **Recall from banks**
 must be on the same Hindsight server or Cloud account; an app that runs Hindsight embedded on its
-own machine keeps its banks there.
+own machine keeps its banks there. Names shaped like another Space's banks (`rakazo-` followed by a
+Space id) can't be listed there.
 
 ## MCP servers
 

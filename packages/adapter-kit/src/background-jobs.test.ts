@@ -146,6 +146,11 @@ describe("memoryRetainTurnJob", () => {
       runId: "run-1",
       pending,
     });
+    // A stored turn whose post-clear purge failed has no token left to poll.
+    const purgeOnly = { generation: 3, checks: 0 };
+    expect(
+      parseBackgroundJob("memory.retain-turn", { runId: "run-1", pending: purgeOnly }).payload,
+    ).toEqual({ runId: "run-1", pending: purgeOnly });
     expect(() =>
       parseBackgroundJob("memory.retain-turn", {
         runId: "run-1",

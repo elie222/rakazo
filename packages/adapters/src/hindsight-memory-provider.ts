@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type {
   AdapterContext,
   DurableMemoryScope,
@@ -15,7 +15,6 @@ import { getLogger } from "@rakazo/logging";
 import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
   deleteHindsightDocument,
-  HINDSIGHT_APPEND_REFUSED,
   HINDSIGHT_CLOUD_BASE_URL,
   HINDSIGHT_RECALL_TIMEOUT_MS,
   hindsightBankExists,
@@ -25,7 +24,6 @@ import {
   recallHindsight,
   reflectHindsight,
   retainHindsight,
-  retryHindsightOperation,
 } from "./hindsight-client.js";
 import {
   assertLocalServiceBaseUrlSync,
@@ -47,16 +45,17 @@ const MAX_QUERY_CHARS = 800;
 const RECALL_MAX_TOKENS = 4_096;
 const MAX_RECALL_BANKS = 10;
 const RECALL_BANK = /^[^\s/?#%\\,]{1,256}$/;
+/** Banks Rakazo generates: `rakazo-` and a Space id (32 hex digits or a UUID), maybe a bot id. */
+const GENERATED_BANK =
+  /^rakazo-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(-|$)/i;
 /** A failing extra bank is skipped this long; recall and writes cool down separately. */
 const EXTRA_BANK_COOLDOWN_MS = 5 * 60_000;
 /** An extra bank still silent after this much of the recall timeout counts as failing. */
 const EXTRA_BANK_RECALL_TIMEOUT_MS = HINDSIGHT_RECALL_TIMEOUT_MS * 0.8;
-/** Purge lists a conversation's per-turn documents a page at a time, at most this many pages. */
-const MAX_PURGE_PAGES = 50;
+/** Purge deletes a conversation's per-turn documents a listed page at a time, at most this many pages. */
+const MAX_PURGE_PAGES = 1_000;
 const RECALL_BUDGETS = ["low", "mid", "high"];
 const DEFAULT_RECALL_BUDGET = "mid";
-const RECALL_TYPES = ["observation", "observation,world,experience"];
-const DEFAULT_RECALL_TYPES = "observation";
 /** With skipUnrelated, the server drops results its reranker scores below this. */
 const MIN_RERANKER_SCORE = 0.25;
 
@@ -64,12 +63,8 @@ type BankUse = "recall" | "write";
 
 /** Per process: when each failing extra bank may be asked again. Kept after expiry until it answers. */
 const bankCooldowns = new Map<string, number>();
-/** Per process: banks that refused to append because they keep no document text. */
+/** Per process: banks that refused an append but stored the turn as its own document. */
 const banksWithoutAppend = new Set<string>();
-/** A failed operation is re-queued on the server at most this many times. */
-const OPERATION_RETRIES = 3;
-/** Per process: how often each failed operation was re-queued. */
-const operationRetries = new Map<string, number>();
 
 function bankKey(connection: string, bank: string, use?: BankUse): string {
   return use ? `${connection}\n${bank}\n${use}` : `${connection}\n${bank}`;
@@ -99,7 +94,6 @@ function noteExtraBank(connection: string, bank: string, use: BankUse, answered:
 export function resetHindsightBankState(): void {
   bankCooldowns.clear();
   banksWithoutAppend.clear();
-  operationRetries.clear();
 }
 
 /** "A", "A and B", "A, B and C". */
@@ -137,7 +131,8 @@ interface HindsightOptions {
   /** Off: the bot recalls only through its memory tools. */
   autoRecall: boolean;
   recallBudget: string;
-  recallTypes: string;
+  /** Recall world and experience facts as well as observations. */
+  recallFacts: boolean;
   /** Asks the server to drop results the reranker scores under MIN_RERANKER_SCORE. */
   skipUnrelated: boolean;
 }
@@ -158,8 +153,8 @@ function parseRecallBanks(value: string | undefined): string[] {
     throw new Error("recallBanks may not include . or ..");
   }
   // Rakazo's own banks are recalled automatically; another Space's must never be named.
-  if (banks.some((bank) => bank.startsWith("rakazo-"))) {
-    throw new Error("recallBanks may not include banks named rakazo-…");
+  if (banks.some((bank) => GENERATED_BANK.test(bank))) {
+    throw new Error("recallBanks may not include another Space's banks");
   }
   if (banks.length > MAX_RECALL_BANKS) throw new Error("recallBanks may list at most 10 banks");
   return banks;
@@ -192,9 +187,8 @@ function parseHindsightConnection(
   if (!RECALL_BUDGETS.includes(recallBudget)) {
     throw new Error("recallBudget must be low, mid or high");
   }
-  const recallTypes = settings.recallTypes ?? DEFAULT_RECALL_TYPES;
-  if (!RECALL_TYPES.includes(recallTypes)) {
-    throw new Error("recallTypes must be observation or observation,world,experience");
+  if (settings.recallFacts !== undefined && !["true", "false"].includes(settings.recallFacts)) {
+    throw new Error("recallFacts must be true or false");
   }
   return {
     connection: { baseUrl, apiKey },
@@ -203,7 +197,7 @@ function parseHindsightConnection(
       retainConversations: settings.retainConversations !== "false",
       autoRecall: settings.autoRecall !== "false",
       recallBudget,
-      recallTypes,
+      recallFacts: settings.recallFacts === "true",
       skipUnrelated: settings.skipUnrelated === "true",
     },
     local,
@@ -238,7 +232,7 @@ export async function prepareHindsightConnection(
   };
   const probe = await probeHindsightKey(probeConnection);
   if (!probe.ok) throw new Error(probe.error);
-  const { recallBanks, retainConversations, autoRecall, recallBudget, recallTypes, skipUnrelated } =
+  const { recallBanks, retainConversations, autoRecall, recallBudget, recallFacts, skipUnrelated } =
     parsed;
   // The bots' own banks are created on first write, but another app's must already be there.
   for (const bank of recallBanks) {
@@ -253,7 +247,7 @@ export async function prepareHindsightConnection(
       ...(retainConversations ? {} : { retainConversations: "false" }),
       ...(autoRecall ? {} : { autoRecall: "false" }),
       ...(recallBudget === DEFAULT_RECALL_BUDGET ? {} : { recallBudget }),
-      ...(recallTypes === DEFAULT_RECALL_TYPES ? {} : { recallTypes }),
+      ...(recallFacts ? { recallFacts: "true" } : {}),
       ...(skipUnrelated ? { skipUnrelated: "true" } : {}),
     },
     credentials: { apiKey: connection.apiKey },
@@ -295,12 +289,15 @@ function operationUuid(key: string): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
-/** An operation a submitted turn waits on; the team bank's failing never fails the turn. */
+/** An operation a submitted turn waits on, in the bot's own bank or the Space's team bank. */
 interface PendingOperation {
   bank: string;
   operationId: string;
   team?: true;
 }
+
+/** A submitted turn's operation id, or why the bank refused it. */
+type StoredTurn = { ok: true; value: string } | { ok: false; error: string; status?: number };
 
 const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -333,6 +330,45 @@ function truncateChars(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   const end = /[\uD800-\uDBFF]/.test(value.charAt(maxChars - 1)) ? maxChars - 1 : maxChars;
   return value.slice(0, end);
+}
+
+/**
+ * Whether the operation stopped running; until then deleting the conversation's document finds
+ * nothing to delete. Learning is best effort: an operation that failed, was cancelled or that the
+ * server lost stored nothing, so it is done. A status check that fails says nothing, so it is not.
+ */
+async function operationDone(
+  connection: HindsightConnectionConfig,
+  bank: string,
+  operationId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const status = await hindsightOperationStatus(connection, bank, operationId, signal);
+  if (!status.ok) {
+    getLogger().warn("Hindsight operation status check failed", {
+      bank,
+      operationId,
+      error: status.error,
+    });
+    return false;
+  }
+  if (status.value === "completed") return true;
+  if (status.value === "failed" || status.value === "cancelled" || status.value === "not_found") {
+    getLogger().warn("Hindsight did not store a conversation turn", {
+      bank,
+      operationId,
+      status: status.value,
+    });
+    return true;
+  }
+  if (status.value !== "pending" && status.value !== "processing") {
+    getLogger().warn("Hindsight reported an unknown operation status", {
+      bank,
+      operationId,
+      status: status.value,
+    });
+  }
+  return false;
 }
 
 export class HindsightMemoryProvider implements SemanticMemoryProvider {
@@ -408,7 +444,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       query: truncateChars(query, MAX_QUERY_CHARS),
       budget: this.options.recallBudget,
       max_tokens: RECALL_MAX_TOKENS,
-      types: this.options.recallTypes.split(","),
+      types: this.options.recallFacts ? ["observation", "world", "experience"] : ["observation"],
       ...(this.options.skipUnrelated ? { min_scores: { reranker: MIN_RERANKER_SCORE } } : {}),
     };
     const stateKey = this.stateKey;
@@ -470,18 +506,26 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         "A fact a Rakazo AI assistant chose to remember about the people it works for and their work",
       timestamp: new Date().toISOString(),
     };
+    // The same fact saved again by the same operation, as a retried tool call does, reuses its id,
+    // so the server returns the stored operation instead of storing the fact twice.
+    const fact = createHash("sha256").update(item.content).digest("hex");
     const [own, ...extra] = writeBanks(context.spaceId, request.botId, request.scope);
+    // Synchronous: the fact is stored before the bot is told so, and a failure reaches the bot.
     const write = (bank: string) =>
       retainHindsight(
         connection.value,
         bank,
-        { items: [item], async: true, operation_id: randomUUID() },
+        {
+          items: [item],
+          async: false,
+          operation_id: operationUuid(`rakazo-save:${bank}:${context.operationId}:${fact}`),
+        },
         context.signal,
       );
     // A failing own bank fails the call before the team bank is touched, so a retry cannot
     // duplicate the item there; a failing team bank is logged and skipped for five minutes.
     const first = await write(own!);
-    if (!first.ok) return first;
+    if (!first.ok) return { ok: false, error: first.error };
     for (const bank of extra) {
       if (coolingDown(this.stateKey, bank, "write")) continue;
       const written = await write(bank);
@@ -522,12 +566,9 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const appended = { ...item, document_id: session, update_mode: "append" };
     // A bank keeping no document text stores each turn in its own document.
     const separate = { ...item, document_id: `rakazo-turn-${request.runId}` };
-    const write = async (bank: string): Promise<SemanticMemoryResponse<string>> => {
+    const write = async (bank: string): Promise<StoredTurn> => {
       const key = bankKey(this.stateKey, bank);
-      const store = async (
-        stored: object,
-        kind: string,
-      ): Promise<SemanticMemoryResponse<string>> => {
+      const store = async (stored: object, kind: string): Promise<StoredTurn> => {
         // One id per run and bank: a repeated call returns the original operation.
         const operationId = operationUuid(`${kind}:${request.runId}:${bank}`);
         const retained = await retainHindsight(
@@ -540,13 +581,16 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       };
       if (banksWithoutAppend.has(key)) return store(separate, "rakazo-turn-document");
       const stored = await store(appended, "rakazo-turn");
-      if (stored.ok || stored.error !== HINDSIGHT_APPEND_REFUSED) return stored;
-      banksWithoutAppend.add(key);
-      return store(separate, "rakazo-turn-document");
+      // A bank keeping no document text refuses appends with a 400; the bank is remembered only
+      // once the turn fits in its own document, so another bad request never sticks.
+      if (stored.ok || stored.status !== 400) return stored;
+      const separated = await store(separate, "rakazo-turn-document");
+      if (separated.ok) banksWithoutAppend.add(key);
+      return separated;
     };
     const [own, ...extra] = writeBanks(context.spaceId, request.botId, request.scope);
     const first = await write(own!);
-    if (!first.ok) return first;
+    if (!first.ok) return { ok: false, error: first.error };
     const operations: PendingOperation[] = [{ bank: own!, operationId: first.value }];
     for (const bank of extra) {
       if (coolingDown(this.stateKey, bank, "write")) continue;
@@ -558,8 +602,9 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   }
 
   /**
-   * Checks each submitted operation once; settled once all are done, so a purge after that
-   * removes the turn. A team-bank operation that fails for good is logged and skipped.
+   * Checks each submitted operation once; settled once none is still running, so a purge after
+   * that removes the turn. A status check that fails counts as still running: the job's check
+   * limit bounds the wait.
    */
   async retainedConversationSettled(
     pending: string,
@@ -570,49 +615,12 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const connection = await this.connectionForRequest();
     if (!connection.ok) return connection;
     let settled = true;
-    for (const { bank, operationId, team } of operations) {
-      const done = await this.operationSettled(connection.value, bank, operationId, context.signal);
-      if (!done.ok) {
-        if (!team) return done;
-        noteExtraBank(this.stateKey, bank, "write", false);
-        continue;
+    for (const { bank, operationId } of operations) {
+      if (!(await operationDone(connection.value, bank, operationId, context.signal))) {
+        settled = false;
       }
-      if (!done.value) settled = false;
     }
     return { ok: true, value: { settled } };
-  }
-
-  /**
-   * Whether the operation finished; until then deleting the conversation's document finds
-   * nothing to delete. A failed operation is re-queued at most three times, then fails.
-   */
-  private async operationSettled(
-    connection: HindsightConnectionConfig,
-    bank: string,
-    operationId: string,
-    signal: AbortSignal,
-  ): Promise<SemanticMemoryResponse<boolean>> {
-    const status = await hindsightOperationStatus(connection, bank, operationId, signal);
-    if (!status.ok) return status;
-    const key = `${bankKey(this.stateKey, bank)}\n${operationId}`;
-    if (status.value === "completed") {
-      operationRetries.delete(key);
-      return { ok: true, value: true };
-    }
-    if (status.value === "pending" || status.value === "processing") {
-      return { ok: true, value: false };
-    }
-    if (status.value === "failed" || status.value === "cancelled") {
-      const retries = operationRetries.get(key) ?? 0;
-      if (retries >= OPERATION_RETRIES) {
-        operationRetries.delete(key);
-        return { ok: false, error: "Hindsight couldn't store the turn." };
-      }
-      operationRetries.set(key, retries + 1);
-      const retried = await retryHindsightOperation(connection, bank, operationId, signal);
-      return retried.ok ? { ok: true, value: false } : retried;
-    }
-    return { ok: false, error: `Hindsight could not store this turn: ${status.value}.` };
   }
 
   /**
@@ -634,7 +642,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         context.signal,
       );
       if (!deleted.ok) return deleted;
-      for (let page = 0; page < MAX_PURGE_PAGES; page++) {
+      // One listing more than pages deleted: the last one only checks that none remain.
+      for (let page = 0; page <= MAX_PURGE_PAGES; page++) {
         const ids = await listHindsightDocumentIdsByTag(
           connection.value,
           bank,
@@ -643,6 +652,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         );
         if (!ids.ok) return ids;
         if (!ids.value.length) return { ok: true, value: undefined };
+        if (page === MAX_PURGE_PAGES) break;
         for (const id of ids.value) {
           const removed = await deleteHindsightDocument(connection.value, bank, id, context.signal);
           if (!removed.ok) return removed;

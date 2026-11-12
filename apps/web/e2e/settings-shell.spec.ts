@@ -258,9 +258,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await learn.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-hindsight-cloud");
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
-  await memory
-    .getByLabel("Base URL", { exact: true })
-    .fill("http://hindsight.railway.internal:8888");
+  await memory.getByLabel("Base URL", { exact: true }).fill("http://hindsight.example.test:8888");
   const connect = memory.getByRole("button", { name: "Connect", exact: true });
   await expect(connect).toBeEnabled();
   await connect.evaluate((element) => element.scrollIntoView({ block: "center" }));

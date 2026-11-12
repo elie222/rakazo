@@ -33,7 +33,7 @@ const payloadSchemas = {
     withoutReplies: z.literal(true).optional(),
     pending: z
       .object({
-        token: z.string().min(1),
+        token: z.string().min(1).optional(),
         generation: z.number().int().min(0),
         checks: z.number().int().min(0),
       })

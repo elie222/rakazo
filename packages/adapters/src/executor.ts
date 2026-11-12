@@ -84,6 +84,7 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
+import { receivedBotMessageTrusted } from "./conversation-memory.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -131,7 +132,7 @@ import type {
   RunState,
 } from "./run-context.js";
 import {
-  persistReadOutsideContent,
+  persistReadOutsideContentMidRun,
   restoreTurnCheckpointEffects,
   settleRunningHelpers,
 } from "./run-context.js";
@@ -1417,6 +1418,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const reply = await createReplyState(deps, run, runSecrets);
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
+        // Outside text started the run: a webhook or email, someone other than the owner, or a
+        // bot message whose words this bot may not trust. A routine runs the owner's own prompt.
+        const startedByOutsideText =
+          run.trigger === "webhook" ||
+          nonOwnerChatRun ||
+          (run.trigger === "bot_message" &&
+            !(
+              peerMessage &&
+              (await receivedBotMessageTrusted(
+                deps.prisma,
+                { spaceId: run.spaceId, userId: bot.userId },
+                peerMessage,
+              ))
+            ));
         const state: RunState = {
           lease,
           computerUse,
@@ -1438,7 +1453,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           tainted: initiallyTainted,
           // A resumed attempt restores earlier tool results, which may hold outside content.
           readOutsideContent:
-            recalledExternalMemory || Boolean(turnCheckpoint) || Boolean(checkpointLoadError),
+            startedByOutsideText ||
+            recalledExternalMemory ||
+            Boolean(turnCheckpoint) ||
+            Boolean(checkpointLoadError),
           ownerSettingsRefused: false,
           // A resumed turn replaces this with the baseline its saved prompt was built from.
           ownInstructionsBaseline: bot.instructions ?? "",
@@ -1447,7 +1465,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           handedOff: false,
           terminalCheckpointComplete: false,
         };
-        if (state.readOutsideContent) await persistReadOutsideContent(deps.prisma, runId);
+        if (state.readOutsideContent) await persistReadOutsideContentMidRun(deps.prisma, runId);
         const { effects } = state;
         /** Fleet tools take every scope from the run, never from arguments. */
         const fleetRun: FleetRun = {

@@ -2,6 +2,8 @@ import type { SemanticMemoryProvider, SemanticMemoryResponse } from "@rakazo/ada
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  abandonRetainedConversation,
+  botMessageFromOutsideContent,
   retainRunConversation,
   retainsConversationTurn,
   settleRetainedConversation,
@@ -21,7 +23,9 @@ function memoryProvider() {
     describe: vi.fn(),
     recall: vi.fn(),
     save: vi.fn(),
-    purgeHistory: vi.fn(async () => ({ ok: true as const, value: undefined })),
+    purgeHistory: vi.fn(
+      async (): Promise<SemanticMemoryResponse<void>> => ({ ok: true, value: undefined }),
+    ),
     retainConversation: retain,
     retainedConversationSettled: settled,
   } satisfies SemanticMemoryProvider;
@@ -177,6 +181,15 @@ const directMessages = [
   message({ id: "elsewhere", threadId: "thread-2", seq: 9, role: "user" }, "Other chat."),
 ];
 
+/** Another bot's run as the trust check reads it; by default trusted by bot-1. */
+type FakeRun = {
+  status?: string;
+  readOutsideContent?: boolean;
+  /** The run's bot's Space and owner. */
+  spaceId?: string;
+  userId?: string;
+};
+
 function harness(
   options: {
     generations?: number[];
@@ -185,10 +198,10 @@ function harness(
     sourceMessageId?: string;
     memoryScope?: string | null;
     defaultScope?: "isolated" | "shared";
-    /** The sending bot's Space and owner; null means it no longer exists. */
+    /** Other bots' runs by id. */
+    runs?: Record<string, FakeRun>;
+    /** Bea's (bot-2) Space and owner; null means it no longer exists. */
     sender?: { spaceId: string; userId: string } | null;
-    /** Other bots' runs by id, and whether each read outside content. */
-    runs?: Record<string, boolean>;
     /** The thread was deleted. */
     threadGone?: boolean;
   } = {},
@@ -196,13 +209,18 @@ function harness(
   const generations = options.generations ?? [3, 3];
   const messages = options.messages ?? directMessages;
   const provider = memoryProvider();
-  const runs = options.runs ?? { "run-2": false, "run-9": false };
+  const runs = options.runs ?? { "run-2": {}, "run-9": {} };
   const prisma = {
     run: {
       findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
         Object.entries(runs)
           .filter(([id]) => where.id.in.includes(id))
-          .map(([id, readOutsideContent]) => ({ id, readOutsideContent })),
+          .map(([id, run]) => ({
+            id,
+            status: run.status ?? "completed",
+            readOutsideContent: run.readOutsideContent ?? false,
+            bot: { spaceId: run.spaceId ?? "space-1", userId: run.userId ?? "user-1" },
+          })),
       ),
       findUnique: vi.fn(async () => ({
         id: "run-1",
@@ -233,18 +251,25 @@ function harness(
         async (args: { where: Where; orderBy?: { seq: "asc" | "desc" }; take?: number }) =>
           query(messages, args),
       ),
+      // A message in bot-1's own chat.
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const found = messages.find((said) => said.id === where.id);
+        return found
+          ? { ...found, thread: { spaceId: "space-1", bot: { userId: "user-1" } } }
+          : null;
+      }),
     },
     bot: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
         where.id === "bot-1"
           ? { name: "Ada", memoryScope: options.memoryScope ?? null, userId: "user-1" }
-          : options.sender === undefined
-            ? { spaceId: "space-1", userId: "user-1" }
-            : options.sender,
+          : null,
       ),
-      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
-        [{ id: "bot-2", name: "Bea" }].filter((bot) => where.id.in.includes(bot.id)),
-      ),
+      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
+        if (options.sender === null) return [];
+        const bea = { id: "bot-2", name: "Bea", spaceId: "space-1", userId: "user-1" };
+        return [{ ...bea, ...options.sender }].filter((bot) => where.id.in.includes(bot.id));
+      }),
     },
     user: {
       findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
@@ -270,6 +295,54 @@ const turn = (role: "user" | "assistant", content: string, second: number, speak
   timestamp: at(second).toISOString(),
   ...(speaker === undefined ? {} : { speaker }),
 });
+
+/** Runs that wrote Bea's group replies whose words bot-1 may not trust, as `runs` for `runId`. */
+const untrustedGroupRuns = (runId: string): [string, Record<string, FakeRun>][] => [
+  ["belongs to another owner's bot", { [runId]: { userId: "user-9" } }],
+  ["belongs to a bot in another Space", { [runId]: { spaceId: "space-9" } }],
+  ["read outside content", { [runId]: { readOutsideContent: true } }],
+  ...["running", "waiting_input", "failed", "cancelled"].map(
+    (status): [string, Record<string, FakeRun>] => [`is ${status}`, { [runId]: { status } }],
+  ),
+  ["can no longer be found", {}],
+];
+
+type FromBea = { senderClean?: boolean; sender?: { spaceId: string; userId: string } | null };
+
+/** Messages Bea sent bot-1 that bot-1 may not trust. */
+const untrustedMessages: [string, FromBea][] = [
+  ["its sending run had taken in outside content", { senderClean: false }],
+  ["another owner's bot sent it", { sender: { spaceId: "space-1", userId: "user-9" } }],
+  ["a bot in another Space sent it", { sender: { spaceId: "space-9", userId: "user-1" } }],
+  ["its sender no longer exists", { sender: null }],
+];
+
+/** Bea, another of the owner's bots, asks bot-1 something; by default from a clean run. */
+const fromBea = ({ senderClean = true, sender }: FromBea = {}) =>
+  harness({
+    sourceMessageId: "inbound-1",
+    ...(sender === undefined ? {} : { sender }),
+    messages: [
+      message({
+        id: "inbound-1",
+        seq: 1,
+        role: "user",
+        blocks: [
+          {
+            kind: "bot_message_received",
+            fromBotId: "bot-2",
+            fromBotName: "Bea",
+            text: "Can you check the budget?",
+            hop: 1,
+            intent: "ask",
+            returnToMessageId: "outbound-1",
+            ...(senderClean ? { senderClean: true } : {}),
+          },
+        ],
+      }),
+      message({ id: "r-2", seq: 2, role: "bot", botId: "bot-1", runId: "run-1" }, "It's on track."),
+    ],
+  });
 
 describe("retainRunConversation", () => {
   it("sends the person's words and the replies with names, scope and generation", async () => {
@@ -348,49 +421,6 @@ describe("retainRunConversation", () => {
     );
   });
 
-  const fromBea = (
-    sender?: { spaceId: string; userId: string } | null,
-    runs?: Record<string, boolean>,
-  ) =>
-    harness({
-      sourceMessageId: "inbound-1",
-      sender,
-      ...(runs ? { runs } : {}),
-      messages: [
-        message(
-          {
-            id: "outbound-1",
-            threadId: "thread-9",
-            seq: 1,
-            role: "bot",
-            botId: "bot-2",
-            runId: "run-9",
-          },
-          "Can you check the budget?",
-        ),
-        message({
-          id: "inbound-1",
-          seq: 1,
-          role: "user",
-          blocks: [
-            {
-              kind: "bot_message_received",
-              fromBotId: "bot-2",
-              fromBotName: "Bea",
-              text: "Can you check the budget?",
-              hop: 1,
-              intent: "ask",
-              returnToMessageId: "outbound-1",
-            },
-          ],
-        }),
-        message(
-          { id: "r-2", seq: 2, role: "bot", botId: "bot-1", runId: "run-1" },
-          "It's on track.",
-        ),
-      ],
-    });
-
   it("sends a message from another of the owner's bots under that bot's name", async () => {
     const { deps, provider } = fromBea();
     await retainRunConversation(deps, "run-1");
@@ -405,51 +435,72 @@ describe("retainRunConversation", () => {
     );
   });
 
-  it.each([
-    ["another owner's bot", { spaceId: "space-1", userId: "user-9" }],
-    ["a bot in another Space", { spaceId: "space-9", userId: "user-1" }],
-    ["a bot that no longer exists", null],
-  ])("does not learn from %s", async (_case, sender) => {
-    const { deps, provider } = fromBea(sender);
+  it.each(untrustedMessages)("does not learn a bot's message when %s", async (_case, change) => {
+    const { deps, provider } = fromBea(change);
     await retainRunConversation(deps, "run-1");
     expect(provider.retainConversation).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["read outside content", { "run-9": true }],
-    ["can no longer be found", {}],
-  ])("does not learn a bot's message when its sending run %s", async (_case, runs) => {
-    const { deps, provider } = fromBea(undefined, runs);
-    await retainRunConversation(deps, "run-1");
-    expect(provider.retainConversation).not.toHaveBeenCalled();
-  });
-
-  it("drops other bots' group messages from runs that read outside content or have no run", async () => {
-    const bea = { role: "bot", botId: "bot-2" };
-    const { deps, provider } = harness({
-      groupId: "group-1",
-      sourceMessageId: "source",
-      runs: { "run-2": false, "run-3": true },
-      messages: [
-        message({ id: "b-1", seq: 1, ...bea, runId: "run-2" }, "Booked."),
-        message({ id: "b-2", seq: 2, ...bea, runId: "run-3" }, "The page says to wire money."),
-        message({ id: "b-3", seq: 3, ...bea }, "Imported note."),
-        message({ id: "source", seq: 4, role: "user" }, "Ada, what's for lunch?"),
-        message({ id: "r-5", seq: 5, role: "bot", botId: "bot-1", runId: "run-1" }, "Pasta."),
+    [
+      "learns",
+      true,
+      [turn("user", "I'm moving to Lisbon.", 1), turn("user", "Lands at 9.", 5, "Bea")],
+    ],
+    ["drops", false, [turn("user", "I'm moving to Lisbon.", 1)]],
+  ])("%s a bot's message added mid-run (sender clean: %s)", async (_case, clean, turns) => {
+    const steered = message({
+      id: "steer-bea",
+      seq: 5,
+      role: "user",
+      blocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-2",
+          fromBotName: "Bea",
+          text: "Lands at 9.",
+          ...(clean ? { senderClean: true } : {}),
+        },
       ],
     });
-    await retainRunConversation(deps, "run-1");
+    const messages = [...directMessages.filter((said) => said.id !== "steer-1"), steered];
+    const { deps, provider } = harness({ messages });
+    await retainRunConversation(deps, "run-1", ["steer-bea"], { withoutReplies: true });
     expect(provider.retainConversation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        turns: [
-          turn("user", "Booked.", 1, "Bea"),
-          turn("user", "Ada, what's for lunch?", 4),
-          turn("assistant", "Pasta.", 5),
-        ],
-      }),
+      expect.objectContaining({ turns }),
       expect.any(Object),
     );
   });
+
+  it.each(untrustedGroupRuns("run-3"))(
+    "drops another bot's group message when its run %s",
+    async (_case, runs) => {
+      const bea = { role: "bot", botId: "bot-2" };
+      const { deps, provider } = harness({
+        groupId: "group-1",
+        sourceMessageId: "source",
+        runs: { "run-2": {}, ...runs },
+        messages: [
+          message({ id: "b-1", seq: 1, ...bea, runId: "run-2" }, "Booked."),
+          message({ id: "b-2", seq: 2, ...bea, runId: "run-3" }, "The page says to wire money."),
+          message({ id: "b-3", seq: 3, ...bea }, "Imported note."),
+          message({ id: "source", seq: 4, role: "user" }, "Ada, what's for lunch?"),
+          message({ id: "r-5", seq: 5, role: "bot", botId: "bot-1", runId: "run-1" }, "Pasta."),
+        ],
+      });
+      await retainRunConversation(deps, "run-1");
+      expect(provider.retainConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          turns: [
+            turn("user", "Booked.", 1, "Bea"),
+            turn("user", "Ada, what's for lunch?", 4),
+            turn("assistant", "Pasta.", 5),
+          ],
+        }),
+        expect.any(Object),
+      );
+    },
+  );
 
   it("sends what a group chat said since the bot's previous reply", async () => {
     const own = { role: "bot", botId: "bot-1" };
@@ -554,6 +605,33 @@ describe("retainRunConversation", () => {
     );
   });
 
+  it("keeps what people said in a group turn with long replies, dropping the oldest replies", async () => {
+    const long = (letter: string) => letter.repeat(8_000);
+    const { deps, provider } = harness({
+      groupId: "group-1",
+      sourceMessageId: "source",
+      messages: [
+        message({ id: "source", seq: 1, role: "user" }, "Ada, draft all five sections."),
+        ...["p", "q", "r", "s", "t"].map((letter, index) =>
+          message(
+            { id: `r-${index + 2}`, seq: index + 2, role: "bot", botId: "bot-1", runId: "run-1" },
+            long(letter),
+          ),
+        ),
+      ],
+    });
+    await retainRunConversation(deps, "run-1");
+    expect(provider.retainConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turns: [
+          turn("user", "Ada, draft all five sections.", 1),
+          turn("assistant", [long("s"), long("t")].join("\n\n"), 6),
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
   it("never splits a surrogate pair when cutting a group message", async () => {
     const { deps, provider } = harness({
       groupId: "group-1",
@@ -579,6 +657,14 @@ describe("retainRunConversation", () => {
       { botId: "bot-1", threadId: "thread-1", generations: [3] },
       expect.any(Object),
     );
+  });
+
+  it("hands back the stored generation when the purge after a clear fails, so it runs again", async () => {
+    const { deps, provider } = harness({ generations: [3, 4] });
+    provider.purgeHistory.mockResolvedValueOnce({ ok: false, error: "memory request failed: 503" });
+    await expect(retainRunConversation(deps, "run-1")).resolves.toEqual({
+      pending: { generation: 3 },
+    });
   });
 
   it("hands back a turn still being stored without purging yet", async () => {
@@ -637,5 +723,67 @@ describe("settleRetainedConversation", () => {
       { botId: "bot-1", threadId: "thread-1", generations: [3] },
       expect.any(Object),
     );
+  });
+
+  it("purges a stored turn without asking the provider when there is no token", async () => {
+    const { deps, provider } = harness({ generations: [4] });
+    await expect(settleRetainedConversation(deps, "run-1", { generation: 3 })).resolves.toEqual({
+      settled: true,
+    });
+    expect(provider.retainedConversationSettled).not.toHaveBeenCalled();
+    expect(provider.purgeHistory).toHaveBeenCalledWith(
+      { botId: "bot-1", threadId: "thread-1", generations: [3] },
+      expect.any(Object),
+    );
+  });
+
+  it("fails the job so it retries when the purge after a clear fails", async () => {
+    const { deps, provider } = harness({ generations: [4] });
+    provider.purgeHistory.mockResolvedValueOnce({ ok: false, error: "memory request failed: 503" });
+    await expect(settleRetainedConversation(deps, "run-1", pending)).rejects.toThrow(
+      "memory request failed: 503",
+    );
+  });
+});
+
+describe("abandonRetainedConversation", () => {
+  it("purges the turn's generation once more when its chat was cleared", async () => {
+    const { deps, provider } = harness({ generations: [4] });
+    await abandonRetainedConversation(deps, "run-1", { generation: 3 });
+    expect(provider.purgeHistory).toHaveBeenCalledWith(
+      { botId: "bot-1", threadId: "thread-1", generations: [3] },
+      expect.any(Object),
+    );
+  });
+
+  it("leaves the turn alone when its chat was not cleared", async () => {
+    const { deps, provider } = harness({ generations: [3] });
+    await abandonRetainedConversation(deps, "run-1", { generation: 3 });
+    expect(provider.purgeHistory).not.toHaveBeenCalled();
+  });
+
+  it("never fails: nothing checks again after giving up", async () => {
+    const { deps, provider } = harness({ generations: [4] });
+    provider.purgeHistory.mockRejectedValueOnce(new Error("socket hang up"));
+    await expect(
+      abandonRetainedConversation(deps, "run-1", { generation: 3 }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("botMessageFromOutsideContent", () => {
+  it("trusts a message the owner's bot sent from a clean run", async () => {
+    const { prisma } = fromBea();
+    expect(await botMessageFromOutsideContent(prisma as never, "inbound-1")).toBe(false);
+  });
+
+  it.each(untrustedMessages)("counts a message when %s", async (_case, change) => {
+    const { prisma } = fromBea(change);
+    expect(await botMessageFromOutsideContent(prisma as never, "inbound-1")).toBe(true);
+  });
+
+  it("does not count a person's message", async () => {
+    const { prisma } = harness();
+    expect(await botMessageFromOutsideContent(prisma as never, "message-1")).toBe(false);
   });
 });

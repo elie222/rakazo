@@ -16,7 +16,7 @@ async function context(
   const append = vi.fn();
   const finalizeRun = vi.fn(async () => ({}));
   const enqueue = vi.fn(async () => undefined);
-  const updateMany = vi.fn(async () => ({ count: 1 }));
+  const updateMany = vi.fn(async (_args: { data?: object }) => ({ count: 1 }));
   const tx = { usageRecord: { createMany } };
   const deps = {
     prisma: {
@@ -173,5 +173,17 @@ describe("learning a finished turn", () => {
     );
     // Recorded again at completion, so a failed earlier write never leaves the row unmarked.
     expect(updateMany).toHaveBeenCalledWith(persisted);
+  });
+
+  it("fails the run instead of finalizing it as clean when the flag can't be recorded", async () => {
+    const { ctx, enqueue, finalizeRun, updateMany } = await context({ trigger: "user" });
+    ctx.state.readOutsideContent = true;
+    updateMany.mockImplementation(async (args: { data?: object }) => {
+      if (args.data && "readOutsideContent" in args.data) throw new Error("connection lost");
+      return { count: 1 };
+    });
+    await expect(completeRun(ctx)).rejects.toThrow("connection lost");
+    expect(finalizeRun).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

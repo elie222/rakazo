@@ -18,6 +18,7 @@ import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import { handoffToGroupBot } from "./group-handoff.js";
 import type { RunContext } from "./run-context.js";
+import { hasTakenInOutsideContent } from "./run-context.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
@@ -329,6 +330,8 @@ export const messagingTools: ToolHandlers = {
         deliveryKey: effectKey,
         files: stored.files,
       },
+      // The message can only repeat what the run read before sending it.
+      { senderClean: !(await hasTakenInOutsideContent(ctx)) },
     );
     if (!sent.ok) return call.finish({ error: sent.error });
     return call.finish({

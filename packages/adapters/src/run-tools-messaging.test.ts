@@ -102,6 +102,7 @@ describe("sending files to another bot", () => {
         message: "deploy this\n\nFiles on our shared computer:\n- bots/bot-coder/site",
         files: [],
       }),
+      expect.anything(),
     );
   });
 
@@ -152,6 +153,7 @@ describe("sending files to another bot", () => {
         message: "deploy this",
         files: [expect.objectContaining({ artifactId: "artifact-zip" })],
       }),
+      expect.anything(),
     );
   });
 
@@ -218,6 +220,7 @@ describe("sending files to another bot", () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ bot_id: "bot-servo", confirm_name: undefined }),
+      expect.anything(),
     );
   });
 
@@ -245,6 +248,7 @@ describe("sending files to another bot", () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ message: "deploy this", files: [] }),
+      expect.anything(),
     );
   });
 
@@ -315,5 +319,32 @@ describe("sending files to another bot", () => {
     ).resolves.toEqual({
       error: "site: not found, or your computer could not be read. Nothing was sent.",
     });
+  });
+});
+
+describe("marking whether the sender was clean", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  type Sender = { readOutsideContent?: boolean; attempts?: number; outsideMessage?: boolean };
+  it.each<[string, Sender, boolean]>([
+    ["has taken in nothing from outside", {}, true],
+    ["read outside content before sending", { readOutsideContent: true }, false],
+    ["is a later attempt", { attempts: 2 }, false],
+    ["took in a channel message mid-turn", { outsideMessage: true }, false],
+  ])("marks the message clean only when the run %s", async (_case, state, clean) => {
+    const { ctx } = context("computer-team");
+    Object.assign(ctx, {
+      deps: { ...ctx.deps, prisma: { attempt: { count: async () => state.attempts ?? 1 } } },
+      state: { readOutsideContent: state.readOutsideContent ?? false },
+      trust: { receivedOutsideMessage: async () => state.outsideMessage ?? false },
+    });
+    await messagingTools.message_bot!(ctx, callWith("message_bot", { files: [] }));
+    expect(mocks.messageBot).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { senderClean: clean },
+    );
   });
 });

@@ -94,9 +94,12 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
   };
 }
 
-/** Clear removes conversation-derived memory of the previous generation (summaries and learned
- * turns); including the new generation also covers a compaction or retain job that began just
- * after the clear committed. Durable memories remain in their Space-private containers. */
+/** Clear removes conversation-derived memory (summaries and learned turns) of the cleared chat's
+ * generation, and again of the one before it. clearThread returns the generation from before its
+ * increment, so the new chat's turns use the next one and are never purged here. Durable memories
+ * remain in their Space-private containers. Best effort throughout: the conversation rows are
+ * already deleted, so failing the clear here would help nothing — a failed purge only leaves
+ * stale memory recallable. */
 export async function purgeClearedThreadMemory(
   deps: Pick<RouterDeps, "prisma" | "memoryProviders">,
   actor: Actor,
@@ -113,27 +116,25 @@ export async function purgeClearedThreadMemory(
   // others key history by bot and generation alone, so purging a group's generations there would
   // delete the member bots' direct-chat summaries. A bot removed from the group still learned
   // from it, and its runs outlive the clear.
-  const botIds =
-    target.kind === "bot"
-      ? [target.botId]
-      : configuredMemory.provider.describe().capabilities.purgesByThread === true
-        ? [
-            ...new Set([
-              ...target.memberBotIds,
-              ...(
-                await deps.prisma.run.findMany({
-                  where: { threadId: target.threadId },
-                  distinct: ["botId"],
-                  select: { botId: true },
-                })
-              ).map((run) => run.botId),
-            ]),
-          ]
-        : [];
+  let botIds: string[] = [];
+  if (target.kind === "bot") {
+    botIds = [target.botId];
+  } else if (configuredMemory.provider.describe().capabilities.purgesByThread === true) {
+    const ranHere = await deps.prisma.run
+      .findMany({
+        where: { threadId: target.threadId },
+        distinct: ["botId"],
+        select: { botId: true },
+      })
+      .catch((error) => {
+        // Still purge the current members.
+        getLogger().error("listing the bots that ran in a cleared group chat failed", error);
+        return [];
+      });
+    botIds = [...new Set([...target.memberBotIds, ...ranHere.map((run) => run.botId)])];
+  }
   await Promise.all(
     botIds.map(async (botId) => {
-      // Best effort: the conversation rows are already deleted, so failing the clear here
-      // would help nothing — a failed purge only leaves stale memory recallable.
       try {
         const purged = await configuredMemory.provider.purgeHistory(
           {

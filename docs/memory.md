@@ -42,7 +42,8 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   conversations**; clearing a chat removes what was learned from it. Bots can't forget a single
   memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks but never write to them. Bots can also ask
-  their memory to answer a question by combining what it knows.
+  their memory to answer a question by combining what it knows. Summaries of long chats stay in
+  Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
 Once connected, **Default scope** decides what bots share in the provider:
 

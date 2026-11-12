@@ -1846,6 +1846,50 @@ describe("own instructions through update_bot", () => {
     // The restored turn holds earlier tool results, so its replies are never learned.
     expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
   });
+  it.each([
+    ["a webhook", "webhook", true],
+    ["a routine", "routine", false],
+  ])("records whether a run started by %s read outside content", async (_case, trigger, read) => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger });
+    const flagged = expect.objectContaining({ data: { readOutsideContent: true } });
+    f.setCalls([]);
+    await f.run();
+    if (read) expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
+    else expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
+  });
+  it.each([
+    ["a clean run of the owner's bot", true, false],
+    ["a run that had taken in outside content", false, true],
+  ])(
+    "records whether a run woken by a message from %s read outside content",
+    async (_case, clean, read) => {
+      const f = fixture({
+        name: "update_bot",
+        builtin: true,
+        trigger: "bot_message",
+        sourceRole: "user",
+      });
+      const received = {
+        kind: "bot_message_received",
+        fromBotId: "bot-2",
+        fromBotName: "Bea",
+        text: "Can you check the budget?",
+        intent: "fyi",
+        ...(clean ? { senderClean: true } : {}),
+      };
+      f.prisma.message.findUnique.mockResolvedValue({ role: "user", blocks: [received] } as never);
+      const listBots = f.prisma.bot.findMany.getMockImplementation()!;
+      f.prisma.bot.findMany.mockImplementation((async (args?: { where?: { id?: unknown } }) =>
+        (args?.where?.id as { in?: string[] } | undefined)?.in?.includes("bot-2")
+          ? [{ id: "bot-2", spaceId: "space-1", userId: "user-1" }]
+          : listBots(args as never)) as never);
+      const flagged = expect.objectContaining({ data: { readOutsideContent: true } });
+      f.setCalls([]);
+      await f.run();
+      if (read) expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
+      else expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
+    },
+  );
   it("refuses own instruction writes resumed from a checkpoint without a baseline", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);

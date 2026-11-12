@@ -27,7 +27,11 @@ import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
-import { retainRunConversation, settleRetainedConversation } from "./conversation-memory.js";
+import {
+  abandonRetainedConversation,
+  retainRunConversation,
+  settleRetainedConversation,
+} from "./conversation-memory.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
@@ -63,9 +67,13 @@ function asOwner<Key, P extends Key>(
 
 const OWNER = { spaceId: true, userId: true } as const;
 const CONTROL_EXPIRE_RETRY_MS = 30_000;
-/** How often to ask whether the memory provider finished storing a turn, and for how long. */
-const RETAIN_TURN_CHECK_MS = 5_000;
-const MAX_RETAIN_TURN_CHECKS = 60;
+/**
+ * How long to wait before asking again whether the memory provider stored a turn: 5 s, doubling
+ * up to 10 min. 150 checks wait about 24 h in all, long enough for a backed-up provider.
+ */
+const RETAIN_TURN_FIRST_CHECK_MS = 5_000;
+const RETAIN_TURN_MAX_CHECK_MS = 10 * 60_000;
+const MAX_RETAIN_TURN_CHECKS = 150;
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -267,7 +275,7 @@ export function createBackgroundJobHandlers(deps: {
     "memory.retain-turn": asOwner(run, async (payload) => {
       const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders };
       const options = { withoutReplies: payload.withoutReplies };
-      let next: { token: string; generation: number; checks: number };
+      let next: { token?: string; generation: number; checks: number };
       if (!payload.pending) {
         const { pending } = await retainRunConversation(
           memory,
@@ -293,15 +301,19 @@ export function createBackgroundJobHandlers(deps: {
               "run.id": payload.runId,
             },
           );
+          await abandonRetainedConversation(memory, payload.runId, next);
           return;
         }
       }
-      // The provider is still storing the turn: check again later instead of holding a worker.
+      // Not settled yet: check again later instead of holding a worker.
       await deps.jobs.enqueue(
         memoryRetainTurnJob(payload.runId, payload.messageIds, {
           ...options,
           pending: next,
-          availableAt: new Date(Date.now() + RETAIN_TURN_CHECK_MS),
+          availableAt: new Date(
+            Date.now() +
+              Math.min(RETAIN_TURN_FIRST_CHECK_MS * 2 ** next.checks, RETAIN_TURN_MAX_CHECK_MS),
+          ),
         }),
       );
     }),

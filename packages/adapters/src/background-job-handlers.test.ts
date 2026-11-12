@@ -14,7 +14,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type * as ComputerControl from "./computer-control.js";
 import { expireComputerControl } from "./computer-control.js";
-import { retainRunConversation, settleRetainedConversation } from "./conversation-memory.js";
+import {
+  abandonRetainedConversation,
+  retainRunConversation,
+  settleRetainedConversation,
+} from "./conversation-memory.js";
 import { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import {
@@ -25,6 +29,7 @@ import {
 import type { EncryptedSecretStore } from "./secrets.js";
 
 vi.mock("./conversation-memory.js", () => ({
+  abandonRetainedConversation: vi.fn(async () => undefined),
   retainRunConversation: vi.fn(async () => ({})),
   settleRetainedConversation: vi.fn(async () => ({ settled: true })),
 }));
@@ -398,12 +403,38 @@ describe("memory.retain-turn", () => {
     expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
-  it("gives up after 60 checks without failing the job", async () => {
+  it.each([
+    [2, 40_000],
+    [5, 320_000],
+    [6, 600_000],
+    [120, 600_000],
+  ])(
+    "waits longer after each check, at most 10 minutes (after %i checks)",
+    async (checks, delay) => {
+      vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
+      const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+      try {
+        const { jobs, handle } = retainTurn();
+        await handle({ runId: "run-1", pending: { token: "op-1", generation: 3, checks } });
+        const [job] = jobs.enqueue.mock.calls[0] as unknown as [{ availableAt: Date }];
+        expect(job.availableAt.getTime()).toBe(1_000_000 + delay);
+      } finally {
+        now.mockRestore();
+      }
+    },
+  );
+
+  it("gives up after about a day of checks, purging the turn if its chat was cleared", async () => {
     vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
     const { jobs, handle } = retainTurn();
     await expect(
-      handle({ runId: "run-1", pending: { token: "op-1", generation: 3, checks: 59 } }),
+      handle({ runId: "run-1", pending: { token: "op-1", generation: 3, checks: 149 } }),
     ).resolves.toBeUndefined();
     expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(abandonRetainedConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      "run-1",
+      expect.objectContaining({ generation: 3 }),
+    );
   });
 });

@@ -46,8 +46,14 @@ function hindsightFake(
     failWrites?: string[];
     /** Banks whose async operations always end failed. */
     failOperations?: string[];
+    /** Banks whose operation status checks never get an answer. */
+    statusDown?: string[];
     /** Banks that keep no document text, so they refuse to append. */
     noAppend?: string[];
+    /** Banks that refuse a turn stored as its own document. */
+    failSeparate?: string[];
+    /** Per-turn documents already in a bank, each tagged with the conversation's session. */
+    turnDocuments?: { bank: string; session: string; count: number };
     apiKey?: string;
   } = {},
 ) {
@@ -59,6 +65,15 @@ function hindsightFake(
   const pending = new Map<string, { bank: string; document: string; tags: string[] }>();
   /** `${bank}\n${document}` → the document's tags. */
   const tags = new Map<string, string[]>();
+  if (options.turnDocuments) {
+    const { bank, session, count } = options.turnDocuments;
+    const ids = documents.get(bank) ?? new Set<string>();
+    for (let index = 0; index < count; index++) {
+      ids.add(`rakazo-turn-run-${index}`);
+      tags.set(`${bank}\nrakazo-turn-run-${index}`, [`session:${session}`]);
+    }
+    documents.set(bank, ids);
+  }
   const operationBanks = new Map<string, string>();
   const requests: RecordedRequest[] = [];
   const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -82,14 +97,15 @@ function hindsightFake(
     }
     if (method === "POST" && rest === "/memories") {
       if (options.failWrites?.includes(bank)) return new Response("{}", { status: 500 });
-      if (
-        options.noAppend?.includes(bank) &&
-        body.items.some((item: { update_mode?: string }) => item.update_mode === "append")
-      ) {
-        return new Response(
-          JSON.stringify({ detail: "update_mode='append' requires document text storage" }),
-          { status: 400 },
-        );
+      const appends = body.items.some(
+        (item: { update_mode?: string }) => item.update_mode === "append",
+      );
+      // Any wording: only the status tells the refusal apart.
+      if (options.noAppend?.includes(bank) && appends) {
+        return new Response(JSON.stringify({ detail: "Bad request" }), { status: 400 });
+      }
+      if (options.failSeparate?.includes(bank) && !appends) {
+        return new Response("{}", { status: 500 });
       }
       banks.add(bank);
       operationBanks.set(body.operation_id, bank);
@@ -104,8 +120,9 @@ function hindsightFake(
       }
       return Response.json({ success: true, operation_id: body.operation_id });
     }
-    const operation = rest.match(/^\/operations\/([^/]+)(\/retry)?$/);
-    if (operation && method === "GET" && !operation[2]) {
+    const operation = rest.match(/^\/operations\/([^/]+)$/);
+    if (operation && method === "GET") {
+      if (options.statusDown?.includes(bank)) throw new TypeError("fetch failed");
       const status = options.failOperations?.includes(operationBanks.get(operation[1]!) ?? "")
         ? "failed"
         : statuses.length > 1
@@ -121,7 +138,6 @@ function hindsightFake(
       }
       return Response.json({ operation_id: operation[1], status });
     }
-    if (operation && method === "POST" && operation[2]) return Response.json({});
     if (method === "POST" && rest === "/memories/recall") {
       const results = options.recall?.[bank];
       if (results === "down") throw new TypeError("fetch failed");
@@ -161,7 +177,7 @@ function provider(
     recallBanks?: string[];
     retainConversations?: boolean;
     recallBudget?: string;
-    recallTypes?: string;
+    recallFacts?: boolean;
     skipUnrelated?: boolean;
     apiKey?: string;
   } = {},
@@ -173,7 +189,7 @@ function provider(
       retainConversations: options.retainConversations ?? true,
       autoRecall: true,
       recallBudget: options.recallBudget ?? "mid",
-      recallTypes: options.recallTypes ?? "observation",
+      recallFacts: options.recallFacts ?? false,
       skipUnrelated: options.skipUnrelated ?? false,
     },
     false,
@@ -210,9 +226,22 @@ describe("Hindsight saves", () => {
           timestamp: expect.any(String),
         },
       ],
-      async: true,
+      // Stored before the bot hears it was saved, so a failed extraction reaches the bot.
+      async: false,
       operation_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
+  });
+
+  it("reuses the operation id when the same operation saves the same fact again", async () => {
+    const fake = hindsightFake();
+    const memory = provider(fake.fetch);
+    await memory.save({ ...save, scope: "isolated" }, context);
+    await memory.save({ ...save, content: "Prefers tea.", scope: "isolated" }, context);
+    await memory.save({ ...save, content: "Prefers coffee.", scope: "isolated" }, context);
+    await memory.save({ ...save, scope: "isolated" }, { ...context, operationId: "op-2" });
+    const ids = writes(fake.requests).map((request) => request.body?.operation_id);
+    expect(ids[1]).toBe(ids[0]);
+    expect(new Set(ids).size).toBe(3);
   });
 
   it("writes a sharing bot's fact to its own bank, then the Space's team bank", async () => {
@@ -291,10 +320,7 @@ describe("Hindsight recall", () => {
 
   it("sends the chosen budget and memory types", async () => {
     const fake = hindsightFake({ recall: { [OWN_BANK]: [] }, reflect: { [OWN_BANK]: "" } });
-    const memory = provider(fake.fetch, {
-      recallBudget: "high",
-      recallTypes: "observation,world,experience",
-    });
+    const memory = provider(fake.fetch, { recallBudget: "high", recallFacts: true });
     await memory.recall({ ...recall, scope: "isolated" }, context);
     await memory.reflect({ query: "Drinks?", botId: "bot-1" }, context);
     expect(fake.requests.map((request) => request.body)).toEqual([
@@ -408,7 +434,7 @@ describe("Hindsight recall", () => {
       value: [],
     });
     // An extra bank gets 80% of the recall timeout so it never costs the own bank its results.
-    expect(timeout.mock.calls).toEqual([[30_000], [24_000]]);
+    expect(timeout.mock.calls).toEqual([[15_000], [12_000]]);
     timeout.mockRestore();
     vi.setSystemTime(new Date("2026-11-11T10:04:59.000Z"));
     await memory.recall({ ...recall, scope: "isolated" }, context);
@@ -610,55 +636,51 @@ describe("Hindsight conversations", () => {
     ).resolves.toEqual({ ok: true, value: { settled: false } });
   });
 
-  it("asks the server once to retry a failed operation and stays unsettled", async () => {
-    const fake = hindsightFake({ operations: ["failed", "completed"] });
-    const memory = provider(fake.fetch);
-    await expect(retainAndCheck(memory)).resolves.toEqual({ ok: true, value: { settled: false } });
-    const retries = fake.requests.filter((request) => request.rest.endsWith("/retry"));
-    const operationId = String(writes(fake.requests)[0]?.body?.operation_id);
-    expect(retries.map((request) => request.rest)).toEqual([`/operations/${operationId}/retry`]);
-    await expect(retainAndCheck(memory)).resolves.toEqual({ ok: true, value: { settled: true } });
-    expect(fake.requests.filter((request) => request.rest.endsWith("/retry"))).toHaveLength(1);
-  });
-
-  it("gives up after three server retries", async () => {
+  it("counts a turn the server failed to store as done, without storing it again", async () => {
     const fake = hindsightFake({ operations: ["failed"] });
     const memory = provider(fake.fetch);
-    const submitted = await memory.retainConversation!(turn, context);
-    const pending = submitted.ok ? submitted.value.pending! : "";
-    for (let check = 0; check < 3; check++) {
-      await expect(memory.retainedConversationSettled(pending, context)).resolves.toEqual({
-        ok: true,
-        value: { settled: false },
-      });
-    }
-    await expect(memory.retainedConversationSettled(pending, context)).resolves.toEqual({
-      ok: false,
-      error: "Hindsight couldn't store the turn.",
-    });
-    expect(fake.requests.filter((request) => request.rest.endsWith("/retry"))).toHaveLength(3);
+    await expect(retainAndCheck(memory)).resolves.toEqual({ ok: true, value: { settled: true } });
+    expect(writes(fake.requests)).toHaveLength(1);
+    expect(fake.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+    expect(fake.documents.get(OWN_BANK)?.has(SESSION)).toBeFalsy();
   });
 
-  it("treats a team-bank operation that keeps failing as done", async () => {
+  it("counts a team-bank operation that failed as done", async () => {
     const fake = hindsightFake({ failOperations: [TEAM_BANK] });
-    const memory = provider(fake.fetch);
-    const submitted = await memory.retainConversation!({ ...turn, scope: "shared" }, context);
-    const pending = submitted.ok ? submitted.value.pending! : "";
-    for (let check = 0; check < 3; check++) {
-      await memory.retainedConversationSettled(pending, context);
-    }
-    await expect(memory.retainedConversationSettled(pending, context)).resolves.toEqual({
+    await expect(
+      retainAndCheck(provider(fake.fetch), { ...turn, scope: "shared" }),
+    ).resolves.toEqual({ ok: true, value: { settled: true } });
+    expect(fake.documents.get(OWN_BANK)?.has(SESSION)).toBe(true);
+  });
+
+  it("counts an operation the server lost as done", async () => {
+    const fake = hindsightFake({ operations: ["not_found"] });
+    await expect(retainAndCheck(provider(fake.fetch))).resolves.toEqual({
       ok: true,
       value: { settled: true },
     });
   });
 
-  it("fails at once when the server lost the operation", async () => {
-    const fake = hindsightFake({ operations: ["not_found"] });
-    await expect(retainAndCheck(provider(fake.fetch))).resolves.toEqual({
-      ok: false,
-      error: "Hindsight could not store this turn: not_found.",
-    });
+  it("stays unsettled while a status check gets no answer, in either bank", async () => {
+    for (const down of [OWN_BANK, TEAM_BANK]) {
+      const fake = hindsightFake({ statusDown: [down] });
+      await expect(
+        retainAndCheck(provider(fake.fetch), { ...turn, scope: "shared" }),
+      ).resolves.toEqual({ ok: true, value: { settled: false } });
+    }
+  });
+
+  it("keeps writing to the team bank after its status check failed", async () => {
+    const fake = hindsightFake({ statusDown: [TEAM_BANK] });
+    const memory = provider(fake.fetch);
+    await retainAndCheck(memory, { ...turn, scope: "shared" });
+    await memory.retainConversation!({ ...turn, scope: "shared", runId: "run-2" }, context);
+    expect(writes(fake.requests).map((request) => request.bank)).toEqual([
+      OWN_BANK,
+      TEAM_BANK,
+      OWN_BANK,
+      TEAM_BANK,
+    ]);
   });
 
   it("rejects a pending turn it did not hand out", async () => {
@@ -745,6 +767,25 @@ describe("Hindsight conversations", () => {
     expect([...(fake.documents.get(OWN_BANK) ?? [])]).toEqual([]);
   });
 
+  it("fails a turn neither document takes and keeps trying to append the next one", async () => {
+    const fake = hindsightFake({ noAppend: [OWN_BANK], failSeparate: [OWN_BANK] });
+    const memory = provider(fake.fetch);
+    await expect(memory.retainConversation!(turn, context)).resolves.toEqual({
+      ok: false,
+      error: "Hindsight request failed: 500",
+    });
+    await memory.retainConversation!({ ...turn, runId: "run-2" }, context);
+    const items = writes(fake.requests).map(
+      (request) => (request.body!.items as Array<Record<string, unknown>>)[0]!,
+    );
+    expect(items.map((item) => item.document_id)).toEqual([
+      SESSION,
+      "rakazo-turn-run-1",
+      SESSION,
+      "rakazo-turn-run-2",
+    ]);
+  });
+
   it("does not learn from conversations when turned off, yet still purges cleared chats", () => {
     const memory = createHindsightProvider(
       { retainConversations: "false" },
@@ -784,6 +825,19 @@ describe("Hindsight conversations", () => {
     expect([...(fake.documents.get(OWN_BANK) ?? [])]).toEqual(["rakazo-thread-1-4-bot-1"]);
     expect([...(fake.documents.get(TEAM_BANK) ?? [])]).toEqual(["rakazo-thread-1-2-bot-2"]);
   });
+
+  it("keeps deleting a conversation's per-turn documents page after page", async () => {
+    const fake = hindsightFake({
+      turnDocuments: { bank: OWN_BANK, session: SESSION, count: 250 },
+    });
+    await expect(
+      provider(fake.fetch).purgeHistory(
+        { botId: "bot-1", threadId: "thread-1", generations: [3] },
+        context,
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect([...(fake.documents.get(OWN_BANK) ?? [])]).toEqual([]);
+  });
 });
 
 describe("Hindsight reflect", () => {
@@ -815,7 +869,7 @@ describe("Hindsight reflect", () => {
 });
 
 describe("Hindsight connection", () => {
-  const LOCAL_URL = "http://hindsight.railway.internal:8888";
+  const LOCAL_URL = "http://hindsight.example.test:8888";
   const privateResolver: ResolveHostname = async () => [{ address: "fd12:3456::7", family: 6 }];
   const publicResolver: ResolveHostname = async () => [{ address: "203.0.113.10", family: 4 }];
 
@@ -908,12 +962,29 @@ describe("Hindsight connection", () => {
         prepareHindsightConnection({ recallBanks }, { apiKey: "hsk-test-key" }, { fetch }),
       ).rejects.toThrow("recallBanks may not include . or ..");
     }
-    for (const recallBanks of ["rakazo-space-2", "notes,rakazo-space-2-bot-9"]) {
+    for (const recallBanks of [
+      "rakazo-0123456789abcdef0123456789ABCDEF",
+      "notes,rakazo-01234567-89ab-cdef-0123-456789abcdef-bot-9",
+    ]) {
       await expect(
         prepareHindsightConnection({ recallBanks }, { apiKey: "hsk-test-key" }, { fetch }),
-      ).rejects.toThrow("recallBanks may not include banks named rakazo-…");
+      ).rejects.toThrow("recallBanks may not include another Space's banks");
     }
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts another app's bank whose name only starts with rakazo-", async () => {
+    const existing = hindsightFake({ banks: ["rakazo-notes"] });
+    await expect(
+      prepareHindsightConnection(
+        { recallBanks: "rakazo-notes" },
+        { apiKey: "hsk-test-key" },
+        { fetch: existing.fetch },
+      ),
+    ).resolves.toEqual({
+      settings: { recallBanks: "rakazo-notes" },
+      credentials: { apiKey: "hsk-test-key" },
+    });
   });
 
   it("validates recall settings and keeps only those that differ from the defaults", async () => {
@@ -922,13 +993,13 @@ describe("Hindsight connection", () => {
       prepareHindsightConnection({ recallBudget: "max" }, { apiKey: "hsk-test-key" }, { fetch }),
     ).rejects.toThrow("recallBudget must be low, mid or high");
     await expect(
-      prepareHindsightConnection({ recallTypes: "world" }, { apiKey: "hsk-test-key" }, { fetch }),
-    ).rejects.toThrow("recallTypes must be observation or observation,world,experience");
+      prepareHindsightConnection({ recallFacts: "yes" }, { apiKey: "hsk-test-key" }, { fetch }),
+    ).rejects.toThrow("recallFacts must be true or false");
     expect(fetch).not.toHaveBeenCalled();
     const defaults = {
       autoRecall: "true",
       recallBudget: "mid",
-      recallTypes: "observation",
+      recallFacts: "false",
       skipUnrelated: "false",
     };
     await expect(
@@ -943,7 +1014,7 @@ describe("Hindsight connection", () => {
     const changed = {
       autoRecall: "false",
       recallBudget: "high",
-      recallTypes: "observation,world,experience",
+      recallFacts: "true",
       skipUnrelated: "true",
     };
     await expect(

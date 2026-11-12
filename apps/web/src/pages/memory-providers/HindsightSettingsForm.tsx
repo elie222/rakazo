@@ -18,7 +18,6 @@ import { ConnectionModeFields } from "./ConnectionModeFields";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
 type RecallBudget = "low" | "mid" | "high";
-const RECALL_TYPES_WITH_FACTS = "observation,world,experience";
 
 function Segmented<T extends string>({
   label,
@@ -120,7 +119,7 @@ export function HindsightSettingsForm({ busy, onConnect }: MemoryProviderSetting
         ...(learn ? {} : { retainConversations: "false" }),
         ...(autoRecall ? {} : { autoRecall: "false" }),
         ...(recallBudget === "mid" ? {} : { recallBudget }),
-        ...(withFacts ? { recallTypes: RECALL_TYPES_WITH_FACTS } : {}),
+        ...(withFacts ? { recallFacts: "true" } : {}),
         ...(skipUnrelated ? { skipUnrelated: "true" } : {}),
       },
       credentials: key ? { apiKey: key } : {},

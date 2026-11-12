@@ -7,7 +7,7 @@ export const HINDSIGHT_CLOUD_BASE_URL = "https://api.hindsight.vectorize.io";
 /** Default request timeout; reflect runs an LLM and can take that long. */
 const HINDSIGHT_TIMEOUT_MS = 120_000;
 /** Recall runs synchronously before every reply, so a slow server must not stall runs for long. */
-export const HINDSIGHT_RECALL_TIMEOUT_MS = 30_000;
+export const HINDSIGHT_RECALL_TIMEOUT_MS = 15_000;
 const MAX_HINDSIGHT_RESPONSE_BYTES = 1024 * 1024;
 
 export interface HindsightConnectionConfig extends LocalServiceConnection {
@@ -16,6 +16,10 @@ export interface HindsightConnectionConfig extends LocalServiceConnection {
 }
 
 export type HindsightResponse<T> = { ok: true; value: T } | { ok: false; error: string };
+/** `status` is the HTTP status of a write the server refused. */
+export type HindsightWriteResponse =
+  | { ok: true; value: undefined }
+  | { ok: false; error: string; status?: number };
 
 export interface HindsightRecallResult {
   text: string;
@@ -24,11 +28,6 @@ export interface HindsightRecallResult {
 }
 
 const INVALID = "Hindsight returned an invalid response.";
-/** A bank that keeps no document text cannot append to a document. */
-export const HINDSIGHT_APPEND_REFUSED = "Hindsight bank keeps no document text to append to.";
-/** A bank that keeps no document text refuses appends with this text in a 400 body. */
-const APPEND_REFUSAL_TEXT = "document text storage";
-const MAX_ERROR_BODY_BYTES = 4096;
 
 function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -46,10 +45,10 @@ async function hindsightRequest(
     readJson?: boolean;
     /** Answer 404 with `null` instead of an error. */
     allowNotFound?: boolean;
-    /** Answer a 400 naming the append refusal with HINDSIGHT_APPEND_REFUSED. */
-    detectAppendRefusal?: boolean;
+    /** Add the HTTP status to a refused request's error. */
+    reportStatus?: boolean;
   } = {},
-): Promise<HindsightResponse<unknown>> {
+): Promise<{ ok: true; value: unknown } | Extract<HindsightWriteResponse, { ok: false }>> {
   const signal = requestSignal(options.timeoutMs ?? HINDSIGHT_TIMEOUT_MS, options.signal);
   const url = `${config.baseUrl.replace(/\/+$/, "")}${path}`;
   const method = options.method ?? "POST";
@@ -73,24 +72,16 @@ async function hindsightRequest(
   } catch {
     return { ok: false, error: "Hindsight is unreachable or the request timed out." };
   }
-  if (response.status === 400 && options.detectAppendRefusal) {
-    try {
-      const bytes = await readBodyCapped(response, MAX_ERROR_BODY_BYTES, signal);
-      if (new TextDecoder().decode(bytes).includes(APPEND_REFUSAL_TEXT)) {
-        return { ok: false, error: HINDSIGHT_APPEND_REFUSED };
-      }
-    } catch {
-      // An oversized or unreadable body is not the refusal.
-    }
-    await response.body?.cancel().catch(() => undefined);
-    return { ok: false, error: "Hindsight request failed: 400" };
-  }
   if (!response.ok || !options.readJson) {
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 404 && options.allowNotFound) return { ok: true, value: null };
     return response.ok
       ? { ok: true, value: undefined }
-      : { ok: false, error: `Hindsight request failed: ${response.status}` };
+      : {
+          ok: false,
+          error: `Hindsight request failed: ${response.status}`,
+          ...(options.reportStatus ? { status: response.status } : {}),
+        };
   }
   try {
     const bytes = await readBodyCapped(response, MAX_HINDSIGHT_RESPONSE_BYTES, signal);
@@ -108,7 +99,9 @@ function operationPath(bank: string, operationId: string): string {
   return `${bankPath(bank)}/operations/${encodeURIComponent(operationId)}`;
 }
 
-function done(result: HindsightResponse<unknown>): HindsightResponse<void> {
+function done(
+  result: { ok: true; value: unknown } | Extract<HindsightWriteResponse, { ok: false }>,
+): HindsightWriteResponse {
   return result.ok ? { ok: true, value: undefined } : result;
 }
 
@@ -140,11 +133,11 @@ export async function retainHindsight(
   bank: string,
   body: object,
   signal?: AbortSignal,
-): Promise<HindsightResponse<void>> {
+): Promise<HindsightWriteResponse> {
   return done(
     await hindsightRequest(config, `${bankPath(bank)}/memories`, body, {
       signal,
-      detectAppendRefusal: true,
+      reportStatus: true,
     }),
   );
 }
@@ -169,20 +162,6 @@ export async function hindsightOperationStatus(
       ? result.value.status
       : undefined;
   return typeof status === "string" ? { ok: true, value: status } : { ok: false, error: INVALID };
-}
-
-/** Re-queues a failed operation; the server kept its payload. */
-export async function retryHindsightOperation(
-  config: HindsightConnectionConfig,
-  bank: string,
-  operationId: string,
-  signal?: AbortSignal,
-): Promise<HindsightResponse<void>> {
-  return done(
-    await hindsightRequest(config, `${operationPath(bank, operationId)}/retry`, undefined, {
-      signal,
-    }),
-  );
 }
 
 function parseRecallResult(value: unknown): HindsightRecallResult | undefined {

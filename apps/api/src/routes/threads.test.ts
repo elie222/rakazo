@@ -123,4 +123,15 @@ describe("purgeClearedThreadMemory", () => {
     ).resolves.toBeUndefined();
     expect(purgeHistory).toHaveBeenCalledTimes(3);
   });
+
+  it("still purges the current members when the bots that ran there can't be listed", async () => {
+    findMany.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(
+      purgeClearedThreadMemory(depsWith(byThread), actor, group, 1),
+    ).resolves.toBeUndefined();
+    expect(purgeHistory.mock.calls.map(([request]) => request.botId).sort()).toEqual([
+      "bot-1",
+      "bot-2",
+    ]);
+  });
 });

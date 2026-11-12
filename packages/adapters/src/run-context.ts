@@ -187,7 +187,11 @@ export interface RunState {
    * and so does a later attempt, including one with restored untrusted tool results.
    */
   tainted: boolean;
-  /** This run read outside content (not just started tainted), so its replies are not learned. */
+  /**
+   * This run read outside content, or outside text started it: a webhook or email, someone
+   * other than the owner, or a bot message whose words are not trusted. Unlike `tainted`, a
+   * routine is not counted. Its replies are not learned, nor its words by other bots.
+   */
   readOutsideContent: boolean;
   /**
    * The taint refusal for owner settings was returned in this attempt. A model that calls
@@ -398,21 +402,49 @@ export async function isRunTainted(ctx: RunContext) {
 }
 
 /**
+ * Whether the run has taken in outside content so far: it read some, or outside text started it,
+ * or it is a later attempt (which restores earlier tool results), or it claimed channel or webhook
+ * text mid-turn. An unreadable answer counts as outside content. Records nothing.
+ */
+export async function hasTakenInOutsideContent(ctx: RunContext): Promise<boolean> {
+  const { state } = ctx;
+  if (state.readOutsideContent) return true;
+  try {
+    state.earlierAttempt ??= ctx.deps.prisma.attempt
+      .count({ where: { runId: ctx.runId } })
+      .then((count) => count > 1);
+    return (await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage());
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Record on the run row that it took in outside content, so other bots do not learn the
- * words it sends them as trusted memory. Never throws: the flag only narrows learning.
+ * words it sends them as trusted memory. Throws when the write fails: at completion the run
+ * must not finalize as clean.
  */
 export async function persistReadOutsideContent(
   prisma: Pick<ExecutorDeps["prisma"], "run">,
   runId: string,
 ) {
-  try {
-    await prisma.run.updateMany({
-      where: { id: runId, readOutsideContent: false },
-      data: { readOutsideContent: true },
-    });
-  } catch (error) {
-    getLogger().error("run readOutsideContent update failed", error);
-  }
+  await prisma.run.updateMany({
+    where: { id: runId, readOutsideContent: false },
+    data: { readOutsideContent: true },
+  });
+}
+
+/**
+ * Before completion a failed write is only logged: completion writes the flag again and fails
+ * the run if it still can't, and until then other bots trust none of a running run's words.
+ */
+export async function persistReadOutsideContentMidRun(
+  prisma: Pick<ExecutorDeps["prisma"], "run">,
+  runId: string,
+) {
+  await persistReadOutsideContent(prisma, runId).catch((error) =>
+    getLogger().error("run readOutsideContent update failed", error),
+  );
 }
 
 /** The run read outside content: taint it and record it once, before the result returns. */
@@ -420,7 +452,7 @@ export async function markReadOutsideContent(ctx: RunContext) {
   ctx.state.tainted = true;
   if (ctx.state.readOutsideContent) return;
   ctx.state.readOutsideContent = true;
-  await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
+  await persistReadOutsideContentMidRun(ctx.deps.prisma, ctx.runId);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */

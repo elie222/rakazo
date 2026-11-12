@@ -48,7 +48,11 @@ import {
   modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { persistReadOutsideContent, persistTurnCheckpoint } from "./run-context.js";
+import {
+  hasTakenInOutsideContent,
+  persistReadOutsideContent,
+  persistTurnCheckpoint,
+} from "./run-context.js";
 import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
@@ -639,6 +643,8 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
       ? overLimitStopText(humanName, overLimit)
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
+  // A completed run's flag is final; other bots trust its words by it.
+  await runReadOutsideContent(ctx);
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -766,25 +772,15 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
 }
 
 /**
- * Whether this run took in outside content, recorded on the run row so bots learning from its
- * replies leave them out. A retried run restored earlier tool results, and channel or webhook
- * text it took in mid-turn counts too; an unreadable answer counts as outside content. The row is
- * written again here because an earlier write may have failed; it only changes a false row.
+ * Whether this run took in outside content (see hasTakenInOutsideContent), recorded on the run
+ * row so bots learning from its replies leave them out. The row is written again here because an
+ * earlier write may have failed; it only changes a false row. The flag is final once the run
+ * completes, so a failed write fails the run rather than finalizing it as clean; its retry is a
+ * later attempt, which counts as outside content.
  */
 async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
-  const { state } = ctx;
-  if (!state.readOutsideContent) {
-    try {
-      state.earlierAttempt ??= ctx.deps.prisma.attempt
-        .count({ where: { runId: ctx.runId } })
-        .then((count) => count > 1);
-      state.readOutsideContent =
-        (await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage());
-    } catch {
-      state.readOutsideContent = true;
-    }
-  }
-  if (!state.readOutsideContent) return false;
+  ctx.state.readOutsideContent = await hasTakenInOutsideContent(ctx);
+  if (!ctx.state.readOutsideContent) return false;
   await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
   return true;
 }

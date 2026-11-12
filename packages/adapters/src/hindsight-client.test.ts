@@ -1,13 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
-  HINDSIGHT_APPEND_REFUSED,
   HINDSIGHT_CLOUD_BASE_URL,
   hindsightBankExists,
   listHindsightDocumentIdsByTag,
   probeHindsightKey,
   recallHindsight,
-  retainHindsight,
 } from "./hindsight-client.js";
 
 const config: HindsightConnectionConfig = {
@@ -59,7 +57,7 @@ describe("Hindsight client", () => {
     const fetch = vi.fn(async () => Response.json({ results: [] }));
     await hindsightBankExists({ ...config, fetch }, "other-app");
     await recallHindsight({ ...config, fetch }, "other-app", { query: "tea" });
-    expect(timeout.mock.calls).toEqual([[120_000], [30_000]]);
+    expect(timeout.mock.calls).toEqual([[120_000], [15_000]]);
   });
 
   it("reads a bank nothing was retained to as empty", async () => {
@@ -67,22 +65,6 @@ describe("Hindsight client", () => {
     expect(await recallHindsight({ ...config, fetch }, "other-app", { query: "tea" })).toEqual({
       ok: true,
       value: [],
-    });
-  });
-
-  it("recognizes a bank refusing to append without echoing other 400s", async () => {
-    const refusal = vi.fn(
-      async () =>
-        new Response('{"detail":"append requires document text storage"}', { status: 400 }),
-    );
-    expect(await retainHindsight({ ...config, fetch: refusal }, "other-app", {})).toEqual({
-      ok: false,
-      error: HINDSIGHT_APPEND_REFUSED,
-    });
-    const other = vi.fn(async () => new Response('{"detail":"bad"}', { status: 400 }));
-    expect(await retainHindsight({ ...config, fetch: other }, "other-app", {})).toEqual({
-      ok: false,
-      error: "Hindsight request failed: 400",
     });
   });
 
