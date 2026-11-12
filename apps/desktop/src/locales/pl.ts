@@ -210,4 +210,13 @@ export const PL_MESSAGES: Record<string, string> = {
   "Chat Details": "Szczegóły czatu",
   Help: "Pomoc",
   "Keyboard Shortcuts": "Skróty klawiszowe",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Nie udało się pobrać Rakazo. Sprawdź połączenie z internetem i spróbuj ponownie.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Nie udało się przenieść danych z Dockera. Sprawdź dane wyjściowe poniżej i spróbuj ponownie.",
+  "Run Rakazo without Docker?": "Uruchamiać Rakazo bez Dockera?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "Twoje boty i dane zostaną przeniesione. Docker zostanie zatrzymany, nie usunięty.",
+  Move: "Przenieś",
+  "Keep Docker": "Zostań przy Dockerze",
 };

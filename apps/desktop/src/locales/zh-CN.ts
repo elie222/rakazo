@@ -179,4 +179,13 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Chat Details": "聊天详情",
   Help: "帮助",
   "Keyboard Shortcuts": "键盘快捷键",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "无法下载 Rakazo。请检查网络连接，然后重试。",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "无法从 Docker 迁移你的数据。请查看下方输出，然后重试。",
+  "Run Rakazo without Docker?": "不使用 Docker 运行 Rakazo？",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "你的机器人和数据会一并迁移。Docker 只会被停止，不会被删除。",
+  Move: "迁移",
+  "Keep Docker": "继续使用 Docker",
 };

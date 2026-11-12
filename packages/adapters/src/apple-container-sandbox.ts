@@ -51,7 +51,40 @@ export interface AppleContainerSandboxOptions {
 
 interface ContainerRecord {
   configuration?: { id?: string; labels?: Record<string, string> };
-  status?: { state?: string; networks?: { ipv4Address?: string; network?: string }[] };
+  status?: {
+    state?: string;
+    networks?: { ipv4Address?: string; ipv4Gateway?: string; network?: string }[];
+  };
+}
+
+/**
+ * The VM's own firewall: the public internet and DNS on the gateway out, nothing to the Mac, the
+ * LAN, link-local, CGNAT or multicast; in, only the host to the screen ports. Mirrors the Incus ACL.
+ */
+export function localVmFirewall(gateway: string): string {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(gateway)) throw new Error(`invalid VM gateway ${gateway}`);
+  return `add table inet rakazo
+delete table inet rakazo
+table inet rakazo {
+  chain output {
+    type filter hook output priority filter; policy accept;
+    oif "lo" accept
+    ct state established,related accept
+    ip daddr ${gateway} meta l4proto { tcp, udp } th dport 53 accept
+    ip daddr ${gateway} reject
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/3 } reject
+    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } meta l4proto { tcp, udp } reject
+    ip6 daddr { ::1, fc00::/7, fe80::/10 } icmpv6 type echo-request reject
+  }
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ip saddr ${gateway} tcp dport { ${READY_PORT}, ${DESKTOP_PORT_START} } accept
+    icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
+  }
+}
+`;
 }
 
 /**
@@ -123,6 +156,12 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
       const existing = await this.inspect(name, signal);
       if (existing) this.assertOwner(existing, name, request.botId);
       if (existing?.status?.state === "running") {
+        try {
+          await this.lockDown(name, signal);
+        } catch (error) {
+          await this.remove(name).catch(() => {});
+          throw error;
+        }
         await this.waitForReady(name, request.botId, context);
         return { id: name, botId: request.botId, kind: KIND, providerRef: name, fresh: false };
       }
@@ -132,7 +171,10 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     const name = `rakazo-${randomUUID()}`;
     try {
       await this.cliRun(["network", "create", name], signal);
-      await this.cliRun(this.runArgs(name, request.botId), signal, CREATE_TIMEOUT_MS);
+      await this.cliRun(this.runArgs(name, request.botId), signal, {
+        timeoutMs: CREATE_TIMEOUT_MS,
+      });
+      await this.lockDown(name, signal);
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
       await this.remove(name).catch(() => {});
@@ -166,6 +208,9 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
       IMAGE_USER,
       "--cap-drop",
       "ALL",
+      // Only root execs get it, to load the firewall; uid 1000 runs with no new privileges.
+      "--cap-add",
+      "CAP_NET_ADMIN",
       ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
       "--entrypoint",
       "setpriv",
@@ -314,8 +359,27 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
   /** Removes the VM and its network; either may already be gone. */
   private async remove(name: string) {
     const signal = AbortSignal.timeout(CLI_TIMEOUT_MS);
-    await this.cliRun(["rm", "--force", name], signal, CLI_TIMEOUT_MS, true);
-    await this.cliRun(["network", "rm", name], signal, CLI_TIMEOUT_MS, true);
+    await this.cliRun(["rm", "--force", name], signal, { allowFailure: true });
+    await this.cliRun(["network", "rm", name], signal, { allowFailure: true });
+  }
+
+  /** Loads the firewall as root and checks it is in place; the caller removes the VM on failure. */
+  private async lockDown(name: string, signal: AbortSignal) {
+    const gateway = (await this.inspect(name, signal))?.status?.networks?.[0]?.ipv4Gateway;
+    if (!gateway) throw new Error(`VM computer ${name} has no network gateway`);
+    const asRoot = async (args: string[], input?: string) => {
+      const result = await this.cliRun(["exec", "--uid", "0", "--gid", "0", ...args], signal, {
+        allowFailure: true,
+        input,
+      });
+      if (result.code !== 0) {
+        throw new Error(
+          `VM computer ${name} could not lock down its network; local-vm needs a computer image with nft: ${result.stderr.trim() || `exit ${result.code}`}`,
+        );
+      }
+    };
+    await asRoot(["--interactive", name, "nft", "-f", "-"], localVmFirewall(gateway));
+    await asRoot([name, "nft", "list", "table", "inet", "rakazo"]);
   }
 
   private assertOwner(record: ContainerRecord, name: string, botId: string) {
@@ -342,7 +406,7 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
   }
 
   private async inspect(name: string, signal: AbortSignal): Promise<ContainerRecord | undefined> {
-    const result = await this.cliRun(["inspect", name], signal, CLI_TIMEOUT_MS, true);
+    const result = await this.cliRun(["inspect", name], signal, { allowFailure: true });
     if (result.code !== 0) return undefined;
     return (JSON.parse(result.stdout || "[]") as ContainerRecord[])[0];
   }
@@ -360,14 +424,19 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
   private cliRun(
     args: string[],
     signal: AbortSignal,
-    timeoutMs = CLI_TIMEOUT_MS,
-    allowFailure = false,
+    {
+      timeoutMs = CLI_TIMEOUT_MS,
+      allowFailure = false,
+      input,
+    }: { timeoutMs?: number; allowFailure?: boolean; input?: string } = {},
   ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.cli, args, {
         signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
       });
+      child.stdin.on("error", () => {});
+      child.stdin.end(input);
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk) => (stdout += chunk));

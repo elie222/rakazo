@@ -192,4 +192,13 @@ export const TR_MESSAGES: Record<string, string> = {
   "Chat Details": "Sohbet Ayrıntıları",
   Help: "Yardım",
   "Keyboard Shortcuts": "Klavye Kısayolları",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Rakazo indirilemedi. İnternet bağlantısını kontrol edip yeniden deneyin.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Verileriniz Docker'dan taşınamadı. Aşağıdaki çıktıyı kontrol edip yeniden deneyin.",
+  "Run Rakazo without Docker?": "Rakazo Docker olmadan çalıştırılsın mı?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "Botlarınız ve verileriniz taşınır. Docker durdurulur, kaldırılmaz.",
+  Move: "Taşı",
+  "Keep Docker": "Docker'ı koru",
 };

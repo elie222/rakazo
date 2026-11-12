@@ -127,7 +127,8 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
 const ADDED_SECRETS = ["POSTGRES_APP_PASSWORD"];
 
 /** Lines to append so an existing `.env` has every added secret, or "" when it already does. */
-export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
+/** The `.env` assignments as Compose reads them: the last assignment of a name wins. */
+export function parseStackEnv(env: string): Map<string, string> {
   const values = new Map<string, string>();
   // Consume quoted values across lines so their contents cannot become assignments.
   const assignments = env.matchAll(
@@ -136,6 +137,11 @@ export function missingStackSecrets(env: string, randomHex: (bytes: number) => s
   for (const match of assignments) {
     values.set(match[1]!, match[2] ?? match[3] ?? match[4]!.trim());
   }
+  return values;
+}
+
+export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
+  const values = parseStackEnv(env);
   // Compose uses the last assignment; empty quotes still fail its required-value check.
   return ADDED_SECRETS.filter((name) => (values.get(name) ?? "") === "")
     .map((name) => `${name}=${randomHex(GENERATED_SECRETS[name]!)}\n`)
@@ -197,6 +203,7 @@ export type LocalStackEvent =
   | { type: "up-start" }
   | { type: "wait-start" }
   | { type: "output"; line: string }
+  | { type: "download"; name: string; bytes: number }
   | { type: "ready" }
   | { type: "failed"; message: string; output?: string[] };
 
@@ -254,6 +261,11 @@ export function reduceStackState(
         output: [...state.output, event.line].slice(-STACK_OUTPUT_LINES),
         layerBytes: reduceLayerBytes(state.layerBytes, event.line),
       };
+    case "download":
+      if (state.phase !== "pulling" || event.bytes <= (state.layerBytes[event.name] ?? 0)) {
+        return state;
+      }
+      return { ...state, layerBytes: { ...state.layerBytes, [event.name]: event.bytes } };
     case "ready":
       return { ...state, phase: "ready", message: null };
     case "failed":
@@ -270,7 +282,7 @@ const dockerGroupHint = () =>
   t(
     "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.",
   );
-const startInterrupted = () => t("The start was interrupted. Retry to continue.");
+export const startInterrupted = () => t("The start was interrupted. Retry to continue.");
 
 /** Docker output may contain paths and hostnames, so the person only ever sees these. */
 export function stackFailureMessage(
@@ -335,8 +347,18 @@ export interface LocalStackDeps {
   healthTimeoutMs?: number;
 }
 
+/** What the app needs from whichever controller runs This computer. */
+export interface StackController {
+  webUrl(): string;
+  state(): DesktopLocalStackState;
+  matchesDesiredStack(): Promise<boolean>;
+  start(): Promise<DesktopLocalStackState>;
+  stop(): Promise<DesktopLocalStackState>;
+  abort(): void;
+}
+
 /** Resolves early on abort so a stop never waits out a health poll. */
-function defaultSleep(ms: number, signal: AbortSignal) {
+export function defaultSleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     const timer = setTimeout(done, ms);
     function done() {
@@ -352,7 +374,7 @@ function defaultSleep(ms: number, signal: AbortSignal) {
  * Installs and starts the compose stack under the app's user data. Every docker call
  * uses a fixed argv and an allowlisted environment; the setup window polls `state()`.
  */
-export class LocalStackController {
+export class LocalStackController implements StackController {
   private current: DesktopLocalStackState;
   private currentWebUrl: string;
   private currentStackToken: string | null = null;

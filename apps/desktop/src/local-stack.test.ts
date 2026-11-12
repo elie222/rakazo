@@ -264,6 +264,16 @@ describe("reduceStackState", () => {
     expect(reduceStackState(state, { type: "check-start" }).layerBytes).toEqual({});
   });
 
+  it("counts direct downloads by name without adding output lines", () => {
+    let state = reduceStackState(start, { type: "check-start" });
+    state = reduceStackState(state, { type: "pull-start" });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 4e7 });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 1e7 });
+    state = reduceStackState(state, { type: "download", name: "database", bytes: 2e7 });
+    expect(state.layerBytes).toEqual({ server: 4e7, database: 2e7 });
+    expect(state.output).toEqual([]);
+  });
+
   it("keeps only the last lines of output", () => {
     let state = reduceStackState(start, { type: "check-start" });
     state = reduceStackState(state, { type: "pull-start" });

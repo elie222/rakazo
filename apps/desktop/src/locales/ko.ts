@@ -193,4 +193,13 @@ export const KO_MESSAGES: Record<string, string> = {
   "Chat Details": "채팅 세부정보",
   Help: "도움말",
   "Keyboard Shortcuts": "키보드 단축키",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Rakazo를 다운로드하지 못했습니다. 인터넷 연결을 확인한 다음 다시 시도하세요.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Docker에서 데이터를 옮기지 못했습니다. 아래 출력을 확인한 다음 다시 시도하세요.",
+  "Run Rakazo without Docker?": "Docker 없이 Rakazo를 실행할까요?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "봇과 데이터가 함께 옮겨집니다. Docker는 삭제되지 않고 중지됩니다.",
+  Move: "옮기기",
+  "Keep Docker": "Docker 유지",
 };

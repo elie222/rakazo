@@ -200,4 +200,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Chat Details": "チャットの詳細",
   Help: "ヘルプ",
   "Keyboard Shortcuts": "キーボードショートカット",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Rakazoをダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Dockerからデータを移行できませんでした。下の出力を確認してから、もう一度お試しください。",
+  "Run Rakazo without Docker?": "DockerなしでRakazoを実行しますか？",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "ボットとデータは引き継がれます。Dockerは停止されますが、削除はされません。",
+  Move: "移行",
+  "Keep Docker": "Dockerを使い続ける",
 };
