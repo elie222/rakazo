@@ -20,14 +20,17 @@ export type CloudAgentActor = { spaceId: string; userId: string };
 /** Environments users connected themselves as MCP servers, wherever those servers reach. */
 export interface UserCloudAgents {
   /**
-   * The actor's connection for new agents, if any. With `botIds`, only a server one of those
-   * agents may use; without, any of the actor's agents.
+   * The actor's connection for new agents, if any. With `botIds`, require each agent's
+   * permission to use the complete bridge protocol; without, list for owner consent.
    */
   forActor(actor: CloudAgentActor & { botIds?: string[] }): Promise<CloudAgentConnection | null>;
   /** Every environment the actor connected in the Space, whichever agents may use it. */
   listForActor(actor: CloudAgentActor): Promise<CloudAgentConnection[]>;
-  /** The connection behind an agent's key; null for a key these connections did not issue. */
-  forKey(key: string, actor: CloudAgentActor): Promise<CloudAgentConnection | null>;
+  /** Resolve a stored key; with botIds, require current permission to start new work. */
+  forKey(
+    key: string,
+    actor: CloudAgentActor & { botIds?: string[] },
+  ): Promise<CloudAgentConnection | null>;
 }
 
 /** Their agents are keyed by this prefix and the MCP server's id, which survives a reconnect. */

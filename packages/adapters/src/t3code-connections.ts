@@ -1,4 +1,5 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
+import type { AdapterContext, ConnectorTool } from "@rakazo/adapter-kit";
+import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { availableInSpace } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -66,26 +67,35 @@ export class T3CodeConnections implements UserCloudAgents {
     });
     // Each check reads a stored login, so the servers are read together, not one after another.
     const found = await Promise.all(
-      servers.map((server) =>
-        this.connect(server, actor, true).catch((error: unknown) => {
+      servers.map(async (server) => {
+        if (botIds && !(await this.authorized(server.id, actor, botIds))) return null;
+        return this.connect(server, actor, true).catch((error: unknown) => {
           // One unreadable server must not hide the others or the deployment's provider.
           getLogger().warn("cloud_agent.connection_unreadable", {
             "mcp.server.id": server.id,
             error,
           });
           return null;
-        }),
-      ),
+        });
+      }),
     );
     const connections = found.filter((connection) => connection !== null);
     return firstOnly ? connections.slice(0, 1) : connections;
   }
 
-  async forKey(key: string, actor: CloudAgentActor): Promise<CloudAgentConnection | null> {
+  async forKey(
+    key: string,
+    actor: CloudAgentActor & { botIds?: string[] },
+  ): Promise<CloudAgentConnection | null> {
     if (!key.startsWith(USER_CLOUD_AGENT_KEY_PREFIX)) return null;
     const server = await this.prisma.mcpServer.findFirst({
       where: { id: key.slice(USER_CLOUD_AGENT_KEY_PREFIX.length), ...usable(actor) },
     });
+    if (
+      actor.botIds &&
+      !(await this.authorized(key.slice(USER_CLOUD_AGENT_KEY_PREFIX.length), actor, actor.botIds))
+    )
+      return null;
     // A server its owner removed, disabled or disconnected refuses every call, so its agents
     // end as expired instead of polling forever.
     return (
@@ -138,19 +148,66 @@ export class T3CodeConnections implements UserCloudAgents {
         return null;
       if (!(await this.fingerprint(server, token!))) return null;
     }
+    const provider = new T3CodeCloudAgentProvider({
+      ...this.transport,
+      endpoint: server.endpoint!,
+      token,
+      onTokenRejected: () => oauth.replaceRejectedToken(),
+    });
+    const authorize = async (context: AdapterContext) => {
+      if (
+        context.userId !== actor.userId ||
+        context.spaceId !== actor.spaceId ||
+        !context.botId ||
+        !(await this.authorized(server.id, actor, [context.botId]))
+      )
+        throw new CloudAgentRequestRejected("expired");
+    };
     return {
       key: `${USER_CLOUD_AGENT_KEY_PREFIX}${server.id}`,
       baseUrl: server.endpoint!,
       spaceId: actor.spaceId,
-      provider: new T3CodeCloudAgentProvider({
-        ...this.transport,
-        endpoint: server.endpoint!,
-        token,
-        // T3 Code issues no refresh token, so this drops it and the server asks to be
-        // connected again wherever MCP servers are listed.
-        onTokenRejected: () => oauth.replaceRejectedToken(),
-      }),
+      provider: {
+        describe: () => provider.describe(),
+        launch: async (...args: Parameters<typeof provider.launch>) => {
+          await authorize(args[1]);
+          return provider.launch(...args);
+        },
+        reply: async (...args: Parameters<typeof provider.reply>) => {
+          await authorize(args[2]);
+          return provider.reply(...args);
+        },
+        // Revocation prevents new instructions while allowing status and cleanup.
+        get: provider.get.bind(provider),
+        cancel: provider.cancel.bind(provider),
+      },
     };
+  }
+
+  private async authorized(serverId: string, actor: CloudAgentActor, botIds: string[]) {
+    if (!botIds.length) return false;
+    const server = await this.prisma.mcpServer.findFirst({
+      where: { id: serverId, ...usable(actor) },
+      include: {
+        assignments: {
+          where: { botId: { in: botIds }, userId: actor.userId, spaceId: actor.spaceId },
+        },
+      },
+    });
+    return Boolean(
+      server &&
+        botIds.every((botId) => {
+          const assignment = server.assignments.find((item) => item.botId === botId);
+          // An explicit assignment overrides allBots, just as the MCP connector does.
+          if (!assignment) return server.allBots;
+          const allowed = assignment.allowedTools;
+          return (
+            assignment.allowAllTools ||
+            (Array.isArray(allowed) &&
+              Object.keys(PROTOCOL).every((tool) => allowed.includes(tool)))
+          );
+        }),
+    );
   }
 
   private fingerprint(server: McpServer, token: string): Promise<boolean> {

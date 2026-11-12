@@ -164,6 +164,16 @@ export async function executeCloudAgentTool(
     agent = owned;
     if (name === "cloud_agent_reply") {
       if (
+        agent.providerKey.startsWith(USER_CLOUD_AGENT_KEY_PREFIX) &&
+        !(await deps.userCloudAgents?.forKey(agent.providerKey, {
+          spaceId: context.spaceId,
+          userId: context.userId,
+          botIds: [context.botId],
+        }))
+      )
+        return { error: "Unknown cloud agent." };
+
+      if (
         agent.status === "running" ||
         agent.followup ||
         agent.cancelRequested ||
