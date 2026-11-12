@@ -563,7 +563,7 @@ describe("updateMemoryProviderConfig", () => {
   }
 
   it("keeps stored credentials when the update leaves them empty", async () => {
-    const { deps, prepareConnection, secretDeleteMany } = updateDeps();
+    const { deps, prepareConnection, secretDeleteMany, upsert } = updateDeps();
     await updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } });
     expect(deps.secrets.load).toHaveBeenCalledWith("stored-cipher", "secret-old");
     expect(prepareConnection).toHaveBeenCalledWith(
@@ -574,11 +574,12 @@ describe("updateMemoryProviderConfig", () => {
         allowPrivateEndpoint: false,
       }),
     );
-    expect(deps.secrets.put).toHaveBeenCalledWith(
-      JSON.stringify({ apiKey: "sm_stored_key_12345" }),
-      expect.anything(),
+    // The same secret record stays, so work bound to this connection keeps its identity.
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ secretId: "secret-old" }) }),
     );
-    expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
   });
 
   it("replaces a credential when one is given and keeps the default scope", async () => {
@@ -727,7 +728,10 @@ describe("updateMemoryProviderConfig", () => {
       .mockResolvedValueOnce(connected)
       .mockResolvedValueOnce({ ...connected, secretId: "secret-other" });
     await expect(
-      updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } }),
+      updateMemoryProviderConfig(deps, actor, {
+        settings,
+        credentials: { apiKey: "sm_replacement_key_1" },
+      }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(upsert).not.toHaveBeenCalled();
     expect(secretDeleteMany).not.toHaveBeenCalled();
@@ -737,7 +741,10 @@ describe("updateMemoryProviderConfig", () => {
 
   it("removes the replaced key from the secret store once saved", async () => {
     const { deps } = updateDeps();
-    await updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings,
+      credentials: { apiKey: "sm_replacement_key_1" },
+    });
     expect(deps.secrets.delete).toHaveBeenCalledWith("old-cipher", "secret-old");
     expect(deps.secrets.delete).not.toHaveBeenCalledWith("cipher", "secret-new");
   });
