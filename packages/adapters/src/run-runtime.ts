@@ -17,7 +17,12 @@ import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
 import { createIdleComputerSweeper } from "./computer-idle.js";
 import { reconcileComputerUpdates } from "./computer-update.js";
 import { createConnectorStack } from "./connector-registry.js";
-import { deploymentModelUsageLookup, resolveDeploymentModel } from "./deployment-model.js";
+import type { DeploymentModels } from "./deployment-model.js";
+import {
+  deploymentModelUsageLookup,
+  environmentDeploymentModels,
+  resolveDeploymentModel,
+} from "./deployment-model.js";
 import { createRunExecutor } from "./executor.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { ExpoPushProvider } from "./expo-push.js";
@@ -51,6 +56,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   cursorApiKey: string | undefined;
   deploymentModelKey: string | undefined;
   deploymentModelConfigured: boolean;
+  /** The environment's deployment connections and allowlist; admins' settings apply over them. */
+  deploymentModels: DeploymentModels;
   mcpStdioEnabled: boolean;
   mcpStdioAllowedCommands: string[];
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
@@ -75,6 +82,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     cursorApiKey: source.CURSOR_API_KEY,
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
+    deploymentModels: environmentDeploymentModels(source, deploymentModel),
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")
       .split(",")
@@ -164,6 +172,7 @@ type SetByRunRuntime =
   | "mcpAllowPrivateEndpoint"
   | "deploymentModelKey"
   | "deploymentModelConfigured"
+  | "deploymentModels"
   | "dataDir"
   | "ticketBoardEnabled"
   | "phoneCallsEnabled"
@@ -193,6 +202,9 @@ export function createRunRuntime(
       connectors.integrationSettings.listConnectedPluginSlugs(userId),
     secrets: [
       env.deploymentModelKey ?? "",
+      ...env.deploymentModels.connections.map((connection) => connection.key ?? ""),
+      // The operator's voice key, which bot tools use to list the deployment's voices.
+      process.env.VOICE_DEFAULT_API_KEY?.trim() ?? "",
       localModelsApiKey() ?? "",
       env.composioApiKey ?? "",
       env.cursorApiKey ?? "",
@@ -201,6 +213,7 @@ export function createRunRuntime(
     mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
     deploymentModelKey: env.deploymentModelKey,
     deploymentModelConfigured: env.deploymentModelConfigured,
+    deploymentModels: env.deploymentModels,
     dataDir: env.dataDir,
     ticketBoardEnabled: env.ticketBoardEnabled,
     phoneCallsEnabled: env.phoneCallsEnabled,
@@ -241,7 +254,13 @@ type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];
 export function createRunReconciler(
   deps: Pick<
     ExecutorDeps,
-    "prisma" | "jobs" | "events" | "notifications" | "billingEnabled" | "mediaGeneration"
+    | "prisma"
+    | "secretStore"
+    | "jobs"
+    | "events"
+    | "notifications"
+    | "billingEnabled"
+    | "mediaGeneration"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
     paymentWallet: NonNullable<ExecutorDeps["paymentWallet"]> | null;
@@ -260,7 +279,7 @@ export function createRunReconciler(
     ...workerOnly,
     reconcileModelCredits: createModelCreditReconciler({
       prisma,
-      lookup: deploymentModelUsageLookup(),
+      lookup: deploymentModelUsageLookup(deps),
     }),
     reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
       prisma,

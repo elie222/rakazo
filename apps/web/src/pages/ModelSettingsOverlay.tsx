@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DeploymentModelSettings } from "../components/DeploymentModelSettings";
 import type { ModelCredential } from "../lib/model-auth";
 import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
@@ -37,6 +38,7 @@ export function ModelSettingsOverlay({
   onClose,
   embedded = false,
   scope,
+  canConfigureDeployment = false,
 }: {
   onClose: () => void;
   /** Render the content only, inside the shared Settings shell's scroller. */
@@ -46,6 +48,8 @@ export function ModelSettingsOverlay({
    * account-wide, so a Space shows only its role lists.
    */
   scope: SettingsScope;
+  /** Admins also choose the models everyone without their own connection can use. */
+  canConfigureDeployment?: boolean;
 }) {
   const { t } = useLingui();
   const model = useModelSettings(onClose, scope);
@@ -416,6 +420,7 @@ export function ModelSettingsOverlay({
           <Trans>No model catalog is available.</Trans>
         </p>
       )}
+      {canConfigureDeployment && scope === "account" ? <DeploymentModelSettings /> : null}
       <ConfirmDialog
         open={confirmDisconnect}
         onCancel={() => setConfirmDisconnect(false)}

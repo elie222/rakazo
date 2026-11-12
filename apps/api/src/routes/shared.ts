@@ -1,6 +1,8 @@
 import { ORPCError } from "@orpc/server";
 import {
+  DEPLOYMENT_MODEL_SETTINGS,
   deploymentModelRole,
+  deploymentServes,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
@@ -18,6 +20,7 @@ import {
 } from "@rakazo/contracts";
 import { isAdmin } from "../admins.js";
 import { effectiveSandboxProvider } from "../computer-provider-config.js";
+import { currentDeploymentModels } from "../deployment-model.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -59,14 +62,12 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     isDeploymentOwner: false,
     isAdmin: admin,
     needsModel: setup.needsModel,
-    defaultProvider: canonicalPiProviderId(setup.model?.provider ?? deps.env.defaultProvider),
-    defaultModel: setup.model?.modelId ?? deps.env.defaultModel,
+    defaultProvider: canonicalPiProviderId(setup.model?.provider ?? setup.deployment.provider),
+    defaultModel: setup.model?.modelId ?? setup.deployment.model,
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
-      !setup.main &&
-        !setup.settings?.defaultModelProvider &&
-        Boolean(deps.env.deploymentModelHostCredentials),
-      deps.env.defaultProvider,
+      !setup.main && !setup.settings?.defaultModelProvider && setup.deployment.hostCredentials,
+      setup.deployment.provider,
     ),
     computerHost: computerHostFor(setup.settings?.computerHost, sandboxProvider),
     canChooseHostComputer:
@@ -107,11 +108,17 @@ function computerHostFor(
 export async function modelSetup(deps: RouterDeps, actor: Actor) {
   const [member, settings] = await Promise.all([
     resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor),
-    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    deps.prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      include: DEPLOYMENT_MODEL_SETTINGS,
+    }),
   ]);
+  const deploymentModels = await currentDeploymentModels(deps, settings);
+  const deployment = deploymentModels.default;
   const main =
     member &&
     (member.credential ||
+      deploymentServes(deploymentModels, member.provider, member.modelId) ||
       (deps.billing?.modelCreditsEnabled &&
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
@@ -119,17 +126,15 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
   const funding = deps.billing ? await deps.billing.status(actor) : null;
   const creditsAvailable = modelCreditsUsd(funding) !== null;
   const hasDeployment =
-    Boolean(deps.env.deploymentModelConfigured) &&
-    (!funding?.creditPurchasesEnabled || creditsAvailable);
+    deployment.configured && (!funding?.creditPurchasesEnabled || creditsAvailable);
   return {
     main,
-    model:
-      main ??
-      deploymentModelRole("main", {
-        settings,
-        deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
-      }).primary,
+    model: main ?? deploymentModelRole("main", { deployment }).primary,
     settings,
+    /** The default model in effect: an admin's choice, else the environment's. */
+    deployment,
+    /** Every model the deployment's connections run for members. */
+    deploymentModels,
     funding,
     creditsAvailable,
     hasDeployment,
@@ -139,10 +144,13 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
 
 /** Whether every bot runs its own model on one of the member's connections, as a run selects it. */
 export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: string[]) {
-  const bots = await deps.prisma.bot.findMany({
-    where: { id: { in: botIds }, spaceId: actor.spaceId },
-    select: { modelProvider: true, modelId: true, thinkingLevel: true },
-  });
+  const [bots, deploymentModels] = await Promise.all([
+    deps.prisma.bot.findMany({
+      where: { id: { in: botIds }, spaceId: actor.spaceId },
+      select: { modelProvider: true, modelId: true, thinkingLevel: true },
+    }),
+    currentDeploymentModels(deps),
+  ]);
   const credentials = await Promise.all(
     bots.map(async (bot) => {
       const overrideCredential = bot.modelProvider
@@ -154,8 +162,17 @@ export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: s
             bot.modelId,
           )
         : null;
-      return selectConfiguredModel({ override: bot, overrideCredential, main: null, defaults: {} })
-        .credential;
+      const selected = selectConfiguredModel({
+        override: bot,
+        overrideCredential,
+        main: null,
+        deploymentModels,
+        defaults: {},
+      });
+      // A model the deployment serves members runs without their own connection.
+      return (
+        selected.credential || deploymentServes(deploymentModels, selected.provider, selected.id)
+      );
     }),
   );
   return credentials.every(Boolean);

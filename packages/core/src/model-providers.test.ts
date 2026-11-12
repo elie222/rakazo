@@ -376,6 +376,7 @@ describe("chat model choices", () => {
         label: "retired-model",
         provider: "openai",
         modelId: "retired-model",
+        unavailable: true,
       },
       ...connected,
     ]);

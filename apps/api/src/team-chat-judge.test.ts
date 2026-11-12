@@ -428,6 +428,122 @@ describe("team chat engagement judge", () => {
     },
   );
 
+  it("runs on the deployment's own endpoint with its URL and headers", async () => {
+    const run = vi.fn(async function* (_request: unknown) {
+      yield { type: "done", text: '{"act":false}' };
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: {
+        user: { findUnique: async () => null },
+        deploymentSettings: {
+          findUnique: async () => ({
+            defaultModelProvider: "openai-compatible",
+            defaultModelId: "fixture/endpoint-model",
+            modelConnections: [
+              {
+                provider: "openai-compatible",
+                ciphertext: "encrypted-fixture",
+                models: ["fixture/endpoint-model"],
+              },
+            ],
+          }),
+        },
+        userModelPreference: { findFirst: async () => null },
+        $transaction: async () => undefined,
+      } as never,
+      runtime: { run } as never,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "openai_compatible",
+            baseUrl: "https://models.example.test/v1",
+            apiKey: "fixture-endpoint-key",
+            headers: { "X-Fixture": "fixture-header" },
+          }),
+      } as never,
+      deploymentProvider: "openrouter",
+      deploymentModel: "fixture/default",
+    });
+    await judge.decide({
+      bot: {
+        id: "bot",
+        spaceId: "space",
+        userId: "user",
+        name: "Fixture",
+        modelProvider: null,
+        modelId: null,
+      },
+      channelId: "channel",
+      rules: "",
+      messages: [],
+    });
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      model: {
+        provider: "openai-compatible",
+        id: "fixture/endpoint-model",
+        baseUrl: "https://models.example.test/v1",
+        apiKey: "fixture-endpoint-key",
+        headers: { "X-Fixture": "fixture-header" },
+      },
+    });
+  });
+
+  it("keeps an admin's endpoint key from a judge model the instance does not serve", async () => {
+    const run = vi.fn(async function* (_request: unknown) {
+      yield { type: "done", text: '{"act":false}' };
+    });
+    const load = vi.fn(async () =>
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        apiKey: "fixture-endpoint-key",
+      }),
+    );
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: {
+        user: { findUnique: async () => null },
+        deploymentSettings: {
+          findUnique: async () => ({
+            defaultModelProvider: "openai-compatible",
+            defaultModelId: "fixture/endpoint-model",
+            modelConnections: [
+              {
+                provider: "openai-compatible",
+                ciphertext: "encrypted-fixture",
+                models: ["fixture/endpoint-model"],
+              },
+            ],
+          }),
+        },
+        userModelPreference: { findFirst: async () => null },
+        userModelCredential: { findFirst: async () => null },
+        $transaction: async () => undefined,
+      } as never,
+      runtime: { run } as never,
+      secrets: { load } as never,
+      deploymentProvider: "openrouter",
+      deploymentModel: "fixture/default",
+      // The judge's own model is on the admin's provider, but neither its default nor listed.
+      providerOverride: "openai-compatible",
+      modelOverride: "fixture/other-model",
+    });
+    await judge.decide({
+      bot: {
+        id: "bot",
+        spaceId: "space",
+        userId: "user",
+        name: "Fixture",
+        modelProvider: null,
+        modelId: null,
+      },
+      channelId: "channel",
+      rules: "",
+      messages: [],
+    });
+    expect(load).not.toHaveBeenCalled();
+    expect(JSON.stringify(run.mock.calls)).not.toContain("fixture-endpoint-key");
+  });
+
   it("blocks a hosted judge without credit access before running the model", async () => {
     const run = vi.fn(async function* () {
       yield { type: "done", text: '{"act":true}' };

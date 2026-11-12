@@ -14,7 +14,13 @@ import {
   GUEST_ROLE,
   organizationForMember,
 } from "@rakazo/db";
-import { resolveDeploymentModel } from "./deployment-model.js";
+import type { DeploymentModels } from "./deployment-model.js";
+import {
+  deploymentServedModels,
+  deploymentServes,
+  loadDeploymentModels,
+  resolveDeploymentModel,
+} from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
@@ -140,6 +146,8 @@ export class UnavailableModelForAuthError extends Error {
 
 export type SpaceCatalogAuth = {
   managedProvider?: string;
+  /** `provider:model` keys the deployment's connections run for this member. */
+  deploymentModels?: Set<string>;
   byProvider: Partial<Record<string, ModelCredentialAuthKind>>;
   /** Model-specific kinds. `"disconnected"` blocks the provider fallback. */
   byModel: Partial<
@@ -165,6 +173,8 @@ export async function modelCredentialAuthKindsForSpace(
   secretStore: Pick<SecretStore, "load">,
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
+  /** Its served models count as available where the member has no connection of their own. */
+  deployment?: DeploymentModels,
 ): Promise<SpaceCatalogAuth> {
   const hosted = hostedProvider && (await hasHostedModelCredits(prisma, scope, hostedProvider));
   const [credentials, preferences] = await Promise.all([
@@ -252,6 +262,28 @@ export async function modelCredentialAuthKindsForSpace(
     secretIdByModel: {},
   };
   if (hosted && hostedProvider) empty.byProvider[hostedProvider] = "api_key";
+  // A member's own connection for the provider wins; only the rest run on the deployment's.
+  // Compatible endpoints share one provider id, so the member's keep only the ids they list.
+  const served = deployment ? deploymentServedModels(deployment) : [];
+  const ownCompatible =
+    connectedProviders.has(OPENAI_COMPATIBLE_PROVIDER_ID) &&
+    served.some((model) => model.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+      ? await compatibleModelIds(prisma, secretStore, scope.userId, credentials, preferences)
+      : undefined;
+  for (const model of served) {
+    if (
+      connectedProviders.has(model.provider) &&
+      (model.provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
+        ownCompatible === "all" ||
+        ownCompatible?.has(model.id))
+    )
+      continue;
+    const models = empty.byModel[model.provider] ?? {};
+    models[model.id] = "api_key";
+    empty.byModel[model.provider] = models;
+    empty.deploymentModels ??= new Set();
+    empty.deploymentModels.add(`${model.provider}:${model.id}`);
+  }
   if (selections.length === 0) return empty;
 
   const secrets = await prisma.secret.findMany({
@@ -298,6 +330,34 @@ export async function modelCredentialAuthKindsForSpace(
   if (hosted && hostedProvider && !auth.byProvider[hostedProvider])
     auth.byProvider[hostedProvider] = "api_key";
   return auth;
+}
+
+/**
+ * The ids the member's own compatible endpoints run, read once: each one's listed ids and the
+ * models its preferences name. "all" when a legacy endpoint without a list serves any id.
+ */
+async function compatibleModelIds(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<SecretStore, "load">,
+  userId: string,
+  credentials: readonly { provider: string; secretId: string }[],
+  preferences: readonly { modelId: string | null; credential: { provider: string } }[],
+): Promise<Set<string> | "all"> {
+  const ids = new Set<string>();
+  for (const preference of preferences)
+    if (
+      preference.modelId &&
+      canonicalPiProviderId(preference.credential.provider) === OPENAI_COMPATIBLE_PROVIDER_ID
+    )
+      ids.add(preference.modelId);
+  for (const credential of credentials) {
+    if (canonicalPiProviderId(credential.provider) !== OPENAI_COMPATIBLE_PROVIDER_ID) continue;
+    const secret = await loadModelSecret(prisma, secretStore, userId, credential.secretId);
+    if (secret?.kind !== "openai_compatible") continue;
+    if (secret.enabledModelIds === undefined) return "all";
+    for (const id of secret.enabledModelIds) ids.add(id);
+  }
+  return ids;
 }
 
 export function validateModelAuthAvailability(
@@ -523,6 +583,8 @@ export type ConnectedModelResolution = {
   /** The connection a role row is pinned to; nothing else may serve it. */
   credentialId?: string | null;
   hostedProvider?: string;
+  /** Models it serves are valid without a connection, unless a row is pinned to one. */
+  deployment?: () => Promise<DeploymentModels | undefined>;
   codexCatalog?: CodexLiveCatalog;
   /** Preview a connection save using the same runtime selection. */
   replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
@@ -576,11 +638,19 @@ export async function findConnectedModelCredential(
       enabledModelIds: candidate?.kind === "openai_compatible" ? candidate.enabledModelIds : [],
     });
   }
-  return selectCompatibleModelCredential(preferred, candidates, id)?.credential ?? selected;
+  const own = selectCompatibleModelCredential(preferred, candidates, id)?.credential;
+  if (own) return own;
+  // None of the member's endpoints lists the id, so the deployment's runs it when it serves it.
+  const deployment = resolution.deployment
+    ? await resolution.deployment()
+    : await loadDeploymentModels(prisma);
+  return deploymentServes(deployment, provider, id) ? null : selected;
 }
 
 export type BotModelChangeDeps = {
   hostedProvider?: string;
+  /** Models it serves can be chosen without a connection. */
+  deployment?: DeploymentModels;
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
   codexCatalog?: CodexLiveCatalog;
@@ -624,7 +694,10 @@ export async function validateBotModelChange(
       ? null
       : await findConnectedModelCredential(deps.prisma, deps.secretStore, scope, provider, model);
     if (!credential) {
-      if (hosted && isCatalogModelChoice(provider, model)) {
+      if (
+        (hosted && isCatalogModelChoice(provider, model)) ||
+        deploymentServes(deps.deployment, provider, model)
+      ) {
         const allowed = listPiCatalog().find(
           (entry) => entry.provider === provider && entry.id === model,
         )?.thinkingLevels;
@@ -803,7 +876,11 @@ export async function validateConnectedModelChoice(
     modelId,
     resolution,
   );
-  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
+  if (!credential)
+    return !resolution.credentialId &&
+      deploymentServes(await resolution.deployment?.(), provider, modelId)
+      ? undefined
+      : PINNED_PROVIDER_NOT_CONNECTED;
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
@@ -931,6 +1008,7 @@ export async function hasHostedModelCredits(
   scope: { userId: string; spaceId: string },
   provider: string,
 ): Promise<boolean> {
+  // Credits pay for the environment's provider only; an admin's settings never change which.
   const deployment = resolveDeploymentModel();
   if (!deployment.configured || deployment.provider !== provider) return false;
   const space = await prisma.space.findFirst({

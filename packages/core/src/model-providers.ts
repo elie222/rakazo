@@ -351,6 +351,8 @@ export type ChatModelChoice = {
   title?: string;
   detail?: string;
   images?: boolean;
+  /** A saved model nothing offers now; runs use the default until it returns. */
+  unavailable?: boolean;
 };
 
 /** Filter on full labels before shortening rows; saved/default choices stay first. */
@@ -400,6 +402,7 @@ export function chatModelChoices(
       label: saved?.modelId ?? selectedKey,
       provider: saved?.provider,
       modelId: saved?.modelId,
+      unavailable: true,
     });
   }
   return choices.concat(connected);

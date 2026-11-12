@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
+import type { JobPublisher, NotificationProvider, SecretStore } from "@rakazo/adapter-kit";
 import { callExpireJob } from "@rakazo/adapter-kit";
 import type { IncomingBotCall, MessageBlock } from "@rakazo/contracts";
 import { resolveBotAvatarSet } from "@rakazo/contracts";
@@ -23,17 +23,22 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
+import { deploymentVoiceSpeaks, hasDeploymentVoice } from "./deployment-voice.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { publishMessage, runLeaseFor } from "./run-messages.js";
 
 const REASON_MAX = 120;
+const NO_VOICE_REFUSAL =
+  "The user has not connected a voice provider, so they cannot take a call. Send a message instead.";
 const OPENING_MAX = 240;
+/** How long a call waits to learn which voice the deployment would speak with. */
+const DEPLOYMENT_VOICE_CHECK_MS = 15_000;
 
 type CallRequestStatus = CallRequestBlock["status"];
 
 /** Why the bot may not ring the user right now, or null when it may. */
 export async function callRequestRefusal(
-  prisma: Pick<PrismaClient, "message" | "userVoiceCredential">,
+  prisma: Pick<PrismaClient, "message" | "userVoiceCredential" | "deploymentSettings">,
   input: { userId: string; groupChat: boolean; now?: number; phoneCallCooldownMinutes?: number },
 ): Promise<string | null> {
   if (input.groupChat) return "Calls work in a one-to-one chat only. Send a message instead.";
@@ -41,9 +46,8 @@ export async function callRequestRefusal(
     where: { userId: input.userId },
     select: { id: true },
   });
-  if (!voice) {
-    return "The user has not connected a voice provider, so they cannot take a call. Send a message instead.";
-  }
+  // Without a connection of their own, the user takes the call on the deployment's voice.
+  if (!voice && !(await hasDeploymentVoice(prisma))) return NO_VOICE_REFUSAL;
   const minutes = input.phoneCallCooldownMinutes ?? phoneCallSettings().phoneCallCooldownMinutes;
   const since = new Date((input.now ?? Date.now()) - minutes * 60_000);
   const recent = await prisma.message.findFirst({
@@ -195,6 +199,7 @@ export async function requestUserCall(
     phoneCallRingSeconds?: number;
     runLease?: ExecutorDeps["runLease"];
     notifications?: NotificationProvider;
+    secretStore?: Pick<SecretStore, "load">;
   },
   run: { id: string; spaceId: string; userId: string; threadId: string; botId: string },
   input: { reason: string; opening: string },
@@ -202,6 +207,26 @@ export async function requestUserCall(
   if (!deps.phoneCallsEnabled) return { error: "Calls are disabled." };
   const request = newCallRequest({ ...input, phoneCallRingSeconds: deps.phoneCallRingSeconds });
   if ("error" in request) return request;
+  // A user without a voice of their own takes the call on the deployment's, which must be able to
+  // speak. Its key is read here, outside the transaction below, rather than ringing into silence.
+  if (
+    deps.secretStore &&
+    !(await deps.prisma.userVoiceCredential.findFirst({
+      where: { userId: run.userId },
+      select: { id: true },
+    })) &&
+    (await hasDeploymentVoice(deps.prisma)) &&
+    !(await deploymentVoiceSpeaks(deps.prisma, deps.secretStore, {
+      operationId: run.id,
+      traceId: run.id,
+      spaceId: run.spaceId,
+      userId: run.userId,
+      botId: run.botId,
+      runId: run.id,
+      signal: AbortSignal.timeout(DEPLOYMENT_VOICE_CHECK_MS),
+    }))
+  )
+    return { error: NO_VOICE_REFUSAL };
   // The call cooldown is per person across all their Spaces; every other read and
   // write here names the run's own thread.
   const result = await runAsSystem("check the call cooldown across the user's Spaces", () =>

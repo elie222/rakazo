@@ -1,5 +1,6 @@
 import type {
   ApnsVoipConfig,
+  DeploymentModels,
   PhotonProjectCredentials,
   TelegramBotCredentials,
 } from "@rakazo/adapters";
@@ -7,6 +8,7 @@ import {
   apnsVoipConfig,
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
+  environmentDeploymentModels,
   mcpStdioOptionsFromEnv,
   photonProjectsFromEnv,
   resolveCloudAgentProvider,
@@ -102,6 +104,8 @@ export interface AppEnv {
   deploymentModelConfigured: boolean;
   /** The deployment default model runs on the host's credentials rather than a key. */
   deploymentModelHostCredentials: boolean;
+  /** The environment's deployment connections and allowlist; admins' settings apply over them. */
+  deploymentModels: DeploymentModels;
   e2bApiKey: string | undefined;
   novitaApiKey: string | undefined;
   sandboxTemplate: string | undefined;
@@ -294,6 +298,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
+    deploymentModels: environmentDeploymentModels(source, deploymentModel),
     e2bApiKey: source.E2B_API_KEY,
     novitaApiKey: source.NOVITA_API_KEY,
     sandboxTemplate: source.SANDBOX_TEMPLATE,

@@ -85,7 +85,11 @@ import {
   selectRunConnections,
 } from "./connection-context.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
-import { resolveDeploymentModel } from "./deployment-model.js";
+import {
+  DEPLOYMENT_MODEL_SETTINGS,
+  deploymentServes,
+  deploymentStandIn,
+} from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
@@ -159,6 +163,7 @@ import {
   resolveConnectedRunModel,
   resolvedModelRunFields,
   resolveRunModel,
+  runDeploymentModels,
   runtimeFallbackModel,
 } from "./run-model.js";
 import { runModelBackups, startRunModel } from "./run-model-start.js";
@@ -596,6 +601,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
+            include: DEPLOYMENT_MODEL_SETTINGS,
           }),
           deps.memoryProviders.resolve(run.spaceId),
           deps.prisma.taughtSkill.findMany({
@@ -892,14 +898,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             }),
           );
         }
-        const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
+        const deploymentModels = await runDeploymentModels(deps, settings);
+        const runDeployment = deploymentStandIn(deploymentModels);
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         const pinError =
           !pinnedComputerModels &&
           run.modelPinned &&
           !(
             (await modelCreditBillingEnabled(deps)) &&
-            modelChoice.modelProvider === runDeployment?.provider
+            modelChoice.modelProvider === deploymentModels.default.provider
+          ) &&
+          !(
+            !overrideCredential &&
+            deploymentServes(deploymentModels, modelChoice.modelProvider, modelChoice.modelId)
           )
             ? pinnedModelCredentialError(modelChoice, overrideCredential)
             : undefined;
@@ -915,9 +926,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               overrideCredential,
               main,
               hostedProvider: (await modelCreditBillingEnabled(deps))
-                ? resolveDeploymentModel().provider
+                ? deploymentModels.default.provider
                 : undefined,
-              defaults: { settings, deployment: runDeployment },
+              deploymentModels,
+              defaults: { deployment: runDeployment },
             });
         const selectedProvider = selected.provider ?? runtimeFallback?.provider;
         const selectedModelId = selected.id ?? runtimeFallback?.id;
@@ -958,7 +970,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const backups = runModelBackups(
           deps,
           run,
-          { settings, deployment: runDeployment },
+          { deployment: runDeployment },
           scripted,
           registerRunSecrets,
         );

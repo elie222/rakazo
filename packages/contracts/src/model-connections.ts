@@ -338,3 +338,80 @@ export const ModelCatalogEntrySchema = z.object({
   live: z.literal(true).optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
+
+const DeploymentModelChoiceSchema = z.object({ provider: z.string(), modelId: z.string() });
+
+/**
+ * Admin view of the deployment's models: its connections, default model, and which models
+ * members may use without a connection of their own. Never a key.
+ */
+export const DeploymentModelSettingsSchema = z.object({
+  /** Saved in Settings; null follows the server environment's. */
+  defaultModel: DeploymentModelChoiceSchema.nullable(),
+  /** The default model in effect, the saved one or the environment's, if any can run. */
+  effectiveDefault: DeploymentModelChoiceSchema.nullable(),
+  /**
+   * Models members may use besides the default: `provider:model`, `provider:*` or `*`.
+   * Saved in Settings; null follows the environment's.
+   */
+  allowedModels: z.array(z.string()).nullable(),
+  /** The list in effect, the saved one or the environment's. */
+  effectiveAllowedModels: z.array(z.string()),
+  /** Every connection the deployment runs models on, the environment's and the saved ones. */
+  connections: z.array(
+    z.object({
+      provider: z.string(),
+      name: z.string(),
+      /** Saved in Settings, so an admin can replace or remove it. */
+      saved: z.boolean(),
+      /** Members may use its models besides the default: all of them, or ones the list names. */
+      open: z.boolean(),
+      /** The models it runs. */
+      models: z.array(z.object({ id: z.string(), label: z.string() })),
+      /** An OpenAI-compatible endpoint's URL and limits. */
+      baseUrl: z.string().optional(),
+      contextWindow: z.number().int().optional(),
+      maxTokens: z.number().int().optional(),
+    }),
+  ),
+  /** Providers an admin can connect. */
+  providers: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      /** Connects with a URL and model ids rather than a key alone. */
+      endpoint: z.literal(true).optional(),
+    }),
+  ),
+});
+export type DeploymentModelSettings = z.infer<typeof DeploymentModelSettingsSchema>;
+
+/** Saves the default model and the allowlist; null for either follows the environment. */
+export const DeploymentModelUpdateSchema = z.object({
+  defaultModel: z
+    .object({
+      provider: z.string().trim().min(1).max(64),
+      modelId: z.string().trim().min(1).max(512),
+    })
+    .nullable()
+    .optional(),
+  allowedModels: z.array(z.string().trim().min(1).max(600)).max(500).nullable().optional(),
+  /** Opens all of one connection's models to members, or closes every one of them. */
+  open: z.object({ provider: z.string().trim().min(1).max(64), open: z.boolean() }).optional(),
+});
+export type DeploymentModelUpdate = z.infer<typeof DeploymentModelUpdateSchema>;
+
+/**
+ * Connects a provider for the whole deployment, or replaces its saved connection. A blank key
+ * keeps the saved one. OpenAI-compatible endpoints take the same fields a member's does.
+ */
+export const DeploymentModelConnectSchema = ModelContextLimitsSchema.pick({
+  contextWindow: true,
+}).extend({
+  provider: z.string().trim().min(1).max(64),
+  apiKey: z.string().trim().max(4096).default(""),
+  baseUrl: z.string().trim().max(2048).optional(),
+  enabledModelIds: z.array(z.string().trim().min(1).max(512)).max(MAX_ENABLED_MODEL_IDS).optional(),
+  maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
+});
+export type DeploymentModelConnect = z.infer<typeof DeploymentModelConnectSchema>;

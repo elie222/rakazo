@@ -29,6 +29,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { DeploymentVoiceSettings } from "../components/DeploymentVoiceSettings";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -39,6 +40,7 @@ export function VoiceSettingsOverlay({
   embedded = false,
   onBusyChange,
   scope,
+  canConfigureDeployment = false,
 }: {
   onClose: () => void;
   /** Render the content only, inside the shared Settings shell's scroller. */
@@ -49,6 +51,8 @@ export function VoiceSettingsOverlay({
    * account-wide, so a Space only picks among them and connects missing ones.
    */
   scope: SettingsScope;
+  /** Admins also choose the voice everyone without their own connection uses. */
+  canConfigureDeployment?: boolean;
 }) {
   const rpc = useSpaceRpc();
   const spaceId = useBoundSpaceId();
@@ -645,6 +649,16 @@ export function VoiceSettingsOverlay({
             </>
           ) : null}
         </>
+      ) : null}
+      {canConfigureDeployment && scope === "account" ? (
+        <DeploymentVoiceSettings
+          // An admin without a voice of their own speaks with the one just saved.
+          onSaved={() =>
+            void refresh(undefined, { keepForm: true }).catch((err: unknown) =>
+              setError(errorText(err, t`Could not load voice settings`)),
+            )
+          }
+        />
       ) : null}
     </>
   );

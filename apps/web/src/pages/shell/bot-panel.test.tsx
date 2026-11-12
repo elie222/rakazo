@@ -55,6 +55,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  NativeSelectOptGroup: (props: ComponentProps<"optgroup">) => <optgroup {...props} />,
   Switch: ({
     onCheckedChange,
     checked,
@@ -382,6 +383,147 @@ describe("BotSettings model choices", () => {
     expect(values).toContain("deepseek::deepseek-v4-pro");
     expect(values).not.toContain("deepseek::DeepSeek-V4.1-Flash");
     expect(values.some((value) => value.includes("DeepSeek"))).toBe(false);
+  });
+});
+
+describe("BotSettings model picker", () => {
+  const served = (id: string, extra: Record<string, unknown> = {}) => ({
+    provider: "fixture-cloud",
+    providerName: "Fixture Cloud",
+    id,
+    label: id === "small" ? "Small" : "Large",
+    billing: "",
+    // Served by the deployment, so no connection of the member's own is needed.
+    managed: true,
+    ...extra,
+  });
+  const modelSelect = () => {
+    const select = container.querySelector('select[id$="-model"]');
+    if (!(select instanceof HTMLSelectElement)) throw new Error("Missing model select");
+    return select;
+  };
+  const choose = (select: HTMLSelectElement, value: string) =>
+    act(async () => {
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  const saveButton = () =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === "Save");
+
+  it("names no default model while none can run", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    vi.mocked(rpc.me).mockResolvedValueOnce({
+      defaultProvider: "fixture-cloud",
+      defaultModel: "small",
+      needsModel: true,
+    } as Awaited<ReturnType<typeof rpc.me>>);
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([served("large")]);
+    await render();
+    expect(modelSelect().options[0]?.textContent).toBe("Default");
+  });
+
+  it("names the default and saves a deployment model the moment it is picked", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    vi.mocked(rpc.me).mockResolvedValueOnce({
+      defaultProvider: "fixture-cloud",
+      defaultModel: "small",
+    } as Awaited<ReturnType<typeof rpc.me>>);
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([
+      served("small"),
+      served("large", { thinkingLevels: ["off", "low", "high"] }),
+    ]);
+    await render();
+    const model = modelSelect();
+    expect([...model.options].map((option) => option.textContent)).toEqual([
+      "Default (Small)",
+      "Small",
+      "Large",
+    ]);
+    expect(model.querySelector("optgroup")?.label).toBe("Fixture Cloud");
+    expect(container.querySelector('[id$="-thinking"]')).toBeNull();
+
+    await choose(model, "fixture-cloud::large");
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({
+      modelProvider: "fixture-cloud",
+      modelId: "large",
+      thinkingLevel: null,
+    });
+    expect(saveButton()).toBeUndefined();
+
+    const thinking = container.querySelector('select[id$="-thinking"]');
+    if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
+    expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
+    await choose(thinking, "high");
+    expect(onSave).toHaveBeenLastCalledWith({
+      modelProvider: "fixture-cloud",
+      modelId: "large",
+      thinkingLevel: "high",
+    });
+    expect(saveButton()).toBeUndefined();
+  });
+
+  it("keeps a saved model nothing offers any more, marked, and saves around it", async () => {
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([
+      served("small", { thinkingLevels: ["off", "high"] }),
+    ]);
+    await render("Billing", {
+      modelProvider: "fixture-cloud",
+      modelId: "retired",
+      thinkingLevel: "high",
+    });
+    const model = modelSelect();
+    expect(model.value).toBe("fixture-cloud::retired");
+    expect(
+      [...container.querySelectorAll('[aria-hidden="true"]')].filter(
+        (node) => node.textContent === "Unavailable",
+      ),
+    ).toHaveLength(1);
+    expect(container.querySelector('[id$="-thinking"]')).toBeNull();
+
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({
+      modelProvider: "fixture-cloud",
+      modelId: "retired",
+    });
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("thinkingLevel");
+  });
+
+  it("puts a failed pick back and says why beside the picker", async () => {
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([served("small"), served("large")]);
+    await render();
+    const model = modelSelect();
+    onSave.mockRejectedValueOnce(
+      new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" }),
+    );
+    await choose(model, "fixture-cloud::small");
+    expect(model.value).toBe("");
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toBe("Connect that model provider first");
+    const notifications = [...container.querySelectorAll("h3")].find(
+      (node) => node.textContent === "Notifications",
+    );
+    if (!alert || !notifications) throw new Error("Missing alert or notifications");
+    // The reason sits with the picker at the top, not at the foot of the panel.
+    expect(
+      alert.compareDocumentPosition(notifications) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await choose(model, "fixture-cloud::large");
+    expect(model.value).toBe("fixture-cloud::large");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("puts a failed pick back to the pick saved before it, not the older bot", async () => {
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([served("small"), served("large")]);
+    await render();
+    const model = modelSelect();
+    await choose(model, "fixture-cloud::small");
+    // The bot with this pick has not arrived yet when the next pick fails.
+    onSave.mockRejectedValueOnce(new ORPCError("BAD_REQUEST", { message: "Not now" }));
+    await choose(model, "fixture-cloud::large");
+    expect(model.value).toBe("fixture-cloud::small");
   });
 });
 

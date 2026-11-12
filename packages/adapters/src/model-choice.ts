@@ -1,5 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { servedModelsOutsideCatalog } from "./deployment-model.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { modelCredentialAuthKindsForSpace } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
@@ -18,9 +19,9 @@ const ECHOED_QUERY_LIMIT = 200;
 export const echoedQuery = (query: string) =>
   query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
 
-/** The catalog models this user's connections, or hosted credits, can run. */
+/** The catalog models this user's connections, hosted credits, or the deployment can run. */
 export async function connectedModelChoices(
-  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider">,
+  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider" | "deployment">,
   scope: Pick<Actor, "userId" | "spaceId">,
 ): Promise<ModelChoice[]> {
   const auth = await modelCredentialAuthKindsForSpace(
@@ -28,12 +29,18 @@ export async function connectedModelChoices(
     deps.secretStore,
     scope,
     deps.hostedProvider,
+    deps.deployment,
   );
-  return offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter((entry) => {
+  const catalog = listAvailablePiCatalog(auth.byProvider, auth.byModel);
+  const choices: ModelChoice[] = offeredCatalog(catalog).filter((entry) => {
     if (entry.placeholder) return false;
     const kind = auth.byModel[entry.provider]?.[entry.id] ?? auth.byProvider[entry.provider];
     return kind !== undefined && kind !== "disconnected";
   });
+  // An instance endpoint's models are not in the bundled catalog, and run all the same.
+  for (const model of servedModelsOutsideCatalog(catalog, auth.deploymentModels))
+    choices.push({ ...model, providerName: model.providerName ?? model.provider, label: model.id });
+  return choices;
 }
 
 /**
@@ -117,7 +124,7 @@ const choiceKey = (choice: ModelChoice) => `${choice.provider}/${choice.id}`;
  * to one provider; `preferredProvider` breaks ties toward it.
  */
 export async function resolveModelChoice(
-  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider">,
+  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider" | "deployment">,
   scope: Pick<Actor, "userId" | "spaceId">,
   input: { model: string; provider?: string; preferredProvider?: string | null },
 ): Promise<ModelChoiceResult> {

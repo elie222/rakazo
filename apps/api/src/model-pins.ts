@@ -1,9 +1,14 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
-import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
+import {
+  deploymentServes,
+  findConnectedModelCredential,
+  validateConnectedModelChoice,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
 import { modelRoleTarget, runAsSystem } from "@rakazo/db";
+import { currentDeploymentModels } from "./deployment-model.js";
 import type { RouterDeps } from "./router.js";
 
 /**
@@ -51,6 +56,13 @@ async function compatibleModelPins(
 
 type ModelPinRow = { spaceId: string | null; modelId: string | null; credentialId?: string | null };
 
+/** Unpinned rows the deployment's own endpoint keeps running whatever the member's connections list. */
+async function servedByDeployment(deps: RouterDeps) {
+  const models = await currentDeploymentModels(deps);
+  return (row: ModelPinRow) =>
+    !row.credentialId && deploymentServes(models, OPENAI_COMPATIBLE_PROVIDER_ID, row.modelId);
+}
+
 /** Refusal naming the bots and routines (plus "backup models") left on a dropped model. */
 function refuseModelPins(
   pins: { named: Array<ModelPinRow & { name: string }>; backups: ModelPinRow[] },
@@ -73,12 +85,15 @@ export async function assertNoDanglingModelPins(
   actorDefault: string,
 ) {
   const stored = secret.kind === "openai_compatible" ? (secret.enabledModelIds ?? []) : [];
-  const pins = await compatibleModelPins(deps, actor, { notIn: stored });
+  const [pins, served] = await Promise.all([
+    compatibleModelPins(deps, actor, { notIn: stored }),
+    servedByDeployment(deps),
+  ]);
   // The connection's own model is the account's, so it stays enabled in every Space.
   const defaultModel = usableModelId(actorDefault);
   const dangling = new Set<ModelPinRow>();
   for (const row of [...pins.named, ...pins.backups] as ModelPinRow[]) {
-    if (!row.modelId || row.modelId === defaultModel) continue;
+    if (!row.modelId || row.modelId === defaultModel || served(row)) continue;
     // A row pinned to a connection runs only there.
     if (row.credentialId) {
       if (row.credentialId === connection.id) dangling.add(row);
@@ -117,9 +132,10 @@ export async function assertCompatibleDefaultChange(
   }
   const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
   if (!outgoing) return;
-  const [pins, target] = await Promise.all([
+  const [pins, target, served] = await Promise.all([
     compatibleModelPins(deps, actor, outgoing),
     modelRoleTarget(deps.prisma, actor),
+    servedByDeployment(deps),
   ]);
   const replacedSpaceId = target.scope === "space" ? actor.spaceId : null;
   // The main model's own row is the choice being replaced, not a pin left behind.
@@ -130,11 +146,11 @@ export async function assertCompatibleDefaultChange(
         (row) => !(row.role === "main" && row.position === 0 && row.spaceId === replacedSpaceId),
       ),
     },
-    () => true,
+    (row) => !served(row),
   );
 }
 
-/** A routine may only name a model the space has connected. */
+/** A routine may only name a model the space has connected, or one the deployment serves. */
 export async function assertRoutineModel(
   deps: RouterDeps,
   actor: Actor,
@@ -148,7 +164,7 @@ export async function assertRoutineModel(
     actor,
     model.modelProvider,
     model.modelId,
-    { codexCatalog },
+    { codexCatalog, deployment: () => currentDeploymentModels(deps) },
   );
   if (message) throw new ORPCError("BAD_REQUEST", { message });
 }

@@ -20,6 +20,10 @@ Then choose a **Voice**, and use **Hear a sample** to check it. **Speech model**
 
 Voice settings apply to every [space](./spaces.md). A space can customize them in its settings.
 
+If your server has a default voice, voice works without a key of your own; connecting your own
+provider replaces it for you. Admins set that default at the end of **Settings → Voice**, or with
+[environment variables](./self-host-models.md#a-default-voice-for-everyone).
+
 ## Talk instead of typing
 
 Hold the microphone in the composer and speak; release to send. Slide up to lock recording so you

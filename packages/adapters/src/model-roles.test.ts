@@ -34,7 +34,6 @@ const main: MemberMainModel = {
   credential: spaceCredential,
 };
 const deploymentDefaults: DeploymentModelDefaults = {
-  settings: { defaultModelProvider: "settings-provider", defaultModelId: "settings-model" },
   deployment: { provider: "deployment-provider", model: "deployment-model" },
 };
 const defaults: SelectionInput = {
@@ -109,18 +108,8 @@ describe("configured model selection", () => {
       },
     },
     {
-      name: "uses the owner's saved default before the environment's",
+      name: "uses the deployment's default model in effect",
       input: { main: null },
-      expected: {
-        provider: "settings-provider",
-        id: "settings-model",
-        credential: null,
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "uses the environment's model when nothing is saved",
-      input: { main: null, defaults: { ...deploymentDefaults, settings: null } },
       expected: {
         provider: "deployment-provider",
         id: "deployment-model",
@@ -137,8 +126,8 @@ describe("configured model selection", () => {
       name: "falls back to the deployment when the main model's connection is gone",
       input: { main: { ...main, credential: null } },
       expected: {
-        provider: "settings-provider",
-        id: "settings-model",
+        provider: "deployment-provider",
+        id: "deployment-model",
         credential: null,
         thinkingLevel: null,
       },
@@ -215,7 +204,7 @@ describe("configured model selection", () => {
 describe("model roles", () => {
   it("derives each purpose's deployment default in the shape of a member's choices", () => {
     expect(deploymentModelRole("main", deploymentDefaults)).toEqual({
-      primary: { provider: "settings-provider", modelId: "settings-model" },
+      primary: { provider: "deployment-provider", modelId: "deployment-model" },
       backups: [],
     });
     expect(
@@ -229,7 +218,7 @@ describe("model roles", () => {
     await expect(
       effectiveModelRole(roleClient([]), scope, "main", deploymentDefaults),
     ).resolves.toEqual({
-      primary: { provider: "settings-provider", modelId: "settings-model" },
+      primary: { provider: "deployment-provider", modelId: "deployment-model" },
       backups: [],
       primarySource: "deployment",
     });
@@ -286,7 +275,7 @@ describe("model roles", () => {
       { role: "main", position: 1, provider: "b", modelId: "n", thinkingLevel: null },
     ]);
     await expect(effectiveModelRole(prisma, scope, "main", deploymentDefaults)).resolves.toEqual({
-      primary: { provider: "settings-provider", modelId: "settings-model" },
+      primary: { provider: "deployment-provider", modelId: "deployment-model" },
       backups: [{ provider: "b", modelId: "n" }],
       primarySource: "deployment",
     });

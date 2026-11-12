@@ -3725,6 +3725,7 @@ description: Prepare standup notes
     const plaintext = compatibleSecret(["newest-model"]);
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: {

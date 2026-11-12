@@ -80,10 +80,11 @@ function fallbackUsage(
 /** Bounded, leased recovery: provider cost first, then counted tokens, never more than held. */
 export function createModelCreditReconciler(deps: {
   prisma: PrismaClient;
-  lookup?: ModelUsageLookup;
+  /** Resolved each pass, so a changed deployment model key applies without a restart. */
+  lookup?: () => Promise<ModelUsageLookup | undefined>;
   now?: () => Date;
 }) {
-  const { prisma, lookup } = deps;
+  const { prisma } = deps;
   let balanceCursor: string | undefined;
   let nextBalanceAuditAt = 0;
   return () =>
@@ -105,6 +106,15 @@ export function createModelCreditReconciler(deps: {
         orderBy: [{ nextReconcileAt: "asc" }, { id: "asc" }],
         take: 5,
       });
+      // An unreadable key only loses provider costs this pass; holds still settle from tokens.
+      const lookup = calls.length
+        ? await deps.lookup?.().catch((error: unknown) => {
+            getLogger().error("Model usage lookup unavailable", {
+              "error.name": error instanceof Error ? error.name : typeof error,
+            });
+            return undefined;
+          })
+        : undefined;
       await Promise.all(
         calls.map(async (call) => {
           const claimed = await prisma.modelCreditEntry.updateMany({

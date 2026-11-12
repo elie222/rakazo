@@ -359,11 +359,15 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       select.size = 0;
       select.style.removeProperty("height");
     });
-    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
+    // The model and its effort save as they are picked.
     const botSaved = page.waitForResponse(
-      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+      (response) =>
+        response.url().includes("/rpc/bots/update") &&
+        response.ok() &&
+        (response.request().postDataJSON() as { json?: { thinkingLevel?: string } }).json
+          ?.thinkingLevel === "high",
     );
-    await settings.getByRole("button", { name: "Save", exact: true }).click();
+    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {

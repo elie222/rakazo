@@ -159,6 +159,12 @@ export function BotSettings({
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
   );
   const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
+  // The newest model or effort pick; only it is undone when its save fails.
+  const latestModelPick = useRef<{ key: string; thinkingLevel: string } | null>(null);
+  // The model and effort last saved, by a pick here or in a newer copy of the bot. A failed pick
+  // goes back to it, even before the bot copy with an earlier pick arrives.
+  const confirmedModel = useRef<readonly [string, string] | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [disabledBuiltinTools, setDisabledBuiltinTools] = useState<string[]>(
     bot.disabledBuiltinTools ?? [],
   );
@@ -191,17 +197,11 @@ export function BotSettings({
     meQuery.data !== undefined;
   const [saving, setSaving] = useState(false);
   const [savedAdvanced, setSavedAdvanced] = useState(() => JSON.stringify(advancedValues(bot)));
-  const advancedSnapshot = JSON.stringify([
-    modelKey,
-    thinkingLevel,
-    computerMode,
-    memoryScope,
-    autoSpeak,
-    voiceId,
-  ]);
+  // The model and its effort save as they are picked, so only the rest wait for Save.
+  const advancedSnapshot = JSON.stringify([computerMode, memoryScope, autoSpeak, voiceId]);
   const dirty =
     name.trim() !== savedNameRef.current.trim() ||
-    advancedSnapshot !== savedAdvanced ||
+    advancedSnapshot !== JSON.stringify((JSON.parse(savedAdvanced) as unknown[]).slice(2)) ||
     description.trim() !== savedDescriptionRef.current;
   const [error, setError] = useState<string | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
@@ -219,6 +219,7 @@ export function BotSettings({
         dailyCheckIns?: boolean;
         disabledBuiltinTools?: string[];
         baseDisabledBuiltinTools?: string[];
+        model?: { key: string; thinkingLevel: string };
       },
       revisions?: { color: number; avatarSet: number; notifyOnFinish: number },
     ) => Promise<void>
@@ -247,6 +248,7 @@ export function BotSettings({
     };
     const saved = JSON.parse(savedAdvanced) as unknown[];
     const next = advancedValues(bot);
+    confirmedModel.current = [next[0], next[1]];
     if (modelKey === saved[0]) setModelKey(next[0]);
     if (thinkingLevel === saved[1]) setThinkingLevel(next[1]);
     if (computerMode === saved[2]) setComputerMode(next[2]);
@@ -271,11 +273,21 @@ export function BotSettings({
   const defaultEntry = me?.defaultModel
     ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
     : undefined;
+  // The default names the model it runs now, so the bot's model is never a mystery. Without a
+  // model that can run, there is none to name.
   const modelChoices = chatModelChoices(
     connectedOptions,
     selectedModelKey,
-    t`Space default`,
+    me?.defaultModel && !me.needsModel
+      ? t`Default (${shortModelLabel(defaultEntry?.label ?? me.defaultModel)})`
+      : t`Default`,
     defaultEntry?.images,
+  ).map((choice) =>
+    // Until the catalog loads every saved model looks unoffered; it is only unavailable after.
+    choice.unavailable && !modelMetaReady ? { ...choice, unavailable: false } : choice,
+  );
+  const modelUnavailable = modelChoices.some(
+    (choice) => choice.unavailable && choice.key === selectedModelKey,
   );
 
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
@@ -289,11 +301,12 @@ export function BotSettings({
         )
       : undefined;
   const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = (
-    effectiveCredential?.thinkingLevels ??
-    effectiveEntry?.thinkingLevels ??
-    []
-  ).filter((level) => level !== "off");
+  // Runs drop the effort of a model they cannot use, so none is offered for it.
+  const thinkingOptions = modelUnavailable
+    ? []
+    : (effectiveCredential?.thinkingLevels ?? effectiveEntry?.thinkingLevels ?? []).filter(
+        (level) => level !== "off",
+      );
   const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
 
   async function executeSave(
@@ -309,6 +322,8 @@ export function BotSettings({
       dailyCheckIns?: boolean;
       disabledBuiltinTools?: string[];
       baseDisabledBuiltinTools?: string[];
+      /** The model and its effort, saved together at once. */
+      model?: { key: string; thinkingLevel: string };
     },
     revisions?: { color: number; avatarSet: number; notifyOnFinish: number },
   ) {
@@ -329,6 +344,21 @@ export function BotSettings({
       }
       if (patchOverrides?.replyMode !== undefined) {
         await onSave({ replyMode: patchOverrides.replyMode });
+        return;
+      }
+      if (patchOverrides?.model) {
+        const { key, thinkingLevel: level } = patchOverrides.model;
+        const model = key ? parseModelOptionKey(key) : null;
+        await onSave({
+          modelProvider: model?.provider ?? null,
+          modelId: model ? resolveSelectableModelId(catalog, model.provider, model.modelId) : null,
+          thinkingLevel: (level || null) as ThinkingLevel | null,
+        });
+        confirmedModel.current = [key, level];
+        setSavedAdvanced((current) => {
+          const saved = JSON.parse(current) as unknown[];
+          return JSON.stringify([key, level, ...saved.slice(2)]);
+        });
         return;
       }
       const selected = selectedModel;
@@ -438,7 +468,17 @@ export function BotSettings({
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
       if (patchOverrides?.replyMode !== undefined) setReplyMode(bot.replyMode);
-      setError(errorText(err, t`Could not save`));
+      const message = errorText(err, t`Could not save`);
+      if (patchOverrides?.model) {
+        // A later pick made while this one was saving stays on screen.
+        if (patchOverrides.model === latestModelPick.current) {
+          const [savedKey, savedLevel] =
+            confirmedModel.current ?? advancedValues(shownBotRef.current);
+          setModelKey(savedKey);
+          setThinkingLevel(savedLevel);
+          setModelError(message);
+        }
+      } else setError(message);
     } finally {
       pendingSavesRef.current -= 1;
       if (pendingSavesRef.current === 0) {
@@ -460,6 +500,16 @@ export function BotSettings({
     void enqueueSave({ disabledBuiltinTools: next });
   }
 
+  /** A model or effort pick saves at once, like the switches around it. */
+  function pickModel(key: string, level: string) {
+    const pick = { key, thinkingLevel: level };
+    latestModelPick.current = pick;
+    setModelError(null);
+    setModelKey(key);
+    setThinkingLevel(level);
+    void enqueueSave({ model: pick });
+  }
+
   function enqueueSave(patchOverrides?: {
     name?: string;
     description?: string;
@@ -471,6 +521,7 @@ export function BotSettings({
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     disabledBuiltinTools?: string[];
+    model?: { key: string; thinkingLevel: string };
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
     // finish after a newer one and clobber fields. Always call through a ref so
@@ -553,6 +604,23 @@ export function BotSettings({
         </TabsContent>
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
+          <div className="mt-6">
+            <ModelSection
+              ids={ids}
+              containerRef={modelRef}
+              onOpenConnections={onOpenConnections}
+              choices={modelChoices}
+              value={selectedModelKey}
+              onModelChange={(key) => {
+                if (key !== selectedModelKey) pickModel(key, "");
+              }}
+              thinkingOptions={thinkingOptions}
+              thinkingLevel={thinkingLevel}
+              defaultThinkingLevel={defaultThinkingLevel}
+              onThinkingLevelChange={(level) => pickModel(modelKey, level)}
+              error={modelError}
+            />
+          </div>
           <NotificationsSection
             ids={ids}
             notifyOnFinish={notifyOnFinish}
@@ -572,21 +640,6 @@ export function BotSettings({
             </Suspense>
           </ErrorBoundary>
           <div className="space-y-6 pt-6">
-            <ModelSection
-              ids={ids}
-              containerRef={modelRef}
-              onOpenConnections={onOpenConnections}
-              choices={modelChoices}
-              value={selectedModelKey}
-              onModelChange={(key) => {
-                setModelKey(key);
-                setThinkingLevel("");
-              }}
-              thinkingOptions={thinkingOptions}
-              thinkingLevel={thinkingLevel}
-              defaultThinkingLevel={defaultThinkingLevel}
-              onThinkingLevelChange={setThinkingLevel}
-            />
             <ComputerGroup
               computerMode={computerMode}
               onComputerModeChange={setComputerMode}
@@ -683,6 +736,11 @@ const NO_CATALOG: ModelCatalogEntry[] = [];
 
 function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
+/** The list's rows drop the catalog's "Vendor: " prefix, so the default's name does too. */
+function shortModelLabel(label: string) {
+  return label.match(/^[^:]+: (.+)$/)?.[1] ?? label;
 }
 
 function catalogEntry(

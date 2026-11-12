@@ -32,6 +32,7 @@ import {
 } from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
 import {
+  addRunSecrets,
   OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
   OWN_INSTRUCTIONS_CHANGED_ERROR,
 } from "./run-context.js";
@@ -326,7 +327,7 @@ export const fleetTools: ToolHandlers = {
       run,
       live,
       { model, thinkingLevel, readAloud, voice },
-      () => listDefaultVoices(deps, run, context),
+      () => listDefaultVoices(deps, run, context, (key) => addRunSecrets(ctx, [key])),
     );
     if ("error" in settings) return call.finish(settings);
     const before = BotSettingsValuesSchema.parse(

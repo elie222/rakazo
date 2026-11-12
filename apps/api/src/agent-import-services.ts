@@ -29,7 +29,7 @@ export function createAgentImportServices({
   repos: ReturnType<typeof createRepos>;
   codexCatalog: CodexLiveCatalog;
   verifyModelConnection: ReturnType<typeof createModelConnector>["verifyModelConnection"];
-  botModelValidation: (actor: Actor) => Parameters<typeof validateBotModelChange>[0];
+  botModelValidation: (actor: Actor) => Promise<Parameters<typeof validateBotModelChange>[0]>;
   prepareMcpServer: ReturnType<typeof createMcpServers>["prepareMcpServer"];
   insertMcpServer: ReturnType<typeof createMcpServers>["insertMcpServer"];
   announceRoutine: ReturnType<typeof createRoutineAnnouncer>;
@@ -76,7 +76,7 @@ export function createAgentImportServices({
       return new Set(providers.filter((provider) => have.has(canonicalPiProviderId(provider))));
     },
     validateBotModel: async (actor, provider, modelId) => {
-      const result = await validateBotModelChange(botModelValidation(actor), {
+      const result = await validateBotModelChange(await botModelValidation(actor), {
         userId: actor.userId,
         spaceId: actor.spaceId,
         provider,

@@ -3,6 +3,13 @@ import { ORPCError } from "@orpc/server";
 import {
   aiRecipient,
   cloudAgentsEnabled,
+  DEPLOYMENT_MODEL_SETTINGS,
+  deploymentConnection,
+  deploymentConnectionSecret,
+  deploymentServes,
+  deploymentStandIn,
+  findConnectedModelCredential,
+  findDeploymentVoice,
   parseModelSecret,
   resolveMemberMainModel,
   selectConfiguredModel,
@@ -15,7 +22,11 @@ import type {
   AiRecipient,
   SettingsScope,
 } from "@rakazo/contracts";
-import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
+import {
+  AI_DISCLOSURE_VERSION,
+  AI_PRIVACY_URL,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "@rakazo/contracts";
 import {
   findDefaultVoiceCredential,
   findModelCredential,
@@ -25,6 +36,7 @@ import {
   modelRoleTarget,
   voicePreferenceTarget,
 } from "@rakazo/db";
+import { currentDeploymentModels } from "./deployment-model.js";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
 import { voiceCredentialServer } from "./voice.js";
@@ -92,7 +104,7 @@ export async function aiConsentStatus(
       uses.includes("voice")
         ? query.uses
           ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
-              (credential) => (credential ? [{ credential }] : []),
+              (credential) => (credential ? [{ credential, isDefault: true }] : []),
             )
           : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
               listVoicePreferences(deps.prisma, target),
@@ -102,7 +114,10 @@ export async function aiConsentStatus(
         ? deps.prisma.spaceMemoryConfig.findUnique({ where: { spaceId: actor.spaceId } })
         : null,
       modelsEnabled
-        ? deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } })
+        ? deps.prisma.deploymentSettings.findUnique({
+            where: { id: "default" },
+            include: DEPLOYMENT_MODEL_SETTINGS,
+          })
         : null,
       deps.prisma.aiDataConsent.findMany({
         where: { userId: actor.userId, spaceId: actor.spaceId, version: AI_DISCLOSURE_VERSION },
@@ -115,26 +130,29 @@ export async function aiConsentStatus(
       recipients.set(recipient.key, { ...recipient, allowed: allowed.has(recipient.key) });
   };
   if (modelsEnabled) {
-    const deployment = deps.env.deploymentModelConfigured
-      ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-      : null;
+    const deploymentModels = await currentDeploymentModels(deps, settings);
+    const deployment = deploymentStandIn(deploymentModels);
+    // The connection a run uses: a member's endpoint that doesn't list the model gives way to
+    // the deployment's, so consent names the endpoint that receives the content.
+    const runCredential = (provider: string, modelId: string) =>
+      findConnectedModelCredential(deps.prisma, deps.secrets, actor, provider, modelId, {
+        deployment: async () => deploymentModels,
+      }).catch(() => findModelCredential(deps.prisma, actor, provider, modelId));
     const selected = await Promise.all(
       (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =
           override?.modelProvider && override.modelId
-            ? await findModelCredential(
-                deps.prisma,
-                actor,
-                override.modelProvider,
-                override.modelId,
-              )
+            ? await runCredential(override.modelProvider, override.modelId)
             : null;
         return selectConfiguredModel({
           override,
           overrideCredential,
           main,
-          hostedProvider: deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
-          defaults: { settings, deployment },
+          hostedProvider: deps.billing?.modelCreditsEnabled
+            ? deploymentModels.default.provider
+            : undefined,
+          deploymentModels,
+          defaults: { deployment },
         });
       }),
     );
@@ -155,8 +173,11 @@ export async function aiConsentStatus(
       roleChoices.map(async (choice) => {
         const credential = choice.credentialId
           ? await findModelCredentialById(deps.prisma, actor, choice.credentialId)
-          : await findModelCredential(deps.prisma, actor, choice.provider, choice.modelId);
-        return credential
+          : await runCredential(choice.provider, choice.modelId);
+        // A choice the deployment serves runs on its connection, so it is a recipient too.
+        return credential ||
+          (!choice.credentialId &&
+            deploymentServes(deploymentModels, choice.provider, choice.modelId))
           ? { provider: choice.provider, id: choice.modelId, credential, thinkingLevel: null }
           : null;
       }),
@@ -209,12 +230,28 @@ export async function aiConsentStatus(
         }),
       ),
     );
+    // The deployment's own endpoint is disclosed by its origin too, so re-pointing it asks again.
+    const deploymentEndpoint = models.some(
+      (model) => !model.credential && model.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
+    )
+      ? await deploymentConnectionSecret(
+          deps.secrets,
+          deploymentConnection(deploymentModels, OPENAI_COMPATIBLE_PROVIDER_ID),
+        ).then(
+          (secret) => (secret?.kind === "openai_compatible" ? secret.baseUrl : undefined),
+          () => undefined,
+        )
+      : undefined;
     for (const model of models) {
       add(
         aiRecipient({
           provider: model.provider!,
           modelId: model.id!,
-          baseUrl: model.credential ? baseUrls.get(model.credential.secretId) : undefined,
+          baseUrl: model.credential
+            ? baseUrls.get(model.credential.secretId)
+            : model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+              ? deploymentEndpoint
+              : undefined,
           use: "model",
         }),
       );
@@ -230,6 +267,19 @@ export async function aiConsentStatus(
         ...(endpoint ? { baseUrl: endpoint } : {}),
       }),
     );
+  }
+  // Without a default connection of their own here whose key is still saved, voice goes to the
+  // deployment's provider, as it does when it speaks.
+  if (uses.includes("voice")) {
+    const deployment = await findDeploymentVoice(deps.prisma, deps.secrets);
+    const own = voices.find((voice) => voice.isDefault);
+    const ownSpeaks =
+      own &&
+      (await deps.prisma.secret.findFirst({
+        where: { id: own.credential.secretId, userId: actor.userId, spaceId: null },
+        select: { id: true },
+      }));
+    if (deployment && !ownSpeaks) add(aiRecipient({ provider: deployment.provider, use: "voice" }));
   }
   if (memory)
     add(

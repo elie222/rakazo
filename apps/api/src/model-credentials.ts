@@ -34,6 +34,7 @@ import {
   withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
+import { currentDeploymentModels } from "./deployment-model.js";
 import { mayUsePrivateEndpoint } from "./mcp-servers.js";
 import { assertNoDanglingModelPins } from "./model-pins.js";
 import type { RouterDeps } from "./router.js";
@@ -145,7 +146,7 @@ export async function prepareModelCredential(
   const defaultModel =
     resolvedCodexModelId ??
     defaultCatalogModelId(input.provider, input.plaintext) ??
-    usableModelId(deps.env.defaultModel);
+    usableModelId((await currentDeploymentModels(deps)).default.model);
   // A compatible connect may enable its new default, so judge it by the secret being saved.
   const allowedThinking = !defaultModel
     ? undefined
