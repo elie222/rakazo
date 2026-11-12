@@ -77,6 +77,8 @@ RAKAZO_LOCAL_MAX_TOKENS=4096
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 # Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
+# Optional: off when the server does not cache prompts.
+RAKAZO_LOCAL_PROMPT_CACHE=off
 ```
 
 Set `RAKAZO_LOCAL_MODELS_API_KEY` when the server requires a key, such as LiteLLM, vLLM started
@@ -94,6 +96,13 @@ receive the field.
 connection sets its own max-tokens value. It never exceeds a quarter of
 `RAKAZO_LOCAL_CONTEXT_WINDOW`, so the prompt keeps the rest; a higher limit leaves less room for the
 prompt, so long chats are compacted sooner.
+
+Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
+hitting, and trims old page state only when that saves more than the cache would. A server without
+prompt caching (several hosted gateways and confidential-compute endpoints report no cached
+tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
+`RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
+tokens of it have built up. Unset, behaviour is unchanged.
 
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
 prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
