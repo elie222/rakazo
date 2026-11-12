@@ -41,7 +41,8 @@ export function HonchoSettingsForm({
   const keepsKey =
     current !== undefined &&
     mode === (current.mode === "local" ? "local" : "cloud") &&
-    (mode === "cloud" || baseUrl.trim() === (current.baseUrl ?? "").trim()) &&
+    (mode === "cloud" ||
+      baseUrl.trim().replace(/\/+$/, "") === (current.baseUrl ?? "").trim().replace(/\/+$/, "")) &&
     workspace.trim() === (current.workspaceId ?? "").trim() &&
     (showUserPeer ? userPeer.trim() : "") === (current.userPeerId ?? "").trim();
   const ready =

@@ -24,7 +24,8 @@ export function SupermemorySettingsForm({
   const keepsKey =
     current !== undefined &&
     mode === (current.mode === "local" ? "local" : "cloud") &&
-    (mode === "cloud" || baseUrl.trim() === (current.baseUrl ?? "").trim());
+    (mode === "cloud" ||
+      baseUrl.trim().replace(/\/+$/, "") === (current.baseUrl ?? "").trim().replace(/\/+$/, ""));
   const ready =
     (key.length === 0 ? keepsKey : key.length >= 8) &&
     (mode === "cloud" || Boolean(baseUrl.trim()));

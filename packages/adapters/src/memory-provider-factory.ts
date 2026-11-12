@@ -84,7 +84,8 @@ interface MemoryProviderAdapter {
 function serviceTarget(settings: Record<string, string>, defaultMode?: "cloud"): string {
   const mode = settings.mode ?? defaultMode;
   if (mode === "cloud") return "cloud";
-  return `${mode ?? ""} ${settings.baseUrl?.trim() ?? ""}`;
+  // Clients drop trailing slashes, so they name the same server.
+  return `${mode ?? ""} ${settings.baseUrl?.trim().replace(/\/+$/, "") ?? ""}`;
 }
 
 function serenityTarget(settings: Record<string, string>): string {

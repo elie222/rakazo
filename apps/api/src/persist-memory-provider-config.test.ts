@@ -538,6 +538,7 @@ describe("updateMemoryProviderConfig", () => {
     defaultMemoryScope: "shared",
     settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
     secret: { id: "secret-old", ciphertext: "stored-cipher" },
+    updatedAt: new Date("2026-08-19T00:00:00.000Z"),
   };
   const settings = { mode: "cloud", baseUrl: "https://api.supermemory.ai" };
 
@@ -752,6 +753,35 @@ describe("updateMemoryProviderConfig", () => {
     expect(secretDeleteMany).not.toHaveBeenCalled();
     // The value already written to the secret store is removed there too.
     expect(deps.secrets.delete).toHaveBeenCalledWith("cipher", "secret-new");
+  });
+
+  it("refuses an edit that keeps the key when another save landed first", async () => {
+    const { deps, findUnique, upsert } = updateDeps();
+    findUnique.mockResolvedValueOnce(connected).mockResolvedValueOnce({
+      ...connected,
+      updatedAt: new Date("2026-08-19T00:05:00.000Z"),
+    });
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("treats a trailing slash as the same self-hosted server", async () => {
+    const { deps, prepareConnection } = updateDeps({
+      existing: {
+        ...connected,
+        provider: "hindsight",
+        settings: { mode: "local", baseUrl: "https://memory.example.test" },
+      },
+    });
+    await updateMemoryProviderConfig({ ...deps, env: { mcpAllowPrivateEndpoint: true } }, actor, {
+      settings: { mode: "local", baseUrl: "https://memory.example.test/" },
+      credentials: { apiKey: "" },
+    });
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "sm_stored_key_12345" } }),
+    );
   });
 
   it("removes the replaced key from the secret store once saved", async () => {

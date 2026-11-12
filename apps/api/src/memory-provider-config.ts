@@ -95,7 +95,7 @@ export async function updateMemoryProviderConfig(
     deps,
     actor,
     { provider: existing.provider, settings: input.settings, credentials },
-    { replacesSecretId: existing.secretId, storedCredentials },
+    { replacesSecretId: existing.secretId, readAt: existing.updatedAt, storedCredentials },
   );
 }
 
@@ -122,7 +122,12 @@ async function saveMemoryProviderConnection(
   },
   target:
     | { defaultMemoryScope: "isolated" | "shared" }
-    | { replacesSecretId: string; storedCredentials: Record<string, string> | null },
+    | {
+        replacesSecretId: string;
+        /** When the connection was read; a save since then means another edit won. */
+        readAt: Date;
+        storedCredentials: Record<string, string> | null;
+      },
 ) {
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
@@ -191,7 +196,11 @@ async function saveMemoryProviderConnection(
           if ("replacesSecretId" in target) {
             // A disconnect or another save racing this update must not be overwritten: the stored
             // credentials it decided on belong to the connection it read.
-            if (!existing || existing.secretId !== target.replacesSecretId) {
+            if (
+              !existing ||
+              existing.secretId !== target.replacesSecretId ||
+              existing.updatedAt.getTime() !== target.readAt.getTime()
+            ) {
               throw new ORPCError("NOT_FOUND");
             }
             defaultMemoryScope = existing.defaultMemoryScope === "shared" ? "shared" : "isolated";

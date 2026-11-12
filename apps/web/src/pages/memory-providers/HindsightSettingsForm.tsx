@@ -132,7 +132,8 @@ export function HindsightSettingsForm({
   const keepsKey =
     current !== undefined &&
     mode === (current.mode === "local" ? "local" : "cloud") &&
-    (mode === "cloud" || baseUrl.trim() === (current.baseUrl ?? "").trim()) &&
+    (mode === "cloud" ||
+      baseUrl.trim().replace(/\/+$/, "") === (current.baseUrl ?? "").trim().replace(/\/+$/, "")) &&
     sameBanks(banks, current.recallBanks ?? "");
   const keyOptional = keepsKey || mode === "local";
   const ready =
