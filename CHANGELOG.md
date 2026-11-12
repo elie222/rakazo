@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - When a bot needs you to use its computer, its card shows a still of the screen with **Skip**, **I'm done** and **Take control**, and folds into one line once settled.
 - A bot's chat no longer shows the prompt that started a webhook, email or chat-message routine; it shows only what the bot does.
 - Your chat bubbles stay close to the bot's avatar color, and the first bot created at sign-up starts orange.
+- Answered questions stay in the chat as dimmed cards, with your reply shown once in its own message, and the iOS inbox controls sit closer to the sidebar toggle.
 - Mobile settings are a short hub, with display and device preferences on a new **General** page and sign-in and security on an **Account** page opened by tapping your name.
 - Usage shows when monthly computer hours next reset separately from the plan's renewal date, including on annual plans.
 - InstaBox computers start at their plan's computer size. A stopped computer moves to its plan's size when it next starts, which discards its paused memory but keeps its files.
@@ -41,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A Docker computer that comes up unable to write its home folder, such as after Docker or the host restarts, is restarted automatically instead of failing every run.
 - Docker computers start on Windows hosts instead of failing a home folder permission check.
 - Android message notifications no longer arrive blank while the app is in the background.
+- Compatible model connections whose label already starts with the service name no longer repeat it.
+- Chat tables sort decimals written without a leading zero, such as `.5`, in numeric order.
 
 ### Self-host upgrade notes
 
