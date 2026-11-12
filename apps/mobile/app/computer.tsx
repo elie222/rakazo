@@ -32,7 +32,7 @@ import {
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { ComputerKeyboardBar } from "../components/computer-keyboard-bar";
-import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
+import { useConfirmComputerReset } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
@@ -176,9 +176,7 @@ export default function Computer() {
   }, [label, navigation]);
 
   const refresh = refreshController.refresh;
-  const refreshAfterMaintenance = useCallback(async () => {
-    await refresh();
-  }, [refresh]);
+  const confirmReset = useConfirmComputerReset();
 
   useEffect(() => {
     setComputer(null);
@@ -475,6 +473,21 @@ export default function Computer() {
         </Text>
       ) : null}
       {retryScreenAction}
+      {screenRetry && computer?.state === "running" && botId ? (
+        <NativeActionButton
+          style={{ marginBottom: 16 }}
+          label={t`Reset computer`}
+          prominence="secondary"
+          size="default"
+          onPress={() =>
+            confirmReset(() => {
+              void rpc("computer/reset", { botId })
+                .then(() => refresh())
+                .catch((err: unknown) => setError(errorText(err, t`Could not update computer`)));
+            })
+          }
+        />
+      ) : null}
       {allowanceUsed ? (
         <NativeActionButton
           label={t`Upgrade`}
@@ -605,13 +618,6 @@ export default function Computer() {
             onPress={() => void cleanUpDisk()}
           />
         </View>
-      ) : null}
-      {computer ? (
-        <ComputerMaintenanceActions
-          botId={botId ?? ""}
-          computer={computer}
-          onChanged={refreshAfterMaintenance}
-        />
       ) : null}
       <ComputerModePicker
         // Restacking the row above leaves the native picker at its old measured height; remount it.
@@ -752,6 +758,23 @@ export default function Computer() {
                     {placeholder}
                   </Text>
                   {retryScreenAction}
+                  {screenRetry && computer?.state === "running" && botId ? (
+                    <NativeActionButton
+                      style={{ marginBottom: 16 }}
+                      label={t`Reset computer`}
+                      prominence="secondary"
+                      size="default"
+                      onPress={() =>
+                        confirmReset(() => {
+                          void rpc("computer/reset", { botId })
+                            .then(() => refresh())
+                            .catch((err: unknown) =>
+                              setError(errorText(err, t`Could not update computer`)),
+                            );
+                        })
+                      }
+                    />
+                  ) : null}
                 </View>
               )}
             </View>

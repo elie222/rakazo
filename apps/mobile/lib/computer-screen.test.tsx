@@ -200,7 +200,7 @@ vi.mock("../components/glass-icon-button", () => {
 });
 
 vi.mock("../components/computer-maintenance-actions", () => ({
-  ComputerMaintenanceActions: () => null,
+  useConfirmComputerReset: () => () => undefined,
 }));
 
 vi.mock("../components/computer-mode-picker", () => {
