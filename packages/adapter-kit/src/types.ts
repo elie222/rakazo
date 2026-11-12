@@ -881,12 +881,19 @@ export interface BackgroundJobPayloads {
    * `pending`: the turn was submitted and the provider is still storing it. Later checks poll the
    * provider's token instead of submitting again, and purge `generation` once it settles if the
    * chat was cleared meanwhile. Without a token the turn is stored and only a failed purge of a
-   * clear is left to retry. `checks` counts the checks so far.
+   * clear is left to retry. `checks` counts the checks so far. Captured `source` identifiers survive
+   * group deletion; `connectionIdentity` prevents another connection from handling the old token.
    */
   "memory.retain-turn": {
     runId: string;
     messageIds?: string[];
-    pending?: { token?: string; generation: number; checks: number };
+    pending?: {
+      token?: string;
+      generation: number;
+      checks: number;
+      connectionIdentity?: string;
+      source?: { spaceId: string; userId: string; botId: string; threadId: string };
+    };
   };
   "messaging.deliver": { runId?: string };
   /** A running chat-app run's interim messages; the run is not marked mirrored. */

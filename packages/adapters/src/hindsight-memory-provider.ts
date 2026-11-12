@@ -376,6 +376,7 @@ async function operationDone(
 }
 
 export class HindsightMemoryProvider implements SemanticMemoryProvider {
+  readonly connectionIdentity: string;
   private readonly localHost?: LocalServiceHost;
   private readonly stateKey: string;
   readonly retainConversation?: (
@@ -391,6 +392,9 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     // Tenants sharing one server keep separate bank state: the key's digest tells them apart.
     const keyDigest = createHash("sha256").update(connection.apiKey).digest("hex").slice(0, 16);
     this.stateKey = `${keyDigest}\n${connection.baseUrl}`;
+    this.connectionIdentity = createHash("sha256")
+      .update(JSON.stringify([connection.baseUrl, connection.apiKey]))
+      .digest("hex");
     if (local) {
       this.localHost = new LocalServiceHost(connection.baseUrl, connection.resolveHostname);
     }

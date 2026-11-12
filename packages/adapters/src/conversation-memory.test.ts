@@ -8,7 +8,7 @@ import {
   settleRetainedConversation,
 } from "./conversation-memory.js";
 
-function memoryProvider() {
+function memoryProvider(connectionIdentity = "connection-1") {
   const retain = vi.fn(
     async (): Promise<SemanticMemoryResponse<{ pending?: string }>> => ({ ok: true, value: {} }),
   );
@@ -19,6 +19,7 @@ function memoryProvider() {
     }),
   );
   return {
+    connectionIdentity,
     describe: vi.fn(),
     recall: vi.fn(),
     save: vi.fn(),
@@ -630,7 +631,11 @@ describe("retainRunConversation", () => {
     const { deps, provider } = harness({ generations: [3, 4] });
     provider.purgeHistory.mockResolvedValueOnce({ ok: false, error: "memory request failed: 503" });
     await expect(retainRunConversation(deps, "run-1")).resolves.toEqual({
-      pending: { generation: 3 },
+      pending: {
+        connectionIdentity: "connection-1",
+        generation: 3,
+        source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+      },
     });
   });
 
@@ -638,7 +643,12 @@ describe("retainRunConversation", () => {
     const { deps, provider } = harness({ generations: [3, 4] });
     provider.retainConversation.mockResolvedValueOnce({ ok: true, value: { pending: "op-1" } });
     await expect(retainRunConversation(deps, "run-1")).resolves.toEqual({
-      pending: { token: "op-1", generation: 3 },
+      pending: {
+        connectionIdentity: "connection-1",
+        token: "op-1",
+        generation: 3,
+        source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+      },
     });
     expect(provider.purgeHistory).not.toHaveBeenCalled();
   });
@@ -656,7 +666,45 @@ describe("retainRunConversation", () => {
 });
 
 describe("settleRetainedConversation", () => {
-  const pending = { token: "op-1", generation: 3 };
+  const pending = { token: "op-1", generation: 3, connectionIdentity: "connection-1" };
+
+  it("purges a late turn after deleting the group has removed its run", async () => {
+    const { deps, prisma, provider } = harness();
+    Object.assign(provider, { connectionIdentity: "accepting-connection" });
+    provider.retainConversation.mockResolvedValueOnce({ ok: true, value: { pending: "op-1" } });
+    const retained = await retainRunConversation(deps, "run-1");
+    expect(retained.pending?.connectionIdentity).toBe("accepting-connection");
+    prisma.run.findUnique.mockResolvedValueOnce(null as never);
+    prisma.thread.findUnique.mockResolvedValueOnce(null as never);
+    await settleRetainedConversation(deps, "run-1", retained.pending!);
+    expect(provider.purgeHistory).toHaveBeenCalledWith(
+      { botId: "bot-1", threadId: "thread-1", generations: [3] },
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
+  });
+
+  it.each(["disconnected", "replaced"])(
+    "does not send old operations to a %s connection",
+    async (change) => {
+      const { deps, provider } = harness();
+      Object.assign(provider, { connectionIdentity: "accepting-connection" });
+      provider.retainConversation.mockResolvedValueOnce({ ok: true, value: { pending: "op-1" } });
+      const retained = await retainRunConversation(deps, "run-1");
+      deps.memoryProviders.resolve.mockResolvedValueOnce(
+        change === "disconnected"
+          ? (null as never)
+          : {
+              provider: { ...provider, connectionIdentity: "replacement-connection" },
+              defaultScope: "isolated",
+            },
+      );
+      await expect(settleRetainedConversation(deps, "run-1", retained.pending!)).resolves.toEqual({
+        settled: true,
+      });
+      expect(provider.retainedConversationSettled).not.toHaveBeenCalled();
+      expect(provider.purgeHistory).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps waiting while the provider is still storing the turn", async () => {
     const { deps, provider } = harness({ generations: [4] });
@@ -694,7 +742,12 @@ describe("settleRetainedConversation", () => {
 
   it("purges a stored turn without asking the provider when there is no token", async () => {
     const { deps, provider } = harness({ generations: [4] });
-    await expect(settleRetainedConversation(deps, "run-1", { generation: 3 })).resolves.toEqual({
+    await expect(
+      settleRetainedConversation(deps, "run-1", {
+        generation: 3,
+        connectionIdentity: "connection-1",
+      }),
+    ).resolves.toEqual({
       settled: true,
     });
     expect(provider.retainedConversationSettled).not.toHaveBeenCalled();
@@ -716,7 +769,10 @@ describe("settleRetainedConversation", () => {
 describe("abandonRetainedConversation", () => {
   it("purges the turn's generation once more when its chat was cleared", async () => {
     const { deps, provider } = harness({ generations: [4] });
-    await abandonRetainedConversation(deps, "run-1", { generation: 3 });
+    await abandonRetainedConversation(deps, "run-1", {
+      generation: 3,
+      connectionIdentity: "connection-1",
+    });
     expect(provider.purgeHistory).toHaveBeenCalledWith(
       { botId: "bot-1", threadId: "thread-1", generations: [3] },
       expect.any(Object),
@@ -725,7 +781,10 @@ describe("abandonRetainedConversation", () => {
 
   it("leaves the turn alone when its chat was not cleared", async () => {
     const { deps, provider } = harness({ generations: [3] });
-    await abandonRetainedConversation(deps, "run-1", { generation: 3 });
+    await abandonRetainedConversation(deps, "run-1", {
+      generation: 3,
+      connectionIdentity: "connection-1",
+    });
     expect(provider.purgeHistory).not.toHaveBeenCalled();
   });
 
@@ -733,7 +792,10 @@ describe("abandonRetainedConversation", () => {
     const { deps, provider } = harness({ generations: [4] });
     provider.purgeHistory.mockRejectedValueOnce(new Error("socket hang up"));
     await expect(
-      abandonRetainedConversation(deps, "run-1", { generation: 3 }),
+      abandonRetainedConversation(deps, "run-1", {
+        generation: 3,
+        connectionIdentity: "connection-1",
+      }),
     ).resolves.toBeUndefined();
   });
 });

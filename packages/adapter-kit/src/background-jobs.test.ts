@@ -130,7 +130,13 @@ describe("memoryRetainTurnJob", () => {
     expect(parseBackgroundJob("memory.retain-turn", { runId: "run-1" }).payload).toEqual({
       runId: "run-1",
     });
-    const pending = { token: "op-1", generation: 3, checks: 0 };
+    const pending = {
+      token: "op-1",
+      generation: 3,
+      checks: 0,
+      connectionIdentity: "connection-1",
+      source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+    };
     expect(parseBackgroundJob("memory.retain-turn", { runId: "run-1", pending }).payload).toEqual({
       runId: "run-1",
       pending,

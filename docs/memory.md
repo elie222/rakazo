@@ -37,12 +37,14 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   and **User peer** to also recall what Honcho already knows about you. That existing peer stays
   read-only; Rakazo writes new facts to its own peers in the same workspace.
 - **Hindsight**: its cloud service, or your own server. Each bot keeps its own memory; with the
-  Shared scope, bots also share one memory for the Space, including learned direct-chat turns. Bots learn from their conversations (their
+  Shared scope, bots also share one memory for the Space, including learned direct-chat turns.
+  Bots learn from their conversations (their
   own chats, group chats, and messages between bots) unless you turn off **Learn from
   conversations**. Cleanup requests share a ten-second deadline. Learning and chat-clear cleanup are
-  best effort: provider outages or writes
-  still pending after the polling window can leave gaps or stale memories. Bots can't forget a single
-  memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
+  best effort: provider outages or writes still pending after the polling window can leave gaps or
+  stale memories. Disconnecting or changing
+  the connection stops cleanup on the old service; it does not delete data there. Bots can't forget a
+  single memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks but never write to them. Names beginning with
   `rakazo-` are reserved for Space isolation and cannot be imported. Bots can also ask
   their own bot memory to answer a question by combining what it knows; reflection does not query

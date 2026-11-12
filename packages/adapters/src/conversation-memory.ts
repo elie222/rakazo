@@ -1,4 +1,8 @@
-import type { SemanticMemoryConversationTurn, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type {
+  BackgroundJobPayloads,
+  SemanticMemoryConversationTurn,
+  SemanticMemoryProvider,
+} from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -141,15 +145,19 @@ export async function answeredSteeringMessageIds(
 
 type RetainDeps = { prisma: PrismaClient; memoryProviders: MemoryProviderResolver };
 
-export type RetainTurnResult = { pending?: { token?: string; generation: number } };
+type PendingTurn = Omit<
+  NonNullable<BackgroundJobPayloads["memory.retain-turn"]["pending"]>,
+  "checks"
+>;
+export type RetainTurnResult = { pending?: PendingTurn };
 
 /**
  * Sends one finished turn of a bot's conversation to the Space's memory provider. In the bot's
  * direct thread: the message that started the run, what was added while it worked, and the
  * replies. In a group chat: everything the room said since the bot last replied, and the replies.
  * These turns are derived knowledge, never instruction authority. Exposure does not suppress
- * learning: people's and bots' words remain usable, and semantic recall always carries derived
- * provenance back into the consuming run.
+ * learning: people's and bots' words remain usable, and semantic recall returns them as derived
+ * data.
  *
  * `pending` means the provider is still storing the turn, or a clear landed meanwhile and its
  * purge failed: poll `settleRetainedConversation` with it so the clear is purged once it settles.
@@ -296,14 +304,19 @@ export async function retainRunConversation(
   );
   // Retrying is safe: the provider makes a repeated turn a no-op.
   if (!result.ok) throw new Error(result.error);
-  if (result.value.pending) return { pending: { token: result.value.pending, generation } };
+  const pending: PendingTurn = {
+    generation,
+    source: { spaceId: run.spaceId, userId: run.userId, botId: run.botId, threadId: run.threadId },
+    ...(provider.connectionIdentity ? { connectionIdentity: provider.connectionIdentity } : {}),
+  };
+  if (result.value.pending) return { pending: { ...pending, token: result.value.pending } };
   try {
     await purgeIfCleared(deps.prisma, provider, run, generation, context);
   } catch (error) {
     // A retry would rebuild the turn from messages the clear deleted, and skip it: hand back the
     // stored generation so a later check purges it.
     getLogger().error("memory.retain-turn could not purge a cleared conversation", error);
-    return { pending: { generation } };
+    return { pending };
   }
   return done;
 }
@@ -311,15 +324,15 @@ export async function retainRunConversation(
 /**
  * Whether a turn the provider was still storing is stored now. Once it is, a clear that landed
  * meanwhile is purged; a failed purge throws so the check runs again. Without a token the turn
- * is already stored and only the purge is left. Runs outlive a clear, so this works after the
- * turn's messages are gone.
+ * is already stored and only the purge is left. Captured source IDs also allow cleanup after
+ * group deletion removes the run. A changed or revoked connection ends this best-effort cleanup.
  */
 export async function settleRetainedConversation(
   deps: RetainDeps,
   runId: string,
-  pending: { token?: string; generation: number },
+  pending: PendingTurn,
 ): Promise<{ settled: boolean }> {
-  const found = await retainedRunProvider(deps, runId);
+  const found = await retainedRunProvider(deps, runId, pending);
   if (!found) return { settled: true };
   const { run, provider } = found;
   const context = retainContext(run);
@@ -340,10 +353,10 @@ export async function settleRetainedConversation(
 export async function abandonRetainedConversation(
   deps: RetainDeps,
   runId: string,
-  pending: { generation: number },
+  pending: PendingTurn,
 ): Promise<void> {
   try {
-    const found = await retainedRunProvider(deps, runId);
+    const found = await retainedRunProvider(deps, runId, pending);
     if (!found) return;
     const { run, provider } = found;
     await purgeIfCleared(deps.prisma, provider, run, pending.generation, retainContext(run));
@@ -355,14 +368,25 @@ export async function abandonRetainedConversation(
 async function retainedRunProvider(
   deps: RetainDeps,
   runId: string,
+  pending: PendingTurn,
 ): Promise<{ run: RetainRun; provider: SemanticMemoryProvider } | undefined> {
-  const run = await deps.prisma.run.findUnique({
-    where: { id: runId },
-    select: { id: true, spaceId: true, botId: true, threadId: true, userId: true },
-  });
+  const run = pending.source
+    ? { id: runId, ...pending.source }
+    : await deps.prisma.run.findUnique({
+        where: { id: runId },
+        select: { id: true, spaceId: true, botId: true, threadId: true, userId: true },
+      });
   if (!run) return undefined;
   const provider = (await deps.memoryProviders.resolve(run.spaceId))?.provider;
-  return provider ? { run, provider } : undefined;
+  if (
+    !provider ||
+    !pending.connectionIdentity ||
+    provider.connectionIdentity !== pending.connectionIdentity
+  ) {
+    getLogger().warn("memory.retain-turn stopped after its memory connection changed");
+    return undefined;
+  }
+  return { run, provider };
 }
 
 type RetainRun = { id: string; spaceId: string; botId: string; threadId: string; userId: string };

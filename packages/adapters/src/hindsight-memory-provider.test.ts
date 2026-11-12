@@ -200,6 +200,14 @@ function provider(
 beforeEach(() => resetHindsightBankState());
 afterEach(() => vi.useRealTimers());
 
+it("binds pending work to credentials without exposing them in its connection identity", () => {
+  const fetch = vi.fn();
+  const original = provider(fetch).connectionIdentity;
+  expect(original).toBe(provider(vi.fn()).connectionIdentity);
+  expect(original).not.toBe(provider(fetch, { apiKey: "hsk-rotated-test-key" }).connectionIdentity);
+  expect(original).not.toContain("hsk-test-key");
+});
+
 const writes = (requests: RecordedRequest[]) =>
   requests.filter((request) => request.method === "POST" && request.rest === "/memories");
 

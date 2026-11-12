@@ -340,11 +340,12 @@ it("retries retired messaging credentials without deleting a currently reference
 });
 
 describe("memory.retain-turn", () => {
-  const retainTurn = () => {
+  const retainTurn = (runExists = true) => {
     const jobs = { enqueue: vi.fn(async () => undefined) };
+    const run = { findUnique: vi.fn(async () => (runExists ? owner : null)) };
     const handlers = createBackgroundJobHandlers({
       executor: {} as unknown as ReturnType<typeof createRunExecutor>,
-      prisma: { run: owned() } as unknown as PrismaClient,
+      prisma: { run } as unknown as PrismaClient,
       sandbox: {} as unknown as SandboxProvider,
       home: {} as unknown as AgentHomeStore,
       artifacts: {} as unknown as ArtifactStore,
@@ -355,8 +356,28 @@ describe("memory.retain-turn", () => {
       secretStore: {} as unknown as EncryptedSecretStore,
       memoryProviders: { resolve: vi.fn(async () => null) },
     });
-    return { jobs, handle: handlers["memory.retain-turn"] };
+    return { jobs, run, handle: handlers["memory.retain-turn"] };
   };
+
+  it("uses the captured source tenant when group deletion removed the run", async () => {
+    const { handle, run } = retainTurn(false);
+    const seen: unknown[] = [];
+    vi.mocked(settleRetainedConversation).mockImplementationOnce(async () => {
+      seen.push(currentDbContext());
+      return { settled: true };
+    });
+    await handle({
+      runId: "run-1",
+      pending: {
+        token: "op-1",
+        generation: 3,
+        checks: 1,
+        source: { ...owner, botId: "bot-1", threadId: "thread-1" },
+      },
+    });
+    expect(run.findUnique).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ kind: "tenant", ...owner }]);
+  });
 
   it("checks again later when the provider is still storing a new turn", async () => {
     vi.mocked(retainRunConversation).mockResolvedValueOnce({

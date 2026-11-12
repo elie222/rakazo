@@ -29,6 +29,7 @@ import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
+import { purgeClearedThreadMemory } from "../thread-memory.js";
 import {
   isBackgroundRun,
   isPeerRun,
@@ -57,7 +58,6 @@ import { mapBotSecretInputError } from "./bots.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
-  computerContext,
   HEARTBEAT,
   modelSetup,
   THREAD_MESSAGE_PAGE_SIZE,
@@ -92,69 +92,6 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
           )?.botId;
     if (botId) await releaseComputerControl(deps, actor, botId, "done", runId);
   };
-}
-
-/** Clear removes conversation-derived memory (summaries and learned turns) of the cleared chat's
- * generation, and again of the one before it. clearThread returns the generation from before its
- * increment, so the new chat's turns use the next one and are never purged here. Durable memories
- * remain in their Space-private containers. Best effort throughout: the conversation rows are
- * already deleted, so failing the clear here would help nothing — a failed purge only leaves
- * stale memory recallable. */
-export async function purgeClearedThreadMemory(
-  deps: Pick<RouterDeps, "prisma" | "memoryProviders">,
-  actor: Actor,
-  target: ThreadTarget,
-  historyCompactionGeneration: number,
-): Promise<void> {
-  const configuredMemory = await deps.memoryProviders.resolve(actor.spaceId).catch((error) => {
-    getLogger().error("semantic memory resolution after thread clear failed", error);
-    return null;
-  });
-  if (!configuredMemory) return;
-  // Group chats only feed memory through learned turns, which are keyed by thread. Providers that
-  // purge by thread are purged even with learning off now, since earlier turns may be stored;
-  // others key history by bot and generation alone, so purging a group's generations there would
-  // delete the member bots' direct-chat summaries. A bot removed from the group still learned
-  // from it, and its runs outlive the clear.
-  let botIds: string[] = [];
-  if (target.kind === "bot") {
-    botIds = [target.botId];
-  } else if (configuredMemory.provider.describe().capabilities.purgesByThread === true) {
-    const ranHere = await deps.prisma.run
-      .findMany({
-        where: { threadId: target.threadId },
-        distinct: ["botId"],
-        select: { botId: true },
-      })
-      .catch((error) => {
-        // Still purge the current members.
-        getLogger().error("listing the bots that ran in a cleared group chat failed", error);
-        return [];
-      });
-    botIds = [...new Set([...target.memberBotIds, ...ranHere.map((run) => run.botId)])];
-  }
-  await Promise.all(
-    botIds.map(async (botId) => {
-      try {
-        const purged = await configuredMemory.provider.purgeHistory(
-          {
-            botId,
-            threadId: target.threadId,
-            generations: [
-              Math.max(0, historyCompactionGeneration - 1),
-              historyCompactionGeneration,
-            ],
-          },
-          computerContext(actor, botId, `thread-clear:${target.threadId}`),
-        );
-        if (!purged.ok) {
-          getLogger().error("semantic memory purge after thread clear failed", purged.error);
-        }
-      } catch (error) {
-        getLogger().error("semantic memory purge after thread clear failed", error);
-      }
-    }),
-  );
 }
 
 export function threadsRoutes(ctx: RouterContext) {

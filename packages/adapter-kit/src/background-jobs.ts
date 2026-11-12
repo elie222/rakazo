@@ -35,6 +35,15 @@ const payloadSchemas = {
         token: z.string().min(1).optional(),
         generation: z.number().int().min(0),
         checks: z.number().int().min(0),
+        connectionIdentity: z.string().min(1).optional(),
+        source: z
+          .object({
+            spaceId: z.string().min(1),
+            userId: z.string().min(1),
+            botId: z.string().min(1),
+            threadId: z.string().min(1),
+          })
+          .optional(),
       })
       .optional(),
   }),
