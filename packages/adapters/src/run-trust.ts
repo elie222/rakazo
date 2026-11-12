@@ -5,8 +5,9 @@ import {
   inboundRoutinePrompts,
   SITE_SENDING_TOOLS,
   siteAlwaysAllowed,
+  TAILNET_CONNECT_TOOL,
 } from "@rakazo/core";
-import { sitesInText, urlSite } from "@rakazo/core/egress";
+import { requestSite, sitesInText } from "@rakazo/core/egress";
 import { findAutoReviewPreference, listApprovalRules, storedBatchActions } from "@rakazo/db";
 import { boundDirectApprovalDetails, catalogApprovalDetails } from "./approval-effect.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -146,16 +147,15 @@ export function createRunTrustLoaders(
       .findMany({
         where: {
           runId,
-          kind: { in: [...SITE_SENDING_TOOLS] },
+          kind: { in: [...SITE_SENDING_TOOLS, TAILNET_CONNECT_TOOL] },
           status: { in: PASSED_EFFECT_STATUSES },
         },
-        select: { request: true },
+        select: { kind: true, request: true },
       })
       .then(async (rows) => {
         const sites = sitesInText(await loadOwnerWords());
         for (const row of rows) {
-          const url = (row.request as { url?: unknown } | null)?.url;
-          const site = typeof url === "string" ? urlSite(url) : undefined;
+          const site = requestSite(row.kind, row.request);
           if (site) sites.add(site);
         }
         return sites;

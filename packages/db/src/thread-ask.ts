@@ -22,9 +22,8 @@ import {
   isSecretAskBlock,
   messageReaction,
   resolveAskChoice,
-  SITE_SENDING_TOOLS,
 } from "@rakazo/core";
-import { urlSite } from "@rakazo/core/egress";
+import { requestSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -779,7 +778,5 @@ function alwaysAllowedSite(effect: {
   kind: string;
   request: Prisma.JsonValue;
 }): string | undefined {
-  if (!SITE_SENDING_TOOLS.has(effect.kind)) return undefined;
-  const request = effect.request as { url?: unknown } | null;
-  return typeof request?.url === "string" ? urlSite(request.url) : undefined;
+  return requestSite(effect.kind, effect.request);
 }

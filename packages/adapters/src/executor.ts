@@ -19,6 +19,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  TAILNET_CONNECT_TOOL,
   userTurnMessageForRun,
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
@@ -1343,6 +1344,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 return null;
               })),
         );
+        // Only the run's own member's connection counts, and only for bots they allowed.
+        const tailnetOffered = Boolean(
+          deps.tailnet &&
+            !disabledBuiltinTools.has(TAILNET_CONNECT_TOOL) &&
+            (await deps.tailnet
+              .environment({ runId, userId: run.userId, spaceId: run.spaceId, botId: bot.id })
+              .catch(() => undefined)),
+        );
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1373,6 +1382,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputerShell,
             userComputerScreen,
+            tailnet: tailnetOffered,
             emailInbox,
             emailClaimable:
               Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,

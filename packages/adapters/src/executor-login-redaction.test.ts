@@ -494,9 +494,12 @@ describe("tailnet settings in shell commands", () => {
         },
       },
     );
-    expect(asked).toEqual([
-      { runId: "run-2", userId: "user-1", spaceId: "space-1", botId: "bot-1" },
-    ]);
+    // Once to offer tailnet_connect, then for each command; always as this run's member.
+    expect(new Set(asked.map((scope) => JSON.stringify(scope)))).toEqual(
+      new Set([
+        JSON.stringify({ runId: "run-2", userId: "user-1", spaceId: "space-1", botId: "bot-1" }),
+      ]),
+    );
     expect(shellCommand(commands)?.env).toMatchObject({
       RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
       RAKAZO_NET_TOKEN: TOKEN,
@@ -505,6 +508,34 @@ describe("tailnet settings in shell commands", () => {
     const text = JSON.stringify(toolResults);
     expect(text).toContain("token=[redacted]");
     expect(text).not.toContain(TOKEN);
+  });
+
+  it("refuses tailnet_connect in a run whose member didn't allow the bot", async () => {
+    const { toolResults } = await runAfterFill(
+      [{ name: "tailnet_connect", args: { host: "nas.tail1234.ts.net", port: 22 } }],
+      { savedLogin: false, tailnet: { environment: async () => undefined } },
+    );
+    expect(JSON.stringify(toolResults)).toContain(
+      "Tailnet access is off for this bot. Connect Tailscale and turn it on in the bot's settings.",
+    );
+  });
+
+  it("refuses a destination off the tailnet before asking anyone", async () => {
+    const { toolResults } = await runAfterFill(
+      [{ name: "tailnet_connect", args: { host: "example.com", port: 22 } }],
+      {
+        savedLogin: false,
+        tailnet: {
+          environment: async () => ({
+            RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
+            RAKAZO_NET_TOKEN: TOKEN,
+          }),
+        },
+      },
+    );
+    expect(JSON.stringify(toolResults)).toContain(
+      "host must be a *.ts.net name or a 100.x tailnet address, and port a TCP port",
+    );
   });
 
   it("runs commands without tunnel settings when the bot is not on a tailnet", async () => {

@@ -1,4 +1,6 @@
+import { parseTailnetDestination, tailnetDestinationKey } from "@rakazo/contracts";
 import { parse } from "tldts";
+import { SITE_SENDING_TOOLS, TAILNET_CONNECT_TOOL } from "./action-approval.js";
 
 /**
  * Who a request trusts, by site: the registrable domain, or the address itself for an IP literal.
@@ -83,4 +85,23 @@ function httpUrl(input: string): URL | undefined {
     return undefined;
   }
   return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
+}
+
+/**
+ * The site a tool request reaches, gated and allowed like a site: a fetched URL's host, or a
+ * tailnet destination as `host:port`, which never collides with a host alone.
+ */
+export function requestSite(toolName: string, request: unknown): string | undefined {
+  const values = request && typeof request === "object" ? (request as Record<string, unknown>) : {};
+  if (toolName === TAILNET_CONNECT_TOOL) {
+    const port = values.port;
+    const destination = parseTailnetDestination(
+      typeof values.host === "string" ? values.host : "",
+      typeof port === "number" || typeof port === "string" ? port : "",
+    );
+    return destination ? tailnetDestinationKey(destination) : undefined;
+  }
+  return SITE_SENDING_TOOLS.has(toolName) && typeof values.url === "string"
+    ? urlSite(values.url)
+    : undefined;
 }
