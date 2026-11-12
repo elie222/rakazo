@@ -8,6 +8,10 @@ on:
       - infra/sandboxes/supervisor/**
       - packages/core/src/node/**
       - packages/adapters/src/docker-sandbox.ts
+      - packages/adapters/src/boat-sandbox.ts
+      - packages/adapters/src/desktop-sandbox.ts
+      - packages/adapters/src/computer-lifecycle.ts
+      - packages/adapters/src/teaching-session.ts
       - packages/adapters/src/computer-browser.ts
       - packages/testkit/src/computer-*.ts
       - packages/testkit/src/cli/computer-replay.ts
