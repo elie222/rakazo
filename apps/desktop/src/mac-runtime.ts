@@ -208,7 +208,11 @@ async function installVersion(
   if ("file" in source) {
     archive = source.file;
   } else {
-    archive = path.join(deps.dir, "downloads", path.basename(new URL(source.url).pathname));
+    archive = path.join(
+      deps.dir,
+      "downloads",
+      `${randomUUID()}-${path.basename(new URL(source.url).pathname)}`,
+    );
     deps.onLine(`Downloading ${name}`);
     await downloadVerified(deps, name, source, archive);
     downloaded = true;

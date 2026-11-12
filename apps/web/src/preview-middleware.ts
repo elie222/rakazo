@@ -320,6 +320,8 @@ export function attachNovncProxy(server: WebServerHost, settings: WebServerSetti
       socket.on("error", () => {});
       return;
     }
+    // An earlier listener refused this upgrade (for example a disallowed host).
+    if (socket.destroyed || socket.writableEnded) return;
     req.url = path;
     const connectionId = randomUUID();
     const startedAt = Date.now();

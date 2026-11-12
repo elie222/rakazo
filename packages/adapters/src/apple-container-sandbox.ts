@@ -58,8 +58,9 @@ interface ContainerRecord {
 }
 
 /**
- * The VM's own firewall: the public internet and DNS on the gateway out, nothing to the Mac, the
- * LAN, link-local, CGNAT or multicast; in, only the host to the screen ports. Mirrors the Incus ACL.
+ * The VM's own firewall: the public IPv4 internet and DNS on the gateway out, nothing to the Mac,
+ * the LAN, link-local, CGNAT or multicast, and no IPv6 beyond neighbour discovery, since global
+ * IPv6 addresses would reach the Mac and the LAN directly; in, only the host to the screen ports.
  */
 export function localVmFirewall(gateway: string): string {
   if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(gateway)) throw new Error(`invalid VM gateway ${gateway}`);
@@ -73,8 +74,8 @@ table inet rakazo {
     ip daddr ${gateway} meta l4proto { tcp, udp } th dport 53 accept
     ip daddr ${gateway} reject
     ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/3 } reject
-    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } meta l4proto { tcp, udp } reject
-    ip6 daddr { ::1, fc00::/7, fe80::/10 } icmpv6 type echo-request reject
+    icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit } accept
+    meta nfproto ipv6 reject
   }
   chain input {
     type filter hook input priority filter; policy drop;

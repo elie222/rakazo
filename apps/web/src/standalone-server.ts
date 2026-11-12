@@ -202,13 +202,13 @@ export function createWebServer(root: string, env: NodeJS.ProcessEnv): http.Serv
       .end("Blocked request. This host is not allowed.");
   });
   server.on("upgrade", (req, socket, head) => {
+    if (!hostAllowed(req.headers.host, settings.allowedHosts)) {
+      socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
+      return;
+    }
     if (!forwardsToApi(req.url, true)) {
       // The screen proxy answers its own upgrades.
       if (!novncRequestPath(req.url)) socket.destroy();
-      return;
-    }
-    if (!hostAllowed(req.headers.host, settings.allowedHosts)) {
-      socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
       return;
     }
     forwardUpgrade(settings.api, req, socket, head);

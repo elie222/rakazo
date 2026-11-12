@@ -82,11 +82,12 @@ A start, in order:
 3. Creates the cluster once (`initdb` with scram-sha-256 and ICU `en-US`, then `CREATE DATABASE` in
    single-user mode, in a scratch folder renamed into place), starts it on a loopback port with the
    Unix socket disabled, and waits for it to report ready.
-4. Runs the bundle's migrate entrypoint (owner login from `POSTGRES_USER`/`POSTGRES_PASSWORD`,
-   runtime login `rakazo_app` from `POSTGRES_APP_PASSWORD`, as Compose names them).
+4. Runs the bundle's migrate entrypoint (owner login `rakazo` with `POSTGRES_PASSWORD`, runtime
+   login `rakazo_app` with `POSTGRES_APP_PASSWORD`). The owner's name is fixed rather than read
+   from `POSTGRES_USER`, so it can never be the runtime login.
 5. Spawns API, worker and web with `ELECTRON_RUN_AS_NODE=1` on loopback ports. The API and worker get
-   the `.env` minus Compose-only and owner-login lines, plus `SANDBOX_PROVIDER=local-vm`,
-   `LOCAL_VM_CLI`, `LOCAL_VM_COMPUTER_IMAGE` (the app's image tag), the stack token and the host
+   the `.env` minus Compose-only and owner-login lines (including `DATABASE_MIGRATION_URL`), plus
+   `SANDBOX_PROVIDER=local-vm`, `LOCAL_VM_CLI`, `LOCAL_VM_COMPUTER_IMAGE` (the app's image tag), the stack token and the host
    computer bridge on `127.0.0.1`. The web gets only what Compose gives it. `RAKAZO_ENV_FILE=none`
    stops the server from reading any `.env` from a parent folder such as the home directory.
 6. Waits for the API's `/health` and the web's authenticated stack probe, then removes unused
@@ -214,8 +215,8 @@ plus the kernel download on its first start (about 45 s measured). The computer 
   against the native database at `host.docker.internal` (credentials in the environment, never on
   a command line), copies `/data` out of the stopped API container with `docker cp`, and stops the
   whole Docker stack without removing it or its volumes. Only then is the move marked done
-  (`postgres/.docker-imported`). If any step fails the new database is removed, the Docker data is
-  untouched and **Retry** runs the move again; a move cut short by a quit or crash has no marker, so
+  (`postgres/.docker-imported`). If any step fails the Docker services it stopped are started
+  again, the new database is removed, the Docker data is untouched and **Retry** runs the move again; a move cut short by a quit or crash has no marker, so
   the next start discards the partial database and copied files and runs it again.
 - Computers re-provision from saved homes because the provider kind changes, which the lifecycle
   already handles.

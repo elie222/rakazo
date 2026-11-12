@@ -175,7 +175,8 @@ describe("AppleContainerSandboxProvider", () => {
       rules.indexOf("ip daddr 192.168.70.1 reject"),
     );
     expect(rules).toContain("10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16");
-    expect(rules).toContain("ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 }");
+    expect(rules).toContain("meta nfproto ipv6 reject");
+    expect(rules).not.toContain("ip6 daddr");
     expect(rules).toContain("policy drop;");
     expect(rules).toContain("ip saddr 192.168.70.1 tcp dport { 6080, 6100 } accept");
     expect(() => localVmFirewall("192.168.70.1; flush ruleset")).toThrow(/invalid VM gateway/);

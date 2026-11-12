@@ -114,12 +114,17 @@ describe("moveDockerStack", () => {
     expect(await readdir(dataDir)).toEqual(["homes"]);
   });
 
-  it("stops at the first failing step without copying files or stopping the database", async () => {
+  it("stops at the first failing step and starts the Docker services again", async () => {
     const calls: string[][] = [];
     const run: RunDocker = async (_binary, args) => {
       calls.push(args);
-      const failed = args.includes("bash");
-      return { code: failed ? 1 : 0, stdout: "", stderr: failed ? "pg_restore: error" : "" };
+      // The restart fails too; the restore's error is the one reported.
+      const code = args.includes("bash")
+        ? 1
+        : args.includes("web") && args.includes("start")
+          ? 2
+          : 0;
+      return { code, stdout: "", stderr: code ? "failed" : "" };
     };
     await expect(
       moveDockerStack(
@@ -143,6 +148,7 @@ describe("moveDockerStack", () => {
       ),
     ).rejects.toThrow(/exited with code 1/);
     expect(calls.some((args) => args[0] === "cp")).toBe(false);
-    expect(calls.at(-1)).toContain("bash");
+    expect(calls.at(-2)).toContain("bash");
+    expect(calls.at(-1)?.slice(-5)).toEqual(["start", "web", "api", "worker", "supervisor"]);
   });
 });

@@ -77,25 +77,36 @@ export async function dockerRunning(deps: Omit<DockerMoveDeps, "sleep">): Promis
 
 /**
  * Copies the Docker stack's database and data into the native stack, then stops (not removes)
- * the Docker stack. The database travels as a logical dump, so the two need only share a
- * major version; the native database is reached from the container at host.docker.internal.
+ * the Docker stack; if any step fails, the services it stopped are started again. The database
+ * travels as a logical dump, so the two need only share a major version; the native database is
+ * reached from the container at host.docker.internal.
  */
 export async function moveDockerStack(deps: DockerMoveDeps, target: DockerImportTarget) {
   const binary = resolveDockerBinary(deps.platform, deps.env, deps.exists);
   if (binary === null) throw new Error("Docker is not installed");
-  const docker = async (args: string[], timeoutMs = DOCKER_TIMEOUT_MS, extra = {}) => {
+  const docker = async (
+    args: string[],
+    timeoutMs = DOCKER_TIMEOUT_MS,
+    extra = {},
+    signal = target.signal,
+  ) => {
     const result = await deps.run(binary, args, {
       cwd: deps.stackDir,
       env: dockerSpawnEnv(deps.platform, deps.env, binary, extra),
       timeoutMs,
-      signal: target.signal,
+      signal,
       onLine: target.onLine,
     });
     if (result.code !== 0)
       throw new Error(`docker ${args.slice(0, 7).join(" ")} exited with code ${result.code}`);
     return result.stdout;
   };
-  const compose = (args: string[], timeoutMs?: number, extra?: Record<string, string>) =>
+  const compose = (
+    args: string[],
+    timeoutMs?: number,
+    extra?: Record<string, string>,
+    signal?: AbortSignal,
+  ) =>
     docker(
       [
         "compose",
@@ -109,49 +120,65 @@ export async function moveDockerStack(deps: DockerMoveDeps, target: DockerImport
       ],
       timeoutMs,
       extra,
+      signal,
     );
 
+  const services = ["web", "api", "worker", "supervisor"];
   target.onLine("Stopping the Docker services");
-  await compose(["stop", "web", "api", "worker", "supervisor"]);
-  await compose(["start", "postgres"]);
-  for (let attempt = 0; ; attempt += 1) {
-    const ready = await compose(["exec", "-T", "postgres", "pg_isready", "-q"]).then(
-      () => true,
-      () => false,
+  try {
+    await compose(["stop", ...services]);
+    await compose(["start", "postgres"]);
+    for (let attempt = 0; ; attempt += 1) {
+      const ready = await compose(["exec", "-T", "postgres", "pg_isready", "-q"]).then(
+        () => true,
+        () => false,
+      );
+      if (ready) break;
+      if (attempt >= READY_ATTEMPTS || target.signal.aborted)
+        throw new Error("The Docker database did not start");
+      await deps.sleep(1_000, target.signal);
+    }
+
+    target.onLine("Copying the database");
+    await compose(
+      [
+        "exec",
+        "-T",
+        ...["PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE"].flatMap((name) => [
+          "-e",
+          name,
+        ]),
+        "postgres",
+        "bash",
+        "-c",
+        RESTORE_SCRIPT,
+      ],
+      DUMP_TIMEOUT_MS,
+      {
+        PGHOST: "host.docker.internal",
+        PGPORT: String(target.port),
+        PGUSER: target.user,
+        PGPASSWORD: target.password,
+        PGDATABASE: target.database,
+      },
     );
-    if (ready) break;
-    if (attempt >= READY_ATTEMPTS || target.signal.aborted)
-      throw new Error("The Docker database did not start");
-    await deps.sleep(1_000, target.signal);
+
+    target.onLine("Copying bot files");
+    const api = (await compose(["ps", "--all", "--quiet", "api"])).trim().split("\n")[0];
+    if (!api) throw new Error("The Docker stack has no API container to copy files from");
+    await rm(target.dataDir, { recursive: true, force: true });
+    await mkdir(target.dataDir, { recursive: true, mode: 0o700 });
+    await docker(["cp", `${api}:/data/.`, target.dataDir], DUMP_TIMEOUT_MS);
+  } catch (error) {
+    // Even after a cancel, the Docker services go back to running; the move's error is what counts.
+    await compose(
+      ["start", ...services],
+      undefined,
+      undefined,
+      AbortSignal.timeout(DOCKER_TIMEOUT_MS),
+    ).catch(() => undefined);
+    throw error;
   }
-
-  target.onLine("Copying the database");
-  await compose(
-    [
-      "exec",
-      "-T",
-      ...["PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE"].flatMap((name) => ["-e", name]),
-      "postgres",
-      "bash",
-      "-c",
-      RESTORE_SCRIPT,
-    ],
-    DUMP_TIMEOUT_MS,
-    {
-      PGHOST: "host.docker.internal",
-      PGPORT: String(target.port),
-      PGUSER: target.user,
-      PGPASSWORD: target.password,
-      PGDATABASE: target.database,
-    },
-  );
-
-  target.onLine("Copying bot files");
-  const api = (await compose(["ps", "--all", "--quiet", "api"])).trim().split("\n")[0];
-  if (!api) throw new Error("The Docker stack has no API container to copy files from");
-  await rm(target.dataDir, { recursive: true, force: true });
-  await mkdir(target.dataDir, { recursive: true, mode: 0o700 });
-  await docker(["cp", `${api}:/data/.`, target.dataDir], DUMP_TIMEOUT_MS);
 
   target.onLine("Stopping the Docker stack");
   await compose(["stop"]);

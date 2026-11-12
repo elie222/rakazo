@@ -49,6 +49,8 @@ import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const NATIVE_PORTS_FILE = ".native-ports";
 export const POSTGRES_DIR = "postgres";
+/** The cluster's owner. Fixed, so it can never be the runtime login whatever the `.env` names. */
+const NATIVE_OWNER = "rakazo";
 /** Written into the cluster once a Docker move has copied everything, so a cut-short move reruns. */
 const DOCKER_IMPORTED = ".docker-imported";
 const COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer";
@@ -283,7 +285,7 @@ const INHERITED_ENV = [
 ];
 /** `.env` lines only Compose reads; the database owner login never reaches the API or worker. */
 const COMPOSE_ONLY =
-  /^(?:POSTGRES_\w+|SANDBOX_SUPERVISOR_TOKEN|RAKAZO_(?:COMPUTER_)?IMAGE(?:_TAG)?|BUSYBOX_IMAGE|RAKAZO_WEB_BIND)$/;
+  /^(?:POSTGRES_\w+|DATABASE_MIGRATION_URL|SANDBOX_SUPERVISOR_TOKEN|RAKAZO_(?:COMPUTER_)?IMAGE(?:_TAG)?|BUSYBOX_IMAGE|RAKAZO_WEB_BIND)$/;
 /** What Compose hands the web service from `.env`. */
 const WEB_ENV = [
   "RAKAZO_HOST",
@@ -402,12 +404,14 @@ export class NativeStackController extends StackLifecycle {
     await this.rotateLogs();
 
     this.push({ type: "pull-start" });
+    // One failed install cancels the others, so a retry never races them over the same files.
+    const installing = new AbortController();
     const runtimeDeps: RuntimeDeps = {
       dir: this.dir("runtime"),
       run: this.deps.run,
       fetch: this.deps.fetch,
       env: this.baseEnv(),
-      signal,
+      signal: AbortSignal.any([signal, installing.signal]),
       onBytes: (name, bytes) => this.push({ type: "download", name, bytes }),
       onLine: (line) => this.push({ type: "output", line }),
     };
@@ -415,19 +419,22 @@ export class NativeStackController extends StackLifecycle {
     let postgresDir: string;
     let server: { dir: string; manifest: ServerManifest };
     let runtime: ContainerRuntime;
+    const installs = [
+      (installers.postgres ?? installPostgres)(runtimeDeps),
+      (installers.server ?? installServerBundle)(runtimeDeps, this.deps.serverBundle),
+      (installers.containerRuntime ?? resolveContainerRuntime)({
+        ...runtimeDeps,
+        uid: this.deps.uid,
+        exists: this.deps.exists,
+        appRoot: this.dir("vm"),
+        logRoot: this.dir("vm-logs"),
+      }),
+    ] as const;
     try {
-      [postgresDir, server, runtime] = await Promise.all([
-        (installers.postgres ?? installPostgres)(runtimeDeps),
-        (installers.server ?? installServerBundle)(runtimeDeps, this.deps.serverBundle),
-        (installers.containerRuntime ?? resolveContainerRuntime)({
-          ...runtimeDeps,
-          uid: this.deps.uid,
-          exists: this.deps.exists,
-          appRoot: this.dir("vm"),
-          logRoot: this.dir("vm-logs"),
-        }),
-      ]);
+      [postgresDir, server, runtime] = await Promise.all(installs);
     } catch (error) {
+      installing.abort();
+      await Promise.allSettled(installs);
       if (signal.aborted) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       if (error instanceof DownloadError) throw new StartFailure(downloadFailed(), [detail]);
@@ -440,7 +447,7 @@ export class NativeStackController extends StackLifecycle {
     }
 
     this.push({ type: "up-start" });
-    const user = stackEnv.get("POSTGRES_USER") || "rakazo";
+    const user = NATIVE_OWNER;
     const database = stackEnv.get("POSTGRES_DB") || "rakazo";
     const password = stackEnv.get("POSTGRES_PASSWORD") ?? "";
     const appPassword = stackEnv.get("POSTGRES_APP_PASSWORD") ?? "";

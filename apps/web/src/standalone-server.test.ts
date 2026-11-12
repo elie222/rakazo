@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createWebServer } from "./standalone-server.js";
 
 const cleanup: (() => Promise<void>)[] = [];
+const apiRequests: string[] = [];
 afterEach(async () => {
+  apiRequests.length = 0;
   await Promise.all(cleanup.splice(0).map((close) => close()));
 });
 
@@ -25,9 +27,10 @@ async function listen(server: http.Server) {
 }
 
 async function start() {
-  const api = http.createServer((req, res) =>
-    res.end(JSON.stringify({ url: req.url, headers: req.headers })),
-  );
+  const api = http.createServer((req, res) => {
+    apiRequests.push(req.url ?? "");
+    res.end(JSON.stringify({ url: req.url, headers: req.headers }));
+  });
   api.on("upgrade", (_req, socket) => {
     socket.end(
       "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
@@ -67,12 +70,12 @@ function get(port: number, pathname: string, headers: http.OutgoingHttpHeaders =
   );
 }
 
-function upgrade(port: number, host: string) {
+function upgrade(port: number, host: string, pathname = USER_DEVICE_CONNECT_PATH) {
   return new Promise<number | undefined>((resolve, reject) => {
     const request = http.request({
       host: "127.0.0.1",
       port,
-      path: USER_DEVICE_CONNECT_PATH,
+      path: pathname,
       headers: { Host: host, Connection: "Upgrade", Upgrade: "websocket" },
     });
     request.on("upgrade", (response, socket) => {
@@ -120,5 +123,14 @@ describe("standalone web server", () => {
 
     await expect(upgrade(port, "app.example.test")).resolves.toBe(101);
     await expect(upgrade(port, "evil.example")).resolves.toBe(404);
+  });
+
+  it("refuses a screen socket from a disallowed host before asking the API", async () => {
+    const port = await start();
+
+    await expect(
+      upgrade(port, "evil.example", "/novnc/session/view/1.capability/websockify"),
+    ).resolves.toBe(404);
+    expect(apiRequests).toEqual([]);
   });
 });

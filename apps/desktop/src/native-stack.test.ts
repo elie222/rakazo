@@ -228,6 +228,61 @@ describe("NativeStackController", () => {
     await again.stop();
   });
 
+  it("keeps the database owner apart from the runtime login, whatever the .env names", async () => {
+    await mkdir(stackDir, { recursive: true });
+    await writeFile(
+      path.join(stackDir, ".env"),
+      `${TEMPLATE.replace("POSTGRES_USER=rakazo", "POSTGRES_USER=rakazo_app")}DATABASE_MIGRATION_URL=postgres://owner:secret@db/rakazo\n`,
+    );
+    const targets: string[] = [];
+    const { deps, runs, byName } = harness({
+      importFromDocker: async (target) => {
+        targets.push(target.user);
+      },
+    });
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    const initdb = runs.find((call) => call.binary.endsWith("initdb"));
+    expect(initdb?.args[initdb.args.indexOf("-U") + 1]).toBe("rakazo");
+    expect(targets).toEqual(["rakazo"]);
+    const migrate = runs.find((call) => call.args[0]?.endsWith("migrate-database.js"));
+    expect(migrate?.env.DATABASE_MIGRATION_URL).toMatch(/^postgres:\/\/rakazo:/);
+    for (const name of ["apps/api/dist/index.js", "apps/worker/dist/index.js"]) {
+      expect(byName(name)[0]?.env.DATABASE_MIGRATION_URL).toBeUndefined();
+    }
+    await controller.stop();
+  });
+
+  it("cancels the other downloads when one fails, and waits for them", async () => {
+    const order: string[] = [];
+    const waitForAbort = (name: string) => (deps: { signal: AbortSignal }) =>
+      new Promise<never>((_, reject) =>
+        deps.signal.addEventListener("abort", () =>
+          setImmediate(() => {
+            order.push(`${name} stopped`);
+            reject(new Error("aborted"));
+          }),
+        ),
+      );
+    const { deps } = harness();
+    const controller = new NativeStackController({
+      ...deps,
+      installers: {
+        postgres: async () => {
+          throw new DownloadError("postgres does not match its pinned checksum");
+        },
+        server: waitForAbort("server"),
+        containerRuntime: waitForAbort("runtime"),
+      },
+    });
+    const state = await controller.start();
+    order.push("start failed");
+    expect(state.message).toBe(
+      "Downloading Rakazo failed. Check the internet connection, then retry.",
+    );
+    expect(order).toEqual(["server stopped", "runtime stopped", "start failed"]);
+  });
+
   it("never gives the web the port just chosen for the API", async () => {
     const { deps, byName } = harness({ localWebUrl: "http://127.0.0.1:40001" });
     const controller = new NativeStackController(deps);
