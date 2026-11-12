@@ -23,7 +23,9 @@ describe.each(caddyfiles)("%s deployment retry", (filename) => {
   });
 
   it("spreads API requests across every running API container", () => {
-    expect(config).toMatch(/dynamic a api 3100 \{\s*refresh 1s\s*\}\s*lb_policy least_conn\s*fail_duration 30s/);
+    expect(config).toMatch(
+      /dynamic a api 3100 \{\s*refresh 1s\s*\}\s*lb_policy least_conn\s*fail_duration 30s/,
+    );
     expect(config).not.toContain("reverse_proxy api:3100");
   });
 });
