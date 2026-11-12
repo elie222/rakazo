@@ -514,7 +514,7 @@ message 30, far outside the messages a run loads. The bot is asked for the
 lease's notice period once with the upload captioned and once with a bare file,
 and a third case asks about a contract that was never shared. Deterministic
 checks require a history lookup in the graded step and, for the lease, a read of
-the file at its `attachments/` path. The `recall-meaning-v5` judge then checks
+the file at its `attachments/` path. The `recall-meaning-v7` judge then checks
 that the answer gives the lease's period and names the file it came from, or
 that a never-shared contract is admitted rather than invented. Calibration
 labels cover a sourced answer, a request to resend, a generic guess, a wrong
@@ -552,13 +552,19 @@ question, eye-strain tips close to the install's topic, and "did I ever tell
 you my sister's name?" (never). A deterministic check fails a history lookup on
 the first three.
 
-The `recall-meaning-v5` judge fails a reply laid out as a step log, any tool-work
+The `recall-meaning-v7` judge fails a reply laid out as a step log, any tool-work
 reply that says the bot never used tools or its computer, a reply to an everyday
-turn that casts unprompted doubt on, corrects or retracts the bot's earlier work
-(including saying it did not confirm or check it), and an install answer that
-doubts the install happened. After a fresh check, a hedge about the extension's
-current state ("its files are there, but I can't tell whether it's enabled") is
-not doubt. Each trial also records, without deciding it, whether the bot used a
+turn that casts unprompted doubt on, corrects, retracts or second-guesses the
+bot's earlier work (including saying it did not confirm or check it, or should
+have asked first), and an install answer that doubts or retracts the install,
+calls its "Done" unchecked or premature, or suggests undoing it, even next to a
+correct yes. A hedge about the extension's current state is fine after a check
+made in the same reply, and saying it has not re-checked since, or cannot see
+the exact commands, is not doubt. The install judge sees the checks the bot made
+in the graded reply, so describing them is not read as history. A sign-off may
+mention earlier work in one sentence but not recap it. Version 7 was calibrated
+against reviewed replies from both replay forms and replies the earlier version
+graded too leniently. Each trial also records, without deciding it, whether the bot used a
 tool other than history lookups (re-verification), whether it looked back, and
 four judged behaviours: unprompted doubt; false confession (claiming it never
 used tools, never did or checked the work its record shows, had not changed
