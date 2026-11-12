@@ -6,6 +6,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { recordUsage, runAsTenant } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { formatCurrentTimeInstruction } from "./current-time.js";
+import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import {
   loadBotNames,
@@ -229,6 +230,8 @@ export interface CompactHistoryDeps {
     spaceId: string;
     botId?: string;
   }) => Promise<AgentRunRequest["model"]>;
+  /** When set, append the live open-work scratchpad list to every new summary. */
+  pinOpenWorkInCompaction?: boolean;
 }
 
 export async function compactHistory(
@@ -490,6 +493,14 @@ export async function compactHistory(
   }
   if (!summary) {
     throw new Error(`history.compact summarizer returned no summary for thread ${threadId}`);
+  }
+  if (deps.pinOpenWorkInCompaction && thread.botId) {
+    const pinned = await loadAgentScratchpadContext(
+      deps,
+      { spaceId: thread.spaceId, botId: thread.botId },
+      2_000,
+    );
+    if (pinned) summary = `${summary}\n\n${pinned}`;
   }
   if (summary.length > MAX_COMPACTED_SUMMARY_CHARS) {
     const [deferred] = await deps.prisma.$queryRaw<

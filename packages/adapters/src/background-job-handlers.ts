@@ -253,6 +253,7 @@ export function createBackgroundJobHandlers(deps: {
           memoryProviders: deps.memoryProviders,
           deploymentModelKey: deps.deploymentModelKey,
           deploymentModelConfigured: deps.deploymentModelConfigured,
+          pinOpenWorkInCompaction: deps.executor.agentLoop?.contextCompactionPinOpenWork,
           ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
         },
         payload.threadId,

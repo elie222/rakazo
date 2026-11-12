@@ -39,6 +39,7 @@ import {
 } from "./pipedream-connector.js";
 import { reconcilePurchases } from "./purchase-poll.js";
 import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
+import { agentLoopSettingsFromEnv } from "./agent-loop-settings.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /**
@@ -184,8 +185,12 @@ export function createRunRuntime(
   },
 ) {
   const { messaging, ...executorDeps } = deps;
+  const agentLoop = executorDeps.agentLoop ?? agentLoopSettingsFromEnv(process.env);
   const executor = createRunExecutor({
     ...executorDeps,
+    agentLoop,
+    contextStrategy:
+      agentLoop.contextStrategy ?? executorDeps.contextStrategy,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,

@@ -105,6 +105,7 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
+import { silentToolContinuationPrompt } from "./agent-loop-settings.js";
 import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
@@ -904,14 +905,14 @@ export class PiAgentRuntime implements AgentRuntime {
                 // another model turn that would hide the error.
                 !providerFailureText(event.message) &&
                 !host.pausePending &&
-                silentToolContinuations < MAX_SILENT_TOOL_CONTINUATIONS
+                silentToolContinuations <
+                  (request.silentToolContinuationsMax ?? MAX_SILENT_TOOL_CONTINUATIONS)
               ) {
                 silentToolContinuations += 1;
+                const mode = request.silentToolContinuationMode ?? "ask";
                 agent.followUp({
                   role: "user",
-                  content: request.allowSilentEmpty
-                    ? SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT
-                    : SILENT_TOOL_CONTINUATION_PROMPT,
+                  content: silentToolContinuationPrompt(mode, Boolean(request.allowSilentEmpty)),
                   timestamp: Date.now(),
                 });
               }

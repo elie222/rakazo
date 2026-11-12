@@ -39,7 +39,9 @@ import {
   createPaymentWalletProvider,
   createProductAnalytics,
   createRunReconciler,
+  agentLoopSettingsFromEnv,
   createRunRuntime,
+  effectiveContextStrategy,
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
@@ -608,10 +610,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
+  const agentLoop = agentLoopSettingsFromEnv(process.env);
   const { executor, jobHandlers } = createRunRuntime(runtimeEnv, connectors, {
     billingEnabled: modelCreditsEnabled,
     mediaGeneration,
-    contextStrategy,
+    agentLoop,
+    contextStrategy: effectiveContextStrategy(agentLoop, contextStrategy),
     prisma,
     runtime,
     codexCatalog,
