@@ -186,7 +186,15 @@ describeWithDatabase("service API", () => {
 
     const status = await get(token, `/${bot.id}/status`);
     expect(status.status).toBe(200);
-    expect(await status.json()).toMatchObject({ botId: bot.id, name: "Owned", runs: [] });
+    const body = (await status.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ botId: bot.id, name: "Owned", runs: [] });
+    // The computer's state is for keys that may read the computer.
+    expect(body).not.toHaveProperty("computer");
+    const computerReader = await newKey(owner.cookie, { scopes: ["bots:read", "computer:read"] });
+    const withComputer = await get(computerReader.token, `/${bot.id}/status`);
+    expect(await withComputer.json()).toMatchObject({
+      computer: { state: expect.any(String), screenAvailable: expect.any(Boolean) },
+    });
 
     const answers = await Promise.all(
       [foreign.id, archived.id, "missing-bot"].map(async (id) => {

@@ -338,7 +338,8 @@ export const SERVICE_ROUTES = {
       threadId: z.string(),
       cursor: z.number().int(),
       runs: z.array(z.object({ id: z.string(), status: z.string() })),
-      computer: z.object({ state: z.string(), screenAvailable: z.boolean() }),
+      /** Only for a key that also has `computer:read`. */
+      computer: z.object({ state: z.string(), screenAvailable: z.boolean() }).optional(),
     }),
   }),
 
