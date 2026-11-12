@@ -2739,6 +2739,23 @@ describe("PiOAuthLogins across API processes", () => {
     expect(save.saved).toEqual(["access-token"]);
   });
 
+  it("drops an expired device-code sign-in at once on every process", async () => {
+    vi.useFakeTimers();
+    const { rows, store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    const started = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+    await vi.advanceTimersByTimeAsync(15 * 60_000 + 1);
+    expect(a.stopped).toBe(true);
+    expect(rows.has(started.loginId)).toBe(false);
+    await expect(
+      deviceCodeProcess(store).logins.complete(started.loginId, member),
+    ).resolves.toMatchObject({ status: "error", error: expect.stringMatching(/not found/) });
+  });
+
   it("lets a save under way finish before shutdown completes", async () => {
     const { rows, store } = handoffStore();
     const a = deviceCodeProcess(store);

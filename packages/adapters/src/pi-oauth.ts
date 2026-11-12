@@ -1284,9 +1284,10 @@ export class PiOAuthLogins<T = unknown> {
   }
 
   private removeSession(session: Session<T>): void {
+    const owned = session.lease !== undefined;
     this.detachSession(session);
     // A pasted code another process received is that process's to finish.
-    if (session.stored) void this.forgetRow(session, { unclaimedOnly: !session.lease });
+    if (session.stored) void this.forgetRow(session, { unclaimedOnly: !owned });
   }
 
   private detachSession(session: Session<T>): void {
