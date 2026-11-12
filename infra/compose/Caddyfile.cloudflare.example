@@ -42,13 +42,16 @@
 }
 
 # Every running API container, looked up again each second, so requests spread across all of them
-# and a stopped one drops out instead of Caddy reusing connections to whichever answered first.
+# and a stopped one drops out instead of Caddy reusing connections to whichever answered first. A
+# container shutting down refuses connections while it is still listed; one refusal sets it aside,
+# or least_conn would keep choosing it, since it never has a request open.
 (api) {
 	reverse_proxy {
 		dynamic a api 3100 {
 			refresh 1s
 		}
 		lb_policy least_conn
+		fail_duration 30s
 		import deploy_retry
 		header_up X-Forwarded-For {client_ip}
 	}
