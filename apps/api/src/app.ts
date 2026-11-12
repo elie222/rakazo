@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -44,6 +46,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
+  createTailscaledNodeHost,
   createTicketChangeNotifier,
   EmailEmulator,
   ExpoPushProvider,
@@ -68,6 +71,7 @@ import {
   StripeBillingProvider,
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
+  TailnetService,
   UserDeviceHub,
   UserDevices,
   userDeviceForwardSecret,
@@ -304,6 +308,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
+  // Bot nodes on members' tailnets run in this process; without tailscaled the feature says why.
+  const tailnet = new TailnetService({
+    prisma,
+    secretStore: secrets,
+    nodeHost: await createTailscaledNodeHost(join(tmpdir(), "rakazo-tailnet")),
+  });
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -1165,6 +1175,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await botEmail?.drain?.();
       await email?.drain?.();
       await jobs.close();
+      await tailnet.close();
       await secrets.close();
       await realtime.close();
       await mcp.close();
