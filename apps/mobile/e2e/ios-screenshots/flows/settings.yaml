@@ -33,7 +33,7 @@ name: Settings
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 03b-profile
+- takeScreenshot: 03-profile
 - openLink: "rakazo:///change-password"
 - extendedWaitUntil:
     visible: "Current password"

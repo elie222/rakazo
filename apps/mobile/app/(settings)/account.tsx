@@ -86,10 +86,22 @@ export default function Account() {
     />
   );
 
+  // Read on every visit, so a name changed on the Account page shows on return.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc("me")
+        .then((next) => {
+          if (active) setMe(next);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
   useEffect(() => {
-    void rpc("me")
-      .then(setMe)
-      .catch(() => undefined);
     void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
