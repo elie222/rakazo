@@ -146,16 +146,21 @@ export function CopyButton({
   const name = text(label);
   const content = text(value) || name;
   const request = useRef(0);
-  const [state, setState] = useState<"idle" | "copied" | "blocked">("idle");
+  const [feedback, setFeedback] = useState<{
+    content: string;
+    name: string;
+    state: "copied" | "blocked";
+  } | null>(null);
+  const state = feedback?.content === content && feedback.name === name ? feedback.state : "idle";
   useEffect(() => {
-    setState("idle");
+    setFeedback(null);
     return () => {
       request.current += 1;
     };
   }, [content, name]);
   useEffect(() => {
     if (state !== "copied") return;
-    const timer = setTimeout(() => setState("idle"), 1600);
+    const timer = setTimeout(() => setFeedback(null), 1600);
     return () => clearTimeout(timer);
   }, [state]);
   if (!name) return null;
@@ -167,9 +172,11 @@ export function CopyButton({
         data-variant={variant === "primary" ? "primary" : undefined}
         onClick={() => {
           const id = ++request.current;
-          setState("idle");
+          setFeedback(null);
           void copyText(content).then((ok) => {
-            if (request.current === id) setState(ok ? "copied" : "blocked");
+            if (request.current === id) {
+              setFeedback({ content, name, state: ok ? "copied" : "blocked" });
+            }
           });
         }}
       >

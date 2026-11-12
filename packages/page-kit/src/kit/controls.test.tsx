@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactElement } from "react";
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -196,6 +196,32 @@ describe("controls", () => {
       view.unmount();
     },
   );
+
+  it.each([true, false])("never commits old feedback for changed text (%s)", async (ok) => {
+    const committed: { button: string | null; fallback: string | null }[] = [];
+    function Probe({ value }: { value: string }) {
+      useLayoutEffect(() => {
+        committed.push({
+          button: q("button")?.textContent ?? null,
+          fallback: q(".rk-copy-fallback")?.textContent ?? null,
+        });
+      }, [value]);
+      return <CopyButton label="Copy" text={value} />;
+    }
+    const view = render(<Probe value="old" />);
+    click(q("button"));
+    const request = posted[0] as { id: string };
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "rakazo-page:copied", id: request.id, ok },
+        }),
+      );
+    });
+    view.rerender(<Probe value="new" />);
+    expect(committed[1]).toEqual({ button: "Copy", fallback: null });
+    view.unmount();
+  });
 
   it("ignores an older response while the newest copy is still pending", async () => {
     const view = render(<CopyButton label="Copy" text="value" />);
