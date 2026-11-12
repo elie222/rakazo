@@ -68,4 +68,5 @@ completion artifact. Successful assessments are cached even when E2E images cove
 the change and no new capture is needed, so simultaneous events cannot duplicate
 the model call. PR description markers never authorize skipping an assessment.
 Every requested image must pass publication validation before completion can be
-recorded.
+recorded. Retries retain current-commit agent images and append missing views,
+so publishing does not remove images used to establish coverage.

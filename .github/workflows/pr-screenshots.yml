@@ -294,13 +294,15 @@ jobs:
               --endpoint-url "$S3_ENDPOINT" --content-type image/png \
               --cache-control "public,max-age=31536000,immutable"
           done < "$out/uploads.txt"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$out/body.md"
+          python3 .github/scripts/pr-screenshots.py retain "$out/body.md" "$out/section.md" "$HEAD_SHA" > "$out/retained.md"
+          mv "$out/retained.md" "$out/section.md"
           if [[ ! -s $out/section.md ]]; then
             labels="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name')"
             if grep -qx screenshots <<< "$labels"; then
               gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/screenshots" --silent
             fi
           fi
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$out/body.md"
           python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
           if [[ -s $out/section.md ]]; then

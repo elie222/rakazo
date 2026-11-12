@@ -129,6 +129,43 @@ class SpliceTest(unittest.TestCase):
         self.assertNotIn("\nnew\n", twice)
 
 
+class RetainTest(unittest.TestCase):
+    sha = "a" * 40
+
+    def section(self, name, sha=None):
+        return shots.section([(name, name)], BASE).replace(shots.START, f"{shots.START}\n<!-- screenshot-commit:{sha or self.sha} -->")
+
+    def test_no_new_capture_keeps_the_image_used_as_evidence(self):
+        existing = self.section("first.png")
+        body = f"Author text\n\n{existing}\n\nFooter"
+        kept = shots.retain_section(body, "", self.sha)
+        self.assertEqual(kept, existing)
+        published = shots.splice(body, kept)
+        self.assertIn("![first.png]", published)
+        self.assertIn("Author text", published)
+        self.assertIn("Footer", published)
+
+    def test_missing_views_are_appended_without_losing_prior_coverage(self):
+        merged = shots.retain_section(self.section("first.png"), self.section("second.png"), self.sha)
+        self.assertIn("![first.png]", merged)
+        self.assertIn("![second.png]", merged)
+        self.assertEqual(merged.count(shots.START), 1)
+        self.assertEqual(merged.count(shots.END), 1)
+        self.assertEqual(merged.count("## Screenshots"), 1)
+        self.assertEqual(merged.count(f"<!-- screenshot-commit:{self.sha} -->"), 1)
+
+    def test_stale_sections_are_replaced_or_removed(self):
+        old = self.section("stale.png", "b" * 40)
+        current = self.section("current.png")
+        self.assertEqual(shots.retain_section(old, current, self.sha), current)
+        self.assertEqual(shots.retain_section(old, "", self.sha), "")
+
+    def test_missing_and_malformed_sections_do_not_consume_author_text(self):
+        current = self.section("current.png")
+        self.assertEqual(shots.retain_section("Author text", current, self.sha), current)
+        self.assertEqual(shots.retain_section(shots.START + "Author text", current, self.sha), current)
+
+
 class PromptTest(unittest.TestCase):
     PR = {"title": "Fix", "body": "", "changed_files": ["apps/web/src/a.tsx"], "preview_url": "https://x"}
 

@@ -10,6 +10,8 @@ untrusted. Only PNG files it saved, and plain-text captions, get through.
       prints the agent's prompt, cut to fit in one environment variable
   pr-screenshots.py prepare RESULT_JSON SHOTS_DIR BASE_URL OUT_DIR
       writes OUT_DIR/uploads.txt (one file name per line) and OUT_DIR/section.md
+  pr-screenshots.py retain BODY_FILE SECTION_FILE SHA
+      prints the new section with existing current-commit captures retained
   pr-screenshots.py splice BODY_FILE SECTION_FILE
       prints BODY_FILE with the screenshot section replaced, added, or removed
 """
@@ -180,6 +182,25 @@ def section(selected: list[tuple[str, str]], base_url: str) -> str:
     return "\n".join(lines)
 
 
+def retain_section(body: str, new_section: str, sha: str) -> str:
+    """Keep current-commit images the agent may have used to establish coverage."""
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("Expected a commit SHA")
+    start = body.find(START)
+    end = body.find(END, start + len(START)) if start != -1 else -1
+    existing = body[start:end + len(END)] if start != -1 and end != -1 else ""
+    marker = f"<!-- screenshot-commit:{sha} -->"
+    if marker not in existing:
+        return new_section
+    if not new_section:
+        return existing
+    additions = "\n".join(
+        line for line in new_section.splitlines()
+        if line not in (START, END, "## Screenshots", marker)
+    ).strip()
+    return existing[:-len(END)].rstrip() + "\n\n" + additions + "\n" + END
+
+
 def splice(body: str, new_section: str) -> str:
     start = body.find(START)
     end = body.find(END, start + len(START)) if start != -1 else -1
@@ -235,6 +256,9 @@ def main(argv: list[str]) -> int:
         out.mkdir(parents=True, exist_ok=True)
         (out / "uploads.txt").write_text("".join(f"{name}\n" for name, _ in selected))
         (out / "section.md").write_text(section(selected, base_url))
+        return 0
+    if len(argv) == 5 and argv[1] == "retain":
+        sys.stdout.write(retain_section(Path(argv[2]).read_text(), Path(argv[3]).read_text().strip(), argv[4]))
         return 0
     if len(argv) == 4 and argv[1] == "splice":
         body = Path(argv[2]).read_text()
