@@ -48,7 +48,7 @@ const RECALL_BANK = /^[^\s/?#%\\,]{1,256}$/;
 /** Banks Rakazo generates: `rakazo-` and a Space id (32 hex digits or a UUID), maybe a bot id. */
 const GENERATED_BANK =
   /^rakazo-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(-|$)/i;
-/** A failing extra bank is skipped this long; recall and writes cool down separately. */
+/** A failing extra bank is skipped this long; used only for recall. */
 const EXTRA_BANK_COOLDOWN_MS = 5 * 60_000;
 /** An extra bank still silent after this much of the recall timeout counts as failing. */
 const EXTRA_BANK_RECALL_TIMEOUT_MS = HINDSIGHT_RECALL_TIMEOUT_MS * 0.8;
@@ -59,24 +59,22 @@ const DEFAULT_RECALL_BUDGET = "mid";
 /** With skipUnrelated, the server drops results its reranker scores below this. */
 const MIN_RERANKER_SCORE = 0.25;
 
-type BankUse = "recall" | "write";
-
 /** Per process: when each failing extra bank may be asked again. Kept after expiry until it answers. */
 const bankCooldowns = new Map<string, number>();
 /** Per process: banks that refused an append but stored the turn as its own document. */
 const banksWithoutAppend = new Set<string>();
 
-function bankKey(connection: string, bank: string, use?: BankUse): string {
-  return use ? `${connection}\n${bank}\n${use}` : `${connection}\n${bank}`;
+function bankKey(connection: string, bank: string): string {
+  return `${connection}\n${bank}`;
 }
 
-function coolingDown(connection: string, bank: string, use: BankUse): boolean {
-  return (bankCooldowns.get(bankKey(connection, bank, use)) ?? 0) > Date.now();
+function coolingDown(connection: string, bank: string): boolean {
+  return (bankCooldowns.get(bankKey(connection, bank)) ?? 0) > Date.now();
 }
 
 /** Starts a cooldown for a failing extra bank, or ends one for an answering bank. */
-function noteExtraBank(connection: string, bank: string, use: BankUse, answered: boolean): void {
-  const key = bankKey(connection, bank, use);
+function noteExtraBank(connection: string, bank: string, answered: boolean): void {
+  const key = bankKey(connection, bank);
   const wasDown = bankCooldowns.has(key);
   if (answered) {
     if (!wasDown) return;
@@ -108,10 +106,10 @@ function conversationContext(request: SemanticMemoryConversationRequest): string
     ...new Set(request.turns.flatMap((turn) => (turn.speaker ? [turn.speaker] : []))),
   ];
   if (request.conversation === "group") {
-    return `Group chat in Rakazo with ${request.userName} and the AI assistants ${joinNames([request.botName, ...speakers])}`;
+    return `Group chat in Rakazo with ${joinNames([...new Set([request.userName, request.botName, ...speakers])])}`;
   }
   if (speakers.length) {
-    return `Messages in Rakazo between the AI assistants ${joinNames([request.botName, ...speakers])}, working for ${request.userName}`;
+    return `Conversation in Rakazo with ${joinNames([...new Set([request.userName, request.botName, ...speakers])])}`;
   }
   return `Chat in Rakazo between ${request.userName} and ${request.botName}, an AI assistant`;
 }
@@ -452,7 +450,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       banks.map(async (bank, index) => {
         // The bot's own bank is never cooled down: its failure fails the recall.
         if (index === 0) return recallHindsight(connection.value, bank, body, context.signal);
-        if (coolingDown(stateKey, bank, "recall")) return undefined;
+        if (coolingDown(stateKey, bank)) return undefined;
         const answer = await recallHindsight(
           connection.value,
           bank,
@@ -460,7 +458,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
           context.signal,
           EXTRA_BANK_RECALL_TIMEOUT_MS,
         );
-        if (!context.signal.aborted) noteExtraBank(stateKey, bank, "recall", answer.ok);
+        if (!context.signal.aborted) noteExtraBank(stateKey, bank, answer.ok);
         return answer;
       }),
     );
@@ -522,14 +520,12 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         },
         context.signal,
       );
-    // A failing own bank fails the call before the team bank is touched, so a retry cannot
-    // duplicate the item there; a failing team bank is logged and skipped for five minutes.
+    // Both writes reuse stable operation IDs, so a failed shared save can be retried safely.
     const first = await write(own!);
     if (!first.ok) return { ok: false, error: first.error };
     for (const bank of extra) {
-      if (coolingDown(this.stateKey, bank, "write")) continue;
       const written = await write(bank);
-      noteExtraBank(this.stateKey, bank, "write", written.ok);
+      if (!written.ok) return { ok: false, error: written.error };
     }
     return { ok: true, value: undefined };
   }
@@ -537,8 +533,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   /**
    * Appends the turn to its conversation's document in each write bank. `pending` lists the
    * operations to wait on; submitting again replays the same operations. A failing own bank
-   * fails the call before the team bank is touched; a failing team bank is logged and skipped for
-   * five minutes.
+   * fails the call before the team bank is touched. Conversation learning is best effort; a
+   * failed team write is logged without discarding the own-bank operation needing cleanup.
    */
   private async retainTurn(
     request: SemanticMemoryConversationRequest,
@@ -593,10 +589,13 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     if (!first.ok) return { ok: false, error: first.error };
     const operations: PendingOperation[] = [{ bank: own!, operationId: first.value }];
     for (const bank of extra) {
-      if (coolingDown(this.stateKey, bank, "write")) continue;
       const written = await write(bank);
-      noteExtraBank(this.stateKey, bank, "write", written.ok);
       if (written.ok) operations.push({ bank, operationId: written.value, team: true });
+      else
+        getLogger().warn("Hindsight could not learn a turn in the shared bank", {
+          bank,
+          error: written.error,
+        });
     }
     return { ok: true, value: { pending: JSON.stringify(operations) } };
   }

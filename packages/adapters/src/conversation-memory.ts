@@ -1,7 +1,12 @@
 import type { SemanticMemoryConversationTurn, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { effectiveMemoryScope, isPartialReplyClientNonce, loadMessageAuthor } from "@rakazo/db";
+import {
+  effectiveMemoryScope,
+  isPartialReplyClientNonce,
+  loadMessageAuthor,
+  loadMessageAuthors,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { messageBlocksText } from "./run-replies.js";
@@ -51,6 +56,7 @@ type SaidMessage = {
   createdAt: Date;
   role: "user" | "assistant";
   speaker?: string;
+  authorUserId?: string | null;
   text?: { content: string; speaker?: string };
 };
 
@@ -323,7 +329,7 @@ export async function retainRunConversation(
     answeredMessageIds.length && !inGroup
       ? deps.prisma.message.findMany({
           where: { id: { in: [...answeredMessageIds] }, threadId: run.threadId, role: "user" },
-          select: { id: true, seq: true, blocks: true, createdAt: true },
+          select: { id: true, seq: true, blocks: true, createdAt: true, authorUserId: true },
         })
       : [],
     deps.prisma.message.findMany({
@@ -383,6 +389,24 @@ export async function retainRunConversation(
         ? []
         : kept.map((reply) => ({ ...reply, role: "assistant" as const }))),
     );
+  }
+  // Keep different people's words separate instead of attributing the whole turn to its starter.
+  const humans = said.filter(
+    (message) => message.role === "user" && !receivedBotMessage(message.blocks) && !message.speaker,
+  );
+  const authorIds = [
+    ...new Set([
+      source.authorUserId ?? run.userId,
+      ...humans.flatMap((message) => (message.authorUserId ? [message.authorUserId] : [])),
+    ]),
+  ];
+  if (authorIds.length > 1) {
+    const authors = await loadMessageAuthors(deps.prisma, authorIds);
+    for (const message of humans) {
+      message.speaker = message.authorUserId
+        ? authors.get(message.authorUserId)?.name || "another person"
+        : "another person";
+    }
   }
   said.sort((a, b) => a.seq - b.seq);
   // In the order it happened, with consecutive messages from one speaker joined.
@@ -576,6 +600,7 @@ async function groupWindow(
       botId: true,
       runId: true,
       clientNonce: true,
+      authorUserId: true,
     },
   });
   const said = recent.filter(

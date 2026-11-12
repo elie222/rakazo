@@ -503,6 +503,30 @@ describe("retainRunConversation", () => {
     },
   );
 
+  it("attributes source and steering messages to their own authors", async () => {
+    const { deps, prisma, provider } = harness({
+      messages: directMessages.map((message) =>
+        message.id === "steer-1" ? { ...message, authorUserId: "user-3" } : message,
+      ),
+    });
+    prisma.user.findMany.mockImplementation(async ({ where }) =>
+      [
+        { id: "user-2", name: "Sam" },
+        { id: "user-3", name: "Riley" },
+      ].filter((user) => where.id.in.includes(user.id)),
+    );
+    await retainRunConversation(deps, "run-1", ["steer-1"]);
+    const [request] = provider.retainConversation.mock.calls[0] as unknown as [
+      { turns: { content: string; speaker?: string }[] },
+    ];
+    expect(request.turns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: "I'm moving to Lisbon.", speaker: "Sam" }),
+        expect.objectContaining({ content: "April.", speaker: "Riley" }),
+      ]),
+    );
+  });
+
   it("sends what a group chat said since the bot's previous reply", async () => {
     const own = { role: "bot", botId: "bot-1" };
     const bea = { role: "bot", botId: "bot-2" };
@@ -538,9 +562,9 @@ describe("retainRunConversation", () => {
         userName: "Sam",
         conversation: "group",
         turns: [
-          turn("user", "Hi all.", 6),
+          turn("user", "Hi all.", 6, "another person"),
           turn("user", "I'm booking the room.\n\nRoom is booked.", 9, "Bea"),
-          turn("user", "Ada, what's for lunch?", 11),
+          turn("user", "Ada, what's for lunch?", 11, "Sam"),
           turn("assistant", "Pasta.", 13),
         ],
       }),

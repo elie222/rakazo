@@ -262,15 +262,15 @@ describe("Hindsight saves", () => {
     expect(writes(fake.requests).map((request) => request.bank)).toEqual([OWN_BANK]);
   });
 
-  it("skips a failing team bank once its own bank is written", async () => {
+  it("reports a failed shared save instead of claiming success", async () => {
     const fake = hindsightFake({ failWrites: [TEAM_BANK] });
     await expect(provider(fake.fetch).save({ ...save, scope: "shared" }, context)).resolves.toEqual(
-      { ok: true, value: undefined },
+      { ok: false, error: "Hindsight request failed: 500" },
     );
     expect(writes(fake.requests).map((request) => request.bank)).toEqual([OWN_BANK, TEAM_BANK]);
   });
 
-  it("cools a failing team bank down for its own connection only", async () => {
+  it("attempts every shared save even after an earlier team write failed", async () => {
     const failing = hindsightFake({ failWrites: [TEAM_BANK] });
     await provider(failing.fetch).save({ ...save, scope: "shared" }, context);
     const other = hindsightFake({ apiKey: "hsk-other-key" });
@@ -284,7 +284,20 @@ describe("Hindsight saves", () => {
       OWN_BANK,
       TEAM_BANK,
       OWN_BANK,
+      TEAM_BANK,
     ]);
+  });
+
+  it("can retry a shared save with the same operation IDs after the team recovers", async () => {
+    const failing = [TEAM_BANK];
+    const fake = hindsightFake({ failWrites: failing });
+    const memory = provider(fake.fetch);
+    expect((await memory.save({ ...save, scope: "shared" }, context)).ok).toBe(false);
+    failing.length = 0;
+    expect((await memory.save({ ...save, scope: "shared" }, context)).ok).toBe(true);
+    const ids = writes(fake.requests).map((request) => request.body?.operation_id);
+    expect(ids[2]).toBe(ids[0]);
+    expect(ids[3]).toBe(ids[1]);
   });
 
   it("keeps compaction summaries out of Hindsight", async () => {
@@ -452,7 +465,7 @@ describe("Hindsight recall", () => {
     expect(fake.requests.filter((request) => request.bank === OWN_BANK)).toHaveLength(2);
   });
 
-  it("cools team-bank writes down without skipping team-bank recall", async () => {
+  it("attempts shared recall even after shared saves failed", async () => {
     const fake = hindsightFake({ failWrites: [TEAM_BANK], recall: { [TEAM_BANK]: [] } });
     const memory = provider(fake.fetch);
     const save = { content: "Prefers tea.", botId: "bot-1", scope: "shared" as const };
@@ -462,6 +475,7 @@ describe("Hindsight recall", () => {
       OWN_BANK,
       TEAM_BANK,
       OWN_BANK,
+      TEAM_BANK,
     ]);
     await memory.recall({ ...recall, scope: "shared" }, context);
     expect(fake.requests.some((r) => r.bank === TEAM_BANK && r.rest === "/memories/recall")).toBe(
@@ -543,7 +557,7 @@ describe("Hindsight conversations", () => {
               timestamp: "2026-11-11T10:00:03.000Z",
             },
           ]),
-          context: "Messages in Rakazo between the AI assistants Ada and Bob, working for Sam",
+          context: "Conversation in Rakazo with Sam, Ada and Bob",
           timestamp: "2026-11-11T10:00:03.000Z",
           document_id: SESSION,
           update_mode: "append",
@@ -725,18 +739,17 @@ describe("Hindsight conversations", () => {
       ],
       [
         expect.objectContaining({
-          context: "Messages in Rakazo between the AI assistants Ada and Bob, working for Sam",
+          context: "Conversation in Rakazo with Sam, Ada and Bob",
         }),
       ],
       [
         expect.objectContaining({
-          context:
-            "Messages in Rakazo between the AI assistants Ada, Bob and Carol, working for Sam",
+          context: "Conversation in Rakazo with Sam, Ada, Bob and Carol",
         }),
       ],
       [
         expect.objectContaining({
-          context: "Group chat in Rakazo with Sam and the AI assistants Ada, Bob and Carol",
+          context: "Group chat in Rakazo with Sam, Ada, Bob and Carol",
         }),
       ],
     ]);

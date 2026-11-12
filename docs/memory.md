@@ -39,10 +39,12 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 - **Hindsight**: its cloud service, or your own server. Each bot keeps its own memory; with the
   Shared scope, bots also share one memory for the Space. Bots learn from their conversations (their
   own chats, group chats, and messages between bots) unless you turn off **Learn from
-  conversations**; clearing a chat removes what was learned from it. Bots can't forget a single
+  conversations**. Learning and chat-clear cleanup are best effort: provider outages or writes
+  still pending after the polling window can leave gaps or stale memories. Bots can't forget a single
   memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks but never write to them. Bots can also ask
-  their memory to answer a question by combining what it knows. Summaries of long chats stay in
+  their own bot memory to answer a question by combining what it knows; reflection does not query
+  the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
   Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
 Once connected, **Default scope** decides what bots share in the provider:
