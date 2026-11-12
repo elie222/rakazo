@@ -149,7 +149,7 @@ Hosted users can permanently delete their account and associated personal Space 
 
 export const PRIVACY_MARKDOWN = `# Rakazo privacy
 
-Last updated: September 14, 2026
+Last updated: November 12, 2026
 
 Rakazo processes account details, user-provided bot content, connection information, and technical records needed to operate and secure the service. Content comes from what you enter, upload, record, or authorize your bots to access. Rakazo does not sell personal information or use Rakazo content for third-party advertising.
 

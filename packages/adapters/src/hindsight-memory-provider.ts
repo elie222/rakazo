@@ -60,9 +60,11 @@ const DEFAULT_RECALL_BUDGET = "mid";
 /** With skipUnrelated, the server drops results its reranker scores below this. */
 const MIN_RERANKER_SCORE = 0.25;
 
-/** Per process: when each failing extra bank may be asked again. Kept after expiry until it answers. */
+// Best-effort local hints, not cross-instance coordination: other instances may retry the bank.
+// They never suppress writes or cleanup and carry no authorization state.
+/** When each failing extra bank may be asked again. Kept after expiry until it answers. */
 const bankCooldowns = new Map<string, number>();
-/** Per process: banks that refused an append but stored the turn as its own document. */
+/** Banks that refused an append but stored the turn as its own document. */
 const banksWithoutAppend = new Set<string>();
 
 function bankKey(connection: string, bank: string): string {
