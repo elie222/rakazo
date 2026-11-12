@@ -17,6 +17,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { listApprovalRules, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
+import { tailnetHelper } from "./page-browser-install.js";
 import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
 import type { TailnetRun } from "./tailnet-service.js";
 
@@ -326,18 +327,28 @@ export function createTailnetCommandAccess(deps: {
       const expiresAt =
         Math.ceil(((deps.now ?? Date.now)() + COMMAND_TOKEN_TTL_MS) / HOUR_MS) * HOUR_MS;
       const token = sealTailnetTunnelToken({ ...run, expiresAt }, key);
-      return { RAKAZO_NET_URL: url, RAKAZO_NET_TOKEN: token };
+      const helper = tailnetHelper();
+      return {
+        RAKAZO_NET_URL: url,
+        RAKAZO_NET_TOKEN: token,
+        RAKAZO_NET_HELPER: helper.base64,
+        RAKAZO_NET_VERSION: helper.version,
+      };
     },
   };
 }
 
 export interface TailnetCommandAccess {
-  environment(run: {
-    runId: string;
-    userId: string;
-    spaceId: string;
-    botId: string;
-  }): Promise<{ RAKAZO_NET_URL: string; RAKAZO_NET_TOKEN: string } | undefined>;
+  environment(run: { runId: string; userId: string; spaceId: string; botId: string }): Promise<
+    | {
+        RAKAZO_NET_URL: string;
+        RAKAZO_NET_TOKEN: string;
+        /** rakazo-net itself, base64, which the shell launcher installs (see computer-idle). */
+        RAKAZO_NET_HELPER: string;
+        RAKAZO_NET_VERSION: string;
+      }
+    | undefined
+  >;
 }
 
 /**

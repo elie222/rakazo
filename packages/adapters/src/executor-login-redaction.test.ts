@@ -489,6 +489,8 @@ describe("tailnet settings in shell commands", () => {
             return {
               RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
               RAKAZO_NET_TOKEN: TOKEN,
+              RAKAZO_NET_HELPER: "ZmFrZQ==",
+              RAKAZO_NET_VERSION: "v1",
             };
           },
         },
@@ -529,6 +531,8 @@ describe("tailnet settings in shell commands", () => {
           environment: async () => ({
             RAKAZO_NET_URL: "https://rakazo.example.test/api/tailnet/connect",
             RAKAZO_NET_TOKEN: TOKEN,
+            RAKAZO_NET_HELPER: "ZmFrZQ==",
+            RAKAZO_NET_VERSION: "v1",
           }),
         },
       },
