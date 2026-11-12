@@ -128,8 +128,9 @@ If our copy is running and the person later installs their own, the next start s
 starts theirs, unless ours holds the database; a copy of ours older than 1.7.0 is stopped and
 replaced the same way. The database volume lives in the app root of the runtime that created it, so
 once our copy holds it, ours is started in preference to the person's install. If the database is
-missing from the running system and `.native-ports` says it lives in the other one, the start fails
-asking the person to quit the running one, instead of creating an empty database. A system the
+missing from the running system and `.native-ports` says it lives in the other one (recorded
+before anything is created, so a first start cut short part-way counts too), the start fails asking
+the person to quit the running one, instead of creating an empty database. A system the
 app did not start is never stopped: one older than 1.7.0 fails the start with a message asking the
 person to update or quit it.
 

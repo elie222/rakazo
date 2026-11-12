@@ -388,6 +388,49 @@ describe("NativeStackController", () => {
     await controller.stop();
   });
 
+  it.each([
+    ["before", "create"],
+    ["after", "start"],
+  ])("records the database's runtime before creating it (cut short %s create)", async (_, step) => {
+    const first = harness();
+    const cutShort = new NativeStackController({
+      ...first.deps,
+      run: async (binary, args, options) =>
+        args[0] === step && args[1] !== "--attach"
+          ? { code: 1, stdout: "", stderr: "interrupted" }
+          : first.deps.run(binary, args, options),
+      spawn: (command, args, options) => {
+        if (step === "start") throw new Error("launch cut short");
+        return first.deps.spawn!(command, args, options);
+      },
+    });
+    expect((await cutShort.start()).phase).toBe("failed");
+    expect(
+      JSON.parse(await readFile(path.join(stackDir, NATIVE_PORTS_FILE), "utf8")).database,
+    ).toBe("theirs");
+
+    // The next launch finds a different runtime, which has no database: it must not make one.
+    const other = harness({}, fakeRuntime());
+    const controller = new NativeStackController({
+      ...other.deps,
+      installers: {
+        ...other.deps.installers,
+        containerRuntime: async () => ({ cli: CLI, ours: true }),
+      },
+    });
+    const state = await controller.start();
+    expect(state.message).toBe(
+      "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.",
+    );
+    expect(other.commands().filter((command) => /create/.test(command))).toEqual([]);
+
+    // Back on the runtime that holds it, the start finishes what was cut short.
+    const again = harness({}, first.runtime);
+    const resumed = new NativeStackController(again.deps);
+    expect((await resumed.start()).phase).toBe("ready");
+    await resumed.stop();
+  });
+
   it("refuses to start an empty database when its data is in the other runtime", async () => {
     await mkdir(stackDir, { recursive: true });
     await writeFile(

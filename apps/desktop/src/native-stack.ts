@@ -658,6 +658,8 @@ export class NativeStackController extends StackLifecycle {
    * Leaves the database VM created and stopped, publishing the saved port while it is free. A VM
    * left running by a launch that crashed is stopped first, since the runtime only attaches to a
    * VM it starts. A taken port recreates the VM on a new one; the volume, and so the data, stays.
+   * Which runtime holds the database is recorded before anything is created in it, so a launch cut
+   * short part-way still points later launches at that runtime.
    */
   private async ensureDatabase(
     runtime: ContainerRuntime,
@@ -674,6 +676,10 @@ export class NativeStackController extends StackLifecycle {
       throw new StartFailure(
         t("Your Rakazo data is in a different computer runtime. Quit the one running, then retry."),
       );
+    }
+    if (ports.database === undefined) {
+      ports.database = holder;
+      await writePrivateFile(this.dir(NATIVE_PORTS_FILE), JSON.stringify(ports));
     }
     if (existing?.running)
       await this.runtimeCommand(cli, ["stop", "--time", "30", DATABASE_CONTAINER], signal);
@@ -720,7 +726,6 @@ export class NativeStackController extends StackLifecycle {
         signal,
         { env: { POSTGRES_PASSWORD: password } },
       );
-      ports.database = holder;
     }
     await writePrivateFile(this.dir(NATIVE_PORTS_FILE), JSON.stringify(ports));
     return port;

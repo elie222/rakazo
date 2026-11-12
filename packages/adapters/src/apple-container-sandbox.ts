@@ -358,9 +358,15 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
 
   /** Removes the VM and its network; either may already be gone. */
   private async remove(name: string) {
-    const signal = AbortSignal.timeout(CLI_TIMEOUT_MS);
-    await this.cliRun(["rm", "--force", name], signal, { allowFailure: true });
-    await this.cliRun(["network", "rm", name], signal, { allowFailure: true });
+    try {
+      await this.cliRun(["rm", "--force", name], AbortSignal.timeout(CLI_TIMEOUT_MS), {
+        allowFailure: true,
+      });
+    } finally {
+      await this.cliRun(["network", "rm", name], AbortSignal.timeout(CLI_TIMEOUT_MS), {
+        allowFailure: true,
+      });
+    }
   }
 
   /** Loads the firewall as root and checks it is in place; the caller removes the VM on failure. */
