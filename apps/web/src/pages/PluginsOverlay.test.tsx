@@ -13,7 +13,13 @@ const api = vi.hoisted(() => ({
     list: vi.fn(),
     tools: vi.fn(),
   },
-  capabilities: { list: vi.fn(), catalogSearch: vi.fn(), sourcePresets: vi.fn() },
+  capabilities: {
+    list: vi.fn(),
+    catalogSearch: vi.fn(),
+    sourcePresets: vi.fn(),
+    pluginPreview: vi.fn(),
+    install: vi.fn(),
+  },
   mcp: {
     apps: { connect: vi.fn() },
     servers: { list: vi.fn() },
@@ -273,5 +279,88 @@ it("keeps management available for a connected app after operator setup is remov
   expect(host.textContent).not.toContain("Server setup required");
   expect(
     Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Added"),
+  ).toBe(true);
+});
+
+it("opens a bundled app's matching plugin skills while keeping its connection separate", async () => {
+  const source = "https://github.com/example/files";
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: false,
+      noAuth: false,
+      mcpAppId: "files",
+    },
+  ]);
+  api.marketplace.catalog.mockResolvedValue({
+    entries: [
+      {
+        id: "files",
+        name: "files",
+        displayName: "Files",
+        description: "",
+        keywords: [],
+        category: "productivity",
+        logo: null,
+        homepage: null,
+        domains: [],
+        registry: "Example",
+        source,
+        installedSource: source,
+        hasConnector: true,
+        skillCount: 1,
+      },
+    ],
+    unavailableRegistries: [],
+  });
+  api.capabilities.pluginPreview.mockResolvedValue({
+    format: "agent-plugins",
+    name: "files",
+    version: null,
+    description: "",
+    author: null,
+    homepage: null,
+    repository: null,
+    license: null,
+    keywords: [],
+    resolvedSha: "a".repeat(40),
+    pinnedSource: source,
+    digest: `sha256:${"b".repeat(64)}`,
+    skills: [{ name: "file-notes", description: "Write notes" }],
+    mcpServers: [
+      {
+        name: "files-mcp",
+        transport: "streamable_http",
+        endpoint: "https://files.example.test/mcp",
+        staticHeaderKeys: [],
+      },
+    ],
+    skipped: [],
+  });
+  const openMcp = vi.fn();
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} onOpenMcp={openMcp} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "Files");
+  const title = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.endsWith("Files"),
+  )!;
+  await act(async () => title.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("file-notes"));
+  expect(openMcp).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("files-mcp");
+  expect(
+    Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Connect"),
+  ).toBe(false);
+  expect(
+    Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Add"),
   ).toBe(true);
 });

@@ -182,10 +182,6 @@ export function PluginsOverlay({
 
   /** A managed app whose brand also has a plugin opens one page with its skills. */
   function openApp(item: ConnectionCatalogItem) {
-    if (item.mcpAppId) {
-      openDetail(item);
-      return;
-    }
     const entry = pluginForApp.get(catalogItemKey(item));
     if (entry) openPlugin(pluginSelection(entry));
     else openDetail(item);
@@ -205,7 +201,7 @@ export function PluginsOverlay({
 
   function managedLink(selection: PluginSelection): ManagedAppLink | undefined {
     const item = appForPlugin(selection);
-    if (!item) return undefined;
+    if (!item || item.mcpAppId) return undefined;
     return {
       name: item.name,
       logo: item.logo,
@@ -509,6 +505,7 @@ export function PluginsOverlay({
               servers={mcpServers}
               assigned={assigned}
               activeBotId={activeBotId}
+              skillsOnly={Boolean(appForPlugin(plugin)?.mcpAppId)}
               managed={managedLink(plugin)}
               onBack={() => setPlugin(null)}
               onChanged={refresh}

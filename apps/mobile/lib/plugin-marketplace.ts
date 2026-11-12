@@ -93,8 +93,9 @@ export function managedPluginParams(
     ...pluginParams(entry),
     name: app.name,
     ...(app.logo ? { logo: app.logo } : {}),
-    managedConnectorId: app.connectorId,
-    managedSlug: app.slug,
+    ...(app.mcpAppId
+      ? { skillsOnly: "1" }
+      : { managedConnectorId: app.connectorId, managedSlug: app.slug }),
   };
 }
 

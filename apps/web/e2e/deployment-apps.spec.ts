@@ -66,3 +66,35 @@ test("bundled apps disclose missing setup and open account authorization without
   await expect(page.getByText("Server setup required", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "deployment-app-connected");
 });
+
+test("bundled app titles keep matching plugin skills reachable", async ({ page }, testInfo) => {
+  await signup(page, `app-skills-${Date.now()}@rakazo.test`, "password12", "App skills");
+  await completeOnboarding(page);
+  // Reuse the existing marketplace fixture so this exercises the real plugin preview.
+  await page.route("**/rpc/connections/catalog", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            connectorId: "deployment",
+            slug: "planning-notes",
+            name: "Planning Notes",
+            logo: null,
+            connected: false,
+            noAuth: false,
+            mcpAppId: "notes",
+          },
+        ],
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await page.getByPlaceholder("Search apps").fill("Planning Notes");
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Planning Notes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
+  await expect(page.getByText("planning-notes", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "deployment-app-skills");
+});

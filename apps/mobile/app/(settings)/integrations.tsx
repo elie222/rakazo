@@ -1021,9 +1021,7 @@ export default function Integrations() {
           key={catalogItemKey(item)}
           accessibilityRole="button"
           onPress={() =>
-            brandPlugin && !item.mcpAppId
-              ? openPlugin(managedPluginParams(brandPlugin, item))
-              : openDetail(item)
+            brandPlugin ? openPlugin(managedPluginParams(brandPlugin, item)) : openDetail(item)
           }
           style={tileStyle}
         >
