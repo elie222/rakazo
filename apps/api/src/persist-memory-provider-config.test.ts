@@ -71,7 +71,11 @@ function makeDeps(
         ),
     },
     spaceMemoryConfig: { findUnique, update, upsert, delete: deleteConfig },
-    secret: { create: secretCreate, deleteMany: secretDeleteMany },
+    secret: {
+      create: secretCreate,
+      deleteMany: secretDeleteMany,
+      findUnique: vi.fn().mockResolvedValue({ id: "secret-old", ciphertext: "old-cipher" }),
+    },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
@@ -82,6 +86,7 @@ function makeDeps(
     secrets: {
       put: vi.fn().mockResolvedValue({ id: "secret-new", ciphertext: "cipher" }),
       load: vi.fn().mockResolvedValue(JSON.stringify({ apiKey: "sm_stored_key_12345" })),
+      delete: vi.fn().mockResolvedValue(undefined),
     },
   };
   return {
@@ -726,5 +731,27 @@ describe("updateMemoryProviderConfig", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(upsert).not.toHaveBeenCalled();
     expect(secretDeleteMany).not.toHaveBeenCalled();
+    // The value already written to the secret store is removed there too.
+    expect(deps.secrets.delete).toHaveBeenCalledWith("cipher", "secret-new");
+  });
+
+  it("removes the replaced key from the secret store once saved", async () => {
+    const { deps } = updateDeps();
+    await updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } });
+    expect(deps.secrets.delete).toHaveBeenCalledWith("old-cipher", "secret-old");
+    expect(deps.secrets.delete).not.toHaveBeenCalledWith("cipher", "secret-new");
+  });
+
+  it("saves a typed key when the stored one can no longer be read", async () => {
+    const { deps, prepareConnection, upsert } = updateDeps();
+    vi.mocked(deps.secrets.load).mockRejectedValueOnce(new Error("secret store key rotated"));
+    await updateMemoryProviderConfig(deps, actor, {
+      settings,
+      credentials: { apiKey: "sm_replacement_key_1" },
+    });
+    expect(prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ credentials: { apiKey: "sm_replacement_key_1" } }),
+    );
+    expect(upsert).toHaveBeenCalled();
   });
 });

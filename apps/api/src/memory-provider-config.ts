@@ -12,11 +12,12 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { findSpaceMemoryConfig, Prisma, requireSpaceOwner, withTransactionRetry } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 export interface MemoryProviderConfigDeps {
   prisma: PrismaClient;
   env?: { mcpAllowPrivateEndpoint?: boolean };
-  secrets: Pick<SecretStore, "put" | "load">;
+  secrets: Pick<SecretStore, "put" | "load" | "delete">;
   /** Test seam: override DNS/trust classification without probing. */
   classifySettings?: (
     provider: string,
@@ -66,11 +67,18 @@ export async function updateMemoryProviderConfig(
     // may run without a key).
     credentials = { ...input.credentials };
   } else {
+    // A stored key that can no longer be read (a rotated secret store, a legacy record) must not
+    // block an owner who typed a replacement: then only what was entered is used.
     credentials = await loadMemoryProviderCredentials(
       deps.secrets,
       existing.provider,
       existing.secret,
-    );
+    ).catch((error: unknown) => {
+      getLogger().warn("Stored memory provider credentials could not be read", {
+        "error.message": error instanceof Error ? error.message : String(error),
+      });
+      return {};
+    });
     for (const [key, value] of Object.entries(input.credentials)) {
       if (value) credentials[key] = value;
     }
@@ -143,57 +151,75 @@ async function saveMemoryProviderConnection(
     userId: actor.userId,
     signal: new AbortController().signal,
   });
-  const config = await withTransactionRetry(() =>
-    deps.prisma.$transaction(
-      async (tx) => {
-        const existing = await findSpaceMemoryConfig(tx, actor.spaceId);
-        let defaultMemoryScope: "isolated" | "shared";
-        if ("replacesSecretId" in target) {
-          // A disconnect or another save racing this update must not be overwritten: the stored
-          // credentials it decided on belong to the connection it read.
-          if (!existing || existing.secretId !== target.replacesSecretId) {
-            throw new ORPCError("NOT_FOUND");
+  let saved: {
+    config: Parameters<typeof serializeSpaceMemoryConfig>[0];
+    replaced: { id: string; ciphertext: string } | null;
+  };
+  try {
+    saved = await withTransactionRetry(() =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          const existing = await findSpaceMemoryConfig(tx, actor.spaceId);
+          let defaultMemoryScope: "isolated" | "shared";
+          if ("replacesSecretId" in target) {
+            // A disconnect or another save racing this update must not be overwritten: the stored
+            // credentials it decided on belong to the connection it read.
+            if (!existing || existing.secretId !== target.replacesSecretId) {
+              throw new ORPCError("NOT_FOUND");
+            }
+            defaultMemoryScope = existing.defaultMemoryScope === "shared" ? "shared" : "isolated";
+          } else {
+            defaultMemoryScope = target.defaultMemoryScope;
           }
-          defaultMemoryScope = existing.defaultMemoryScope === "shared" ? "shared" : "isolated";
-        } else {
-          defaultMemoryScope = target.defaultMemoryScope;
-        }
-        const secret = await tx.secret.create({
-          data: {
-            id: stored.id,
-            userId: actor.userId,
-            spaceId: actor.spaceId,
-            kind: "memory-provider",
-            ciphertext: stored.ciphertext,
-          },
-        });
-        const updated = await tx.spaceMemoryConfig.upsert({
-          where: { spaceId: actor.spaceId },
-          create: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            provider: prepared.provider,
-            settings: prepared.settings,
-            secretId: secret.id,
-            defaultMemoryScope,
-          },
-          update: {
-            userId: actor.userId,
-            provider: prepared.provider,
-            settings: prepared.settings,
-            secretId: secret.id,
-            defaultMemoryScope,
-          },
-        });
-        if (existing && existing.secretId !== secret.id) {
-          await tx.secret.deleteMany({ where: { id: existing.secretId } });
-        }
-        return updated;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    ),
-  );
-  return serializeSpaceMemoryConfig(config);
+          const secret = await tx.secret.create({
+            data: {
+              id: stored.id,
+              userId: actor.userId,
+              spaceId: actor.spaceId,
+              kind: "memory-provider",
+              ciphertext: stored.ciphertext,
+            },
+          });
+          const config = await tx.spaceMemoryConfig.upsert({
+            where: { spaceId: actor.spaceId },
+            create: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              provider: prepared.provider,
+              settings: prepared.settings,
+              secretId: secret.id,
+              defaultMemoryScope,
+            },
+            update: {
+              userId: actor.userId,
+              provider: prepared.provider,
+              settings: prepared.settings,
+              secretId: secret.id,
+              defaultMemoryScope,
+            },
+          });
+          let replaced: { id: string; ciphertext: string } | null = null;
+          if (existing && existing.secretId !== secret.id) {
+            replaced = await tx.secret.findUnique({
+              where: { id: existing.secretId },
+              select: { id: true, ciphertext: true },
+            });
+            await tx.secret.deleteMany({ where: { id: existing.secretId } });
+          }
+          return { config, replaced };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    );
+  } catch (error) {
+    // A remote secret store keeps the value it was given until it is deleted there too.
+    await deps.secrets.delete(stored.ciphertext, stored.id).catch(() => undefined);
+    throw error;
+  }
+  if (saved.replaced) {
+    await deps.secrets.delete(saved.replaced.ciphertext, saved.replaced.id).catch(() => undefined);
+  }
+  return serializeSpaceMemoryConfig(saved.config);
 }
 
 export async function updateMemoryProviderDefaultScope(
