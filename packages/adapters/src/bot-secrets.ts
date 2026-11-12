@@ -2017,6 +2017,8 @@ export async function resolveCodeFill(input: {
 
 export const LOGIN_CODE_CHANGED =
   "The authenticator moved on to its next code before this one could be typed, so nothing was typed. Call browser_act again.";
+export const LOGIN_REMOVED =
+  "This login is no longer saved, so nothing was typed. Use request_secret with oneTimeCode to ask the user for the code.";
 export const CODE_ALREADY_TYPED =
   "This code was already typed in this run. Wait for the authenticator's next code, then call fill_code again.";
 
@@ -2043,6 +2045,7 @@ export const LOGIN_CODES_USED_UP = `A site asked for this login's authenticator 
  *   the codes claimed, each with the time it was claimed, as spent run codes the run's later
  *   attempts reload to hide. Codes of an earlier value are never counted again.
  * A claim of a code:
+ * - is refused with LOGIN_REMOVED when the login was removed since the fill read it;
  * - is refused with LOGIN_CODES_USED_UP while the login is stopped, for every run and value;
  * - is refused with CODE_ALREADY_TYPED when this run claimed the same code of this value;
  * - else counts `asked`: this code, plus the run's earlier codes of this value walking back
@@ -2127,8 +2130,10 @@ export function loginCodeClaim(input: {
         where: { id: input.login.id },
         select: { ciphertext: true, codesStoppedAt: true, updatedAt: true },
       });
+      // The owner removed the login since this run read it.
+      if (!current) return LOGIN_REMOVED;
       // Another run stopped the login since this one read it.
-      if (current?.codesStoppedAt) return LOGIN_CODES_USED_UP;
+      if (current.codesStoppedAt) return LOGIN_CODES_USED_UP;
       if (spent.some((row) => row.id === id)) return CODE_ALREADY_TYPED;
       at = new Date();
       const repeats = 1 + asked(spent, at.getTime());
@@ -2151,7 +2156,7 @@ export function loginCodeClaim(input: {
       // The last code a site keeps asking for stops the login, but only for the value it came
       // from: a key saved since may be right. The time it was saved stays, so an approval given
       // for it holds.
-      if (repeats >= LOGIN_CODE_TRIES && current?.ciphertext === input.login.ciphertext) {
+      if (repeats >= LOGIN_CODE_TRIES && current.ciphertext === input.login.ciphertext) {
         await tx.vaultCredential.updateMany({
           where: { id: input.login.id, ciphertext: current.ciphertext },
           data: { codesStoppedAt: at, updatedAt: current.updatedAt },

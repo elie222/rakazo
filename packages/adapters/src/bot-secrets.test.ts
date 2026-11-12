@@ -14,6 +14,7 @@ import {
   LOGIN_CODE_REPEAT_WINDOW_MS,
   LOGIN_CODE_TRIES,
   LOGIN_CODES_USED_UP,
+  LOGIN_REMOVED,
   listBotSecrets,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
@@ -1911,6 +1912,30 @@ describe("loginCodeClaim", () => {
         return !steps.some((later) => "restore" in later && later.restore === index);
       }).length,
     );
+  });
+
+  it("claims no code of a login the owner removed since the fill read it", async () => {
+    const db = fakeDatabase();
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination: login,
+      plaintext: value(TEST_KEY),
+    });
+    const row = db.rows()[0]!;
+    const code = loginCodeClaim({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      runId: "run-1",
+      login: { id: row.id, ciphertext: row.ciphertext },
+      origin: row.origin,
+      code: "000000",
+    });
+    db.rows().splice(0);
+    expect(await code.claim()).toBe(LOGIN_REMOVED);
+    expect(db.secrets().filter((secret) => String(secret.id).startsWith("run-totp-"))).toEqual([]);
   });
 });
 
