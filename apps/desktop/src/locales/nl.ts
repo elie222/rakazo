@@ -78,7 +78,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "Rakazo instellen",
   "Quit Rakazo": "Stop Rakazo",
   "Welcome to Rakazo": "Welkom bij Rakazo",
-  "Choose which server this app should use.": "Kies welke server deze app moet gebruiken.",
+  "Choose where Rakazo runs.": "Kies waar Rakazo draait.",
   Instance: "Instantie",
   "This computer": "Deze computer",
   "Existing instance": "Bestaande instantie",
@@ -89,7 +89,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Name: value": "Naam: waarde",
   "Check connection": "Verbinding controleren",
   Continue: "Doorgaan",
-  "Check again": "Opnieuw controleren",
   Retry: "Opnieuw proberen",
   "Getting ready…": "Voorbereiden…",
   "Downloading Rakazo…": "Rakazo downloaden…",
@@ -149,15 +148,12 @@ export const NL_MESSAGES: Record<string, string> = {
     "Verbonden, maar de installatie kon niet worden bewaard voor de volgende start. Klik nogmaals op Doorgaan.",
   "The app-managed Rakazo services are not ready. Retry setup.":
     "De Rakazo-services die de app beheert, zijn niet klaar. Start de installatie opnieuw.",
-  "Docker is not installed on this computer.": "Docker is niet geïnstalleerd op deze computer.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker is geïnstalleerd, maar Docker Compose ontbreekt. Installeer Docker Desktop of de docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose kon niet worden gecontroleerd. Bekijk de uitvoer hieronder en probeer het opnieuw.",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "Docker is geïnstalleerd, maar draait niet. Start Docker en controleer opnieuw.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "Deze gebruiker heeft geen toegang tot Docker. Voeg de gebruiker toe aan de groep docker (sudo usermod -aG docker $USER), log uit en weer in en controleer opnieuw.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "Deze gebruiker heeft geen toegang tot Docker. Voeg de gebruiker toe aan de groep docker (sudo usermod -aG docker $USER) en log daarna uit en weer in.",
   "The start was interrupted. Retry to continue.":
     "Het starten is onderbroken. Probeer het opnieuw om door te gaan.",
   "Images for {tag} are not published yet. Try again in a few minutes.":
@@ -200,4 +196,24 @@ export const NL_MESSAGES: Record<string, string> = {
   "Chat Details": "Chatdetails",
   Help: "Help",
   "Keyboard Shortcuts": "Sneltoetsen",
+  "Nothing to install.": "Niets te installeren.",
+  "Your data stays on this computer.": "Je gegevens blijven op deze computer.",
+  "Connect to a server you or your team already run.":
+    "Maak verbinding met een server die jij of je team al draait.",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "Rakazo heeft Docker Desktop nodig om op deze computer te draaien.",
+  "Rakazo needs Docker to run on this computer.":
+    "Rakazo heeft Docker nodig om op deze computer te draaien.",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktop is een gratis app die Rakazo op de achtergrond draait. Installeer en open het één keer.",
+  "Install Docker Engine and start it.": "Installeer Docker Engine en start het.",
+  "Download Docker Desktop": "Docker Desktop downloaden",
+  "Install Docker": "Docker installeren",
+  "Docker is installed but not running. Open it to continue.":
+    "Docker is geïnstalleerd maar draait niet. Open het om door te gaan.",
+  "Starting {app}…": "{app} wordt gestart…",
+  "Waiting for Docker Desktop…": "Wachten op Docker Desktop…",
+  "Waiting for Docker…": "Wachten op Docker…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker is geïnstalleerd maar draait niet. Start de Docker-service om door te gaan.",
 };
