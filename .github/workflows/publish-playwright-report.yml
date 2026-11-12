@@ -202,7 +202,7 @@ jobs:
   screenshot-source:
     name: Mark E2E publication finished
     needs: [result, publish]
-    if: always() && github.event.workflow_run.event == 'pull_request'
+    if: always() && needs.result.result == 'success' && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

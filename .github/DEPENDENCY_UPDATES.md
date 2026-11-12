@@ -65,8 +65,9 @@ The first caller exits if the other source is still running; the second starts
 the agent. No runner polls or sleeps. Readiness requires the trusted deployment
 comment for that exact PR and full commit SHA, plus a trusted E2E completion
 artifact retained for 90 days. A different PR's deployment cannot authorize a
-capture. Failed or skipped E2E publication still starts the agent, which captures
-from the preview; a failed preview deployment never starts it.
+capture. The result-reading job must succeed before E2E completion is recorded;
+cancelled or unapproved CI cannot authorize an assessment. Failed or skipped E2E
+publication still starts the agent, which captures from the preview; a failed preview deployment never starts it.
 Calls for the same PR and commit are serialized through publishing and recheck a trusted
 completion artifact. Successful assessments are cached even when E2E images cover
 the change and no new capture is needed, so simultaneous events cannot duplicate
