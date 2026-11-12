@@ -45,13 +45,13 @@ later.
 
 For [Hindsight](https://github.com/vectorize-io/hindsight) 1.0 or later, the key is optional when
 the server has no authentication. Hindsight needs its own LLM provider to extract facts. Rakazo
-creates a bank per bot (`rakazo-<space id>-<bot id>`) and, for the Shared scope, one per Space
-(`rakazo-<space id>`). It does not configure banks, so set extraction missions in Hindsight if you
-want them. Rakazo sends each finished turn (unless **Learn from conversations** is off) and the
+creates a bank per bot and, for the Shared scope, one per Space. Bank names use the reserved
+`rakazo-` prefix and fixed-length hashes of the identifiers so legacy identifiers cannot collide.
+It does not configure banks, so set extraction missions in Hindsight if you want them. Rakazo sends each finished turn (unless **Learn from conversations** is off) and the
 facts bots save; banks under **Recall from banks** are only read. A bank under **Recall from banks**
 must be on the same Hindsight server or Cloud account; an app that runs Hindsight embedded on its
-own machine keeps its banks there. Names shaped like another Space's banks (`rakazo-` followed by a
-Space id) can't be listed there.
+own machine keeps its banks there. All names starting with `rakazo-` are reserved and cannot be
+listed there, including banks created by another app using that prefix.
 
 ## MCP servers
 

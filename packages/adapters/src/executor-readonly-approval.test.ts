@@ -69,6 +69,7 @@ type Effect = {
   result?: unknown;
   reviewDecision?: string;
   runId?: string;
+  spaceId?: string;
 };
 
 function fixture({
@@ -1893,6 +1894,26 @@ describe("own instructions through update_bot", () => {
     );
     expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { readOutsideContent: false } }),
+    );
+  });
+
+  it("records exposure when an executing outside-tool effect is recovered at the gate", async () => {
+    const f = fixture({ name: "demo_get_item", skipApprovals: true });
+    const args = { id: "item-1" };
+    f.effects.push({
+      id: "existing-effect",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "demo_get_item",
+      request: args,
+      idempotencyKey: toolEffectIdempotencyKey("run-1", "demo_get_item", args),
+      status: "executing",
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
     );
   });
 

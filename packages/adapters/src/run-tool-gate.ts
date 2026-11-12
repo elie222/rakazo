@@ -643,7 +643,10 @@ export async function gateToolCall(
         return { result: await requestApproval(ctx, call, card) };
       }
     } else if (gate.action === "uncertain") {
-      return { result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName) };
+      return {
+        result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
+        replayed: true,
+      };
     } else if (gate.action === "execute") {
       const early = await call.claimOrReturn("approved");
       if (early !== undefined) return { result: early, replayed: true };

@@ -45,9 +45,8 @@ const MAX_QUERY_CHARS = 800;
 const RECALL_MAX_TOKENS = 4_096;
 const MAX_RECALL_BANKS = 10;
 const RECALL_BANK = /^[^\s/?#%\\,]{1,256}$/;
-/** Banks Rakazo generates: `rakazo-` and a Space id (32 hex digits or a UUID), maybe a bot id. */
-const GENERATED_BANK =
-  /^rakazo-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(-|$)/i;
+// Space IDs include legacy identifiers, so the whole generated namespace is reserved.
+const RESERVED_BANK = /^rakazo-/i;
 /** A failing extra bank is skipped this long; used only for recall. */
 const EXTRA_BANK_COOLDOWN_MS = 5 * 60_000;
 /** An extra bank still silent after this much of the recall timeout counts as failing. */
@@ -151,8 +150,8 @@ function parseRecallBanks(value: string | undefined): string[] {
     throw new Error("recallBanks may not include . or ..");
   }
   // Rakazo's own banks are recalled automatically; another Space's must never be named.
-  if (banks.some((bank) => GENERATED_BANK.test(bank))) {
-    throw new Error("recallBanks may not include another Space's banks");
+  if (banks.some((bank) => RESERVED_BANK.test(bank))) {
+    throw new Error("Bank names starting with rakazo- are reserved.");
   }
   if (banks.length > MAX_RECALL_BANKS) throw new Error("recallBanks may list at most 10 banks");
   return banks;
@@ -262,12 +261,12 @@ export function createHindsightProvider(
 
 /** Every bot keeps its own bank. */
 function ownBank(spaceId: string, botId: string): string {
-  return `rakazo-${spaceId}-${botId}`;
+  return `${teamBank(spaceId)}-${createHash("sha256").update(botId).digest("hex")}`;
 }
 
 /** The Space's team bank, which bots that share memory also write to and recall from. */
 function teamBank(spaceId: string): string {
-  return `rakazo-${spaceId}`;
+  return `rakazo-${createHash("sha256").update(spaceId).digest("hex")}`;
 }
 
 function writeBanks(spaceId: string, botId: string, scope: DurableMemoryScope): string[] {

@@ -1,5 +1,14 @@
 import { Trans } from "@lingui/react/macro";
-import { Button, Field, FieldLabel, Input, Label, Switch, Toggle } from "@rakazo/ui-web";
+import {
+  Button,
+  Field,
+  FieldLabel,
+  Input,
+  Label,
+  Switch,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import type { ConnectionMode } from "./ConnectionModeFields";
@@ -26,22 +35,28 @@ function Segmented<T extends string>({
   return (
     <Field className="mt-4" aria-labelledby={labelId}>
       <FieldLabel id={labelId}>{label}</FieldLabel>
-      <div
-        className="grid gap-1 rounded-lg bg-muted p-1"
+      <ToggleGroup
+        aria-labelledby={labelId}
+        value={[value]}
+        disabled={busy}
+        spacing={1}
+        onValueChange={([next]) => {
+          const selected = options.find((option) => option.value === next);
+          if (selected) onChange(selected.value);
+        }}
+        className="grid w-full gap-1 rounded-lg bg-muted p-1"
         style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
         {options.map((option) => (
-          <Toggle
+          <ToggleGroupItem
             key={option.value}
-            pressed={value === option.value}
-            disabled={busy}
-            onPressedChange={() => onChange(option.value)}
+            value={option.value}
             className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
           >
             {option.label}
-          </Toggle>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
     </Field>
   );
 }

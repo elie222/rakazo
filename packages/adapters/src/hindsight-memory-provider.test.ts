@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AdapterContext, SemanticMemoryConversationRequest } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HINDSIGHT_CLOUD_BASE_URL } from "./hindsight-client.js";
@@ -19,8 +20,8 @@ const context: AdapterContext = {
   signal: new AbortController().signal,
 };
 
-const OWN_BANK = "rakazo-space-1-bot-1";
-const TEAM_BANK = "rakazo-space-1";
+const TEAM_BANK = `rakazo-${createHash("sha256").update("space-1").digest("hex")}`;
+const OWN_BANK = `${TEAM_BANK}-${createHash("sha256").update("bot-1").digest("hex")}`;
 
 interface RecordedRequest {
   method: string;
@@ -252,6 +253,20 @@ describe("Hindsight saves", () => {
     expect(own?.body?.items).toEqual(team?.body?.items);
     // One id cannot serve two banks.
     expect(own?.body?.operation_id).not.toBe(team?.body?.operation_id);
+  });
+
+  it("keeps legacy Space and bot identifiers from colliding in generated bank names", async () => {
+    const fake = hindsightFake();
+    const memory = provider(fake.fetch);
+    await memory.save(
+      { ...save, botId: "team-bot", scope: "isolated" },
+      { ...context, spaceId: "legacy" },
+    );
+    await memory.save(
+      { ...save, botId: "another-bot", scope: "shared" },
+      { ...context, spaceId: "legacy-team-bot" },
+    );
+    expect(new Set(writes(fake.requests).map((request) => request.bank)).size).toBe(3);
   });
 
   it("fails at its own bank before touching the team bank", async () => {
@@ -977,27 +992,26 @@ describe("Hindsight connection", () => {
     }
     for (const recallBanks of [
       "rakazo-0123456789abcdef0123456789ABCDEF",
+      "rakazo-clegacyspaceid",
+      "rakazo-private-team-bot-1",
+      "RAKAZO-legacy-organization",
+      "notes,rakazo-notes",
       "notes,rakazo-01234567-89ab-cdef-0123-456789abcdef-bot-9",
     ]) {
       await expect(
         prepareHindsightConnection({ recallBanks }, { apiKey: "hsk-test-key" }, { fetch }),
-      ).rejects.toThrow("recallBanks may not include another Space's banks");
+      ).rejects.toThrow("Bank names starting with rakazo- are reserved.");
     }
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("accepts another app's bank whose name only starts with rakazo-", async () => {
-    const existing = hindsightFake({ banks: ["rakazo-notes"] });
-    await expect(
-      prepareHindsightConnection(
-        { recallBanks: "rakazo-notes" },
+  it("rejects the reserved namespace in persisted settings before making requests", () => {
+    expect(() =>
+      createHindsightProvider(
+        { recallBanks: "rakazo-legacy-organization" },
         { apiKey: "hsk-test-key" },
-        { fetch: existing.fetch },
       ),
-    ).resolves.toEqual({
-      settings: { recallBanks: "rakazo-notes" },
-      credentials: { apiKey: "hsk-test-key" },
-    });
+    ).toThrow("Bank names starting with rakazo- are reserved.");
   });
 
   it("validates recall settings and keeps only those that differ from the defaults", async () => {
