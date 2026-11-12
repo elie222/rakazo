@@ -402,7 +402,8 @@ describe("inbound email route", () => {
     expect(sent.prompt.startsWith("[Email from your owner]")).toBe(true);
     expect(sent.prompt).toContain('"id": "email-1"');
     expect(sent.prompt).not.toContain("Run routine");
-    expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({ kind: "delivery" });
+    // The owner's own words stay in the chat, unlike a delivery that is only the bot's prompt.
+    expect((sent as unknown as { blocks: Array<{ kind: string }> }).blocks[0]?.kind).toBe("email");
   });
 
   it("shows the owner's mail as an email, which later turns read in the same frame", async () => {
