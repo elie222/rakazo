@@ -669,6 +669,7 @@ export function createBillingService(deps: {
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
           computerHoursLeft: computerAllowance && sandboxHoursLeft(computerAllowance),
+          computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
           referral: await referrals.status(organizationId, isOwner),
         };
       }

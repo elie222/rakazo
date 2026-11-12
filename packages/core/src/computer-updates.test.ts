@@ -58,6 +58,24 @@ describe("computer update presentation", () => {
     await Promise.resolve();
     expect(store.getSnapshot().updates).toEqual([]);
   });
+  it("polls quickly only while an update is in progress", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => [{ ...update, status: "failed" }]);
+    const store = createComputerUpdates({
+      list,
+      start: async () => update,
+      dismiss: async () => {},
+    });
+    const stop = store.watch();
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    list.mockResolvedValue([update]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(list).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(list).toHaveBeenCalledTimes(3);
+    stop();
+  });
   it("stops polling on a 401 and resumes on the next watch", async () => {
     vi.useFakeTimers();
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => {

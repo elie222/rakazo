@@ -8,6 +8,7 @@ import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerSandboxProvider,
+  HEALTH_CHECK_TIMEOUT_MS,
   MAX_SANDBOX_ERROR_RESPONSE_BYTES,
   MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
   SCREEN_RELEASE_TIMEOUT_MS,
@@ -236,6 +237,119 @@ describe("Docker sandbox", () => {
     });
   });
 
+  /** A finished command's stream: what it printed, then exit code 0. */
+  const commandOutput = (stdout: string) =>
+    new Response(
+      [
+        ...(stdout ? [JSON.stringify({ type: "stdout", data: stdout })] : []),
+        JSON.stringify({ type: "exit", code: 0 }),
+      ].join("\n"),
+      { headers: { "content-type": "application/x-ndjson" } },
+    );
+
+  describe("before a computer is used", () => {
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    it("uses a computer that can write its home folder", async () => {
+      const fetchMock = vi.fn(async () => commandOutput(""));
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+        "http://supervisor.test/computers/computer/exec",
+        expect.objectContaining({
+          body: expect.stringContaining(
+            JSON.stringify(["/bin/sh", "-c", "test -w . || echo unwritable"]),
+          ),
+        }),
+      );
+    });
+
+    it("shares one home probe while callers stop waiting independently", async () => {
+      let answer = (_response: Response) => {};
+      const fetchMock = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const stopped = new AbortController();
+      const first = provider.prepare(computer, { ...context, signal: stopped.signal });
+      const second = provider.prepare(computer, context);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      stopped.abort(new Error("stopped"));
+      await expect(first).rejects.toThrow("stopped");
+      answer(commandOutput(""));
+      await expect(second).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports a computer that cannot write its home folder as damaged", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => commandOutput("unwritable\n")),
+      );
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
+    });
+
+    it("does not restart a computer on incomplete unwritable output", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ type: "stdout", data: "unwritable\n" }), {
+              headers: { "content-type": "application/x-ndjson" },
+            }),
+        ),
+      );
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).resolves.toBeUndefined();
+    });
+
+    it("bounds an unanswered preparation check without reporting damage", async () => {
+      const deadline = new AbortController();
+      vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+      try {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(
+            (_url: string, init: RequestInit) =>
+              new Promise<Response>((_resolve, reject) => {
+                init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+              }),
+          ),
+        );
+        const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+        const check = provider.prepare(computer, context);
+        expect(AbortSignal.timeout).toHaveBeenCalledWith(HEALTH_CHECK_TIMEOUT_MS);
+        const rejected = expect(check).rejects.not.toBeInstanceOf(SandboxDamagedError);
+        deadline.abort(new DOMException("Timed out", "TimeoutError"));
+        await rejected;
+      } finally {
+        vi.mocked(AbortSignal.timeout).mockRestore();
+      }
+    });
+
+    it("does not blame the home folder when the check itself could not run", async () => {
+      const fetchMock = vi.fn(async (url: string) =>
+        url.endsWith("/exec")
+          ? new Response("supervisor error", { status: 500 })
+          : new Response(JSON.stringify({ running: true })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      await expect(provider.prepare(computer, context)).resolves.toBeUndefined();
+    });
+  });
+
   describe("after a command goes unanswered", () => {
     const computer = {
       id: "computer",
@@ -260,20 +374,23 @@ describe("Docker sandbox", () => {
       return provider;
     }
 
-    it("does not check a computer that has answered every command", async () => {
-      const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
-      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
-      await provider.prepare(computer, context);
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
+    const checkTimeout = (call: unknown[] | undefined) => {
+      if (!call) throw new Error("Expected an exec request");
+      return JSON.parse((call[1] as RequestInit).body as string).timeoutMs;
+    };
 
-    it("uses the computer again once it runs a command", async () => {
+    it("gives every preparation check a short deadline", async () => {
       const fetchMock = vi.fn(async () => exit(0));
       const provider = await unansweredProvider(fetchMock);
       await provider.prepare(computer, context);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
       await provider.prepare(computer, context);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
+    });
+
+    it("reports the computer damaged when it answers that its home cannot be written", async () => {
+      const provider = await unansweredProvider(vi.fn(async () => commandOutput("unwritable\n")));
+      await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
     });
 
     it.each([new Error("stopped"), "stopped"])(
@@ -344,7 +461,7 @@ describe("Docker sandbox", () => {
         }),
       ]);
       await provider.prepare(computer, context);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(checkTimeout(fetchMock.mock.calls.at(-1))).toBe(HEALTH_CHECK_TIMEOUT_MS);
     });
 
     it("runs one check for callers that need it at the same time", async () => {
