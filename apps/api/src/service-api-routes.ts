@@ -502,12 +502,14 @@ export const SERVICE_HANDLERS: Handlers = {
     return context.client.bots.restore({ botId: botOf(context) });
   },
   async botStatus(context) {
-    const { client, prisma, actor } = context;
+    const { client, prisma, actor, credential } = context;
     if (!context.bot) throw new ServiceRejection("not_found");
     const botId = context.bot.id;
+    // The computer's state is for keys that may read the computer.
+    const readsComputer = credential.scopes.includes("computer:read");
     const [head, computer, runs] = await Promise.all([
       client.threads.head({ botId }),
-      client.computer.status({ botId }),
+      readsComputer ? client.computer.status({ botId }) : null,
       prisma.run.findMany({
         // Only the creator's runs, as everywhere else a key reads runs.
         where: { botId, spaceId: actor.spaceId, userId: actor.userId },
@@ -522,7 +524,9 @@ export const SERVICE_HANDLERS: Handlers = {
       threadId: head.threadId,
       cursor: head.cursor,
       runs,
-      computer: { state: computer.state, screenAvailable: computer.screenAvailable },
+      ...(computer
+        ? { computer: { state: computer.state, screenAvailable: computer.screenAvailable } }
+        : {}),
     };
   },
 
