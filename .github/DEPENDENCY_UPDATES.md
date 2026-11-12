@@ -26,7 +26,8 @@ gh secret set GH_DEPENDENCY_UPDATES_PAT
 
 The screenshot workflow also uses this login. Both workflows share the
 `codex-subscription` concurrency group so refreshes cannot race. Claude runs do not
-acquire that shared lock. Codex refreshes the cache;
+acquire that shared lock. Both lock users set `queue: max` to retain pending
+runs instead of replacing the previous pending entry. Codex refreshes the cache;
 the workflow writes it back to the secret even after an update failure. If
 authentication is revoked or refresh fails, repeat the login and replace the
 secret. No OpenAI API key is used, so requests use the Codex subscription.
@@ -70,3 +71,5 @@ the model call. PR description markers never authorize skipping an assessment.
 Every requested image must pass publication validation before completion can be
 recorded. Retries retain current-commit agent images and append missing views,
 so publishing does not remove images used to establish coverage.
+
+Publication skips description updates when the resulting content is unchanged.

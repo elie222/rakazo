@@ -15,6 +15,7 @@ permissions: {}
 # capture twice before the first run has updated the description.
 concurrency:
   group: pr-screenshots-${{ inputs.head_sha }}
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -104,6 +105,7 @@ jobs:
     # Only Codex uses the shared login; other agents get a run-specific group.
     concurrency:
       group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}', github.run_id, github.run_attempt) }}
+      queue: max
       cancel-in-progress: false
     env:
       SCREENSHOT_AGENT: ${{ vars.PR_SCREENSHOT_AGENT || 'codex' }}
@@ -304,7 +306,9 @@ jobs:
             fi
           fi
           python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
+          if ! cmp -s "$out/body.md" "$out/new.md"; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
+          fi
           if [[ -s $out/section.md ]]; then
             gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=screenshots" --silent
           fi

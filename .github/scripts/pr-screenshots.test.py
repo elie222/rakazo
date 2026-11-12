@@ -109,6 +109,12 @@ class SectionTest(unittest.TestCase):
 class SpliceTest(unittest.TestCase):
     new = f"{shots.START}\nnew\n{shots.END}"
 
+    def test_no_change_preserves_exact_author_formatting(self):
+        for body in ("Author text  \n\n", "Author text without a newline", ""):
+            self.assertEqual(shots.splice(body, ""), body)
+        body = f"Author text  \n\n{self.new}\nFooter  "
+        self.assertEqual(shots.splice(body, self.new), body)
+
     def test_appends_when_missing(self):
         self.assertEqual(shots.splice("## What\nx\n", self.new), f"## What\nx\n\n{self.new}\n")
 

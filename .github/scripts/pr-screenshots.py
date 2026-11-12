@@ -204,7 +204,11 @@ def retain_section(body: str, new_section: str, sha: str) -> str:
 def splice(body: str, new_section: str) -> str:
     start = body.find(START)
     end = body.find(END, start + len(START)) if start != -1 else -1
+    if not new_section and start == -1:
+        return body
     if start != -1 and end != -1:
+        if body[start:end + len(END)] == new_section:
+            return body
         before = body[:start].rstrip()
         after = body[end + len(END) :].lstrip()
     else:
