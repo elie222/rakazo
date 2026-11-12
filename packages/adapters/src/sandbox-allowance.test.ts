@@ -285,6 +285,27 @@ describe("computer allowance", () => {
     ).toEqual(resetsAt);
   });
 
+  it("omits the reset when a monthly subscription's end is unavailable", async () => {
+    const periodStart = new Date("2026-03-20T14:00:00Z");
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "active",
+        byokInterval: "month",
+        currentPeriodStartsAt: periodStart,
+        currentPeriodEndsAt: null,
+      },
+    });
+    const allowance = await sandboxAllowance(
+      deps,
+      "organization",
+      new Date("2026-04-01T00:00:00Z"),
+    );
+    expect(prisma.$queryRaw.mock.calls[0]?.[3]).toEqual(periodStart);
+    expect(allowance?.resetsAt).toBeNull();
+  });
+
   it.each([null, new Date("2026-05-20T14:00:00Z")])(
     "keeps an annual plan's reset aligned with calendar-month usage when its start is %s",
     async (currentPeriodStartsAt) => {

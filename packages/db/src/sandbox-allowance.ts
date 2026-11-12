@@ -106,8 +106,9 @@ export async function sandboxAllowancePlan(
     periodStart && billing?.byokInterval === "year"
       ? monthlyAnniversary(periodStart, monthsBetween(periodStart, since) + 1)
       : null;
-  const reset = periodStart ? (nextAnniversary ?? periodEnd ?? nextMonth) : nextMonth;
+  const reset = periodStart ? (nextAnniversary ?? periodEnd ?? null) : nextMonth;
   const resetsAt =
+    reset === null ||
     limitCents <= 0 ||
     (!tier && !live) ||
     billing?.status === "trialing" ||
