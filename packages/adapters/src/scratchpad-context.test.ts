@@ -84,7 +84,7 @@ describe("scratchpad prompt context", () => {
     // The two long notes split what the short ones left over.
     expect(result).toMatch(/Task a — x{1500,}… \(id: a\)/);
     expect(result).toMatch(/Task c — y{1500,}… \(id: c\)/);
-    expect(result).toContain("Call scratchpad_list to read them in full.");
+    expect(result).toContain("Notes cut. Call scratchpad_list.");
     expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(4 * 1024);
     expect(result?.endsWith("</scratchpad_open>")).toBe(true);
   });
@@ -94,7 +94,20 @@ describe("scratchpad prompt context", () => {
 
     expect(result).toContain(`Task a — ${"x".repeat(1_000)} (id: a)`);
     expect(result).toContain(`Task b — ${"y".repeat(1_000)} (id: b)`);
-    expect(result).not.toContain("cut short");
+    expect(result).not.toContain("Notes cut.");
+  });
+
+  it("signals dropped notes when forty long titles leave almost no notes space", async () => {
+    const items = Array.from({ length: 40 }, (_, index) => ({
+      ...item(String(index).padStart(24, "0"), "saved notes".repeat(100)),
+      title: "t".repeat(54),
+    }));
+    const result = await load(items);
+
+    for (const { id, title } of items) expect(result).toContain(`${title} (id: ${id})`);
+    expect(result).toContain("Notes cut. Call scratchpad_list.");
+    expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(4 * 1024);
+    expect(result?.endsWith("</scratchpad_open>")).toBe(true);
   });
 
   it("drops notes before titles when the block is small", async () => {

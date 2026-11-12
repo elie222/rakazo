@@ -8,7 +8,7 @@ const MAX_SCRATCHPAD_CONTEXT_BYTES = 4 * 1024;
 const MAX_OPEN_ITEMS = 40;
 const NOTES_SEPARATOR = " — ";
 const CUT = "…";
-const CUT_HINT = `\nNotes ending in ${CUT} are cut short. Call scratchpad_list to read them in full.`;
+const CUT_HINT = "\nNotes cut. Call scratchpad_list.";
 
 export async function loadAgentScratchpadContext(
   deps: ScratchpadToolDeps | { prisma: PrismaClient },
@@ -50,7 +50,10 @@ export async function loadAgentScratchpadContext(
   );
   const notesBytes = bodyBytes - byteLength(withoutNotes);
   const fits = wanted.reduce((sum, bytes) => sum + bytes, 0) <= notesBytes;
-  const hint = fits || notesBytes < byteLength(CUT_HINT) ? "" : CUT_HINT;
+  const hint = fits ? "" : truncateUtf8(CUT_HINT, bodyBytes);
+  if (byteLength(hint) > notesBytes) {
+    return `${preamble}${truncateUtf8(withoutNotes, bodyBytes - byteLength(hint))}${hint}${closing}`;
+  }
   const granted = fits ? wanted : shareBytes(wanted, notesBytes - byteLength(hint));
   const lines = entries.map((entry, index) => {
     if (granted[index] === wanted[index]) {
@@ -60,7 +63,9 @@ export async function loadAgentScratchpadContext(
       entry.notes,
       granted[index]! - byteLength(NOTES_SEPARATOR) - byteLength(CUT),
     );
-    return `${entry.head}${kept ? NOTES_SEPARATOR + kept + CUT : ""}${entry.tail}`;
+    const cutNote =
+      granted[index]! >= byteLength(NOTES_SEPARATOR + CUT) ? NOTES_SEPARATOR + kept + CUT : "";
+    return `${entry.head}${cutNote}${entry.tail}`;
   });
   return `${preamble}${lines.join("")}${more}${hint}${closing}`;
 }
