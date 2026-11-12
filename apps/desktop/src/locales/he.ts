@@ -187,6 +187,19 @@ export const HE_MESSAGES: Record<string, string> = {
   "Chat Details": "פרטי הצ׳אט",
   Help: "עזרה",
   "Keyboard Shortcuts": "קיצורי מקלדת",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "ההורדה של Rakazo נכשלה. בדקו את החיבור לאינטרנט ונסו שוב.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "לא ניתן להעביר את הנתונים מ-Docker. בדקו את הפלט למטה ונסו שוב.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "סביבת ההרצה של המחשבים שכבר פועלת ישנה מדי. עדכנו או סגרו אותה ונסו שוב.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "הנתונים שלכם ב-Rakazo נמצאים בסביבת הרצה אחרת של המחשבים. סגרו את זו שפועלת ונסו שוב.",
+  "Run Rakazo without Docker?": "להפעיל את Rakazo בלי Docker?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "הבוטים והנתונים שלכם יועברו. Docker ייעצר, לא יוסר.",
+  Move: "העברה",
+  "Keep Docker": "להשאיר את Docker",
   "Nothing to install.": "אין מה להתקין.",
   "Your data stays on this computer.": "הנתונים שלכם נשארים במחשב הזה.",
   "Connect to a server you or your team already run.":

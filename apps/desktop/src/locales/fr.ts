@@ -193,6 +193,19 @@ export const FR_MESSAGES: Record<string, string> = {
   "Chat Details": "Détails de la discussion",
   Help: "Aide",
   "Keyboard Shortcuts": "Raccourcis clavier",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Le téléchargement de Rakazo a échoué. Vérifiez la connexion Internet, puis réessayez.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Impossible de transférer vos données depuis Docker. Consultez la sortie ci-dessous, puis réessayez.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "L’environnement d’exécution des ordinateurs déjà lancé est trop ancien. Mettez-le à jour ou quittez-le, puis réessayez.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Vos données Rakazo se trouvent dans un autre environnement d’exécution des ordinateurs. Quittez celui qui est lancé, puis réessayez.",
+  "Run Rakazo without Docker?": "Utiliser Rakazo sans Docker ?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "Vos bots et vos données sont transférés. Docker est arrêté, pas supprimé.",
+  Move: "Transférer",
+  "Keep Docker": "Garder Docker",
   "Nothing to install.": "Rien à installer.",
   "Your data stays on this computer.": "Vos données restent sur cet ordinateur.",
   "Connect to a server you or your team already run.":

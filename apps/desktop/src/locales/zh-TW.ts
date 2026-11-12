@@ -178,6 +178,19 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Chat Details": "聊天詳細資料",
   Help: "說明",
   "Keyboard Shortcuts": "鍵盤快速鍵",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "無法下載 Rakazo。請檢查網路連線，然後再試一次。",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "無法從 Docker 移轉你的資料。請查看下方輸出，然後再試一次。",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "已在執行的電腦執行環境版本過舊。請更新或結束它，然後再試一次。",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "你的 Rakazo 資料位於另一個電腦執行環境中。請結束正在執行的那個，然後再試一次。",
+  "Run Rakazo without Docker?": "不使用 Docker 執行 Rakazo？",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "你的機器人和資料會一併移轉。Docker 只會停止，不會移除。",
+  Move: "移轉",
+  "Keep Docker": "繼續使用 Docker",
   "Nothing to install.": "無需安裝。",
   "Your data stays on this computer.": "你的資料保留在這台電腦上。",
   "Connect to a server you or your team already run.": "連線到你或你的團隊已在執行的伺服器。",

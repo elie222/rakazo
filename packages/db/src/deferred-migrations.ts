@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "pg";
@@ -150,6 +151,14 @@ async function rollBackLockConflict(migrationUrl: string, migrationsPath: string
   }
 }
 
+/** The database package's own Prisma CLI, run by this runtime so no package manager is needed. */
+function prismaCli(dbPackageDir: string) {
+  const manifest = createRequire(path.join(dbPackageDir, "package.json")).resolve(
+    "prisma/package.json",
+  );
+  return path.join(path.dirname(manifest), "build/index.js");
+}
+
 /**
  * `prisma migrate deploy` from the database package, without the migrations held back this run.
  * A migration gives up on a lock the running release holds after a short wait, instead of stalling
@@ -184,7 +193,7 @@ export async function deployMigrations(input: {
       : withLockTimeout(input.migrationUrl, input.lockTimeoutMs ?? LOCK_TIMEOUT_MS);
     for (let attempt = 0; ; attempt++) {
       try {
-        execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+        execFileSync(process.execPath, [prismaCli(input.dbPackageDir), "migrate", "deploy"], {
           cwd: input.dbPackageDir,
           stdio: "inherit",
           env: {

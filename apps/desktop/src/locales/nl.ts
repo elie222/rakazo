@@ -196,6 +196,19 @@ export const NL_MESSAGES: Record<string, string> = {
   "Chat Details": "Chatdetails",
   Help: "Help",
   "Keyboard Shortcuts": "Sneltoetsen",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Rakazo downloaden is mislukt. Controleer de internetverbinding en probeer het opnieuw.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Je gegevens konden niet uit Docker worden overgezet. Bekijk de uitvoer hieronder en probeer het opnieuw.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "De computerruntime die al draait is te oud. Werk hem bij of sluit hem af en probeer het opnieuw.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Je Rakazo-gegevens staan in een andere computerruntime. Sluit de runtime die draait af en probeer het opnieuw.",
+  "Run Rakazo without Docker?": "Rakazo zonder Docker gebruiken?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "Je bots en gegevens gaan mee. Docker wordt gestopt, niet verwijderd.",
+  Move: "Overzetten",
+  "Keep Docker": "Docker houden",
   "Nothing to install.": "Niets te installeren.",
   "Your data stays on this computer.": "Je gegevens blijven op deze computer.",
   "Connect to a server you or your team already run.":

@@ -206,6 +206,19 @@ export const PL_MESSAGES: Record<string, string> = {
   "Chat Details": "Szczegóły czatu",
   Help: "Pomoc",
   "Keyboard Shortcuts": "Skróty klawiszowe",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Nie udało się pobrać Rakazo. Sprawdź połączenie z internetem i spróbuj ponownie.",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Nie udało się przenieść danych z Dockera. Sprawdź dane wyjściowe poniżej i spróbuj ponownie.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "Uruchomione już środowisko komputerów jest zbyt stare. Zaktualizuj je lub zamknij, a potem spróbuj ponownie.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Twoje dane Rakazo są w innym środowisku komputerów. Zamknij to, które jest uruchomione, a potem spróbuj ponownie.",
+  "Run Rakazo without Docker?": "Uruchamiać Rakazo bez Dockera?",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "Twoje boty i dane zostaną przeniesione. Docker zostanie zatrzymany, nie usunięty.",
+  Move: "Przenieś",
+  "Keep Docker": "Zostań przy Dockerze",
   "Nothing to install.": "Nic do instalowania.",
   "Your data stays on this computer.": "Twoje dane zostają na tym komputerze.",
   "Connect to a server you or your team already run.":

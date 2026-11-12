@@ -91,6 +91,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fd-find \
     file \
     sqlite3 \
+    nftables \
   && rm -rf /var/lib/apt/lists/* \
   && pdftotext -v \
   && pdfinfo -v \

@@ -195,6 +195,8 @@ export interface RunDockerOptions {
   signal?: AbortSignal;
   /** Receives each complete stdout or stderr line as it arrives. */
   onLine?: (line: string) => void;
+  /** Written to stdin, which is otherwise closed. */
+  input?: string;
 }
 
 export interface RunDockerResult {
@@ -245,9 +247,11 @@ export function runDocker(
       env: options.env,
       shell: false,
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(options.input);
     const captured = { stdout: "", stderr: "" };
     const pending = { stdout: "", stderr: "" };
     let settled = false;

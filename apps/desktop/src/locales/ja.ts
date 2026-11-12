@@ -195,6 +195,19 @@ export const JA_MESSAGES: Record<string, string> = {
   "Chat Details": "チャットの詳細",
   Help: "ヘルプ",
   "Keyboard Shortcuts": "キーボードショートカット",
+  "Downloading Rakazo failed. Check the internet connection, then retry.":
+    "Rakazoをダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。",
+  "Could not move your data from Docker. Check the output below, then retry.":
+    "Dockerからデータを移行できませんでした。下の出力を確認してから、もう一度お試しください。",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "すでに実行中のコンピューターランタイムが古すぎます。更新するか終了してから、もう一度お試しください。",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Rakazoのデータは別のコンピューターランタイムにあります。実行中のものを終了してから、もう一度お試しください。",
+  "Run Rakazo without Docker?": "DockerなしでRakazoを実行しますか？",
+  "Your bots and data move over. Docker is stopped, not removed.":
+    "ボットとデータは引き継がれます。Dockerは停止されますが、削除はされません。",
+  Move: "移行",
+  "Keep Docker": "Dockerを使い続ける",
   "Nothing to install.": "インストール不要です。",
   "Your data stays on this computer.": "データはこのコンピュータに保存されます。",
   "Connect to a server you or your team already run.":

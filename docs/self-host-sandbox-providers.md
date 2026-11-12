@@ -13,6 +13,7 @@ for the sharing and persistence contract.
 | Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
 | One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                                            | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
 | One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| One VM per computer on an Apple silicon Mac             | `SANDBOX_PROVIDER=local-vm`                                              | macOS 26 or newer and Apple's `container` runtime with its system service started                                                     |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -372,6 +373,33 @@ echo requests are refused among ICMPv6 messages to private addresses; DHCP and D
 allowed by Incus before any ACL rule. The IP filtering options stop
 a computer from spoofing addresses or sending router advertisements to the host. Set
 `INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
+
+## `local-vm`
+
+Each computer is one lightweight Linux VM on the Mac running Rakazo, started from the published
+computer image by Apple's [`container`](https://github.com/apple/container) runtime
+(Virtualization.framework). It needs Apple silicon and macOS 26 or newer, with the `container`
+system service started; no Docker, supervisor or socket is involved.
+
+| Variable                  | Default                                | Notes                                        |
+| ------------------------- | -------------------------------------- | -------------------------------------------- |
+| `LOCAL_VM_CLI`            | `container`                            | Path to the `container` CLI                  |
+| `LOCAL_VM_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Must include `nft`; older images are refused |
+| `LOCAL_VM_CPUS`           | `2`                                    | CPUs of each VM                              |
+| `LOCAL_VM_MEMORY`         | `2g`                                   | Memory of each VM                            |
+
+Each start creates a VM and a network of its own, both named `rakazo-<uuid>`, labelled
+`rakazo.bot-id=<bot id>`; one carrying another bot's id is never reused or removed. The image's
+start command and every command run as uid 1000 with no capabilities and no privilege escalation.
+As with Incus, VMs are removed when they stop: the saved workspace is copied in when a computer
+starts and saved back when it stops. The API, worker and web reach the screen on the VM's address.
+
+Before a computer is used, Rakazo loads an nftables firewall into the VM as root and checks it is
+in place; if that fails, the VM is removed and the start fails. The firewall allows the public
+internet and DNS to the VM's gateway, and rejects everything else to the Mac, the LAN,
+link-local and cloud-metadata, CGNAT, multicast and other private addresses (the same list as the
+Incus ACL above). Incoming connections are dropped except from the Mac to the screen ports. The
+bot's uid 1000 cannot change it.
 
 ## `wuying`
 

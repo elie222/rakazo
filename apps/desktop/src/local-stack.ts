@@ -34,12 +34,12 @@ export async function readStackWebUrl(dir: string, fallback: string): Promise<st
     : fallback;
 }
 
-/** Docker owns the final bind; a racing listener is handled by bounded up retries. */
-export async function allocateLoopbackPort(): Promise<number> {
+/** Binds and releases `port` on loopback (0 picks a free one); resolves to the port it bound. */
+function bindLoopback(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(port, "127.0.0.1", () => {
       const address = server.address();
       server.close((error) => {
         if (error) reject(error);
@@ -48,6 +48,18 @@ export async function allocateLoopbackPort(): Promise<number> {
       });
     });
   });
+}
+
+/** Docker owns the final bind; a racing listener is handled by bounded up retries. */
+export function allocateLoopbackPort(): Promise<number> {
+  return bindLoopback(0);
+}
+
+export function portFreeOnLoopback(port: number): Promise<boolean> {
+  return bindLoopback(port).then(
+    () => true,
+    () => false,
+  );
 }
 
 const HEALTH_POLL_INTERVAL_MS = 2_000;
@@ -129,7 +141,8 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
 const ADDED_SECRETS = ["POSTGRES_APP_PASSWORD"];
 
 /** Lines to append so an existing `.env` has every added secret, or "" when it already does. */
-export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
+/** The `.env` assignments as Compose reads them: the last assignment of a name wins. */
+export function parseStackEnv(env: string): Map<string, string> {
   const values = new Map<string, string>();
   // Consume quoted values across lines so their contents cannot become assignments.
   const assignments = env.matchAll(
@@ -138,6 +151,11 @@ export function missingStackSecrets(env: string, randomHex: (bytes: number) => s
   for (const match of assignments) {
     values.set(match[1]!, match[2] ?? match[3] ?? match[4]!.trim());
   }
+  return values;
+}
+
+export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
+  const values = parseStackEnv(env);
   // Compose uses the last assignment; empty quotes still fail its required-value check.
   return ADDED_SECRETS.filter((name) => (values.get(name) ?? "") === "")
     .map((name) => `${name}=${randomHex(GENERATED_SECRETS[name]!)}\n`)
@@ -199,6 +217,7 @@ export type LocalStackEvent =
   | { type: "up-start" }
   | { type: "wait-start" }
   | { type: "output"; line: string }
+  | { type: "download"; name: string; bytes: number }
   | { type: "ready" }
   | { type: "failed"; message: string; output?: string[] };
 
@@ -256,6 +275,11 @@ export function reduceStackState(
         output: [...state.output, event.line].slice(-STACK_OUTPUT_LINES),
         layerBytes: reduceLayerBytes(state.layerBytes, event.line),
       };
+    case "download":
+      if (state.phase !== "pulling" || event.bytes <= (state.layerBytes[event.name] ?? 0)) {
+        return state;
+      }
+      return { ...state, layerBytes: { ...state.layerBytes, [event.name]: event.bytes } };
     case "ready":
       return { ...state, phase: "ready", message: null };
     case "failed":
@@ -272,7 +296,7 @@ const dockerGroupHint = () =>
   t(
     "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.",
   );
-const startInterrupted = () => t("The start was interrupted. Retry to continue.");
+export const startInterrupted = () => t("The start was interrupted. Retry to continue.");
 
 /** Docker output may contain paths and hostnames, so the person only ever sees these. */
 export function stackFailureMessage(
@@ -340,8 +364,18 @@ export interface LocalStackDeps {
   healthTimeoutMs?: number;
 }
 
+/** What the app needs from whichever controller runs This computer. */
+export interface StackController {
+  webUrl(): string;
+  state(): DesktopLocalStackState;
+  matchesDesiredStack(): Promise<boolean>;
+  start(): Promise<DesktopLocalStackState>;
+  stop(): Promise<DesktopLocalStackState>;
+  abort(): void;
+}
+
 /** Resolves early on abort so a stop never waits out a health poll. */
-function defaultSleep(ms: number, signal: AbortSignal) {
+export function defaultSleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     const timer = setTimeout(done, ms);
     function done() {
@@ -354,26 +388,33 @@ function defaultSleep(ms: number, signal: AbortSignal) {
 }
 
 /**
- * Installs and starts the compose stack under the app's user data. Every docker call
- * uses a fixed argv and an allowlisted environment; the setup window polls `state()`.
+ * The start/stop lifecycle both controllers share: one attempt at a time, a stop that cancels
+ * it and voids starts queued before it, and state pushed on every change. Each backend supplies
+ * the attempt, how a thrown attempt fails, and what stopping does.
  */
-export class LocalStackController {
-  private current: DesktopLocalStackState;
-  private currentWebUrl: string;
-  private currentStackToken: string | null = null;
+export abstract class StackLifecycle implements StackController {
+  protected current: DesktopLocalStackState;
+  protected currentWebUrl: string;
   private running: Promise<DesktopLocalStackState> | null = null;
   private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
   private ticket = 0;
-  /** Set once setup has tried to start the Docker app, so a re-check never reopens it on top of the person's work. */
-  private dockerAppLaunch: { app: string | null; at: number } | undefined;
   /** Starts ticketed at or below this were superseded by a later stop and must not run. */
   private voidBefore = 0;
 
-  constructor(private readonly deps: LocalStackDeps) {
-    this.current = initialStackState(deps.imageTag);
-    this.currentWebUrl = deps.localWebUrl;
+  constructor(
+    imageTag: string,
+    webUrl: string,
+    private readonly onState?: (state: DesktopLocalStackState) => void,
+  ) {
+    this.current = initialStackState(imageTag);
+    this.currentWebUrl = webUrl;
   }
+
+  abstract matchesDesiredStack(): Promise<boolean>;
+  protected abstract attempt(signal: AbortSignal): Promise<void>;
+  protected abstract attemptFailed(error: unknown, signal: AbortSignal): Promise<void>;
+  protected abstract shutdown(): Promise<void>;
 
   webUrl(): string {
     return this.currentWebUrl;
@@ -381,6 +422,84 @@ export class LocalStackController {
 
   state(): DesktopLocalStackState {
     return this.current;
+  }
+
+  /**
+   * Idempotent while a start is in flight; otherwise begins a fresh attempt from any
+   * phase, after any stop still running so a start and a stop never overlap.
+   */
+  start(): Promise<DesktopLocalStackState> {
+    if (this.running !== null) return this.running;
+    const ticket = ++this.ticket;
+    const attempt = (this.stopping ?? Promise.resolve())
+      .then(() => (ticket <= this.voidBefore ? this.current : this.run()))
+      .finally(() => {
+        if (this.running === attempt) this.running = null;
+      });
+    this.running = attempt;
+    return attempt;
+  }
+
+  /** Cancels the in-flight step; whatever already started keeps running. */
+  abort() {
+    this.inFlight?.abort();
+  }
+
+  stop(): Promise<DesktopLocalStackState> {
+    this.voidBefore = this.ticket;
+    // Join a stop already running unless a start was queued behind it; the latest
+    // intent is "stopped", so that start is voided and a fresh stop follows it.
+    if (this.stopping !== null && this.running === null) return this.stopping;
+    this.abort();
+    // Release the attempt now so a start requested during this stop queues a fresh
+    // attempt behind it instead of joining the one being torn down.
+    const settled = [this.stopping, this.running].map((pending) => pending?.catch(() => undefined));
+    this.running = null;
+    const stopping = Promise.all(settled)
+      .then(() => this.shutdown())
+      .then(() => this.current)
+      .finally(() => {
+        if (this.stopping === stopping) this.stopping = null;
+      });
+    this.stopping = stopping;
+    return stopping;
+  }
+
+  protected push(event: LocalStackEvent) {
+    this.setState(reduceStackState(this.current, event));
+  }
+
+  protected setState(next: DesktopLocalStackState) {
+    if (next === this.current) return;
+    this.current = next;
+    this.onState?.(next);
+  }
+
+  private async run(): Promise<DesktopLocalStackState> {
+    const controller = new AbortController();
+    this.inFlight = controller;
+    try {
+      await this.attempt(controller.signal);
+    } catch (error) {
+      await this.attemptFailed(error, controller.signal);
+    } finally {
+      if (this.inFlight === controller) this.inFlight = null;
+    }
+    return this.current;
+  }
+}
+
+/**
+ * Installs and starts the compose stack under the app's user data. Every docker call
+ * uses a fixed argv and an allowlisted environment; the setup window polls `state()`.
+ */
+export class LocalStackController extends StackLifecycle {
+  private currentStackToken: string | null = null;
+  /** Set once setup has tried to start the Docker app, so a re-check never reopens it on top of the person's work. */
+  private dockerAppLaunch: { app: string | null; at: number } | undefined;
+
+  constructor(private readonly deps: LocalStackDeps) {
+    super(deps.imageTag, deps.localWebUrl, deps.onState);
   }
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
@@ -404,48 +523,8 @@ export class LocalStackController {
     }
   }
 
-  /**
-   * Idempotent while a start is in flight; otherwise begins a fresh attempt from any
-   * phase, after any stop still running so `compose up` and `compose stop` never overlap.
-   */
-  start(): Promise<DesktopLocalStackState> {
-    if (this.running !== null) return this.running;
-    const ticket = ++this.ticket;
-    const attempt = (this.stopping ?? Promise.resolve())
-      .then(() => (ticket <= this.voidBefore ? this.current : this.run()))
-      .finally(() => {
-        if (this.running === attempt) this.running = null;
-      });
-    this.running = attempt;
-    return attempt;
-  }
-
-  /** Kills the in-flight docker command; containers already started keep running. */
-  abort() {
-    this.inFlight?.abort();
-  }
-
   /** Stops the containers (`compose stop`); volumes and images stay for the next start. */
-  stop(): Promise<DesktopLocalStackState> {
-    this.voidBefore = this.ticket;
-    // Join a stop already running unless a start was queued behind it; the latest
-    // intent is "stopped", so that start is voided and a fresh stop follows it.
-    if (this.stopping !== null && this.running === null) return this.stopping;
-    this.abort();
-    // Release the attempt now so a start requested during this stop queues a fresh
-    // attempt behind it instead of joining the one being torn down.
-    const settled = [this.stopping, this.running].map((pending) => pending?.catch(() => undefined));
-    this.running = null;
-    const stopping = Promise.all(settled)
-      .then(() => this.runStop())
-      .finally(() => {
-        if (this.stopping === stopping) this.stopping = null;
-      });
-    this.stopping = stopping;
-    return stopping;
-  }
-
-  private async runStop(): Promise<DesktopLocalStackState> {
+  protected async shutdown() {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
     this.setState(
@@ -459,34 +538,14 @@ export class LocalStackController {
             ),
           },
     );
-    return this.current;
   }
 
-  private push(event: LocalStackEvent) {
-    this.setState(reduceStackState(this.current, event));
+  protected async attemptFailed() {
+    // Copying the bundled compose files failed; the path would not help the person.
+    this.push({ type: "failed", message: t("Could not prepare the local stack. Retry.") });
   }
 
-  private setState(next: DesktopLocalStackState) {
-    if (next === this.current) return;
-    this.current = next;
-    this.deps.onState?.(next);
-  }
-
-  private async run(): Promise<DesktopLocalStackState> {
-    const controller = new AbortController();
-    this.inFlight = controller;
-    try {
-      await this.attempt(controller.signal);
-    } catch {
-      // Copying the bundled compose files failed; the path would not help the person.
-      this.push({ type: "failed", message: t("Could not prepare the local stack. Retry.") });
-    } finally {
-      if (this.inFlight === controller) this.inFlight = null;
-    }
-    return this.current;
-  }
-
-  private async attempt(signal: AbortSignal) {
+  protected async attempt(signal: AbortSignal) {
     this.push({ type: "check-start" });
     await mkdir(this.deps.stackDir, { recursive: true, mode: 0o700 });
 

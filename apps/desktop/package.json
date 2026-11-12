@@ -87,6 +87,10 @@
         {
           "from": "assets/pl.lproj",
           "to": "pl.lproj"
+        },
+        {
+          "from": "build/server-bundle.json",
+          "to": "server-bundle.json"
         }
       ],
       "target": [
