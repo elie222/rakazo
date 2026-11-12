@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-12
+
+### Security
+
+- Updated third-party dependencies with known vulnerabilities, including the HTTP client used by model, mail and scraping connections, the mail sender, and XML and Markdown parsers.
+
+### Added
+
+- On Apple silicon Macs running macOS 26 or newer, the desktop app's **This computer** runs without Docker. The app downloads what it needs the first time you pick it, and each bot's computer runs as its own small VM with a firewall that lets it reach the internet but not your Mac or local network. If you already run This computer on Docker, the app asks once whether to move your bots and data; Docker is stopped, not removed. Intel Macs, older macOS, Linux and Windows keep using Docker ([This computer on a Mac without Docker](docs/desktop-mac-without-docker.md)).
+- Message your bots from Microsoft Teams direct messages after linking your Teams account ([messaging apps](docs/messaging-apps.md)).
+- Routines can watch a public HTTPS address and run only when its response changes, without starting a computer ([routines](docs/routines.md#when-something-changes)).
+- When This computer needs Docker and it is missing, the desktop app offers one button to download the right Docker Desktop installer, opens Docker if it is stopped, and continues setup on its own once Docker is running.
+
+### Changed
+
+- Webhook and email routine runs now follow the owner's approval mode and **Always allow** list instead of asking on every step. Text in a webhook or email can try to steer the bot, so a tool on your **Always allow** list will run on it without a person looking ([approvals](docs/approvals.md)).
+- When a bot needs you to use its computer, its card shows a still of the screen with **Skip**, **I'm done** and **Take control**, and folds into one line once settled.
+- A bot's chat no longer shows the prompt that started a webhook, email or chat-message routine; it shows only what the bot does.
+- Your chat bubbles stay close to the bot's avatar color, and the first bot created at sign-up starts orange.
+- Mobile settings are a short hub, with display and device preferences on a new **General** page and sign-in and security on an **Account** page opened by tapping your name.
+- Usage shows when monthly computer hours next reset separately from the plan's renewal date, including on annual plans.
+- InstaBox computers start at their plan's computer size. A stopped computer moves to its plan's size when it next starts, which discards its paused memory but keeps its files.
+- Bots see every open scratchpad item at the start of a run, and know the scratchpad's title and notes size limits before writing.
+- The sidebar updates when something changes instead of polling, and computer update progress is checked quickly only while an update is running.
+- Deploys are smoother: the old API finishes in-flight requests before exiting, and apps spread out their reconnects and retries afterwards.
+- Updating a self-hosted server downloads only the app's own files when its dependencies haven't changed, instead of the whole image.
+- The worker spends less CPU on memory cleanup under load.
+- Self-host monitoring raises the CPU overload alert when work actually waits for a processor rather than on a high load average, and says which measure tripped it.
+
+### Fixed
+
+- A Docker computer that comes up unable to write its home folder, such as after Docker or the host restarts, is restarted automatically instead of failing every run.
+- Docker computers start on Windows hosts instead of failing a home folder permission check.
+- Android message notifications no longer arrive blank while the app is in the background.
+
+### Self-host upgrade notes
+
+- Servers on Apple silicon Macs with macOS 26 or newer can run computers as VMs instead of Docker containers with `SANDBOX_PROVIDER=local-vm`, tuned by `LOCAL_VM_CLI`, `LOCAL_VM_COMPUTER_IMAGE`, `LOCAL_VM_CPUS` and `LOCAL_VM_MEMORY` ([computer providers](docs/self-host-sandbox-providers.md#local-vm)).
+- The computer image now includes nftables, which `local-vm` requires; no action is needed.
+- To enable Microsoft Teams, set `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD` and `TEAMS_APP_TENANT_ID` ([integrations](docs/self-host-integrations.md#microsoft-teams)).
+- The bundled Compose files start the worker with `--max-semi-space-size=64`. If you maintain your own Compose file, add it to the worker's start command for the same CPU saving.
+
 ## [0.10.0] - 2026-11-11
 
 ### Security
