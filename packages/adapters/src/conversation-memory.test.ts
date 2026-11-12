@@ -307,6 +307,19 @@ const fromBea = () =>
   });
 
 describe("retainRunConversation", () => {
+  it.each([undefined, "", "   "])(
+    "refuses to submit without a connection identity: %j",
+    async (identity) => {
+      const { deps, provider } = harness();
+      Object.assign(provider, { connectionIdentity: identity });
+      await expect(retainRunConversation(deps, "run-1")).rejects.toThrow(
+        "Conversation retention requires a stable connection identity.",
+      );
+      expect(provider.retainConversation).not.toHaveBeenCalled();
+      expect(provider.purgeHistory).not.toHaveBeenCalled();
+    },
+  );
+
   it("sends the person's words and the replies with names, scope and generation", async () => {
     const { deps, provider } = harness();
     await retainRunConversation(deps, "run-1");

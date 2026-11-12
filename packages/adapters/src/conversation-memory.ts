@@ -190,6 +190,10 @@ export async function retainRunConversation(
   const configured = await deps.memoryProviders.resolve(run.spaceId);
   const provider = configured?.provider;
   if (!configured || !provider?.retainConversation) return done;
+  const connectionIdentity = provider.connectionIdentity;
+  if (!connectionIdentity?.trim()) {
+    throw new Error("Conversation retention requires a stable connection identity.");
+  }
   const [source, steered, replies, bot] = await Promise.all([
     deps.prisma.message.findFirst({
       // In a group chat another bot's handoff can start the run.
@@ -306,8 +310,8 @@ export async function retainRunConversation(
   if (!result.ok) throw new Error(result.error);
   const pending: PendingTurn = {
     generation,
+    connectionIdentity,
     source: { spaceId: run.spaceId, userId: run.userId, botId: run.botId, threadId: run.threadId },
-    ...(provider.connectionIdentity ? { connectionIdentity: provider.connectionIdentity } : {}),
   };
   if (result.value.pending) return { pending: { ...pending, token: result.value.pending } };
   try {

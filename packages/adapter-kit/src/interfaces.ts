@@ -335,7 +335,7 @@ export interface MemoryStore {
 
 /** Optional semantic memory. Durable Markdown memory remains owned by MemoryStore. */
 export interface SemanticMemoryProvider {
-  /** Providers retaining turns expose an opaque version that changes with endpoint or credentials. */
+  /** Required by retainConversation: an opaque version that changes with endpoint or credentials. */
   readonly connectionIdentity?: string;
   describe(): AdapterDescriptor<SemanticMemoryCapabilities>;
   recall(
