@@ -43,6 +43,8 @@ import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
 import { T3CodeConnections } from "./t3code-connections.js";
 import { TeamChat } from "./team-chat.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
+import { tailscaledInstalled } from "./tailnet-service.js";
+import { createTailnetCommandAccess, tailnetServerOrigin } from "./tailnet-tunnel.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /**
@@ -71,6 +73,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   maxUploadSizeBytes: number;
   /** Only names a bot's address to it; the API receives the mail. */
   inboundEmailDomain: string | undefined;
+  /** This server's origin as bots' computers reach it for tailnet tunnels; see tailnetServerOrigin. */
+  tailnetServerOrigin: string | undefined;
 }
 
 /** The worker's reading of the run runtime settings, values and defaults as the worker has them. */
@@ -103,6 +107,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
+    tailnetServerOrigin: tailnetServerOrigin(source.WEB_ORIGIN ?? ""),
   };
 }
 
@@ -191,6 +196,7 @@ type SetByRunRuntime =
   | "maxUploadSizeBytes"
   | "messaging"
   | "messagingDelivery"
+  | "tailnet"
   | "web";
 
 /** The run executor and the background job handlers that drive it. */
@@ -263,6 +269,13 @@ export function createRunRuntime(
     inboundEmailDomain: env.inboundEmailDomain,
     messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
     messagingDelivery,
+    tailnet: createTailnetCommandAccess({
+      prisma: deps.prisma,
+      encryptionKey: env.encryptionKey,
+      serverOrigin: env.tailnetServerOrigin,
+      // Tunnels end in an API process from the same image as this one.
+      available: tailscaledInstalled(),
+    }),
     web: createWebProvider(),
   });
   const jobHandlers = createBackgroundJobHandlers({

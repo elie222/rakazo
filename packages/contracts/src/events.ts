@@ -440,8 +440,9 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
 
 /**
  * Something the bot did on its computer, shown in the terminal's Activity view: a shell
- * command (with a redacted output tail) or a file/app action, whose `command` is the path or
- * app name.
+ * command (with a redacted output tail), a file/app action, whose `command` is the path or
+ * app name, or a tailnet connection, whose `command` is `host:port` and whose `output` says why
+ * it was refused or failed.
  */
 export const COMPUTER_COMMAND_OUTPUT_MAX_CHARS = 16_000;
 export const ComputerCommandKind = z.enum([
@@ -450,6 +451,7 @@ export const ComputerCommandKind = z.enum([
   "attach_file",
   "open_path",
   "launch_app",
+  "tailnet",
 ]);
 export type ComputerCommandKind = z.infer<typeof ComputerCommandKind>;
 export const ComputerCommandSchema = z.object({
@@ -460,7 +462,7 @@ export const ComputerCommandSchema = z.object({
   status: z.enum(["running", "done"]),
   exitCode: z.number().int().nullable(),
   output: z.string(),
-  /** Size written by write_file. */
+  /** Size written by write_file, or bytes a tailnet connection carried both ways. */
   bytes: z.number().int().nonnegative().optional(),
 });
 export type ComputerCommand = z.infer<typeof ComputerCommandSchema>;

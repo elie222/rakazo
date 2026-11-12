@@ -228,6 +228,7 @@ export { T3CodeConnections } from "./t3code-connections.js";
 export * from "./tailnet-connections.js";
 export * from "./tailnet-emulator.js";
 export * from "./tailnet-service.js";
+export * from "./tailnet-tunnel.js";
 export * from "./tailscale-network.js";
 export * from "./tailscaled-node-host.js";
 export * from "./task-catalog.js";

@@ -1,6 +1,8 @@
 import * as z from "zod";
 import { isTailnetHost, normalizeHost } from "./network-host.js";
 
+export { TAILNET_CONNECT_PATH } from "./tailnet-path.js";
+
 /** The tag a space's bots join a tailnet with unless the admin picks another. */
 export const TAILNET_DEFAULT_TAG = "tag:rakazo";
 

@@ -24,6 +24,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { MessagingDelivery } from "./messaging-delivery.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import type { TailnetCommandAccess } from "./tailnet-tunnel.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
 
@@ -91,6 +92,8 @@ export interface ExecutorDeps {
    * can still run for the OAuth account whose backend lists it.
    */
   codexCatalog?: CodexLiveCatalog;
+  /** Tunnel settings for shell commands of runs whose member allowed the bot on their tailnet. */
+  tailnet?: TailnetCommandAccess;
   /** The run starter's connected desktop; absent never offers user_computer_shell. */
   userDevices?: UserDeviceGateway;
   /** Aborted when createApp stop() begins so in-flight continueRun boot waits exit promptly. */

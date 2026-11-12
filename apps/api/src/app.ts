@@ -72,6 +72,7 @@ import {
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   TailnetService,
+  tailnetServerOrigin,
   UserDeviceHub,
   UserDevices,
   userDeviceForwardSecret,
@@ -94,6 +95,7 @@ import {
   isLocalhostOrLoopbackIp,
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
+  tailnetDestinationKey,
 } from "@rakazo/contracts";
 import { encryptionKeyWarning, signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
@@ -169,6 +171,7 @@ import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
+import { createTailnetTunnel } from "./tailnet-tunnel.js";
 import { settleWithTimeout } from "./team-chat-startup.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
@@ -204,7 +207,7 @@ export interface AppHandles {
   runtime: AgentRuntime;
   awaitIdle?: () => Promise<void>;
   backgroundFailures?: () => Array<{ name: string; count: number }>;
-  /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
+  /** Node `upgrade` listener: desktop device sockets and bots' tailnet tunnels. */
   handleUpgrade?: UserDeviceHub["handleUpgrade"];
   stop: () => Promise<void>;
 }
@@ -265,7 +268,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
-  const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
+  const runtimeEnv: RunRuntimeEnv = {
+    ...env,
+    inboundEmailDomain: env.inboundEmail?.domain,
+    tailnetServerOrigin: tailnetServerOrigin(env.webOrigin),
+  };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
@@ -325,6 +332,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
+  });
+  const tailnetTunnel = createTailnetTunnel({
+    prisma,
+    tailnet,
+    events,
+    encryptionKey: env.encryptionKey,
+    // Replaced by the run's approvals; until then every destination needs one.
+    authorize: async (_run, destination) =>
+      `Ask to connect to ${tailnetDestinationKey(destination)} first.`,
   });
   const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
@@ -1151,7 +1167,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime,
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
-    handleUpgrade: userDeviceHub?.handleUpgrade,
+    handleUpgrade: (request, socket, head) => {
+      if (tailnetTunnel.matches(request)) return tailnetTunnel.handleUpgrade(request, socket, head);
+      if (userDeviceHub) return userDeviceHub.handleUpgrade(request, socket, head);
+      socket.destroy();
+    },
     stop: async () => {
       // Handlers still running would otherwise query the pool after it ends.
       const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
@@ -1162,6 +1182,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       // Aborted runs hand themselves back while realtime is still open to announce them.
       const runsStopped = runs?.stop();
       await userDeviceHub?.close();
+      tailnetTunnel.close();
       await oauthLogins.abortAll();
       await messagingRuntime?.stop();
       await stopReferralEmails?.();
