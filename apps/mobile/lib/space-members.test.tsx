@@ -26,6 +26,10 @@ vi.mock("./api-server", () => ({
   selectSpace,
 }));
 vi.mock("expo-secure-store", () => ({}));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-router", () => ({
   useRouter: () => router,
@@ -39,7 +43,8 @@ vi.mock("react-native", () => ({
   Share: { share },
   StyleSheet: { create: <T,>(styles: T) => styles },
   Platform: { OS: "ios" },
-  ActivityIndicator: () => null,
+  ActivityIndicator: () => createElement("div", { role: "progressbar" }),
+  View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
   Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
 }));
@@ -193,4 +198,41 @@ it("lets a member leave and returns home in their own space", async () => {
   expect(selectSpace).toHaveBeenCalledWith("space-own");
   expect(router.dismissAll).toHaveBeenCalled();
   expect(router.replace).toHaveBeenCalledWith("/");
+});
+
+it("retries a failed first load without reopening the members screen", async () => {
+  let finishRetry!: (value: unknown) => void;
+  rpc.mockRejectedValueOnce(new Error("Offline")).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRetry = resolve;
+      }),
+  );
+  await act(async () => root.render(createElement(SpaceMembersScreen)));
+  expect(host.textContent).toContain("Offline");
+  expect(buttonNamed("Retry")).toBeDefined();
+  await act(async () => buttonNamed("Retry")?.click());
+  expect(host.textContent).not.toContain("Offline");
+  expect(buttonNamed("Retry")).toBeUndefined();
+  expect(host.querySelector('[role="progressbar"]')).not.toBeNull();
+  expect(rpc).toHaveBeenCalledTimes(2);
+  expect(rpc).toHaveBeenLastCalledWith("spaces/members/list", { spaceId: "space-shared" });
+  await act(async () =>
+    finishRetry({ spaceName: "Home", members: [owner, member], canManage: true }),
+  );
+  expect(host.textContent).toContain("Ada Lovelace");
+  expect(buttonNamed("Invite")).toBeDefined();
+  expect(buttonNamed("Retry")).toBeUndefined();
+  expect(host.querySelector('[role="progressbar"]')).toBeNull();
+});
+
+it("offers retry again if reloading the members fails", async () => {
+  rpc.mockRejectedValueOnce(new Error("Offline")).mockRejectedValueOnce(new Error("Still offline"));
+  await act(async () => root.render(createElement(SpaceMembersScreen)));
+  expect(buttonNamed("Retry")).toBeDefined();
+  await act(async () => buttonNamed("Retry")?.click());
+  expect(rpc).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("Still offline");
+  expect(buttonNamed("Retry")).toBeDefined();
+  expect(host.querySelector('[role="progressbar"]')).toBeNull();
 });
