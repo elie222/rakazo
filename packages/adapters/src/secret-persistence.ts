@@ -108,6 +108,7 @@ const secretTables = {
   Secret: "secrets",
   BotSecret: "bot_secrets",
   VaultCredential: "vault_credentials",
+  TailnetConnection: "tailnet_connections",
   IntegrationProviderConfig: "integration_provider_configs",
 };
 const parentTables = { User: "user", Space: "spaces", Bot: "bots", Organization: "organization" };
@@ -220,6 +221,7 @@ export function withSecretPersistence(
     if (model !== "Bot") {
       await dropping(state, await lockedRows(state, "Secret", filter));
       await dropping(state, await lockedRows(state, "VaultCredential", filter));
+      await dropping(state, await lockedRows(state, "TailnetConnection", filter));
     }
     await dropping(state, await lockedRows(state, "BotSecret", filter));
   }
