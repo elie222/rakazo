@@ -121,6 +121,11 @@ msgstr "{0}이(가) 실행 중입니다"
 msgid "{0} KB"
 msgstr "{0} KB"
 
+#. placeholder {0}: usd(creditsUsd)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0} left"
+msgstr ""
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "{0} MB"
@@ -141,6 +146,11 @@ msgstr "{0} TB"
 msgid "{0}, paused until you turn it on"
 msgstr "{0}, 직접 켤 때까지 일시 중지됨"
 
+#. placeholder {0}: Math.round(used)
+#: apps/web/src/components/PlanUsage.tsx
+msgid "{0}% used"
+msgstr ""
+
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -160,6 +170,10 @@ msgstr "주 {amount}"
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} in total"
 msgstr "총 {amount}"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{amount} left"
+msgstr ""
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
@@ -673,6 +687,10 @@ msgstr "{title}, {savedAs}(으)로 저장"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, other {도구 #개}}"
 
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{used}% used"
+msgstr ""
+
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
 msgstr "{variable}은(는) 예약된 이름입니다. 다른 이름을 선택하세요."
@@ -1093,7 +1111,7 @@ msgstr "모델 추가"
 msgid "Add open work"
 msgstr "진행 중인 작업 추가"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/lib/passkey.ts
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -1177,7 +1195,6 @@ msgstr "주소 2"
 msgid "Adds"
 msgstr "추가 항목"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
@@ -1204,13 +1221,13 @@ msgstr "에이전트"
 msgid "Agent from another app"
 msgstr "다른 앱의 에이전트"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Agent messages"
 msgstr "에이전트 메시지"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "AI data sharing"
 msgstr "AI 데이터 공유"
 
@@ -1379,7 +1396,7 @@ msgstr "가져온 API 키를 사용할 수 없습니다. 선택을 해제하고 
 msgid "An integration tool"
 msgstr "연동 도구"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/lib/live-notifications.ts
 msgid "Android blocked notifications."
 msgstr "Android에서 알림이 차단되었습니다."
@@ -1483,7 +1500,7 @@ msgstr "API 토큰"
 msgid "API URL"
 msgstr "API URL"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "모양"
@@ -1557,7 +1574,6 @@ msgid "archived"
 msgstr "보관됨"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Archived"
@@ -1863,7 +1879,7 @@ msgstr "Bot 화면"
 msgid "Bot screen preview"
 msgstr "Bot 화면 미리보기"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr "봇 스타일"
@@ -1992,13 +2008,14 @@ msgid "Can't read images"
 msgstr "이미지를 읽을 수 없음"
 
 #: apps/mobile/app/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
@@ -2141,8 +2158,8 @@ msgid "Change model"
 msgstr "모델 변경"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/change-password.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "비밀번호 변경"
@@ -2559,10 +2576,10 @@ msgstr "완료"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "컴퓨터"
 
@@ -3088,11 +3105,12 @@ msgstr "음성 서비스에 연결하지 못했습니다."
 msgid "Could not connect to the computer screen"
 msgstr "컴퓨터 화면에 연결하지 못했습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/app/thread.tsx
 #: apps/mobile/components/account-deletion.tsx
+#: apps/mobile/components/ComputerCard.tsx
 #: apps/mobile/components/confirm-identity.tsx
 #: apps/mobile/lib/api-auth.ts
 #: apps/mobile/lib/identity-confirmation.ts
@@ -3101,6 +3119,7 @@ msgstr "컴퓨터 화면에 연결하지 못했습니다"
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/PasskeyOffer.tsx
 #: apps/web/src/components/PasskeySettings.tsx
@@ -3667,7 +3686,7 @@ msgstr "권한을 취소하지 못했습니다"
 msgid "Could not run routine"
 msgstr "루틴을 실행할 수 없습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -3933,7 +3952,7 @@ msgstr "컴퓨터를 업데이트할 수 없습니다"
 msgid "Could not update name"
 msgstr "이름을 업데이트하지 못했습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 msgid "Could not update notifications"
 msgstr "알림 설정을 업데이트하지 못했습니다"
@@ -3996,7 +4015,7 @@ msgstr "새로고침하지 못했습니다. 마지막으로 불러온 메시지�
 msgid "Couldn't start the computer"
 msgstr "컴퓨터를 시작하지 못했습니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
 msgstr "봇 스타일을 업데이트하지 못했습니다"
@@ -4112,9 +4131,11 @@ msgstr "자격 증명: {names}"
 msgid "Credit amount"
 msgstr "크레딧 금액"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 msgid "Credits"
 msgstr "크레딧"
 
@@ -4197,7 +4218,7 @@ msgstr "매일"
 msgid "Daily check-ins on unfinished work"
 msgstr "미완료 작업 매일 확인"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Dark"
@@ -4268,9 +4289,9 @@ msgstr "OpenClaw 기본값"
 msgid "Default scope"
 msgstr "기본 기억 범위"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/artifact.tsx
@@ -4342,8 +4363,8 @@ msgstr "{name}과(와) 봇 {count}개를 삭제할까요?"
 msgid "Delete {name} and its bot?"
 msgstr "{name}과(와) 봇을 삭제할까요?"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
@@ -4352,7 +4373,7 @@ msgstr "{name}과(와) 봇을 삭제할까요?"
 msgid "Delete {name}?"
 msgstr "{name}을(를) 삭제할까요?"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/AccountAccess.tsx
 #: apps/web/src/components/AccountMenu.tsx
@@ -4370,6 +4391,8 @@ msgid "Delete memories too"
 msgstr "기억도 함께 삭제"
 
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/AccountMenu.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Delete organization"
 msgstr "조직 삭제"
@@ -4417,6 +4440,10 @@ msgstr "삭제됨"
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Deleted"
 msgstr "삭제됨"
+
+#: apps/web/src/pages/shell/transcript-member-name.ts
+msgid "Deleted bot"
+msgstr ""
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -4645,12 +4672,12 @@ msgstr "계정이 없나요?"
 #: apps/mobile/lib/activity.ts
 #: apps/mobile/lib/board.ts
 #: apps/web/src/components/AccountDataSettings.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/ticket-status.ts
 #: apps/web/src/pages/ActivityList.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "완료"
 
@@ -4725,7 +4752,7 @@ msgstr "아바타 편집"
 msgid "Edit first"
 msgstr "수정 후 보내기"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
 #: apps/mobile/components/name-dialog.tsx
@@ -5288,6 +5315,8 @@ msgstr "게이트웨이 토큰"
 msgid "Gateway URL"
 msgstr "게이트웨이 URL"
 
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/settings-nav.ts
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "General"
@@ -5386,6 +5415,10 @@ msgstr "그룹 설정"
 msgid "Group updates"
 msgstr "업데이트 묶기"
 
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
+msgstr ""
+
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Hang up"
@@ -5400,7 +5433,7 @@ msgstr "먼저 전화를 끊은 다음 화면에 표시된 코드를 입력하�
 msgid "Hang up, then enter the code on screen."
 msgstr "전화를 끊은 다음 화면에 표시된 코드를 입력하세요."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Haptics"
 msgstr "햅틱"
 
@@ -5581,6 +5614,8 @@ msgid "https://example.com/openapi.json"
 msgstr "https://example.com/openapi.json"
 
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
 msgstr "조작 끝내기"
@@ -5880,7 +5915,7 @@ msgid "Label"
 msgstr "레이블"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/language.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -5933,7 +5968,7 @@ msgstr "봇이 이 컴퓨터를 사용하도록 허용"
 msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "MEMORY.md와 함께 봇이 의미를 기준으로 사실을 저장하고 떠올릴 수 있게 합니다."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Light"
@@ -5958,7 +5993,7 @@ msgstr "링크를 복사했습니다"
 msgid "Link DMs"
 msgstr "DM 연결"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO 연결"
@@ -5975,11 +6010,11 @@ msgstr "듣는 중"
 msgid "Listening…"
 msgstr "듣는 중…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live update settings"
 msgstr "실시간 업데이트 설정"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Live working status"
 msgstr "실시간 작업 상태"
 
@@ -5997,7 +6032,7 @@ msgstr "더 불러오기"
 msgid "Load older runs"
 msgstr "이전 실행 불러오기"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "웹 이미지 자동으로 불러오기"
@@ -6496,10 +6531,12 @@ msgstr "월요일"
 msgid "month"
 msgstr "월"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/components/ModelCredits.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 #: apps/web/src/lib/cron.ts
 msgid "Monthly"
@@ -6649,7 +6686,7 @@ msgstr "답변 필요"
 msgid "Needs an OAuth client ID"
 msgstr "OAuth 클라이언트 ID가 필요합니다"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/components/unread-jump-overlay.tsx
@@ -6673,9 +6710,9 @@ msgid "Needs takeover"
 msgstr "인수 필요"
 
 #: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/lib/roster-status.ts
 #: apps/web/src/pages/shell/computer-overlay.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "확인 필요"
 
@@ -7103,11 +7140,11 @@ msgstr "아직 기억한 내용이 없습니다"
 msgid "Nothing saved yet."
 msgstr "아직 저장된 항목이 없습니다."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Notification settings"
 msgstr "알림 설정"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -7227,12 +7264,12 @@ msgstr "나만"
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
-#: apps/web/src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "열기"
 
@@ -7378,7 +7415,7 @@ msgstr "조직"
 msgid "Organization API key"
 msgstr "조직 API 키"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -7486,12 +7523,12 @@ msgstr "이 그룹이 만든 페이지가 여기에 표시됩니다."
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
 msgstr "이 그룹이 만든 페이지가 여기에 표시됩니다. 대시보드, 트래커 또는 계획을 요청해 만들어 보세요."
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "패스키"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/PasskeySettings.tsx
 msgid "Passkeys"
 msgstr "패스키"
@@ -7828,7 +7865,7 @@ msgstr "풀 리퀘스트"
 msgid "Put your bots to work"
 msgstr "봇에게 일을 맡기세요"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Questions, approvals, takeover"
 msgstr "질문, 승인, 제어권 가져오기"
 
@@ -7842,8 +7879,8 @@ msgstr "대기 중"
 msgid "Quote"
 msgstr "인용"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -8080,10 +8117,10 @@ msgstr "새로고침"
 msgid "Remote MCP server"
 msgstr "원격 MCP 서버"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
@@ -8215,7 +8252,7 @@ msgstr "삭제했지만 목록을 새로고침하지 못했습니다."
 msgid "Removing…"
 msgstr "삭제 중…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/components/pages/PagesList.tsx
@@ -8282,7 +8319,7 @@ msgstr "{site}에 저장된 로그인 정보를 대체합니다"
 msgid "Replies"
 msgstr "답장"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Replies and completed work"
 msgstr "답장과 완료된 작업"
 
@@ -8355,15 +8392,26 @@ msgstr "비밀번호 재설정"
 msgid "Reset your password"
 msgstr "비밀번호를 재설정하세요"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/components/run-error-sheet.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Resets"
 msgstr "초기화"
 
+#. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Resets {0}"
+msgstr ""
+
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
 msgstr "{date}에 초기화됩니다."
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Resets in {reset}"
+msgstr ""
 
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -8425,14 +8473,15 @@ msgstr "워크스페이스 복원 중"
 msgid "Resume notifications"
 msgstr "알림 다시 켜기"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -8624,9 +8673,9 @@ msgstr "기본 모델과 동일"
 msgid "Saturday"
 msgstr "토요일"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -8744,7 +8793,7 @@ msgstr "예약 실행 지연"
 msgid "Scheduled routines"
 msgstr "예약된 루틴"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 msgid "Scheduled tasks"
 msgstr "예약된 작업"
 
@@ -8987,10 +9036,16 @@ msgstr "서버 이름"
 msgid "Server URL"
 msgstr "서버 URL"
 
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/PlanUsage.tsx
+msgid "Session"
+msgstr ""
+
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "설정"
 
+#: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/CallCard.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -9309,6 +9364,8 @@ msgstr "스킬은 모든 봇이 공유하는 라이브러리에 추가됩니다.
 
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
+#: apps/mobile/components/ComputerCard.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "건너뛰기"
@@ -9318,7 +9375,7 @@ msgid "Skip or deploy key"
 msgstr "건너뛰거나 배포 키"
 
 #: apps/mobile/components/ComputerCard.tsx
-#: apps/web/src/pages/shell/message-view.tsx
+#: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
 msgstr "건너뜀"
 
@@ -9611,7 +9668,7 @@ msgstr "중지하는 중…"
 msgid "Stored encrypted"
 msgstr "암호화해 저장"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "답변 스트리밍"
@@ -9721,7 +9778,7 @@ msgstr "서버를 전환하면 보내지 않은 메시지가 삭제됩니다."
 msgid "Switching…"
 msgstr "전환 중…"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "System"
@@ -9736,6 +9793,7 @@ msgid "Table"
 msgstr "표"
 
 #: apps/mobile/app/computer.tsx
+#: apps/web/src/components/ComputerCard.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "제어권 가져오기"
@@ -9875,6 +9933,14 @@ msgstr "봇이 작업하는 컴퓨터."
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "연결 시간이 초과되었습니다."
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The group {names} will be deleted too, including its messages, files, and pages."
+msgstr ""
+
+#: apps/web/src/pages/shell/dialogs.tsx
+msgid "The groups {names} will be deleted too, including their messages, files, and pages."
+msgstr ""
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10387,7 +10453,7 @@ msgstr "악용을 막기 위해 체험 기간에는 시간이 더 적게 제공�
 msgid "Troubleshoot"
 msgstr "문제 해결"
 
-#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
 msgstr "신뢰할 수 있는 사이트"
@@ -10412,9 +10478,9 @@ msgstr "신뢰할 수 있는 사이트"
 msgid "Try again"
 msgstr "다시 시도"
 
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/(settings)/bot-template.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/board.tsx
@@ -10654,6 +10720,7 @@ msgid "URL"
 msgstr "URL"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/SidebarFooter.tsx
 #: apps/web/src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "사용량"
@@ -10858,6 +10925,10 @@ msgstr "모두 보기"
 msgid "View source"
 msgstr "소스 보기"
 
+#: apps/web/src/components/SidebarFooter.tsx
+msgid "View usage"
+msgstr ""
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -10951,7 +11022,9 @@ msgstr "주중"
 msgid "Weekends"
 msgstr "주말"
 
+#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/web/src/components/PlanUsage.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Weekly"
 msgstr "매주"
@@ -11199,6 +11272,7 @@ msgid "You're all set"
 msgstr "준비가 끝났습니다"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/profile.tsx
 msgid "Your account"
 msgstr "내 계정"
 
