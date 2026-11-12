@@ -1689,6 +1689,8 @@ model Connection {
   secretId    String?
   providerRef String?
   metadata    Json     @default("{}")
+  /// The account bots use for this app unless told otherwise; without one, the oldest connected.
+  isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

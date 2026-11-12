@@ -298,6 +298,25 @@ export function usePluginConnections({
     }
   }
 
+  async function setDefaultAccount(row: Connection, item: ConnectionCatalogItem) {
+    setPending(`default:${row.id}`);
+    setCatalogError(null);
+    try {
+      await rpc.connections.setDefault({ connectionId: row.id });
+      const siblings = new Set(catalogItemAccounts(connections, item).map((entry) => entry.id));
+      await updateIntegrations((current) => ({
+        ...current,
+        connections: current.connections.map((entry) =>
+          siblings.has(entry.id) ? { ...entry, isDefault: entry.id === row.id } : entry,
+        ),
+      }));
+    } catch (err) {
+      setCatalogError(errorText(err, t`Could not change the default account`));
+    } finally {
+      setPending(null);
+    }
+  }
+
   return {
     mcpQuery,
     mcpServers,
@@ -327,6 +346,7 @@ export function usePluginConnections({
     itemConnected,
     connect,
     revokeAccount,
+    setDefaultAccount,
     uninstall,
     renameAccount,
   };

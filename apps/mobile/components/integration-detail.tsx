@@ -8,6 +8,7 @@ import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-nativ
 import { native, useThemedStyles } from "../lib/native";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
+import { MenuPicker } from "./menu-picker";
 import { NativeActionButton } from "./native-action-button";
 import { Chevron } from "./row-accessories";
 
@@ -28,6 +29,7 @@ export function IntegrationDetail({
   onUninstall,
   onRename,
   onRevoke,
+  onSetDefault,
   onConnect,
 }: {
   item: ConnectionCatalogItem;
@@ -43,6 +45,7 @@ export function IntegrationDetail({
   onUninstall: () => void;
   onRename: (row: Connection) => void;
   onRevoke: (row: Connection) => void;
+  onSetDefault: (row: Connection) => void;
   onConnect: () => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
@@ -51,6 +54,8 @@ export function IntegrationDetail({
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
   const toolCount = tools.length;
+  const connected = accounts.filter((row) => row.status === "connected");
+  const defaultAccount = connected.find((row) => row.isDefault);
 
   return (
     <View style={styles.detail}>
@@ -103,6 +108,18 @@ export function IntegrationDetail({
             />
           </View>
         ))}
+        {connected.length > 1 ? (
+          <MenuPicker
+            label={t`Default account`}
+            plain
+            choices={connected.map((row) => ({ key: row.id, label: row.displayName }))}
+            value={defaultAccount?.id ?? ""}
+            onChange={(id) => {
+              const row = connected.find((entry) => entry.id === id);
+              if (row && !row.isDefault) onSetDefault(row);
+            }}
+          />
+        ) : null}
         <NativeActionButton
           accessibilityLabel={t`Add another ${ph({ name: item.name })}`}
           disabled={connecting || uninstalling}

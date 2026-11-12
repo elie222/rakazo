@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   catalogItemAccounts,
   connectCatalogItem,
+  defaultAccountIds,
   isCatalogItemConnected,
   nextCatalogAccountLabel,
   waitForConnection,
@@ -32,6 +33,29 @@ describe("connection catalog", () => {
     expect(catalogItemAccounts(rows, item).map((row) => row.id)).toEqual(["a", "b"]);
     expect(isCatalogItemConnected(rows, item)).toBe(true);
     expect(isCatalogItemConnected([account("b", "pending")], item)).toBe(false);
+  });
+
+  it("defaults each app to its picked account, else its oldest connected one", () => {
+    const row = (id: string, at: string, extra: Partial<Connection> = {}) => ({
+      ...account(id, "connected"),
+      isDefault: false,
+      createdAt: at,
+      ...extra,
+    });
+    expect(
+      defaultAccountIds([
+        row("old-pending", "2026-01-01", { status: "pending" }),
+        row("newer", "2026-03-01"),
+        row("older", "2026-02-01"),
+        row("slack", "2026-04-01", { provider: "slack" }),
+      ]),
+    ).toEqual(new Set(["older", "slack"]));
+    expect(
+      defaultAccountIds([
+        row("older", "2026-02-01"),
+        row("picked", "2026-03-01", { isDefault: true }),
+      ]),
+    ).toEqual(new Set(["picked"]));
   });
 
   it("numbers additional accounts", () => {

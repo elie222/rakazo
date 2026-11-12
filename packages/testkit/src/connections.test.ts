@@ -167,21 +167,32 @@ describeWithDatabase("Composio catalog reconciliation", () => {
           id: first.connectionId,
           displayName: "Personal",
           status: "connected",
+          isDefault: true,
         }),
         expect.objectContaining({
           id: second.connectionId,
           displayName: "Work",
           status: "connected",
+          isDefault: false,
         }),
       ]),
     );
 
+    await rpc(app, cookie, "connections/setDefault", { connectionId: second.connectionId });
     await expect(
-      rpc<{ displayName: string }>(app, cookie, "connections/rename", {
+      rpc<{ displayName: string; isDefault: boolean }>(app, cookie, "connections/rename", {
         connectionId: second.connectionId,
         displayName: "Work inbox",
       }),
-    ).resolves.toMatchObject({ displayName: "Work inbox" });
+    ).resolves.toMatchObject({ displayName: "Work inbox", isDefault: true });
+    await expect(
+      rpc<Array<{ id: string; isDefault: boolean }>>(app, cookie, "connections/list"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.connectionId, isDefault: false }),
+        expect.objectContaining({ id: second.connectionId, isDefault: true }),
+      ]),
+    );
 
     await rpc(app, cookie, "connections/catalog");
     await expect(statuses([first.connectionId, second.connectionId])).resolves.toEqual([

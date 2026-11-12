@@ -9,7 +9,8 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { isIntegrationProviderId } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import { defaultAccountIds } from "@rakazo/core";
+import type { Connection, Prisma, PrismaClient } from "@rakazo/db";
 import {
   IsolationError,
   ProviderTransactionBusyError,
@@ -612,6 +613,13 @@ export async function completeConnection(
       connectionCreatedEvent("connections.complete", row.id, context.actor),
     );
   }
+  // Clients poll while authorizing; only a connected account can be a default.
+  return row.status === "connected"
+    ? connectionWithDefault(deps.prisma, row)
+    : connectionOutput(row, false);
+}
+
+export function connectionOutput(row: Connection, isDefault: boolean) {
   return {
     id: row.id,
     connectorId: row.connectorId,
@@ -619,8 +627,22 @@ export async function completeConnection(
     displayName: row.displayName,
     status: row.status as "pending" | "connected" | "revoked" | "error",
     capabilities: [],
+    isDefault,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/** One account's output, with whether it is its app's default among the owner's accounts. */
+export async function connectionWithDefault(prisma: PrismaClient, row: Connection) {
+  const siblings = await prisma.connection.findMany({
+    where: {
+      spaceId: row.spaceId,
+      userId: row.userId,
+      connectorId: row.connectorId,
+      provider: { equals: row.provider, mode: "insensitive" },
+    },
+  });
+  return connectionOutput(row, defaultAccountIds(siblings).has(row.id));
 }
 
 export async function revokeConnection(

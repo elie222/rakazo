@@ -73,7 +73,7 @@ type PipedreamApp = {
   img_src?: string;
 };
 
-type ApprovedAccount = { id: string; label: string; connectionId: string };
+type ApprovedAccount = { id: string; label: string; connectionId: string; isDefault?: boolean };
 
 type PipedreamAccount = {
   id: string;
@@ -189,6 +189,8 @@ export class PipedreamConnector implements ManagedConnectorProvider {
                     externalId: app,
                     displayName: account.label,
                     providerRef: account.id,
+                    // With one account there is nothing to choose between.
+                    isDefault: accounts.length > 1 && account.isDefault,
                   });
                 } catch (error) {
                   getLogger().error(
@@ -582,7 +584,12 @@ function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount
     if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
     const ref = connection.providerRef?.trim();
     if (ref && ref !== app && !approved.has(ref)) {
-      approved.set(ref, { id: ref, label: connection.displayName, connectionId: connection.id });
+      approved.set(ref, {
+        id: ref,
+        label: connection.displayName,
+        connectionId: connection.id,
+        isDefault: connection.isDefault,
+      });
     }
   }
   return [...approved.values()];

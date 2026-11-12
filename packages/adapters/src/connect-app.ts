@@ -18,6 +18,7 @@ export async function connectApp(
   target: { id: string; spaceId: string; threadId: string; botId: string },
   app: unknown,
   effectId: string,
+  another = false,
 ) {
   if (typeof app !== "string" || !app.trim() || app.length > 100) {
     return { error: "Provide an app name or slug of at most 100 characters." };
@@ -43,12 +44,14 @@ export async function connectApp(
       app,
     ) ?? matchAppCatalog(catalog, app);
   if (!entry) return { error: "No such app is available in the connector catalog." };
-  if (entry.connected)
+  if (entry.connected && !another)
     return {
       status: "connected",
-      message: "This app is already connected and its tools are available.",
+      message:
+        "This app is already connected and its tools are available. To add another account, call connect_app again with another set.",
     };
-  const block = appConnectCard(entry);
+  // A card for another account waits for its own authorization, whatever the app already has.
+  const block = { ...appConnectCard(entry), status: "pending" as const };
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const nonce = `connect-app:${effectId}`;

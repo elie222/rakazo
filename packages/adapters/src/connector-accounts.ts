@@ -26,7 +26,7 @@ export function scopeConnectorTools(
       // Keep the full action name for approval classification. Long names put the
       // account hash first so runtime name truncation cannot erase the account.
       name: tool.name.length <= 46 ? `${tool.name}__${suffix}` : `account_${suffix}__${tool.name}`,
-      description: `${tool.description}\nConnected account: ${JSON.stringify(connection.displayName)} (${connection.id})`,
+      description: `${tool.description}\nConnected account: ${JSON.stringify(connection.displayName)} (${connection.id})${connection.isDefault ? ", the default unless the user asks for another" : ""}`,
       route: {
         ...tool.route,
         connectorId: connection.connectorId,

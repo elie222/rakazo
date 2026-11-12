@@ -787,6 +787,31 @@ export default function Integrations() {
     }
   }
 
+  async function setDefaultAccount(row: Connection) {
+    const isCurrent = captureConnectionScope();
+    if (!isCurrent()) return;
+    setPending(`default:${row.id}`);
+    setCatalogError(null);
+    try {
+      await rpc("connections/setDefault", { connectionId: row.id });
+      if (!isCurrent()) return;
+      const siblings = new Set(
+        accountsFor({ connectorId: row.connectorId, slug: row.provider }).map((entry) => entry.id),
+      );
+      saveSnapshot({
+        ...snapshot.current,
+        connections: snapshot.current.connections.map((entry) =>
+          siblings.has(entry.id) ? { ...entry, isDefault: entry.id === row.id } : entry,
+        ),
+      });
+    } catch (reason) {
+      if (!isCurrent()) return;
+      setCatalogError(errorText(reason, t`Could not change the default account`));
+    } finally {
+      if (isCurrent()) setPending(null);
+    }
+  }
+
   async function uninstall(item: ConnectionCatalogItem) {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
@@ -1139,6 +1164,7 @@ export default function Integrations() {
                 onUninstall={() => void uninstall(detailItem)}
                 onRename={(row) => void renameAccount(row)}
                 onRevoke={(row) => void revokeAccount(row)}
+                onSetDefault={(row) => void setDefaultAccount(row)}
                 onConnect={() => void connect(detailItem)}
               />
             ) : (

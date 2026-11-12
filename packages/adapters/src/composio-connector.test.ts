@@ -8,6 +8,7 @@ import {
   ComposioConnector,
   collectLogIds,
   composioResultError,
+  defaultComposioAccounts,
   executeSessionKey,
   expandComposioMultiExecute,
   isComposioEnabled,
@@ -18,6 +19,7 @@ import {
   pickReusableConnection,
   planLiveConnectionSync,
   sanitizeIntegrationError,
+  withDefaultAccount,
 } from "./composio-connector.js";
 import { collectPages, filterCatalog } from "./connector-catalog.js";
 import { ConnectorRegistry } from "./connector-registry.js";
@@ -459,6 +461,105 @@ describe("composio tool mapping", () => {
     } finally {
       restore();
     }
+  });
+
+  it("runs a call that names no account as the default account", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts(["ca-personal", "ca-work"]);
+
+    try {
+      const connector = new ComposioConnector();
+      const context: AdapterContext = {
+        operationId: "composio-default-account",
+        traceId: "composio-default-account",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+        connectedConnections: [
+          {
+            id: "connection-personal",
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "Personal",
+            providerRef: "ca-personal",
+          },
+          {
+            id: "connection-work",
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "Work",
+            providerRef: "ca-work",
+            isDefault: true,
+          },
+        ],
+      };
+      for await (const _event of connector.execute(
+        { tool: "GITHUB_GET_REPOS", args: {}, executionId: "composio-default-account" },
+        context,
+      )) {
+        // drain
+      }
+      expect(composioSdkState.executions).toEqual([
+        { tool: "GITHUB_GET_REPOS", args: {}, options: { account: "ca-work" } },
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("names the default account only where several accounts need a pick", () => {
+    const connections = [
+      {
+        id: "a",
+        connectorId: "composio",
+        externalId: "gmail",
+        displayName: "A",
+        providerRef: "ca-a",
+      },
+      {
+        id: "b",
+        connectorId: "composio",
+        externalId: "gmail",
+        displayName: "B",
+        providerRef: "ca-b",
+        isDefault: true,
+      },
+      {
+        id: "s",
+        connectorId: "composio",
+        externalId: "slack",
+        displayName: "S",
+        providerRef: "ca-s",
+        isDefault: true,
+      },
+    ];
+    const defaults = defaultComposioAccounts(connections, {
+      GMAIL: ["ca-a", "ca-b"],
+      SLACK: ["ca-s"],
+    });
+    expect(defaults).toEqual({ GMAIL: "ca-b" });
+    expect(
+      withDefaultAccount(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: {
+            tools: [
+              { tool_slug: "GMAIL_FETCH_EMAILS", arguments: {} },
+              { tool_slug: "GMAIL_SEND_EMAIL", arguments: {}, account: "ca-a" },
+              { tool_slug: "SLACK_SEND_MESSAGE", arguments: {} },
+            ],
+          },
+        },
+        defaults,
+      ).args.tools,
+    ).toEqual([
+      { tool_slug: "GMAIL_FETCH_EMAILS", arguments: {}, account: "ca-b" },
+      { tool_slug: "GMAIL_SEND_EMAIL", arguments: {}, account: "ca-a" },
+      { tool_slug: "SLACK_SEND_MESSAGE", arguments: {} },
+    ]);
   });
 
   it("drops a dead sibling account id so it cannot poison discovery", async () => {

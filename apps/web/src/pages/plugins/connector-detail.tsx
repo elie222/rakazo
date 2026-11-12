@@ -35,10 +35,13 @@ export function ConnectorDetail({
     toolsLoading,
     connect,
     revokeAccount,
+    setDefaultAccount,
     uninstall,
     renameAccount,
   } = state;
   const accounts = catalogItemAccounts(connections, item);
+  // A default only means something once there is another connected account to choose instead.
+  const choosesDefault = accounts.filter((row) => row.status === "connected").length > 1;
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
@@ -109,6 +112,22 @@ export function ConnectorDetail({
                 }
               }}
             />
+            {choosesDefault && row.isDefault ? (
+              <Badge variant="secondary" className="h-6 shrink-0 px-2.5 text-label font-normal">
+                <Trans>Default</Trans>
+              </Badge>
+            ) : choosesDefault && row.status === "connected" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
+                size="sm"
+                disabled={pending === `default:${row.id}` || uninstalling}
+                onClick={() => void setDefaultAccount(row, item)}
+              >
+                <Trans>Make default</Trans>
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"

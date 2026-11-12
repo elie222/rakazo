@@ -591,6 +591,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               providerRef: true,
               displayName: true,
               status: true,
+              isDefault: true,
+              createdAt: true,
             },
           }),
           pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
