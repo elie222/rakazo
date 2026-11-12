@@ -1858,7 +1858,14 @@ describe("own instructions through update_bot", () => {
     else {
       expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
       expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { readOutsideContent: false } }),
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: "running",
+            leaseOwner: expect.any(String),
+            leaseFence: expect.any(Number),
+          }),
+          data: { readOutsideContent: false },
+        }),
       );
     }
   });

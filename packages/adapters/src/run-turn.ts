@@ -784,7 +784,12 @@ async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
     // Old releases never tracked exposure. Only this executor can attest a clean run;
     // until then the database default keeps historical and rolling-deploy runs untrusted.
     await ctx.deps.prisma.run.updateMany({
-      where: { id: ctx.runId },
+      where: {
+        id: ctx.runId,
+        status: "running",
+        leaseOwner: ctx.workerId,
+        leaseFence: ctx.fence,
+      },
       data: { readOutsideContent: false },
     });
     return false;
