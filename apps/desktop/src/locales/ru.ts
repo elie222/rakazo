@@ -199,4 +199,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Chat Details": "Сведения о чате",
   Help: "Справка",
   "Keyboard Shortcuts": "Сочетания клавиш",
+  "Rakazo stopped unexpectedly.": "Rakazo неожиданно остановился.",
+  Reload: "Перезагрузить",
 };

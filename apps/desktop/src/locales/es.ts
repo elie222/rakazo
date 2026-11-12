@@ -212,4 +212,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Chat Details": "Detalles del chat",
   Help: "Ayuda",
   "Keyboard Shortcuts": "Atajos de teclado",
+  "Rakazo stopped unexpectedly.": "Rakazo se detuvo de forma inesperada.",
+  Reload: "Recargar",
 };

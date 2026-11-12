@@ -192,4 +192,6 @@ export const TR_MESSAGES: Record<string, string> = {
   "Chat Details": "Sohbet Ayrıntıları",
   Help: "Yardım",
   "Keyboard Shortcuts": "Klavye Kısayolları",
+  "Rakazo stopped unexpectedly.": "Rakazo beklenmedik şekilde durdu.",
+  Reload: "Yeniden yükle",
 };

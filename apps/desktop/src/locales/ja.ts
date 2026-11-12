@@ -200,4 +200,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Chat Details": "チャットの詳細",
   Help: "ヘルプ",
   "Keyboard Shortcuts": "キーボードショートカット",
+  "Rakazo stopped unexpectedly.": "Rakazo が突然停止しました。",
+  Reload: "再読み込み",
 };
