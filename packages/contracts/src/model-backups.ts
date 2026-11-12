@@ -115,7 +115,11 @@ export function connectedBackupOptions(
     for (const raw of credential.enabledModelIds ?? [credential.modelId ?? ""]) {
       const modelId = raw.trim();
       if (!modelId || seen.has(modelId)) continue;
-      if (computerUse && !credential.visionModelIds?.includes(modelId)) continue;
+      // A list the endpoint declared names its image-capable models, so screen work skips the
+      // rest. Without one the capability is unknown, not absent — the run-time image check
+      // then asks per use, and the picker offers the model instead of hiding it.
+      if (computerUse && credential.visionModelIds && !credential.visionModelIds.includes(modelId))
+        continue;
       seen.add(modelId);
       const entry = catalog.find(
         (candidate) =>
