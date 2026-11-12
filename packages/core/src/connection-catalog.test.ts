@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   catalogItemAccounts,
   connectCatalogItem,
+  connectCatalogMcpApp,
   isCatalogItemConnected,
   nextCatalogAccountLabel,
   waitForConnection,
@@ -185,5 +186,57 @@ describe("waitForConnection", () => {
     }
     expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
     expect(complete).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("bundled catalog connections", () => {
+  function fixture() {
+    const controller = new AbortController();
+    const deps = {
+      connect: vi.fn(async () => ({ serverId: "server-a" })),
+      authorize: vi.fn(async () => undefined),
+      refresh: vi.fn(async () => undefined),
+      signal: controller.signal,
+    };
+    return { controller, deps };
+  }
+  it("passes the bot to registration before authorizing and refreshing", async () => {
+    const { deps } = fixture();
+    await connectCatalogMcpApp({ appId: "files", botId: "bot-a" }, deps);
+    expect(deps.connect).toHaveBeenCalledWith({ appId: "files", botId: "bot-a" });
+    expect(deps.authorize).toHaveBeenCalledWith("server-a");
+    expect(deps.connect.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.authorize.mock.invocationCallOrder[0]!,
+    );
+    expect(deps.authorize.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.refresh.mock.invocationCallOrder[0]!,
+    );
+  });
+  it("does not open OAuth after the caller leaves its space", async () => {
+    const { deps } = fixture();
+    let current = true;
+    deps.connect.mockImplementation(async () => {
+      current = false;
+      return { serverId: "server-a" };
+    });
+    await connectCatalogMcpApp({ appId: "files" }, { ...deps, isCurrent: () => current });
+    expect(deps.authorize).not.toHaveBeenCalled();
+    expect(deps.refresh).not.toHaveBeenCalled();
+  });
+  it("does not refresh after cancellation during OAuth", async () => {
+    const { deps, controller } = fixture();
+    deps.authorize.mockImplementation(async () => {
+      controller.abort();
+      return undefined;
+    });
+    await connectCatalogMcpApp({ appId: "files" }, deps);
+    expect(deps.refresh).not.toHaveBeenCalled();
+  });
+  it("does not authorize or refresh after registration fails", async () => {
+    const { deps } = fixture();
+    deps.connect.mockRejectedValue(new Error("restricted"));
+    await expect(connectCatalogMcpApp({ appId: "files" }, deps)).rejects.toThrow("restricted");
+    expect(deps.authorize).not.toHaveBeenCalled();
+    expect(deps.refresh).not.toHaveBeenCalled();
   });
 });

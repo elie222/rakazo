@@ -43,6 +43,25 @@ export function nextCatalogAccountLabel(
   return label;
 }
 
+/** Register and authorize a bundled app; platforms own their OAuth browser and cache. */
+export async function connectCatalogMcpApp(
+  input: { appId: string; botId?: string },
+  deps: {
+    connect: (input: { appId: string; botId?: string }) => Promise<{ serverId: string }>;
+    authorize: (serverId: string) => Promise<unknown>;
+    refresh: () => Promise<unknown>;
+    signal: AbortSignal;
+    isCurrent?: () => boolean;
+  },
+): Promise<void> {
+  const stopped = () => deps.signal.aborted || deps.isCurrent?.() === false;
+  if (stopped()) return;
+  const { serverId } = await deps.connect(input);
+  if (stopped()) return;
+  await deps.authorize(serverId);
+  if (!stopped()) await deps.refresh();
+}
+
 const CATALOG_CONNECT_POLL_ATTEMPTS = 45;
 const CATALOG_CONNECT_POLL_MS = 2_000;
 

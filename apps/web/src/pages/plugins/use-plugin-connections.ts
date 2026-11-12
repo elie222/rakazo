@@ -9,6 +9,7 @@ import {
   catalogItemAccounts,
   catalogItemKey,
   connectCatalogItem,
+  connectCatalogMcpApp,
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
@@ -199,13 +200,15 @@ export function usePluginConnections({
     setPending(key);
     try {
       if (item.mcpAppId) {
-        const { serverId } = await rpc.mcp.apps.connect({
-          appId: item.mcpAppId,
-          ...(activeBotId ? { botId: activeBotId } : {}),
-        });
-        if (controller.signal.aborted) return;
-        await connectMcpOauth(serverId);
-        if (!controller.signal.aborted) await refresh();
+        await connectCatalogMcpApp(
+          { appId: item.mcpAppId, ...(activeBotId ? { botId: activeBotId } : {}) },
+          {
+            connect: (input) => rpc.mcp.apps.connect(input),
+            authorize: connectMcpOauth,
+            refresh,
+            signal: controller.signal,
+          },
+        );
         return;
       }
       const result = await connectCatalogItem(item, connections, {

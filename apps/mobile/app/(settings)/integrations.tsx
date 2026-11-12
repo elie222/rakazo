@@ -17,6 +17,7 @@ import {
   catalogItemAccounts,
   catalogItemKey,
   connectCatalogItem,
+  connectCatalogMcpApp,
   filterConnectionCatalogItems,
   integrationCatalogsReady,
   isCatalogItemConnected,
@@ -744,14 +745,19 @@ export default function Integrations() {
       if (item.mcpAppId) {
         const botId = lastBotId || (await loadLastBotId());
         if (!isCurrent() || controller.signal.aborted) return;
-        const { serverId } = await rpc("mcp/apps/connect", {
-          appId: item.mcpAppId,
-          ...(botId ? { botId } : {}),
-        });
-        if (!isCurrent() || controller.signal.aborted) return;
-        setOauthServerId(serverId);
-        await authorizeMcp(serverId);
-        if (isCurrent()) await refresh();
+        await connectCatalogMcpApp(
+          { appId: item.mcpAppId, ...(botId ? { botId } : {}) },
+          {
+            connect: (input) => rpc("mcp/apps/connect", input),
+            authorize: async (serverId) => {
+              setOauthServerId(serverId);
+              await authorizeMcp(serverId);
+            },
+            refresh,
+            signal: controller.signal,
+            isCurrent,
+          },
+        );
         return;
       }
       const result = await connectCatalogItem(item, connections, {
@@ -1006,7 +1012,9 @@ export default function Integrations() {
           key={catalogItemKey(item)}
           accessibilityRole="button"
           onPress={() =>
-            brandPlugin ? openPlugin(managedPluginParams(brandPlugin, item)) : openDetail(item)
+            brandPlugin && !item.mcpAppId
+              ? openPlugin(managedPluginParams(brandPlugin, item))
+              : openDetail(item)
           }
           style={tileStyle}
         >
