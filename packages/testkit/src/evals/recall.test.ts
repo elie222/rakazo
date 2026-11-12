@@ -194,6 +194,13 @@ describe("recall outcome grading", () => {
       expect(shell(id, "chromium --version")!.stdout).toMatch(/^Chromium 131\./);
       expect(shell(id, "uname -a")).toBeUndefined();
     }
+    // The file spells the name with capitals, so a case-sensitive lowercase search finds nothing.
+    const prefs = "~/.config/chromium/Default/Preferences";
+    expect(shell("tool-steps-replayed", `grep -o '"midnight[^"]*"' ${prefs}`)).toMatchObject({
+      stdout: "",
+      code: 1,
+    });
+    expect(shell("tool-steps-replayed", `grep -io '"midnight[^"]*"' ${prefs}`)!.code).toBe(0);
     // Only the installed extension's own manifest shows it; an unrelated path proves nothing.
     expect(shell("tool-steps-replayed", "cat ~/notes/manifest.json")).toBeUndefined();
     // A redirect silences only the check it follows, so an earlier failure still shows.
@@ -380,6 +387,14 @@ describe("recall outcome grading", () => {
     }
   });
 
+  it("shows the install judge the summary a compacted chat left the bot", () => {
+    const judged = scenario("tool-steps-compacted").judge!({
+      ...evidence([], "reply"),
+      historySummary: "Installed Midnight Lizard with two shell commands.",
+    });
+    expect((judged.evidence as { record: string }).record).toContain("two shell commands");
+  });
+
   it("shows the install judge the checks made in the reply, in anchors as in trials", () => {
     const installAnchors = RECALL_JUDGE_CALIBRATION.filter((a) =>
       a.input.rubric.includes("asking whether the bot installed a browser extension"),
@@ -446,6 +461,16 @@ describe("recall outcome grading", () => {
     };
     writeFileSync(file, JSON.stringify([badPattern]));
     expect(() => loadRecallCases(file)).toThrow(/valid regular expression/);
+    const backwards = {
+      ...badPattern,
+      expect: { kind: "rubric", rubric: "sign-off" },
+      messages: [
+        { role: "user", text: "x", day: 0 },
+        { role: "bot", text: "y", day: -2 },
+      ],
+    };
+    writeFileSync(file, JSON.stringify([backwards]));
+    expect(() => loadRecallCases(file)).toThrow(/earlier message's day/);
     writeFileSync(file, JSON.stringify([{ id: "bad", purpose: "x", messages: [], ask: "x" }]));
     expect(() => loadRecallCases(file)).toThrow();
   });

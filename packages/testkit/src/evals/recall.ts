@@ -376,6 +376,13 @@ const INSTALLED_COMPUTER: ComputerScript = {
       match: /\bgrep\b[^;&|]*\s-\w*l\w*\s[^;&|]*(?:midnight|lizard|pbnh)[^;&|]*Preferences/i,
       output: `${PROFILE}/Preferences`,
     },
+    // The file spells the name "Midnight Lizard", so a case-sensitive lowercase search finds nothing.
+    {
+      match:
+        /\bgrep\b(?![^;&|]*\s-\w*i)[^;&|]*["'\s](?:\\?")?(?:midnight|lizard)[^;&|]*Preferences/,
+      output: "",
+      exitCode: 1,
+    },
     {
       match: /Preferences/,
       output: `"${EXTENSION_ID}": {"location": 6, "path": "${EXTENSION_ID}/10.7.1_0", "state": 1, "manifest": {"name": "Midnight Lizard", "version": "10.7.1"}}`,
@@ -1364,15 +1371,14 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
       const history = toolStepsFixture(size, earlier);
       const computer = work === "install" ? INSTALLED_COMPUTER : PLAIN_COMPUTER;
       // What the bot can read of the earlier tool work: the replayed exchange, or after
-      // compaction only the summary the product writes, which this judge does not see.
-      const record =
+      // compaction only the summary the product wrote.
+      const replayed = recordText(
+        history.messages.filter((m) => m.steps).flatMap((m) => [history.messages[m.seq - 1]!, m]),
+      );
+      const record = (e: Evidence) =>
         size === 100
-          ? "The earlier exchange was compacted: the bot read only a summary of it, written when the chat was compacted."
-          : recordText(
-              history.messages
-                .filter((m) => m.steps)
-                .flatMap((m) => [history.messages[m.seq - 1]!, m]),
-            );
+          ? `The earlier exchange was compacted; the bot read only this summary of it:\n${e.historySummary ?? "(no summary)"}`
+          : replayed;
       return {
         id: `recall-tool-steps-${where}${variant}`,
         purpose: `${size} messages: ${purpose}, ${where}`,
@@ -1382,7 +1388,7 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
         steps: [{ ask: ASK_INSTALL }],
         grade: () => [],
         // The judge sees what the bot checked just now, so a fresh check is not read as history.
-        judge: (e) => judgeInput(rubric, e.text, checksText(e, computer), record),
+        judge: (e) => judgeInput(rubric, e.text, checksText(e, computer), record(e)),
         // The question is about the earlier work, so doubt about it is graded, not observed.
         observe: observeToolWork(work, history, computer, work === "disk"),
         shellUnneeded: true,
@@ -1485,7 +1491,10 @@ const RecallFileCaseSchema = z.object({
         day: z.number().int().max(0).default(0),
       }),
     )
-    .min(1),
+    .min(1)
+    .refine((messages) => messages.every((m, i) => i === 0 || m.day >= messages[i - 1]!.day), {
+      message: "A message's day may not come before an earlier message's day",
+    }),
   ask: z.string().min(1),
   /**
    * `needs-tool`: the reply must run a shell command matching `command` (a regular expression

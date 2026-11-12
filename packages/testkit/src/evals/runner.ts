@@ -1008,8 +1008,18 @@ export async function runTrial(
     ]);
     await captureTools();
     const finalStep = scenario.steps.length;
+    const historySummary =
+      scenario.history?.compact && seededThreadId
+        ? (
+            await prisma.thread.findUnique({
+              where: { id: seededThreadId },
+              select: { historyCompactionSummary: true },
+            })
+          )?.historyCompactionSummary
+        : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
       routineRuns,

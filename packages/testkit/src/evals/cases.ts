@@ -29,6 +29,8 @@ export type Step =
   | { fromPeer: string };
 export type Evidence = {
   text: string;
+  /** For a case whose history is compacted first, the summary the bot read in its place. */
+  historySummary?: string;
   replies?: string[];
   routineRuns?: RoutineEvidence[];
   /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
