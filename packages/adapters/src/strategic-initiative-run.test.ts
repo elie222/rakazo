@@ -99,6 +99,20 @@ describe("daily check-in routine execution", () => {
     expect(append).not.toHaveBeenCalled();
   });
 
+  it("posts a non-empty final reply to the bot's chat", async () => {
+    const { ctx, finalizeRun } = await context();
+    const reminder = "The release check is still open. Next step: compare the latest tag.";
+    await consumeRunEvents(ctx, events({ type: "done", text: reminder }));
+    await completeRun(ctx);
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "completed",
+        blocks: [{ kind: "text", text: reminder }],
+        markUnread: true,
+      }),
+    );
+  });
+
   it("does not apply scripted files or memory on completion", async () => {
     const { ctx } = await context();
     ctx.script = [

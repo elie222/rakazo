@@ -342,7 +342,7 @@ describe("strategic initiative tool guard", () => {
         trigger: "routine",
         clientNonce: "strategic-initiative:bot-1:123",
       }).map((tool) => tool.name),
-    ).toEqual(["ask_user", "message_user"]);
+    ).toEqual(["ask_user"]);
   });
 
   it("does not filter regular runs", () => {
@@ -433,6 +433,20 @@ it("escapes scratchpad data and keeps instructions outside its wrapper", async (
   expect(tasks[0]?.prompt?.match(/<\/scratchpad_items>/g)).toHaveLength(1);
 });
 
+it("offers one question or a final-reply reminder, and silence otherwise", async () => {
+  const { prisma, tasks } = strategicPrisma({ bots: [candidate] });
+  const { jobs } = publisher();
+  await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 });
+  const prompt = tasks[0]?.prompt ?? "";
+  expect(prompt).toContain("the entire final reply must be exactly NO_RESPONSE.");
+  expect(prompt).toContain("ask that one question with ask_user");
+  expect(prompt).toContain(
+    "write one short reminder with a concrete next step as your final reply",
+  );
+  expect(prompt).toContain("cannot do or start the work itself");
+  expect(prompt).not.toContain("message_user");
+});
+
 it.each([
   "computer_shell",
   "browser_act",
@@ -442,6 +456,7 @@ it.each([
   "update_bot",
   "gmail_send",
   "catalog_execute",
+  "message_user",
 ])("denies %s at the shared dispatch boundary", (name) => {
   expect(
     strategicInitiativeToolAllowed(name, {

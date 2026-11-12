@@ -332,6 +332,20 @@ describe("routine failure notifications", () => {
     );
   });
 
+  it("offers a daily check-in only ask_user and never tells it to use message_user", async () => {
+    const { runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+    });
+    const request = runtimeRun.mock.calls[0]?.[0] as unknown as {
+      tools: { name: string }[];
+      instructions: string;
+    };
+    expect(request.tools.map((tool) => tool.name)).toEqual(["ask_user"]);
+    expect(request.instructions).toContain("exactly NO_RESPONSE");
+    expect(request.instructions).not.toContain("message_user");
+  });
+
   it("puts the unread chats across the user's Spaces on the app icon", async () => {
     const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
     expect(send).toHaveBeenCalledWith(
