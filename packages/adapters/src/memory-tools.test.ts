@@ -2,6 +2,7 @@ import type { ConnectorTool, SemanticMemoryProvider } from "@rakazo/adapter-kit"
 import { describe, expect, it, vi } from "vitest";
 import { appendMemoryFact, editMemory, selectMemoryTools } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
+import { hasTakenInOutsideContent } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { memoryTools } from "./run-tools-memory.js";
 
@@ -62,16 +63,20 @@ describe("reflect_memory", () => {
     const ctx = {
       bot: { id: "bot-1" },
       context,
+      runId: "run-1",
+      state: { tainted: false, readOutsideContent: false },
+      deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
       memory: { semantic: { reflect }, scope: "shared" },
     } as unknown as RunContext;
     const call = { name: "reflect_memory", args: { query: "What does the user prefer?" } };
-    return { context, result: memoryTools.reflect_memory!(ctx, call as unknown as ToolCall) };
+    return { ctx, context, result: memoryTools.reflect_memory!(ctx, call as unknown as ToolCall) };
   }
 
   it("asks the provider with the bot and query and returns its answer", async () => {
     const reflect = vi.fn(async () => ({ ok: true as const, value: "They prefer dark mode." }));
-    const { context, result } = reflectWith(reflect);
+    const { ctx, context, result } = reflectWith(reflect);
     await expect(result).resolves.toEqual({ ok: true, value: "They prefer dark mode." });
+    expect(await hasTakenInOutsideContent(ctx)).toBe(true);
     expect(reflect).toHaveBeenCalledWith(
       { query: "What does the user prefer?", botId: "bot-1" },
       context,

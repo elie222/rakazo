@@ -95,15 +95,6 @@ export function HindsightSettingsForm({
   const ready =
     (key.length === 0 ? keyOptional : key.length >= 8) &&
     (mode === "cloud" || Boolean(baseUrl.trim()));
-  const customized = !autoRecall || recallBudget !== "mid" || withFacts || skipUnrelated;
-
-  function restoreDefaults() {
-    setAutoRecall(true);
-    setRecallBudget("mid");
-    setWithFacts(false);
-    setSkipUnrelated(false);
-  }
-
   async function connect() {
     if (!ready) return;
     const draft: MemoryProviderConnectionDraft = {
@@ -201,18 +192,6 @@ export function HindsightSettingsForm({
           busy={busy}
           onChange={setSkipUnrelated}
         />
-        {customized ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mt-3"
-            disabled={busy}
-            onClick={restoreDefaults}
-          >
-            <Trans>Use defaults</Trans>
-          </Button>
-        ) : null}
       </MemoryProviderAdvanced>
 
       <Button

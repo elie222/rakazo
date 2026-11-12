@@ -1865,6 +1865,37 @@ describe("own instructions through update_bot", () => {
     );
   });
 
+  it("keeps an existing compacted chat with its own historical reply usable", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.prisma.thread.findUniqueOrThrow.mockResolvedValue({
+      id: "thread-1",
+      botId: "bot-1",
+      groupId: null,
+      historyCompactionSummary: "Earlier conversation",
+      historyCompactedUpToSeq: 0,
+    } as never);
+    f.prisma.message.findMany.mockResolvedValue([
+      {
+        id: "history-1",
+        seq: 1,
+        role: "bot",
+        botId: null,
+        runId: null,
+        createdAt: new Date("2026-11-01T00:00:00Z"),
+        steeringMessages: [],
+        blocks: [{ kind: "text", text: "An earlier reply" }],
+      },
+    ] as never);
+    f.setCalls([]);
+    await f.run();
+    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
+    );
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: false } }),
+    );
+  });
+
   it("records a resumed run as having read outside content", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     const flagged = expect.objectContaining({ data: { readOutsideContent: true } });

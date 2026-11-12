@@ -94,3 +94,19 @@ it.each([false, true])(
     expect(ctx.state.readOutsideContent).toBe(sharedSpace);
   },
 );
+
+it.each(["Provider-generated context", ""])(
+  "records reflection exposure only for a nonempty answer: %j",
+  async (text) => {
+    const ctx = {
+      runId: "run-1",
+      bot: { id: "bot-1" },
+      context: {},
+      state: { readOutsideContent: false },
+      memory: { semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) } },
+      deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
+    };
+    await memoryTools.reflect_memory!(ctx as never, { args: { query: "Question" } } as never);
+    expect(ctx.state.readOutsideContent).toBe(Boolean(text));
+  },
+);

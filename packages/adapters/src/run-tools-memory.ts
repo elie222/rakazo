@@ -78,14 +78,20 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     try {
       const rows = await deps.prisma.message.findMany({
         where: { id: { in: ids }, thread: { spaceId: run.spaceId } },
-        select: { role: true, runId: true, blocks: true },
+        select: {
+          role: true,
+          botId: true,
+          runId: true,
+          blocks: true,
+          thread: { select: { botId: true } },
+        },
       });
       outside =
         rows.length !== ids.length ||
         (await historyHasOutsideContent(
           deps.prisma,
-          { spaceId: run.spaceId, userId: ctx.bot.userId },
-          rows,
+          { spaceId: run.spaceId, userId: ctx.bot.userId, botId: ctx.bot.id },
+          rows.map((row) => ({ ...row, botId: row.botId ?? row.thread?.botId })),
         ));
     } catch {
       outside = true;
@@ -221,7 +227,10 @@ export const memoryTools: ToolHandlers = {
       context,
     );
     if (!response.ok) return response;
-    return { ok: true, value: response.value.trim() || "No relevant memories." };
+    const text = response.value.trim();
+    // Reflection is provider-generated prose; it cannot attest that its answer is clean.
+    if (text) await markReadOutsideContent(ctx);
+    return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,
   read_history: readHistoryTool,

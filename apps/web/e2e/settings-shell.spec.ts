@@ -293,17 +293,13 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
     await expect(skipUnrelated).toBeInViewport({ timeout: 300 });
   }).toPass();
   await captureScreenshot(page, testInfo, "memory-hindsight-advanced");
-  const useDefaults = memory.getByRole("button", { name: "Use defaults", exact: true });
-  await expect(useDefaults).toHaveCount(0);
   await skipUnrelated.click();
   await memory.getByRole("button", { name: "High", exact: true }).click();
-  await useDefaults.click();
-  await expect(skipUnrelated).not.toBeChecked();
-  await expect(memory.getByRole("button", { name: "Medium", exact: true })).toHaveAttribute(
+  await expect(skipUnrelated).toBeChecked();
+  await expect(memory.getByRole("button", { name: "High", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(useDefaults).toHaveCount(0);
 
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");

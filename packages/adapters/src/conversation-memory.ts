@@ -147,18 +147,28 @@ async function trustedBotRuns(
   );
 }
 
-/** History can relay outside text just as a fresh bot message can. Missing provenance is untrusted. */
+/**
+ * Check new sources in history, not the receiver's own saved replies. Propagating a run's flag
+ * through its own replies would permanently flag every subsequent turn after one outside read.
+ */
 export async function historyHasOutsideContent(
   prisma: PrismaClient,
-  receiver: WordsReceiver,
-  messages: readonly { role: string; runId: string | null; blocks: unknown }[],
+  receiver: WordsReceiver & { botId: string },
+  messages: readonly {
+    role: string;
+    botId?: string | null;
+    runId: string | null;
+    blocks: unknown;
+  }[],
 ): Promise<boolean> {
   try {
     const received = messages.flatMap((message) => {
       const block = receivedBotMessage(message.blocks);
       return block ? [block] : [];
     });
-    const replies = messages.filter((message) => message.role === "bot");
+    const replies = messages.filter(
+      (message) => message.role === "bot" && message.botId !== receiver.botId,
+    );
     const [trustedReplies, trustedReceived] = await Promise.all([
       trustedBotRuns(
         prisma,

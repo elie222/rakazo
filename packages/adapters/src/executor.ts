@@ -783,6 +783,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .map((message) => ({
             id: message.id,
             role: message.role,
+            botId: message.botId ?? thread.botId,
             runId: message.runId,
             blocks: message.blocks as MessageBlock[],
           }));
@@ -1423,13 +1424,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Outside text started the run: a webhook or email, someone other than the owner, or a
         // bot message whose words this bot may not trust. A routine runs the owner's own prompt.
         const historyIds = new Set(history.map((message) => message.id));
-        const outsideHistory =
-          Boolean(compactedHistory.summary) ||
-          (await historyHasOutsideContent(
-            deps.prisma,
-            { spaceId: run.spaceId, userId: bot.userId },
-            historyMessages.filter((message) => historyIds.has(message.id)),
-          ));
+        const outsideHistory = await historyHasOutsideContent(
+          deps.prisma,
+          { spaceId: run.spaceId, userId: bot.userId, botId: bot.id },
+          historyMessages.filter((message) => historyIds.has(message.id)),
+        );
         const startedByOutsideText =
           run.trigger === "webhook" ||
           nonOwnerChatRun ||

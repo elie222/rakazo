@@ -814,7 +814,7 @@ describe("botMessageFromOutsideContent", () => {
 });
 
 describe("history exposure", () => {
-  const receiver = { spaceId: "space-1", userId: "user-1" };
+  const receiver = { spaceId: "space-1", userId: "user-1", botId: "bot-1" };
   const received = {
     kind: "bot_message_received",
     fromBotId: "bot-2",
@@ -858,6 +858,14 @@ describe("history exposure", () => {
   it("fails closed when provenance is missing or unavailable", async () => {
     expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, runId: null }])).toBe(true);
     expect(await historyHasOutsideContent({} as PrismaClient, receiver, [reply])).toBe(true);
+  });
+  it("does not perpetuate exposure through the receiving bot's own saved replies", async () => {
+    expect(
+      await historyHasOutsideContent(db({ readOutsideContent: true }), receiver, [
+        { ...reply, botId: "bot-1" },
+        { ...reply, botId: "bot-1", runId: null },
+      ]),
+    ).toBe(false);
   });
   it("leaves ordinary human messages clean", async () => {
     expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, role: "user" }])).toBe(
