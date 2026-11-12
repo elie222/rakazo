@@ -41,12 +41,12 @@ existed; the egress row shows the result with it.
 | VM reaching the host                                        | With the firewall: host listeners on `127.0.0.1` and `0.0.0.0` and the LAN router refused; internet, DNS and SSH to github.com work; uid 1000 cannot flush the rules |
 | `local-vm` provider, opt-in live test                       | Provisioned in 2.8 s; shared workspace contract, Chromium screenshot on the bot's display, screen URL, workspace export, stop and network cleanup all passed         |
 | Official `postgres:16` image as a VM (Compose's digest)     | Pull of the linux/arm64 variant only: 25 s, 151.5 MB, 452 MB unpacked. First start with init about 3 s, restarts about 2 s; published on `127.0.0.1` only            |
-| Desktop controller end to end (Node, scratch runtime)       | First start 64 s; sign-up and bot creation; restart 4.6 s with data intact; DB VM killed while ready recovered in 3.4 s; taken DB port recreated the VM, data intact  |
+| Desktop controller end to end (Node, scratch runtime)       | First start 64 s; sign-up and bot creation; restart 4.6 s with data intact; DB VM killed while ready recovered in 3.4 s; taken DB port recreated the VM, data intact |
 | API, worker, web as Node processes                          | `/internal/health` reports `sandbox: local-vm`; Graphile worker connected; web preview served and proxied the API                                                    |
 | Sign up, create bot, `computer.boot` through the web origin | Computer running 4 s after boot; `computer.screenUrl` issued a capability URL                                                                                        |
 | Proxied screen                                              | Capability URL page served through the web proxy; its websocket returned the VNC `RFB 003.008` banner from the VM                                                    |
 | Persistence                                                 | File written in VM 1 survived `computer.stop` (checkpoint into `DATA_DIR/homes`) and was present in a brand-new VM 2 after `computer.boot`                           |
-| Memory                                                      | One computer with Chromium: about 970 MB host RSS (2 GB cap). Database VM: about 540 MB (1 GB cap). API + worker + web: under 245 MB (measured with native Postgres)  |
+| Memory                                                      | One computer with Chromium: about 970 MB host RSS (2 GB cap). Database VM: about 540 MB (1 GB cap). API + worker + web: under 245 MB (measured with native Postgres) |
 
 The live provider test is `VERIFY_LOCAL_VM=1 LOCAL_VM_CLI=<path to container> pnpm exec vitest run
 packages/adapters/src/apple-container-sandbox.test.ts`. It is skipped by default and in CI.
@@ -57,13 +57,13 @@ behavior, and anything packaged or signed as part of the app.
 
 ## Server stack without Docker
 
-| Today (Docker Compose)                 | Mac without Docker                                                                                                                         |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `postgres:16` container, named volume  | The same image and digest as a VM through the computer runtime: `rakazo-postgres` VM, network and volume, 1 GB, `127.0.0.1:<port>` only   |
-| `migrate` container (`pnpm db:deploy`) | Same migration code run by Electron-as-Node before the API starts                                                                          |
-| `api`, `worker` containers             | `dist/index.js` of each, run with `ELECTRON_RUN_AS_NODE=1` from the app binary (no separate Node)                                          |
-| `web` container (`vite preview`)       | The built web assets plus the existing screen/API proxy, served by a small Node process on loopback                                        |
-| `sandbox-supervisor` + Docker socket   | Gone. The API and worker call the `container` CLI (theirs or downloaded) through the `local-vm` provider                                   |
+| Today (Docker Compose)                 | Mac without Docker                                                                                                                      |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres:16` container, named volume  | The same image and digest as a VM through the computer runtime: `rakazo-postgres` VM, network and volume, 1 GB, `127.0.0.1:<port>` only |
+| `migrate` container (`pnpm db:deploy`) | Same migration code run by Electron-as-Node before the API starts                                                                       |
+| `api`, `worker` containers             | `dist/index.js` of each, run with `ELECTRON_RUN_AS_NODE=1` from the app binary (no separate Node)                                       |
+| `web` container (`vite preview`)       | The built web assets plus the existing screen/API proxy, served by a small Node process on loopback                                     |
+| `sandbox-supervisor` + Docker socket   | Gone. The API and worker call the `container` CLI (theirs or downloaded) through the `local-vm` provider                                |
 
 ### How the desktop app runs it
 
@@ -182,26 +182,26 @@ Offline tests drive the provider against a fake CLI. Not done: cancellation of a
 
 Nothing below is in the app download. All of it is fetched the first time **This computer** starts.
 
-| Component                                       | Download | On disk | Source                                                            |
-| ----------------------------------------------- | -------- | ------- | ----------------------------------------------------------------- |
-| Server bundle (API, worker, web, migrations)    | 117 MB   | ~900 MB | This release's GitHub asset, pinned by `server-bundle.json`       |
-| Postgres 16 image (linux/arm64)                 | 152 MB   | 452 MB  | Docker Hub through the runtime, Compose's digest pinned in code   |
-| Computer runtime 1.7.1 (only when none is used) | 170 MB   | 182 MB  | Apple's signed release package, pinned in code                    |
-| Linux kernel for the VMs                        | ~30 MB   | ~30 MB  | Fetched by the runtime itself on its first start                  |
-| Computer image                                  | —        | 1.58 GB | Pulled in the background once the stack is ready                  |
+| Component                                       | Download | On disk | Source                                                          |
+| ----------------------------------------------- | -------- | ------- | --------------------------------------------------------------- |
+| Server bundle (API, worker, web, migrations)    | 117 MB   | ~900 MB | This release's GitHub asset, pinned by `server-bundle.json`     |
+| Postgres 16 image (linux/arm64)                 | 152 MB   | 452 MB  | Docker Hub through the runtime, Compose's digest pinned in code |
+| Computer runtime 1.7.1 (only when none is used) | 170 MB   | 182 MB  | Apple's signed release package, pinned in code                  |
+| Linux kernel for the VMs                        | ~30 MB   | ~30 MB  | Fetched by the runtime itself on its first start                |
+| Computer image                                  | —        | 1.58 GB | Pulled in the background once the stack is ready                |
 
 ## First run
 
 Measured on this Mac (fast connection) with the real downloads and a locally built bundle, against a
 computer runtime that was already running:
 
-| Run                                                             | Time to ready           |
-| --------------------------------------------------------------- | ----------------------- |
-| First start (database image pull, bundle unpack, init, migrations) | 64 s                 |
-| Later start                                                     | 4.6 s                   |
-| Database VM killed while ready, until sign-in works again       | 3.4 s                   |
-| Move from a Docker stack (dump, restore, file copy)             | 13 s (small sample data) |
-| Computer runtime package: download, verify, expand              | 47 s                    |
+| Run                                                                | Time to ready            |
+| ------------------------------------------------------------------ | ------------------------ |
+| First start (database image pull, bundle unpack, init, migrations) | 64 s                     |
+| Later start                                                        | 4.6 s                    |
+| Database VM killed while ready, until sign-in works again          | 3.4 s                    |
+| Move from a Docker stack (dump, restore, file copy)                | 13 s (small sample data) |
+| Computer runtime package: download, verify, expand                 | 47 s                     |
 
 A first start that also downloads the runtime adds its 47 s in parallel with the other downloads,
 plus the kernel download on its first start (about 45 s measured). The computer image pull
@@ -242,15 +242,15 @@ plus the kernel download on its first start (about 45 s measured). The computer 
 
 ## Security and isolation compared with today
 
-| Concern               | Docker Desktop today                                                      | Native stack + `local-vm`                                                                                |
-| --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Computer vs. computer | Containers sharing one Linux VM and kernel; per-bot Docker networks       | One VM and kernel per computer; per-computer network, verified unreachable from each other               |
-| Computer vs. host     | Docker Desktop VM; host services reachable through `host.docker.internal` | Refused by the in-VM firewall, except DNS on the gateway (verified)                                      |
-| Egress restriction    | Unsupported on Docker Desktop (`open`)                                    | Always on: public internet only, enforced inside each VM; a bot that gained root in its VM could lift it |
-| Privileged component  | Supervisor holds the Docker socket, root-equivalent on the Docker VM      | No socket. The API and worker can create VMs as the signed-in user, nothing more                         |
-| Server processes      | Inside the Docker VM                                                      | Run as the user on the host, bound to loopback. They are our code; bot commands still only run in VMs    |
+| Concern               | Docker Desktop today                                                      | Native stack + `local-vm`                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Computer vs. computer | Containers sharing one Linux VM and kernel; per-bot Docker networks       | One VM and kernel per computer; per-computer network, verified unreachable from each other                                                                                             |
+| Computer vs. host     | Docker Desktop VM; host services reachable through `host.docker.internal` | Refused by the in-VM firewall, except DNS on the gateway (verified)                                                                                                                    |
+| Egress restriction    | Unsupported on Docker Desktop (`open`)                                    | Always on: public internet only, enforced inside each VM; a bot that gained root in its VM could lift it                                                                               |
+| Privileged component  | Supervisor holds the Docker socket, root-equivalent on the Docker VM      | No socket. The API and worker can create VMs as the signed-in user, nothing more                                                                                                       |
+| Server processes      | Inside the Docker VM                                                      | Run as the user on the host, bound to loopback. They are our code; bot commands still only run in VMs                                                                                  |
 | Database              | Container on a Compose network only the server containers join            | A VM on its own network, published only on the Mac's `127.0.0.1`; computers cannot reach it. Its own egress is not firewalled (the official image has no `nft`); it runs only Postgres |
-| Third-party code      | Docker Desktop (user-installed)                                           | Apple's signed `container`, pinned by SHA-256, and the official `postgres:16` image at Compose's digest |
+| Third-party code      | Docker Desktop (user-installed)                                           | Apple's signed `container`, pinned by SHA-256, and the official `postgres:16` image at Compose's digest                                                                                |
 
 The native server processes do gain the user's file access. Bot commands never run on the host
 unless the user turns on the existing local computer access, which is unchanged.
