@@ -9425,7 +9425,9 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
-      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [],
@@ -9436,7 +9438,9 @@ describe("groups.remove", () => {
         }),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
           calls.push("cancel run");
           return where.id.in.map((id) => ({ id }));
@@ -9475,6 +9479,7 @@ describe("groups.remove", () => {
       calls.push("expire lease");
     });
     const prisma = {
+      run: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       computerExecutionLease: { updateMany: leaseUpdate },
       computer: { updateMany: vi.fn() },
@@ -9486,8 +9491,18 @@ describe("groups.remove", () => {
       calls.push("cancel run work");
       return [];
     });
+    const purgeHistory = vi.fn(async (_request: { botId: string }) => ({
+      ok: true as const,
+      value: undefined,
+    }));
     const deps = {
       prisma,
+      memoryProviders: {
+        resolve: async () => ({
+          provider: { describe: () => ({ capabilities: { purgesByThread: true } }), purgeHistory },
+          defaultScope: "isolated",
+        }),
+      },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -9518,6 +9533,16 @@ describe("groups.remove", () => {
     );
 
     expect(response?.status).toBe(200);
+    expect(
+      purgeHistory.mock.calls.map(([request]) => (request as { botId: string }).botId).sort(),
+    ).toEqual(["bot-1", "past-bot"]);
+    expect(purgeHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-1", generations: [2, 3] }),
+      expect.any(Object),
+    );
+    expect(purgeHistory.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.chatGroup.delete.mock.invocationCallOrder[0]!,
+    );
     expect(releaseScreen).toHaveBeenCalledWith(
       expect.objectContaining({ id: "computer-1" }),
       expect.objectContaining({
@@ -9545,7 +9570,9 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
-      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
@@ -9554,7 +9581,9 @@ describe("groups.remove", () => {
         delete: vi.fn(async () => undefined),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
@@ -9581,6 +9610,7 @@ describe("groups.remove", () => {
     const deleteSecret = vi.fn(async () => undefined);
     const deps = {
       prisma,
+      memoryProviders: { resolve: async () => null },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",

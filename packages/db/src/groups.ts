@@ -650,7 +650,10 @@ export function createGroupRepos(prisma: PrismaClient) {
         await lockSpaceGroup(tx, actor, groupId);
         // Wait out the thread's writers before taking the group row exclusively: their
         // foreign-key share on the group would otherwise wait on this transaction.
-        const thread = await tx.thread.findUnique({ where: { groupId }, select: { id: true } });
+        const thread = await tx.thread.findUnique({
+          where: { groupId },
+          select: { id: true, historyCompactionGeneration: true },
+        });
         if (thread) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
         }
@@ -660,7 +663,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           where: { id: groupId },
           select: {
             artifacts: { select: { storageKey: true } },
-            members: { orderBy: groupMemberOrder, take: 1, select: { botId: true } },
+            members: { orderBy: groupMemberOrder, select: { botId: true } },
           },
         });
         const contextBotId = group?.members[0]?.botId;
@@ -677,10 +680,26 @@ export function createGroupRepos(prisma: PrismaClient) {
           (run) => run.id,
         );
         const { targets } = await snapshotRunTeardownTargets(tx, runIds);
+        const learnedBots = thread
+          ? await tx.run.findMany({
+              where: { threadId: thread.id },
+              distinct: ["botId"],
+              select: { botId: true },
+            })
+          : [];
         const pageShareSecrets = await deletePageShareSecrets(tx, { groupId });
         await tx.chatGroup.delete({ where: { id: groupId } });
         return {
           contextBotId,
+          memory: thread
+            ? {
+                threadId: thread.id,
+                generation: thread.historyCompactionGeneration,
+                botIds: [
+                  ...new Set([...group.members, ...learnedBots].map((member) => member.botId)),
+                ],
+              }
+            : undefined,
           artifactStorageKeys: group.artifacts.map((artifact) => artifact.storageKey),
           cancelledRunIds: runIds,
           computers: targets,

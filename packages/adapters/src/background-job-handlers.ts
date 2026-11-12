@@ -4,6 +4,7 @@ import type {
   ArtifactStore,
   BackgroundJobExecution,
   BackgroundJobHandlers,
+  BackgroundJobPayloads,
   JobPublisher,
   MediaGenerationProvider,
   MessagingSurface,
@@ -12,6 +13,8 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import {
+  memoryRetainTurnJob,
+  memoryRetainTurnRecoveryJobKey,
   messagingDeliverJob,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -26,6 +29,12 @@ import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import { performComputerUpdate } from "./computer-update.js";
+import {
+  abandonRetainedConversation,
+  retainRunConversation,
+  settleRetainedConversation,
+} from "./conversation-memory.js";
+import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
@@ -44,8 +53,8 @@ type Tenant = { spaceId: string; userId: string };
 /**
  * A job that acts for one run, routine, computer, skill, thread, cloud agent or purchase runs
  * as that row's tenant, so row-level security keeps it, and every tool it runs, in
- * the owner's Space even where a query forgets to filter. The owner comes from one
- * narrow system read; when the row is gone there is nothing left to act on.
+ * the owner's Space even where a query forgets to filter. Normally the owner comes from one
+ * narrow system read. Server-created cleanup intent can capture that tenant before deletion.
  */
 function asOwner<Key, P extends Key>(
   owner: (payload: Key) => Promise<Tenant | null>,
@@ -61,6 +70,13 @@ function asOwner<Key, P extends Key>(
 
 const OWNER = { spaceId: true, userId: true } as const;
 const CONTROL_EXPIRE_RETRY_MS = 30_000;
+/**
+ * How long to wait before asking again whether the memory provider stored a turn: 5 s, doubling
+ * up to 10 min. 150 checks wait about 24 h in all, long enough for a backed-up provider.
+ */
+const RETAIN_TURN_FIRST_CHECK_MS = 5_000;
+const RETAIN_TURN_MAX_CHECK_MS = 10 * 60_000;
+const MAX_RETAIN_TURN_CHECKS = 150;
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -266,5 +282,71 @@ export function createBackgroundJobHandlers(deps: {
         payload.userId,
       );
     }),
+    "memory.purge-history": asOwner(
+      async (payload: BackgroundJobPayloads["memory.purge-history"]) => payload,
+      async (payload) => retryConversationMemoryPurge(deps, payload),
+    ),
+    "memory.retain-turn": asOwner(
+      async (payload: BackgroundJobPayloads["memory.retain-turn"]) =>
+        // Source was captured from the run before submission; group deletion may remove that row.
+        payload.pending ? payload.pending.source : run(payload),
+      async (payload) => {
+        const memory = {
+          prisma: deps.prisma,
+          memoryProviders: deps.memoryProviders,
+          jobs: deps.jobs,
+        };
+        let next: NonNullable<BackgroundJobPayloads["memory.retain-turn"]["pending"]>;
+        if (!payload.pending) {
+          const { pending } = await retainRunConversation(
+            memory,
+            payload.runId,
+            payload.messageIds,
+          );
+          if (!pending) return;
+          next = { ...pending, checks: 0 };
+        } else {
+          // Never rebuild the turn: a clear may have deleted its messages meanwhile.
+          const { settled } = await settleRetainedConversation(
+            memory,
+            payload.runId,
+            payload.pending,
+          ).catch((error) => {
+            // A failed status check or post-clear purge uses the same bounded backoff.
+            getLogger().error("memory.retain-turn settlement failed", error);
+            return { settled: false };
+          });
+          if (settled) return;
+          next = { ...payload.pending, checks: payload.pending.checks + 1 };
+          if (next.checks >= MAX_RETAIN_TURN_CHECKS) {
+            getLogger().warn(
+              "memory.retain-turn gave up waiting for the provider to store the turn",
+              {
+                "run.id": payload.runId,
+              },
+            );
+            await abandonRetainedConversation(memory, payload.runId, next);
+            return;
+          }
+        }
+        // Not settled yet: check again later instead of holding a worker.
+        await deps.jobs.enqueue(
+          memoryRetainTurnJob(payload.runId, payload.messageIds, {
+            pending: next,
+            availableAt: new Date(
+              Date.now() +
+                Math.min(RETAIN_TURN_FIRST_CHECK_MS * 2 ** next.checks, RETAIN_TURN_MAX_CHECK_MS),
+            ),
+          }),
+        );
+        if (!payload.pending) {
+          // Cancel only after the confirmed handoff is durable. An already running recovery
+          // may requeue itself, but its separate key cannot erase the token and its budget ends.
+          await deps.jobs.cancel(memoryRetainTurnRecoveryJobKey(payload.runId)).catch((error) => {
+            getLogger().error("memory.retain-turn recovery cancellation failed", error);
+          });
+        }
+      },
+    ),
   };
 }

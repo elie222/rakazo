@@ -69,6 +69,7 @@ type Effect = {
   result?: unknown;
   reviewDecision?: string;
   runId?: string;
+  spaceId?: string;
 };
 
 function fixture({
@@ -109,7 +110,10 @@ function fixture({
   batch,
   browser,
   spendingLimit = null,
+  memoryProvider,
 }: {
+  /** The Space's semantic memory provider; none by default. */
+  memoryProvider?: Record<string, unknown>;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
   /** The user's spending limit for payments. */
@@ -598,7 +602,7 @@ function fixture({
       read: async (request: { scope: string; path?: string }) => {
         const documents =
           request.scope === "user" &&
-          request.path === "MEMORY.md" &&
+          (request.path === undefined || request.path === "MEMORY.md") &&
           sharedMemoryState.content !== undefined
             ? [
                 {
@@ -618,7 +622,10 @@ function fixture({
       },
       commit,
     },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () =>
+        memoryProvider ? { provider: memoryProvider, defaultScope: "isolated" } : null,
+    },
     events: {
       append: vi.fn(async () => undefined),
       notify: vi.fn(async () => undefined),
@@ -635,6 +642,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma: transactionalPrisma,
+    runtimeRun,
     effects,
     spending: spending.state,
     web,
@@ -1828,6 +1836,64 @@ describe("own instructions through update_bot", () => {
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
+
+  it("keeps an existing compacted chat with its own historical reply usable", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.prisma.thread.findUniqueOrThrow.mockResolvedValue({
+      id: "thread-1",
+      botId: "bot-1",
+      groupId: null,
+      historyCompactionSummary: "Earlier conversation",
+      historyCompactedUpToSeq: 0,
+    } as never);
+    f.prisma.message.findMany.mockResolvedValue([
+      {
+        id: "history-1",
+        seq: 1,
+        role: "bot",
+        botId: null,
+        runId: null,
+        createdAt: new Date("2026-11-01T00:00:00Z"),
+        steeringMessages: [],
+        blocks: [{ kind: "text", text: "An earlier reply" }],
+      },
+    ] as never);
+    f.setCalls([{ args: { instructions: "Updated by the current owner" }, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.instructionState.instructions).toBe("Updated by the current owner");
+  });
+
+  it("does not repeat an executing outside-tool effect recovered at the gate", async () => {
+    const f = fixture({ name: "demo_get_item", skipApprovals: true });
+    const args = { id: "item-1" };
+    f.effects.push({
+      id: "existing-effect",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "demo_get_item",
+      request: args,
+      idempotencyKey: toolEffectIdempotencyKey("run-1", "demo_get_item", args),
+      status: "executing",
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps native memory from blocking current owner actions", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      skipApprovals: true,
+      existingSharedMemory: "A previously saved finding",
+    });
+    f.setCalls([{ args: { instructions: "Updated by the current owner" }, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.instructionState.instructions).toBe("Updated by the current owner");
+  });
+
   it("refuses own instruction writes resumed from a checkpoint without a baseline", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
@@ -2083,6 +2149,49 @@ describe("own settings through update_bot", () => {
     await f.run();
     expect(f.results).toEqual([{ ok: true, readAloud: false }]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("keeps automatic recall from blocking the owner's settings change", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      memoryProvider: {
+        describe: () => ({ capabilities: { recall: true, save: true, recallEachRun: true } }),
+        recall: vi.fn(async () => ({
+          ok: true as const,
+          value: [{ memory: "The dog is named Pixel.", score: 0.9 }],
+        })),
+      },
+    });
+    f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { autoSpeak: true } }),
+    );
+  });
+  it("refuses reflection when a channel run emits a tool it was not offered", async () => {
+    const reflect = vi.fn(async () => ({ ok: true as const, value: "Private bot context" }));
+    const f = fixture({
+      builtin: true,
+      trigger: "messaging",
+      sourceRole: "user",
+      memoryProvider: {
+        describe: () => ({ capabilities: { recall: true, save: true } }),
+        reflect,
+        recall: vi.fn(async () => ({ ok: true, value: [] })),
+      },
+    });
+    f.prisma.message.findUnique.mockResolvedValue({
+      role: "user",
+      blocks: [{ kind: "channel_message", channelId: "channel-1" }],
+    } as never);
+    f.setCalls([
+      { name: "reflect_memory", args: { query: "private context" }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.offeredTools()).not.toContain("reflect_memory");
+    expect(reflect).not.toHaveBeenCalled();
+    expect(f.results[0]).toMatchObject({ error: expect.any(String) });
   });
   it("keeps the model once outside content entered the run", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
@@ -2846,6 +2955,41 @@ describe("outbound destinations", () => {
       actions: expect.arrayContaining([{ id: "always", label: "Always allow this tool" }]),
     });
   });
+
+  it.each([true, false])(
+    "keeps automatic recall from changing owner read permissions: %s",
+    async (external) => {
+      reviewMock.mockReset();
+      reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
+      const memory = {
+        memory: "The dog is named Pixel.",
+        score: 0.9,
+        ...(external ? { external: true as const } : {}),
+      };
+      const recall = vi.fn(async () => ({ ok: true as const, value: [memory] }));
+      const f = fixture({
+        autoReview: true,
+        memoryProvider: {
+          describe: () => ({ capabilities: { recall: true, save: true, recallEachRun: true } }),
+          recall,
+          save: vi.fn(),
+          purgeHistory: vi.fn(),
+        },
+      });
+      f.setCalls([{ args: { id: "item-1" }, executionId: "call-1" }]);
+      await f.run();
+      expect(recall).toHaveBeenCalledOnce();
+      expect(recall).toHaveBeenCalledWith(
+        expect.objectContaining({ includeExternal: false }),
+        expect.anything(),
+      );
+      const history = JSON.stringify(f.runtimeRun.mock.calls[0]?.[0].history);
+      if (external) expect(history).not.toContain(memory.memory);
+      else expect(history).toContain(memory.memory);
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.execute).toHaveBeenCalledOnce();
+    },
+  );
 
   it("keeps read trust to the installed resource the run used, not its name prefix", async () => {
     reviewMock.mockReset();
