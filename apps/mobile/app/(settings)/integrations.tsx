@@ -16,6 +16,7 @@ import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
   catalogItemKey,
+  catalogItemState,
   connectCatalogItem,
   connectCatalogMcpApp,
   filterConnectionCatalogItems,
@@ -681,7 +682,9 @@ export default function Integrations() {
       const isCurrent = captureConnectionScope();
       Alert.alert(
         item.name,
-        item.needsSetup && !itemConnected(item) ? t`Server setup required` : undefined,
+        catalogItemState(item, itemConnected(item)) === "setup-required"
+          ? t`Server setup required`
+          : undefined,
         [
           { text: t`Cancel`, style: "cancel" },
           ...(!item.needsSetup
@@ -967,11 +970,11 @@ export default function Integrations() {
 
   function renderCatalogActions(item: ConnectionCatalogItem, label: string) {
     const key = catalogItemKey(item);
-    const connected = itemConnected(item);
+    const state = catalogItemState(item, itemConnected(item));
     const connecting = pending === key;
-    if (item.needsSetup && !connected)
+    if (state === "setup-required")
       return <Text style={styles.secondary}>{t`Server setup required`}</Text>;
-    if (connected) {
+    if (state === "connected") {
       return (
         <NativeActionButton
           accessibilityLabel={t`Added`}

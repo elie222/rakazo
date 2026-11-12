@@ -6,7 +6,7 @@ import type {
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { mcpServerConnection } from "@rakazo/contracts";
-import { catalogItemKey } from "@rakazo/core";
+import { catalogItemKey, catalogItemState } from "@rakazo/core";
 import { Button, SectionHeading } from "@rakazo/ui-web";
 import { Check, ChevronLeft, CircleAlert, TriangleAlert } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
@@ -152,15 +152,15 @@ export function CatalogTile({
 function CatalogActions({ item, context }: { item: ConnectionCatalogItem; context: TileContext }) {
   const { connections, onOpenDetail } = context;
   const key = catalogItemKey(item);
-  const connected = connections.itemConnected(item);
+  const state = catalogItemState(item, connections.itemConnected(item));
   const connecting = connections.pending === key;
-  if (item.needsSetup && !connected)
+  if (state === "setup-required")
     return (
       <span className="text-body-sm text-muted-foreground">
         <Trans>Server setup required</Trans>
       </span>
     );
-  if (connected) {
+  if (state === "connected") {
     return (
       <Button
         type="button"

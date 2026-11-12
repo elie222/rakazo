@@ -43,6 +43,11 @@ export function nextCatalogAccountLabel(
   return label;
 }
 
+/** A connected account stays manageable even when new connections require setup. */
+export function catalogItemState(item: ConnectionCatalogItem, connected: boolean) {
+  return connected ? "connected" : item.needsSetup ? "setup-required" : "connectable";
+}
+
 /** Register and authorize a bundled app; platforms own their OAuth browser and cache. */
 export async function connectCatalogMcpApp(
   input: { appId: string; botId?: string },

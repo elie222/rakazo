@@ -142,15 +142,15 @@ export function connectionsRoutes(ctx: RouterContext) {
             : [];
         const query = input.query?.trim() ?? "";
         const matches = query ? filterConnectionCatalogItems(bundled, query) : bundled;
+        const managed = catalogs.flat();
         return [
           ...matches.filter(
             (item) =>
               !item.needsSetup ||
-              !catalogs
-                .flat()
-                .some((other) => other.name.toLowerCase() === item.name.toLowerCase()),
+              !!item.mcpServerId ||
+              !managed.some((other) => other.name.toLowerCase() === item.name.toLowerCase()),
           ),
-          ...catalogs.flat(),
+          ...managed,
         ];
       }),
       list: authed.connections.list.handler(async ({ context }) => {
