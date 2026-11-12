@@ -138,7 +138,10 @@ export function connectionsRoutes(ctx: RouterContext) {
         );
         const bundled =
           !input.connectorId || input.connectorId === "deployment"
-            ? await deploymentAppCatalog(ctx, context.actor)
+            ? await deploymentAppCatalog(ctx, context.actor).catch(() => {
+                getLogger().warn("Bundled app catalog is unavailable");
+                return [];
+              })
             : [];
         const query = input.query?.trim() ?? "";
         const matches = query ? filterConnectionCatalogItems(bundled, query) : bundled;

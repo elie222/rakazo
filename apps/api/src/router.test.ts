@@ -10469,6 +10469,14 @@ describe("bundled catalog visibility", () => {
     );
   });
 
+  it("keeps managed apps available when bundled status lookup fails", async () => {
+    const { catalog, client } = fixture();
+    catalog.mockRejectedValue(new Error("Secret store unavailable"));
+    expect(await client.connections.catalog({})).toEqual([
+      expect.objectContaining({ connectorId: "managed", name: "Files" }),
+    ]);
+  });
+
   it("matches the bundled connector identifier and keeps empty-query entries", async () => {
     const { client } = fixture();
     expect(

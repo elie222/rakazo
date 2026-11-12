@@ -261,6 +261,26 @@ it("searches the readable fallback when a mention name is opaque", () => {
 });
 
 describe("mentionConnectorsFrom", () => {
+  it("omits bundled and setup-required apps from the managed connection picker", () => {
+    const item = {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      connected: false,
+      noAuth: false,
+    };
+    expect(
+      mentionConnectorsFrom(
+        [],
+        [
+          { ...item, mcpAppId: "files" },
+          { ...item, mcpAppId: "files", needsSetup: true },
+          { ...item, connectorId: "managed", needsSetup: true },
+        ],
+      ),
+    ).toEqual([]);
+  });
+
   it("lists connected apps, then catalog apps not yet covered by a connection", () => {
     const catalogItem = { connected: false, noAuth: false };
     expect(
