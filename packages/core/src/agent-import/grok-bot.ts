@@ -15,7 +15,7 @@ import { freeName, memoryItem, skillItem } from "./shared.js";
 export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
 export const GROK_BOT_REPLY_MAX_LENGTH = AGENT_IMPORT_MAX_TOTAL_LENGTH;
-export const GROK_BOT_EVENT_ROUTINES_PATH = "grok-bot-event-routines.md";
+export const GROK_BOT_ROUTINES_PATH = "grok-bot-routines.md";
 
 /**
  * Grok Bot has no export button, so each Bot writes its own setup. Model-facing text pasted
@@ -305,8 +305,9 @@ function readBot(bot: Json): GrokBot {
 }
 
 /**
- * One Bot per name: lists join, dropping exact repeats, and other fields keep the last
- * non-empty value, so a split or repeated export brings each thing once.
+ * One Bot per name: lists join, dropping exact repeats, instructions join their distinct
+ * parts, and other fields keep the last non-empty value, so a split or repeated export brings
+ * each thing once.
  */
 function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   const union = <T>(mine: T[], theirs: T[]) => [
@@ -323,7 +324,9 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
             name: into.name,
             title: bot.title || into.title,
             description: bot.description || into.description,
-            instructions: bot.instructions || into.instructions,
+            instructions: into.instructions.includes(bot.instructions)
+              ? into.instructions
+              : [into.instructions, bot.instructions].filter(Boolean).join("\n\n"),
             memories: union(into.memories, bot.memories),
             userFacts: union(into.userFacts, bot.userFacts),
             skills: union(into.skills, bot.skills),
@@ -461,29 +464,31 @@ function bullets(lines: readonly string[]): string {
   return `${lines.map((line) => `- ${line.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
 }
 
-function eventRoutines(routines: readonly GrokBotRoutine[]): string {
+function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
   const blocks = routines.map(
     (routine) =>
       `## ${routine.name || "Routine"}\n\n- Trigger: ${routine.trigger || "unknown"}\n- Details: ${
         routine.details || routine.when || "none"
       }\n\n${routine.instruction}\n`,
   );
-  return `# Grok Bot routines that run on an event\n\nSet up each one again here.\n\n${blocks.join("\n")}`;
+  return `# Grok Bot routines to set up again\n\nThese run on an event, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
 }
 
 /** Imported text is data: nothing here follows it. Routines and apps are added by the server. */
 export function parseGrokBot(bot: GrokBot): AgentImportParse {
-  const seen = new Set<string>();
-  const fresh = (lines: readonly string[]) =>
-    lines.filter((line) => {
+  // Each field on its own: a fact in both stays in both documents.
+  const fresh = (lines: readonly string[]) => {
+    const seen = new Set<string>();
+    return lines.filter((line) => {
       const key = line.replace(/\s+/g, " ").trim().toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+  };
   const memories = fresh(bot.memories);
   const userFacts = fresh(bot.userFacts);
-  const onEvent = bot.routines.filter(
+  const toSetUp = bot.routines.filter(
     (routine) => routine.instruction && grokRoutineCron(routine) === null,
   );
   const memory: AgentImportMemory[] = [
@@ -491,13 +496,13 @@ export function parseGrokBot(bot: GrokBot): AgentImportParse {
       ? [memoryItem("MEMORY.md", "MEMORY.md", "MEMORY.md", bullets(memories))]
       : []),
     ...(userFacts.length ? [memoryItem("USER.md", "USER.md", "USER.md", bullets(userFacts))] : []),
-    ...(onEvent.length
+    ...(toSetUp.length
       ? [
           memoryItem(
-            GROK_BOT_EVENT_ROUTINES_PATH,
-            GROK_BOT_EVENT_ROUTINES_PATH,
-            GROK_BOT_EVENT_ROUTINES_PATH,
-            eventRoutines(onEvent),
+            GROK_BOT_ROUTINES_PATH,
+            GROK_BOT_ROUTINES_PATH,
+            GROK_BOT_ROUTINES_PATH,
+            routinesToSetUp(toSetUp),
           ),
         ]
       : []),

@@ -76,11 +76,23 @@ describe("reading a Grok Bot's reply", () => {
 
   it("joins a split export by Bot name and counts a repeated part once", () => {
     const [monday, triage] = bramble.routines;
-    const first = exportOf({ name: "Bramble", memories: ["A"], routines: [monday] });
-    const second = exportOf({ name: "bramble", memories: ["B"], routines: [monday, triage] });
-    const bots = parseGrokBotExport(`Part 1:\n${first}\n\nPart 2:\n${second}`);
+    const first = exportOf({
+      name: "Bramble",
+      instructions: "Rule one.",
+      memories: ["A"],
+      routines: [monday],
+    });
+    const second = exportOf({
+      name: "bramble",
+      instructions: "Rule two.",
+      memories: ["B"],
+      routines: [monday, triage],
+    });
+    const again = exportOf({ name: "Bramble", instructions: "Rule two." });
+    const bots = parseGrokBotExport(`Part 1:\n${first}\n\nPart 2:\n${second}\n\n${again}`);
     expect(bots).toHaveLength(1);
     expect(bots[0]!.name).toBe("Bramble");
+    expect(bots[0]!.instructions).toBe("Rule one.\n\nRule two.");
     expect(bots[0]!.memories).toEqual(["A", "B"]);
     expect(bots[0]!.routines.map((routine) => routine.name)).toEqual([
       "Monday review",
@@ -149,7 +161,7 @@ describe("a Grok Bot as an import plan", () => {
   }
   const [bot] = parseGrokBotExport(exportOf(bramble));
 
-  it("maps instructions, memory, event routines and skills", () => {
+  it("maps instructions, memory, routines to set up again and skills", () => {
     const parsed = plan(bot!);
     expect(parsed.source).toBe("grok_bot");
     expect(parsed.suggestedName).toBe("Bramble");
@@ -158,7 +170,7 @@ describe("a Grok Bot as an import plan", () => {
     expect(parsed.memory.map((item) => item.path)).toEqual([
       "MEMORY.md",
       "USER.md",
-      "grok-bot-event-routines.md",
+      "grok-bot-routines.md",
     ]);
     expect(parsed.memory[0]!.content).toBe(
       "- Weekly report goes out on Mondays.\n- The team uses Linear.\n",
@@ -173,6 +185,32 @@ describe("a Grok Bot as an import plan", () => {
     expect(grokSkillNames(bot!)).toEqual(
       new Map([["weekly account health", "weekly-account-health"]]),
     );
+  });
+
+  it("keeps a fact in both memory files and files an unreadable schedule to set up again", () => {
+    const [both] = parseGrokBotExport(
+      exportOf({
+        name: "Wren",
+        memories: ["Name: Sam"],
+        user_facts: ["Name: Sam"],
+        routines: [
+          {
+            name: "Standup",
+            instruction: "Post the standup.",
+            schedule_text: "every weekday at 9",
+          },
+        ],
+      }),
+    );
+    const parsed = plan(both!);
+    expect(parsed.memory.map((item) => [item.path, item.content])).toEqual([
+      ["MEMORY.md", "- Name: Sam\n"],
+      ["USER.md", "- Name: Sam\n"],
+      [
+        "grok-bot-routines.md",
+        expect.stringContaining("- Details: every weekday at 9\n\nPost the standup."),
+      ],
+    ]);
   });
 
   it("flags key-shaped text and lists a skill with no text as skipped", () => {

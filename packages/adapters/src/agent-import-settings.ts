@@ -186,7 +186,12 @@ export function readGrokBotImportSettings(
   const skillNames = grokSkillNames(bot);
   const routines: ImportedRoutine[] = [];
   for (const [index, source] of bot.routines.entries()) {
-    const cron = source.instruction ? grokRoutineCron(source) : null;
+    // A routine the Bot could not read in full is named, so the user knows it was left behind.
+    if (!source.instruction) {
+      skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
+      continue;
+    }
+    const cron = grokRoutineCron(source);
     if (!cron) continue;
     const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
     const prompt = uses.length
@@ -202,6 +207,11 @@ export function readGrokBotImportSettings(
 
   const mcpServers: ImportedMcpServer[] = [];
   for (const [index, app] of bot.apps.entries()) {
+    // An app name with a key in it never becomes a server name, nor appears in the preview.
+    if (looksLikeCredential(app.name)) {
+      skipped.push({ path: `apps: ${index + 1}`, reason: "unsupported" });
+      continue;
+    }
     const path = `apps: ${app.name}`;
     if (!app.mcpUrl) {
       skipped.push({ path, reason: "reconnect" });

@@ -688,6 +688,7 @@ describe("Grok Bot export", () => {
             },
             { ...routine, name: "Elsewhere", timezone: "Mars/Base" },
             { name: "Support", instruction: "Answer #support.", trigger: "slack" },
+            { name: "Unread", trigger: "schedule", schedule_cron: "0 9 * * *" },
           ],
           apps: [
             {
@@ -698,6 +699,8 @@ describe("Grok Bot export", () => {
             { name: "Plain", mcp_url: "http://mcp.example.com/mcp" },
             { name: "Keyed", mcp_url: "https://mcp.example.com/a1b2c3d4e5f6g7h8i9j0k1l2m3" },
             { name: "Gmail" },
+            // Built from parts so no scanner mistakes this file for a leak.
+            { name: ["gh", "p_", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zAb3dE5"].join("") },
           ],
         },
       ],
@@ -719,7 +722,7 @@ describe("Grok Bot export", () => {
     ]);
   });
 
-  it("carries remote MCP addresses without a key and lists other apps to connect again", () => {
+  it("carries remote MCP addresses without a key and lists what is left behind", () => {
     expect(settings.mcpServers).toMatchObject([
       {
         id: "mcp:0",
@@ -729,9 +732,11 @@ describe("Grok Bot export", () => {
       },
     ]);
     expect(settings.skipped).toEqual([
+      { path: "routines: Unread", reason: "unsupported" },
       { path: "apps: Plain", reason: "unsupported" },
       { path: "apps: Keyed", reason: "unsupported" },
       { path: "apps: Gmail", reason: "reconnect" },
+      { path: "apps: 5", reason: "unsupported" },
     ]);
     expect(settings.model).toBeNull();
     expect(settings.apiKeys).toEqual([]);

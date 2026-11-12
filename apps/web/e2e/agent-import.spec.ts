@@ -399,7 +399,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   const preview = panel.getByTestId("agent-import-preview");
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Bramble");
   await expect(preview.getByTestId("agent-import-memory").getByRole("checkbox")).toHaveCount(3);
-  await expect(preview.getByRole("checkbox", { name: "grok-bot-event-routines.md" })).toBeChecked();
+  await expect(preview.getByRole("checkbox", { name: "grok-bot-routines.md" })).toBeChecked();
   const skill = preview.getByRole("checkbox", { name: "weekly-account-health" });
   const routine = preview.getByRole("checkbox", { name: "Monday review" });
   await expect(skill).not.toBeChecked();
@@ -424,7 +424,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   expect(memory.map((doc) => doc.path).sort()).toEqual([
     "MEMORY.md",
     "USER.md",
-    "grok-bot-event-routines.md",
+    "grok-bot-routines.md",
   ]);
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.map((item) => item.name)).toContain("weekly-account-health");

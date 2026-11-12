@@ -33,11 +33,11 @@ import here too. A reply with password or key fields in it is refused whole; ask
 it again without them.
 
 Routines on a schedule come over paused. Turn each one off in Grok Bot before you turn it on here,
-so it doesn't run twice. Routines that start on an event (Slack, GitHub, email, a webhook) are
-saved in the bot's memory as `grok-bot-event-routines.md`, with their trigger and full instruction,
-so you can set them up again. Connected apps with a remote MCP address become MCP servers you sign
-in to again; **Not imported** lists the other apps to connect again. Chats, files on the Bot's
-computer and sign-ins stay in Grok Bot.
+so it doesn't run twice. Routines that start on an event (Slack, GitHub, email, a webhook), or
+whose schedule could not be read, are saved in the bot's memory as `grok-bot-routines.md`, with
+their trigger and full instruction, so you can set them up again. Connected apps with a remote
+MCP address become MCP servers you sign in to again; **Not imported** lists the other apps to
+connect again. Chats, files on the Bot's computer and sign-ins stay in Grok Bot.
 
 ## From another assistant
 
