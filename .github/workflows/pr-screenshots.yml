@@ -101,9 +101,9 @@ jobs:
     if: needs.screenshot-context.outputs.pr != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Share the rotating subscription login with the dependency updater.
+    # Only Codex uses the shared login; other agents get a run-specific group.
     concurrency:
-      group: codex-subscription
+      group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}', github.run_id, github.run_attempt) }}
       cancel-in-progress: false
     env:
       SCREENSHOT_AGENT: ${{ vars.PR_SCREENSHOT_AGENT || 'codex' }}
@@ -191,11 +191,24 @@ jobs:
           args=()
           [[ -z $MODEL ]] || args+=(--model "$MODEL")
           # No checkout instructions or inherited credentials; browser tools only.
+          status=0
           printf '%s' "$PROMPT" | env -u GH_TOKEN -u GITHUB_TOKEN -u OPENAI_API_KEY -u CODEX_API_KEY \
             timeout --kill-after=30s 20m codex exec --ephemeral --skip-git-repo-check \
             -C "$RUNNER_TEMP/screenshot-work" "${args[@]}" \
             --output-schema "$CODEX_HOME/schema.json" --output-last-message "$CODEX_HOME/result.json" - \
-            > "$CODEX_HOME/session.log" 2>&1
+            > "$CODEX_HOME/session.log" 2>&1 || status=$?
+          if [[ $status -ne 0 ]]; then
+            echo "::error::Codex exited with status $status"
+            # As in the dependency updater, show only filtered error lines. The
+            # private transcript may contain refreshed credentials or hostile text.
+            resume="$(openssl rand -hex 16)"
+            echo "::stop-commands::$resume"
+            grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$CODEX_HOME/session.log" \
+              | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
+              | tail -n 20 | cut -c1-300 || true
+            echo "::$resume::"
+            exit "$status"
+          fi
           echo "result=$(jq -c . "$CODEX_HOME/result.json")" >> "$GITHUB_OUTPUT"
       - name: Persist refreshed subscription login
         if: always() && steps.auth.outcome == 'success'

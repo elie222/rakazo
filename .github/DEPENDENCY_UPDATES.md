@@ -25,7 +25,8 @@ gh secret set GH_DEPENDENCY_UPDATES_PAT
 ```
 
 The screenshot workflow also uses this login. Both workflows share the
-`codex-subscription` concurrency group so refreshes cannot race. Codex refreshes the cache;
+`codex-subscription` concurrency group so refreshes cannot race. Claude runs do not
+acquire that shared lock. Codex refreshes the cache;
 the workflow writes it back to the secret even after an update failure. If
 authentication is revoked or refresh fails, repeat the login and replace the
 secret. No OpenAI API key is used, so requests use the Codex subscription.
@@ -47,7 +48,8 @@ Both agents use the same prompt, browser allowlist, output contract and publishi
 validation. Codex has shell, local image reading, image generation, web search and
 subagents disabled, a read-only filesystem, and an explicit deny on its login
 folder. Browser tools run as a separate user with a clean environment. Neither
-agent receives the GitHub secret-write token.
+agent receives the GitHub secret-write token. Failed Codex runs print only a
+bounded, credential-filtered set of error lines; private transcripts are deleted.
 
 Runs skip the LLM for non-web changes, obsolete commits, and commits with a
 trusted completed-assessment artifact. Otherwise the agent inspects existing PR images and
