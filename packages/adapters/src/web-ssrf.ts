@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { MIMEType } from "node:util";
 import {
   ipVersion,
   isCloudMetadataHost,
@@ -106,7 +107,15 @@ export async function fetchSafeWebText(
   options: SafeWebFetchOptions = {},
 ): Promise<SafeWebResponse<string>> {
   const response = await fetchSafeWebBytes(url, options);
-  return { ...response, body: new TextDecoder().decode(response.body) };
+  let decoder = new TextDecoder();
+  try {
+    const charset =
+      response.contentType && new MIMEType(response.contentType).params.get("charset");
+    if (charset) decoder = new TextDecoder(charset);
+  } catch {
+    // Preserve UTF-8 decoding for malformed media types or unsupported charset labels.
+  }
+  return { ...response, body: decoder.decode(response.body) };
 }
 
 export async function fetchSafeWebBytes(
