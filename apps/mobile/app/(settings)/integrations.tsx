@@ -68,7 +68,7 @@ import {
   readIntegrationsCache,
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
-import { loadLastBotId } from "../../lib/last-bot";
+import { clearLastBot, loadLastBotId } from "../../lib/last-bot";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -757,7 +757,23 @@ export default function Integrations() {
         await connectCatalogMcpApp(
           { appId: item.mcpAppId, ...(botId ? { botId } : {}) },
           {
-            connect: (input) => rpc("mcp/apps/connect", input),
+            connect: async (input) => {
+              try {
+                return await rpc("mcp/apps/connect", input);
+              } catch (reason) {
+                if (
+                  !input.botId ||
+                  (reason as { code?: string })?.code !== "NOT_FOUND" ||
+                  !isCurrent() ||
+                  controller.signal.aborted
+                )
+                  throw reason;
+                // The remembered bot is optional context and may have been deleted.
+                setLastBotId("");
+                void clearLastBot();
+                return rpc("mcp/apps/connect", { appId: input.appId });
+              }
+            },
             authorize: async (serverId) => {
               setOauthServerId(serverId);
               await authorizeMcp(serverId, true);
