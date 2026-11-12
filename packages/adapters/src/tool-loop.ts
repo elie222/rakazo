@@ -5,25 +5,42 @@ import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
 import { toolResultError } from "./tool-result-error.js";
 
 const LOOP_GUARD_STOP_PREFIX = "I got stuck calling ";
-const LOOP_GUARD_STOP_COUNT_PATTERN = " with (?:(?:nearly )?the same input|too many actions) ";
+const LOOP_GUARD_STOP_COUNT_PATTERN =
+  " with (?:(?:nearly )?the same input|the same result|too many actions) ";
 const LOOP_GUARD_STOP_SUFFIX =
   " times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.";
 const LOOP_GUARD_STOP_PATTERN = new RegExp(
   `^${LOOP_GUARD_STOP_PREFIX}.+${LOOP_GUARD_STOP_COUNT_PATTERN}\\d+${LOOP_GUARD_STOP_SUFFIX.replaceAll(".", "\\.")}$`,
 );
 
-/** Whether the run stopped on one call repeated exactly, and the count its stop message gives. */
-export function loopGuardStop(streak: ToolCallStreak): { identical: boolean; count: number } {
+/**
+ * Which run stopped the loop and the count its stop message gives: one call repeated exactly,
+ * calls that differ only by digits, or one tool whose answer stayed the same whatever its input.
+ */
+export function loopGuardStop(streak: LoopGuardStreak): {
+  kind: "identical" | "similar" | "same_result";
+  count: number;
+} {
+  const shapeCount = streak.shapeCount ?? 0;
+  const failed = (streak.failures ?? 0) >= MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS - 1;
+  if (!failed && shapeCount < MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS)
+    return { kind: "same_result", count: streak.sameResultCount ?? 0 };
   // Short of the similar limit, only a repeated failure stops a run, and that is an identical one.
-  const identical =
-    streak.count >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS ||
-    (streak.shapeCount ?? 0) < MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS;
-  return { identical, count: identical ? streak.count : toolCallStreakLength(streak) };
+  return streak.count >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS ||
+    shapeCount < MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS
+    ? { kind: "identical", count: streak.count }
+    : { kind: "similar", count: toolCallStreakLength(streak) };
 }
 
-export function loopGuardStopText(toolName: string, streak: ToolCallStreak): string {
-  const { identical, count } = loopGuardStop(streak);
-  return `${LOOP_GUARD_STOP_PREFIX}${toolName} with ${identical ? "" : "nearly "}the same input ${count}${LOOP_GUARD_STOP_SUFFIX}`;
+const LOOP_GUARD_STOP_REPEATS = {
+  identical: "the same input",
+  similar: "nearly the same input",
+  same_result: "the same result",
+};
+
+export function loopGuardStopText(toolName: string, streak: LoopGuardStreak): string {
+  const { kind, count } = loopGuardStop(streak);
+  return `${LOOP_GUARD_STOP_PREFIX}${toolName} with ${LOOP_GUARD_STOP_REPEATS[kind]} ${count}${LOOP_GUARD_STOP_SUFFIX}`;
 }
 
 export function overLimitStopText(toolName: string, count: number): string {
@@ -38,7 +55,8 @@ export function isLoopGuardStopText(text: string): boolean {
 const MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS = 6;
 // Arguments that differ only by digits in their text (`echo noop-1`, `echo noop-2`) can be a real
 // sequence such as reading a file in chunks or paging through a site, so they get more room. So
-// does an identical call that keeps succeeding with the same answer: it may be waiting on a page.
+// does an identical call that keeps succeeding with the same answer: it may be waiting on a page,
+// and one tool that keeps getting the same answer whatever its input.
 const MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS = 25;
 const FAILED_RESULT = "failed:";
 
@@ -73,15 +91,19 @@ export function toolCallStreakLength(streak: ToolCallStreak): number {
 }
 
 /**
- * `executionId` and `response` are the streak's last call and the model response that made it;
- * `results` are the distinct answers this identical run has had, up to the similar limit, and
- * `failures` how many answers in a row failed.
+ * `executionId`, `name` and `response` are the streak's last call, its tool and the model response
+ * that made it; `results` are the distinct answers this identical run has had, up to the similar
+ * limit, and `failures` how many answers in a row failed. `sameResultCount` counts the model
+ * responses in a row that called only `name` and got `sameResult` back, whatever the input.
  */
 export type LoopGuardStreak = ToolCallStreak & {
   executionId?: string;
+  name?: string;
   response?: number;
   results?: string[];
   failures?: number;
+  sameResult?: string;
+  sameResultCount?: number;
 };
 
 /**
@@ -113,7 +135,8 @@ export function toolResultFingerprint(result: unknown, error?: unknown): string 
  * whose last answer is new to the run is polling something that changes, so the identical run
  * starts over from that call; answers it has seen before (a blinking cursor) keep counting. A
  * repeat stops early only when its answers keep failing. Matching calls from one model response
- * are one step, so they return the streak unchanged.
+ * are one step, so they return the streak unchanged, and calls of one tool from one response are
+ * one step of its same-result run.
  */
 export function advanceToolCallLoopGuard(
   streak: LoopGuardStreak,
@@ -142,11 +165,25 @@ export function advanceToolCallLoopGuard(
     same && previousResult?.startsWith(FAILED_RESULT)
       ? (restart ? 0 : (streak.failures ?? 0)) + 1
       : 0;
+  const sameStep = response !== undefined && response === streak.response && name === streak.name;
+  const sameResult = sameStep
+    ? { sameResult: streak.sameResult, sameResultCount: streak.sameResultCount }
+    : sameResultRun(streak, name, previousResult);
   return {
-    streak: { ...next, response, ...(same ? { results, failures } : {}) },
+    streak: { ...next, name, response, ...(same ? { results, failures } : {}), ...sameResult },
     // The first call has no answer yet, so six identical failing calls have five failures.
     stuck:
       failures >= MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS - 1 ||
-      (next.shapeCount ?? 0) >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS,
+      (next.shapeCount ?? 0) >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS ||
+      (sameResult.sameResultCount ?? 0) >= MAX_CONSECUTIVE_SIMILAR_TOOL_CALLS,
   };
+}
+
+/** The same-result run after a new step: another tool or an unknown answer starts it over. */
+function sameResultRun(streak: LoopGuardStreak, name: string, previousResult?: string) {
+  if (name !== streak.name || previousResult === undefined) return { sameResultCount: 1 };
+  // The previous step's answer is known now, so the run holds it and this call.
+  if (streak.sameResult !== undefined && streak.sameResult !== previousResult)
+    return { sameResult: previousResult, sameResultCount: 2 };
+  return { sameResult: previousResult, sameResultCount: (streak.sameResultCount ?? 0) + 1 };
 }

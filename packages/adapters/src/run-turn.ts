@@ -651,6 +651,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
   });
   if (!stopped) return;
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
+  const loop = loopGuardStop(ctx.state.toolCallStreak);
   logLoopGuardStop(
     {
       spaceId: run.spaceId,
@@ -661,8 +662,12 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     },
     {
       tool: toolName,
-      reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
-      count: stoppedForOverLimit ? overLimit : loopGuardStop(ctx.state.toolCallStreak).count,
+      reason: stoppedForOverLimit
+        ? "over_limit_actions"
+        : loop.kind === "same_result"
+          ? "repeated_results"
+          : "repeated_calls",
+      count: stoppedForOverLimit ? overLimit : loop.count,
       failures: ctx.state.toolCallStreak.failures ?? 0,
       ...(refusal ? { refusal } : {}),
     },
