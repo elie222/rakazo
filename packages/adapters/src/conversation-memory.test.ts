@@ -387,7 +387,7 @@ describe("retainRunConversation", () => {
     });
     provider.retainConversation.mockResolvedValueOnce({ ok: true, value: { pending: "op-1" } });
     const retained = await retainRunConversation(deps, "run-1");
-    const key = "memory.retain-turn:run-1:settle";
+    const key = "memory.retain-turn:run-1:recover";
     const guard = durable.get(key)!;
     expect(guard.replaceKey).not.toBe(memoryRetainTurnJob("run-1").replaceKey);
     deps.jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable after submit"));
@@ -700,7 +700,10 @@ describe("retainRunConversation", () => {
       sourceMessageId: "e",
       messages: [
         ...["a", "b", "c", "d", "e"].map((letter, index) =>
-          message({ id: letter, seq: index + 1, role: "user" }, letter.repeat(9_000)),
+          message(
+            { id: letter, seq: index + 1, role: "user", authorUserId: "user-1" },
+            letter.repeat(9_000),
+          ),
         ),
         message({ id: "r-6", seq: 6, role: "bot", botId: "bot-1", runId: "run-1" }, "Done."),
       ],
@@ -711,6 +714,38 @@ describe("retainRunConversation", () => {
         turns: [
           turn("user", [cut("c"), cut("d"), cut("e")].join("\n\n"), 5),
           turn("assistant", "Done.", 6),
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("keeps same-name humans and bots in separate turns", async () => {
+    const { deps, prisma, provider } = harness({
+      groupId: "group-1",
+      sourceMessageId: "a",
+      messages: [
+        message({ id: "a", seq: 1, role: "user", authorUserId: "user-1" }, "First person's fact."),
+        message({ id: "b", seq: 2, role: "user", authorUserId: "user-2" }, "Second person's fact."),
+        message({ id: "c", seq: 3, role: "bot", botId: "bot-2" }, "Another bot's fact."),
+        message({ id: "d", seq: 4, role: "bot", botId: "bot-1", runId: "run-1" }, "Noted."),
+      ],
+    });
+    prisma.user.findMany.mockResolvedValue([
+      { id: "user-1", name: "Sam" },
+      { id: "user-2", name: "Sam" },
+    ]);
+    prisma.bot.findMany.mockResolvedValue([
+      { id: "bot-2", name: "Sam", spaceId: "space-1", userId: "user-1" },
+    ]);
+    await retainRunConversation(deps, "run-1");
+    expect(provider.retainConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turns: [
+          turn("user", "First person's fact.", 1, "Sam"),
+          turn("user", "Second person's fact.", 2, "Sam"),
+          turn("user", "Another bot's fact.", 3, "Sam"),
+          turn("assistant", "Noted.", 4),
         ],
       }),
       expect.any(Object),

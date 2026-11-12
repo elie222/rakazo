@@ -1085,6 +1085,117 @@ describe("Hindsight connection", () => {
   const privateResolver: ResolveHostname = async () => [{ address: "fd12:3456::7", family: 6 }];
   const publicResolver: ResolveHostname = async () => [{ address: "203.0.113.10", family: 4 }];
 
+  it("includes stalled DNS in the setup deadline", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+    const fetch = vi.fn();
+    const resolveHostname = vi.fn(() => new Promise<never>(() => {}));
+    try {
+      const preparing = prepareHindsightConnection(
+        { mode: "local", baseUrl: LOCAL_URL },
+        { apiKey: "" },
+        { allowPrivateEndpoint: true, resolveHostname, fetch },
+      );
+      const rejected = expect(preparing).rejects.toThrow("Local mode requires");
+      expect(resolveHostname).toHaveBeenCalledOnce();
+      deadline.abort();
+      await rejected;
+      expect(timeout).toHaveBeenNthCalledWith(1, 10_000);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it.each(["recall", "purge"] as const)(
+    "includes stalled DNS in the %s deadline",
+    async (operation) => {
+      const deadline = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+      const fetch = vi.fn();
+      const resolveHostname = vi.fn(() => new Promise<never>(() => {}));
+      const memory = new HindsightMemoryProvider(
+        { baseUrl: LOCAL_URL, apiKey: "", resolveHostname, fetch },
+        {
+          recallBanks: [],
+          retainConversations: true,
+          autoRecall: true,
+          recallBudget: "mid",
+          recallFacts: false,
+          skipUnrelated: false,
+        },
+        true,
+      );
+      try {
+        const pending =
+          operation === "recall"
+            ? memory.recall(
+                { query: "context", botId: "bot-1", scope: "isolated", limit: 5 },
+                context,
+              )
+            : memory.purgeHistory(
+                { botId: "bot-1", threadId: "thread-1", generations: [3] },
+                context,
+              );
+        expect(resolveHostname).toHaveBeenCalledOnce();
+        deadline.abort(new Error("operation deadline"));
+        await expect(pending).resolves.toMatchObject({ ok: false });
+        expect(timeout).toHaveBeenNthCalledWith(1, operation === "recall" ? 15_000 : 10_000);
+        expect(fetch).not.toHaveBeenCalled();
+      } finally {
+        timeout.mockRestore();
+      }
+    },
+  );
+
+  it("keeps the local recall deadline when HTTP starts after DNS", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+    let finishDns!: (addresses: { address: string; family: number }[]) => void;
+    const resolveHostname = vi.fn(
+      () =>
+        new Promise<{ address: string; family: number }[]>((resolve) => {
+          finishDns = resolve;
+        }),
+    );
+    let requestStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      requestStarted = resolve;
+    });
+    const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      requestStarted();
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    });
+    const memory = new HindsightMemoryProvider(
+      { baseUrl: LOCAL_URL, apiKey: "", resolveHostname, fetch },
+      {
+        recallBanks: [],
+        retainConversations: true,
+        autoRecall: true,
+        recallBudget: "mid",
+        recallFacts: false,
+        skipUnrelated: false,
+      },
+      true,
+    );
+    try {
+      const pending = memory.recall(
+        { query: "context", botId: "bot-1", scope: "isolated", limit: 5 },
+        context,
+      );
+      finishDns([{ address: "10.0.0.2", family: 4 }]);
+      await started;
+      deadline.abort(new Error("shared operation deadline"));
+      await expect(pending).resolves.toMatchObject({ ok: false });
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("needs the deployment owner before contacting a self-hosted server", async () => {
     const fetch = vi.fn();
     const resolveHostname = vi.fn(privateResolver);

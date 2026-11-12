@@ -223,8 +223,9 @@ export async function prepareHindsightConnection(
       new MemoryProviderPrivateEndpointRequiredError(),
     );
   }
+  const signal = AbortSignal.timeout(HINDSIGHT_CONNECTION_TIMEOUT_MS);
   const pinnedAddresses = local
-    ? await pinLocalServiceHost(connection.baseUrl, options)
+    ? await pinLocalServiceHost(connection.baseUrl, { ...options, signal })
     : undefined;
   const probeConnection: HindsightConnectionConfig = {
     ...connection,
@@ -232,7 +233,6 @@ export async function prepareHindsightConnection(
     resolveHostname: options?.resolveHostname,
     ...(pinnedAddresses ? { pinnedAddresses } : {}),
   };
-  const signal = AbortSignal.timeout(HINDSIGHT_CONNECTION_TIMEOUT_MS);
   const probe = await probeHindsightKey(probeConnection, signal);
   if (!probe.ok) throw new Error(probe.error);
   const { recallBanks, retainConversations, autoRecall, recallBudget, recallFacts, skipUnrelated } =
@@ -403,9 +403,11 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   }
 
   /** Local hosts are checked and pinned before the first request, then reused. */
-  private async connectionForRequest(): Promise<SemanticMemoryResponse<HindsightConnectionConfig>> {
+  private async connectionForRequest(
+    signal?: AbortSignal,
+  ): Promise<SemanticMemoryResponse<HindsightConnectionConfig>> {
     if (!this.localHost) return { ok: true, value: this.connection };
-    const blocked = await this.localHost.block();
+    const blocked = await this.localHost.block(signal);
     if (blocked) return { ok: false, error: blocked };
     return { ok: true, value: this.localHost.withPin(this.connection) };
   }
@@ -440,7 +442,10 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse<SemanticMemoryResult[]>> {
     const query = request.query.trim();
     if (!query) return { ok: true, value: [] };
-    const connection = await this.connectionForRequest();
+    const signal = this.localHost
+      ? AbortSignal.any([context.signal, AbortSignal.timeout(HINDSIGHT_RECALL_TIMEOUT_MS)])
+      : context.signal;
+    const connection = await this.connectionForRequest(signal);
     if (!connection.ok) return connection;
     const written = writeBanks(context.spaceId, request.botId, request.scope);
     const banks = [
@@ -460,14 +465,13 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const found = await Promise.all(
       banks.map(async (bank, index) => {
         // Own and shared Space memory use the full budget and are never cooled down.
-        if (index < written.length)
-          return recallHindsight(connection.value, bank, body, context.signal);
+        if (index < written.length) return recallHindsight(connection.value, bank, body, signal);
         if (coolingDown(stateKey, bank)) return undefined;
         const answer = await recallHindsight(
           connection.value,
           bank,
           body,
-          context.signal,
+          signal,
           EXTRA_BANK_RECALL_TIMEOUT_MS,
         );
         if (!context.signal.aborted) noteExtraBank(stateKey, bank, answer.ok);
@@ -521,7 +525,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     if (request.source.kind === "history") return { ok: true, value: undefined };
     const content = request.content.trim();
     if (!content) return { ok: false, error: "Hindsight save skipped: memory content is empty." };
-    const connection = await this.connectionForRequest();
+    const connection = await this.connectionForRequest(context.signal);
     if (!connection.ok) return connection;
     const item = {
       content: truncateUtf8(content, MAX_CONTENT_BYTES),
@@ -568,7 +572,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const turns = request.turns.filter((turn) => turn.content.trim());
     const last = turns.at(-1);
     if (!last) return { ok: true, value: {} };
-    const connection = await this.connectionForRequest();
+    const connection = await this.connectionForRequest(context.signal);
     if (!connection.ok) return connection;
     const session = sessionId(request.threadId, request.generation, request.botId);
     const item = {
@@ -636,7 +640,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse<{ settled: boolean }>> {
     const operations = parsePendingOperations(pending, context.spaceId);
     if (!operations) return { ok: false, error: "Hindsight got an invalid pending turn." };
-    const connection = await this.connectionForRequest();
+    const connection = await this.connectionForRequest(context.signal);
     if (!connection.ok) return connection;
     let settled = true;
     for (const { bank, operationId } of operations) {
@@ -659,7 +663,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       context.signal,
       AbortSignal.timeout(HINDSIGHT_PURGE_TIMEOUT_MS),
     ]);
-    const connection = await this.connectionForRequest();
+    const connection = await this.connectionForRequest(signal);
     if (!connection.ok) return connection;
     const banks = [ownBank(context.spaceId, request.botId), teamBank(context.spaceId)];
     const purge = async (bank: string, session: string): Promise<SemanticMemoryResponse> => {
@@ -703,7 +707,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse<string>> {
     const query = request.query.trim();
     if (!query) return { ok: true, value: "" };
-    const connection = await this.connectionForRequest();
+    const connection = await this.connectionForRequest(context.signal);
     if (!connection.ok) return connection;
     return reflectHindsight(
       connection.value,

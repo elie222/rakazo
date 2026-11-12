@@ -2,11 +2,12 @@ import type {
   AgentHomeStore,
   AgentRuntime,
   ArtifactStore,
+  BackgroundJob,
   JobPublisher,
   MessagingSurface,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import { memoryRetainTurnJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -367,7 +368,10 @@ describe("memory.retain-turn", () => {
     source: { ...owner, botId: "bot-1", threadId: "thread-1" },
   };
   const retainTurn = (runExists = true) => {
-    const jobs = { enqueue: vi.fn(async () => undefined) };
+    const jobs = {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      cancel: vi.fn(async (_key: string) => undefined),
+    };
     const run = { findUnique: vi.fn(async () => (runExists ? owner : null)) };
     const handlers = createBackgroundJobHandlers({
       executor: {} as unknown as ReturnType<typeof createRunExecutor>,
@@ -439,6 +443,70 @@ describe("memory.retain-turn", () => {
     expect(jobs.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ payload: { runId: "run-1", pending: { ...pending, checks: 3 } } }),
     );
+  });
+
+  it("keeps the confirmed token when a canceled slow recovery requeues itself", async () => {
+    const { jobs, handle } = retainTurn();
+    const durable = new Map<string, BackgroundJob>();
+    jobs.enqueue.mockImplementation(async (job) => {
+      durable.set(job.replaceKey!, job);
+    });
+    jobs.cancel.mockImplementation(async (key) => {
+      durable.delete(key);
+    });
+    const pending = { ...identity, generation: 3, checks: 0, unconfirmed: true as const };
+    const recovery = memoryRetainTurnJob("run-1", [], { pending });
+    durable.set(recovery.replaceKey!, recovery);
+    let entered!: () => void;
+    let finish!: (result: { settled: boolean }) => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const slow = new Promise<{ settled: boolean }>((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(settleRetainedConversation).mockImplementationOnce(async () => {
+      entered();
+      return slow;
+    });
+    const running = handle({ runId: "run-1", pending });
+    await started;
+    vi.mocked(retainRunConversation).mockResolvedValueOnce({
+      pending: { ...identity, generation: 3, token: "op-1" },
+    });
+    await handle({ runId: "run-1" });
+    expect(jobs.cancel).toHaveBeenCalledWith(recovery.replaceKey);
+    expect(durable.has(recovery.replaceKey!)).toBe(false);
+    finish({ settled: false });
+    await running;
+    expect(durable.get("memory.retain-turn:run-1:settle")).toMatchObject({
+      payload: { pending: { token: "op-1" } },
+    });
+    expect(durable.get(recovery.replaceKey!)).toMatchObject({
+      payload: { pending: { unconfirmed: true, checks: 1 } },
+    });
+  });
+
+  it("preserves recovery when the confirmed handoff cannot be queued", async () => {
+    const { jobs, handle } = retainTurn();
+    vi.mocked(retainRunConversation).mockResolvedValueOnce({
+      pending: { ...identity, generation: 3, token: "op-1" },
+    });
+    jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    await expect(handle({ runId: "run-1" })).rejects.toThrow("queue unavailable");
+    expect(jobs.cancel).not.toHaveBeenCalled();
+  });
+
+  it("bounds a recovery that resumed after cancellation", async () => {
+    const { jobs, handle } = retainTurn();
+    const pending = { ...identity, generation: 3, checks: 149, unconfirmed: true as const };
+    vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
+    await handle({ runId: "run-1", pending });
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(abandonRetainedConversation).toHaveBeenCalledWith(expect.anything(), "run-1", {
+      ...pending,
+      checks: 150,
+    });
   });
 
   it("keeps failed post-clear cleanup on the bounded polling backoff", async () => {

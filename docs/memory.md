@@ -43,7 +43,8 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   conversations**. Each cleanup attempt has a ten-second deadline and deletes per-turn documents
   in bounded parallel batches. Failed cleanup is retried up to twelve times through the existing
   queue, using the captured connection identity. Cleanup remains best effort if publication fails
-  or the process stops before the retry is queued; outages or writes pending beyond the polling
+  or the process stops before the retry is queued. If the configured connection cannot be loaded,
+  cleanup cannot capture a safe retry identity either. Outages or writes pending beyond the polling
   window can leave gaps or stale memories. If a submission response is uncertain, cleanup checks
   continue through the bounded window. Unchanged conversations require only a local generation
   check without resolving credentials; a later refusal cannot prove an earlier attempt stored

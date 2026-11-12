@@ -63,6 +63,7 @@ type SaidMessage = {
   createdAt: Date;
   role: "user" | "assistant";
   speaker?: string;
+  botId?: string | null;
   authorUserId?: string | null;
   text?: { content: string; speaker?: string };
 };
@@ -268,13 +269,25 @@ export async function retainRunConversation(
   said.sort((a, b) => a.seq - b.seq);
   // In the order it happened, with consecutive messages from one speaker joined.
   const turns: SemanticMemoryConversationTurn[] = [];
+  let previousSpeakerIdentity: string | undefined;
   for (const message of said) {
     const text = message.text ?? conversationText(message.blocks);
     if (!text.content) continue;
     const speaker = message.speaker ?? text.speaker;
     const timestamp = message.createdAt.toISOString();
+    const sender = receivedBotMessage(message.blocks);
+    const speakerIdentity =
+      message.role === "assistant"
+        ? `bot:${run.botId}`
+        : sender || message.botId
+          ? `bot:${sender?.fromBotId ?? message.botId}`
+          : `user:${message.authorUserId ?? (inGroup ? `unknown:${message.seq}` : run.userId)}`;
     const previous = turns.at(-1);
-    if (previous?.role === message.role && previous.speaker === speaker) {
+    if (
+      previous?.role === message.role &&
+      previous.speaker === speaker &&
+      previousSpeakerIdentity === speakerIdentity
+    ) {
       previous.content = `${previous.content}\n\n${text.content}`;
       previous.timestamp = timestamp;
     } else {
@@ -285,6 +298,7 @@ export async function retainRunConversation(
         ...(speaker === undefined ? {} : { speaker }),
       });
     }
+    previousSpeakerIdentity = speakerIdentity;
   }
   if (
     !turns.some((turn) => turn.role === "user") ||

@@ -235,6 +235,10 @@ export function memoryPurgeHistoryJob(
   };
 }
 
+export function memoryRetainTurnRecoveryJobKey(runId: string): string {
+  return `memory.retain-turn:${runId}:recover`;
+}
+
 /** Retries reuse the run's operation id, so the memory service never stores a turn twice. */
 export function memoryRetainTurnJob(
   runId: string,
@@ -251,8 +255,10 @@ export function memoryRetainTurnJob(
       ...(messageIds.length ? { messageIds } : {}),
       ...(options.pending ? { pending: options.pending } : {}),
     },
-    // Submission retries must not replace cleanup that already guards a remote write.
-    replaceKey: `memory.retain-turn:${runId}${options.pending ? ":settle" : ""}`,
+    // A slow recovery check must not overwrite a subsequently confirmed operation token.
+    replaceKey: options.pending?.unconfirmed
+      ? memoryRetainTurnRecoveryJobKey(runId)
+      : `memory.retain-turn:${runId}${options.pending ? ":settle" : ""}`,
     ...(options.availableAt ? { availableAt: options.availableAt } : {}),
     maxAttempts: 4,
   };

@@ -150,6 +150,17 @@ describe("memoryRetainTurnJob", () => {
       availableAt,
       maxAttempts: 4,
     });
+    const recovery = memoryRetainTurnJob("run-1", [], {
+      pending: { ...pending, token: undefined, unconfirmed: true },
+    });
+    expect(recovery.replaceKey).toBe("memory.retain-turn:run-1:recover");
+    expect(
+      new Set([
+        memoryRetainTurnJob("run-1").replaceKey,
+        memoryRetainTurnJob("run-1", [], { pending }).replaceKey,
+        recovery.replaceKey,
+      ]).size,
+    ).toBe(3);
   });
 
   it("parses retention and pending-operation payloads", () => {

@@ -14,6 +14,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   memoryRetainTurnJob,
+  memoryRetainTurnRecoveryJobKey,
   messagingDeliverJob,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -331,6 +332,13 @@ export function createBackgroundJobHandlers(deps: {
             ),
           }),
         );
+        if (!payload.pending) {
+          // Cancel only after the confirmed handoff is durable. An already running recovery
+          // may requeue itself, but its separate key cannot erase the token and its budget ends.
+          await deps.jobs.cancel(memoryRetainTurnRecoveryJobKey(payload.runId)).catch((error) => {
+            getLogger().error("memory.retain-turn recovery cancellation failed", error);
+          });
+        }
       },
     ),
   };
