@@ -1,8 +1,10 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
+  boundedInRunCheckpoint,
   compactedInRunContext,
   DEFAULT_IN_RUN_CHECKPOINT_CONTEXT_FRACTION,
+  inRunCheckpointBudgets,
   inRunCheckpointContextFraction,
   shouldCreateInRunCheckpoint,
 } from "./in-run-checkpoint.js";
@@ -72,6 +74,7 @@ describe("in-run checkpoint pressure", () => {
   it("replaces tool history while retaining canonical system and user context", () => {
     const compacted = compactedInRunContext({
       source: {
+        systemPrompt: "Keep the bot's durable instructions.",
         tools: [],
         messages: [
           { role: "system", content: "Keep approval boundaries.", timestamp: 1 },
@@ -110,6 +113,7 @@ describe("in-run checkpoint pressure", () => {
     expect(compacted.messages.map((message) => message.role)).toEqual(["system", "user", "user"]);
     expect(JSON.stringify(compacted.messages)).not.toContain("large raw browser result");
     expect(JSON.stringify(compacted.messages)).toContain("Checked page one");
+    expect(compacted.systemPrompt).toBe("Keep the bot's durable instructions.");
   });
 
   it("keeps recent user images and bounds user text to the active model window", () => {
@@ -121,7 +125,11 @@ describe("in-run checkpoint pressure", () => {
             role: "user",
             content: [
               { type: "text", text: `begin ${"detail ".repeat(2_000)} end` },
-              { type: "image", data: "fixture-image", mimeType: "image/png" },
+              ...Array.from({ length: 6 }, (_, index) => ({
+                type: "image" as const,
+                data: `fixture-image-${index}`,
+                mimeType: "image/png",
+              })),
             ],
             timestamp: 1,
           },
@@ -130,12 +138,36 @@ describe("in-run checkpoint pressure", () => {
       tools: [],
       summary: "Continue from the screenshot.",
       contextWindow: 5_000,
+      maxImages: 2,
     });
 
     const wire = JSON.stringify(compacted.messages);
-    expect(wire).toContain("fixture-image");
+    expect(wire).toContain("fixture-image-0");
+    expect(wire).toContain("fixture-image-1");
+    expect(wire).not.toContain("fixture-image-2");
     expect(wire).toContain("older user text clipped");
     expect(wire).toContain("Continue from the screenshot");
     expect(wire.length).toBeLessThan(10_000);
+  });
+
+  it("shares a small-window budget and rejects an oversized checkpoint", () => {
+    const budgets = inRunCheckpointBudgets(2_048);
+    expect(budgets.checkpointChars + budgets.userChars).toBeLessThanOrEqual(3_277);
+    expect(budgets.checkpointChars).toBeGreaterThan(0);
+    expect(budgets.userChars).toBeGreaterThan(0);
+    expect(
+      boundedInRunCheckpoint("x".repeat(budgets.checkpointChars + 1), budgets.checkpointChars),
+    ).toBe("");
+    expect(() =>
+      compactedInRunContext({
+        source: {
+          tools: [],
+          messages: [{ role: "user", content: "Keep this goal.", timestamp: 1 }],
+        },
+        tools: [],
+        summary: "x".repeat(budgets.checkpointChars + 1),
+        contextWindow: 2_048,
+      }),
+    ).toThrow("without a summary");
   });
 });

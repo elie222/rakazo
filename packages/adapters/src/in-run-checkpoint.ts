@@ -6,7 +6,9 @@ export const MAX_IN_RUN_CHECKPOINT_CHARS = 20_000;
 const MAX_RETAINED_USER_CHARS = 80_000;
 const RETAINED_USER_CONTEXT_SHARE = 0.2;
 const CHECKPOINT_CONTEXT_SHARE = 0.2;
+const COMPACTED_INPUT_CONTEXT_SHARE = RETAINED_USER_CONTEXT_SHARE + CHECKPOINT_CONTEXT_SHARE;
 const ESTIMATED_CHARS_PER_TOKEN = 4;
+const DEFAULT_RETAINED_IMAGE_LIMIT = 4;
 
 const COMPACTION_PROMPT = [
   "Create a compact progress checkpoint for this unusually long tool-driven task.",
@@ -64,7 +66,7 @@ export function boundedInRunCheckpoint(
 ): string {
   const checkpoint = value.trim();
   if (checkpoint.length <= maxChars) return checkpoint;
-  return checkpoint.slice(0, maxChars).trimEnd();
+  return "";
 }
 
 function boundedText(value: string, maxChars: number): string {
@@ -82,7 +84,11 @@ function userMessage(message: Message): UserMessage | undefined {
   return message.content.length > 0 ? message : undefined;
 }
 
-function boundedUserMessage(message: UserMessage, maxChars: number): UserMessage {
+function boundedUserMessage(
+  message: UserMessage,
+  maxChars: number,
+  remainingImages: { value: number },
+): UserMessage {
   if (typeof message.content === "string") {
     return { ...message, content: boundedText(message.content, maxChars) };
   }
@@ -90,7 +96,10 @@ function boundedUserMessage(message: UserMessage, maxChars: number): UserMessage
   const content: typeof message.content = [];
   for (const part of message.content) {
     if (part.type !== "text") {
-      content.push(part);
+      if (remainingImages.value > 0) {
+        content.push(part);
+        remainingImages.value -= 1;
+      }
       continue;
     }
     if (remaining === 0) continue;
@@ -101,9 +110,10 @@ function boundedUserMessage(message: UserMessage, maxChars: number): UserMessage
   return { ...message, content };
 }
 
-function retainedUserMessages(messages: Message[], maxChars: number): Message[] {
+function retainedUserMessages(messages: Message[], maxChars: number, maxImages: number): Message[] {
   const retained: Message[] = [];
   let remaining = maxChars;
+  const remainingImages = { value: maxImages };
   for (const candidate of messages.toReversed()) {
     const message = userMessage(candidate);
     if (!message) continue;
@@ -115,19 +125,36 @@ function retainedUserMessages(messages: Message[], maxChars: number): Message[] 
             0,
           );
     if (size > remaining && retained.length > 0) break;
-    retained.push(boundedUserMessage(message, remaining));
+    const bounded = boundedUserMessage(message, remaining, remainingImages);
+    if (typeof bounded.content === "string" || bounded.content.length > 0) retained.push(bounded);
     remaining = Math.max(0, remaining - Math.min(size, remaining));
     if (remaining === 0) break;
   }
   return retained.reverse();
 }
 
-function contextScaledChars(contextWindow: number | undefined, share: number, ceiling: number) {
-  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= 0) return ceiling;
-  return Math.min(
-    ceiling,
-    Math.max(4_000, Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * share)),
+export function inRunCheckpointBudgets(contextWindow: number | undefined): {
+  checkpointChars: number;
+  userChars: number;
+} {
+  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= 0) {
+    return {
+      checkpointChars: MAX_IN_RUN_CHECKPOINT_CHARS,
+      userChars: MAX_RETAINED_USER_CHARS,
+    };
+  }
+  const available = Math.max(
+    512,
+    Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * COMPACTED_INPUT_CONTEXT_SHARE),
   );
+  const checkpointChars = Math.min(
+    MAX_IN_RUN_CHECKPOINT_CHARS,
+    Math.floor(available * (CHECKPOINT_CONTEXT_SHARE / COMPACTED_INPUT_CONTEXT_SHARE)),
+  );
+  return {
+    checkpointChars,
+    userChars: Math.min(MAX_RETAINED_USER_CHARS, available - checkpointChars),
+  };
 }
 
 /**
@@ -141,21 +168,17 @@ export function compactedInRunContext(options: {
   tools: Context["tools"];
   summary: string;
   contextWindow?: number;
+  maxImages?: number;
 }): Context {
-  const summary = boundedInRunCheckpoint(
-    options.summary,
-    contextScaledChars(
-      options.contextWindow,
-      CHECKPOINT_CONTEXT_SHARE,
-      MAX_IN_RUN_CHECKPOINT_CHARS,
-    ),
-  );
+  const budgets = inRunCheckpointBudgets(options.contextWindow);
+  const summary = boundedInRunCheckpoint(options.summary, budgets.checkpointChars);
   if (!summary) throw new Error("in-run compaction completed without a summary");
   const sourceMessages = [...options.source.messages, ...(options.lateMessages ?? [])];
   const systemMessages = sourceMessages.filter((message) => message.role === "system");
   const userMessages = retainedUserMessages(
     sourceMessages,
-    contextScaledChars(options.contextWindow, RETAINED_USER_CONTEXT_SHARE, MAX_RETAINED_USER_CHARS),
+    budgets.userChars,
+    Math.max(0, Math.floor(options.maxImages ?? DEFAULT_RETAINED_IMAGE_LIMIT)),
   );
   const checkpoint: Message = {
     role: "user",
@@ -170,6 +193,7 @@ export function compactedInRunContext(options: {
     ].join("\n"),
   };
   return {
+    ...options.source,
     messages: [...systemMessages, ...userMessages, checkpoint],
     tools: options.tools,
   };
