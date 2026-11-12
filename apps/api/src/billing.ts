@@ -597,6 +597,8 @@ export function createBillingService(deps: {
       try {
         await provider.setMonthlyCredits(account.customerId, amountCents);
       } catch (error) {
+        if (error instanceof BillingPaymentNotCompletedError)
+          throw new ORPCError("PAYMENT_REQUIRED", { status: 402, message: error.message });
         if (!(error instanceof BillingNoMonthlyCreditsError)) throw error;
         // The plan ended after the page loaded; syncing lets the next status offer Subscribe.
         await sync(account.customerId);
