@@ -345,10 +345,15 @@ export async function publishNarrationBeforeAsk(ctx: RunContext) {
  * Replaces the text streamed so far with the note as the working line. Runs that hold their
  * narration back (routines, peers, background work) keep their live view.
  */
-export async function showNarrationStatus(ctx: RunContext, note: string | undefined) {
+export async function showNarrationStatus(
+  ctx: RunContext,
+  note: string | undefined,
+  { keepLine = false }: { keepLine?: boolean } = {},
+) {
   const { deps, run, runId, bot, thread } = ctx;
   if (
     !note ||
+    (keepLine && openingAcknowledgementEnabled()) ||
     ctx.scripted ||
     !runPromotesMidTurnNarration(run.trigger) ||
     isBackgroundRunTrigger(run.trigger)
@@ -358,7 +363,7 @@ export async function showNarrationStatus(ctx: RunContext, note: string | undefi
   // steps never shows as written: the status model words it as a status, or the line keeps
   // its last one.
   const shown = openingAcknowledgementEnabled() ? "" : narrationStatusLine(note);
-  if (!shown) ctx.statusLive?.step(note);
+  if (!shown) ctx.statusLive?.step(note, { fallback: false });
   ctx.state.reply.narrationStatusShowing = Boolean(shown);
   await deps.events.append({
     spaceId: run.spaceId,

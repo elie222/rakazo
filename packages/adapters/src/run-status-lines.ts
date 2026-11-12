@@ -6,8 +6,11 @@ export const OPENING_STATUS_ROTATION_MS = 3_500;
 export type LiveStatusLines = {
   /** Whether a status model is writing statuses; false until it is known, and without one. */
   active(): boolean;
-  /** A step the runtime described technically; the status model words it for the person. */
-  step(technical: string): void;
+  /**
+   * A step the status model words for the person. Without an answer, a tool's own description
+   * shows instead; the bot's own text (`fallback: false`) never shows as written.
+   */
+  step(text: string, options?: { fallback?: boolean }): void;
   /** Something else now owns the working line: the model's own status, or its reply text. */
   supersede(): void;
   /** The turn ended: nothing more is shown and pending writes are cancelled. */
@@ -72,13 +75,15 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
 
   return {
     active: () => hasWriter && !closed,
-    step(technical) {
+    step(text, { fallback = true } = {}) {
       const mine = ++generation;
       stopRotation();
       void target.writer
-        .then((writer) => writer?.step(target.request, technical, abort.signal))
+        .then((writer) => writer?.step(target.request, text, abort.signal))
+        .catch(() => undefined)
         .then((line) => {
-          if (line) return show(line, mine);
+          const shown = line || (fallback ? text : undefined);
+          if (shown) return show(shown, mine);
         })
         .catch(() => {});
     },

@@ -561,7 +561,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     runId,
     payload: { name: event.name, executionId: event.executionId },
   });
-  await showNarrationStatus(ctx, heldNote);
+  // A step that came with the model's own status keeps it on the line.
+  await showNarrationStatus(ctx, heldNote, { keepLine: Boolean(event.status) });
   tryFlushPendingTools(reply);
   // A call can finish before or after its own event is handled, so its result is read here.
   const { toolCallStreak: streak, toolResults } = ctx.state;

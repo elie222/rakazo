@@ -86,6 +86,17 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("shows a tool's own description when no status model answers, but never the bot's text", async () => {
+    const t = target({ opening: async () => [], step: async () => undefined });
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    await vi.advanceTimersByTimeAsync(0);
+    live.step("I found two sources and will compare them now.", { fallback: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.shown).toEqual(["Running: ls"]);
+    live.close();
+  });
+
   it("drops a status that arrives after something newer took the line", async () => {
     let finish: (line: string) => void = () => {};
     const t = target({

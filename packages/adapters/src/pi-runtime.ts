@@ -838,7 +838,7 @@ export class PiAgentRuntime implements AgentRuntime {
             if (status) {
               host.stepStatuses ??= new Map();
               host.stepStatuses.set(event.toolCallId, status);
-            }
+            } else host.stepStatuses?.delete(event.toolCallId);
             queue.push({
               type: "progress",
               text: describeToolActivity(

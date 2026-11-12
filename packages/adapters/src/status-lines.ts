@@ -99,10 +99,11 @@ export async function createStatusLineWriter(
       buildPrompt: () => string,
       signal: AbortSignal,
     ): Promise<string> => {
-      const key = await keyFor(choice);
+      // The time limit covers resolving the model's key as well as the call.
+      const timeout = AbortSignal.timeout(STATUS_LINE_TIMEOUT_MS);
+      const key = await untilAborted(keyFor(choice), AbortSignal.any([signal, timeout]));
       // Built only now, so it is redacted against the credentials just resolved too.
       const prompt = buildPrompt();
-      const timeout = AbortSignal.timeout(STATUS_LINE_TIMEOUT_MS);
       const startedAt = Date.now();
       let text = "";
       let problem = "";
@@ -154,14 +155,9 @@ export async function createStatusLineWriter(
         },
       )) {
         if (event.type === "usage" && !event.accounted) await onUsage(event);
-        if (
-          event.type === "text" &&
-          /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())
-        )
-          problem = event.text.trim();
+        if (event.type === "text" && isModelFailureText(event.text)) problem = event.text.trim();
         if (event.type === "done" && event.text) {
-          if (/^(?:I hit a problem:|Unknown model )/i.test(event.text.trim()))
-            problem = event.text.trim();
+          if (isModelFailureText(event.text)) problem = event.text.trim();
           else text = event.text;
         }
       }
@@ -218,6 +214,21 @@ export async function createStatusLineWriter(
     );
     return undefined;
   }
+}
+
+/** Text a runtime writes in place of an answer when the model call failed. */
+function isModelFailureText(text: string) {
+  return /^(?:I hit a problem:|Unknown model )/i.test(text.trim());
+}
+
+/** The value, unless the signal aborts first. */
+function untilAborted<T>(value: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    value.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 /** A turn that ended or moved on cancels its pending status; that is no failure. */
