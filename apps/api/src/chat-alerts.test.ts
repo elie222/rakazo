@@ -86,7 +86,8 @@ describe("notifications.subscribe", () => {
       yield alert;
     });
     const followRosterChanges = vi.fn(async function* (): AsyncGenerator<void> {
-      throw new Error("roster lookup failed");
+      await Promise.reject(new Error("roster lookup failed"));
+      yield;
     });
     const client = createRouterClient(
       createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
