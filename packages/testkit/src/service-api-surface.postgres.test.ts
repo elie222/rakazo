@@ -702,6 +702,33 @@ describeWithDatabase("service API surface", () => {
       expect(sent?.blocks).toContainEqual({ kind: "sent_with_key", name: credential.name });
     });
 
+    it("keeps group runs from a key limited to some bots", async () => {
+      const { cookie, actor } = await person();
+      const first = await newBot(cookie, "Member");
+      const second = await newBot(cookie, "Peer");
+      const { token } = await newKey(cookie);
+      const limited = await newKey(cookie, ["conversations:read"], [first.id]);
+      const group = await ok<{ id: string; threadId: string }>(token, "POST", "/groups", {
+        body: { name: "Limited team", botIds: [first.id, second.id] },
+        key: "limited-group",
+      });
+      const owner = { spaceId: actor.spaceId, userId: actor.userId, threadId: group.threadId };
+      const task = await db.task.create({
+        data: { ...owner, botId: first.id, prompt: "group work", status: "running" },
+      });
+      const run = await db.run.create({
+        data: { ...owner, botId: first.id, taskId: task.id, status: "running", trigger: "user" },
+      });
+
+      const everyone = await ok<{ runs: Array<{ runId: string }> }>(token, "GET", "/runs");
+      expect(everyone.runs.map((entry) => entry.runId)).toContain(run.id);
+      await ok(token, "GET", `/runs/${run.id}`);
+
+      const seen = await ok<{ runs: Array<{ runId: string }> }>(limited.token, "GET", "/runs");
+      expect(seen.runs.map((entry) => entry.runId)).not.toContain(run.id);
+      expect((await api(limited.token, "GET", `/runs/${run.id}`)).status).toBe(404);
+    });
+
     it("holds a group message for a busy member instead of joining its run", async () => {
       const { cookie, actor } = await person();
       const first = await newBot(cookie, "Busy");
