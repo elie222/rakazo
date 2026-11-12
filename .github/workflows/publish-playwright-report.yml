@@ -192,3 +192,35 @@ jobs:
           else
             gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --input - <<<"$payload"
           fi
+
+  screenshot-source:
+    name: Mark E2E publication finished
+    needs: [result, publish]
+    if: always() && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # Even a skipped or failed publication is terminal: the agent can capture missing views.
+      - run: |
+          mkdir -p "$RUNNER_TEMP/screenshot-ready"
+          printf 'ready\n' > "$RUNNER_TEMP/screenshot-ready/ready.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr-screenshot-e2e-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/screenshot-ready/ready.txt
+          retention-days: 3
+          overwrite: true
+
+  screenshots:
+    needs: screenshot-source
+    if: always() && needs.screenshot-source.result == 'success'
+    uses: ./.github/workflows/pr-screenshots.yml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    with:
+      head_sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit

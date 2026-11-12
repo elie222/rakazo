@@ -98,6 +98,7 @@ export function buildPlaywrightPrScreenshotComment(input: {
 
   return [
     PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER,
+    `<!-- screenshot-commit:${input.sha} -->`,
     "### Playwright screenshots",
     "",
     featureSection,

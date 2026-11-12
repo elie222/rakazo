@@ -6,6 +6,7 @@ import re
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = pathlib.Path(__file__).with_name("pr-screenshots.py").resolve()
 spec = importlib.util.spec_from_file_location("pr_screenshots", SCRIPT)
@@ -147,6 +148,121 @@ class PromptTest(unittest.TestCase):
     def test_an_emoji_body_alone_cannot_overflow(self):
         text = shots.prompt("Do it.", {**self.PR, "body": "\U0001f600" * 8_000}, "")
         self.assertLessEqual(len(json.dumps(text)), shots.MAX_PROMPT_JSON)
+
+class EfficiencyTest(unittest.TestCase):
+    sha = "a" * 40
+
+    def pr(self, body):
+        return {"state": "open", "head": {"sha": self.sha}, "body": body}
+
+    def test_only_same_commit_agent_images_skip_without_a_model(self):
+        section = f"{shots.START}\n<!-- screenshot-commit:{self.sha} -->\n![Chat](https://example.com/a.png)\n{shots.END}"
+        self.assertTrue(shots.covered(self.pr(section), self.sha))
+        self.assertFalse(shots.covered(self.pr(section.replace(self.sha, "b" * 40)), self.sha))
+        self.assertFalse(shots.covered(self.pr(section.replace("![Chat]", "[Chat]")), self.sha))
+        self.assertFalse(shots.covered(self.pr("![Unrelated](https://example.com/a.png)"), self.sha))
+
+    def test_completed_assessment_without_new_images_skips_duplicate_events(self):
+        body = shots.splice("Author's description", "", self.sha)
+        self.assertTrue(shots.covered(self.pr(body), self.sha))
+        self.assertFalse(shots.covered(self.pr(body.replace(self.sha, "b" * 40)), self.sha))
+
+    def test_new_assessment_replaces_only_its_metadata(self):
+        old = shots.splice("Author's description", "", "b" * 40)
+        body = shots.splice(old, "", self.sha)
+        self.assertEqual(body.count(shots.REVIEWED), 1)
+        self.assertIn("Author's description", body)
+        self.assertIn(self.sha, body)
+
+    def test_obsolete_runs_skip(self):
+        self.assertTrue(shots.covered({**self.pr(""), "state": "closed"}, self.sha))
+        self.assertTrue(shots.covered(self.pr(""), "b" * 40))
+
+    def test_evidence_requires_publisher_and_current_commit(self):
+        body = f"<!-- rakazo-playwright-screenshots -->\n<!-- screenshot-commit:{self.sha} -->\nGallery"
+        comment = {"user": {"login": "github-actions[bot]"}, "body": body}
+        pages = [[{**comment, "user": {"login": "someone"}}], [comment]]
+        self.assertEqual(shots.evidence(pages, self.sha), body)
+        self.assertEqual(shots.evidence(pages, "b" * 40), "")
+
+    def test_evidence_cannot_overflow_prompt(self):
+        pr = {**PromptTest.PR, "existing_e2e_screenshots": '"' * 100_000}
+        self.assertLessEqual(shots.json_size(shots.prompt("Do it.", pr, "x" * 200_000)), shots.MAX_PROMPT_JSON)
+
+
+class SourcesReadyTest(unittest.TestCase):
+    sha = "a" * 40
+    repo = "example/repo"
+
+    def artifacts(self, source, **overrides):
+        return [{"artifacts": [{"name": f"pr-screenshot-{source}-{self.sha}", "expired": False, "workflow_run": {"id": 1}, **overrides}]}]
+
+    def source_run(self, workflow, **overrides):
+        return {"event": "workflow_run", "path": f".github/workflows/{workflow}.yml", "head_repository": {"full_name": self.repo}, **overrides}
+
+    def test_both_signals_allow_capture(self):
+        responses = [self.artifacts("preview"), self.source_run("preview-deploy"), self.artifacts("e2e"), self.source_run("publish-playwright-report")]
+        with mock.patch.object(shots, "api", side_effect=responses):
+            self.assertTrue(shots.sources_ready(self.repo, self.sha))
+
+    def test_e2e_finishes_first(self):
+        with mock.patch.object(shots, "api", return_value=[{"artifacts": []}]):
+            self.assertFalse(shots.sources_ready(self.repo, self.sha))
+
+    def test_preview_finishes_first(self):
+        with mock.patch.object(shots, "api", side_effect=[self.artifacts("preview"), self.source_run("preview-deploy"), [{"artifacts": []}]]):
+            self.assertFalse(shots.sources_ready(self.repo, self.sha))
+
+    def test_expired_or_other_commit_signal_does_not_allow_capture(self):
+        for overrides in ({"expired": True}, {"name": "pr-screenshot-preview-" + "b" * 40}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", return_value=self.artifacts("preview", **overrides)) as api:
+                self.assertFalse(shots.sources_ready(self.repo, self.sha))
+                self.assertEqual(api.call_count, 1)
+
+    def test_pr_cannot_forge_trusted_readiness_with_an_artifact_name(self):
+        for overrides in ({"event": "pull_request"}, {"path": ".github/workflows/ci.yml"}, {"head_repository": {"full_name": "other/repo"}}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", side_effect=[self.artifacts("preview"), self.source_run("preview-deploy", **overrides)]):
+                self.assertFalse(shots.sources_ready(self.repo, self.sha))
+
+    def test_forged_artifact_does_not_hide_a_trusted_one_on_another_page(self):
+        pages = self.artifacts("preview") + self.artifacts("preview")
+        responses = [pages, self.source_run("preview-deploy", event="pull_request"), self.source_run("preview-deploy"), self.artifacts("e2e"), self.source_run("publish-playwright-report")]
+        with mock.patch.object(shots, "api", side_effect=responses):
+            self.assertTrue(shots.sources_ready(self.repo, self.sha))
+
+    def test_invalid_sha_is_rejected_before_api_access(self):
+        with mock.patch.object(shots, "api") as api, self.assertRaises(ValueError):
+            shots.sources_ready(self.repo, "../other")
+        api.assert_not_called()
+
+
+class CodexConfigTest(unittest.TestCase):
+    def test_browser_only_configuration(self):
+        import tomllib
+        adapter_spec = importlib.util.spec_from_file_location("adapter", SCRIPT.with_name("pr-screenshot-codex.py"))
+        adapter = importlib.util.module_from_spec(adapter_spec)
+        adapter_spec.loader.exec_module(adapter)
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            mcp = root / "mcp.json"
+            mcp.write_text(json.dumps({"mcpServers": {"playwright": {"command": "sudo", "args": ["--isolated"]}}}))
+            adapter.configure(mcp, root)
+            config = tomllib.loads((root / "config.toml").read_text())
+            self.assertEqual(config["permissions"]["screenshots"]["filesystem"][str(root)], "deny")
+            self.assertEqual(config["web_search"], "disabled")
+            self.assertTrue(all(value is False for value in config["features"].values()))
+            allowed = config["mcp_servers"]["playwright"]["enabled_tools"]
+            self.assertIn("browser_take_screenshot", allowed)
+            self.assertNotIn("browser_evaluate", allowed)
+            self.assertNotIn("browser_file_upload", allowed)
+            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete"])
+            workflow = SCRIPT.parent.parent / "workflows" / "pr-screenshots.yml"
+            text = workflow.read_text()
+            claude_tools = re.search(r"--allowedTools (\S+)", text).group(1).split(",")
+            self.assertEqual(claude_tools, [f"mcp__playwright__{tool}" for tool in allowed])
+            claude_schema = json.loads(re.search(r"--json-schema '([^']+)'", text).group(1))
+            self.assertEqual(claude_schema, adapter.SCHEMA)
+
 
 class CliTest(unittest.TestCase):
     def test_prepare_writes_uploads_and_section(self):
