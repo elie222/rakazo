@@ -148,6 +148,10 @@ describe("structured results through real Pi context selection", () => {
           prompt: "Approval remains pending. Follow all diagnostic cursors. Do not deploy.",
           instructions:
             "Use read-only diagnostic evidence and preserve the current approval state.",
+          // This fixture isolates the existing context selectors. In-run compaction has its own
+          // long-loop replay coverage and would add an intentional model request to these exact
+          // 13-step emulator scripts.
+          usageOperationKind: "compaction",
           history: Array.from({ length: 100 }, (_, index) => ({
             id: `old-${index}`,
             role: "user" as const,
