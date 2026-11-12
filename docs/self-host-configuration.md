@@ -181,6 +181,15 @@ file, `RAKAZO_API_MEMORY_LIMIT` and `RAKAZO_WORKER_MEMORY_LIMIT` cap them (Compo
 `2g` or `3072m`, default `2g` each). Raise them on a larger host. Deploys briefly run the old and
 new container of each side by side, so leave room for both.
 
+## More API and worker containers
+
+Each API and worker container runs on about one CPU core. On a host with more cores,
+`RAKAZO_API_REPLICAS` and `RAKAZO_WORKER_REPLICAS` (default `1` each) run several; they share work
+through Postgres and Caddy spreads requests across the API containers. The deploy script applies a
+new count on its next run, starting that many new containers before it stops the old ones, so
+leave memory for twice the count during a deploy. With more than one API container, give Telegram
+bots and iMessage projects a webhook secret: without one each API polls for the same messages.
+
 ## Postgres memory
 
 The production Compose file sizes Postgres for an 8 GB host: `POSTGRES_MEMORY_LIMIT` caps the
