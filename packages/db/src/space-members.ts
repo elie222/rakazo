@@ -595,6 +595,7 @@ async function departSpace(
           await tx.botSecret.deleteMany({ where: own });
           // Their vault for this Space only; the account vault every Space uses stays theirs.
           await tx.vaultCredential.deleteMany({ where: own });
+          await tx.tailnetConnection.deleteMany({ where: own });
           await tx.botMcpServer.deleteMany({
             where: { spaceId, OR: [{ userId }, { server: { userId } }] },
           });

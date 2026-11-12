@@ -48,6 +48,7 @@ export * from "./server-headers.js";
 export * from "./settings-scope.js";
 export * from "./signup-attribution.js";
 export * from "./space-availability.js";
+export * from "./tailnet.js";
 export * from "./terminal.js";
 export * from "./user-devices.js";
 export * from "./vault-import.js";

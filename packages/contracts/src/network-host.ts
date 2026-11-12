@@ -189,6 +189,48 @@ export function isPrivateNetworkHost(hostname: string): boolean {
   return ipVersion(host) !== 0 && isPrivateNetworkAddress(host);
 }
 
+/** 100.64.0.0/10, where Tailscale numbers its nodes. */
+const TAILNET_IPV4 = ranges([["100.64.0.0", 10]]);
+/** 100.100.100.0/24 is Tailscale's own resolver and metadata, served inside every node. */
+const TAILNET_SERVICE_IPV4 = ranges([["100.100.100.0", 24]]);
+/** fd7a:115c:a1e0::/48, Tailscale's IPv6 range. */
+const TAILNET_IPV6_PREFIX = [0xfd7a, 0x115c, 0xa1e0];
+/** fd7a:115c:a1e0::53, the IPv6 address of the same resolver. */
+const TAILNET_SERVICE_IPV6 = [0xfd7a, 0x115c, 0xa1e0, 0, 0, 0, 0, 0x53];
+
+/**
+ * A tailnet peer's address: 100.64.0.0/10 or fd7a:115c:a1e0::/48, without Tailscale's own service
+ * addresses, which every node answers itself. Literal forms only; IPv4-mapped IPv6 and zones are
+ * refused.
+ */
+export function isTailnetAddress(address: string): boolean {
+  const value = canonical(address);
+  // A zone names an interface on this machine, never a tailnet peer.
+  if (value.includes("%")) return false;
+  const v4 = parseIpv4(value);
+  if (v4 !== undefined) return inRanges(v4, TAILNET_IPV4) && !inRanges(v4, TAILNET_SERVICE_IPV4);
+  const v6 = parseIpv6(value);
+  if (v6 === undefined) return false;
+  if (!TAILNET_IPV6_PREFIX.every((part, index) => group(v6, index) === part)) return false;
+  return !TAILNET_SERVICE_IPV6.every((part, index) => group(v6, index) === part);
+}
+
+/**
+ * A host a tailnet connection may dial: a tailnet address or a MagicDNS name under `ts.net`.
+ * Short names and other suffixes are refused, so a name can never fall back to public DNS.
+ */
+export function isTailnetHost(hostname: string): boolean {
+  const host = normalizeHost(hostname);
+  if (ipVersion(host) !== 0) return isTailnetAddress(host);
+  if (!host.endsWith(".ts.net")) return false;
+  const labels = host.slice(0, -".ts.net".length).split(".");
+  // At least a machine and a tailnet label, each a valid DNS label.
+  return (
+    labels.length >= 2 &&
+    labels.every((label) => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+  );
+}
+
 /** Names reserved for local or internal use: `localhost`, `*.localhost`, `*.local`, `*.internal`. */
 export function isInternalHostname(hostname: string): boolean {
   const host = normalizeHost(hostname);
