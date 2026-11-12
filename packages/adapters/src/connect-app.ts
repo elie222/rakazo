@@ -7,7 +7,6 @@ import {
   createThreadMessageInTransaction,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { approvedAccounts } from "./pipedream-connector.js";
 
 const RECENT_MESSAGES = 50;
 
@@ -44,12 +43,9 @@ export async function connectApp(
       app,
     ) ?? matchAppCatalog(catalog, app);
   if (!entry) return { error: "No such app is available in the connector catalog." };
-  // The catalog lists Pipedream's remote accounts. A saved row that names none of them
-  // (made before account pinning) gets no tools, so the user has to connect again.
+  const provider = providers.find((provider) => provider.describe().id === entry.connectorId);
   const reconnect =
-    entry.connected &&
-    entry.connectorId === "pipedream" &&
-    approvedAccounts(context, entry.slug).length === 0;
+    entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
   if (entry.connected && !reconnect)
     return {
       status: "connected",

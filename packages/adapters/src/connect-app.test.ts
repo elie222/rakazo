@@ -21,10 +21,7 @@ const entry: ConnectionCatalogItem = {
   connected: false,
   noAuth: false,
 };
-function fixture(
-  items = [entry],
-  connectedConnections: AdapterContext["connectedConnections"] = [],
-) {
+function fixture(items = [entry]) {
   const tx = {
     $executeRaw: vi.fn(),
     message: {
@@ -50,7 +47,6 @@ function fixture(
     operationId: "test",
     traceId: "test",
     signal: new AbortController().signal,
-    connectedConnections,
   } as AdapterContext;
   const target = { id: "run", spaceId: "space", botId: "bot", threadId: "chat" };
   return {
@@ -151,41 +147,31 @@ it("treats an app connected through a later provider as connected", async () => 
   expect(stored).toHaveLength(0);
 });
 
-describe("Pipedream connections that name no account", () => {
-  const pipedream = { ...entry, connectorId: "pipedream", connected: true };
-  const row = (providerRef?: string, externalId = "gmail") => ({
-    id: "row",
-    connectorId: "pipedream",
-    externalId,
-    displayName: "Gmail",
-    providerRef,
-  });
-  it.each([
-    ["INV-1 a row names the account", [row("apn_1")], "connected"],
-    ["INV-2 a row holds only the app slug", [row("gmail")], "pending"],
-    ["INV-2 a row has no reference", [row()], "pending"],
-    ["INV-3 no row at all", [], "pending"],
-    ["INV-3 only another app has an account", [row("apn_2", "slack")], "pending"],
-  ])("%s", async (_name, rows, status) => {
-    const f = fixture([pipedream], rows);
-    expect(await f.call()).toMatchObject({ status });
+describe("connected apps that need reconnecting", () => {
+  it.each([false, true])("handles provider reconnect requirement %s", async (reconnect) => {
+    const f = fixture([{ ...entry, connected: true }]);
+    const needsReconnect = vi.fn(async () => reconnect);
+    f.providers[0]!.needsReconnect = needsReconnect;
+    expect(await f.call()).toMatchObject({ status: reconnect ? "pending" : "connected" });
+    expect(needsReconnect).toHaveBeenCalledWith(f.context, entry.slug);
     expect(stored.map((message) => message.blocks)).toEqual(
-      status === "connected"
-        ? []
-        : [[expect.objectContaining({ connectorId: "pipedream", status: "pending" })]],
+      reconnect ? [[expect.objectContaining({ connectorId: "fake", status: "pending" })]] : [],
     );
   });
-  it("INV-4 another connector's connected app needs no row", async () => {
+  it("tells the bot to reconnect and reuses the pending card on replay", async () => {
     const f = fixture([{ ...entry, connected: true }]);
-    expect(await f.call()).toMatchObject({ status: "connected" });
-    expect(stored).toHaveLength(0);
-  });
-  it("tells the bot the saved connection must be reconnected, also on replay", async () => {
-    const f = fixture([pipedream], [row("gmail")]);
-    expect(await f.call()).toMatchObject({ message: expect.stringContaining("reconnect") });
+    f.providers[0]!.needsReconnect = async () => true;
+    expect(await f.call()).toMatchObject({
+      status: "pending",
+      message:
+        "Connection card shown. The saved connection gives this app no tools, so the user must reconnect it. Wait for them to do so.",
+    });
     expect(await f.call("Gmail", "another-effect")).toMatchObject({
-      message: expect.stringContaining("already shown"),
+      status: "pending",
+      message:
+        "Connection card already shown. The saved connection gives this app no tools, so the user must reconnect it. Wait for them to do so.",
     });
     expect(stored).toHaveLength(1);
+    expect(stored[0]?.blocks[0]).toMatchObject({ status: "pending" });
   });
 });

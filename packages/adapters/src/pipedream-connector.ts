@@ -145,6 +145,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
   }
 
+  async needsReconnect(context: AdapterContext, externalId: string): Promise<boolean> {
+    return approvedAccounts(context, externalId).length === 0;
+  }
+
   async warmDirectory(): Promise<void> {
     await this.apps();
   }
@@ -576,7 +580,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
  * the run context omits revoked and pending rows, so it cannot tell which remote
  * account such a row stands for.
  */
-export function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
+function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
   const approved = new Map<string, ApprovedAccount>();
   for (const connection of context.connectedConnections ?? []) {
     if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
