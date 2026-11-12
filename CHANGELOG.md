@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Security
 
 - Updated third-party dependencies with known vulnerabilities, including the HTTP client used by model, mail and scraping connections, the mail sender, and XML and Markdown parsers.
+- The development launcher's database cleanup accepts only database names it generated and quotes them, so forged database metadata can no longer inject SQL or point the cleanup at another folder. This affects source checkouts only.
 
 ### Added
 
