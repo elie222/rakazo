@@ -111,7 +111,8 @@ export async function sandboxAllowancePlan(
     billing?.status === "trialing" ||
     reset <= now ||
     (live && periodEnd != null && periodEnd <= now) ||
-    (live && billing?.cancelAtPeriodEnd && (!periodEnd || reset >= periodEnd))
+    // The cancellation flag can also mean a scheduled date before the billing period ends.
+    (live && billing?.cancelAtPeriodEnd)
       ? null
       : reset;
   return { limitCents, since, resetsAt };

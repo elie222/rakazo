@@ -303,6 +303,28 @@ describe("computer allowance", () => {
     }
   });
 
+  it("does not promise monthly resets on a yearly plan scheduled to cancel", async () => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: {
+        status: "active",
+        byokInterval: "year",
+        byokTier: "max",
+        cancelAtPeriodEnd: true,
+        currentPeriodStartsAt: new Date("2026-01-20T14:00:00Z"),
+        currentPeriodEndsAt: new Date("2027-01-20T14:00:00Z"),
+      },
+    });
+    const allowance = await sandboxAllowance(
+      deps,
+      "organization",
+      new Date("2026-04-01T00:00:00Z"),
+    );
+    expect(allowance?.resetsAt).toBeNull();
+    expect(allowance?.limitMicros).toBe(40_000_000);
+  });
+
   it("counts the calendar month without a live subscription", async () => {
     const { deps, prisma } = allowanceDeps({
       billing: true,
