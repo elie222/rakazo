@@ -1,3 +1,4 @@
+import type { ConnectorTool } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { availableInSpace } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -7,16 +8,20 @@ import type {
   UserCloudAgents,
 } from "./cloud-agent-factory.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
+import { credentialDigest } from "./credential-digest.js";
 import type { McpOAuthBroker } from "./mcp-oauth.js";
 import { TOKEN_REFRESH_SKEW_MS } from "./mcp-oauth.js";
+import { listRemoteMcpTools } from "./remote-mcp.js";
 import type { T3CodeCloudAgentOptions } from "./t3code-cloud-agent.js";
 import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
 
 /**
  * T3 Code environments that users connected as remote MCP servers, as cloud-agent connections.
- * T3 Code names itself in the protected-resource metadata stored when the server was connected.
+ * New launches require its OAuth and orchestrator protocol, independently of display labels.
  */
 export class T3CodeConnections implements UserCloudAgents {
+  private readonly fingerprints = new Map<string, { until: number; result: Promise<boolean> }>();
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly oauth: Pick<McpOAuthBroker, "providerFor">,
@@ -94,12 +99,14 @@ export class T3CodeConnections implements UserCloudAgents {
 
   private async connect(server: McpServer, actor: CloudAgentActor, connectedOnly: boolean) {
     const oauth = await this.oauth.providerFor(server, actor);
-    const resource = oauth?.discoveryState()?.resourceMetadata;
-    // T3 Code serves its sign-in at any of its addresses but its tools only at this one.
+    if (!oauth) return null;
+    const discovery = oauth.discoveryState();
+    const resource = discovery?.resourceMetadata;
+    // Existing keys already selected this adapter: preserve recovery without discovery I/O.
+    // Older stored metadata may omit the resource URL; new launches must have it.
     if (
-      !oauth ||
-      resource?.resource_name !== "T3 Code" ||
-      !sameUrl(resource.resource, server.endpoint)
+      (connectedOnly || resource?.resource !== undefined) &&
+      !sameUrl(resource?.resource, server.endpoint)
     )
       return null;
     const tokens = await oauth.tokens();
@@ -109,11 +116,28 @@ export class T3CodeConnections implements UserCloudAgents {
     if (
       connectedOnly &&
       (!token ||
-        (tokens?.scope !== undefined && !tokens.scope.split(" ").includes(OPERATE_SCOPE)) ||
+        !tokens?.scope?.split(/\s+/).includes(OPERATE_SCOPE) ||
         Date.now() >=
           (oauth.accessTokenExpiresAt() ?? Number.POSITIVE_INFINITY) - TOKEN_REFRESH_SKEW_MS)
     )
       return null;
+    if (connectedOnly) {
+      const origin = new URL(server.endpoint!).origin;
+      const issuers = [
+        discovery?.authorizationServerUrl,
+        discovery?.authorizationServerMetadata?.issuer,
+        ...(resource?.authorization_servers ?? []),
+      ].filter((value) => value !== undefined);
+      if (issuers.some((value) => new URL(value).origin !== origin)) return null;
+      if (
+        resource?.scopes_supported &&
+        !["orchestration:read", OPERATE_SCOPE].every((scope) =>
+          resource.scopes_supported!.includes(scope),
+        )
+      )
+        return null;
+      if (!(await this.fingerprint(server, token!))) return null;
+    }
     return {
       key: `${USER_CLOUD_AGENT_KEY_PREFIX}${server.id}`,
       baseUrl: server.endpoint!,
@@ -128,6 +152,31 @@ export class T3CodeConnections implements UserCloudAgents {
       }),
     };
   }
+
+  private fingerprint(server: McpServer, token: string): Promise<boolean> {
+    const key = credentialDigest(
+      JSON.stringify([server.id, server.revision, server.endpoint, token]),
+    );
+    const cached = this.fingerprints.get(key);
+    if (cached && cached.until > Date.now()) return cached.result;
+    // Share in-flight probes too; bound both successful and failed discoveries.
+    if (this.fingerprints.size >= 256)
+      this.fingerprints.delete(this.fingerprints.keys().next().value!);
+    const result = listRemoteMcpTools({
+      ...this.transport,
+      endpoint: server.endpoint!,
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+      .then(matchesProtocol)
+      .catch(() => {
+        // Never log remote error bodies, which may echo credentials.
+        getLogger().warn("cloud_agent.fingerprint_unavailable", { "mcp.server.id": server.id });
+        return false;
+      });
+    this.fingerprints.set(key, { until: Date.now() + 60_000, result });
+    return result;
+  }
 }
 
 const OPERATE_SCOPE = "orchestration:operate";
@@ -140,9 +189,118 @@ function sameUrl(a: string | undefined, b: string | null) {
       return url;
     }
   };
-  return a === undefined || (b !== null && normal(a) === normal(b));
+  return a !== undefined && b !== null && normal(a) === normal(b);
 }
 
 function usable(actor: CloudAgentActor) {
   return { enabled: true, endpoint: { not: null }, ...availableInSpace(actor) };
+}
+
+// Representative calls cover both launch paths and the model-selection retry. This is
+// a conservative protocol fingerprint, not a general JSON Schema validator: unfamiliar
+// schema forms fail closed; explicitly unconstrained schemas accept any value.
+const PROTOCOL: Record<string, Record<string, unknown>[]> = {
+  t3_project_list: [{ cursor: 0, limit: 100 }],
+  t3_thread_launch: [
+    { title: "Task", message: "Prompt", clientRequestId: "request", scratch: true },
+    {
+      title: "Task",
+      message: "Prompt",
+      clientRequestId: "request",
+      projectId: "project",
+      workspaceStrategy: { type: "worktree", baseRef: "HEAD" },
+    },
+    {
+      title: "Task",
+      message: "Prompt",
+      clientRequestId: "request",
+      scratch: true,
+      modelSelection: { instanceId: "provider", model: "model" },
+    },
+  ],
+  t3_thread_read: [{ threadId: "thread", limit: 1, runLimit: 50 }],
+  t3_thread_send: [{ threadId: "thread", message: "Prompt", mode: "queue" }],
+  t3_thread_interrupt: [{ threadId: "thread", runId: "run" }],
+  t3_queue: [{ action: "cancel", threadId: "thread", queuedRunId: "run" }],
+  orchestrator_capabilities: [{}],
+};
+
+function matchesProtocol(tools: ConnectorTool[]): boolean {
+  return Object.entries(PROTOCOL).every(([name, calls]) => {
+    const schema = tools.find((tool) => tool.name === name)?.inputSchema;
+    return calls.every((args) => acceptsInput(schema, args));
+  });
+}
+
+function acceptsInput(schema: unknown, input: unknown, depth = 0, root = schema): boolean {
+  if (depth > 12) return false;
+  // Unconstrained schemas accept leaf values only: an object argument, including a whole
+  // tool input, must be described as one, or any server could advertise `{}` for every tool.
+  const leaf = input === null || typeof input !== "object";
+  if (typeof schema === "boolean") return schema && leaf;
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return false;
+  const value = schema as Record<string, unknown>;
+  if (
+    Object.keys(value).every((key) =>
+      [
+        "description",
+        "title",
+        "default",
+        "examples",
+        "$comment",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+      ].includes(key),
+    )
+  )
+    return leaf;
+  if (typeof value.$ref === "string") {
+    if (!value.$ref.startsWith("#/")) return false;
+    let target = root;
+    for (const part of value.$ref.slice(2).split("/")) {
+      if (!target || typeof target !== "object") return false;
+      const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (!Object.hasOwn(target, key)) return false;
+      target = (target as Record<string, unknown>)[key];
+    }
+    return acceptsInput(target, input, depth + 1, root);
+  }
+  if (value.not !== undefined || value.if !== undefined) return false;
+  if (
+    Array.isArray(value.allOf) &&
+    !value.allOf.every((part) => acceptsInput(part, input, depth + 1, root))
+  )
+    return false;
+  const alternatives = value.anyOf ?? value.oneOf;
+  if (Array.isArray(alternatives))
+    return alternatives.some((part) => acceptsInput(part, input, depth + 1, root));
+  if (value.const !== undefined) return value.const === input;
+  if (Array.isArray(value.enum)) return value.enum.includes(input);
+  if (typeof input === "object" && input !== null) {
+    if (value.type !== "object") return false;
+    const args = input as Record<string, unknown>;
+    const properties = value.properties as Record<string, unknown> | undefined;
+    return (
+      (value.required === undefined ||
+        (Array.isArray(value.required) &&
+          value.required.every((key) => typeof key === "string" && Object.hasOwn(args, key)))) &&
+      Object.entries(args).every(([key, item]) =>
+        acceptsInput(properties?.[key], item, depth + 1, root),
+      )
+    );
+  }
+  if (typeof input === "number")
+    return (
+      (value.type === "number" || value.type === "integer") &&
+      (typeof value.minimum !== "number" || input >= value.minimum) &&
+      (typeof value.maximum !== "number" || input <= value.maximum)
+    );
+  if (typeof input === "string")
+    return (
+      value.type === "string" &&
+      (typeof value.minLength !== "number" || input.length >= value.minLength) &&
+      (typeof value.maxLength !== "number" || input.length <= value.maxLength)
+    );
+  return typeof input === "boolean" && value.type === "boolean";
 }

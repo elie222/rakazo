@@ -30,8 +30,309 @@ type Outcome =
   | { failure: string; message?: string }
   | { invalidParams: true };
 const ACTIVE = ["preparing", "starting", "running", "waiting"];
-// T3 Code answers any other tool name with JSON-RPC invalid params.
-const TOOLS = [
+// Exact advertisedJsonSchema() output from pingdotgg/t3code at
+// b63d3c592318ce936f787c48023f0dba498056dd.
+const T3_ADVERTISED_SCHEMAS = {
+  t3_thread_launch: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+      },
+      projectId: {
+        type: "string",
+      },
+      scratch: {
+        type: "boolean",
+        description:
+          "No project: a new Scratch folder. Not with `projectId` or `workspaceStrategy`.",
+      },
+      title: {
+        type: "string",
+      },
+      modelSelection: {
+        type: "object",
+        properties: {
+          provider: {},
+          instanceId: {},
+          model: {},
+          options: {},
+        },
+        required: ["model"],
+      },
+      runtimeMode: {
+        type: "string",
+        enum: ["approval-required", "auto-accept-edits", "auto", "full-access"],
+      },
+      interactionMode: {
+        type: "string",
+        enum: ["default", "plan"],
+      },
+      workspaceStrategy: {
+        type: "object",
+        properties: {
+          type: {
+            type: "string",
+            enum: ["root", "existing_worktree", "worktree"],
+          },
+          branch: {
+            type: "string",
+          },
+          worktreePath: {
+            type: "string",
+          },
+          baseRef: {
+            type: "string",
+          },
+          startFromOrigin: {
+            type: "boolean",
+          },
+        },
+        required: ["type"],
+        description:
+          "'worktree': new checkout from `baseRef`. Honor a requested base. Otherwise, independent work uses the default branch as `remote/branch` (e.g. `origin/main`) with `startFromOrigin: true`; with no remote, use the local default branch. Required unpublished commits and dependent or stacked work use their local base with `startFromOrigin: false`. 'existing_worktree': bind `worktreePath`, a project worktree. 'root': project checkout, the default, not your worktree. Uncommitted edits are not copied.",
+      },
+      message: {
+        type: "string",
+        maxLength: 120000,
+        description: "First prompt. Omit it and `attachments` for idle.",
+      },
+      attachments: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            type: {
+              type: "string",
+              enum: ["image", "file"],
+            },
+            id: {
+              type: "string",
+            },
+            name: {
+              type: "string",
+            },
+            mimeType: {
+              type: "string",
+            },
+            sizeBytes: {
+              anyOf: [
+                {
+                  type: "integer",
+                  minimum: 0,
+                  maximum: 10485760,
+                },
+                {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 52428800,
+                },
+              ],
+            },
+            source: {
+              type: "object",
+              properties: {
+                _tag: {
+                  type: "string",
+                  enum: ["pasted-text"],
+                },
+              },
+              required: ["_tag"],
+            },
+          },
+          required: ["type", "id", "name", "mimeType", "sizeBytes"],
+        },
+        maxItems: 8,
+      },
+      clientRequestId: {
+        type: "string",
+      },
+      delegatedFrom: {
+        type: "object",
+        properties: {
+          environmentId: {
+            type: "string",
+          },
+          threadId: {
+            type: "string",
+          },
+          title: {
+            type: "string",
+          },
+        },
+        required: ["environmentId", "threadId", "title"],
+      },
+    },
+    required: ["title"],
+  },
+  t3_project_list: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+      },
+      cursor: {
+        type: "integer",
+        minimum: 0,
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+      },
+    },
+  },
+  t3_queue: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["list", "read", "edit", "cancel", "reorder", "promote_to_steer"],
+      },
+      environmentId: {
+        type: "string",
+      },
+      threadId: {
+        type: "string",
+      },
+      queuedRunId: {
+        type: "string",
+      },
+      text: {
+        type: "string",
+        maxLength: 100000,
+      },
+      beforeRunId: {
+        type: "string",
+      },
+      targetRunId: {
+        type: "string",
+      },
+      cursor: {
+        type: "integer",
+        minimum: 0,
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+      },
+    },
+    required: ["action"],
+  },
+  orchestrator_capabilities: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+      },
+      search: {
+        type: "string",
+      },
+    },
+  },
+  t3_thread_read: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+      },
+      threadId: {
+        type: "string",
+      },
+      itemId: {
+        type: "string",
+      },
+      textOffset: {
+        type: "integer",
+        minimum: 0,
+      },
+      view: {
+        type: "string",
+        enum: ["messages", "activity"],
+      },
+      afterPosition: {
+        type: "integer",
+        minimum: 0,
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        description: "Max items, 1 to 100.",
+      },
+      runLimit: {
+        type: "integer",
+        minimum: 1,
+        description: "Max recent runs, 1 to 50.",
+      },
+      maxCharsPerItem: {
+        type: "integer",
+        minimum: 1,
+        description: "Max chars per item, 1 to 50000.",
+      },
+    },
+    required: ["threadId"],
+  },
+  t3_thread_send: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+      },
+      threadId: {
+        type: "string",
+      },
+      message: {
+        type: "string",
+      },
+      mode: {
+        type: "string",
+        enum: ["auto", "queue", "steer", "restart"],
+      },
+      freshContext: {
+        type: "boolean",
+        description:
+          "Start a new provider session without the thread's earlier context, like /clear. Never steers.",
+      },
+      clientRequestId: {
+        type: "string",
+      },
+    },
+    required: ["threadId", "message"],
+  },
+  t3_thread_interrupt: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+      },
+      threadId: {
+        type: "string",
+      },
+      runId: {
+        type: "string",
+      },
+      reason: {
+        type: "string",
+        maxLength: 2000,
+      },
+      stop: {
+        type: "boolean",
+      },
+      clientRequestId: {
+        type: "string",
+      },
+    },
+    required: ["threadId"],
+  },
+};
+export const T3_TOOLS: Array<{
+  name: string;
+  inputSchema: Record<string, unknown> & {
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}> = [
   "t3_project_list",
   "t3_thread_launch",
   "t3_thread_read",
@@ -39,12 +340,18 @@ const TOOLS = [
   "t3_thread_interrupt",
   "t3_queue",
   "orchestrator_capabilities",
-];
+].map((name) => ({
+  name,
+  inputSchema: T3_ADVERTISED_SCHEMAS[name as keyof typeof T3_ADVERTISED_SCHEMAS],
+}));
 
 /** T3 Code's orchestrator MCP endpoint on the wire: streamable HTTP, JSON responses,
  * structured results, and failures as `isError` text carrying `{_tag, code, message}`. */
 export class T3McpEmulator {
   token = T3_TOKEN;
+  tools = structuredClone(T3_TOOLS);
+  listCalls = 0;
+  failList = false;
   readonly calls: Array<{ tool: string; args: Args }> = [];
   readonly threads = new Map<string, Thread>();
   /** Fails the next tool call after it ran, as a lost response would. */
@@ -132,6 +439,11 @@ export class T3McpEmulator {
     }
     if (!request.headers.get("mcp-session-id")) return new Response(null, { status: 400 });
     if (message.id === undefined) return new Response(null, { status: 202 });
+    if (message.method === "tools/list") {
+      this.listCalls += 1;
+      if (this.failList) return new Response(null, { status: 503 });
+      return respond({ result: { tools: this.tools } });
+    }
     if (message.method !== "tools/call") return respond({ error: { code: -32601, message: "no" } });
     const tool = message.params?.name ?? "";
     const args = message.params?.arguments ?? {};
@@ -210,7 +522,7 @@ export class T3McpEmulator {
   }
 
   private handle(tool: string, args: Args): Outcome {
-    if (!TOOLS.includes(tool)) return { invalidParams: true };
+    if (!T3_TOOLS.some((entry) => entry.name === tool)) return { invalidParams: true };
     if (tool === "t3_project_list") {
       const cursor = Number(args.cursor ?? 0);
       const limit = Number(args.limit ?? 20);

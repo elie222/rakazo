@@ -783,7 +783,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     async function connectServer(
       owner: { spaceId: string; userId: string },
       overrides: {
-        name?: string;
+        scope?: string;
         token?: string | null;
         enabled?: boolean;
         secret?: boolean;
@@ -801,14 +801,14 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
                   access_token: overrides.token ?? T3_TOKEN,
                   token_type: "Bearer",
                   expires_in: 30 * 24 * 3600,
-                  scope: "orchestration:read orchestration:operate",
+                  scope: overrides.scope ?? "orchestration:read orchestration:operate",
                 },
                 obtainedAt: Date.now(),
               }),
           clientInformation: { client_id: "client-1" },
           discoveryState: {
             authorizationServerUrl: new URL(endpoint).origin,
-            resourceMetadata: { resource: endpoint, resource_name: overrides.name ?? "T3 Code" },
+            resourceMetadata: { resource: endpoint, resource_name: "T3 Code" },
           },
         },
       };
@@ -907,7 +907,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
           data: { id: randomUUID(), organizationId: h.id, name: "Other", isDefault: false },
         }),
       );
-      await connectServer(actor, { name: "Docs" });
+      await connectServer(actor, { scope: "read write" });
       await connectServer(actor, { enabled: false });
       await connectServer(actor, { secret: false });
       await connectServer(actor, { token: null });

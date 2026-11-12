@@ -231,6 +231,8 @@ T3 Code runs agents on a machine you control. Each user connects their own T3 Co
 2. In Rakazo, add it under **MCP servers** as a remote server and click **Connect OAuth**.
 3. On the T3 Code page that opens, set the access level to **Auto** (without a sign-in code it starts at **Read only**) and approve.
 
+Rakazo identifies a compatible connection by its orchestrator tools and input schemas, an explicit operate grant, and matching OAuth resource and authorization origins, rather than a display name.
+
 With **Read only**, the server is not used for new agents. With **Supervised**, every run that edits files waits for approval in T3 Code, and its card shows it running until then. To change the level, disconnect the server and connect it again; disconnecting ends its running agents as expired. T3 Code also refuses follow-ups and cancellation on threads running above the chosen level, such as full-access threads started in its own UI.
 
 T3 Code's approval lasts 30 days and cannot be renewed. Once it lapses or is revoked, new agents stop using the server, the cards of its running agents end as expired, and the server shows **Reconnect OAuth**. Removing, disabling or disconnecting the server, or making it unavailable in the Space, ends its agents the same way. Meanwhile new cloud agents run on the deployment's provider, if there is one.
