@@ -388,13 +388,12 @@ describe("Hindsight recall", () => {
     await expect(memory.recall({ ...recall, scope: "shared" }, context)).resolves.toEqual({
       ok: true,
       value: [
-        { memory: "Prefers tea.", score: 0.9, provenance: "hindsight", external: true },
+        { memory: "Prefers tea.", score: 0.9, provenance: "hindsight" },
         {
           memory: "Works in Lisbon.",
           score: 1,
           updatedAt: "2026-11-01T00:00:00Z",
           provenance: "hindsight",
-          external: true,
         },
         {
           memory: "Has a dog named Pixel.",
@@ -412,10 +411,8 @@ describe("Hindsight recall", () => {
     const isolated = await memory.recall({ ...recall, scope: "isolated", limit: 1 }, context);
     expect(isolated).toEqual({
       ok: true,
-      value: [{ memory: "Prefers tea.", score: 0.9, provenance: "hindsight", external: true }],
+      value: [{ memory: "Prefers tea.", score: 0.9, provenance: "hindsight" }],
     });
-    // Recalling stored knowledge never promotes it to instruction authority.
-    expect(isolated.ok && isolated.value[0]).toHaveProperty("external", true);
   });
 
   it("reads a bank nothing was written to as empty and skips a failing extra bank", async () => {
