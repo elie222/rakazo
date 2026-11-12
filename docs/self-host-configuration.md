@@ -190,6 +190,12 @@ new count on its next run, starting that many new containers before it stops the
 leave memory for twice the count during a deploy. With more than one API container, give Telegram
 bots and iMessage projects a webhook secret: without one each API polls for the same messages.
 
+A deploy also briefly needs twice the database connections. Each API and worker container holds up
+to `DB_POOL_MAX` connections plus a few for live updates, and Postgres allows 100 in all by default;
+when twice the containers' total comes near that, run `ALTER SYSTEM SET max_connections = 200;` as
+the owner (`POSTGRES_USER`) and restart Postgres. Otherwise a deploy fails some requests with
+"too many clients".
+
 ## Postgres memory
 
 The production Compose file sizes Postgres for an 8 GB host: `POSTGRES_MEMORY_LIMIT` caps the
