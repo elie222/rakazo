@@ -68,15 +68,17 @@ export class T3CodeConnections implements UserCloudAgents {
     // Each check reads a stored login, so the servers are read together, not one after another.
     const found = await Promise.all(
       servers.map(async (server) => {
-        if (botIds && !(await this.authorized(server.id, actor, botIds))) return null;
-        return this.connect(server, actor, true).catch((error: unknown) => {
+        try {
+          if (botIds && !(await this.authorized(server.id, actor, botIds))) return null;
+          return await this.connect(server, actor, true);
+        } catch (error) {
           // One unreadable server must not hide the others or the deployment's provider.
           getLogger().warn("cloud_agent.connection_unreadable", {
             "mcp.server.id": server.id,
             error,
           });
           return null;
-        });
+        }
       }),
     );
     const connections = found.filter((connection) => connection !== null);

@@ -450,6 +450,15 @@ describe("T3 Code environments connected as MCP servers", () => {
     expect(await connections.forActor(actor)).toBeNull();
   });
 
+  it("skips only the server whose permission read fails", async () => {
+    const f = fakes([server("unreadable"), server("t3")]);
+    vi.spyOn(f.prisma.mcpServer, "findFirst").mockRejectedValueOnce(
+      new Error("permission read failed"),
+    );
+    const connections = new T3CodeConnections(f.prisma, f.oauth, f.transport);
+    expect((await connections.forActor({ ...actor, botIds: ["bot-1"] }))?.key).toBe("mcp:t3");
+  });
+
   it("skips an unreadable server and keeps the deployment's provider when none can be read", async () => {
     const { prisma, oauth, transport } = fakes([server("broken"), server("t3")], ["broken"]);
     const connections = new T3CodeConnections(prisma, oauth, transport);
