@@ -160,6 +160,23 @@ class RetainTest(unittest.TestCase):
         self.assertEqual(merged.count("## Screenshots"), 1)
         self.assertEqual(merged.count(f"<!-- screenshot-commit:{self.sha} -->"), 1)
 
+    def test_web_editor_line_endings_keep_evidence_and_noop_description(self):
+        existing = self.section("first.png")
+        original = f"Author text  \n\n{existing}\n\nFooter  ".replace("\n", "\r\n")
+        with tempfile.TemporaryDirectory() as directory:
+            body, section = pathlib.Path(directory) / "body.md", pathlib.Path(directory) / "section.md"
+            body.write_bytes(original.encode())
+            section.write_text("")
+            retained = io.StringIO()
+            with contextlib.redirect_stdout(retained):
+                self.assertEqual(shots.main(["x", "retain", str(body), str(section), self.sha]), 0)
+            self.assertIn("![first.png]", retained.getvalue())
+            section.write_text(retained.getvalue())
+            published = io.StringIO()
+            with contextlib.redirect_stdout(published):
+                self.assertEqual(shots.main(["x", "splice", str(body), str(section)]), 0)
+            self.assertEqual(published.getvalue(), original)
+
     def test_duplicate_urls_are_not_appended(self):
         existing = self.section("first.png")
         merged = shots.retain_section(existing, self.section("first.png"), self.sha)

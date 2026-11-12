@@ -259,6 +259,10 @@ jobs:
     if: needs.screenshots.outputs.result != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: pr-screenshot-publication-${{ inputs.pull_request }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
@@ -310,7 +314,12 @@ jobs:
               --endpoint-url "$S3_ENDPOINT" --content-type image/png \
               --cache-control "public,max-age=31536000,immutable"
           done < "$out/uploads.txt"
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$out/body.md"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" > "$out/current.json"
+          if python3 .github/scripts/pr-screenshots.py obsolete "$out/current.json" "$HEAD_SHA"; then
+            echo "The pull request changed during uploads; skipping publication."
+            exit 0
+          fi
+          jq -r '.body // ""' "$out/current.json" > "$out/body.md"
           python3 .github/scripts/pr-screenshots.py retain "$out/body.md" "$out/section.md" "$HEAD_SHA" > "$out/retained.md"
           mv "$out/retained.md" "$out/section.md"
           if [[ ! -s $out/section.md ]]; then

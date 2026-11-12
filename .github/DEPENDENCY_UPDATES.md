@@ -80,3 +80,8 @@ current pull requests found through the source owner and branch, including forks
 preparing a browser or restoring a login. Retention deduplicates image URLs and
 rejects merged sets beyond the publication limit. The gallery, publisher and
 Python reader share the commit-marker template in the testkit.
+
+Publication serializes across commits of each PR and rechecks the head after
+uploads. Every matching PR receives the immutable E2E run gallery link; the
+primary PR retains the existing stable gallery. No-op updates preserve author
+line endings, including descriptions saved in the GitHub web editor.

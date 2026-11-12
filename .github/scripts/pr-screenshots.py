@@ -215,7 +215,7 @@ def retain_section(body: str, new_section: str, sha: str) -> str:
     seen: set[str] = set()
     for text in (existing, new_section):
         caption = ""
-        for block in text.split("\n\n"):
+        for block in text.replace("\r\n", "\n").split("\n\n"):
             block = block.strip()
             match = re.fullmatch(r"!\[[^\n]*\]\((https://[^\s]+)\)", block)
             if match:
@@ -245,7 +245,7 @@ def splice(body: str, new_section: str) -> str:
     if not new_section and start == -1:
         return body
     if start != -1 and end != -1:
-        if body[start:end + len(END)] == new_section:
+        if body[start:end + len(END)].replace("\r\n", "\n") == new_section.replace("\r\n", "\n"):
             return body
         before = body[:start].rstrip()
         after = body[end + len(END) :].lstrip()
@@ -254,6 +254,12 @@ def splice(body: str, new_section: str) -> str:
         before, after = body.replace(START, "").rstrip(), ""
     parts = [part for part in (before, new_section, after) if part]
     return "\n\n".join(parts).rstrip() + "\n"
+
+
+def read_markdown(path: str) -> str:
+    # Preserve author line endings for no-op comparisons and description updates.
+    with Path(path).open(newline="") as file:
+        return file.read()
 
 
 def main(argv: list[str]) -> int:
@@ -306,11 +312,11 @@ def main(argv: list[str]) -> int:
         (out / "section.md").write_text(section(selected, base_url))
         return 0
     if len(argv) == 5 and argv[1] == "retain":
-        sys.stdout.write(retain_section(Path(argv[2]).read_text(), Path(argv[3]).read_text().strip(), argv[4]))
+        sys.stdout.write(retain_section(read_markdown(argv[2]), read_markdown(argv[3]).strip(), argv[4]))
         return 0
     if len(argv) == 4 and argv[1] == "splice":
-        body = Path(argv[2]).read_text()
-        sys.stdout.write(splice(body, Path(argv[3]).read_text().strip()))
+        body = read_markdown(argv[2])
+        sys.stdout.write(splice(body, read_markdown(argv[3]).strip()))
         return 0
     sys.stderr.write(__doc__ or "")
     return 2

@@ -76,14 +76,12 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
-          pulls="$(gh api --method GET \
-            "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${HEAD_OWNER}:${HEAD_BRANCH}&per_page=100")"
-          number="$(jq -r --arg sha "$HEAD_SHA" \
-            '[.[] | select(.head.sha == $sha)] | if length == 1 then .[0].number else empty end' \
-            <<<"$pulls")"
-          if [[ -z "$number" ]]; then
-            echo "::warning::Could not resolve a pull request for ${HEAD_OWNER}:${HEAD_BRANCH} at ${HEAD_SHA}."
-          fi
+          set -euo pipefail
+          pulls=$(python3 .github/scripts/pr-screenshots.py pulls "$GITHUB_REPOSITORY" "$HEAD_OWNER" "$HEAD_BRANCH" "$HEAD_SHA")
+          echo "pulls=$pulls" >> "$GITHUB_OUTPUT"
+          # Keep the existing stable gallery for the primary PR. All matching PRs
+          # receive the immutable run gallery below, without republishing history.
+          number=$(jq -r 'first // empty' <<< "$pulls")
           echo "number=$number" >> "$GITHUB_OUTPUT"
       - name: Check for Playwright artifact
         id: artifact
@@ -152,46 +150,54 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PR_NUMBER: ${{ steps.pull_request.outputs.number }}
+          PRS: ${{ steps.pull_request.outputs.pulls }}
+          RUN_KEY: ${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
-          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
-            echo "PR_NUMBER must be a positive integer." >&2
-            exit 1
-          fi
-          public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}"
-          gallery_url="$public_base_url/prs/$PR_NUMBER/index.html"
-          review_path="$GITHUB_WORKSPACE/.tmp/playwright-dashboard/screenshots/review.json"
-          if [[ ! -f "$review_path" ]]; then
-            echo "Missing Playwright review manifest at $review_path." >&2
-            exit 1
-          fi
-          changed_paths_file="$(mktemp)"
-          gh api --paginate \
-            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
-            --jq '.[].filename' > "$changed_paths_file"
-          body="$(
-            PLAYWRIGHT_GALLERY_URL="$gallery_url" \
-            PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
-            PLAYWRIGHT_RUN_URL="$RUN_URL" \
-            PLAYWRIGHT_SHA="$SHA" \
-              pnpm exec tsx packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts \
-                "$review_path" \
-                "$changed_paths_file"
-          )"
-          marker="<!-- rakazo-playwright-screenshots -->"
-          comment_id="$(gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" | \
-            jq -r --arg marker "$marker" \
-              '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains($marker)))] | last | .id // empty')"
-          payload="$(jq -n --arg body "$body" '{body: $body}')"
-          if [[ -n "$comment_id" ]]; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --input - <<<"$payload"
-          else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --input - <<<"$payload"
-          fi
+          set -euo pipefail
+          for PR_NUMBER in $(jq -r '.[]' <<< "$PRS"); do
+            if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '"\(.state) \(.head.sha)"') != "open $SHA" ]]; then
+              continue
+            fi
+            if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+              echo "PR_NUMBER must be a positive integer." >&2
+              exit 1
+            fi
+            public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}"
+            gallery_url="$public_base_url/runs/$RUN_KEY/screenshots/index.html"
+            review_path="$GITHUB_WORKSPACE/.tmp/playwright-dashboard/screenshots/review.json"
+            if [[ ! -f "$review_path" ]]; then
+              echo "Missing Playwright review manifest at $review_path." >&2
+              exit 1
+            fi
+            changed_paths_file="$(mktemp)"
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
+              --jq '.[].filename' > "$changed_paths_file"
+            body="$(
+              PLAYWRIGHT_GALLERY_URL="$gallery_url" \
+              PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
+              PLAYWRIGHT_RUN_URL="$RUN_URL" \
+              PLAYWRIGHT_SHA="$SHA" \
+                pnpm exec tsx packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts \
+                  "$review_path" \
+                  "$changed_paths_file"
+            )"
+            marker="<!-- rakazo-playwright-screenshots -->"
+            comment_id="$(gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" | \
+              jq -r --arg marker "$marker" \
+                '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains($marker)))] | last | .id // empty')"
+            payload="$(jq -n --arg body "$body" '{body: $body}')"
+            if [[ -n "$comment_id" ]]; then
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --input - <<<"$payload"
+            else
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --input - <<<"$payload"
+            fi
+
+          done
 
   screenshot-source:
     name: Mark E2E publication finished
