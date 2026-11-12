@@ -146,8 +146,7 @@ export async function holdSharedPageSave(
   request.args = args;
   request.effectRequest = args;
   if (args.help === true || !argumentGiven(args.pageId)) return undefined;
-  const hasTitle = argumentGiven(args.title);
-  if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle) return undefined;
+  if (!argumentGiven(args.source) && !editsGiven(args)) return undefined;
   if (argumentGiven(args.source) && editsGiven(args)) return undefined;
   if (await neverAsks(ctx)) return undefined;
   const page = await ctx.deps.prisma.page.findFirst({
@@ -160,18 +159,13 @@ export async function holdSharedPageSave(
     },
   });
   if (page?.visibility !== "link") return undefined;
-  const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
-  if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return undefined;
   const check = checkPageSource(proposed.source);
   if (!check.ok || containsSecret([proposed.source, check.code], ctx.secrets)) return undefined;
   const lines = [
-    // The title as it would be stored.
-    ...(parsedTitle
-      ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
-      : []),
+    // What changes, without what both versions share.
     ...changedLines(current, proposed.source),
   ];
   // Measured as the card shows it, redacted, so nothing an approval covers is cut off.
@@ -188,37 +182,94 @@ export async function holdSharedPageSave(
   return undefined;
 }
 
-async function savePage(ctx: RunContext, call: ToolCall) {
+/**
+ * Creation is a separate tool from save_page so the model must send both the title and the
+ * source when it makes a page, and never drops one the way it does on the read/edit tool.
+ */
+async function createPage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
+  if (!argumentGiven(args.title)) return { error: "A new page needs a title." };
+  if (!argumentGiven(args.source)) return { error: "A new page needs source." };
+  const parsedTitle = PageTitleSchema.safeParse(args.title);
+  if (!parsedTitle.success) return { error: "title must be 1 to 200 characters." };
+  const title = redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH);
+  const source = String(args.source);
+  const check = checkPageSource(source);
+  if (!check.ok) return { error: "The page has problems; nothing was saved.", problems: check.errors };
+  // A page can be shared by link, so it never stores a value this run keeps secret.
+  if (containsSecret([source, check.code], ctx.secrets)) {
+    return {
+      error: "The page contains a secret value; nothing was saved. Remove it and save again.",
+      unchanged: true,
+    };
+  }
+  let saved: { pageId: string; version: number; title: string };
+  try {
+    saved = await deps.prisma.$transaction(async (tx) => {
+      const created = await tx.page.create({
+        data: {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botId: bot.id,
+          groupId: thread.groupId,
+          title,
+          versions: { create: { version: 1, title, source, code: check.code } },
+        },
+      });
+      return { pageId: created.id, version: 1, title: created.title };
+    });
+  } catch (error) {
+    if (error instanceof PageChangedError || isUniqueViolation(error)) {
+      return { error: "The page changed while saving; read it again and retry.", unchanged: true };
+    }
+    throw error;
+  }
+  const block: MessageBlock = { kind: "page", ...saved };
+  const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
+  try {
+    // A new page posts its card even from a routine, which otherwise speaks only via its reply.
+    await publishMessage(deps, run, "bot", [block]);
+  } catch (error) {
+    // The page is saved; only its card in the chat is missing, so the bot can still link it.
+    return {
+      ...saved,
+      error: `The page was saved, but its card could not be posted in the chat (${
+        error instanceof Error ? error.message : "unknown error"
+      }). Link it in your reply as [${linkText}](page:${saved.pageId}).`,
+    };
+  }
+  const result = {
+    ...saved,
+    mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
+  };
+  return check.warnings?.length ? { ...result, warnings: check.warnings } : result;
+}
+
+async function savePage(ctx: RunContext, call: ToolCall) {
+  const { deps, run } = ctx;
+  const { args } = call;
+  if (args.help === true) return { guide: PAGE_KIT_GUIDE };
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
+  if (!pageId) return { error: "Use create_page to make a new page; pass its pageId to read or update one." };
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);
   if (hasSource && hasEdits) return { error: "Send either source or edits, not both." };
-  let title: string | undefined;
-  if (argumentGiven(args.title)) {
-    const parsed = PageTitleSchema.safeParse(args.title);
-    if (!parsed.success) return { error: "title must be 1 to 200 characters." };
-    title = redactSecrets(parsed.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH);
-  }
+  const page = await deps.prisma.page.findFirst({
+    where: reachablePage(ctx, pageId),
+    select: {
+      id: true,
+      title: true,
+      visibility: true,
+      currentVersion: true,
+      versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
+    },
+  });
+  if (!page) return { error: "No page with that pageId belongs to this bot or chat." };
+  const current = page.versions[0]?.source ?? "";
 
-  const page = pageId
-    ? await deps.prisma.page.findFirst({
-        where: reachablePage(ctx, pageId),
-        select: {
-          id: true,
-          title: true,
-          visibility: true,
-          currentVersion: true,
-          versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
-        },
-      })
-    : null;
-  if (pageId && !page) return { error: "No page with that pageId belongs to this bot or chat." };
-  const current = page?.versions[0]?.source ?? "";
-
-  if (page && !hasSource && !hasEdits && !title) {
+  if (!hasSource && !hasEdits) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
     ctx.state.tainted = true;
@@ -230,12 +281,9 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       source: current,
     };
   }
-  if (!page && hasEdits) return { error: "edits need the pageId of the page to change." };
-  if (!page && !hasSource) return { error: "A new page needs source." };
-  if (!page && !title) return { error: "A new page needs a title." };
 
   // An approved change applies only to the version the user saw it against.
-  if (page && args.approvedVersion !== undefined && args.approvedVersion !== page.currentVersion)
+  if (args.approvedVersion !== undefined && args.approvedVersion !== page.currentVersion)
     return { error: "The page changed while saving; read it again and retry.", unchanged: true };
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return { error: proposed.error, unchanged: true };
@@ -253,42 +301,26 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
 
   const unapproved =
-    page !== null &&
     !call.bypassApproval &&
     call.nextApprovedTool !== "save_page" &&
     !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
   try {
     saved = await deps.prisma.$transaction(async (tx) => {
-      if (!page) {
-        const created = await tx.page.create({
-          data: {
-            spaceId: run.spaceId,
-            userId: run.userId,
-            botId: bot.id,
-            groupId: thread.groupId,
-            title: title!,
-            versions: { create: { version: 1, title: title!, source, code: check.code } },
-          },
-        });
-        return { pageId: created.id, version: 1, title: created.title };
-      }
       const version = page.currentVersion + 1;
       // Conditional on the version this change was built from, so two saves never interleave.
       // A save nobody approved also needs the page still private: sharing does not bump the
       // version, so a page shared since the approval check would publish it.
-      // With no new title the page keeps its current one, even a rename made after the read.
       const moved = await tx.page.updateMany({
         where: {
           id: page.id,
           currentVersion: page.currentVersion,
           ...(unapproved ? { visibility: "private" } : {}),
         },
-        data: { currentVersion: version, title, updatedAt: new Date() },
+        data: { currentVersion: version, updatedAt: new Date() },
       });
       if (moved.count === 0) throw new PageChangedError();
       let nextTitle =
-        title ??
         (await tx.page.findUniqueOrThrow({ where: { id: page.id }, select: { title: true } }))
           .title;
       // A title saved before this run learned a secret is redacted before it is shown again.
@@ -313,7 +345,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   try {
     // A routine speaks only through its final reply, which may be silence, so refreshing a
     // page it already showed posts no card; its first save still does.
-    if (!page || run.trigger !== "routine") await publishMessage(deps, run, "bot", [block]);
+    if (run.trigger !== "routine") await publishMessage(deps, run, "bot", [block]);
   } catch (error) {
     // The page is saved; only its card in the chat is missing, so the bot can still link it.
     return {
@@ -325,7 +357,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
+    ...(page.visibility === "link" ? { sharedByLink: true } : {}),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;
@@ -334,6 +366,9 @@ async function savePage(ctx: RunContext, call: ToolCall) {
 class PageChangedError extends Error {}
 
 export const pageTools: ToolHandlers = {
+  async create_page(ctx, call) {
+    return call.finish(await createPage(ctx, call));
+  },
   async save_page(ctx, call) {
     return call.finish(await savePage(ctx, call));
   },

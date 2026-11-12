@@ -405,8 +405,13 @@ export function userTurnInstructions(parts: {
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
+      "create_page",
+      'For a dashboard, report, tracker or comparison, create a page with create_page, giving both a title and the page as source in one call (call it with {"help": true} first for the kit guide). After it is created, mention it in your reply as [Title](page:PAGE_ID) so the user can open it. Use save_page only to read or change a page that already exists.',
+    ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
       "save_page",
-      'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
+      'To read or change a page that already exists, use save_page (call it with {"help": true} first for the kit guide). Pass its pageId with edits or new source to change it; pass only pageId to read its current source. In your reply, mention the page by its title; never paste its source.',
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,

@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { CORE_TOOLS_ENV, coreBuiltinToolNames, FIND_TOOL, USE_TOOL } from "./core-tools.js";
 import type { CatalogEntry } from "./lazy-tool-catalog.js";
 import {
   catalogEntries,
@@ -9,51 +10,9 @@ import {
 } from "./lazy-tool-catalog.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "./run-tool-selection.js";
 
-export const FIND_TOOL = "find_tool";
-export const USE_TOOL = "use_tool";
-const FIND_TOOL_LIMIT = 3;
+export { CORE_TOOLS_ENV, coreBuiltinToolNames, FIND_TOOL, USE_TOOL };
 
-/**
- * Built-in tools the model always sees with full schemas: everyday work, and every tool the
- * runtime answers itself. Other built-ins offered to a run are reached through find_tool and
- * use_tool, so the listed tools stay small and never change mid-run.
- */
-export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "shell",
-  "user_computer_shell",
-  "read_file",
-  "write_file",
-  "list_files",
-  "attach_file",
-  "web_search",
-  "web_fetch",
-  "service_search",
-  "service_call",
-  "computer_observe",
-  "computer_act",
-  "browser_navigate",
-  "browser_snapshot",
-  "browser_act",
-  "ask_user",
-  "message_user",
-  "request_takeover",
-  "request_secret",
-  "connect_app",
-  "run_subagent",
-  "skill_read",
-  "update_bot",
-  "update_preferences",
-  "remember",
-  "save_memory",
-  "recall_memory",
-  "schedule_create",
-  "schedule_list",
-  "search_history",
-  "read_history",
-  "read_email",
-  "send_email",
-  "end_call",
-]);
+const FIND_TOOL_LIMIT = 3;
 
 const FLEET_NAMES: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);
 
@@ -70,15 +29,21 @@ const AREAS: Array<[area: string, matches: (name: string) => boolean]> = [
   ["memory", (name) => name.includes("memory")],
   [
     "media",
-    (name) => name.startsWith("generate_") || name === "render_plot" || name === "save_page",
+    (name) =>
+      name.startsWith("generate_") || name === "render_plot" || name === "save_page" || name === "create_page",
   ],
   ["cloud agents", (name) => name.startsWith("cloud_agent_")],
   ["purchases", (name) => name.includes("purchase") || name === "paid_request"],
   ["email", (name) => name.includes("email")],
 ];
 
+/**
+ * Built-in tools the model always sees with full schemas: everyday work, and every tool the
+ * runtime answers itself. Other built-ins offered to a run are reached through find_tool and
+ * use_tool, so the listed tools stay small and never change mid-run.
+ */
 export function isDeferredTool(name: string): boolean {
-  return BUILTIN_AGENT_TOOL_NAMES.has(name) && !CORE_BUILTIN_TOOL_NAMES.has(name);
+  return BUILTIN_AGENT_TOOL_NAMES.has(name) && !coreBuiltinToolNames().names.has(name);
 }
 
 /** Splits a run's offered tools into the ones listed to the model and the deferred built-ins. */

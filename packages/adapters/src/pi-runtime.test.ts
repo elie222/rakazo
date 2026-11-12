@@ -69,8 +69,14 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("save_page", { help: true })).toBe(
       "Reading the page kit reference",
     );
-    expect(describeToolActivity("save_page", { title: "Plan", source: "x" })).toBe(
-      "Writing the page code",
+    expect(describeToolActivity("save_page", { pageId: "page-1", source: "x" })).toBe(
+      "Updating the page code",
+    );
+    expect(describeToolActivity("create_page", { help: true })).toBe(
+      "Reading the page kit reference",
+    );
+    expect(describeToolActivity("create_page", { title: "Plan", source: "x" })).toBe(
+      "Creating the page",
     );
     expect(describeToolActivity("add_mcp_server", { name: "Linear" })).toBe(
       "Connecting MCP server: Linear",

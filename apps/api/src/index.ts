@@ -1,5 +1,7 @@
 import type { Server } from "node:http";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import type { Socket } from "node:net";
+import { coreBuiltinToolNames, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 
@@ -19,6 +21,9 @@ const stopStallWatch = watchEventLoopStalls("api.event_loop_stalled");
 
 try {
   const env = loadEnv();
+  // The list is otherwise first read when a run selects tools; force it so startup logs which
+  // list (default, override or fallback) this process will serve.
+  coreBuiltinToolNames();
   const { app, stop, handleUpgrade } = await createApp({ ...env, logger });
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.apiHost }, () => {
     logger.info("api listening", { "http.host": env.apiHost, "http.port": env.port });

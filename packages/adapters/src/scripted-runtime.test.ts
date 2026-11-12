@@ -61,14 +61,25 @@ describe("inferScript background helpers", () => {
   });
 });
 
-describe("inferScript save_page", () => {
-  it("calls save_page only with a JSON object and treats anything else as plain words", () => {
+describe("inferScript page tools", () => {
+  it("calls save_page or create_page only with a JSON object and treats anything else as plain words", () => {
     expect(inferScript('call save_page with {"help":true}')[0]?.toolCalls).toEqual([
       { name: "save_page", args: { help: true } },
     ]);
-    for (const text of ["call save_page with {", "call save_page with null"]) {
+    expect(inferScript('call create_page with {"title":"Sunny","source":"x"}')[0]?.toolCalls).toEqual(
+      [{ name: "create_page", args: { title: "Sunny", source: "x" } }],
+    );
+    for (const text of [
+      "call save_page with {",
+      "call create_page with {",
+      "call save_page with null",
+      "call create_page with null",
+    ]) {
       expect(inferScript(text)[0]?.toolCalls ?? []).not.toContainEqual(
         expect.objectContaining({ name: "save_page" }),
+      );
+      expect(inferScript(text)[0]?.toolCalls ?? []).not.toContainEqual(
+        expect.objectContaining({ name: "create_page" }),
       );
     }
   });

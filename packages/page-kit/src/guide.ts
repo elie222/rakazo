@@ -1,4 +1,4 @@
-/** Returned by save_page {"help": true}, so ordinary turns do not pay for it. */
+/** Returned by create_page and save_page {"help": true}, so ordinary turns do not pay for it. */
 export const PAGE_KIT_GUIDE = `# Pages
 
 A page is JSX source whose default export is a React component. It renders in an isolated viewer in the user's light or dark theme and prints cleanly.
@@ -9,7 +9,7 @@ A page is JSX source whose default export is a React component. It renders in an
 - Do not name your own component after a kit component (Page, Status, Table, Rows...): it replaces the kit's in the whole file, so using that kit component inside it renders itself forever, and the check refuses it. Call it StatusPage, BotTable and so on.
 - Gather data first and keep it in one object at the top. Write figures already formatted ("$12,400", "4.8%") and write plain characters, not HTML escapes ("<800ms", not "&lt;800ms").
 - Plain HTML and SVG elements (div, span, svg, path, rect, circle, text, linearGradient, animate...) with style={{...}} are allowed for custom visuals; take colours from useTheme() so they match both themes. script, style, iframe, object, embed and foreignObject are not allowed, and handlers are functions, never strings. Images are data: URIs only.
-- Save with save_page {title, source}. To change it later, pass the pageId you got back with edits [{find, replace}] (all apply or none do) or the whole new source; pass only pageId to read the current source.
+- Create it with create_page {title, source}. To change it later, pass the pageId you got back to save_page with edits [{find, replace}] (all apply or none do) or the whole new source; pass only pageId to read the current source.
 
 ## Design rules
 - Show, don't narrate: pick the richest component that fits the data. Numbers become Metrics, trends a LineChart, comparisons Bars, shares a Pie, flows a Diagram, sequences Steps, options ProsCons, statuses toned Status pills. A paragraph is for the one thing a visual cannot say.

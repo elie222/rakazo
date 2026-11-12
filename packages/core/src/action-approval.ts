@@ -232,8 +232,8 @@ export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): b
 /**
  * Tools whose results bring in nothing from outside during the run: confirmations of the bot's own
  * writes, the owner's answers, and the product's own saved state (memory, skills, history), which
- * is treated like the conversation already in context. save_page confirms the bot's own write; its
- * read mode returns a page's stored source and taints the run in its handler. Every other result
+ * is treated like the conversation already in context. save_page and create_page confirm the bot's
+ * own write; save_page's read mode returns a page's stored source and taints the run in its handler. Every other result
  * (pages, search hits, files, connector data, the screen, shell output, other bots) can carry text
  * an attacker wrote, and taints the run. New tools taint by default.
  */
@@ -260,6 +260,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "save_memory",
   "save_page",
   "save_shared_memory",
+  "create_page",
   "schedule_cancel",
   "schedule_create",
   "schedule_list",

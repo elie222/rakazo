@@ -227,15 +227,15 @@ export function inferScript(
   const words = peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, "");
   const lower = words.toLowerCase();
   // In a group the words open with the mention that picked this bot.
-  const page = /^(?:@\S+\s+)?call save_page with (.+?)(?:\nthen say ([\s\S]+))?$/s.exec(
+  const page = /^(?:@\S+\s+)?call (save_page|create_page) with (.+?)(?:\nthen say ([\s\S]+))?$/s.exec(
     words.trim(),
   );
-  const pageArgs = page ? jsonObject(page[1]!) : undefined;
+  const pageArgs = page ? jsonObject(page[2]!) : undefined;
   if (page && pageArgs) {
     return [
       {
-        assistant: page[2],
-        toolCalls: [{ name: "save_page", args: pageArgs }],
+        assistant: page[3],
+        toolCalls: [{ name: page[1]!, args: pageArgs }],
         complete: true,
       },
     ];
