@@ -602,6 +602,11 @@ memory. instabox also pauses a computer after 30 idle minutes, later than the de
 limits on requests at once (API calls, and connections to screens and terminals), so a
 deployment with many active computers at the same time can see them slow down.
 
+New computers start at the computer size of the space's plan. Standard is instabox's default.
+Large and xlarge need an instabox plan that offers that size; otherwise the computer starts at
+the size it can have. A stopped computer moves to its plan's size when it next starts, which
+restarts it, so its running programs end. A running computer keeps its size.
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that
