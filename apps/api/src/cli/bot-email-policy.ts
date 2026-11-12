@@ -76,6 +76,14 @@ try {
               recipientCount: policy.botEmailAllowedRecipients.length,
               previousRecipientCount: previous.botEmailAllowedRecipients.length,
               change: action,
+              changed:
+                previous.botEmailDailyLimit !== policy.botEmailDailyLimit ||
+                previous.botEmailRepliesEnabled !== policy.botEmailRepliesEnabled ||
+                previous.botEmailAllowedRecipients.length !==
+                  policy.botEmailAllowedRecipients.length,
+              ...((action === "allow" || action === "deny") && recipient.success
+                ? { recipient: recipient.data }
+                : {}),
             },
           },
         });

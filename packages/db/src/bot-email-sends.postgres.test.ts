@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { reserveBotEmailSend } from "./bot-email-sends.js";
 import type { PrismaClient } from "./client.js";
@@ -54,6 +55,37 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
     runAsTenant({ spaceId, userId }, () =>
       reserveBotEmailSend(prisma, { userId, botId, recipients, verifiedReplySender }, now),
     );
+
+  it("charges existing reservations and overlapping previous-release writers their maximum recipients", async () => {
+    const sql = readFileSync(
+      new URL(
+        "../prisma/migrations/20261212120000_bot_email_policy/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    await asSystem(prisma).$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('CREATE TEMP TABLE "user" (id TEXT PRIMARY KEY) ON COMMIT DROP');
+      await tx.$executeRawUnsafe(
+        "CREATE TEMP TABLE bot_email_sends (id TEXT PRIMARY KEY) ON COMMIT DROP",
+      );
+      await tx.$executeRaw`INSERT INTO bot_email_sends (id) VALUES ('before-migration')`;
+      for (const statement of sql
+        .replace(/^--.*$/gm, "")
+        .split(";")
+        .filter((statement) => statement.trim()))
+        await tx.$executeRawUnsafe(statement);
+      await tx.$executeRaw`INSERT INTO bot_email_sends (id) VALUES ('previous-release')`;
+      const rows = await tx.$queryRaw<{ id: string; recipientCount: number }[]>`
+        SELECT id, "recipientCount" FROM bot_email_sends ORDER BY id`;
+      expect(rows).toEqual([
+        { id: "before-migration", recipientCount: 10 },
+        { id: "previous-release", recipientCount: 10 },
+      ]);
+    });
+    await asSystem(prisma).botEmailSend.create({ data: { userId, botId: "previous-release" } });
+    expect(await reserve("bot", "space")).toBe("limit");
+  });
 
   it("shares five deliveries across concurrent bots in different Spaces", async () => {
     const results = await Promise.all(

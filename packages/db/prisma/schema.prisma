@@ -1586,8 +1586,9 @@ model BotEmailSend {
   /// No relation: a deleted bot's sends still count toward its owner's limit.
   botId  String
   sentAt DateTime @default(now())
-  /// Envelope recipients reserved before delivery, including failed attempts.
-  recipientCount Int @default(1)
+  /// Envelope recipients reserved before delivery, including failed attempts. Legacy writers
+  /// omit the count and are conservatively charged the maximum envelope size.
+  recipientCount Int @default(10)
 
   @@index([userId, sentAt])
   @@map("bot_email_sends")

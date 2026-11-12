@@ -58,6 +58,29 @@ dbTests("operator bot email policy command", { timeout: 120_000 }, () => {
         where: { userId, type: "bot_email.policy.changed" },
       });
       expect(events).toHaveLength(7);
+      const recipientEvents = events
+        .map((event) => event.metadata as Record<string, unknown>)
+        .filter((metadata) => metadata.recipient !== undefined);
+      expect(recipientEvents).toHaveLength(3);
+      expect(recipientEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            change: "allow",
+            recipient: "reports@example.test",
+            changed: true,
+          }),
+          expect.objectContaining({
+            change: "allow",
+            recipient: "reports@example.test",
+            changed: false,
+          }),
+          expect.objectContaining({
+            change: "deny",
+            recipient: "reports@example.test",
+            changed: true,
+          }),
+        ]),
+      );
       expect(events.map((event) => event.metadata)).toContainEqual({
         by: "operator",
         previousLimit: 5,
@@ -67,6 +90,7 @@ dbTests("operator bot email policy command", { timeout: 120_000 }, () => {
         recipientCount: 0,
         previousRecipientCount: 0,
         change: "limit",
+        changed: true,
       });
     } finally {
       await prisma.securityEvent.deleteMany({ where: { userId } });

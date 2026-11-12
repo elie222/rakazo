@@ -144,8 +144,10 @@ The bot supplies its own From and Reply-To address, so replies return to its inb
 
 Each account starts with five recipient deliveries per rolling 24 hours, shared by every bot
 and Space. CC recipients and failed delivery attempts count too. Deleting mail or a bot never
-resets usage. An account must have a verified email and be active. By default bots can send only
-to that verified owner address, including scheduled reports.
+resets usage. Reservations from before recipient accounting, including overlapping older
+workers, count as ten deliveries until they leave the rolling window because their recipient
+counts are unknown. An account must have a verified email and be active. By default bots can
+send only to that verified owner address, including scheduled reports.
 
 An operator can enable replies to authenticated incoming senders and raise the allowance using
 the API container's CLI:
@@ -159,7 +161,9 @@ node dist/cli/bot-email-policy.js deny owner@example.test reports@example.test
 node dist/cli/bot-email-policy.js limit owner@example.test 0
 ```
 
-Zero pauses all bot sending. Changes are recorded in the security audit log. No user or bot tool
+Zero pauses all bot sending. Changes are recorded in the security audit log, including whether
+anything changed and the canonical recipient for `allow` and `deny`. These recipient identifiers
+remain in the protected database audit and follow its retention policy. No user or bot tool
 can raise the allowance or enable external replies. Reply access permits only the authenticated
 From address of an incoming message received in the last 30 days, identified by `inReplyTo`.
 It does not permit arbitrary recipients, reply-all, or recipients from a Reply-To header.
@@ -170,6 +174,26 @@ The bot's usual action approvals still apply inside these limits, and known secr
 Before enabling external replies on a hosted deployment, configure the sending service's hard
 bounce and complaint suppression and operational alerts. Review the workflow and recipient
 consent; a paid subscription alone is not authorization for external sending.
+
+### Monitoring operator changes
+
+The CLI commits its security event in the same transaction as the policy change. Its output
+from `docker exec` is not part of the API process's structured log stream. Monitor committed
+`bot_email.policy.changed` rows in `security_events` directly, using an operator database
+connection. For example:
+
+```sql
+SELECT id, "createdAt", "userId", metadata
+FROM security_events
+WHERE type = 'bot_email.policy.changed'
+  AND "createdAt" > NOW() - INTERVAL '15 minutes'
+ORDER BY "createdAt", id;
+```
+
+Configure database-backed alerts on newly observed event IDs, including permission grants and
+allowance increases; API log-sink alerts alone do not cover this CLI. Treat `metadata.recipient`
+as account data and restrict access to operators. See [security events](./self-host-observability.md#security-events)
+for database access and retention.
 
 ## Who can start work
 
