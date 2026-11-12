@@ -1,1 +1,0 @@
-ALTER TABLE "runs" ADD COLUMN "readOutsideContent" BOOLEAN NOT NULL DEFAULT true;

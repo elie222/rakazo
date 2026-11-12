@@ -79,7 +79,7 @@ Provider setup shows the provider, one short description of its role, and only t
 
 ## Memory
 
-Bots can build general knowledge about a user together while keeping bot-specific memories. Cross-bot learning and intentionally shared memory are supported within a Space; memory never crosses Space boundaries implicitly. Learning may retain outside-derived knowledge, but remembering, summarizing or relaying it never makes it an owner instruction. Provenance follows conversation history and deliveries; recalled knowledge is always derived data, even when it came from the bot's own bank. Provenance does not disable learning or grant action permissions. Stored history and automatic recall preserve this provenance without changing current owner permissions; explicit tool reads still follow the existing authorization and approval rules.
+Bots can build general knowledge about a user together while keeping bot-specific memories. Cross-bot learning and intentionally shared memory are supported within a Space; memory never crosses Space boundaries implicitly. All learned, recalled and relayed knowledge is derived data, even from the bot's own history or bank. Keep author and provider attribution when available; storing, summarizing or repeating text never turns it into an owner instruction. Stored history and automatic recall do not change current owner permissions. Fresh outside tool input still follows the existing authorization and approval rules. No bot message or memory gets a clean-source attestation.
 
 ## Approvals
 

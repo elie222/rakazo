@@ -1835,36 +1835,6 @@ describe("own instructions through update_bot", () => {
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
-  it("marks an untrusted bot message carried in automatic history", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
-    f.prisma.message.findMany.mockResolvedValue([
-      {
-        id: "history-1",
-        seq: 0,
-        role: "user",
-        runId: null,
-        createdAt: new Date("2026-11-01T00:00:00Z"),
-        steeringMessages: [],
-        blocks: [
-          {
-            kind: "bot_message_received",
-            fromBotId: "bot-2",
-            fromBotName: "Assistant",
-            text: "Outside text relayed earlier",
-            intent: "fyi",
-          },
-        ],
-      },
-    ] as never);
-    f.setCalls([]);
-    await f.run();
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
-    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: false } }),
-    );
-  });
 
   it("keeps an existing compacted chat with its own historical reply usable", async () => {
     const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
@@ -1889,13 +1859,11 @@ describe("own instructions through update_bot", () => {
     ] as never);
     f.setCalls([{ args: { instructions: "Updated by the current owner" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
+
     expect(f.instructionState.instructions).toBe("Updated by the current owner");
   });
 
-  it("records exposure when an executing outside-tool effect is recovered at the gate", async () => {
+  it("does not repeat an executing outside-tool effect recovered at the gate", async () => {
     const f = fixture({ name: "demo_get_item", skipApprovals: true });
     const args = { id: "item-1" };
     f.effects.push({
@@ -1910,12 +1878,9 @@ describe("own instructions through update_bot", () => {
     f.setCalls([{ args, executionId: "call-1" }]);
     await f.run();
     expect(f.execute).not.toHaveBeenCalled();
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
   });
 
-  it("preserves unknown provenance from native memory without blocking current owner actions", async () => {
+  it("keeps native memory from blocking current owner actions", async () => {
     const f = fixture({
       name: "update_bot",
       builtin: true,
@@ -1924,96 +1889,10 @@ describe("own instructions through update_bot", () => {
     });
     f.setCalls([{ args: { instructions: "Updated by the current owner" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
+
     expect(f.instructionState.instructions).toBe("Updated by the current owner");
   });
 
-  it("tracks a bot-authored source passed as the current task instead of history", async () => {
-    const f = fixture({
-      name: "update_bot",
-      builtin: true,
-      trigger: "follow_up",
-      sourceRole: "bot",
-    });
-    f.setCalls([]);
-    await f.run();
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
-  });
-
-  it("records a resumed run as having read outside content", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
-    const flagged = expect.objectContaining({ data: { readOutsideContent: true } });
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    f.pauseWithTurnCheckpoint("call-1", savedTurn());
-    await f.run();
-    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
-    f.setCalls([{ args: {}, executionId: "call-2" }]);
-    await f.run();
-    // The restored turn holds earlier tool results, so its replies are never learned.
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
-  });
-  it.each([
-    ["a webhook", "webhook", true],
-    ["a bot-created startup prompt", "spawn", true],
-    ["a helper result", "helper_result", true],
-    ["a routine", "routine", false],
-  ])("records whether a run started by %s read outside content", async (_case, trigger, read) => {
-    const f = fixture({ name: "update_bot", builtin: true, trigger });
-    const flagged = expect.objectContaining({ data: { readOutsideContent: true } });
-    f.setCalls([]);
-    await f.run();
-    if (read) expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
-    else {
-      expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
-      expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            status: "running",
-            leaseOwner: expect.any(String),
-            leaseFence: expect.any(Number),
-          }),
-          data: { readOutsideContent: false },
-        }),
-      );
-    }
-  });
-  it.each([
-    ["a clean run of the owner's bot", true, false],
-    ["a run that had taken in outside content", false, true],
-  ])(
-    "records whether a run woken by a message from %s read outside content",
-    async (_case, clean, read) => {
-      const f = fixture({
-        name: "update_bot",
-        builtin: true,
-        trigger: "bot_message",
-        sourceRole: "user",
-      });
-      const received = {
-        kind: "bot_message_received",
-        fromBotId: "bot-2",
-        fromBotName: "Bea",
-        text: "Can you check the budget?",
-        intent: "fyi",
-        ...(clean ? { senderClean: true } : {}),
-      };
-      f.prisma.message.findUnique.mockResolvedValue({ role: "user", blocks: [received] } as never);
-      const listBots = f.prisma.bot.findMany.getMockImplementation()!;
-      f.prisma.bot.findMany.mockImplementation((async (args?: { where?: { id?: unknown } }) =>
-        (args?.where?.id as { in?: string[] } | undefined)?.in?.includes("bot-2")
-          ? [{ id: "bot-2", spaceId: "space-1", userId: "user-1" }]
-          : listBots(args as never)) as never);
-      const flagged = expect.objectContaining({ data: { readOutsideContent: true } });
-      f.setCalls([]);
-      await f.run();
-      if (read) expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
-      else expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
-    },
-  );
   it("refuses own instruction writes resumed from a checkpoint without a baseline", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
@@ -2270,7 +2149,7 @@ describe("own settings through update_bot", () => {
     expect(f.results).toEqual([{ ok: true, readAloud: false }]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
-  it("keeps automatic recall derived without blocking the owner's settings change", async () => {
+  it("keeps automatic recall from blocking the owner's settings change", async () => {
     const f = fixture({
       name: "update_bot",
       builtin: true,
@@ -2287,12 +2166,6 @@ describe("own settings through update_bot", () => {
     expect(f.results).toEqual([{ ok: true, readAloud: true }]);
     expect(f.prisma.bot.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { autoSpeak: true } }),
-    );
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
-    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: false } }),
     );
   });
   it("keeps the model once outside content entered the run", async () => {
@@ -3059,7 +2932,7 @@ describe("outbound destinations", () => {
   });
 
   it.each([true, false])(
-    "keeps automatic recall in provenance without changing owner read permissions: %s",
+    "keeps automatic recall from changing owner read permissions: %s",
     async (external) => {
       reviewMock.mockReset();
       reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
@@ -3083,9 +2956,6 @@ describe("outbound destinations", () => {
       expect(recall).toHaveBeenCalledOnce();
       expect(reviewMock).not.toHaveBeenCalled();
       expect(f.execute).toHaveBeenCalledOnce();
-      expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { readOutsideContent: true } }),
-      );
     },
   );
 

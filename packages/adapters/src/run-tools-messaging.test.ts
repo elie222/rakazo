@@ -1,7 +1,4 @@
-import type { MessageBlock } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { historyHasOutsideContent, receivedBotMessageTrusted } from "./conversation-memory.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
@@ -105,7 +102,6 @@ describe("sending files to another bot", () => {
         message: "deploy this\n\nFiles on our shared computer:\n- bots/bot-coder/site",
         files: [],
       }),
-      expect.anything(),
     );
   });
 
@@ -156,7 +152,6 @@ describe("sending files to another bot", () => {
         message: "deploy this",
         files: [expect.objectContaining({ artifactId: "artifact-zip" })],
       }),
-      expect.anything(),
     );
   });
 
@@ -223,7 +218,6 @@ describe("sending files to another bot", () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ bot_id: "bot-servo", confirm_name: undefined }),
-      expect.anything(),
     );
   });
 
@@ -251,7 +245,6 @@ describe("sending files to another bot", () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ message: "deploy this", files: [] }),
-      expect.anything(),
     );
   });
 
@@ -323,90 +316,4 @@ describe("sending files to another bot", () => {
       error: "site: not found, or your computer could not be read. Nothing was sent.",
     });
   });
-});
-
-describe("marking whether the sender was clean", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  type Sender = { readOutsideContent?: boolean; attempts?: number; outsideMessage?: boolean };
-  it.each<[string, Sender, boolean]>([
-    ["has taken in nothing from outside", {}, true],
-    ["read outside content before sending", { readOutsideContent: true }, false],
-    ["is a later attempt", { attempts: 2 }, false],
-    ["took in a channel message mid-turn", { outsideMessage: true }, false],
-  ])("marks the message clean only when the run %s", async (_case, state, clean) => {
-    const { ctx } = context("computer-team");
-    Object.assign(ctx, {
-      deps: { ...ctx.deps, prisma: { attempt: { count: async () => state.attempts ?? 1 } } },
-      state: { readOutsideContent: state.readOutsideContent ?? false },
-      trust: { receivedOutsideMessage: async () => state.outsideMessage ?? false },
-    });
-    await messagingTools.message_bot!(ctx, callWith("message_bot", { files: [] }));
-    expect(mocks.messageBot).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      { senderClean: clean },
-    );
-  });
-});
-
-it("keeps outside provenance through an own reply, a later turn and a bot delivery", async () => {
-  mocks.messageBot.mockClear();
-  const { ctx } = context("computer-team");
-  const prisma = {
-    run: {
-      findMany: vi.fn(async () => [
-        {
-          id: "past-run",
-          status: "completed",
-          readOutsideContent: true,
-          bot: { spaceId: "space-1", userId: "user-1" },
-        },
-      ]),
-    },
-    bot: {
-      findMany: vi.fn(async () => [{ id: "bot-coder", spaceId: "space-1", userId: "user-1" }]),
-    },
-    attempt: { count: vi.fn(async () => 1) },
-  };
-  const derived = await historyHasOutsideContent(
-    prisma as unknown as PrismaClient,
-    { spaceId: "space-1", userId: "user-1" },
-    [
-      {
-        role: "bot",
-        botId: "bot-coder",
-        runId: "past-run",
-        blocks: [{ kind: "text", text: "An outside-derived finding" }],
-      },
-    ],
-  );
-  Object.assign(ctx, {
-    deps: { ...ctx.deps, prisma },
-    state: { readOutsideContent: derived },
-    trust: { receivedOutsideMessage: async () => false },
-  });
-  await messagingTools.message_bot!(
-    ctx,
-    callWith("message_bot", { files: [], message: "The earlier finding" }),
-  );
-  const source = mocks.messageBot.mock.calls[0]?.[4] as { senderClean: boolean };
-  expect(source.senderClean).toBe(false);
-  const delivered: Extract<MessageBlock, { kind: "bot_message_received" }> = {
-    kind: "bot_message_received",
-    fromBotId: "bot-coder",
-    fromBotName: "Coder",
-    text: "The earlier finding",
-    intent: "fyi",
-    ...(source.senderClean ? { senderClean: true } : {}),
-  };
-  expect(
-    await receivedBotMessageTrusted(
-      prisma as unknown as PrismaClient,
-      { spaceId: "space-1", userId: "user-1" },
-      delivered,
-    ),
-  ).toBe(false);
 });

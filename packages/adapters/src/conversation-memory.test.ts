@@ -3,8 +3,6 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   abandonRetainedConversation,
-  botMessageFromOutsideContent,
-  historyHasOutsideContent,
   retainRunConversation,
   retainsConversationTurn,
   settleRetainedConversation,
@@ -85,7 +83,16 @@ type Where = Record<string, unknown>;
 
 function matches(value: unknown, condition: unknown): boolean {
   if (condition === null || typeof condition !== "object") return value === condition;
-  const c = condition as { in?: unknown[]; not?: unknown; gt?: number; lt?: number; lte?: number };
+  const c = condition as {
+    in?: unknown[];
+    not?: unknown;
+    gt?: number;
+    lt?: number;
+    lte?: number;
+    startsWith?: string;
+  };
+  if (c.startsWith !== undefined && !(typeof value === "string" && value.startsWith(c.startsWith)))
+    return false;
   if (c.in && !c.in.includes(value)) return false;
   if ("not" in c && value === c.not) return false;
   if (c.not !== undefined && value === null) return false;
@@ -99,15 +106,15 @@ function query(
   messages: FakeMessage[],
   args: { where: Where; orderBy?: { seq: "asc" | "desc" }; take?: number },
 ): FakeMessage[] {
-  const found = messages.filter((message) =>
-    Object.entries(args.where).every(([key, condition]) =>
-      key === "OR"
-        ? (condition as Where[]).some((branch) =>
-            Object.entries(branch).every(([k, c]) => matches(message[k as keyof FakeMessage], c)),
-          )
-        : matches(message[key as keyof FakeMessage], condition),
-    ),
-  );
+  function eligible(message: FakeMessage, where: Where): boolean {
+    return Object.entries(where).every(([key, condition]) => {
+      if (key === "OR") return (condition as Where[]).some((branch) => eligible(message, branch));
+      if (key === "AND") return (condition as Where[]).every((branch) => eligible(message, branch));
+      if (key === "NOT") return !eligible(message, condition as Where);
+      return matches(message[key as keyof FakeMessage], condition);
+    });
+  }
+  const found = messages.filter((message) => eligible(message, args.where));
   if (args.orderBy) {
     const direction = args.orderBy.seq === "asc" ? 1 : -1;
     found.sort((a, b) => (a.seq - b.seq) * direction);
@@ -182,15 +189,6 @@ const directMessages = [
   message({ id: "elsewhere", threadId: "thread-2", seq: 9, role: "user" }, "Other chat."),
 ];
 
-/** Another bot's run as the trust check reads it; by default trusted by bot-1. */
-type FakeRun = {
-  status?: string;
-  readOutsideContent?: boolean;
-  /** The run's bot's Space and owner. */
-  spaceId?: string;
-  userId?: string;
-};
-
 function harness(
   options: {
     generations?: number[];
@@ -199,10 +197,6 @@ function harness(
     sourceMessageId?: string;
     memoryScope?: string | null;
     defaultScope?: "isolated" | "shared";
-    /** Other bots' runs by id. */
-    runs?: Record<string, FakeRun>;
-    /** Bea's (bot-2) Space and owner; null means it no longer exists. */
-    sender?: { spaceId: string; userId: string } | null;
     /** The thread was deleted. */
     threadGone?: boolean;
   } = {},
@@ -210,19 +204,8 @@ function harness(
   const generations = options.generations ?? [3, 3];
   const messages = options.messages ?? directMessages;
   const provider = memoryProvider();
-  const runs = options.runs ?? { "run-2": {}, "run-9": {} };
   const prisma = {
     run: {
-      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
-        Object.entries(runs)
-          .filter(([id]) => where.id.in.includes(id))
-          .map(([id, run]) => ({
-            id,
-            status: run.status ?? "completed",
-            readOutsideContent: run.readOutsideContent ?? false,
-            bot: { spaceId: run.spaceId ?? "space-1", userId: run.userId ?? "user-1" },
-          })),
-      ),
       findUnique: vi.fn(async () => ({
         id: "run-1",
         spaceId: "space-1",
@@ -268,9 +251,8 @@ function harness(
           : null,
       ),
       findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
-        if (options.sender === null) return [];
         const bea = { id: "bot-2", name: "Bea", spaceId: "space-1", userId: "user-1" };
-        return [{ ...bea, ...options.sender }].filter((bot) => where.id.in.includes(bot.id));
+        return [bea].filter((bot) => where.id.in.includes(bot.id));
       }),
     },
     user: {
@@ -298,21 +280,10 @@ const turn = (role: "user" | "assistant", content: string, second: number, speak
   ...(speaker === undefined ? {} : { speaker }),
 });
 
-type FromBea = { senderClean?: boolean; sender?: { spaceId: string; userId: string } | null };
-
-/** Messages Bea sent bot-1 that bot-1 may not trust. */
-const untrustedMessages: [string, FromBea][] = [
-  ["its sending run had taken in outside content", { senderClean: false }],
-  ["another owner's bot sent it", { sender: { spaceId: "space-1", userId: "user-9" } }],
-  ["a bot in another Space sent it", { sender: { spaceId: "space-9", userId: "user-1" } }],
-  ["its sender no longer exists", { sender: null }],
-];
-
-/** Bea, another of the owner's bots, asks bot-1 something; by default from a clean run. */
-const fromBea = ({ senderClean = true, sender }: FromBea = {}) =>
+/** Another bot asks bot-1 a question; its words stay attributed to that bot. */
+const fromBea = () =>
   harness({
     sourceMessageId: "inbound-1",
-    ...(sender === undefined ? {} : { sender }),
     messages: [
       message({
         id: "inbound-1",
@@ -327,7 +298,6 @@ const fromBea = ({ senderClean = true, sender }: FromBea = {}) =>
             hop: 1,
             intent: "ask",
             returnToMessageId: "outbound-1",
-            ...(senderClean ? { senderClean: true } : {}),
           },
         ],
       }),
@@ -422,20 +392,6 @@ describe("retainRunConversation", () => {
         ],
       }),
       expect.any(Object),
-    );
-  });
-
-  it("keeps an exposed bot's delivered knowledge in the receiving Space", async () => {
-    const { deps, provider } = fromBea({ senderClean: false });
-    await retainRunConversation(deps, "run-1");
-    expect(provider.retainConversation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        turns: [
-          turn("user", "Can you check the budget?", 1, "Bea"),
-          turn("assistant", "It's on track.", 2),
-        ],
-      }),
-      expect.objectContaining({ spaceId: "space-1" }),
     );
   });
 
@@ -542,6 +498,40 @@ describe("retainRunConversation", () => {
           turn("user", "I'm booking the room.\n\nRoom is booked.", 9, "Bea"),
           turn("user", "Ada, what's for lunch?", 11, "Sam"),
           turn("assistant", "Pasta.", 13),
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("keeps the source conversation when progress rows exceed the group window", async () => {
+    const own = { role: "bot", botId: "bot-1", runId: "run-1" };
+    const { deps, provider } = harness({
+      groupId: "group-1",
+      sourceMessageId: "source",
+      messages: [
+        message({ id: "source", seq: 1, role: "user" }, "Remember the launch date."),
+        ...Array.from({ length: 220 }, (_, index) =>
+          message(
+            {
+              id: `progress-${index}`,
+              seq: index + 2,
+              ...own,
+              clientNonce:
+                index % 2 ? `partial-reply:run-1:${index}` : `user-progress:run-1:${index}`,
+            },
+            "Working…",
+          ),
+        ),
+        message({ id: "final", seq: 222, ...own }, "The launch is in April."),
+      ],
+    });
+    await retainRunConversation(deps, "run-1");
+    expect(provider.retainConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turns: [
+          turn("user", "Remember the launch date.", 1),
+          turn("assistant", "The launch is in April.", 222),
         ],
       }),
       expect.any(Object),
@@ -745,85 +735,5 @@ describe("abandonRetainedConversation", () => {
     await expect(
       abandonRetainedConversation(deps, "run-1", { generation: 3 }),
     ).resolves.toBeUndefined();
-  });
-});
-
-describe("botMessageFromOutsideContent", () => {
-  it("trusts a message the owner's bot sent from a clean run", async () => {
-    const { prisma } = fromBea();
-    expect(await botMessageFromOutsideContent(prisma as never, "inbound-1")).toBe(false);
-  });
-
-  it.each(untrustedMessages)("counts a message when %s", async (_case, change) => {
-    const { prisma } = fromBea(change);
-    expect(await botMessageFromOutsideContent(prisma as never, "inbound-1")).toBe(true);
-  });
-
-  it("does not count a person's message", async () => {
-    const { prisma } = harness();
-    expect(await botMessageFromOutsideContent(prisma as never, "message-1")).toBe(false);
-  });
-});
-
-describe("history exposure", () => {
-  const receiver = { spaceId: "space-1", userId: "user-1", botId: "bot-1" };
-  const received = {
-    kind: "bot_message_received",
-    fromBotId: "bot-2",
-    fromBotName: "Assistant",
-    text: "A learned preference",
-    intent: "fyi",
-  };
-  const message = { role: "user", runId: null, blocks: [received] };
-  const reply = { role: "bot", runId: "run-1", blocks: [{ kind: "text", text: "A reply" }] };
-  function db(changes = {}) {
-    return {
-      bot: { findMany: vi.fn(async () => [{ id: "bot-2", ...receiver }]) },
-      run: {
-        findMany: vi.fn(async () => [
-          {
-            id: "run-1",
-            status: "completed",
-            readOutsideContent: false,
-            bot: receiver,
-            ...changes,
-          },
-        ]),
-      },
-    } as unknown as PrismaClient;
-  }
-  it("preserves learning from clean same-owner bots in the same Space", async () => {
-    const clean = { ...message, blocks: [{ ...received, senderClean: true }] };
-    expect(await historyHasOutsideContent(db(), receiver, [clean, reply])).toBe(false);
-  });
-  it("keeps a relayed bot message untrusted after it becomes chat history", async () => {
-    expect(await historyHasOutsideContent(db(), receiver, [message])).toBe(true);
-  });
-  it.each([
-    { readOutsideContent: true },
-    { status: "running" },
-    { bot: { ...receiver, spaceId: "space-2" } },
-    { bot: { ...receiver, userId: "user-2" } },
-  ])("does not trust reply provenance %j", async (changes) => {
-    expect(await historyHasOutsideContent(db(changes), receiver, [reply])).toBe(true);
-  });
-  it("fails closed when provenance is missing or unavailable", async () => {
-    expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, runId: null }])).toBe(true);
-    expect(await historyHasOutsideContent({} as PrismaClient, receiver, [reply])).toBe(true);
-  });
-  it("preserves exposure through the receiving bot's own saved replies", async () => {
-    expect(
-      await historyHasOutsideContent(db({ readOutsideContent: true }), receiver, [
-        { ...reply, botId: "bot-1" },
-        { ...reply, botId: "bot-1", runId: null },
-      ]),
-    ).toBe(true);
-  });
-  it("leaves ordinary human messages clean", async () => {
-    expect(
-      await historyHasOutsideContent(db(), receiver, [
-        { ...reply, role: "user", authorUserId: "user-1" },
-      ]),
-    ).toBe(false);
   });
 });

@@ -31,8 +31,6 @@ function deps(
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
     deletingSpace?: boolean;
-    /** The sending run's row as returnBotMessageOutcome reads it once the run ended. */
-    endedRun?: { status: string; readOutsideContent: boolean };
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -90,12 +88,7 @@ function deps(
         ),
     },
     message: { findUnique: messageFindUnique, findMany: vi.fn().mockResolvedValue([]) },
-    run: {
-      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-      findUnique: vi
-        .fn()
-        .mockResolvedValue(options.endedRun ?? { status: "completed", readOutsideContent: false }),
-    },
+    run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
       transactionAttempts += 1;
       if (options.transactionConflictOnce && transactionAttempts === 1) {
@@ -195,70 +188,6 @@ describe("messaging another bot", () => {
       expect.objectContaining({ kind: "bot_message_received" }),
       file,
     ]);
-  });
-
-  it.each([
-    ["marks", { senderClean: true }, { senderClean: true }],
-    ["does not mark", {}, {}],
-  ])("%s a message from a clean sending run", async (_case, options, marker) => {
-    const harness = deps();
-    await messageBot(
-      harness.deps,
-      run,
-      sender,
-      { bot_id: "bot-target", message: "deploy this" },
-      options,
-    );
-    const received = harness.tx.message.create.mock.calls
-      .map(([call]) => (call as { data: { threadId: string; blocks: object[] } }).data)
-      .find((m) => m.threadId === "thread-target")?.blocks[0];
-    expect(received).toEqual({
-      kind: "bot_message_received",
-      fromBotId: "bot-sender",
-      fromBotName: "Researcher",
-      text: "deploy this",
-      hop: expect.any(Number),
-      intent: "request",
-      returnToMessageId: "message-1",
-      ...marker,
-    });
-  });
-
-  it.each([
-    ["a run that completed clean", { status: "completed", readOutsideContent: false }, true],
-    [
-      "a run that took in outside content",
-      { status: "completed", readOutsideContent: true },
-      false,
-    ],
-    ["a run that failed", { status: "failed", readOutsideContent: false }, false],
-  ])("marks a returned result clean only from %s", async (_case, endedRun, clean) => {
-    const harness = deps({
-      endedRun,
-      hopBlocks: [
-        {
-          kind: "bot_message_received",
-          fromBotId: "bot-target",
-          fromBotName: "Coordinator",
-          text: "research this",
-          hop: 1,
-          intent: "request",
-          returnToMessageId: "message-request",
-        },
-      ],
-    });
-    await returnBotMessageOutcome(
-      harness.deps,
-      { ...run, sourceMessageId: "message-source" },
-      sender,
-      "Done.",
-    );
-    const received = harness.tx.message.create.mock.calls
-      .map(([call]) => (call as { data: { threadId: string; blocks: object[] } }).data)
-      .find((m) => m.threadId === "thread-target")?.blocks[0];
-    expect(received).toMatchObject({ kind: "bot_message_received", text: "Done." });
-    if (clean) expect(received).toHaveProperty("senderClean", true);
-    else expect(received).not.toHaveProperty("senderClean");
   });
 
   it("marks a forced failure return unread on both sides", async () => {

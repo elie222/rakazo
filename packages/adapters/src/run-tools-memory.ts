@@ -7,11 +7,10 @@ import {
 import { readHistory, searchHistory } from "@rakazo/db";
 import { sharedMemorySaveError } from "./builtin-tools.js";
 import { redactConnectorPayload } from "./connector-safety.js";
-import { historyHasOutsideContent, trustedBotRuns } from "./conversation-memory.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
-import { markDerivedProvenance, markReadOutsideContent } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { argsError } from "./tool-args.js";
 
@@ -71,48 +70,6 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
     response = await readHistory(deps.prisma, scope, parsed.data);
   }
-  // The returned prose has lost its sender markers. Check its source rows before exposing it.
-  const ids = response.messages.map((message) => message.messageId);
-  let outside = false;
-  if ("runs" in response && response.runs.length > 0) {
-    try {
-      const runIds = response.runs.map((run) => run.id);
-      const trusted = await trustedBotRuns(
-        deps.prisma,
-        {
-          spaceId: run.spaceId,
-          userId: ctx.bot.userId,
-        },
-        runIds,
-      );
-      outside = runIds.some((id) => !trusted.has(id));
-    } catch {
-      outside = true;
-    }
-  }
-  if (!outside && ids.length) {
-    try {
-      const rows = await deps.prisma.message.findMany({
-        where: { id: { in: ids }, thread: { spaceId: run.spaceId } },
-        select: {
-          role: true,
-          authorUserId: true,
-          runId: true,
-          blocks: true,
-        },
-      });
-      outside =
-        rows.length !== ids.length ||
-        (await historyHasOutsideContent(
-          deps.prisma,
-          { spaceId: run.spaceId, userId: ctx.bot.userId },
-          rows,
-        ));
-    } catch {
-      outside = true;
-    }
-  }
-  if (outside) await markDerivedProvenance(ctx);
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {

@@ -405,8 +405,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     returnToMessageId: Id.optional(),
     /** Links in a bot-started chain; absent when a person started it. */
     hop: z.number().int().nonnegative().optional(),
-    /** The sending run had read no outside content when it sent this. */
-    senderClean: z.literal(true).optional(),
   }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;

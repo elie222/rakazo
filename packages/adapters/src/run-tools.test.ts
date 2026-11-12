@@ -38,7 +38,6 @@ function dispatchContext(tainted: boolean) {
     deps: {
       prisma: {
         bot: { findUnique: async () => null },
-        run: { updateMany: vi.fn(async () => ({ count: 1 })) },
         user: {
           findUniqueOrThrow: async () => ({
             timezone: "UTC" as string | null,
@@ -52,7 +51,7 @@ function dispatchContext(tainted: boolean) {
     thread: { id: "thread-1" },
     source: { ownerStartedRun: true },
     runId: "run-1",
-    state: { tainted, readOutsideContent: false, handedOff: false, ownerSettingsRefused: false },
+    state: { tainted, handedOff: false, ownerSettingsRefused: false },
     trust: {
       loadAutoReviewPreference: async () => ({ enabled: true, skipApprovals: false }),
       receivedOutsideMessage: async () => false,
@@ -79,11 +78,8 @@ describe("dispatchTool audit outcomes", () => {
       replayed: true,
     } as never);
     await applyTool(ctx as never, "web_search", { query: "example" }, "call-1");
-    expect(ctx.state.readOutsideContent).toBe(true);
+
     expect(ctx.state.tainted).toBe(true);
-    expect(ctx.deps.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: true } }),
-    );
   });
 
   it("dispatches a connector named delete_bot to its connector instead of local archival", async () => {
@@ -173,13 +169,8 @@ describe("dispatchTool audit outcomes", () => {
 
     await applyTool(ctx as never, "read_inbox", {}, "call-1");
     await applyTool(ctx as never, "read_inbox", {}, "call-1");
-    expect(ctx.state).toMatchObject({ tainted: true, readOutsideContent: true });
-    // Recorded on the run row once, before the result returns.
-    expect(ctx.deps.prisma.run.updateMany).toHaveBeenCalledOnce();
-    expect(ctx.deps.prisma.run.updateMany).toHaveBeenCalledWith({
-      where: { id: "run-1", readOutsideContent: false },
-      data: { readOutsideContent: true },
-    });
+
+    expect(ctx.state.tainted).toBe(true);
   });
 
   type Refusal = (tools: { disabled: Set<string> }) => unknown;
@@ -206,15 +197,8 @@ describe("dispatchTool audit outcomes", () => {
 
     await applyTool(ctx as never, "read_inbox", {}, "call-1");
     expect(execute).not.toHaveBeenCalled();
-    expect(ctx.state).toMatchObject({ tainted: false, readOutsideContent: false });
-    expect(ctx.deps.prisma.run.updateMany).not.toHaveBeenCalled();
-  });
 
-  it("does not count a run tainted by its trigger alone as having read outside content", async () => {
-    const ctx = dispatchContext(true);
-    await applyTool(ctx as never, "update_preferences", {}, "call-1");
-    expect(ctx.state).toMatchObject({ tainted: true, readOutsideContent: false });
-    expect(ctx.deps.prisma.run.updateMany).not.toHaveBeenCalled();
+    expect(ctx.state.tainted).toBe(false);
   });
 
   it("records an ordinary successful call as a success", async () => {

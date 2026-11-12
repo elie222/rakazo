@@ -48,11 +48,7 @@ import {
   modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
-import {
-  hasTakenInOutsideContent,
-  persistReadOutsideContent,
-  persistTurnCheckpoint,
-} from "./run-context.js";
+import { persistTurnCheckpoint } from "./run-context.js";
 import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
@@ -644,8 +640,6 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
   const answeredMessageIds = await conversationRetentionMessages(ctx);
-  // A completed run's flag is final; other bots trust its words by it.
-  await runReadOutsideContent(ctx);
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -771,33 +765,6 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
     select: { id: true },
   });
   return !earlier;
-}
-
-/**
- * Whether this run took in outside content (see hasTakenInOutsideContent), recorded on the run
- * row so later contexts and deliveries retain its provenance. Learning still keeps the replies
- * as derived data. Historical runs and older releases default to unknown provenance. The flag
- * is final once the run completes, so a failed write fails the run; its retry is a
- * later attempt, which counts as outside content.
- */
-async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
-  ctx.state.readOutsideContent = await hasTakenInOutsideContent(ctx);
-  if (!ctx.state.readOutsideContent) {
-    // Old releases never tracked exposure. Only this executor can attest a clean run;
-    // until then the database default keeps historical and rolling-deploy runs untrusted.
-    await ctx.deps.prisma.run.updateMany({
-      where: {
-        id: ctx.runId,
-        status: "running",
-        leaseOwner: ctx.workerId,
-        leaseFence: ctx.fence,
-      },
-      data: { readOutsideContent: false },
-    });
-    return false;
-  }
-  await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
-  return true;
 }
 
 /** Finalization deletes steering claims, so collect them before either completion path. */
@@ -980,8 +947,6 @@ export async function completeRun(ctx: RunContext) {
   );
   await ctx.settleRunningHelpers();
   const answeredMessageIds = await conversationRetentionMessages(ctx);
-  // Read before finalizing deletes the claims of what arrived mid-turn.
-  await runReadOutsideContent(ctx);
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,

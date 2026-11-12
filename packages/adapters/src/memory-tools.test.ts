@@ -2,7 +2,6 @@ import type { ConnectorTool, SemanticMemoryProvider } from "@rakazo/adapter-kit"
 import { describe, expect, it, vi } from "vitest";
 import { appendMemoryFact, editMemory, selectMemoryTools } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
-import { hasTakenInOutsideContent } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { memoryTools } from "./run-tools-memory.js";
 
@@ -64,8 +63,7 @@ describe("reflect_memory", () => {
       bot: { id: "bot-1" },
       context,
       runId: "run-1",
-      state: { tainted: false, readOutsideContent: false },
-      deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
+      state: { tainted: false },
       memory: { semantic: { reflect }, scope: "shared" },
     } as unknown as RunContext;
     const call = { name: "reflect_memory", args: { query: "What does the user prefer?" } };
@@ -76,7 +74,8 @@ describe("reflect_memory", () => {
     const reflect = vi.fn(async () => ({ ok: true as const, value: "They prefer dark mode." }));
     const { ctx, context, result } = reflectWith(reflect);
     await expect(result).resolves.toEqual({ ok: true, value: "They prefer dark mode." });
-    expect(await hasTakenInOutsideContent(ctx)).toBe(true);
+
+    expect(ctx.state.tainted).toBe(true);
     expect(reflect).toHaveBeenCalledWith(
       { query: "What does the user prefer?", botId: "bot-1" },
       context,
@@ -103,23 +102,19 @@ describe("reflect_memory", () => {
 
 describe("recall_memory", () => {
   async function recallWith(value: Array<{ memory: string; score: number; external?: true }>) {
-    const updateMany = vi.fn(async () => ({ count: 1 }));
     const ctx = {
-      deps: { prisma: { run: { updateMany } } },
       runId: "run-1",
       bot: { id: "bot-1" },
       thread: { historyCompactedUpToSeq: null, historyCompactionGeneration: 0 },
       context: { operationId: "op-1" },
       memory: { semantic: { recall: async () => ({ ok: true, value }) }, scope: "isolated" },
-      state: { tainted: false, readOutsideContent: false },
+      state: { tainted: false },
     } as unknown as RunContext;
     const call = { name: "recall_memory", args: { query: "pets" } };
     const result = await memoryTools.recall_memory!(ctx, call as unknown as ToolCall);
     return {
       result,
       tainted: ctx.state.tainted,
-      readOutside: ctx.state.readOutsideContent,
-      updateMany,
     };
   }
 
@@ -128,23 +123,14 @@ describe("recall_memory", () => {
       { memory: "Prefers dark mode.", score: 0.9 },
       { memory: "The dog is named Pixel.", score: 0.8, external: true as const },
     ];
-    const { result, tainted, readOutside, updateMany } = await recallWith(value);
+    const { result, tainted } = await recallWith(value);
     expect(result).toEqual({ ok: true, value });
     expect(tainted).toBe(true);
-    expect(readOutside).toBe(true);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "run-1", readOutsideContent: false },
-      data: { readOutsideContent: true },
-    });
   });
 
   it("does not promote the bot's own recalled knowledge to a clean source", async () => {
-    const { tainted, readOutside, updateMany } = await recallWith([
-      { memory: "Prefers dark mode.", score: 0.9 },
-    ]);
+    const { tainted } = await recallWith([{ memory: "Prefers dark mode.", score: 0.9 }]);
     expect(tainted).toBe(true);
-    expect(readOutside).toBe(true);
-    expect(updateMany).toHaveBeenCalled();
   });
 });
 

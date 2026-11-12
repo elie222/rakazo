@@ -37,7 +37,7 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   and **User peer** to also recall what Honcho already knows about you. That existing peer stays
   read-only; Rakazo writes new facts to its own peers in the same workspace.
 - **Hindsight**: its cloud service, or your own server. Each bot keeps its own memory; with the
-  Shared scope, bots also share one memory for the Space. Bots learn from their conversations (their
+  Shared scope, bots also share one memory for the Space, including learned direct-chat turns. Bots learn from their conversations (their
   own chats, group chats, and messages between bots) unless you turn off **Learn from
   conversations**. Cleanup requests share a ten-second deadline. Learning and chat-clear cleanup are
   best effort: provider outages or writes
@@ -63,25 +63,20 @@ Learning and instruction authority are separate. A bot may learn from people, ot
 outside-derived replies in a conversation it can access. That knowledge stays in the receiving
 Space's private or deliberately shared memory. Learning does not grant access to another Space.
 
-The backend tracks provenance conservatively:
+The source policy is deliberately conservative:
 
-- A run that used outside content keeps that provenance on its run record. Its own later replies
-  do not erase the flag when loaded into another turn's history.
-- A bot message snapshots the sender's context provenance before delivery. Missing provenance is
-  treated as unknown, never as a clean source.
-- Local summaries, native memory, scratchpad and ticket context cannot attest their full ancestry;
-  consuming them preserves derived provenance for later deliveries.
-- Semantic recall and reflection always return derived knowledge. A provider's missing source
-  hint, a matching bot name or an owned bank never promotes recalled material into instructions.
-- Unknown historical runs default to derived provenance. Fresh outside tool results and recovered
-  results retain the same classification.
+- Every bot message, old reply, summary and recalled memory is derived data. Reusing it never
+  certifies that its source was clean or makes it an owner instruction.
+- Conversation learning preserves speakers' names, and recall keeps provider attribution when
+  available. These identify sources; they do not grant authority or certify factual correctness.
+- Semantic recall and reflection remain derived even when the bank belongs to the same bot or
+  the provider omits its optional outside-bank attribution.
+- Stored history and automatic recall do not change current owner permissions. Fresh outside
+  input, including explicit semantic recall and reflection, keeps existing action protections.
 
-This provenance is separate from current action authorization. Keeping prior knowledge does not
-silently disable the owner's normal workflow or suppress learning. Automatic recall and history
-lookups preserve source provenance without changing current owner permissions. Explicit recall and new outside
-input still go through the existing action protections; remembering and relaying knowledge cannot
-authorize a new action or bypass the receiving Space's access checks. The source flag is not a factual-quality
-judgment: no wording checks or model claims can change its classification.
+There is no per-run clean flag or ancestry graph. This avoids both claiming that old replies can
+attest a clean source and making ordinary work wait on provenance bookkeeping. Cross-bot learning
+remains enabled, and sharing knowledge never bypasses the receiving Space's access checks.
 
 ## Open work
 

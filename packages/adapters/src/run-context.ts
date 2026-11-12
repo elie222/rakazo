@@ -188,12 +188,6 @@ export interface RunState {
    */
   tainted: boolean;
   /**
-   * Content provenance, distinct from current action authorization (`tainted`). Derived
-   * history, summaries and stored knowledge keep this true across runs and bot deliveries.
-   * It never suppresses learning: remembered and shared knowledge remains derived data.
-   */
-  readOutsideContent: boolean;
-  /**
    * The taint refusal for owner settings was returned in this attempt. A model that calls
    * again gets the turn ended instead of the same error a second time.
    */
@@ -401,63 +395,9 @@ export async function isRunTainted(ctx: RunContext) {
   return state.tainted;
 }
 
-/**
- * Whether the run has taken in outside content so far: it read some, or outside text started it,
- * or it is a later attempt (which restores earlier tool results), or it claimed channel or webhook
- * text mid-turn. An unreadable answer counts as outside content. Records nothing.
- */
-export async function hasTakenInOutsideContent(ctx: RunContext): Promise<boolean> {
-  const { state } = ctx;
-  if (state.readOutsideContent) return true;
-  try {
-    state.earlierAttempt ??= ctx.deps.prisma.attempt
-      .count({ where: { runId: ctx.runId } })
-      .then((count) => count > 1);
-    return (await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage());
-  } catch {
-    return true;
-  }
-}
-
-/**
- * Record outside-source provenance on the run row so later replies and deliveries retain it.
- * Learning may keep the words as derived knowledge. Throws when the write fails: the run
- * must not finalize as clean.
- */
-export async function persistReadOutsideContent(
-  prisma: Pick<ExecutorDeps["prisma"], "run">,
-  runId: string,
-) {
-  await prisma.run.updateMany({
-    where: { id: runId, readOutsideContent: false },
-    data: { readOutsideContent: true },
-  });
-}
-
-/**
- * Before completion a failed write is only logged: completion writes the flag again and fails
- * the run if it still can't, and until then other bots trust none of a running run's words.
- */
-export async function persistReadOutsideContentMidRun(
-  prisma: Pick<ExecutorDeps["prisma"], "run">,
-  runId: string,
-) {
-  await persistReadOutsideContent(prisma, runId).catch((error) =>
-    getLogger().error("run readOutsideContent update failed", error),
-  );
-}
-
-/** The run read outside content: taint it and record it once, before the result returns. */
+/** Fresh outside input applies the existing action protections for this run. */
 export async function markReadOutsideContent(ctx: RunContext) {
   ctx.state.tainted = true;
-  await markDerivedProvenance(ctx);
-}
-
-/** Existing knowledge keeps its ancestry without changing current action authorization. */
-export async function markDerivedProvenance(ctx: RunContext) {
-  if (ctx.state.readOutsideContent) return;
-  ctx.state.readOutsideContent = true;
-  await persistReadOutsideContentMidRun(ctx.deps.prisma, ctx.runId);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */

@@ -6,11 +6,12 @@ import {
   isPartialReplyClientNonce,
   loadMessageAuthor,
   loadMessageAuthors,
+  partialReplyClientNonce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { messageBlocksText } from "./run-replies.js";
-import { isUserProgressClientNonce } from "./user-progress.js";
+import { isUserProgressClientNonce, USER_PROGRESS_CLIENT_NONCE_PREFIX } from "./user-progress.js";
 
 /** A person or another bot talking to the bot; routines, webhooks and channels are not. */
 export const CONVERSATION_MEMORY_TRIGGERS: ReadonlySet<string> = new Set([
@@ -104,162 +105,6 @@ type ReceivedBotMessage = Extract<MessageBlock, { kind: "bot_message_received" }
 function receivedBotMessage(blocks: unknown): ReceivedBotMessage | undefined {
   return (blocks as MessageBlock[]).find(
     (block): block is ReceivedBotMessage => block.kind === "bot_message_received",
-  );
-}
-
-/** The bot whose memory another bot's words would enter. */
-export type WordsReceiver = { spaceId: string; userId: string };
-
-/** Whether a bot shares the receiver's Space and owner; any other bot's words are outside text. */
-function receiverOwns(bot: { spaceId: string; userId: string }, receiver: WordsReceiver) {
-  return bot.spaceId === receiver.spaceId && bot.userId === receiver.userId;
-}
-
-/**
- * Runs whose context can attest a clean source: same Space and owner, completed, and without
- * derived context. This is provenance classification only, never permission to access a thread
- * or a reason to drop knowledge from learning. A group reply is written when its run
- * finalizes, and the flag is final only then, so a running, waiting, failed or cancelled run is
- * not trusted, and neither is a run that can't be found.
- */
-export async function trustedBotRuns(
-  prisma: PrismaClient,
-  receiver: WordsReceiver,
-  runIds: readonly string[],
-): Promise<Set<string>> {
-  if (!runIds.length) return new Set();
-  const runs = await prisma.run.findMany({
-    where: { id: { in: [...new Set(runIds)] }, spaceId: receiver.spaceId },
-    select: {
-      id: true,
-      status: true,
-      readOutsideContent: true,
-      bot: { select: { spaceId: true, userId: true } },
-    },
-  });
-  return new Set(
-    runs
-      .filter(
-        (run) =>
-          run.status === "completed" && !run.readOutsideContent && receiverOwns(run.bot, receiver),
-      )
-      .map((run) => run.id),
-  );
-}
-
-/**
- * Provenance follows every reply, including the receiver's own. This classifies knowledge for
- * later delivery; it does not decide whether the knowledge may be learned or authorize actions.
- */
-export async function historyHasOutsideContent(
-  prisma: PrismaClient,
-  receiver: WordsReceiver,
-  messages: readonly {
-    role: string;
-    authorUserId?: string | null;
-    botId?: string | null;
-    runId: string | null;
-    blocks: unknown;
-  }[],
-): Promise<boolean> {
-  try {
-    const received = messages.flatMap((message) => {
-      const block = receivedBotMessage(message.blocks);
-      return block ? [block] : [];
-    });
-    const replies = messages.filter((message) => message.role === "bot");
-    const [trustedReplies, trustedReceived] = await Promise.all([
-      trustedBotRuns(
-        prisma,
-        receiver,
-        replies.flatMap((reply) => (reply.runId ? [reply.runId] : [])),
-      ),
-      trustedReceivedMessages(prisma, receiver, received),
-    ]);
-    return (
-      received.some((block) => !trustedReceived.has(block)) ||
-      replies.some((reply) => !reply.runId || !trustedReplies.has(reply.runId)) ||
-      messages.some(
-        (message) =>
-          message.role === "user" &&
-          !receivedBotMessage(message.blocks) &&
-          message.authorUserId !== receiver.userId,
-      ) ||
-      messages.some((message) =>
-        (message.blocks as MessageBlock[]).some(
-          (block) =>
-            block.kind === "channel_message" || block.kind === "file" || block.kind === "image",
-        ),
-      )
-    );
-  } catch {
-    return true;
-  }
-}
-
-/**
- * Messages with source-clean context: the sending bot is in the receiver's Space and has its
- * owner, and the sending run had
- * taken in no outside content when it sent the message (`senderClean`). A message can only repeat
- * what its run read before sending it, so that snapshot is exact. A message without the marker,
- * including any sent before it existed, is not trusted.
- */
-async function trustedReceivedMessages(
-  prisma: PrismaClient,
-  receiver: WordsReceiver,
-  received: readonly ReceivedBotMessage[],
-): Promise<Set<ReceivedBotMessage>> {
-  const clean = received.filter((block) => block.senderClean === true);
-  if (!clean.length) return new Set();
-  const senders = await prisma.bot.findMany({
-    where: {
-      id: { in: [...new Set(clean.map((block) => block.fromBotId))] },
-      spaceId: receiver.spaceId,
-      userId: receiver.userId,
-    },
-    select: { id: true, spaceId: true, userId: true },
-  });
-  const owned = new Set(
-    senders.filter((sender) => receiverOwns(sender, receiver)).map((sender) => sender.id),
-  );
-  return new Set(clean.filter((block) => owned.has(block.fromBotId)));
-}
-
-/** Whether the receiver may trust this message another bot sent it; see trustedReceivedMessages. */
-export async function receivedBotMessageTrusted(
-  prisma: PrismaClient,
-  receiver: WordsReceiver,
-  received: ReceivedBotMessage,
-): Promise<boolean> {
-  return (await trustedReceivedMessages(prisma, receiver, [received])).has(received);
-}
-
-/**
- * Whether the bot message that started a run may carry outside content: the bot whose chat it
- * arrived in may not trust it (see trustedReceivedMessages).
- */
-export async function botMessageFromOutsideContent(
-  prisma: PrismaClient,
-  sourceMessageId: string,
-): Promise<boolean> {
-  const source = await prisma.message.findUnique({
-    where: { id: sourceMessageId },
-    select: {
-      blocks: true,
-      thread: { select: { spaceId: true, bot: { select: { userId: true } } } },
-    },
-  });
-  const received = source ? receivedBotMessage(source.blocks) : undefined;
-  if (!source || !received) return false;
-  // Bot messages arrive in the receiving bot's own chat.
-  const owner = source.thread.bot?.userId;
-  return (
-    !owner ||
-    !(await receivedBotMessageTrusted(
-      prisma,
-      { spaceId: source.thread.spaceId, userId: owner },
-      received,
-    ))
   );
 }
 
@@ -570,6 +415,19 @@ async function groupWindow(
   sourceSeq: number,
   lastReplySeq: number,
 ): Promise<SaidMessage[]> {
+  const conversationalReply = {
+    OR: [
+      { clientNonce: null },
+      {
+        NOT: {
+          OR: [
+            { clientNonce: { startsWith: partialReplyClientNonce("") } },
+            { clientNonce: { startsWith: USER_PROGRESS_CLIENT_NONCE_PREFIX } },
+          ],
+        },
+      },
+    ],
+  };
   const previousReply = await prisma.message.findFirst({
     where: {
       threadId: run.threadId,
@@ -577,15 +435,27 @@ async function groupWindow(
       botId: run.botId,
       OR: [{ runId: null }, { runId: { not: run.id } }],
       seq: { lt: sourceSeq },
+      AND: [conversationalReply],
     },
     orderBy: { seq: "desc" },
     select: { seq: true },
   });
-  const recent = await prisma.message.findMany({
+  const messages = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
       seq: { gt: previousReply?.seq ?? -1, lte: lastReplySeq },
-      role: { in: ["user", "bot"] },
+      OR: [
+        { role: "user" },
+        {
+          role: "bot",
+          AND: [
+            conversationalReply,
+            {
+              OR: [{ botId: null }, { botId: { not: run.botId } }, { runId: run.id }],
+            },
+          ],
+        },
+      ],
     },
     orderBy: { seq: "desc" },
     take: MAX_GROUP_WINDOW_MESSAGES,
@@ -600,15 +470,6 @@ async function groupWindow(
       authorUserId: true,
     },
   });
-  const said = recent.filter(
-    (message) =>
-      message.role === "user" ||
-      (!isPartialReplyClientNonce(message.clientNonce) &&
-        !isUserProgressClientNonce(message.clientNonce) &&
-        // This bot's words from another run belong to that run's turn.
-        (message.botId !== run.botId || message.runId === run.id)),
-  );
-  const messages = said;
   const otherBotIds = [
     ...new Set(
       messages.flatMap((message) =>

@@ -84,7 +84,6 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
-import { historyHasOutsideContent, receivedBotMessageTrusted } from "./conversation-memory.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -131,11 +130,7 @@ import type {
   RunningHelper,
   RunState,
 } from "./run-context.js";
-import {
-  persistReadOutsideContentMidRun,
-  restoreTurnCheckpointEffects,
-  settleRunningHelpers,
-} from "./run-context.js";
+import { restoreTurnCheckpointEffects, settleRunningHelpers } from "./run-context.js";
 import { APPROVED_EFFECT_REPLAY_ORDER, buildApprovalContinuation } from "./run-effects.js";
 import {
   BOT_DIRECTORY_LIMIT,
@@ -783,7 +778,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .map((message) => ({
             id: message.id,
             role: message.role,
-            authorUserId: message.authorUserId,
             runId: message.runId,
             blocks: message.blocks as MessageBlock[],
           }));
@@ -1213,11 +1207,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
                 select: {
-                  id: true,
                   clientNonce: true,
                   role: true,
-                  runId: true,
-                  authorUserId: true,
                   blocks: true,
                   threadId: true,
                 },
@@ -1422,42 +1413,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const reply = await createReplyState(deps, run, runSecrets);
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
-        // Outside text started the run: a webhook or email, someone other than the owner, or a
-        // bot message whose words this bot may not trust. A routine runs the owner's own prompt.
-        const historyIds = new Set(history.map((message) => message.id));
-        const provenanceMessages = historyMessages.filter((message) => historyIds.has(message.id));
-        // The source can be passed as the current task instead of history. It must not escape
-        // source tracking simply because its role was re-encoded as a task prompt.
-        if (sourceMessage && !historyIds.has(sourceMessage.id)) {
-          provenanceMessages.push({
-            id: sourceMessage.id,
-            role: sourceMessage.role,
-            authorUserId: sourceMessage.authorUserId ?? run.userId,
-            runId: sourceMessage.runId,
-            blocks: sourceMessage.blocks as MessageBlock[],
-          });
-        }
-        const outsideHistory =
-          Boolean(compactedHistory.summary) ||
-          (await historyHasOutsideContent(
-            deps.prisma,
-            { spaceId: run.spaceId, userId: bot.userId },
-            provenanceMessages,
-          ));
-        const startedByOutsideText =
-          run.trigger === "webhook" ||
-          run.trigger === "spawn" ||
-          run.trigger === "helper_result" ||
-          nonOwnerChatRun ||
-          (run.trigger === "bot_message" &&
-            !(
-              peerMessage &&
-              (await receivedBotMessageTrusted(
-                deps.prisma,
-                { spaceId: run.spaceId, userId: bot.userId },
-                peerMessage,
-              ))
-            ));
         const state: RunState = {
           lease,
           computerUse,
@@ -1476,27 +1431,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
-          // Existing knowledge does not grant authority or change current action permissions.
-          // Its provenance still follows every outgoing message and retained reply below.
           tainted: initiallyTainted,
-          // A resumed attempt restores earlier tool results, which may hold outside content.
-          readOutsideContent:
-            startedByOutsideText ||
-            outsideHistory ||
-            Boolean(
-              memoryContext || scratchpadContext || ticketContext || currentTurnImages?.length,
-            ) ||
-            Boolean(
-              (sourceMessage?.blocks as MessageBlock[] | null | undefined)?.some(
-                (block) =>
-                  block.kind === "file" ||
-                  block.kind === "image" ||
-                  block.kind === "channel_message",
-              ),
-            ) ||
-            Boolean(recalledMemory) ||
-            Boolean(turnCheckpoint) ||
-            Boolean(checkpointLoadError),
           ownerSettingsRefused: false,
           // A resumed turn replaces this with the baseline its saved prompt was built from.
           ownInstructionsBaseline: bot.instructions ?? "",
@@ -1505,7 +1440,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           handedOff: false,
           terminalCheckpointComplete: false,
         };
-        if (state.readOutsideContent) await persistReadOutsideContentMidRun(deps.prisma, runId);
         const { effects } = state;
         /** Fleet tools take every scope from the run, never from arguments. */
         const fleetRun: FleetRun = {

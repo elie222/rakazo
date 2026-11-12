@@ -138,18 +138,12 @@ describe("daily check-in routine execution", () => {
 });
 
 describe("learning a finished turn", () => {
-  const persisted = {
-    where: { id: "run-1", readOutsideContent: false },
-    data: { readOutsideContent: true },
-  };
-
   it("learns a plain turn with its replies", async () => {
-    const { ctx, enqueue, updateMany } = await context({ trigger: "user" });
+    const { ctx, enqueue } = await context({ trigger: "user" });
     await completeRun(ctx);
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "memory.retain-turn", payload: { runId: "run-1" } }),
     );
-    expect(updateMany).not.toHaveBeenCalledWith(persisted);
   });
 
   it("includes what the person sent while the run worked", async () => {
@@ -160,33 +154,10 @@ describe("learning a finished turn", () => {
     );
   });
 
-  it.each([
-    ["read outside content", { trigger: "user" }, true],
-    ["was retried", { trigger: "user", attempts: 2 }, false],
-    ["received a channel message", { trigger: "user", outsideMessage: true }, false],
-  ])(
-    "retains knowledge from a run that %s while recording its provenance",
-    async (_case, options, read) => {
-      const { ctx, enqueue, updateMany } = await context(options);
-      if (read) ctx.state.readOutsideContent = true;
-      await completeRun(ctx);
-      expect(enqueue).toHaveBeenCalledWith(
-        expect.objectContaining({ payload: { runId: "run-1" } }),
-      );
-      // Recorded again at completion, so a failed earlier write never leaves the row unmarked.
-      expect(updateMany).toHaveBeenCalledWith(persisted);
-    },
-  );
-
-  it("fails the run instead of finalizing it as clean when the flag can't be recorded", async () => {
-    const { ctx, enqueue, finalizeRun, updateMany } = await context({ trigger: "user" });
-    ctx.state.readOutsideContent = true;
-    updateMany.mockImplementation(async (args: { data?: object }) => {
-      if (args.data && "readOutsideContent" in args.data) throw new Error("connection lost");
-      return { count: 1 };
-    });
-    await expect(completeRun(ctx)).rejects.toThrow("connection lost");
-    expect(finalizeRun).not.toHaveBeenCalled();
-    expect(enqueue).not.toHaveBeenCalled();
+  it("keeps learning from a turn after outside input", async () => {
+    const { ctx, enqueue } = await context({ trigger: "user" });
+    ctx.state.tainted = true;
+    await completeRun(ctx);
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ payload: { runId: "run-1" } }));
   });
 });

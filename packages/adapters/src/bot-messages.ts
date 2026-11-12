@@ -87,12 +87,7 @@ export async function messageBot(
     /** Attachments filed under the recipient's chat, shown there and copied to its computer. */
     files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
-  options?: {
-    allowTerminalSource?: boolean;
-    forceUnread?: boolean;
-    /** The sending run had read no outside content; see `senderClean` on the received block. */
-    senderClean?: boolean;
-  },
+  options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
 ) {
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
@@ -238,7 +233,6 @@ export async function messageBot(
           hop,
           intent,
           returnToMessageId: outbound.id,
-          ...(options?.senderClean ? { senderClean: true as const } : {}),
         };
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
@@ -390,18 +384,6 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
-  // The run has ended, so its flag is final: the outcome is clean only when the run completed
-  // without taking in outside content. An unreadable row counts as outside content.
-  let senderClean = false;
-  try {
-    const ended = await deps.prisma.run.findUnique({
-      where: { id: run.id },
-      select: { status: true, readOutsideContent: true },
-    });
-    senderClean = ended?.status === "completed" && !ended.readOutsideContent;
-  } catch (error) {
-    getLogger().error("bot message result could not read the run's outside content", error);
-  }
   const outcome = await messageBot(
     deps,
     run,
@@ -416,7 +398,6 @@ export async function returnBotMessageOutcome(
     {
       allowTerminalSource: true,
       forceUnread: options?.forceUnread,
-      senderClean,
     },
   );
   if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);

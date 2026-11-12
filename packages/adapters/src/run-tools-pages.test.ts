@@ -33,16 +33,14 @@ function context(
       ),
     },
     $transaction: vi.fn(async (work: (client: unknown) => unknown) => work(tx)),
-    run: { updateMany: vi.fn(async () => ({ count: 1 })) },
   };
   return {
     deps: { prisma },
-    runId: "run-1",
     run: { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "t-1", botId: "bot-1" },
     bot: { id: "bot-1" },
     thread: { groupId: null },
     secrets,
-    state: { tainted: false, readOutsideContent: false },
+    state: { tainted: false },
     trust: { loadAutoReviewPreference: async () => ({ skipApprovals }) },
   } as never;
 }
@@ -82,19 +80,13 @@ describe("save_page", () => {
       unknown
     >;
     expect(result.source).toBe(source("Plan"));
-    expect((read as { state: unknown }).state).toMatchObject({
-      tainted: true,
-      readOutsideContent: true,
-    });
+    expect((read as { state: { tainted: boolean } }).state.tainted).toBe(true);
 
     const tx = { page: { create: vi.fn(async () => ({ id: "page-2", title: "New" })) } };
     const save = context(tx);
     await pageTools.save_page!(save, call({ title: "New", source: source("New") }));
     expect(tx.page.create).toHaveBeenCalledTimes(1);
-    expect((save as { state: unknown }).state).toMatchObject({
-      tainted: false,
-      readOutsideContent: false,
-    });
+    expect((save as { state: { tainted: boolean } }).state.tainted).toBe(false);
   });
 
   it("treats an empty edits list as not sent, as it does a blank title or source", async () => {
