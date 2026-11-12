@@ -85,6 +85,14 @@ export async function removeTailnetConnection(input: {
   return count > 0;
 }
 
+/** The bot is not one of this Space's. */
+export class TailnetBotNotFoundError extends Error {
+  constructor() {
+    super("Bot not found in this space.");
+    this.name = "TailnetBotNotFoundError";
+  }
+}
+
 /** Let a bot of this Space onto this member's tailnet, or take it off. Null when not connected. */
 export async function setTailnetBotAccess(input: {
   prisma: TailnetPrisma & Pick<PrismaClient, "bot">;
@@ -103,7 +111,7 @@ export async function setTailnetBotAccess(input: {
       where: { id: input.botId, spaceId: input.scope.spaceId },
       select: { id: true },
     });
-    if (!bot) throw new Error("Bot not found in this Space");
+    if (!bot) throw new TailnetBotNotFoundError();
   }
   const others = current.botIds.filter((id) => id !== input.botId);
   return await input.prisma.tailnetConnection.update({

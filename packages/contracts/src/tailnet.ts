@@ -24,6 +24,17 @@ export const TailscaleConnectionConfigSchema = z.object({
 });
 export type TailscaleConnectionConfig = z.infer<typeof TailscaleConnectionConfigSchema>;
 
+/**
+ * Tailnet access for the signed-in member in the current Space. `unavailable` says why this server
+ * can't put bots on a tailnet: no Tailscale installed, or no address bots' computers can reach it
+ * at. `connection` is the member's own, never another member's, and never holds the client.
+ */
+export const TailnetStatusSchema = z.object({
+  unavailable: z.enum(["no_tailscale", "no_server_address"]).nullable(),
+  connection: z.object({ tag: z.string(), botIds: z.array(z.string()) }).nullable(),
+});
+export type TailnetStatus = z.infer<typeof TailnetStatusSchema>;
+
 export type TailnetDestination = { host: string; port: number };
 
 /** `host:port` for a tailnet destination, with IPv6 bracketed. Used as its approval key. */

@@ -48,6 +48,7 @@ import {
   ToolsGroup,
   VoiceRow,
 } from "./bot-settings-sections";
+import { TailnetGroup } from "./tailnet-group";
 
 const ScratchpadSection = lazyComponent(() =>
   import("../ScratchpadSection").then((module) => module.ScratchpadSection),
@@ -785,6 +786,7 @@ export function BotSettings({
                 />
               ) : null}
             </SettingsCard>
+            <TailnetGroup botId={bot.id} />
             <InstructionSettings key={bot.id} bot={bot} />
             <ErrorBoundary fallback={<SectionLoadFailed />}>
               <Suspense fallback={null}>
