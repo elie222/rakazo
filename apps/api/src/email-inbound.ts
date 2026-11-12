@@ -29,7 +29,6 @@ export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
   events: WebhookDeps["events"] & Pick<ThreadEvents, "notify">;
   domain: string;
   secret: string;
-  relayArcDomain?: string;
   storeAttachment?: (input: {
     spaceId: string;
     userId: string;
@@ -101,9 +100,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
 
   let email: InboundEmail;
   try {
-    email = deps.readEmail
-      ? await deps.readEmail(raw)
-      : await readInboundEmail(raw, { relayArcDomain: deps.relayArcDomain });
+    email = deps.readEmail ? await deps.readEmail(raw) : await readInboundEmail(raw);
   } catch (error) {
     getLogger().warn("inbound email was unreadable", {
       reason: error instanceof Error ? error.message : String(error),
