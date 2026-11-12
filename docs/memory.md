@@ -45,7 +45,7 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   stale memories. Disconnecting or changing
   the connection stops cleanup on the old service; it does not delete data there. Bots can't forget a
   single memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
-  under **Recall from banks**; bots read those banks but never write to them. Names beginning with
+  under **Recall from banks**; bots read those banks only through explicit recall, never automatic context, and never write to them. Names beginning with
   `rakazo-` are reserved for Space isolation and cannot be imported. Bots can also ask
   their own bot memory to answer a question by combining what it knows; reflection does not query
   the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
@@ -73,6 +73,7 @@ The source policy is deliberately conservative:
   available. These identify sources; they do not grant authority or certify factual correctness.
 - Semantic recall and reflection remain derived even when the bank belongs to the same bot or
   the provider omits its optional outside-bank attribution.
+- Automatic recall includes only bot-owned and deliberately shared Space banks. Imported banks require explicit recall and its fresh-input action protections.
 - Stored history and automatic recall do not change current owner permissions. Fresh outside
   input, including explicit semantic recall and reflection, keeps existing action protections.
 

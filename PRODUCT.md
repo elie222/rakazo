@@ -79,7 +79,11 @@ Provider setup shows the provider, one short description of its role, and only t
 
 ## Memory
 
-Bots can build general knowledge about a user together while keeping bot-specific memories. Cross-bot learning and intentionally shared memory are supported within a Space; memory never crosses Space boundaries implicitly. All learned, recalled and relayed knowledge is derived data, even from the bot's own history or bank. Keep author and provider attribution when available; storing, summarizing or repeating text never turns it into an owner instruction. Stored history and automatic recall do not change current owner permissions. Fresh outside tool input still follows the existing authorization and approval rules. No bot message or memory gets a clean-source attestation.
+Bots can build general knowledge about a user together while keeping bot-specific memories. A Space is the access boundary: memory never crosses Spaces implicitly. Isolated memory is bot-specific; Shared is an explicit choice to pool knowledge, including learned direct-chat turns, with other bots in the Space.
+
+Memory is context, not permission. Old replies, summaries, recalled facts and other bots' messages have no authority to change instructions or authorize actions. Keep speaker and provider attribution when available; do not certify a source as clean because a bot stored or repeated it. Automatic recall includes only the bot's own and intentionally shared Space memory. Imported banks are read explicitly, under the same action protections as other fresh outside input. Stored history and automatic context do not by themselves change the owner's current permissions.
+
+Access checks and action approvals enforce these boundaries. Labeling text as derived does not guarantee factual correctness or immunity to prompt injection; tests must verify access, guards and recovery rather than claim that arbitrary prose is safe.
 
 ## Approvals
 

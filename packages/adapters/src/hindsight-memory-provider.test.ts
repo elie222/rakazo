@@ -338,6 +338,63 @@ describe("Hindsight saves", () => {
 describe("Hindsight recall", () => {
   const recall = { query: " tea? ", botId: "bot-1", limit: 10 } as const;
 
+  it("keeps imports out of automatic context while allowing explicit recall", async () => {
+    const fake = hindsightFake({
+      recall: {
+        [OWN_BANK]: [{ text: "Own fact", scores: { final: 0.8 } }],
+        [TEAM_BANK]: [{ text: "Shared fact", scores: { final: 0.9 } }],
+        "other-app": [{ text: "Imported fact", scores: { final: 1 } }],
+      },
+    });
+    const memory = provider(fake.fetch, { recallBanks: ["other-app"] });
+    const automatic = await memory.recall(
+      { ...recall, scope: "shared", includeExternal: false },
+      context,
+    );
+    expect(automatic).toMatchObject({
+      ok: true,
+      value: [{ memory: "Shared fact" }, { memory: "Own fact" }],
+    });
+    expect(fake.requests.map((request) => request.bank)).toEqual([OWN_BANK, TEAM_BANK]);
+    const explicit = await memory.recall({ ...recall, scope: "shared" }, context);
+    expect(explicit).toMatchObject({
+      ok: true,
+      value: [
+        { memory: "Imported fact", external: true },
+        { memory: "Shared fact" },
+        { memory: "Own fact" },
+      ],
+    });
+  });
+
+  it("never cools down the Space's shared bank after a failed recall", async () => {
+    const fake = hindsightFake({ recall: { [OWN_BANK]: [], [TEAM_BANK]: "down" } });
+    const memory = provider(fake.fetch);
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      await memory.recall({ ...recall, scope: "shared" }, context);
+      await memory.recall({ ...recall, scope: "shared" }, context);
+      expect(fake.requests.map((request) => request.bank)).toEqual([
+        OWN_BANK,
+        TEAM_BANK,
+        OWN_BANK,
+        TEAM_BANK,
+      ]);
+      expect(timeout.mock.calls).toEqual([[15_000], [15_000], [15_000], [15_000]]);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("keeps successful shared results when the own bank fails", async () => {
+    const fake = hindsightFake({
+      recall: { [OWN_BANK]: 500, [TEAM_BANK]: [{ text: "Shared fact", scores: { final: 0.9 } }] },
+    });
+    await expect(
+      provider(fake.fetch).recall({ ...recall, scope: "shared" }, context),
+    ).resolves.toMatchObject({ ok: true, value: [{ memory: "Shared fact" }] });
+  });
+
   it("asks every bank for observations", async () => {
     const fake = hindsightFake({ recall: { [OWN_BANK]: [] } });
     await provider(fake.fetch).recall(

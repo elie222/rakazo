@@ -1,8 +1,10 @@
 import type {
   BackgroundJobPayloads,
+  JobPublisher,
   SemanticMemoryConversationTurn,
   SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
+import { memoryRetainTurnJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -159,11 +161,11 @@ export type RetainTurnResult = { pending?: PendingTurn };
  * learning: people's and bots' words remain usable, and semantic recall returns them as derived
  * data.
  *
- * `pending` means the provider is still storing the turn, or a clear landed meanwhile and its
- * purge failed: poll `settleRetainedConversation` with it so the clear is purged once it settles.
+ * Cleanup is scheduled before submitting any data. The returned pending state replaces that
+ * watchdog with confirmed submission status, so a clear is purged once the write settles.
  */
 export async function retainRunConversation(
-  deps: RetainDeps,
+  deps: RetainDeps & { jobs: JobPublisher },
   runId: string,
   answeredMessageIds: readonly string[] = [],
 ): Promise<RetainTurnResult> {
@@ -292,6 +294,19 @@ export async function retainRunConversation(
   }
   const generation = thread.historyCompactionGeneration;
   const context = retainContext(run);
+  const pending: PendingTurn = {
+    generation,
+    connectionIdentity,
+    source: { spaceId: run.spaceId, userId: run.userId, botId: run.botId, threadId: run.threadId },
+  };
+  // Persist cleanup before the network side effect. If this process dies before saving the
+  // provider's token, this job survives even when clear/group deletion removes the source run.
+  await deps.jobs.enqueue(
+    memoryRetainTurnJob(runId, [], {
+      pending: { ...pending, unconfirmed: true, checks: 0 },
+      availableAt: new Date(Date.now() + 5_000),
+    }),
+  );
   const result = await provider.retainConversation(
     {
       botId: run.botId,
@@ -308,11 +323,6 @@ export async function retainRunConversation(
   );
   // Retrying is safe: the provider makes a repeated turn a no-op.
   if (!result.ok) throw new Error(result.error);
-  const pending: PendingTurn = {
-    generation,
-    connectionIdentity,
-    source: { spaceId: run.spaceId, userId: run.userId, botId: run.botId, threadId: run.threadId },
-  };
   if (result.value.pending) return { pending: { ...pending, token: result.value.pending } };
   try {
     await purgeIfCleared(deps.prisma, provider, run, generation, context);
@@ -322,7 +332,8 @@ export async function retainRunConversation(
     getLogger().error("memory.retain-turn could not purge a cleared conversation", error);
     return { pending };
   }
-  return done;
+  // Replace the pre-submission watchdog even when the provider stored synchronously.
+  return { pending };
 }
 
 /**
@@ -346,7 +357,9 @@ export async function settleRetainedConversation(
     if (!result.value.settled) return { settled: false };
   }
   await purgeIfCleared(deps.prisma, provider, run, pending.generation, context);
-  return { settled: true };
+  // Without the submission response we cannot know when a remote write finishes. Keep checking
+  // through the bounded cleanup window, including after an early purge found nothing yet.
+  return { settled: pending.unconfirmed !== true };
 }
 
 /**
@@ -374,19 +387,9 @@ async function retainedRunProvider(
   runId: string,
   pending: PendingTurn,
 ): Promise<{ run: RetainRun; provider: SemanticMemoryProvider } | undefined> {
-  const run = pending.source
-    ? { id: runId, ...pending.source }
-    : await deps.prisma.run.findUnique({
-        where: { id: runId },
-        select: { id: true, spaceId: true, botId: true, threadId: true, userId: true },
-      });
-  if (!run) return undefined;
+  const run = { id: runId, ...pending.source };
   const provider = (await deps.memoryProviders.resolve(run.spaceId))?.provider;
-  if (
-    !provider ||
-    !pending.connectionIdentity ||
-    provider.connectionIdentity !== pending.connectionIdentity
-  ) {
+  if (!provider || provider.connectionIdentity !== pending.connectionIdentity) {
     getLogger().warn("memory.retain-turn stopped after its memory connection changed");
     return undefined;
   }

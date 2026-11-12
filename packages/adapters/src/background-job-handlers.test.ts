@@ -340,6 +340,10 @@ it("retries retired messaging credentials without deleting a currently reference
 });
 
 describe("memory.retain-turn", () => {
+  const identity = {
+    connectionIdentity: "connection-1",
+    source: { ...owner, botId: "bot-1", threadId: "thread-1" },
+  };
   const retainTurn = (runExists = true) => {
     const jobs = { enqueue: vi.fn(async () => undefined) };
     const run = { findUnique: vi.fn(async () => (runExists ? owner : null)) };
@@ -369,6 +373,7 @@ describe("memory.retain-turn", () => {
     await handle({
       runId: "run-1",
       pending: {
+        ...identity,
         token: "op-1",
         generation: 3,
         checks: 1,
@@ -381,7 +386,7 @@ describe("memory.retain-turn", () => {
 
   it("checks again later when the provider is still storing a new turn", async () => {
     vi.mocked(retainRunConversation).mockResolvedValueOnce({
-      pending: { token: "op-1", generation: 3 },
+      pending: { ...identity, token: "op-1", generation: 3 },
     });
     const { jobs, handle } = retainTurn();
     const before = Date.now();
@@ -392,9 +397,9 @@ describe("memory.retain-turn", () => {
         payload: {
           runId: "run-1",
           messageIds: ["m-1"],
-          pending: { token: "op-1", generation: 3, checks: 0 },
+          pending: { ...identity, token: "op-1", generation: 3, checks: 0 },
         },
-        replaceKey: "memory.retain-turn:run-1",
+        replaceKey: "memory.retain-turn:run-1:settle",
       }),
     );
     const [job] = jobs.enqueue.mock.calls[0] as unknown as [{ availableAt: Date }];
@@ -405,7 +410,7 @@ describe("memory.retain-turn", () => {
     vi.mocked(retainRunConversation).mockClear();
     vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
     const { jobs, handle } = retainTurn();
-    const pending = { token: "op-1", generation: 3, checks: 2 };
+    const pending = { ...identity, token: "op-1", generation: 3, checks: 2 };
     await handle({ runId: "run-1", pending });
     expect(retainRunConversation).not.toHaveBeenCalled();
     expect(settleRetainedConversation).toHaveBeenCalledWith(expect.anything(), "run-1", pending);
@@ -417,7 +422,7 @@ describe("memory.retain-turn", () => {
   it("keeps failed post-clear cleanup on the bounded polling backoff", async () => {
     vi.mocked(settleRetainedConversation).mockRejectedValueOnce(new Error("purge unavailable"));
     const { jobs, handle } = retainTurn();
-    const pending = { token: "op-1", generation: 3, checks: 6 };
+    const pending = { ...identity, token: "op-1", generation: 3, checks: 6 };
     await expect(handle({ runId: "run-1", pending })).resolves.toBeUndefined();
     expect(jobs.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -428,7 +433,10 @@ describe("memory.retain-turn", () => {
 
   it.each([
     ["a new turn is stored at once", {}],
-    ["a pending turn settles", { pending: { token: "op-1", generation: 3, checks: 4 } }],
+    [
+      "a pending turn settles",
+      { pending: { ...identity, token: "op-1", generation: 3, checks: 4 } },
+    ],
   ])("stops once %s", async (_case, extra) => {
     const { jobs, handle } = retainTurn();
     await handle({ runId: "run-1", ...extra });
@@ -447,7 +455,10 @@ describe("memory.retain-turn", () => {
       const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
       try {
         const { jobs, handle } = retainTurn();
-        await handle({ runId: "run-1", pending: { token: "op-1", generation: 3, checks } });
+        await handle({
+          runId: "run-1",
+          pending: { ...identity, token: "op-1", generation: 3, checks },
+        });
         const [job] = jobs.enqueue.mock.calls[0] as unknown as [{ availableAt: Date }];
         expect(job.availableAt.getTime()).toBe(1_000_000 + delay);
       } finally {
@@ -460,7 +471,10 @@ describe("memory.retain-turn", () => {
     vi.mocked(settleRetainedConversation).mockResolvedValueOnce({ settled: false });
     const { jobs, handle } = retainTurn();
     await expect(
-      handle({ runId: "run-1", pending: { token: "op-1", generation: 3, checks: 149 } }),
+      handle({
+        runId: "run-1",
+        pending: { ...identity, token: "op-1", generation: 3, checks: 149 },
+      }),
     ).resolves.toBeUndefined();
     expect(jobs.enqueue).not.toHaveBeenCalled();
     expect(abandonRetainedConversation).toHaveBeenCalledWith(

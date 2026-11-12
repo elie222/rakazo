@@ -4005,6 +4005,7 @@ description: Prepare standup notes
       if (calls) {
         expect(recall.mock.calls[0]?.[0]).toEqual({
           query: "hello",
+          includeExternal: false,
           scope: "isolated",
           botId: "bot-1",
           limit: expect.any(Number),

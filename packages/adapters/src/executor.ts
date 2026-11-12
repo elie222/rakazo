@@ -841,6 +841,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
+                  includeExternal: false,
                   scope: memoryScope,
                   botId: bot.id,
                   ...(compacted ? { historyGeneration: thread.historyCompactionGeneration } : {}),
@@ -880,12 +881,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
-          if (recalled.ok && recalled.value.length > 0) {
-            recallSucceeded = true;
+          if (recalled.ok) {
+            const stored = recalled.value.filter((memory) => !memory.external);
+            recallSucceeded = stored.length > 0;
             // Provider extraction and recall return derived knowledge, even when the original
             // conversation was this bot's own. Storage cannot promote it to owner authority.
-            recalledMemory = formatRecalledMemory(recalled.value);
-          } else if (!recalled.ok) {
+            recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
+          } else {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
         }

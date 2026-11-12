@@ -276,9 +276,13 @@ export function createBackgroundJobHandlers(deps: {
     "memory.retain-turn": asOwner(
       async (payload: BackgroundJobPayloads["memory.retain-turn"]) =>
         // Source was captured from the run before submission; group deletion may remove that row.
-        payload.pending?.source ?? run(payload),
+        payload.pending ? payload.pending.source : run(payload),
       async (payload) => {
-        const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders };
+        const memory = {
+          prisma: deps.prisma,
+          memoryProviders: deps.memoryProviders,
+          jobs: deps.jobs,
+        };
         let next: NonNullable<BackgroundJobPayloads["memory.retain-turn"]["pending"]>;
         if (!payload.pending) {
           const { pending } = await retainRunConversation(

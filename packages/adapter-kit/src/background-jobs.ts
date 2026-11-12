@@ -33,17 +33,16 @@ const payloadSchemas = {
     pending: z
       .object({
         token: z.string().min(1).optional(),
+        unconfirmed: z.literal(true).optional(),
         generation: z.number().int().min(0),
         checks: z.number().int().min(0),
-        connectionIdentity: z.string().min(1).optional(),
-        source: z
-          .object({
-            spaceId: z.string().min(1),
-            userId: z.string().min(1),
-            botId: z.string().min(1),
-            threadId: z.string().min(1),
-          })
-          .optional(),
+        connectionIdentity: z.string().min(1),
+        source: z.object({
+          spaceId: z.string().min(1),
+          userId: z.string().min(1),
+          botId: z.string().min(1),
+          threadId: z.string().min(1),
+        }),
       })
       .optional(),
   }),
@@ -233,7 +232,8 @@ export function memoryRetainTurnJob(
       ...(messageIds.length ? { messageIds } : {}),
       ...(options.pending ? { pending: options.pending } : {}),
     },
-    replaceKey: `memory.retain-turn:${runId}`,
+    // Submission retries must not replace cleanup that already guards a remote write.
+    replaceKey: `memory.retain-turn:${runId}${options.pending ? ":settle" : ""}`,
     ...(options.availableAt ? { availableAt: options.availableAt } : {}),
     maxAttempts: 4,
   };

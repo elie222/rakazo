@@ -452,6 +452,8 @@ export type SemanticMemoryResponse<T = void> =
 
 export interface SemanticMemoryRecallRequest {
   query: string;
+  /** Automatic context excludes imported sources; explicit reads may include them. */
+  includeExternal?: boolean;
   scope: DurableMemoryScope;
   botId: string;
   /** Omit until a thread has compacted history; the provider can then skip that namespace. */
@@ -878,21 +880,23 @@ export interface BackgroundJobPayloads {
   "history.compact": { threadId: string; userId?: string };
   /**
    * `messageIds`: what the person sent while the run worked, which the run also answered.
-   * `pending`: the turn was submitted and the provider is still storing it. Later checks poll the
-   * provider's token instead of submitting again, and purge `generation` once it settles if the
-   * chat was cleared meanwhile. Without a token the turn is stored and only a failed purge of a
-   * clear is left to retry. `checks` counts the checks so far. Captured `source` identifiers survive
-   * group deletion; `connectionIdentity` prevents another connection from handling the old token.
+   * `pending`: cleanup captured before submission. `unconfirmed` keeps checking through the
+   * cleanup window if the submission response was lost; otherwise poll the provider token until
+   * settled, or just retry the purge when no token is needed. Purge the captured generation if
+   * the chat was cleared. `checks` bounds the window. Captured source identifiers survive group
+   * deletion; connectionIdentity prevents a replacement from handling the old operation.
    */
   "memory.retain-turn": {
     runId: string;
     messageIds?: string[];
     pending?: {
       token?: string;
+      /** Submission may have started but its response was not durably handed off. */
+      unconfirmed?: true;
       generation: number;
       checks: number;
-      connectionIdentity?: string;
-      source?: { spaceId: string; userId: string; botId: string; threadId: string };
+      connectionIdentity: string;
+      source: { spaceId: string; userId: string; botId: string; threadId: string };
     };
   };
   "messaging.deliver": { runId?: string };

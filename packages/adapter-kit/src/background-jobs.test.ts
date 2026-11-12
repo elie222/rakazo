@@ -114,13 +114,19 @@ describe("memoryRetainTurnJob", () => {
     });
   });
 
-  it("schedules a later check under the same key", () => {
+  it("schedules checks under a separate stable cleanup key", () => {
     const availableAt = new Date("2026-11-11T12:00:05.000Z");
-    const pending = { token: "op-1", generation: 3, checks: 2 };
+    const pending = {
+      token: "op-1",
+      generation: 3,
+      checks: 2,
+      connectionIdentity: "connection-1",
+      source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+    };
     expect(memoryRetainTurnJob("run-1", [], { pending, availableAt })).toEqual({
       name: "memory.retain-turn",
       payload: { runId: "run-1", pending },
-      replaceKey: "memory.retain-turn:run-1",
+      replaceKey: "memory.retain-turn:run-1:settle",
       availableAt,
       maxAttempts: 4,
     });
@@ -141,8 +147,12 @@ describe("memoryRetainTurnJob", () => {
       runId: "run-1",
       pending,
     });
+    const unconfirmed = { ...pending, token: undefined, unconfirmed: true as const };
+    expect(
+      parseBackgroundJob("memory.retain-turn", { runId: "run-1", pending: unconfirmed }).payload,
+    ).toEqual({ runId: "run-1", pending: unconfirmed });
     // A stored turn whose post-clear purge failed has no token left to poll.
-    const purgeOnly = { generation: 3, checks: 0 };
+    const purgeOnly = { ...pending, token: undefined };
     expect(
       parseBackgroundJob("memory.retain-turn", { runId: "run-1", pending: purgeOnly }).payload,
     ).toEqual({ runId: "run-1", pending: purgeOnly });

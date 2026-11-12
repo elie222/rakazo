@@ -1,4 +1,9 @@
-import type { SemanticMemoryProvider, SemanticMemoryResponse } from "@rakazo/adapter-kit";
+import type {
+  BackgroundJob,
+  SemanticMemoryProvider,
+  SemanticMemoryResponse,
+} from "@rakazo/adapter-kit";
+import { memoryRetainTurnJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -263,6 +268,11 @@ function harness(
     },
   };
   const deps = {
+    jobs: {
+      enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
+      cancel: vi.fn(),
+      close: vi.fn(),
+    },
     prisma: prisma as unknown as PrismaClient,
     memoryProviders: {
       resolve: vi.fn(async () => ({
@@ -319,6 +329,102 @@ describe("retainRunConversation", () => {
       expect(provider.purgeHistory).not.toHaveBeenCalled();
     },
   );
+
+  it("does not submit any data when durable cleanup cannot be scheduled", async () => {
+    const { deps, provider } = harness();
+    deps.jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable"));
+    await expect(retainRunConversation(deps, "run-1")).rejects.toThrow("queue unavailable");
+    expect(provider.retainConversation).not.toHaveBeenCalled();
+  });
+
+  it("keeps cleanup after losing the submission response, even after group deletion", async () => {
+    const { deps, provider, prisma } = harness();
+    let stored = false;
+    provider.retainConversation.mockImplementationOnce(async () => {
+      expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
+      // The remote service accepts the write, then the worker loses its response.
+      throw new Error("worker stopped before receiving the operation token");
+    });
+    await expect(retainRunConversation(deps, "run-1")).rejects.toThrow("worker stopped");
+    const guard = deps.jobs.enqueue.mock.calls[0]![0];
+    if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
+    const recovery = guard.payload.pending!;
+    expect(recovery).toEqual({
+      unconfirmed: true,
+      checks: 0,
+      generation: 3,
+      connectionIdentity: "connection-1",
+      source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+    });
+    // Group deletion removes the source run and messages before the remote write lands.
+    prisma.run.findUnique.mockResolvedValue(null as never);
+    prisma.thread.findUnique.mockResolvedValue(null as never);
+    prisma.message.findFirst.mockResolvedValue(null);
+    provider.purgeHistory.mockImplementation(async () => {
+      stored = false;
+      return { ok: true, value: undefined };
+    });
+    await expect(settleRetainedConversation(deps, "run-1", recovery)).resolves.toEqual({
+      settled: false,
+    });
+    expect(stored).toBe(false);
+    stored = true;
+    // An earlier successful purge must not stop polling while remote completion is unknown.
+    await expect(settleRetainedConversation(deps, "run-1", recovery)).resolves.toEqual({
+      settled: false,
+    });
+    expect(stored).toBe(false);
+    expect(provider.purgeHistory).toHaveBeenCalledTimes(2);
+    expect(provider.retainedConversationSettled).not.toHaveBeenCalled();
+    expect(prisma.run.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the pre-submit guard when the token handoff fails and the retry finds a clear", async () => {
+    const { deps, provider, prisma } = harness();
+    const durable = new Map<string, BackgroundJob>();
+    deps.jobs.enqueue.mockImplementation(async (job) => {
+      durable.set(job.replaceKey!, job);
+    });
+    provider.retainConversation.mockResolvedValueOnce({ ok: true, value: { pending: "op-1" } });
+    const retained = await retainRunConversation(deps, "run-1");
+    const key = "memory.retain-turn:run-1:settle";
+    const guard = durable.get(key)!;
+    expect(guard.replaceKey).not.toBe(memoryRetainTurnJob("run-1").replaceKey);
+    deps.jobs.enqueue.mockRejectedValueOnce(new Error("queue unavailable after submit"));
+    await expect(
+      deps.jobs.enqueue(
+        memoryRetainTurnJob("run-1", [], {
+          pending: { ...retained.pending!, checks: 0 },
+        }),
+      ),
+    ).rejects.toThrow("queue unavailable after submit");
+    prisma.message.findFirst.mockResolvedValue(null);
+    await expect(retainRunConversation(deps, "run-1")).resolves.toEqual({});
+    expect(durable.get(key)).toBe(guard);
+    expect(provider.retainConversation).toHaveBeenCalledOnce();
+    prisma.thread.findUnique.mockResolvedValue(null as never);
+    if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
+    await expect(
+      settleRetainedConversation(deps, "run-1", guard.payload.pending!),
+    ).resolves.toEqual({ settled: false });
+    expect(provider.purgeHistory).toHaveBeenCalledWith(
+      { botId: "bot-1", threadId: "thread-1", generations: [3] },
+      expect.objectContaining({ spaceId: "space-1" }),
+    );
+  });
+
+  it("does not clean up an unconfirmed submission through a replacement connection", async () => {
+    const { deps, provider } = harness();
+    provider.retainConversation.mockRejectedValueOnce(new Error("lost response"));
+    await expect(retainRunConversation(deps, "run-1")).rejects.toThrow("lost response");
+    const guard = deps.jobs.enqueue.mock.calls[0]![0];
+    if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
+    Object.assign(provider, { connectionIdentity: "replacement-connection" });
+    await expect(
+      settleRetainedConversation(deps, "run-1", guard.payload.pending!),
+    ).resolves.toEqual({ settled: true });
+    expect(provider.purgeHistory).not.toHaveBeenCalled();
+  });
 
   it("sends the person's words and the replies with names, scope and generation", async () => {
     const { deps, provider } = harness();
@@ -679,7 +785,12 @@ describe("retainRunConversation", () => {
 });
 
 describe("settleRetainedConversation", () => {
-  const pending = { token: "op-1", generation: 3, connectionIdentity: "connection-1" };
+  const pending = {
+    token: "op-1",
+    generation: 3,
+    connectionIdentity: "connection-1",
+    source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+  };
 
   it("purges a late turn after deleting the group has removed its run", async () => {
     const { deps, prisma, provider } = harness();
@@ -759,6 +870,7 @@ describe("settleRetainedConversation", () => {
       settleRetainedConversation(deps, "run-1", {
         generation: 3,
         connectionIdentity: "connection-1",
+        source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
       }),
     ).resolves.toEqual({
       settled: true,
@@ -785,6 +897,7 @@ describe("abandonRetainedConversation", () => {
     await abandonRetainedConversation(deps, "run-1", {
       generation: 3,
       connectionIdentity: "connection-1",
+      source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
     });
     expect(provider.purgeHistory).toHaveBeenCalledWith(
       { botId: "bot-1", threadId: "thread-1", generations: [3] },
@@ -797,6 +910,7 @@ describe("abandonRetainedConversation", () => {
     await abandonRetainedConversation(deps, "run-1", {
       generation: 3,
       connectionIdentity: "connection-1",
+      source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
     });
     expect(provider.purgeHistory).not.toHaveBeenCalled();
   });
@@ -808,6 +922,7 @@ describe("abandonRetainedConversation", () => {
       abandonRetainedConversation(deps, "run-1", {
         generation: 3,
         connectionIdentity: "connection-1",
+        source: { spaceId: "space-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
       }),
     ).resolves.toBeUndefined();
   });

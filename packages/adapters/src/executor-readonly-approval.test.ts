@@ -642,6 +642,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma: transactionalPrisma,
+    runtimeRun,
     effects,
     spending: spending.state,
     web,
@@ -2954,6 +2955,13 @@ describe("outbound destinations", () => {
       f.setCalls([{ args: { id: "item-1" }, executionId: "call-1" }]);
       await f.run();
       expect(recall).toHaveBeenCalledOnce();
+      expect(recall).toHaveBeenCalledWith(
+        expect.objectContaining({ includeExternal: false }),
+        expect.anything(),
+      );
+      const history = JSON.stringify(f.runtimeRun.mock.calls[0]?.[0].history);
+      if (external) expect(history).not.toContain(memory.memory);
+      else expect(history).toContain(memory.memory);
       expect(reviewMock).not.toHaveBeenCalled();
       expect(f.execute).toHaveBeenCalledOnce();
     },

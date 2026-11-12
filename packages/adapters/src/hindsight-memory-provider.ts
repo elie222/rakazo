@@ -380,7 +380,6 @@ async function operationDone(
 export class HindsightMemoryProvider implements SemanticMemoryProvider {
   readonly connectionIdentity: string;
   private readonly localHost?: LocalServiceHost;
-  private readonly stateKey: string;
   readonly retainConversation?: (
     request: SemanticMemoryConversationRequest,
     context: AdapterContext,
@@ -391,9 +390,6 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     private readonly options: HindsightOptions,
     local: boolean,
   ) {
-    // Tenants sharing one server keep separate bank state: the key's digest tells them apart.
-    const keyDigest = createHash("sha256").update(connection.apiKey).digest("hex").slice(0, 16);
-    this.stateKey = `${keyDigest}\n${connection.baseUrl}`;
     this.connectionIdentity = createHash("sha256")
       .update(JSON.stringify([connection.baseUrl, connection.apiKey]))
       .digest("hex");
@@ -434,7 +430,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
 
   /**
    * Recalls the bot's write banks, then the other apps' banks, all at once. The bot's own bank
-   * failing fails the recall; any other bank failing is skipped. Rank all results together,
+   * failing fails an otherwise empty recall; successful banks still contribute. Rank all results together,
    * keeping the strongest duplicate and preferring the own bank on tied scores.
    */
   async recall(
@@ -448,7 +444,9 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const written = writeBanks(context.spaceId, request.botId, request.scope);
     const banks = [
       ...written,
-      ...this.options.recallBanks.filter((bank) => !written.includes(bank)),
+      ...(request.includeExternal === false
+        ? []
+        : this.options.recallBanks.filter((bank) => !written.includes(bank))),
     ];
     const body = {
       query: truncateChars(query, MAX_QUERY_CHARS),
@@ -457,11 +455,12 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       types: this.options.recallFacts ? ["observation", "world", "experience"] : ["observation"],
       ...(this.options.skipUnrelated ? { min_scores: { reranker: MIN_RERANKER_SCORE } } : {}),
     };
-    const stateKey = this.stateKey;
+    const stateKey = this.connectionIdentity;
     const found = await Promise.all(
       banks.map(async (bank, index) => {
-        // The bot's own bank is never cooled down: its failure fails the recall.
-        if (index === 0) return recallHindsight(connection.value, bank, body, context.signal);
+        // Own and shared Space memory use the full budget and are never cooled down.
+        if (index < written.length)
+          return recallHindsight(connection.value, bank, body, context.signal);
         if (coolingDown(stateKey, bank)) return undefined;
         const answer = await recallHindsight(
           connection.value,
@@ -478,10 +477,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     for (const [index, bank] of banks.entries()) {
       const answer = found[index];
       if (!answer) continue;
-      if (!answer.ok) {
-        if (index === 0) return answer;
-        continue;
-      }
+      if (!answer.ok) continue;
       const external = !written.includes(bank);
       for (const memory of answer.value) {
         results.push({
@@ -493,6 +489,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         });
       }
     }
+    const own = found[0];
+    if (!results.length && own && !own.ok) return own;
     // Stable sorting keeps the own bank first on ties. Rank before deduplication so a repeated
     // fact keeps its strongest match instead of its first bank's lower score.
     results.sort((left, right) => right.score - left.score);
@@ -581,7 +579,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     // A bank keeping no document text stores each turn in its own document.
     const separate = { ...item, document_id: `rakazo-turn-${request.runId}` };
     const write = async (bank: string): Promise<StoredTurn> => {
-      const key = bankKey(this.stateKey, bank);
+      const key = bankKey(this.connectionIdentity, bank);
       const store = async (stored: object, kind: string): Promise<StoredTurn> => {
         // One id per run and bank: a repeated call returns the original operation.
         const operationId = operationUuid(`${kind}:${request.runId}:${bank}`);
