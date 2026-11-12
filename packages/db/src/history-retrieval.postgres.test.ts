@@ -222,10 +222,14 @@ postgres("history retrieval (PostgreSQL)", () => {
         ]),
       ],
     );
-    for (const query of ["marbleworth", "zephyrine"]) {
+    for (const [query, shown] of [
+      ["marbleworth", '"subject": "Marbleworth invoice"'],
+      ["zephyrine", '"text": "Please file it under Zephyrine."'],
+    ] as const) {
       const results = await searchHistory(prisma, scope, { query });
       expect(results.messages.map((message) => message.messageId)).toEqual(["owner-email"]);
-      expect(results.messages[0]!.text).toContain("invoice\nPlease file it under Zephyrine.");
+      // The bot reads it in its owner-email frame, around the words that matched.
+      expect(results.messages[0]!.text).toContain(shown);
     }
     await pool.query(`DELETE FROM messages WHERE id = 'owner-email'`);
   });
