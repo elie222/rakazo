@@ -9,6 +9,7 @@ export const ROSTER_SAFETY_POLL_MS = 60_000;
 export function createRosterSchedule(refresh: () => void, now = Date.now) {
   let live = false;
   let opened = false;
+  const created = now();
   let lastRead = Number.NEGATIVE_INFINITY;
   const signals: RosterSignals = {
     changed() {
@@ -16,10 +17,9 @@ export function createRosterSchedule(refresh: () => void, now = Date.now) {
       lastRead = now();
       // The stream's opening signal arrives alongside the page's own first load, and a refresh
       // racing that load can redirect away from a chat it is still opening.
-      if (!opened) {
-        opened = true;
-        return;
-      }
+      const opening = !opened;
+      opened = true;
+      if (opening && now() - created < ROSTER_POLL_MS) return;
       refresh();
     },
     lost() {

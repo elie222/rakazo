@@ -36,6 +36,13 @@ describe("createRosterSchedule", () => {
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 
+  it("re-reads on a late opening signal, since the page's own load may be stale by then", () => {
+    const { refresh, roster, advance } = schedule();
+    advance(ROSTER_POLL_MS);
+    roster.signals.changed();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
   it("returns to the old cadence when the signals drop, and re-reads when they come back", () => {
     const { refresh, roster, advance } = schedule();
     roster.signals.changed();

@@ -241,6 +241,8 @@ export async function* mergeStreams<T extends unknown[]>(
     const pending = stream.next().then((result) => ({ index, result }));
     // Raced on the next loop; this only keeps a rejection while the consumer is paused handled.
     pending.catch(() => {});
+    // Re-adding moves this stream behind the others, so a busy one cannot starve the rest.
+    reads.delete(index);
     reads.set(index, pending);
   };
   for (const [index, stream] of streams.entries()) read(index, stream);
