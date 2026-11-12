@@ -760,7 +760,7 @@ export default function Integrations() {
             connect: (input) => rpc("mcp/apps/connect", input),
             authorize: async (serverId) => {
               setOauthServerId(serverId);
-              await authorizeMcp(serverId);
+              await authorizeMcp(serverId, true);
             },
             refresh,
             signal: controller.signal,
@@ -881,7 +881,7 @@ export default function Integrations() {
     setAuthHeader("x-api-key");
   }
 
-  async function authorizeMcp(serverId: string) {
+  async function authorizeMcp(serverId: string, propagateError = false) {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
     setPending(`oauth:${serverId}`);
@@ -898,6 +898,7 @@ export default function Integrations() {
       }
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
+      if (propagateError) throw reason;
     } finally {
       if (isCurrent()) setPending(null);
     }

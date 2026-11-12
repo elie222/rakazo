@@ -93,7 +93,10 @@ test("bundled app titles keep matching plugin skills reachable", async ({ page }
   await expect(
     page.getByRole("button", { name: "Connect Planning Notes", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: /Planning Notes$/ }).click();
+  await page
+    .getByRole("button")
+    .filter({ has: page.getByText("Planning Notes", { exact: true }) })
+    .click();
   await expect(page.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
   await expect(page.getByText("planning-notes", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);
