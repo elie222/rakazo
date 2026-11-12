@@ -228,6 +228,11 @@ export class FakeComposioClient implements ComposioClient {
     },
   };
 
+  readonly tools: ComposioClient["tools"] = {
+    getRawComposioTools: async (query) =>
+      query.toolkits.flatMap((toolkit) => toolsFor(toolkit.toUpperCase())),
+  };
+
   readonly connectedAccounts: ComposioClient["connectedAccounts"] = {
     list: async (query?: ConnectedAccountListParams): Promise<ConnectedAccountListResponse> => {
       this.accountListCalls.push(query ?? {});

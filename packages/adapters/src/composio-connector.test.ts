@@ -37,6 +37,7 @@ const composioSdkState = vi.hoisted(() => ({
     resultType?: "completed" | "failed" | "blocked";
   },
   failTools: null as null | string[],
+  rawToolQueries: [] as Array<{ toolkits: string[]; limit?: number }>,
   logIds: null as null | string[],
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
@@ -73,6 +74,16 @@ vi.mock("@composio/core", () => ({
         const session = composioSdkState.sessions.get(sessionId);
         if (!session) throw new Error(`unknown session ${sessionId}`);
         return session;
+      },
+    };
+
+    readonly tools = {
+      getRawComposioTools: async (query: { toolkits: string[]; limit?: number }) => {
+        composioSdkState.rawToolQueries.push(query);
+        return [
+          { slug: "GMAIL_SEND_EMAIL", name: "Send email", description: "Send an email" },
+          { slug: "GMAIL_FETCH_EMAILS", name: "Fetch emails", description: "Fetch emails" },
+        ];
       },
     };
 
@@ -149,6 +160,25 @@ vi.mock("@composio/core", () => ({
     }
   },
 }));
+
+describe("composio app tools", () => {
+  it("lists the app's own actions rather than the session's search tools", async () => {
+    composioToolkitDirectory.invalidate();
+    const tools = await new ComposioConnector().listAppTools(
+      {
+        operationId: "composio-app-tools",
+        traceId: "composio-app-tools",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+      },
+      "gmail",
+    );
+    expect(tools.map((tool) => tool.name)).toEqual(["GMAIL_SEND_EMAIL", "GMAIL_FETCH_EMAILS"]);
+    expect(composioSdkState.rawToolQueries.at(-1)?.toolkits).toHaveLength(1);
+    expect(composioSdkState.rawToolQueries.at(-1)?.toolkits[0]?.toLowerCase()).toBe("gmail");
+  });
+});
 
 describe("composio tool mapping", () => {
   it("maps OpenAI-style session tools and raw slugs", () => {

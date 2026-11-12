@@ -42,6 +42,9 @@ export type ComposioClient = {
       limit?: number;
     }): Promise<Array<{ slug: string; noAuth?: boolean; composioManagedAuthSchemes?: string[] }>>;
   };
+  tools: {
+    getRawComposioTools(query: { toolkits: string[]; limit?: number }): Promise<unknown[]>;
+  };
   authConfigs: {
     list(query: { limit?: number; cursor?: string }): Promise<{
       items: Array<{ toolkit: { slug: string }; status: string }>;
@@ -162,6 +165,8 @@ export function executeSessionKey(
   return accountKey ? `${toolkitKey}|${accountKey}` : toolkitKey;
 }
 
+/** Enough for the largest apps' action lists on their integration page. */
+const APP_TOOLS_LIMIT = 200;
 /** Connected-account listings are per user and toolkit; this bounds a runaway cursor. */
 const MAX_ACCOUNT_PAGES = 20;
 /** Folder listings treat a missing path as the account root. */
@@ -586,6 +591,16 @@ export class ComposioConnector implements ComposioProvider {
 
   async listReconnectRefs(context: AdapterContext): Promise<string[]> {
     return this.accountIds(context.userId, [], RECONNECT_STATUSES, { signal: context.signal });
+  }
+
+  /** The app's own actions, not the session tools that only search and run them. */
+  async listAppTools(_context: AdapterContext, externalId: string): Promise<ConnectorTool[]> {
+    const [toolkit] = await this.canonicalizeToolkits([externalId]);
+    if (!toolkit) return [];
+    const composio = await this.sdk();
+    return asConnectorTools(
+      await composio.tools.getRawComposioTools({ toolkits: [toolkit], limit: APP_TOOLS_LIMIT }),
+    );
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
