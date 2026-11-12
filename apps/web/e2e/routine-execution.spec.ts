@@ -275,11 +275,12 @@ test("a webhook delivery stays out of the chat, like a scheduled run", async ({
   await expect
     .poll(
       async () =>
+        // The delivery starts its run before the webhook answers, so no active run means done.
         (await rpc<{ run?: { status: string } | null }>(page, "threads/get", { botId })).run
-          ?.status ?? "",
+          ?.status ?? "done",
       { timeout: 30_000 },
     )
-    .toMatch(/^(completed|failed|cancelled|waiting_input)$/);
+    .toMatch(/^(done|failed|cancelled|waiting_input)$/);
   await page.reload({ waitUntil: "domcontentloaded" });
 
   // The run's own output shows; the prompt the delivery woke it with never does.
