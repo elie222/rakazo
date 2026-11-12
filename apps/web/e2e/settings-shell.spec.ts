@@ -162,8 +162,11 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await memory.getByLabel("Provider").selectOption("serenity");
   await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
   await expect(memory.getByLabel("Bearer token")).toBeVisible();
-  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
+  await expect(memory.getByRole("button", { name: "Recall only" })).not.toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-memory-serenity");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-memory-serenity-advanced");
 
   await settings.getByTestId("settings-nav-voice").click();
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
