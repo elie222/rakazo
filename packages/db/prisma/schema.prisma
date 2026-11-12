@@ -53,6 +53,12 @@ model User {
   deactivatedAt               DateTime?
   /// Operator-set recorded hosted model usage ceiling, including pending reservations.
   modelCreditCapMicros        BigInt?
+  /// Operator-controlled bot email allowance per rolling 24 hours. Zero pauses sending.
+  botEmailDailyLimit          Int                          @default(5)
+  /// Allows replies to authenticated incoming senders; never arbitrary outbound recipients.
+  botEmailRepliesEnabled      Boolean                      @default(false)
+  /// Operator-approved recipients for requested reports or other expected workflow mail.
+  botEmailAllowedRecipients   String[]                     @default([])
   sessions                    Session[]
   accounts                    Account[]
   scimSubject                 ScimSubject?
@@ -1580,6 +1586,8 @@ model BotEmailSend {
   /// No relation: a deleted bot's sends still count toward its owner's limit.
   botId  String
   sentAt DateTime @default(now())
+  /// Envelope recipients reserved before delivery, including failed attempts.
+  recipientCount Int @default(1)
 
   @@index([userId, sentAt])
   @@map("bot_email_sends")

@@ -131,19 +131,45 @@ channel, and what it reads counts as outside data.
 
 ## Sending
 
-Bots send from their own address through the same provider as account email (`EMAIL_PROVIDER`
-and its settings), so set those on the worker as well as the API. The provider must be allowed to
-send as the bot domain:
+Bots send through a separate TLS SMTP connection, configured on both API and worker:
 
-- **Resend:** add the domain under **Domains** and publish the DNS records it shows. They sit on
-  a `send` subdomain and the domain's DKIM selector, so they don't clash with the MX records that
-  receive mail.
-- **SMTP:** the relay must accept a From address on the domain and sign it with DKIM, or
-  recipients will mark the mail as spam.
+```bash
+BOT_EMAIL_SMTP_URL=smtps://username:password@smtp.example.com:465
+```
 
-Replies go to the bot's address and land in its inbox. Each send follows the bot's usual
-[approval](./approvals.md) settings. A bot sends at most 50 emails a day, and one owner's bots 200
-between them, each to at most 10 people, and never includes a secret the run has used. What it sends stays in its inbox, and deleting mail never removes it.
+The relay must accept and DKIM-sign mail from `INBOUND_EMAIL_DOMAIN`. Keep its credentials
+separate from account email. Leaving this unset disables bot sending; it never falls back to
+`EMAIL_PROVIDER` or `SMTP_URL`. Existing receiving and account email settings keep working.
+The bot supplies its own From and Reply-To address, so replies return to its inbox.
+
+Each account starts with five recipient deliveries per rolling 24 hours, shared by every bot
+and Space. CC recipients and failed delivery attempts count too. Deleting mail or a bot never
+resets usage. An account must have a verified email and be active. By default bots can send only
+to that verified owner address, including scheduled reports.
+
+An operator can enable replies to authenticated incoming senders and raise the allowance using
+the API container's CLI:
+
+```bash
+node dist/cli/bot-email-policy.js status owner@example.test
+node dist/cli/bot-email-policy.js limit owner@example.test 20
+node dist/cli/bot-email-policy.js replies owner@example.test on
+node dist/cli/bot-email-policy.js allow owner@example.test reports@example.test
+node dist/cli/bot-email-policy.js deny owner@example.test reports@example.test
+node dist/cli/bot-email-policy.js limit owner@example.test 0
+```
+
+Zero pauses all bot sending. Changes are recorded in the security audit log. No user or bot tool
+can raise the allowance or enable external replies. Reply access permits only the authenticated
+From address of an incoming message received in the last 30 days, identified by `inReplyTo`.
+It does not permit arbitrary recipients, reply-all, or recipients from a Reply-To header.
+Use `allow` only for recipients whose consent has been reviewed, such as a report destination
+that differs from the account login. `deny` removes that exception.
+The bot's usual action approvals still apply inside these limits, and known secrets are removed.
+
+Before enabling external replies on a hosted deployment, configure the sending service's hard
+bounce and complaint suppression and operational alerts. Review the workflow and recipient
+consent; a paid subscription alone is not authorization for external sending.
 
 ## Who can start work
 

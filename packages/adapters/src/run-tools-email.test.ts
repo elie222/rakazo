@@ -6,11 +6,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { botEmailInstruction } from "./run-instructions.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
-import {
-  emailTools,
-  SEND_EMAIL_DAILY_LIMIT,
-  SEND_EMAIL_OWNER_DAILY_LIMIT,
-} from "./run-tools-email.js";
+import { emailTools } from "./run-tools-email.js";
 
 type Row = {
   id: string;
@@ -581,6 +577,12 @@ describe("send_email", () => {
   function sendRun(
     options: {
       sentToday?: number;
+      ownerEmail?: string;
+      dailyLimit?: number;
+      repliesEnabled?: boolean;
+      allowedRecipients?: string[];
+      verified?: boolean;
+      deactivated?: boolean;
       ownerSentToday?: number;
       fail?: boolean;
       original?: Record<string, unknown>;
@@ -593,17 +595,41 @@ describe("send_email", () => {
     });
     // Sends earlier today: this bot's, then another of its owner's bots.
     const sends = [
-      ...Array.from({ length: options.sentToday ?? 0 }, () => ({ id: "old", botId: "bot-1" })),
-      ...Array.from({ length: options.ownerSentToday ?? 0 }, () => ({ id: "old", botId: "bot-2" })),
+      ...Array.from({ length: options.sentToday ?? 0 }, () => ({
+        id: "old",
+        botId: "bot-1",
+        recipientCount: 1,
+      })),
+      ...Array.from({ length: options.ownerSentToday ?? 0 }, () => ({
+        id: "old",
+        botId: "bot-2",
+        recipientCount: 1,
+      })),
     ];
     const botEmailSend = {
       deleteMany: async () => ({ count: 0 }),
-      findMany: async () => [...sends],
-      create: async ({ data }: { data: { botId: string } }) => {
-        const row = { id: `send-${sends.length + 1}`, botId: data.botId };
+      aggregate: async () => ({
+        _sum: { recipientCount: sends.reduce((total, row) => total + row.recipientCount, 0) },
+      }),
+      create: async ({ data }: { data: { botId: string; recipientCount: number } }) => {
+        const row = {
+          id: `send-${sends.length + 1}`,
+          botId: data.botId,
+          recipientCount: data.recipientCount,
+        };
         sends.push(row);
         return { id: row.id };
       },
+    };
+    const user = {
+      findUnique: async () => ({
+        email: options.ownerEmail ?? "a@shop.test",
+        emailVerified: options.verified ?? true,
+        deactivatedAt: options.deactivated ? new Date() : null,
+        botEmailDailyLimit: options.dailyLimit ?? 5,
+        botEmailRepliesEnabled: options.repliesEnabled ?? false,
+        botEmailAllowedRecipients: options.allowedRecipients ?? [],
+      }),
     };
     const ctx = {
       deps: {
@@ -611,12 +637,23 @@ describe("send_email", () => {
         email: { send },
         prisma: {
           $transaction: async (fn: (tx: unknown) => unknown) =>
-            fn({ $queryRaw: async () => [], botEmailSend }),
+            fn({ $queryRaw: async () => [], botEmailSend, user }),
           botEmailSend,
           botEmailAddress: { findUnique: async () => ({ name: "scout" }) },
           botEmailMessage: {
             findFirst: async ({ where }: { where: { id: string } }) =>
-              where.id === "in-1" ? (options.original ?? null) : null,
+              where.id === "in-1" && options.original
+                ? {
+                    fromAddress: "support@shop.test",
+                    subject: "Hi",
+                    messageId: "<message@example.test>",
+                    references: [],
+                    verified: true,
+                    sent: false,
+                    receivedAt: new Date(),
+                    ...options.original,
+                  }
+                : null,
             findUnique: async ({ where }: { where: { botId_key: { key: string } } }) =>
               saved.find((row) => row.key === where.botId_key.key) ?? null,
             create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -656,7 +693,7 @@ describe("send_email", () => {
   }
 
   it("sends from the bot's own address and keeps a copy in its inbox", async () => {
-    const { call, send, saved } = sendRun();
+    const { call, send, saved } = sendRun({ ownerEmail: "Support@Shop.test" });
 
     const result = await call({
       to: "Support@Shop.test",
@@ -702,6 +739,7 @@ describe("send_email", () => {
 
   it("answers an email in its own thread", async () => {
     const { call, send } = sendRun({
+      repliesEnabled: true,
       original: {
         subject: "Your ticket",
         messageId: "<t-2@shop.test>",
@@ -736,47 +774,41 @@ describe("send_email", () => {
       error: "Sending failed (domain not verified). It most likely did not go out.",
     });
     expect(failing.saved).toEqual([]);
-    expect(failing.sends).toEqual([{ id: "send-1", botId: "bot-1" }]);
+    expect(failing.sends).toEqual([{ id: "send-1", botId: "bot-1", recipientCount: 1 }]);
   });
 
-  it("keeps a follow-up to the bot's own email in that thread", async () => {
+  it("cannot use a sent copy to authorize an external recipient", async () => {
     const { call, send } = sendRun({
       original: {
         subject: "Re: Your ticket",
+        sent: true,
         messageId: null,
         references: ["<t-1@shop.test>", "<t-2@shop.test>"],
       },
     });
 
-    await call({ to: ["support@shop.test"], text: "Any news?", inReplyTo: "in-1" });
-
-    expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        subject: "Re: Your ticket",
-        headers: {
-          "In-Reply-To": "<t-2@shop.test>",
-          References: "<t-1@shop.test> <t-2@shop.test>",
-        },
-      }),
-    );
+    expect(
+      (await call({ to: ["support@shop.test"], text: "Any news?", inReplyTo: "in-1" })).error,
+    ).toContain("isn't approved");
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("refuses past the daily limit, too many people, or no subject", async () => {
-    const { call, send } = sendRun({ sentToday: SEND_EMAIL_DAILY_LIMIT });
+    const { call, send } = sendRun({ sentToday: 5 });
     const many = Array.from({ length: 11 }, (_, index) => `p${index}@shop.test`);
 
     expect(await call({ to: ["a@shop.test"], subject: "Hi", text: "x" })).toEqual({
-      error: "You've sent as many emails today as you can. Try again tomorrow.",
+      error: "Your account has reached its email allowance for the last 24 hours. Try again later.",
     });
     expect(
       (
-        await sendRun({ ownerSentToday: SEND_EMAIL_OWNER_DAILY_LIMIT }).call({
+        await sendRun({ ownerSentToday: 5 }).call({
           to: ["a@shop.test"],
           subject: "Hi",
           text: "x",
         })
       ).error,
-    ).toBe("You've sent as many emails today as your owner's bots can. Try again tomorrow.");
+    ).toBe("Your account has reached its email allowance for the last 24 hours. Try again later.");
     expect(
       await sendRun().call({ to: ["hunter2-secret@evil.test"], subject: "Hi", text: "x" }),
     ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
@@ -809,11 +841,105 @@ describe("send_email", () => {
   });
 
   it("keeps the part of an address before the @ as written", async () => {
-    const { call, send } = sendRun();
+    const { call, send } = sendRun({ ownerEmail: "Ada.Lovelace@Shop.TEST" });
 
     await call({ to: ["Ada.Lovelace@Shop.TEST"], subject: "Hi", text: "x" });
 
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: ["Ada.Lovelace@shop.test"] }));
+  });
+
+  it("cannot authorize new recipients, forged or stale replies, or extra copies", async () => {
+    for (const original of [
+      null,
+      { verified: false },
+      { sent: true },
+      { receivedAt: new Date(Date.now() - 31 * 86_400_000) },
+      { fromAddress: "another@bots.test" },
+    ]) {
+      const { call, send, sends } = sendRun({
+        repliesEnabled: true,
+        original: original ?? undefined,
+      });
+      const result = await call({
+        to: "support@shop.test",
+        subject: "Hi",
+        text: "Hello",
+        ...(original ? { inReplyTo: "in-1" } : {}),
+      });
+      expect(result.error).toContain("isn't approved");
+      expect(send).not.toHaveBeenCalled();
+      expect(sends).toHaveLength(0);
+    }
+    const { call, send } = sendRun({
+      repliesEnabled: true,
+      original: { subject: "Hi", messageId: "<message@example.test>", references: [] },
+    });
+    expect(
+      (
+        await call({
+          to: "support@shop.test",
+          cc: "victim@example.test",
+          text: "Hello",
+          inReplyTo: "in-1",
+        })
+      ).error,
+    ).toContain("isn't approved");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("does not authorize a differently cased mailbox local part", async () => {
+    const { call, send } = sendRun({ ownerEmail: "Owner@shop.test" });
+    expect((await call({ to: "owner@shop.test", subject: "Hi", text: "Hello" })).error).toContain(
+      "isn't approved",
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("allows an operator-approved recipient for a scheduled report without granting arbitrary sending", async () => {
+    const { call, send } = sendRun({ allowedRecipients: ["reports@example.test"] });
+    expect(
+      await call({ to: "reports@example.test", subject: "Weekly report", text: "Activity report" }),
+    ).toMatchObject({ sent: true });
+    expect(send).toHaveBeenCalledOnce();
+    expect(
+      (await call({ to: "other@example.test", subject: "Hi", text: "Hello" }, "other-effect"))
+        .error,
+    ).toContain("isn't approved");
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("counts CC recipients and lets the operator raise, lower, or pause the account allowance", async () => {
+    const original = { subject: "Hi", messageId: "<message@example.test>", references: [] };
+    const limited = sendRun({ repliesEnabled: true, original, sentToday: 4 });
+    expect(
+      (
+        await limited.call({
+          to: "support@shop.test",
+          cc: "a@shop.test",
+          text: "Hello",
+          inReplyTo: "in-1",
+        })
+      ).error,
+    ).toContain("allowance");
+    expect(limited.send).not.toHaveBeenCalled();
+    const raised = sendRun({ repliesEnabled: true, original, sentToday: 4, dailyLimit: 6 });
+    expect(
+      await raised.call({
+        to: "support@shop.test",
+        cc: "a@shop.test",
+        text: "Hello",
+        inReplyTo: "in-1",
+      }),
+    ).toMatchObject({ sent: true });
+    expect(raised.sends.at(-1)?.recipientCount).toBe(2);
+    for (const options of [{ dailyLimit: 0 }, { verified: false }, { deactivated: true }]) {
+      const run = sendRun(options);
+      expect(
+        (await run.call({ to: "a@shop.test", subject: "Hi", text: "Hello" })).error,
+      ).toBeTruthy();
+      expect(run.send).not.toHaveBeenCalled();
+      expect(run.sends).toHaveLength(0);
+    }
   });
 
   it("is offered only where the inbox is read and email can go out, under the usual approvals", () => {
