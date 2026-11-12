@@ -148,7 +148,10 @@ export function ModelSettingsOverlay({
   // when asked for from the main model's menu.
   const [statusOpened, setStatusOpened] = useState(false);
   const statusRole = useModelRole(me, scope, "status");
-  const showStatus = statusOpened || Boolean(statusRole?.primary || statusRole?.backups.length);
+  // Only where bots narrate live does a status model change anything.
+  const statusAvailable = me?.liveStatusLines === true;
+  const showStatus =
+    statusAvailable && (statusOpened || Boolean(statusRole?.primary || statusRole?.backups.length));
 
   // A hosted preset shares the compatible provider id with a saved local server.
   const connected = Boolean(
@@ -338,14 +341,14 @@ export function ModelSettingsOverlay({
               ) : null
             }
             primaryMenuItems={
-              showComputer && showStatus ? null : (
+              showComputer && (showStatus || !statusAvailable) ? null : (
                 <>
                   {showComputer ? null : (
                     <DropdownMenuItem onClick={() => setComputerOpened(true)}>
                       <Trans>Computer-use model…</Trans>
                     </DropdownMenuItem>
                   )}
-                  {showStatus ? null : (
+                  {showStatus || !statusAvailable ? null : (
                     <DropdownMenuItem onClick={() => setStatusOpened(true)}>
                       <Trans>Status line model…</Trans>
                     </DropdownMenuItem>

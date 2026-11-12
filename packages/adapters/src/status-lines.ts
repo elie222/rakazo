@@ -116,6 +116,8 @@ export async function createStatusLineWriter(
             threadId: scope.threadId,
             runId: `${scope.runId}:status-line`,
             usageOperationKind: "setup",
+            // An empty answer stays empty, so the next model is tried instead of a placeholder.
+            allowSilentEmpty: true,
             onUsage: async (event) => {
               await onUsage(event);
             },

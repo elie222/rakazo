@@ -299,12 +299,15 @@ export default function Models() {
               title={t`Computer-use model`}
               defaultLabel={t`Same as main model`}
             />
-            <ModelRoleSettings
-              {...shared}
-              modelRole="status"
-              title={t`Status line model`}
-              defaultLabel={t`Same as main model`}
-            />
+            {/* Only where bots narrate live does a status model change anything. */}
+            {me.liveStatusLines ? (
+              <ModelRoleSettings
+                {...shared}
+                modelRole="status"
+                title={t`Status line model`}
+                defaultLabel={t`Same as main model`}
+              />
+            ) : null}
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (
               <ModelProviders

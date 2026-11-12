@@ -1497,6 +1497,8 @@ export const MeSchema = z.object({
   /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugins, adds stdio MCP servers, grants access. */
   isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
+  /** Whether bots narrate live (RAKAZO_OPENING_ACKNOWLEDGEMENT), so a status line model applies. */
+  liveStatusLines: z.boolean().optional(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
   /** Provider the active default runs on with the server's own credentials, without a key. */

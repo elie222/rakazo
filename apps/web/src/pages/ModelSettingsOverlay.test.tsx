@@ -625,8 +625,32 @@ it("keeps the computer-use model out of sight while the main model can see", asy
   }
 });
 
+it("offers no status line model where bots do not narrate live", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const view = await renderSettings();
+  try {
+    expect(view.container.querySelector('[data-testid="model-role-status"]')).toBeNull();
+    await click(
+      section("main").querySelector(
+        '[data-testid="model-role-row-1"] button[aria-label$=" options"]',
+      ),
+    );
+    expect(
+      [...document.querySelectorAll('[role="menuitem"]')].some(
+        (entry) => entry.textContent === "Status line model…",
+      ),
+    ).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("keeps the status line model out of sight until asked for from the main model's menu", async () => {
   models.credentials.mockResolvedValue([deepseekCredential]);
+  vi.mocked(rpc.me).mockResolvedValue({
+    ...account("deepseek", "deepseek-chat"),
+    liveStatusLines: true,
+  });
   const view = await renderSettings();
   try {
     expect(view.container.querySelector('[data-testid="model-role-status"]')).toBeNull();
