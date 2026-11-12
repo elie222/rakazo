@@ -8,6 +8,7 @@ import {
   AGENT_IMPORT_MAX_FILE_LENGTH,
   AGENT_IMPORT_MAX_FILES,
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
+  GROK_BOT_EXPORT_PATH,
 } from "@rakazo/contracts";
 import { AgentImportArchiveError } from "./archive.js";
 import {
@@ -17,6 +18,8 @@ import {
 } from "./config.js";
 import { looksLikeCredential } from "./credentials.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
+import type { GrokBot } from "./grok-bot.js";
+import { parseGrokBot, parseGrokBotExport } from "./grok-bot.js";
 import {
   BUNDLED_MANIFEST,
   bundledSkillNames,
@@ -55,6 +58,17 @@ export {
 } from "./config.js";
 export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
+export {
+  GROK_BOT_EXPORT_PROMPT,
+  GROK_BOT_REPLY_MAX_LENGTH,
+  type GrokBot,
+  GrokBotExportError,
+  type GrokBotExportErrorCode,
+  grokBotExportJson,
+  grokRoutineCron,
+  grokSkillNames,
+  parseGrokBotExport,
+} from "./grok-bot.js";
 export { bundledSkillNames } from "./hermes.js";
 export type { AgentImportReader, SkillFiles } from "./shared.js";
 export { renameSkillMd } from "./shared.js";
@@ -193,7 +207,7 @@ export function readAgentImportFolder(
   files: AgentImportFile[],
   options: { includeSecrets: boolean },
 ): {
-  source: Exclude<AgentImportSource, "document" | "template">;
+  source: Exclude<AgentImportSource, "document" | "template" | "grok_bot">;
   root: string;
   files: Map<string, string>;
 } | null {
@@ -288,6 +302,19 @@ export function parseAgentImport(
   skillFiles: SkillFiles = {},
 ): AgentImportPlan | { error: string } {
   const only = files.length === 1 ? files[0] : undefined;
+  if (only?.path === GROK_BOT_EXPORT_PATH) {
+    let bots: GrokBot[];
+    try {
+      bots = parseGrokBotExport(only.content);
+    } catch {
+      return { error: AGENT_IMPORT_NOT_FOUND };
+    }
+    // The client sends only the Bot the user picked.
+    const [bot] = bots;
+    return bot && bots.length === 1
+      ? plan("grok_bot", parseGrokBot(bot))
+      : { error: AGENT_IMPORT_NOT_FOUND };
+  }
   // A known agent file (SOUL.md, MEMORY.md, memories/…) is read as one even when its text
   // has the document's headings; only another file or the pasted reply is a document.
   if (only && !isKnownAgentFile(only.path) && isAgentDocument(only.content)) {
@@ -339,7 +366,7 @@ function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportP
 function detectSource(
   paths: Set<string>,
   root: string,
-): Exclude<AgentImportSource, "document" | "template"> | null {
+): Exclude<AgentImportSource, "document" | "template" | "grok_bot"> | null {
   const has = (path: string) => paths.has(path);
   if (
     root === ".hermes" ||

@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { Bot, MemoryDocument } from "@rakazo/contracts";
+import type { Bot, MemoryDocument, Routine } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -114,18 +114,26 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   const panel = await openImport(page);
   const choose = panel.getByTestId("agent-import-choose");
-  await expect(choose.getByRole("heading")).toHaveText(["OpenClaw or Hermes", "Another assistant"]);
+  await expect(choose.getByRole("heading")).toHaveText([
+    "OpenClaw or Hermes",
+    "Grok Bot",
+    "Another assistant",
+  ]);
   await expect(choose.getByRole("button")).toHaveText([
     "Choose folder",
     "Choose backup",
     "Copy prompt",
     "Continue",
     "Choose file",
+    "Copy prompt",
+    "Continue",
+    "Choose file",
   ]);
   await captureScreenshot(page, testInfo, "agent-import-choose");
 
-  await choose.getByRole("textbox", { name: "Paste the reply" }).fill("Just chatting.");
-  await choose.getByRole("button", { name: "Continue" }).click();
+  const another = choose.getByTestId("agent-import-another");
+  await another.getByRole("textbox", { name: "Paste the reply" }).fill("Just chatting.");
+  await another.getByRole("button", { name: "Continue" }).click();
   await expect(panel.getByRole("alert")).toHaveText("No OpenClaw, Hermes or agent document found.");
   await captureScreenshot(page, testInfo, "agent-import-error");
 
@@ -305,11 +313,12 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const second = await openImport(page);
-  await second.getByRole("button", { name: "Copy prompt" }).click();
-  await expect(second.getByRole("button", { name: "Copied" })).toBeVisible();
+  const secondAnother = second.getByTestId("agent-import-another");
+  await secondAnother.getByRole("button", { name: "Copy prompt" }).click();
+  await expect(secondAnother.getByRole("button", { name: "Copied" })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("\n# Skills\n");
-  await second.getByRole("textbox", { name: "Paste the reply" }).fill(document);
-  await second.getByRole("button", { name: "Continue" }).click();
+  await secondAnother.getByRole("textbox", { name: "Paste the reply" }).fill(document);
+  await secondAnother.getByRole("button", { name: "Continue" }).click();
   const documentPreview = second.getByTestId("agent-import-preview");
   await expect(
     documentPreview.getByTestId("agent-import-memory").getByRole("checkbox"),
@@ -331,4 +340,97 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   expect(atlasMemory.map((doc) => doc.path).sort()).toEqual(["MEMORY.md", "about-me.md"]);
   const library = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(library.map((item) => item.name)).toEqual(expect.arrayContaining(["trip-planner"]));
+});
+
+/** What a Grok Bot writes back for the export prompt: fake data, in a chat reply. */
+const grokBot = {
+  name: "Bramble",
+  title: "Account manager",
+  instructions: "Keep replies short.",
+  memories: ["Weekly report goes out on Mondays."],
+  user_facts: ["Time zone: America/New_York"],
+  skills: [
+    {
+      name: "Weekly Account Health",
+      description: "Use for the Monday account review.",
+      instructions: "1. List accounts.\n2. Flag the ones at risk.",
+    },
+  ],
+  routines: [
+    {
+      name: "Monday review",
+      instruction: "Run the weekly account review.",
+      trigger: "schedule",
+      schedule_cron: "0 8 * * 1",
+      timezone: "America/New_York",
+      skills: ["Weekly Account Health"],
+    },
+    { name: "Support pings", instruction: "Answer #support.", trigger: "slack" },
+  ],
+  apps: [{ name: "Gmail" }],
+};
+
+function grokReply(...bots: object[]) {
+  const body = JSON.stringify({ format: "grok-bot-export", version: 1, bots }, null, 2);
+  return `Here is my setup.\n\n\`\`\`json\n${body}\n\`\`\``;
+}
+
+test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `grok-import-${stamp}@rakazo.test`, "password12", "Grok User");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const panel = await openImport(page);
+  const grok = panel.getByTestId("agent-import-grok");
+  await grok
+    .getByRole("textbox", { name: "Paste the reply" })
+    .fill(grokReply(grokBot, { name: "Wren", instructions: "Plan trips." }));
+  await grok.getByRole("button", { name: "Continue" }).click();
+  await expect(grok.getByText("Which Bot?")).toBeVisible();
+  await captureScreenshot(page, testInfo, "agent-import-grok-choose-bot");
+  await clickAndWaitForRpc(
+    page,
+    grok.getByRole("button", { name: "Bramble", exact: true }),
+    "bots/importPreview",
+  );
+
+  const preview = panel.getByTestId("agent-import-preview");
+  await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Bramble");
+  await expect(preview.getByTestId("agent-import-memory").getByRole("checkbox")).toHaveCount(3);
+  await expect(preview.getByRole("checkbox", { name: "grok-bot-event-routines.md" })).toBeChecked();
+  const skill = preview.getByRole("checkbox", { name: "weekly-account-health" });
+  const routine = preview.getByRole("checkbox", { name: "Monday review" });
+  await expect(skill).not.toBeChecked();
+  await expect(routine).not.toBeChecked();
+  await preview.getByRole("button", { name: "Not imported" }).click();
+  await expect(preview.getByTestId("agent-import-skipped")).toContainText(
+    "apps: GmailConnect it again",
+  );
+  await captureScreenshot(page, testInfo, "agent-import-grok-preview");
+
+  await skill.click();
+  await routine.click();
+  await clickAndWaitForRpc(
+    page,
+    preview.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
+  await expect(page.getByPlaceholder("Message Bramble")).toBeVisible();
+  const botId = activeBotId(page);
+  expect((await rpc<Bot>(page, "bots/get", { botId })).instructions).toBe("Keep replies short.");
+  const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId });
+  expect(memory.map((doc) => doc.path).sort()).toEqual([
+    "MEMORY.md",
+    "USER.md",
+    "grok-bot-event-routines.md",
+  ]);
+  const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
+  expect(skills.map((item) => item.name)).toContain("weekly-account-health");
+  const routines = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(routines).toMatchObject([
+    { name: "Monday review", active: false, crons: ["0 8 * * 1"], timezone: "America/New_York" },
+  ]);
+  expect(routines[0]!.prompt).toContain("@weekly-account-health");
 });

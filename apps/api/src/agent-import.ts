@@ -6,6 +6,7 @@ import {
   BUILTIN_AGENT_SKILLS,
   isCatalogModelChoice,
   readAgentImportSettings,
+  readGrokBotImportSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -33,6 +34,7 @@ import type { SkillFiles } from "@rakazo/core";
 import {
   combineImportedInstructions,
   parseAgentImport,
+  parseGrokBotExport,
   readAgentImportFolder,
   renameRoutineSkillMentions,
   resolveAgentImportNames,
@@ -179,16 +181,25 @@ async function buildPlan(
   const base = parsePlan(files, input.skillFiles);
   const taken = await takenNames(services.prisma, actor);
   const plan = resolveAgentImportNames(base, taken);
-  const folder =
-    base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
   const routineInputs = new Map<string, CreateRoutineInputType>();
   const mcpConfigs = new Map<string, ImportedMcpServer & { slug: string }>();
   const connectedKeyIds = new Set<string>();
-  if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
-  const settings = readAgentImportSettings(folder, {
-    includeSecrets,
-    stdioAllowed: await services.stdioAllowed(actor),
-  });
+  let settings: Built["settings"];
+  if (base.source === "grok_bot") {
+    // parsePlan has checked that this file holds exactly one Bot.
+    const [bot] = parseGrokBotExport(files[0]?.content ?? "");
+    settings = bot ? readGrokBotImportSettings(bot) : null;
+  } else {
+    const folder =
+      base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
+    settings = folder
+      ? readAgentImportSettings(folder, {
+          includeSecrets,
+          stdioAllowed: await services.stdioAllowed(actor),
+        })
+      : null;
+  }
+  if (!settings) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
 
   let model: AgentImportPlan["model"] = null;
   if (settings.model) {
@@ -236,7 +247,8 @@ async function buildPlan(
       active: false,
     });
     if (!parsed.success) {
-      skipped.push({ path: `cron/jobs.json: ${routine.title}`, reason: "unsupported" });
+      const file = base.source === "grok_bot" ? "routines" : "cron/jobs.json";
+      skipped.push({ path: `${file}: ${routine.title}`, reason: "unsupported" });
       return [];
     }
     routineInputs.set(routine.id, parsed.data);

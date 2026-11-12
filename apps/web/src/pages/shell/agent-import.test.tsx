@@ -308,7 +308,7 @@ describe("an item whose text looks like it contains a key", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -317,9 +317,11 @@ describe("an item whose text looks like it contains a key", () => {
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const continueButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Continue",
-    )!;
+    const continueButton = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="agent-import-another"] button',
+      ),
+    ].find((button) => button.textContent === "Continue")!;
     await act(async () => continueButton.click());
 
     const box = (label: string) =>
@@ -360,7 +362,7 @@ describe("an item whose text looks like it contains a key", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -370,7 +372,11 @@ describe("an item whose text looks like it contains a key", () => {
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      [...container!.querySelectorAll("button")]
+      [
+        ...container!.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="agent-import-another"] button',
+        ),
+      ]
         .find((button) => button.textContent === "Continue")!
         .click(),
     );
@@ -464,7 +470,12 @@ describe("creating a bot", () => {
     await act(async () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
-    await act(async () => button("Copy prompt").click());
+    const copyPrompt = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="agent-import-another"] button',
+      ),
+    ].find((item) => item.textContent === "Copy prompt")!;
+    await act(async () => copyPrompt.click());
     const archive = container.querySelector<HTMLInputElement>(
       '[data-testid="agent-import-archive"]',
     )!;
@@ -505,7 +516,7 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -515,7 +526,11 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      [...container!.querySelectorAll("button")]
+      [
+        ...container!.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="agent-import-another"] button',
+        ),
+      ]
         .find((button) => button.textContent === "Continue")!
         .click(),
     );

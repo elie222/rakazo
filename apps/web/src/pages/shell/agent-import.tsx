@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, ComputerMode } from "@rakazo/contracts";
-import { AGENT_IMPORT_PROMPT } from "@rakazo/core";
+import { AGENT_IMPORT_PROMPT, GROK_BOT_EXPORT_PROMPT } from "@rakazo/core";
 import { Button, CopyTextFallback, Textarea, useCopyText } from "@rakazo/ui-web";
 import { ArrowLeft, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
@@ -40,6 +40,10 @@ export function AgentImportForm({
     pickArchive,
     previewDocument,
     pickDocument,
+    grokBots,
+    previewGrokReply,
+    previewGrokBot,
+    pickGrokFiles,
     stopReading,
     selectedInstructions,
     chosen,
@@ -47,9 +51,12 @@ export function AgentImportForm({
     ready,
   } = source;
   const archiveInput = useRef<HTMLInputElement>(null);
+  const grokFileInput = useRef<HTMLInputElement>(null);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [reply, setReply] = useState("");
+  const [grokReply, setGrokReply] = useState("");
   const [copied, copy, copyFailed, resetCopy] = useCopyText();
+  const [grokCopied, copyGrok, grokCopyFailed, resetGrokCopy] = useCopyText();
   const [creating, setCreating] = useState(false);
 
   async function create() {
@@ -104,6 +111,7 @@ export function AgentImportForm({
               if (plan) {
                 // A copy that failed while the preview was open must not greet the return.
                 resetCopy();
+                resetGrokCopy();
                 setPlan(null);
               } else onClose();
             }}
@@ -205,7 +213,87 @@ export function AgentImportForm({
               </Button>
             </div>
           </section>
-          <section className={sectionClass}>
+          <section className={sectionClass} data-testid="agent-import-grok">
+            <h3 className={headingClass}>
+              <Trans>Grok Bot</Trans>
+            </h3>
+            <Button
+              variant="outline"
+              className="mt-2"
+              onClick={() => copyGrok(GROK_BOT_EXPORT_PROMPT)}
+            >
+              {grokCopied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
+            </Button>
+            <CopyTextFallback
+              open={grokCopyFailed}
+              onOpenChange={resetGrokCopy}
+              text={GROK_BOT_EXPORT_PROMPT}
+              label={t`Copy prompt`}
+            />
+            <Textarea
+              aria-label={t`Paste the reply`}
+              value={grokReply}
+              onChange={(event) => setGrokReply(event.target.value)}
+              placeholder={t`Paste the reply`}
+              rows={5}
+              className="mt-3"
+            />
+            <input
+              ref={(node) => {
+                grokFileInput.current = node;
+                if (!node) return;
+                node.addEventListener("cancel", stopReading);
+                return () => {
+                  node.removeEventListener("cancel", stopReading);
+                  grokFileInput.current = null;
+                };
+              }}
+              type="file"
+              multiple
+              accept=".json,.md,.txt,application/json,text/plain,text/markdown"
+              data-testid="agent-import-grok-file"
+              className="hidden"
+              onChange={(event) => {
+                void pickGrokFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <div className="mt-3 flex gap-2">
+              <Button
+                disabled={!grokReply.trim() || busy}
+                onClick={() => void previewGrokReply(grokReply)}
+              >
+                <Trans>Continue</Trans>
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => grokFileInput.current?.click()}
+              >
+                <Trans>Choose file</Trans>
+              </Button>
+            </div>
+            {grokBots.length > 1 ? (
+              <>
+                <p className="mt-3 text-body-sm text-muted-foreground">
+                  <Trans>Which Bot?</Trans>
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {grokBots.map((bot) => (
+                    <Button
+                      key={bot.name}
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void previewGrokBot(bot)}
+                    >
+                      {bot.name}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+          <section className={sectionClass} data-testid="agent-import-another">
             <h3 className={headingClass}>
               <Trans>Another assistant</Trans>
             </h3>

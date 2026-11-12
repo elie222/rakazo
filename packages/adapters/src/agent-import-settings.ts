@@ -5,8 +5,12 @@ import type {
   McpServerConfigInput,
 } from "@rakazo/contracts";
 import { isValidTimeZone, McpServerConfigInput as McpServerConfigSchema } from "@rakazo/contracts";
+import type { GrokBot } from "@rakazo/core";
 import {
   AGENT_IMPORT_PROVIDER_KEYS,
+  grokRoutineCron,
+  grokSkillNames,
+  looksLikeCredential,
   mcpServerImportable,
   nextCronDateAcrossStrict,
   normalizeImportProvider,
@@ -24,7 +28,7 @@ import { isCatalogProviderBaseUrl, listPiCatalog } from "./pi-models.js";
 type Json = Record<string, unknown>;
 type Skipped = {
   path: string;
-  reason: "builtin" | "unsupported" | "invalid_file";
+  reason: "builtin" | "unsupported" | "invalid_file" | "reconnect";
 };
 
 export type ImportedModel = {
@@ -166,6 +170,69 @@ export function readAgentImportSettings(
   }
 
   return { model, mcpServers, routines, apiKeys, skipped, keyValues };
+}
+
+/** A path segment this long and mixed reads as a key: the address would carry it. */
+const KEY_LIKE_SEGMENT = /^(?=.*\d)(?=.*[a-zA-Z])[A-Za-z0-9_-]{24,}$/;
+
+/**
+ * A Grok Bot's routines and connected apps, from the export it wrote. It has no model to
+ * choose and the export never holds keys. Routines on an event stay in its memory note.
+ */
+export function readGrokBotImportSettings(
+  bot: GrokBot,
+): AgentImportSettings & { keyValues: Map<string, string> } {
+  const skipped: Skipped[] = [];
+  const skillNames = grokSkillNames(bot);
+  const routines: ImportedRoutine[] = [];
+  for (const [index, source] of bot.routines.entries()) {
+    const cron = source.instruction ? grokRoutineCron(source) : null;
+    if (!cron) continue;
+    const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
+    const prompt = uses.length
+      ? `${source.instruction}\n\nUse these skills: ${uses.map((name) => `@${name}`).join(", ")}.`
+      : source.instruction;
+    const result = routine({ name: source.name }, prompt, cron, source.timeZone, false, false);
+    if ("reason" in result) {
+      skipped.push({ path: `routines: ${source.name || index + 1}`, reason: result.reason });
+    } else {
+      routines.push({ ...result, id: `routine:${index}` });
+    }
+  }
+
+  const mcpServers: ImportedMcpServer[] = [];
+  for (const [index, app] of bot.apps.entries()) {
+    const path = `apps: ${app.name}`;
+    if (!app.mcpUrl) {
+      skipped.push({ path, reason: "reconnect" });
+      continue;
+    }
+    let url: URL | null = null;
+    try {
+      url = new URL(app.mcpUrl);
+    } catch {
+      url = null;
+    }
+    // Only a remote address that carries no key can come over.
+    const server =
+      url?.protocol === "https:" &&
+      !url.pathname.split("/").some((part) => KEY_LIKE_SEGMENT.test(part)) &&
+      !looksLikeCredential(app.mcpUrl)
+        ? mcpServer(
+            app.name,
+            {
+              url: app.mcpUrl,
+              transport: app.transport,
+              headers: Object.fromEntries(app.headerNames.map((name) => [name, ""])),
+            },
+            () => false,
+          )
+        : null;
+    if (server) mcpServers.push({ ...server, id: `mcp:${index}` });
+    else skipped.push({ path, reason: "unsupported" });
+  }
+
+  return { model: null, mcpServers, routines, apiKeys: [], skipped, keyValues: new Map() };
 }
 
 /**

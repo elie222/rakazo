@@ -1,10 +1,11 @@
-import { agentImportUpload, readAgentImportFolder } from "@rakazo/core";
+import { agentImportUpload, parseGrokBotExport, readAgentImportFolder } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   intervalCron,
   normalizeImportProvider,
   parseDotEnv,
   readAgentImportSettings,
+  readGrokBotImportSettings,
 } from "./agent-import-settings.js";
 
 // Shaped like a real `~/.openclaw/openclaw.json` (JSON5: comments and trailing commas).
@@ -661,5 +662,78 @@ describe("credentials inside MCP URLs and arguments", () => {
       { path: "config.yaml: flag", reason: "unsupported" },
     ]);
     expect(JSON.stringify(settings)).not.toContain("placeholder-");
+  });
+});
+
+describe("Grok Bot export", () => {
+  const routine = {
+    instruction: "Run the weekly account review.",
+    trigger: "schedule",
+    schedule_cron: "0 8 * * 1-5",
+  };
+  const [bot] = parseGrokBotExport(
+    JSON.stringify({
+      format: "grok-bot-export",
+      version: 1,
+      bots: [
+        {
+          name: "Bramble",
+          skills: [{ name: "Weekly Account Health", instructions: "List accounts at risk." }],
+          routines: [
+            {
+              ...routine,
+              name: "Monday review",
+              timezone: "America/New_York",
+              skills: ["Weekly Account Health"],
+            },
+            { ...routine, name: "Elsewhere", timezone: "Mars/Base" },
+            { name: "Support", instruction: "Answer #support.", trigger: "slack" },
+          ],
+          apps: [
+            {
+              name: "Linear",
+              mcp_url: "https://mcp.example.com/mcp",
+              headers: { Authorization: "" },
+            },
+            { name: "Plain", mcp_url: "http://mcp.example.com/mcp" },
+            { name: "Keyed", mcp_url: "https://mcp.example.com/a1b2c3d4e5f6g7h8i9j0k1l2m3" },
+            { name: "Gmail" },
+          ],
+        },
+      ],
+    }),
+  );
+  const settings = readGrokBotImportSettings(bot!);
+
+  it("turns scheduled routines into routines that use the saved skill names", () => {
+    expect(settings.routines).toMatchObject([
+      {
+        id: "routine:0",
+        name: "Monday review",
+        cron: "0 8 * * 1-5",
+        timezone: "America/New_York",
+        prompt: "Run the weekly account review.\n\nUse these skills: @weekly-account-health.",
+        warnings: [],
+      },
+      { id: "routine:1", timezone: null, warnings: ["changed_schedule"] },
+    ]);
+  });
+
+  it("carries remote MCP addresses without a key and lists other apps to connect again", () => {
+    expect(settings.mcpServers).toMatchObject([
+      {
+        id: "mcp:0",
+        title: "Linear",
+        config: { transport: "streamable_http", endpoint: "https://mcp.example.com/mcp" },
+        status: { kind: "needs_setup", needs: [{ kind: "credentials", names: ["Authorization"] }] },
+      },
+    ]);
+    expect(settings.skipped).toEqual([
+      { path: "apps: Plain", reason: "unsupported" },
+      { path: "apps: Keyed", reason: "unsupported" },
+      { path: "apps: Gmail", reason: "reconnect" },
+    ]);
+    expect(settings.model).toBeNull();
+    expect(settings.apiKeys).toEqual([]);
   });
 });
