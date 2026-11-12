@@ -1005,6 +1005,28 @@ describe("connector read-only metadata and approval enforcement", () => {
       },
     );
 
+    // An owner's clean chat run that paused for an unrelated approval resumes as a later attempt.
+    // Its restored tool results keep the existing action policy, so a save afterwards asks.
+    it("asks before saving in an owner's run resumed after a pause in Ask", async () => {
+      const f = fixture({ name: "remember", builtin: true });
+      f.prisma.attempt.count.mockResolvedValue(2);
+      f.setCalls([{ args: { content: "Prefers short replies." }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.commit).not.toHaveBeenCalled();
+    });
+
+    it("lets the approval model judge a save in an owner's resumed run in Auto", async () => {
+      reviewMock.mockResolvedValue({ decision: "pass", reason: "Asked", model: "mock" });
+      const f = fixture({ name: "remember", builtin: true, autoReview: true });
+      f.prisma.attempt.count.mockResolvedValue(2);
+      f.setCalls([{ args: { content: "Prefers short replies." }, executionId: "call-1" }]);
+      await f.run();
+      expect(reviewMock).toHaveBeenCalledOnce();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.commit).toHaveBeenCalledOnce();
+    });
+
     it("saves an approved save once on the resumed attempt without asking again", async () => {
       const f = fixture({ name: "save_shared_memory", builtin: true });
       f.claimedOutsideSteering(true);
