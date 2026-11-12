@@ -863,7 +863,11 @@ async function reviewToolCall(
           ? { url: redactSecrets(fetchUrl, ctx.secrets) }
           : redactToolArgsForReview(args, ctx.secrets),
       userTask: redactSecrets(
-        outsideRun ? ownerWords : ownerWordsOnly ? await ctx.trust.loadOwnerWords() : ctx.task.prompt,
+        outsideRun
+          ? ownerWords
+          : ownerWordsOnly
+            ? await ctx.trust.loadOwnerWords()
+            : ctx.task.prompt,
         ctx.secrets,
       ),
       botDescription,
