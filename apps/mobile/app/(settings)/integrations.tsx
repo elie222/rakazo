@@ -679,28 +679,34 @@ export default function Integrations() {
   function openDetail(item: ConnectionCatalogItem) {
     if (item.mcpAppId) {
       const isCurrent = captureConnectionScope();
-      Alert.alert(item.name, undefined, [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Connect`, onPress: () => isCurrent() && void connect(item) },
-        ...(item.mcpServerId
-          ? [
-              {
-                text: t`Disconnect`,
-                style: "destructive" as const,
-                onPress: () => {
-                  if (!isCurrent()) return;
-                  void rpc("mcp/servers/remove", { id: item.mcpServerId! })
-                    .then(async () => {
-                      if (isCurrent()) await refresh();
-                    })
-                    .catch((error) => {
-                      if (isCurrent()) setCatalogError(errorText(error, t`Could not disconnect`));
-                    });
+      Alert.alert(
+        item.name,
+        item.needsSetup && !itemConnected(item) ? t`Server setup required` : undefined,
+        [
+          { text: t`Cancel`, style: "cancel" },
+          ...(!item.needsSetup
+            ? [{ text: t`Connect`, onPress: () => isCurrent() && void connect(item) }]
+            : []),
+          ...(item.mcpServerId
+            ? [
+                {
+                  text: t`Disconnect`,
+                  style: "destructive" as const,
+                  onPress: () => {
+                    if (!isCurrent()) return;
+                    void rpc("mcp/servers/remove", { id: item.mcpServerId! })
+                      .then(async () => {
+                        if (isCurrent()) await refresh();
+                      })
+                      .catch((error) => {
+                        if (isCurrent()) setCatalogError(errorText(error, t`Could not disconnect`));
+                      });
+                  },
                 },
-              },
-            ]
-          : []),
-      ]);
+              ]
+            : []),
+        ],
+      );
       return;
     }
     setCatalogError(null);

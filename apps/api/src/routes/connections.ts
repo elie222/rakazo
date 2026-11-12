@@ -1,6 +1,7 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import { planLiveConnectionSync } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { filterConnectionCatalogItems } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -139,15 +140,15 @@ export function connectionsRoutes(ctx: RouterContext) {
           !input.connectorId || input.connectorId === "deployment"
             ? await deploymentAppCatalog(ctx, context.actor)
             : [];
-        const query = input.query?.toLowerCase() ?? "";
+        const query = input.query?.trim() ?? "";
+        const matches = query ? filterConnectionCatalogItems(bundled, query) : bundled;
         return [
-          ...bundled.filter(
+          ...matches.filter(
             (item) =>
-              item.name.toLowerCase().includes(query) &&
-              (!item.needsSetup ||
-                !catalogs
-                  .flat()
-                  .some((other) => other.name.toLowerCase() === item.name.toLowerCase())),
+              !item.needsSetup ||
+              !catalogs
+                .flat()
+                .some((other) => other.name.toLowerCase() === item.name.toLowerCase()),
           ),
           ...catalogs.flat(),
         ];
