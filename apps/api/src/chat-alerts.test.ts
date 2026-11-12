@@ -79,6 +79,27 @@ describe("notifications.subscribe", () => {
     }
   });
 
+  it("keeps streaming alerts when roster signals fail", async () => {
+    const controller = new AbortController();
+    const followChatAlerts = vi.fn(async function* () {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      yield alert;
+    });
+    const followRosterChanges = vi.fn(async function* (): AsyncGenerator<void> {
+      throw new Error("roster lookup failed");
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followRosterChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "alert", alert });
+    } finally {
+      controller.abort();
+    }
+  });
+
   it("requires a signed-in user", async () => {
     const client = createRouterClient(createRouter({} as unknown as RouterDeps), {
       context: { actor: null },

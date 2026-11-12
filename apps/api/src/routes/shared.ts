@@ -237,11 +237,12 @@ export async function* mergeStreams<T extends unknown[]>(
 ): AsyncGenerator<T[number]> {
   const streams: AsyncGenerator<T[number]>[] = sources;
   const reads = new Map<number, Promise<{ index: number; result: IteratorResult<T[number]> }>>();
-  const read = (index: number, stream: AsyncGenerator<T[number]>) =>
-    reads.set(
-      index,
-      stream.next().then((result) => ({ index, result })),
-    );
+  const read = (index: number, stream: AsyncGenerator<T[number]>) => {
+    const pending = stream.next().then((result) => ({ index, result }));
+    // Raced on the next loop; this only keeps a rejection while the consumer is paused handled.
+    pending.catch(() => {});
+    reads.set(index, pending);
+  };
   for (const [index, stream] of streams.entries()) read(index, stream);
   try {
     while (reads.size > 0) {

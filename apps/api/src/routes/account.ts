@@ -342,7 +342,10 @@ export function accountRoutes(ctx: RouterContext) {
           signal: AbortSignal,
         ): AsyncGenerator<typeof ROSTER_CHANGED> {
           if (!followRosterChanges) return;
-          for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
+          // Chat alerts keep flowing if roster signals fail; the client falls back to polling.
+          try {
+            for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
+          } catch {}
         };
         const frames = withHeartbeats(context, (signal) =>
           mergeStreams(followChatAlerts(userId, spaceId, signal), rosterChanges(signal)),

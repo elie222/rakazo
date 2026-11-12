@@ -45,6 +45,8 @@ export const ROSTER_PROCEDURES: Record<string, RosterScope> = {
   "botSections.update": actorSpace,
   "botSections.remove": actorSpace,
   "externalConversations.updatePolicy": actorSpace,
+  "organizations.create": actorOnly,
+  "organizations.remove": actorOnly,
   "threads.markRead": actorOnly,
   "threads.markUnread": actorOnly,
   "threads.snooze": actorOnly,

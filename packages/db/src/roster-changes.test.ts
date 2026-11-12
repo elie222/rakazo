@@ -64,6 +64,35 @@ describe("followRosterChanges", () => {
     expect(fanout.topics()).toEqual([]);
   });
 
+  it("re-reads what it watches while idle, without signalling", async () => {
+    vi.useFakeTimers();
+    try {
+      const fanout = fakeFanout();
+      let scope: RosterScope = { spaceIds: ["space-1"], threadIds: ["thread-1"] };
+      const controller = new AbortController();
+      const iterator = followRosterChanges(
+        fanout as never,
+        "user-1",
+        async () => scope,
+        controller.signal,
+        0,
+      );
+      await iterator.next();
+      let signalled = false;
+      const next = iterator.next().then(() => {
+        signalled = true;
+      });
+      scope = { spaceIds: ["space-1"], threadIds: ["thread-1", "thread-2"] };
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fanout.topics()).toContain("thread:thread-2");
+      expect(signalled).toBe(false);
+      controller.abort();
+      await next;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores other people's and other Spaces' changes", async () => {
     const fanout = fakeFanout();
     const scope = { spaceIds: ["space-1"], threadIds: ["thread-1"] };

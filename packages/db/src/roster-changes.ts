@@ -84,7 +84,11 @@ export async function* followRosterChanges(
     while (!signal?.aborted) {
       await latch.waitForChange(seen, IDLE_WAIT_MS, signal);
       if (signal?.aborted) return;
-      if (latch.generation === seen) continue;
+      if (latch.generation === seen) {
+        // An idle check also picks up chats a missed roster signal never told this stream about.
+        await watch().catch(() => undefined);
+        continue;
+      }
       seen = latch.generation;
       // A failed re-read keeps the chats already watched; the next wake tries again.
       await watch().catch(() => undefined);
