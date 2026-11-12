@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -16,6 +17,9 @@ import { useInboxChatActions } from "./use-inbox-chat-actions";
 
 const session = vi.hoisted(() => ({ space: "space-a", generation: 1, alert: vi.fn() }));
 
+vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => () => void) => useEffect(effect, [effect]),
+}));
 vi.mock("react-native", () => ({ Alert: { alert: session.alert } }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -274,7 +278,7 @@ it.each([
     expect(h.loadBots).not.toHaveBeenCalled();
     expect(vi.mocked(confirm).mock.calls[0]![0]).toEqual({ id: "x", name: "Ada" });
     // A chat in the selected space is deleted with the session's own space.
-    expect(vi.mocked(confirm).mock.calls[0]!.at(-1)).toBeUndefined();
+    expect(vi.mocked(confirm).mock.calls[0]![kind === "bot" ? 3 : 2]).toBeUndefined();
     vi.mocked(confirm).mock.calls[0]![1]!();
     expect(h.loadBots).toHaveBeenCalledTimes(1);
   },
@@ -286,7 +290,7 @@ it.each([
 ] as const)("%s delete from another space targets that space", async (kind, confirm) => {
   const h = await handlers(async () => ({ ok: true }));
   await h.runRowAction(kind, { id: "x", name: "Ada", spaceId: "space-b" }, "delete");
-  expect(vi.mocked(confirm).mock.calls[0]!.at(-1)).toMatchObject({
+  expect(vi.mocked(confirm).mock.calls[0]![kind === "bot" ? 3 : 2]).toMatchObject({
     headers: { "x-rakazo-space-id": "space-b" },
   });
 });
@@ -469,3 +473,19 @@ it.each(["bot", "group"] as const)(
     expect(notifyArchivedChatsChanged).toHaveBeenCalledOnce();
   },
 );
+
+it("guards inbox deletion until dismissed and invalidates it on unmount", async () => {
+  const h = await handlers(async () => []);
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  expect(confirmDeleteBot).toHaveBeenCalledTimes(1);
+  const first = vi.mocked(confirmDeleteBot).mock.calls[0]!;
+  expect(first[2]!()).toBe(true);
+  first[4]!();
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  expect(confirmDeleteBot).toHaveBeenCalledTimes(2);
+  const second = vi.mocked(confirmDeleteBot).mock.calls[1]!;
+  root!.unmount();
+  root = undefined;
+  expect(second[2]!()).toBe(false);
+});

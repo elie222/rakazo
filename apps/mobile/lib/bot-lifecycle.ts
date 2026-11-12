@@ -13,6 +13,7 @@ export async function confirmDeleteBot(
   // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
   current: () => boolean = () => true,
   requestContext?: ApiRequestContext,
+  finished: () => void = () => {},
 ) {
   // Native alerts cannot update their message: resolve the preview before opening one.
   let groupWarning = "";
@@ -34,10 +35,14 @@ export async function confirmDeleteBot(
     // Match the web dialog: a failed preview warns generally rather than hiding the risk.
     groupWarning = t`Groups left with fewer than two bots are deleted too, including their messages, files, and pages.`;
   }
-  if (!current()) return;
+  if (!current()) {
+    finished();
+    return;
+  }
 
   const remove = async (deleteMemories: boolean) => {
     try {
+      if (!current()) return;
       if (requestContext) {
         await rpc(
           "bots/remove",
@@ -51,6 +56,8 @@ export async function confirmDeleteBot(
       onDeleted();
     } catch (error) {
       if (current()) Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));
+    } finally {
+      finished();
     }
   };
 
@@ -63,7 +70,7 @@ export async function confirmDeleteBot(
       .filter(Boolean)
       .join("\n\n"),
     [
-      { text: t`Cancel`, style: "cancel" },
+      { text: t`Cancel`, style: "cancel", onPress: finished },
       { text: t`Keep memories`, style: "destructive", onPress: () => void remove(false) },
       {
         text: t`Delete memories too`,
@@ -71,6 +78,7 @@ export async function confirmDeleteBot(
         onPress: () => void remove(true),
       },
     ],
+    { onDismiss: finished },
   );
 }
 

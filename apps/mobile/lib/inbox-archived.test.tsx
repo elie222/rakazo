@@ -336,6 +336,48 @@ describe("bot profile menu archive notifications", () => {
     stop();
   });
 
+  it.each([false, true])(
+    "does not show a late profile delete prompt after unmount (failure=%s)",
+    async (fails) => {
+      const action = renderActions();
+      let finish!: () => void;
+      mocks.rpc.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () => (fails ? reject(new Error("offline")) : resolve([]));
+          }),
+      );
+      action("Delete…").onPress();
+      await act(async () => root.render(null));
+      finish();
+      await flush();
+      expect(mocks.alert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores repeated profile delete taps through preview and confirmation", async () => {
+    const action = renderActions();
+    let finish!: (groups: unknown[]) => void;
+    mocks.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    action("Delete…").onPress();
+    action("Delete…").onPress();
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    finish([]);
+    await flush();
+    action("Delete…").onPress();
+    expect(mocks.alert).toHaveBeenCalledTimes(1);
+    alertButton(0, "Cancel").onPress!();
+    mocks.rpc.mockResolvedValueOnce([]);
+    action("Delete…").onPress();
+    await flush();
+    expect(mocks.alert).toHaveBeenCalledTimes(2);
+  });
+
   it("notifies after confirmed deletion succeeds", async () => {
     const { listener, stop } = listenForArchiveChanges();
     const action = renderActions();

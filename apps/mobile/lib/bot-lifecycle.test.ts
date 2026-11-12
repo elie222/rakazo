@@ -194,3 +194,24 @@ describe("bot deletion preview", () => {
     },
   );
 });
+
+it.each(["cancel", "dismiss", "success", "failure", "stale"] as const)(
+  "releases the confirmation guard on %s",
+  async (outcome) => {
+    const finished = vi.fn();
+    await confirmDeleteBot(
+      { id: "fixture", name: "Fixture" },
+      vi.fn(),
+      () => outcome !== "stale",
+      undefined,
+      finished,
+    );
+    if (outcome === "cancel") alert.mock.calls[0]![2][0].onPress();
+    else if (outcome === "dismiss") alert.mock.calls[0]![3].onDismiss();
+    else if (outcome === "success" || outcome === "failure") {
+      if (outcome === "failure") rpc.mockRejectedValueOnce(new Error("offline"));
+      alert.mock.calls[0]![2][1].onPress();
+    }
+    await vi.waitFor(() => expect(finished).toHaveBeenCalledOnce());
+  },
+);

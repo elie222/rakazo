@@ -17,6 +17,7 @@ import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mo
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { currentSessionGeneration, loadSessionToken } from "./session";
+import { useConfirmationGuard } from "./use-confirmation-guard";
 import { errorText } from "./user-error";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
@@ -54,6 +55,7 @@ export function useInboxChatActions({
   setSpaces: ListUpdate<MobileSpace>;
 }) {
   const { t } = useLingui();
+  const beginDelete = useConfirmationGuard();
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
@@ -182,6 +184,8 @@ export function useInboxChatActions({
       }
       // The same confirmation as the chat's own menu; the row goes once the server deletes it.
       if (action === "delete") {
+        const confirmation = kind === "bot" ? beginDelete() : undefined;
+        if (kind === "bot" && !confirmation) return;
         const deleted = () => {
           notifyArchivedChatsChanged();
           void loadBots();
@@ -191,10 +195,17 @@ export function useInboxChatActions({
         try {
           requestContext = await chatRequestContext(chat.spaceId);
         } catch {
+          confirmation?.finish();
           return;
         }
         if (kind === "bot") {
-          confirmDeleteBot({ id: chat.id, name: chat.name }, deleted, undefined, requestContext);
+          void confirmDeleteBot(
+            { id: chat.id, name: chat.name },
+            deleted,
+            confirmation!.current,
+            requestContext,
+            confirmation!.finish,
+          );
         } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
         return;
       }
@@ -202,7 +213,7 @@ export function useInboxChatActions({
         Alert.alert(t`Could not update chat`, errorText(err, t`Try again.`)),
       );
     },
-    [loadBots, sendReadState, t, updateChat],
+    [beginDelete, loadBots, sendReadState, t, updateChat],
   );
   const botAction = useCallback(
     (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),

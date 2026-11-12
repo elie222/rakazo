@@ -7,6 +7,7 @@ import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { archiveBot, confirmClearConversation, confirmDeleteBot } from "../lib/bot-lifecycle";
 import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { useConfirmationGuard } from "../lib/use-confirmation-guard";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
@@ -21,6 +22,7 @@ export type BotProfileAction = {
 export function useBotProfileActions(botId: string, name: string): BotProfileAction[] {
   const { t } = useLingui();
   const router = useRouter();
+  const beginDelete = useConfirmationGuard();
   function leave() {
     router.dismissAll();
     router.replace("/");
@@ -44,11 +46,20 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
       id: "delete",
       text: t`Delete…`,
       destructive: true,
-      onPress: () =>
-        confirmDeleteBot({ id: botId, name }, () => {
-          notifyArchivedChatsChanged();
-          leave();
-        }),
+      onPress: () => {
+        const confirmation = beginDelete();
+        if (!confirmation) return;
+        void confirmDeleteBot(
+          { id: botId, name },
+          () => {
+            notifyArchivedChatsChanged();
+            if (confirmation.current()) leave();
+          },
+          confirmation.current,
+          undefined,
+          confirmation.finish,
+        );
+      },
     },
   ];
 }
