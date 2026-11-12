@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">चल रही कॉल</string>
+  <string name="rakazo_call_title">Rakazo कॉल</string>
+  <string name="rakazo_call_text">माइक्रोफ़ोन चालू है</string>
+  <string name="rakazo_call_answer">जवाब दें</string>
+  <string name="rakazo_call_decline">अस्वीकार करें</string>
+</resources>

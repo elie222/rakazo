@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import type { AppEmulator } from "../apps/app-emulator.js";
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
+import { SESSION_EVAL_CASES } from "./history-session.js";
 import type { JudgeInput } from "./judge.js";
 import type { ComputerScript } from "./scripted-shell.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
@@ -732,4 +734,17 @@ for (const size of [100, 1000, 10000] as const) {
       ),
     ],
   });
+}
+
+HISTORY_EVAL_CASES.push(...SESSION_EVAL_CASES);
+
+/** Entries of a cases file: a JSON array, or one JSON object per line. */
+export function readCasesFile(file: string): unknown[] {
+  const text = readFileSync(file, "utf8").trim();
+  return text.startsWith("[")
+    ? (JSON.parse(text) as unknown[])
+    : text
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line) as unknown);
 }

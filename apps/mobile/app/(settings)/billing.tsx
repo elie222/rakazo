@@ -257,6 +257,9 @@ export default function BillingScreen() {
           }
         >
           <SettingsRow title={t`Computer hours left`} value={String(status.computerHoursLeft)} />
+          {status.computerHoursResetAt ? (
+            <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
+          ) : null}
           {endTrial ? (
             <SettingsRow
               title={t`Start plan now`}

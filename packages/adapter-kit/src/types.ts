@@ -6,6 +6,7 @@ import type {
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
+  VoiceAccountErrorCode,
 } from "@rakazo/contracts";
 
 export interface AdapterContext {
@@ -790,6 +791,8 @@ export interface VoiceCapabilities {
 export interface VoiceVerifyResult {
   ok: boolean;
   message?: string;
+  /** Set when the provider refused the account, as a request with the key would be. */
+  code?: VoiceAccountErrorCode;
 }
 
 export interface VoiceSynthesizeRequest {

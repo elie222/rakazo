@@ -17,6 +17,7 @@ import { ComposerReplyPreview } from "../composer-reply-preview";
 import { GlassSurface } from "../glass-surface";
 import { NativeSymbol } from "../native-symbol";
 import { ReplyDismissButton } from "../reply-dismiss-button";
+import { ThreadEdgeFade } from "./thread-edge-fade";
 
 /**
  * Holds the composer above the keyboard, with the reply being written and the draft's
@@ -75,12 +76,18 @@ export function ThreadComposerDock({
     },
     [],
   );
+  // On iOS the input rests just above the home indicator rather than a full safe area up.
   const composerRestingPadding =
-    Platform.OS === "ios" ? insets.bottom : Math.max(insets.bottom + 12, 24);
+    Platform.OS === "ios" ? Math.max(insets.bottom - 14, 8) : Math.max(insets.bottom + 12, 24);
   // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
   // dips into the home indicator and then jumps back up.
   const composerKeyboardPadding = useAnimatedStyle(() => ({
     paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
+  }));
+
+  // Ends about halfway up the input, following it as the keyboard moves.
+  const fadeHeight = useAnimatedStyle(() => ({
+    height: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]) + 22,
   }));
 
   const noticeHeight = useRef(0);
@@ -98,6 +105,7 @@ export function ThreadComposerDock({
         columnPadding,
       ]}
     >
+      {hidden ? null : <ThreadEdgeFade edge="bottom" style={fadeHeight} />}
       <View
         pointerEvents="box-none"
         onLayout={(event) => {

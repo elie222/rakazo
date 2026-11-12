@@ -40,7 +40,7 @@ export default function ChangePassword() {
 
   function close() {
     if (router.canGoBack()) router.back();
-    else router.replace("/account");
+    else router.replace("/profile");
   }
 
   async function save() {

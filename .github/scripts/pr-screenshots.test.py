@@ -126,6 +126,28 @@ class SpliceTest(unittest.TestCase):
         self.assertNotIn("\nnew\n", twice)
 
 
+class PromptTest(unittest.TestCase):
+    PR = {"title": "Fix", "body": "", "changed_files": ["apps/web/src/a.tsx"], "preview_url": "https://x"}
+
+    def test_keeps_a_small_diff_whole(self):
+        text = shots.prompt("Do it.", self.PR, "+line\n")
+        self.assertTrue(text.startswith("Do it.\n\n<pull_request>\n"))
+        self.assertTrue(text.endswith("<diff>\n+line\n\n</diff>\n"))
+
+    def test_fits_huge_inputs_in_one_environment_variable(self):
+        pr = {**self.PR, "body": "\u00e9\"" * 70_000, "changed_files": [f"f{i}" for i in range(5000)]}
+        text = shots.prompt("Do it.", pr, '"\\\n' * 200_000)
+        self.assertLessEqual(len(json.dumps(text)), shots.MAX_PROMPT_JSON)
+        self.assertLess(len(json.dumps(text, ensure_ascii=False).encode()), 128 * 1024)
+        self.assertTrue(text.endswith("\n</diff>\n"))
+        self.assertIn('"f299"', text)
+        self.assertNotIn('"f300"', text)
+
+
+    def test_an_emoji_body_alone_cannot_overflow(self):
+        text = shots.prompt("Do it.", {**self.PR, "body": "\U0001f600" * 8_000}, "")
+        self.assertLessEqual(len(json.dumps(text)), shots.MAX_PROMPT_JSON)
+
 class CliTest(unittest.TestCase):
     def test_prepare_writes_uploads_and_section(self):
         with tempfile.TemporaryDirectory() as directory:

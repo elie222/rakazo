@@ -2,6 +2,7 @@ import {
   COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -704,12 +705,13 @@ it.each([
   });
 });
 
-it.each([COMPUTER_RATE_LIMIT_ERROR, COMPUTER_PROVIDER_UNAVAILABLE_ERROR])(
-  "shows the computer error %j as written",
-  (message) => {
-    expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
-  },
-);
+it.each([
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+])("shows the computer error %j as written", (message) => {
+  expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
+});
 
 it("sends spent computer hours to billing", () => {
   expect(normalizeRunError(COMPUTER_ALLOWANCE_USED_ERROR)).toEqual({

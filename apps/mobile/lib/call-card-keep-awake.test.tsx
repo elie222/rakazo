@@ -124,7 +124,8 @@ vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
-  setVoiceBackgroundPlayback: vi.fn(),
+  setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
 }));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({
@@ -146,6 +147,7 @@ const deps: CallDeps = {
   speak: async () => undefined,
   watch: () => vi.fn(),
   stopSpeaking: vi.fn(),
+  audio: async () => undefined,
   cue: async () => undefined,
   waitSound: vi.fn(),
 };

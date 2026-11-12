@@ -556,6 +556,7 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
       },
     ],
     mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
+    page: [{ kind: "page", pageId: "page-1", version: 1, title: "Plan" }],
     options: [
       {
         kind: "ask",
@@ -585,7 +586,7 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  for (const kind of ["appConnect", "mcpApproval", "options"] as const) {
+  for (const kind of ["appConnect", "mcpApproval", "options", "page"] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");
     expect(card.maxWidth).toBe("90%");

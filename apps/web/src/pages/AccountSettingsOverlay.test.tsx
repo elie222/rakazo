@@ -29,6 +29,8 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
     <label htmlFor={htmlFor}>{children}</label>
   ),
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
+  NativeSelect: (props: React.ComponentProps<"select">) => <select {...props} />,
+  NativeSelectOption: (props: React.ComponentProps<"option">) => <option {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
@@ -64,10 +66,8 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
       {children}
     </button>
   ),
-  ToggleGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children?: ReactNode }) => (
-    <button type="button">{children}</button>
-  ),
+  ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
+  ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
   OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
     <div data-testid={testId} />
   ),
@@ -116,6 +116,7 @@ vi.mock("../lib/ui-appearance", () => ({
   setUiAppearance: vi.fn(),
 }));
 
+import { localTimezone } from "@rakazo/core";
 import { authClient } from "../lib/auth";
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
@@ -128,6 +129,44 @@ import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOver
 afterEach(() => {
   localStorage.clear();
 });
+
+it.each([undefined, null, "device", "different"])(
+  "only offers the device timezone when the selected timezone differs (%s)",
+  async (saved) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const deviceTimezone = localTimezone();
+    const timezone =
+      saved === "device"
+        ? deviceTimezone
+        : saved === "different"
+          ? deviceTimezone === "UTC"
+            ? "Europe/London"
+            : "UTC"
+          : saved;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <GeneralSettingsPanels
+            name="Test"
+            timezone={timezone}
+            onTimezoneChange={async () => {}}
+          />,
+        ),
+      );
+      expect(
+        container.querySelector<HTMLSelectElement>('[data-testid="timezone-select"]')?.value,
+      ).toBe(timezone ?? deviceTimezone);
+      expect(Boolean(container.querySelector('[data-testid="timezone-use-device"]'))).toBe(
+        saved === "different",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("flips the stored tool activity preference from the settings toggle", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -575,5 +614,30 @@ it("closes the name editor before refresh finishes and ignores a refresh failure
     expect(editor.card.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await editor.cleanup();
+  }
+});
+
+it("keeps bot style available without a saved value and saves an explicit Original choice", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const onChange = vi.fn(async () => {});
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<GeneralSettingsPanels name="Tester" onBotAvatarSetChange={onChange} />);
+    });
+    const picker = container.querySelector('[data-testid="bot-style-select"]');
+    expect(picker).not.toBeNull();
+    const original = Array.from(picker!.querySelectorAll("button")).find(
+      (button) => button.textContent === "Original",
+    )!;
+    expect(original.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => original.click());
+    expect(onChange).toHaveBeenCalledWith("organic");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
   }
 });

@@ -2,9 +2,9 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
+  isDeliveryMessage,
   plainTextFromMarkdown,
 } from "@rakazo/core";
-
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
@@ -75,6 +75,8 @@ export async function withLatestBotRuns<T extends { thread: { id: string } | nul
 
 export function previewFromBlocks(blocks: unknown): string {
   const rows = Array.isArray(blocks) ? blocks : [];
+  // A delivery's text is the bot's prompt, hidden in chat.
+  if (isDeliveryMessage(rows)) return "";
   for (const block of rows) {
     if (
       block &&
