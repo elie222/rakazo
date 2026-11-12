@@ -21,6 +21,7 @@ import {
   isRunWorking,
   newClientId,
   otherAuthor,
+  waitingOnAskMessages,
   workingRoutineName,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
@@ -608,9 +609,16 @@ function SpaceShell() {
       ? snapshot
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
-  const answerableAskIds = useMemo(() => answerableAskMessageIds(activeSnapshot), [activeSnapshot]);
+  const answerableAskIds = useMemo(
+    () => answerableAskMessageIds(activeSnapshot, userId),
+    [activeSnapshot, userId],
+  );
   const dismissableAskIds = useMemo(
     () => dismissableAskMessageIds(activeSnapshot, userId),
+    [activeSnapshot, userId],
+  );
+  const waitingOnAsks = useMemo(
+    () => waitingOnAskMessages(activeSnapshot, userId),
     [activeSnapshot, userId],
   );
   const workingRuns = currentRuns.filter((run) => isRunWorking(run.status));
@@ -1109,6 +1117,7 @@ function SpaceShell() {
               loadingOlder={loadingOlder}
               answerableAskIds={answerableAskIds}
               dismissableAskIds={dismissableAskIds}
+              waitingOnAsks={waitingOnAsks}
               running={transcriptRunning}
               workingBots={workingBots}
               workingRoutine={workingRoutineName(workingRuns)}

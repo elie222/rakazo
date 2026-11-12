@@ -12,6 +12,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
+  AnswerNotRunUserError,
   AnswerTooLongError,
   appendEventInTransaction,
   createExternalConversationRepos,
@@ -640,6 +641,9 @@ export function threadsRoutes(ctx: RouterContext) {
           .catch((error: unknown) => {
             if (error instanceof AnswerTooLongError)
               throw new ORPCError("BAD_REQUEST", { message: error.message });
+            // In a shared space a card is answered only by the person whose run asked it.
+            if (error instanceof AnswerNotRunUserError)
+              throw new ORPCError("FORBIDDEN", { message: error.message });
             // A typed credential its destination cannot carry (e.g. a header with a line break).
             throw mapBotSecretInputError(error);
           });

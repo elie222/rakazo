@@ -9,6 +9,7 @@ import {
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
+  waitingOnAskMessages,
 } from "@rakazo/core";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ListRenderItemInfo } from "react-native";
@@ -104,8 +105,9 @@ export function useThreadRows({
   const { t } = useLingui();
   const locale = useUiLocale();
   const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;
-  const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
+  const answerableAskIds = useMemo(() => answerableAskMessageIds(snap, userId), [snap, userId]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
+  const waitingOnAsks = useMemo(() => waitingOnAskMessages(snap, userId), [snap, userId]);
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
   const unreadDividerId = useMemo(
     () => unreadDividerMessageId(visibleMessages, readSeq, snap?.olderCursor ?? null, userId),
@@ -160,6 +162,7 @@ export function useThreadRows({
           onCall={onCall}
           canAnswer={!readOnly && answerableAskIds.has(message.id)}
           canDismiss={dismissableAskIds.has(message.id)}
+          waitingOn={readOnly ? undefined : waitingOnAsks.get(message.id)}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
           headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}
@@ -211,6 +214,7 @@ export function useThreadRows({
       onCall,
       answerableAskIds,
       dismissableAskIds,
+      waitingOnAsks,
       highlightedMessageId,
       separatorIds,
       visibleMessages[0]?.id,

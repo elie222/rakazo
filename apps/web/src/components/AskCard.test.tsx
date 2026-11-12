@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import type { LoginFieldInput } from "@rakazo/contracts";
+import type { AskWaitingOn } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -399,6 +400,88 @@ it("dims a closed question's options without a status line", async () => {
   );
   expect(button("AParis")!.disabled).toBe(true);
   expect(container.textContent).not.toContain("No longer active");
+});
+
+describe("another member's card in a shared space", () => {
+  const approval: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Review before web_fetch",
+    site: "example.net",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+
+  async function renderFor(
+    block: AskBlock,
+    viewer: { canAnswer: boolean; waitingOn?: AskWaitingOn },
+    onAnswer: (text: string) => Promise<void> = async () => undefined,
+  ) {
+    await act(async () =>
+      root.render(
+        <AskCard
+          block={block}
+          canDismiss={false}
+          onAnswer={onAnswer}
+          onDismiss={async () => undefined}
+          {...viewer}
+        />,
+      ),
+    );
+  }
+
+  it("keeps the approval's choices in place, disabled, and says who it waits on", async () => {
+    const onAnswer = vi.fn(async () => undefined);
+    await renderFor(
+      approval,
+      { canAnswer: false, waitingOn: { userId: "casey", name: "Casey" } },
+      onAnswer,
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.map((item) => [item.textContent, item.disabled])).toEqual([
+      ["Allow once", true],
+      ["Always allow example.net", true],
+      ["Deny", true],
+    ]);
+    expect(container.textContent).toContain("Waiting on Casey");
+    expect(container.textContent).not.toContain("No longer active");
+    await act(async () => buttons[0]!.click());
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("lets the run's own user answer as before", async () => {
+    const onAnswer = vi.fn(async () => undefined);
+    await renderFor(approval, { canAnswer: true }, onAnswer);
+    expect(button("Allow once")!.disabled).toBe(false);
+    expect(container.textContent).not.toContain("Waiting on");
+    await act(async () => button("Allow once")!.click());
+    expect(onAnswer).toHaveBeenCalledWith("allow");
+  });
+
+  it("dims a question's options and says who it waits on", async () => {
+    await renderFor(
+      {
+        kind: "ask",
+        text: "Which city?",
+        status: "pending",
+        actions: [{ id: "paris", label: "Paris" }],
+      },
+      { canAnswer: false, waitingOn: { userId: "casey", name: "Casey" } },
+    );
+    expect(button("AParis")!.disabled).toBe(true);
+    expect(container.textContent).toContain("Waiting on Casey");
+  });
+
+  it("says only the person who started it can answer a secret card when their name is not loaded", async () => {
+    await renderFor(secretCard, { canAnswer: false, waitingOn: { userId: "casey" } });
+    expect(container.querySelector("input")).toBeNull();
+    expect(container.textContent).toContain("Only the person who started this can answer it");
+    expect(container.textContent).not.toContain("No longer active");
+  });
 });
 
 it("letters question options and fills them only on hover", async () => {

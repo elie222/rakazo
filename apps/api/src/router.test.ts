@@ -39,6 +39,7 @@ import {
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  AnswerNotRunUserError,
   AnswerTooLongError,
   configureProviderTransactionPool,
   Prisma,
@@ -1104,6 +1105,72 @@ describe("oversized one-time answer", () => {
     const body = await response.text();
     expect(body).toContain("This answer is too long.");
     expect(body).not.toContain("fake-code-");
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("answering another member's card", () => {
+  it.each([
+    [
+      "another member's waiting card",
+      () => Promise.reject(new AnswerNotRunUserError()),
+      403,
+      "Only the person who started this can answer it",
+    ],
+    [
+      "a card that is no longer waiting",
+      () => Promise.resolve(false),
+      409,
+      "This prompt is no longer awaiting an answer",
+    ],
+  ])("refuses %s with its own reason", async (_name, answered, status, message) => {
+    const answerRunInput = vi.fn(answered);
+    const enqueue = vi.fn();
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          thread: { id: "thread-1" },
+          computer: null,
+        }),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      events: { answerRunInput },
+      jobs: { enqueue },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-2",
+      email: "member@example.test",
+      isDeploymentOwner: false,
+    } satisfies Actor;
+    const response = await handle(
+      new RPCHandler(createRouter(deps)),
+      new Request("http://127.0.0.1/rpc/threads/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          json: { botId: "bot-1", runId: "run-1", messageId: "message-1", answer: "allow" },
+        }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(status);
+    await expect(response.text()).resolves.toContain(message);
+    expect(answerRunInput).toHaveBeenCalledWith(
+      expect.objectContaining({ answeredByUserId: "user-2" }),
+    );
     expect(enqueue).not.toHaveBeenCalled();
   });
 });

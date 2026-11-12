@@ -22,6 +22,7 @@ import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
 import type { AnswerRunInput } from "./thread-ask.js";
 import {
+  AnswerNotRunUserError,
   AnswerTooLongError,
   answerRunInput,
   answerWaitingRunWithTextInTransaction,
@@ -2612,19 +2613,32 @@ describe("answerRunInput approvals", () => {
             },
           ],
         }),
-        update: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
       run: {
         findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
-        updateMany: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
       },
-      externalEffect: { findFirst: vi.fn(), update: vi.fn() },
+      task: { updateMany: vi.fn() },
+      externalEffect: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "effect-1", kind: "connector_write", status: "intended" }),
+        update: vi.fn().mockResolvedValue({ id: "effect-1" }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
-
-    await expect(
+    const answer = (answeredByUserId: string) =>
       answerRunInput(
         prisma,
         {
@@ -2632,14 +2646,28 @@ describe("answerRunInput approvals", () => {
           threadId: "thread-1",
           runId: "run-1",
           messageId: "message-1",
-          answeredByUserId: "user-2",
+          answeredByUserId,
           answer: "allow",
         },
         new TestFanout(),
-      ),
-    ).resolves.toBe(false);
+      );
+
+    // Another member is told the card is not theirs, not that it is stale, and nothing is written.
+    await expect(answer("user-2")).rejects.toThrow(AnswerNotRunUserError);
+    expect(tx.message.findFirst).not.toHaveBeenCalled();
     expect(tx.externalEffect.update).not.toHaveBeenCalled();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.event.create).not.toHaveBeenCalled();
+
+    await expect(answer("user-1")).resolves.toBe(true);
+    expect(tx.externalEffect.update).toHaveBeenCalledWith({
+      where: { id: "effect-1" },
+      data: { status: "approved" },
+    });
+
+    // A card whose run is no longer waiting stays a stale answer for everyone.
+    tx.run.findFirst.mockResolvedValue(null);
+    await expect(answer("user-2")).resolves.toBe(false);
   });
 
   it.each([
@@ -2938,7 +2966,7 @@ describe("answerRunInput approvals", () => {
         answeredByUserId: "other-member",
         answer: "always",
       }),
-    ).resolves.toBe(false);
+    ).rejects.toThrow(AnswerNotRunUserError);
 
     expect(tx.run.updateMany).not.toHaveBeenCalled();
     expect(tx.actionApprovalRule.upsert).not.toHaveBeenCalled();
@@ -2973,7 +3001,7 @@ describe("answerRunInput approvals", () => {
         answeredByUserId: "other-member",
         answer: "Paris",
       }),
-    ).resolves.toBe(false);
+    ).rejects.toThrow(AnswerNotRunUserError);
 
     expect(tx.run.updateMany).not.toHaveBeenCalled();
     expect(tx.task.updateMany).not.toHaveBeenCalled();
@@ -3000,7 +3028,7 @@ describe("answerRunInput approvals", () => {
         }),
       },
       run: {
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1" }),
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         updateMany: vi.fn(),
       },
       externalEffect: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -3043,7 +3071,7 @@ describe("answerRunInput approvals", () => {
         }),
       },
       run: {
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1" }),
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         updateMany: vi.fn(),
       },
       externalEffect: { findFirst: vi.fn() },
@@ -3185,7 +3213,7 @@ describe("answerRunInput approvals", () => {
         }),
       },
       run: {
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1" }),
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         updateMany: vi.fn(),
       },
     };
@@ -3356,7 +3384,7 @@ describe("answerRunInput approvals", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(
+    const answered = expect(
       answerRunInput(
         prisma,
         {
@@ -3379,7 +3407,9 @@ describe("answerRunInput approvals", () => {
         new TestFanout(),
         { store },
       ),
-    ).resolves.toBe(accepted);
+    );
+    if (kind === "member") await answered.rejects.toThrow(AnswerNotRunUserError);
+    else await answered.resolves.toBe(accepted);
     if (!accepted) {
       expect(store).not.toHaveBeenCalled();
       return;
@@ -3423,8 +3453,8 @@ describe("answerRunInput approvals", () => {
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
-    expect(
-      await answerRunInput(
+    await expect(
+      answerRunInput(
         prisma,
         {
           spaceId: "workspace-1",
@@ -3437,7 +3467,7 @@ describe("answerRunInput approvals", () => {
         new TestFanout(),
         { store },
       ),
-    ).toBe(false);
+    ).rejects.toThrow(AnswerNotRunUserError);
     expect(store).not.toHaveBeenCalled();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
@@ -3517,7 +3547,7 @@ describe("answerRunInput approvals", () => {
 
     it("lets only the run's user answer", async () => {
       const { store, tx, answer } = codeCard();
-      await expect(answer("123456", "other-member")).resolves.toBe(false);
+      await expect(answer("123456", "other-member")).rejects.toThrow(AnswerNotRunUserError);
       expect(store).not.toHaveBeenCalled();
       expect(tx.run.updateMany).not.toHaveBeenCalled();
     });
@@ -3663,15 +3693,26 @@ describe("answerRunInput approvals", () => {
     });
 
     it.each([
-      ["another member of the space", { ownerId: "owner" }, {}],
+      ["another member of the space", { ownerId: "owner" }],
       [
         "another member, for a connector code",
         {
           ownerId: "owner",
           block: { kind: "ask", text: "Enter the code", input: "secret", status: "pending" },
         },
-        {},
       ],
+    ])("rejects a dismissal from %s", async (_name, options) => {
+      const h = setup(options);
+
+      await expect(h.dismiss()).rejects.toThrow(AnswerNotRunUserError);
+
+      expect(h.tx.run.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.externalEffect.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.message.update).not.toHaveBeenCalled();
+      expect(h.writer.store).not.toHaveBeenCalled();
+    });
+
+    it.each([
       [
         "a question card",
         {
@@ -5721,7 +5762,9 @@ describe("held instruction answers", () => {
       "always",
     ])
       expect(await f.answer(value)).toBe(false);
-    expect(await f.answer('{"instructions":"new"}', "other-user")).toBe(false);
+    await expect(f.answer('{"instructions":"new"}', "other-user")).rejects.toThrow(
+      AnswerNotRunUserError,
+    );
     expect(f.tx.externalEffect.update).not.toHaveBeenCalled();
     expect(f.tx.run.updateMany).not.toHaveBeenCalled();
   });

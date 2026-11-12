@@ -11,6 +11,7 @@ import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AskBlock, AskCardProps } from "./AskCard";
+import { waitingOnLabel } from "./AskCard";
 import { BuiCard } from "./ai/primitives";
 import { siteHost, VaultTile } from "./vault/kinds";
 import { useVaultContacts } from "./vault/use-vault-contacts";
@@ -35,7 +36,14 @@ function CardEditor(props: Parameters<typeof VaultItemEditor>[0]) {
  * vault's own form; a code, key or variable is one field, typed right in the card. The value lives
  * only in this card's state and is cleared as soon as it is sent.
  */
-export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismiss }: AskCardProps) {
+export function SecretAskCard({
+  block,
+  canAnswer,
+  canDismiss,
+  waitingOn,
+  onAnswer,
+  onDismiss,
+}: AskCardProps) {
   const { t } = useLingui();
   const [answer, setAnswer] = useState("");
   const [accepted, setAccepted] = useState(false);
@@ -227,7 +235,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
       ) : null}
       {!answered && !canAnswer ? (
         <div className="mt-2.5 text-body font-medium text-muted-foreground">
-          <Trans>No longer active</Trans>
+          {waitingOn ? waitingOnLabel(waitingOn) : <Trans>No longer active</Trans>}
         </div>
       ) : null}
       {!answered && canAnswer && !ownerOnly && !form ? (
