@@ -161,6 +161,7 @@ node dist/cli/bot-email-policy.js deny owner@example.test reports@example.test
 node dist/cli/bot-email-policy.js limit owner@example.test 0
 ```
 
+`status` lists the approved addresses; mutating commands print only their count.
 Zero pauses all bot sending. Changes are recorded in the security audit log, including whether
 anything changed and the canonical recipient for `allow` and `deny`. These recipient identifiers
 remain in the protected database audit and follow its retention policy. No user or bot tool

@@ -95,6 +95,9 @@ try {
       process.stdout.write(
         `Daily recipient allowance: ${policy.botEmailDailyLimit}\nExternal replies: ${policy.botEmailRepliesEnabled ? "on" : "off"}\nApproved recipients: ${policy.botEmailAllowedRecipients.length}\n`,
       );
+      if (action === "status")
+        for (const approved of policy.botEmailAllowedRecipients)
+          process.stdout.write(`${approved}\n`);
     }),
   );
 } finally {
