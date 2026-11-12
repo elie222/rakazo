@@ -1,5 +1,8 @@
+import { hideOneTimeCodeInEmail, REDACTED_MARK } from "@rakazo/contracts";
 import {
   createStreamingRedactor,
+  redactSecrets,
+  redactSecretsAfter,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -226,6 +229,18 @@ function fakeRun(
 }
 
 describe("read_email", () => {
+  // A search over hidden text leaves the mark out, so every writer of it must put the same one.
+  it("is shown one mark for a hidden value, whichever redactor hid it", () => {
+    const hidden = `before ${REDACTED_MARK} after`;
+    expect(redactSecrets("before secret-1234 after", ["secret-1234"])).toBe(hidden);
+    expect(redactSecretsAfter("before secret", "-1234 after", ["secret-1234"])).toBe(
+      `${REDACTED_MARK} after`,
+    );
+    const stream = createStreamingRedactor(["secret-1234"]);
+    expect(stream.push("before secret-1234 after") + stream.finish()).toBe(hidden);
+    expect(hideOneTimeCodeInEmail("before 4 8 2 9 1 3 after", "482913")).toBe(hidden);
+  });
+
   it("lists the newest mail as untrusted data", async () => {
     const { call } = fakeRun([
       row({ id: "old", receivedAt: new Date("2026-11-01T00:00:00.000Z"), subject: "Old" }),

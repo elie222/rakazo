@@ -1,11 +1,12 @@
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
+import { INBOX_DAILY_LIMIT } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { EmailInboundDeps } from "./email-inbound.js";
-import { INBOUND_EMAIL_PATH, INBOX_DAILY_LIMIT, mountEmailInboundRoute } from "./email-inbound.js";
+import { INBOUND_EMAIL_PATH, mountEmailInboundRoute } from "./email-inbound.js";
 
 const SECRET = "inbound-email-test-secret-at-least-32";
 const DOMAIN = "bots.test";

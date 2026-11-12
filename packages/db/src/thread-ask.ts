@@ -28,6 +28,7 @@ import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import type { Prisma, PrismaClient } from "./client.js";
+import { noteCodeAnswered } from "./code-requests.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
@@ -417,6 +418,10 @@ async function commitAnswerRunInput(
     });
     if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
+    // A code card: noted with when it was answered, and no code is taken from mail for the
+    // run's bot or user while this answer is under way.
+    if (pendingAsk.oneTimeCode)
+      await noteCodeAnswered(tx, { botId: run.botId, userId: run.userId }, secretRequest);
     await input.claimEmail?.(tx);
     await runSecretWriter!.store({
       botId: run.botId,

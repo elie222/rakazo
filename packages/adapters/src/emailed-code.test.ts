@@ -1,11 +1,19 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { promises as dnsPromises } from "node:dns";
-import type { ConnectedConnector, ConnectedMailListing } from "@rakazo/adapter-kit";
+import type {
+  ConnectedConnector,
+  ConnectedMailListing,
+  ConnectedMailSource,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { CODE_REQUEST_LIMIT, installAuditEventStore } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { dkimSign } from "mailauth";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ComposioConnector } from "./composio-connector.js";
+import { FakeComposioClient } from "./composio-fake.js";
+import { composioMailSource } from "./composio-mail.js";
+import { ConnectorRegistry } from "./connector-registry.js";
 import {
   answerCodeCardsFromInbox,
   CONNECTED_MAIL_LIMIT,
@@ -76,6 +84,10 @@ function inbox(
     /** The owner's connections in the Space, and what each one's mailbox holds. */
     connections?: Row[];
     connected?: { recent?: Recent } | Error;
+    /** The real source of readers, in place of the mailbox above. */
+    source?: ConnectedMailSource;
+    /** The inbox is encrypted: its mail is found by the hashed words it holds, not by its text. */
+    encrypted?: boolean;
     /** Whether the bot may read the owner's connected mail for codes. */
     connectedMailCodes?: boolean;
     /** The owner turned that off after the attempt started. */
@@ -189,6 +201,13 @@ function inbox(
   );
   const enqueue = vi.fn(async (_job: unknown) => undefined);
   const prisma: Record<string, unknown> = {
+    ...(options.encrypted
+      ? {
+          $contentEncryption: () => ({
+            messageSearchTokens: async (_spaceId: string, text: string) => [hashedWords(text)],
+          }),
+        }
+      : {}),
     run: {
       findMany: vi.fn(async ({ where }: { where: Row & { id?: string | { not: string } } }) =>
         runs.filter(
@@ -254,17 +273,32 @@ function inbox(
         skip,
         take,
       }: {
-        where: { id?: { in: string[] }; receivedAt: { gte: Date; lte: Date } };
+        where: {
+          id?: { in: string[] };
+          receivedAt: { gte: Date; lte: Date };
+          OR?: Array<{ fromAddress?: { contains: string }; searchTokens?: { hasEvery: number[] } }>;
+        };
         cursor?: { id: string };
         skip?: number;
         take?: number;
       }) => {
         if (where.id) return emails.filter((email) => where.id?.in.includes(String(email.id)));
+        // As the database narrows them: an encrypted email by the hashed words it holds, a
+        // plaintext one by what its sender's address holds.
+        const named = (email: Row) =>
+          !where.OR ||
+          where.OR.some(({ fromAddress, searchTokens }) =>
+            options.encrypted
+              ? searchTokens?.hasEvery.every((token) => wordTokens(email).includes(token))
+              : fromAddress &&
+                String(email.fromAddress).toLowerCase().includes(fromAddress.contains),
+          );
         const inWindow = emails
           .filter(
             (email) =>
               (email.receivedAt as Date) >= where.receivedAt.gte &&
-              (email.receivedAt as Date) <= where.receivedAt.lte,
+              (email.receivedAt as Date) <= where.receivedAt.lte &&
+              named(email),
           )
           .sort((a, b) => (b.receivedAt as Date).getTime() - (a.receivedAt as Date).getTime());
         const start = cursor ? inWindow.findIndex((email) => email.id === cursor.id) : 0;
@@ -330,7 +364,7 @@ function inbox(
         events: { answerRunInput } as never,
         jobs: { enqueue },
         botEmailDomain: "bots.test",
-        connectedMail: options.connectedMailCodes ? { readerFor } : undefined,
+        connectedMail: options.connectedMailCodes ? (options.source ?? { readerFor }) : undefined,
       },
       bot,
       runId,
@@ -351,7 +385,7 @@ function inbox(
         botEmailDomain: "bots.test",
         sources: {
           inbox: sources.inbox ?? true,
-          connected: sources.connected ? { readerFor } : undefined,
+          connected: sources.connected ? (options.source ?? { readerFor }) : undefined,
         },
       },
       // Kept in a transaction that makes the claim, as the code is stored.
@@ -379,6 +413,15 @@ function inbox(
     reads,
   };
 }
+
+/** The words of a text as a blind index keeps them: a number for each, telling nothing of it. */
+const hashedWords = (text: string) =>
+  (text.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []).map((word) =>
+    createHash("sha256").update(word).digest().readInt32BE(0),
+  );
+/** What the index holds of an email: the words of its sender, subject and text together. */
+const wordTokens = (email: Row) =>
+  hashedWords([email.fromAddress, email.fromName, email.subject, email.text].join("\n"));
 
 function mailConnection(overrides: Row = {}): Row {
   return {
@@ -764,7 +807,8 @@ describe("a code emailed to the bot while its run waits on the card", () => {
       receivedAt: ago(50_000 - index),
     }));
   it("reads no more of the inbox than its read limit, and leaves the card past it", async () => {
-    const other = others(EMAIL_READ_LIMIT, (index) => `news-${index}@elsewhere.test`);
+    // Mail whose senders hold the site's name, though none is the site's: all of it is read.
+    const other = others(EMAIL_READ_LIMIT, (index) => `news-${index}@example.test.elsewhere.test`);
     const { deliver, answerRunInput, prisma } = inbox({
       emails: [
         codeEmail({ receivedAt: ago(60 * 1000) }),
@@ -783,6 +827,49 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
     const read = (await Promise.all(findMany.mock.results.map((result) => result.value))).flat();
     expect(read.length).toBeLessThanOrEqual(EMAIL_READ_LIMIT);
+  });
+
+  // BOUNDS: the read limit is on mail that names the site. The query asks for no other, so mail
+  // that does not name it, however much, is neither read nor counted, whether the inbox is
+  // encrypted (found by the hashed words it holds) or not (by its sender's address).
+  it.each<[inbox: string, encrypted: boolean]>([
+    ["a plaintext inbox", false],
+    ["an encrypted inbox", true],
+  ])("in %s, takes the site's code beside more unrelated mail than a look reads", async (_, on) => {
+    const other = others(EMAIL_READ_LIMIT + 50, (index) => `news-${index}@elsewhere.org`);
+    const { deliver, prisma } = inbox({
+      encrypted: on,
+      emails: [
+        codeEmail({ receivedAt: ago(60 * 1000) }),
+        ...other.map((mail) =>
+          codeEmail({
+            id: mail.id,
+            key: `dkim:${mail.id}`,
+            fromAddress: mail.from,
+            fromName: "News",
+            text: "This week's letter.",
+            receivedAt: mail.receivedAt,
+          }),
+        ),
+      ],
+    });
+    const findMany = vi.spyOn(prisma.botEmailMessage as { findMany: () => unknown }, "findMany");
+    await expect(deliver()).resolves.toBe(1);
+    // Only the site's own email was ever read from the inbox.
+    const read = (await Promise.all(findMany.mock.results.map((result) => result.value))).flat();
+    expect(new Set(read.map((email) => (email as Row).id))).toEqual(new Set(["email-1"]));
+  });
+
+  it("narrows nothing for a site whose name can be written in two ways", async () => {
+    const page = "https://login.xn--bcher-kva.test";
+    const { deliver, prisma } = inbox({
+      cards: { "run-1": codeCard(page) },
+      emails: [codeEmail({ fromAddress: "no-reply@xn--bcher-kva.test" })],
+    });
+    const findMany = vi.spyOn(prisma.botEmailMessage as { findMany: () => unknown }, "findMany");
+    await expect(deliver()).resolves.toBe(1);
+    const [scan] = findMany.mock.calls[0] as unknown as [{ where: Row }];
+    expect(scan.where).not.toHaveProperty("OR");
   });
 
   it.each<[source: string, newerFromOthers: number]>([
@@ -1709,7 +1796,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
           codeEmail({
             id: `other-${index}`,
             key: `dkim:other-${index}`,
-            fromAddress: `news-${index}@elsewhere.test`,
+            fromAddress: `news-${index}@example.test.elsewhere.test`,
             receivedAt: ago(5 * 1000 + index),
           }),
         ),
@@ -1834,6 +1921,126 @@ describe("a code the site emailed to the mail the owner connected", () => {
       expect(JSON.stringify(rows)).not.toContain(CODE);
     },
   );
+
+  // WHICH MAILBOXES a look reads: the owner's own connections in the run's Space that are
+  // connected now and name the one account their provider is to read, asked afresh on every
+  // look. Read through the real reader over a provider's fake, so what is asserted is what the
+  // provider was asked, and as which account.
+  describe("through the provider, of the owner's connections", () => {
+    const audited = () => {
+      const rows: Row[] = [];
+      installAuditEventStore({
+        auditEvent: { createMany: async ({ data }: { data: Row[] }) => rows.push(...data) },
+        space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+        user: { findUnique: async () => null },
+        member: { findMany: async () => [] },
+      } as never);
+      return rows;
+    };
+    afterEach(() => installAuditEventStore(undefined));
+    /** The owner's mailbox at the provider, holding the site's code, and a reader source. */
+    const provider = async () => {
+      publishKeys();
+      vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+      const client = new FakeComposioClient();
+      const account = client.connect(bot.userId, "GMAIL");
+      // A newer account of the owner's at the same provider, never connected in this Space.
+      const unconnected = client.connect(bot.userId, "GMAIL");
+      client.mailboxFor(bot.userId)!.address = "owner@example.net";
+      const code = await connectedMail();
+      client.receiveMail(bot.userId, new TextDecoder().decode(code.raw), new Date());
+      const source = composioMailSource(new ConnectorRegistry([new ComposioConnector({ client })]));
+      /** The accounts the provider was told to act as, for the owner. */
+      const actedAs = () =>
+        client.created
+          .filter(({ userId }) => userId === bot.userId)
+          .map(({ config }) => Object.values(config.connectedAccounts ?? {}).flat());
+      return { client, account, unconnected, code, source, actedAs };
+    };
+    const legacy = (id: string, providerRef: string | null) =>
+      mailConnection({ id, providerRef, displayName: id });
+
+    it("reads the one that names its account, and none that lets the provider pick", async () => {
+      const { client, account, unconnected, code, source, actedAs } = await provider();
+      const rows = audited();
+      const { deliver, effects } = inbox({
+        emails: [],
+        connectedMailCodes: true,
+        source,
+        connections: [
+          legacy("connection-0", null),
+          mailConnection({ providerRef: account }),
+          legacy("connection-2", "gmail"),
+          legacy("connection-3", " GMAIL "),
+        ],
+      });
+      expect(await deliver("run-1")).toBe(1);
+      expect(effects.has(await claimOf(code))).toBe(true);
+      // Every call went out as that one account, never as whichever the provider would pick.
+      expect(client.executions.length).toBeGreaterThan(0);
+      expect(actedAs().length).toBeGreaterThan(0);
+      for (const accounts of actedAs()) expect(accounts).toEqual([account]);
+      expect(JSON.stringify(client.created)).not.toContain(unconnected);
+      expect(rows.map((row) => row.targetId)).toEqual(["connection-1"]);
+    });
+
+    it("reads nothing, and leaves the card, when none names its account", async () => {
+      const { client, source, actedAs } = await provider();
+      const rows = audited();
+      const { deliver, answerRunInput } = inbox({
+        emails: [],
+        connectedMailCodes: true,
+        source,
+        connections: [legacy("connection-0", null), legacy("connection-2", "gmail")],
+      });
+      expect(await deliver("run-1")).toBe(0);
+      expect(answerRunInput).not.toHaveBeenCalled();
+      expect(client.executions).toEqual([]);
+      expect(actedAs()).toEqual([]);
+      expect(rows).toEqual([]);
+    });
+
+    it.each<
+      [change: string, apply: (world: Awaited<ReturnType<typeof provider>>, row: Row) => void]
+    >([
+      ["revoked", (_world, row) => Object.assign(row, { status: "revoked" })],
+      ["waiting to be connected again", (_world, row) => Object.assign(row, { status: "pending" })],
+      ["removed", (_world, row) => Object.assign(row, { gone: true })],
+      ["expired at the provider", ({ client, account }) => client.setStatus(account, "EXPIRED")],
+    ])("reads no mailbox whose connection was %s since the last look", async (_change, apply) => {
+      const world = await provider();
+      const row = mailConnection({ providerRef: world.account });
+      // The first look finds a card for another page, so it takes nothing; it did read.
+      const connections = [row];
+      const { deliver, prisma, answerRunInput } = inbox({
+        emails: [],
+        connectedMailCodes: true,
+        source: world.source,
+        connections,
+        cards: { "run-1": codeCard("https://login.elsewhere.test") },
+      });
+      expect(await deliver("run-1")).toBe(0);
+      const before = world.client.executions.length;
+      expect(before).toBeGreaterThan(0);
+      apply(world, row);
+      prisma.connection.findMany.mockImplementation(async () =>
+        connections.filter((connection) => !connection.gone),
+      );
+      expect(await deliver("run-1")).toBe(0);
+      expect(answerRunInput).not.toHaveBeenCalled();
+      // Nothing more was read from the mailbox.
+      expect(world.client.executions.length).toBe(before);
+    });
+
+    it("asks only for the owner's own connections in the run's Space", async () => {
+      const { source } = await provider();
+      const { deliver, prisma } = inbox({ emails: [], connectedMailCodes: true, source });
+      await deliver("run-1");
+      expect(prisma.connection.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: "user-1", spaceId: "space-1" } }),
+      );
+    });
+  });
 
   // BOUNDS: a look reads at most CONNECTED_MAIL_MAX_BYTES of mail in all, and only mail that
   // may be the site's is read or counted: what the mailbox lists from another sender, before

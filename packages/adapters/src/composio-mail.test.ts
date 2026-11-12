@@ -10,7 +10,13 @@ const USER = "user-1";
 /** What one read may hold, in bytes, unless a test is about that. */
 const maxBytes = 1024 * 1024;
 /** A mail connection and a call's context, for a reader over a stubbed provider. */
-const CONNECTION = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
+const CONNECTION = {
+  id: "c",
+  connectorId: "composio",
+  externalId: "GMAIL",
+  displayName: "",
+  providerRef: "ca_1",
+};
 const stubContext = () => ({
   operationId: "x",
   traceId: "x",
@@ -60,12 +66,40 @@ function setup() {
 }
 
 describe("composioMailSource", () => {
-  it("reads only the mail connections it knows", () => {
+  // Which connections get a reader: a mail connection of this connector that names the one
+  // account to read. One that names none (older rows hold nothing, or the provider's own name)
+  // could not be held to an account, and the provider would read whichever mailbox it picks.
+  it.each<[connection: string, change: Record<string, unknown>, read: boolean]>([
+    ["a mail connection that names its account", {}, true],
+    ["a connection to another app", { externalId: "github" }, false],
+    ["another connector's mail connection", { connectorId: "pipedream" }, false],
+    ["a mail connection that names no account", { providerRef: undefined }, false],
+    ["a mail connection whose account is blank", { providerRef: "  " }, false],
+    ["a mail connection that names the provider, not an account", { providerRef: "gmail" }, false],
+    ["a mail connection that names the provider in capitals", { providerRef: " GMAIL " }, false],
+  ])("for %s, gives a reader: %s", (_connection, change, read) => {
     const { source } = setup();
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
-    expect(source.readerFor(connection)).toBeDefined();
-    expect(source.readerFor({ ...connection, externalId: "github" })).toBeUndefined();
-    expect(source.readerFor({ ...connection, connectorId: "pipedream" })).toBeUndefined();
+    expect(source.readerFor({ ...CONNECTION, ...change }) !== undefined).toBe(read);
+  });
+
+  it("holds every call it makes to the account its connection names", async () => {
+    const { client, reader, context } = setup();
+    // The user has a newer account of the same provider, which was not connected here.
+    const newer = client.connect(USER, "GMAIL");
+    client.receiveMail(USER, rawMail("a@example.com", "Code", new Date()));
+    await reader.mailbox(context);
+    const query = { fromDomain: "example.com", after: new Date(Date.now() - 60_000), limit: 5 };
+    const { messages } = await reader.recent(context, query);
+    await reader.read(context, messages[0]!.id, maxBytes);
+    expect(client.executions.length).toBeGreaterThanOrEqual(4);
+    // Every session opened for the user is held to that one account.
+    const sessions = client.created.filter(({ userId }) => userId === USER);
+    expect(sessions.length).toBeGreaterThan(0);
+    const account = context.connectedConnections![0]!.providerRef;
+    for (const { config } of sessions) {
+      expect(Object.values(config.connectedAccounts ?? {})).toEqual([[account]]);
+      expect(JSON.stringify(config)).not.toContain(newer);
+    }
   });
 
   it("names the mailbox it reads", async () => {
@@ -306,6 +340,30 @@ describe("composioMailSource", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("asks about a page's messages together, so other senders' mail costs one wait", async () => {
+    const ids = ["m1", "m2", "m3", "m4", "m5"];
+    let asked = 0;
+    let answer = () => {};
+    const all = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    // The provider answers about no message until it was asked about every one on the page.
+    const stub: Pick<ConnectorProvider, "execute"> = {
+      async *execute(call) {
+        if (call.tool === "GMAIL_FETCH_EMAILS") {
+          yield { type: "result", data: { data: { messages: ids.map((id) => ({ id })) } } };
+          return;
+        }
+        if (++asked === ids.length) answer();
+        await all;
+        yield { type: "result", data: { data: { sender: "a@other.test", internalDate: "1" } } };
+      },
+    };
+    const query = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    const page = await composioMailSource(stub).readerFor(CONNECTION)!.recent(stubContext(), query);
+    expect(page.messages.map(({ id }) => id)).toEqual(ids);
+  });
+
   it("makes no more calls once the look gave up, though the provider answers", async () => {
     const { client, registry, reader, context } = setup();
     for (const subject of ["One", "Two", "Three"])
@@ -371,10 +429,9 @@ describe("composioMailSource", () => {
         yield { type: "result", data: { data: { profile: {} } } };
       },
     };
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
     await expect(
       composioMailSource(stub)
-        .readerFor(connection)!
+        .readerFor(CONNECTION)!
         .mailbox({
           operationId: "x",
           traceId: "x",
@@ -391,8 +448,7 @@ describe("composioMailSource", () => {
         yield { type: "error", message: "rate limited" };
       },
     };
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
-    const reader = composioMailSource(failing).readerFor(connection)!;
+    const reader = composioMailSource(failing).readerFor(CONNECTION)!;
     const context = {
       operationId: "x",
       traceId: "x",

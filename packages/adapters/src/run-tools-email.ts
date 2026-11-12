@@ -3,17 +3,18 @@ import {
   BOT_EMAIL_NAME_TAKEN,
   BotEmailNameSchema,
   hideOneTimeCodeInEmail,
+  REDACTED_MARK,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, matchesSearchQuery, redactSecrets } from "@rakazo/core";
 import {
   claimBotEmailName,
-  contentEncryptionOf,
   reserveBotEmailSend,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { z } from "zod";
 import { RunCodeUnreadableError } from "./bot-secrets.js";
 import { maskPayload, redactConnectorPayload } from "./connector-safety.js";
+import { INBOX_SEARCHED_FIELDS, inboxMailHolding } from "./emailed-code.js";
 import type { RunContext } from "./run-context.js";
 import { hideRunEmailedCodes, isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
@@ -40,9 +41,6 @@ const LOOK_AGAIN_LIMIT = 3;
  * this server sets on its thread transactions (THREAD_LOCK_TRANSACTION_OPTIONS), plus a poll.
  */
 const LATE_SAVE_MS = THREAD_LOCK_TRANSACTION_OPTIONS.timeout + POLL_MS;
-const SEARCHED_FIELDS = ["fromAddress", "fromName", "subject", "text"] as const;
-/** What redactSecrets and hideOneTimeCodeInEmail put where a hidden value was. */
-const REDACTED_MARK = "[redacted]";
 /**
  * What the inbox itself writes about an email. Every other field the tool returns is the sender's
  * and is masked; masking these could only hint at a hidden value's characters.
@@ -72,28 +70,6 @@ function sender(email: { fromName: string; fromAddress: string }): string {
 }
 
 type SavedFile = { name: string; artifactId?: string; mimeType?: string; size?: number };
-
-/**
- * Plaintext mail matches the query inside any field. Encrypted mail matches on blind-index
- * prefix tokens and is checked against its decrypted fields afterwards (`check`), so text inside
- * a word only matches mail that is still plaintext, as in Space search.
- */
-async function emailQuery(ctx: RunContext, query: string) {
-  const plaintext = SEARCHED_FIELDS.map((field) => ({
-    [field]: { contains: query, mode: "insensitive" as const },
-  }));
-  const encryption = contentEncryptionOf(ctx.deps.prisma);
-  const keyTokens = encryption
-    ? await encryption.messageSearchTokens(ctx.bot.spaceId, query, "prefix")
-    : [];
-  // No keys: nothing in the Space was ever encrypted.
-  if (!keyTokens.length) return { where: { OR: plaintext }, check: false };
-  const tokenSets = keyTokens.filter((tokens) => tokens.length);
-  // No term long enough to be indexed: check the newest mail.
-  if (!tokenSets.length) return { where: {}, check: true };
-  const encrypted = tokenSets.map((tokens) => ({ searchTokens: { hasEvery: tokens } }));
-  return { where: { OR: [...encrypted, ...plaintext] }, check: true };
-}
 
 /** While a code the run took from mail cannot be read, no email is shown: any could hold it. */
 async function readEmail(ctx: RunContext, call: ToolCall) {
@@ -278,7 +254,10 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
         read.set(email.id, email.receivedAt);
         if (!readNewest || email.receivedAt > readNewest) readNewest = email.receivedAt;
         if (
-          matchesSearchQuery(query, ...SEARCHED_FIELDS.flatMap((field) => searchable(email[field])))
+          matchesSearchQuery(
+            query,
+            ...INBOX_SEARCHED_FIELDS.flatMap((field) => searchable(email[field])),
+          )
         )
           matches.push(email);
       }
@@ -290,14 +269,16 @@ async function readInbox(ctx: RunContext, call: ToolCall) {
   // Asked again on every look: a Space's first key can appear while the bot waits.
   const list = async () => {
     if (input.query && emailedCodes.length) return searchHidden(input.query);
-    const search = input.query ? await emailQuery(ctx, input.query) : undefined;
+    const search = input.query
+      ? await inboxMailHolding(deps.prisma, bot.spaceId, input.query, INBOX_SEARCHED_FIELDS)
+      : undefined;
     const found = await fetchEmails({
       where: { ...inWindow(), ...search?.where },
       take: search?.check ? SEARCH_CANDIDATES : limit,
     });
     if (!search?.check) return found;
     const matches = found.filter((email) =>
-      matchesSearchQuery(input.query!, ...SEARCHED_FIELDS.map((field) => email[field])),
+      matchesSearchQuery(input.query!, ...INBOX_SEARCHED_FIELDS.map((field) => email[field])),
     );
     if (input.since)
       checkedTo =

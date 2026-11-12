@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
+import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "./bot-email.js";
 import { Id } from "./ids.js";
 import { isCloudMetadataHost, isPrivateNetworkHost } from "./network-host.js";
 import { settingsScopeInput } from "./settings-scope.js";
@@ -305,6 +306,13 @@ export function oneTimeCodeWritings(code: string): string[] {
   return writings;
 }
 
+/**
+ * What stands where a hidden value was, in whatever hides one from a run: redactSecrets and the
+ * redactors beside it, and hideOneTimeCodeInEmail. A search over hidden text leaves it out, so
+ * every writer and every reader of the mark takes it from here.
+ */
+export const REDACTED_MARK = "[redacted]";
+
 // Whitespace (no-break and other Unicode spaces too), zero-width space, dots, dashes, middle dot.
 const SPELLING_SEPARATORS = String.raw`[\s\u200b.\p{Pd}\u00b7]*`;
 
@@ -317,7 +325,7 @@ const SPELLING_SEPARATORS = String.raw`[\s\u200b.\p{Pd}\u00b7]*`;
 export function hideOneTimeCodeInEmail(text: string, code: string): string {
   const characters = [...code.replaceAll("-", "")];
   if (!characters.length) return text;
-  return text.replace(new RegExp(characters.join(SPELLING_SEPARATORS), "giu"), "[redacted]");
+  return text.replace(new RegExp(characters.join(SPELLING_SEPARATORS), "giu"), REDACTED_MARK);
 }
 
 // Han, kana and Hangul text puts no space around a number, so those letters may touch a code.
@@ -939,13 +947,6 @@ export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: Re
 export const ONE_TIME_CODE_UNIT_LIMIT = 200;
 
 /**
- * How much of a subject and of a text is read for a code, in characters: what the inbox keeps of
- * a body. It bounds what reading one email can cost. A longer email gives no code: what was not
- * read could say the code expired or name another.
- */
-export const ONE_TIME_CODE_TEXT_LIMIT = 20_000;
-
-/**
  * A character that ends a unit inside a line: sentence and clause punctuation (Chinese, Japanese
  * and Hindi marks too), a bracket, a quote or a pipe. One character, so splitting never backs up;
  * "1,234" or "4.8.2" splits into pieces, none of which is a code, as none was.
@@ -1102,17 +1103,19 @@ function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
  * one could not be hidden. Without one it is `unclear` when it names a code all the same: it
  * writes several, or one too short to take, or has a sentence naming a code with a `stale` word
  * ("This code has expired", namesStaleCode), whether or not it also names a current one, or it
- * writes one and is longer than ONE_TIME_CODE_TEXT_LIMIT, of which only that much is read. An
- * unclear email leaves in doubt every code its sender wrote around then; one that names no
- * code, however long it is, does not.
+ * writes one and its subject or text is longer than what the inbox keeps of a body
+ * (INBOUND_EMAIL_TEXT_MAX_CHARS). Only that much of either is read, which bounds what reading
+ * one email can cost, and a longer email gives no code: what was not read could say the code
+ * expired or name another. An unclear email leaves in doubt every code its sender wrote around
+ * then; one that names no code, however long it is, does not.
  */
 export function readOneTimeCode(email: { subject: string; text: string }): {
   code?: string;
   unclear: boolean;
 } {
   const whole = [email.subject, email.text];
-  const parts = whole.map((part) => part.slice(0, ONE_TIME_CODE_TEXT_LIMIT));
-  const cut = whole.some((part) => part.length > ONE_TIME_CODE_TEXT_LIMIT);
+  const parts = whole.map((part) => part.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS));
+  const cut = whole.some((part) => part.length > INBOUND_EMAIL_TEXT_MAX_CHARS);
   if (parts.some((part) => sentences(part).some(namesStaleCode))) return { unclear: true };
   const codes = new Set<string>();
   const all = parts.flatMap(units);

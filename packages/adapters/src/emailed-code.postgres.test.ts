@@ -11,6 +11,7 @@ import {
   EmailedCodeTaken,
   emailedCodeWindow,
   findEmailedCode,
+  inboxMailHolding,
   notePageForEmailedCode,
   takeEmailedCode,
 } from "./emailed-code.js";
@@ -402,39 +403,46 @@ postgres("emailed code claims (PostgreSQL)", () => {
   /** A mailbox as each connection to it reads it; `read` names the messages it handed over. */
   const mailboxOf = (address: string, messages: Held[]) => {
     const read: string[] = [];
+    /** The connections a reader was asked for. */
+    const connections: string[] = [];
     const source = {
-      readerFor: () => ({
-        mailbox: async () => address,
-        recent: async () => ({
-          messages: messages.map(({ id, raw, receivedAt }) => ({
-            id,
-            from: "no-reply@example.test",
-            size: raw.byteLength,
-            receivedAt,
-          })),
-        }),
-        read: async (_context: unknown, id: string) => {
-          read.push(id);
-          return messages.find((message) => message.id === id)!.raw;
-        },
-      }),
+      readerFor: (connection: { id: string }) => {
+        connections.push(connection.id);
+        return {
+          mailbox: async () => address,
+          recent: async () => ({
+            messages: messages.map(({ id, raw, receivedAt }) => ({
+              id,
+              from: "no-reply@example.test",
+              size: raw.byteLength,
+              receivedAt,
+            })),
+          }),
+          read: async (_context: unknown, id: string) => {
+            read.push(id);
+            return messages.find((message) => message.id === id)!.raw;
+          },
+        };
+      },
     };
-    return { source, read };
+    return { source, read, connections };
   };
   /** The owner connects a mailbox in a Space and lets its bot read it for codes. */
-  const connectMail = (place: Place) =>
+  const connectMail = (place: Place, status = "connected") =>
     system(async () => {
-      await prisma.connection.create({
+      const connection = await prisma.connection.create({
         data: {
           spaceId: place.spaceId,
           userId: place.userId,
           provider: "GMAIL",
           displayName: "Mail",
-          status: "connected",
+          status,
           providerRef: `ca_${randomUUID()}`,
         },
+        select: { id: true },
       });
       await prisma.bot.update({ where: { id: place.botId }, data: { connectedMailCodes: true } });
+      return connection.id;
     });
   /** A run of `place` asks for the site's code and looks in the mailbox, inside its Space. */
   async function asks(place: Place, source: ReturnType<typeof mailboxOf>["source"]) {
@@ -455,6 +463,92 @@ postgres("emailed code claims (PostgreSQL)", () => {
     await settle(request.id, kept ? "completed" : "denied");
     return { runId, code: kept?.code };
   }
+  /**
+   * A run of `place` waiting on a code card for the site, asked at `askedAt`, with the owner's
+   * way to type a code into it through the real answer path, inside that run's Space. With
+   * `during`, the answer stops there once its transaction holds what it needs, until that ends.
+   */
+  async function waitsOnCard(place: Place, askedAt = new Date()) {
+    const runId = await newRun("waiting_input", place);
+    const request = await ask(runId, place, origin, askedAt);
+    const card = await system(() =>
+      prisma.message.create({
+        data: {
+          threadId: place.threadId,
+          seq: 1,
+          role: "bot",
+          botId: place.botId,
+          runId,
+          blocks: [
+            {
+              kind: "ask",
+              text: "Code for login.example.test",
+              input: "secret",
+              oneTimeCode: { origin },
+              purpose: "otp",
+              status: "pending",
+            },
+          ],
+        },
+        select: { id: true },
+      }),
+    );
+    const writer = createRunSecretWriter(new EncryptedSecretStore("test-only-encryption-key"));
+    const types = (code: string, during?: () => Promise<void>) =>
+      runAsTenant(place, () =>
+        answerRunInput(
+          prisma,
+          {
+            spaceId: place.spaceId,
+            threadId: place.threadId,
+            runId,
+            messageId: card.id,
+            answeredByUserId: place.userId,
+            answer: code,
+          },
+          undefined,
+          {
+            ...writer,
+            // The code is sealed first, as always; the stop is inside the answer's transaction.
+            withPrepared: (client, input, commit) =>
+              writer.withPrepared!(client, input, (prepared) =>
+                commit({
+                  store: async (value) => {
+                    await during?.();
+                    return prepared.store(value);
+                  },
+                }),
+              ),
+          },
+        ),
+      );
+    return { runId, request, types };
+  }
+  /** A gate a step waits at: `reached` once it is there, and it goes on after `open()`. */
+  function gate() {
+    let open = () => {};
+    let arrive = () => {};
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const wait = async () => {
+      arrive();
+      await opened;
+    };
+    return { open, reached, wait };
+  }
+  /** Whether `work` is still under way a moment from now. */
+  const stillUnderWay = (work: Promise<unknown>) =>
+    Promise.race([
+      work.then(
+        () => false,
+        () => false,
+      ),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 300)),
+    ]);
   const claimsOf = (runIds: string[]) =>
     system(() =>
       prisma.externalEffect.count({
@@ -473,6 +567,32 @@ postgres("emailed code claims (PostgreSQL)", () => {
       if (name.startsWith("s1._domainkey.")) return [[dkim.record]];
       throw Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), { code: "ENOTFOUND" });
     }) as never);
+
+  // WHICH MAILBOXES: a look reads the owner's own connections in the run's own Space that are
+  // connected now, and no other, asked afresh each time, as the run's job does it: inside its
+  // Space, where another Space's connections are not visible.
+  it("reads only the owner's own connected mailboxes in the run's Space", async () => {
+    publishKey();
+    const [here, there] = [home(), await otherSpace("mailbox")];
+    await system(() => prisma.connection.deleteMany({ where: { spaceId } }));
+    // The owner connected the mailbox in another Space; here, someone else connected theirs,
+    // and the owner's own connection was revoked.
+    await connectMail(there);
+    await connectMail({ ...here, userId: stranger });
+    await connectMail(here, "revoked");
+    const message = await sent("440913");
+    const none = mailboxOf("owner@example.net", [message]);
+    expect((await asks(here, none.source)).code).toBeUndefined();
+    expect(none.connections).toEqual([]);
+    expect(none.read).toEqual([]);
+    // Connected here by the owner, that one connection is read, for the site's next mail.
+    const mine = await connectMail(here);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const one = mailboxOf("owner@example.net", [message, await sent("440914")]);
+    expect((await asks(here, one.source)).code).toBe("440914");
+    expect(one.connections).toEqual([mine]);
+    await forgetRequests();
+  });
 
   it("takes a message's code once across its owner's Spaces, and no other owner's", async () => {
     publishKey();
@@ -508,49 +628,12 @@ postgres("emailed code claims (PostgreSQL)", () => {
     await connectMail(here);
     const old = await sent("318840");
     // The owner types that code into the card of a run in their other Space.
-    const waiting = await newRun("waiting_input", there);
-    const request = await ask(waiting, there);
-    const card = await system(() =>
-      prisma.message.create({
-        data: {
-          threadId: there.threadId,
-          seq: 1,
-          role: "bot",
-          botId: there.botId,
-          runId: waiting,
-          blocks: [
-            {
-              kind: "ask",
-              text: "Code for login.example.test",
-              input: "secret",
-              oneTimeCode: { origin },
-              purpose: "otp",
-              status: "pending",
-            },
-          ],
-        },
-        select: { id: true },
-      }),
-    );
-    const writer = createRunSecretWriter(new EncryptedSecretStore("test-only-encryption-key"));
-    const typed = await runAsTenant(there, () =>
-      answerRunInput(
-        prisma,
-        {
-          spaceId: there.spaceId,
-          threadId: there.threadId,
-          runId: waiting,
-          messageId: card.id,
-          answeredByUserId: userId,
-          answer: "318840",
-        },
-        undefined,
-        writer,
-      ),
-    );
-    expect(typed).toBe(true);
+    const waiting = await waitsOnCard(there);
+    expect(await waiting.types("318840")).toBe(true);
     expect(
-      await system(() => prisma.externalEffect.findUniqueOrThrow({ where: { id: request.id } })),
+      await system(() =>
+        prisma.externalEffect.findUniqueOrThrow({ where: { id: waiting.request.id } }),
+      ),
     ).toMatchObject({ status: "approved" });
     // A run in this Space reads the same mailbox: the older mail is not fetched, let alone taken.
     const before = mailboxOf("owner@example.net", [old]);
@@ -560,6 +643,95 @@ postgres("emailed code claims (PostgreSQL)", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     const after = mailboxOf("owner@example.net", [old, await sent("905512")]);
     expect((await asks(here, after.source)).code).toBe("905512");
+    await forgetRequests();
+  });
+
+  // A card answered and a code taken from mail never pass each other: each waits for the
+  // other to finish, so the code is taken either before the card was answered or knowing it
+  // was. The card here was asked long before the mail came, so it is no open request the mail
+  // could be for: only the answer itself keeps the mail from being used.
+  const longAgo = () => new Date(Date.now() - EMAILED_CODE_WINDOW_MS - 60_000);
+  it("waits for a card being answered before it takes a code, then takes none", async () => {
+    const there = await otherSpace("typing");
+    const waiting = await waitsOnCard(there, longAgo());
+    const runId = await newRun("running");
+    const mine = await ask(runId);
+    const email = await receive("571940");
+    const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+    // The owner's answer is under way: its transaction has not committed.
+    const answering = gate();
+    const typed = waiting.types("571940", answering.wait);
+    await answering.reached;
+    const taking = runAsTenant({ spaceId, userId }, () =>
+      holdEmailedCode(prisma, secretStore, {
+        ...lookup(runId),
+        scope: { userId, spaceId, botId },
+        request: { id: mine.id, from: "intended", result: { ok: true } },
+        hide: () => undefined,
+      }),
+    );
+    expect(await stillUnderWay(taking)).toBe(true);
+    answering.open();
+    expect(await typed).toBe(true);
+    // The card was answered since the email came: its code is not taken a second time.
+    expect(await taking).toBeUndefined();
+    expect(await takers(email.id)).toEqual([]);
+    expect(await heldCodes(runId)).toBe(0);
+    await forgetRequests();
+  });
+
+  it("makes a card's answer wait while a code is being taken", async () => {
+    const there = await otherSpace("taking");
+    const waiting = await waitsOnCard(there, longAgo());
+    const runId = await newRun("running");
+    const email = await receive("571941");
+    const claiming = gate();
+    const claimed = system(() =>
+      prisma.$transaction(async (tx) => {
+        await claimEmailedCode(tx, {
+          runId,
+          requestId: `request-of-${runId}`,
+          spaceId,
+          botId,
+          userId,
+          site: "example.test",
+          key: email.key,
+          receivedAt: new Date(),
+          emailId: email.id,
+        });
+        await claiming.wait();
+      }),
+    );
+    await claiming.reached;
+    const typed = waiting.types("571941");
+    expect(await stillUnderWay(typed)).toBe(true);
+    claiming.open();
+    await claimed;
+    expect(await typed).toBe(true);
+    expect(await takers(email.id)).toEqual([runId]);
+    await forgetRequests();
+  });
+
+  it("uses mail that came after a card was answered, however late its run goes on", async () => {
+    const waiting = await waitsOnCard(await otherSpace("late"), longAgo());
+    expect(await waiting.types("318841")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const email = await receive("604417");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The answered run goes on only now: its request's row changes after the mail came.
+    await settle(waiting.request.id, "completed");
+    const runId = await newRun("running");
+    const mine = await ask(runId);
+    const kept = await runAsTenant({ spaceId, userId }, () =>
+      holdEmailedCode(prisma, new EncryptedSecretStore("test-only-encryption-key"), {
+        ...lookup(runId),
+        scope: { userId, spaceId, botId },
+        request: { id: mine.id, from: "intended", result: { ok: true } },
+        hide: () => undefined,
+      }),
+    );
+    expect(kept).toMatchObject({ code: "604417" });
+    expect(await takers(email.id)).toEqual([runId]);
     await forgetRequests();
   });
 
@@ -667,6 +839,41 @@ postgres("emailed code claims (PostgreSQL)", () => {
       await receive(String(100_000 + index), `news-${index}@elsewhere.test`);
     const found = await system(() => findEmailedCode(prisma, lookup(runs[0]!)));
     expect(found).toMatchObject({ code: "317244", emailId: email.id });
+    await system(() => prisma.botEmailMessage.deleteMany({ where: { botId } }));
+  });
+
+  it("asks the inbox only for mail that names the site, and reads no other", async () => {
+    const email = await receive("317245");
+    await system(async () => {
+      for (let index = 0; index < 60; index += 1)
+        await prisma.botEmailMessage.create({
+          data: {
+            spaceId,
+            botId,
+            key: `<${randomUUID()}@elsewhere.org>`,
+            fromAddress: `news-${index}@elsewhere.org`,
+            fromName: "News",
+            verified: true,
+            mailingList: false,
+            autoReplyOrBulk: false,
+            to: ["signer@bots.test"],
+            cc: [],
+            subject: "This week",
+            text: "This week's letter.",
+          },
+        });
+    });
+    const naming = await system(() =>
+      inboxMailHolding(prisma, spaceId, "example.test", ["fromAddress"]),
+    );
+    // This suite's inbox is encrypted: the mail is found by the hashed words it holds.
+    expect(naming.check).toBe(true);
+    const named = await system(() =>
+      prisma.botEmailMessage.findMany({ where: { botId, ...naming.where }, select: { id: true } }),
+    );
+    expect(named).toEqual([{ id: email.id }]);
+    const found = await system(() => findEmailedCode(prisma, lookup(runs[0]!)));
+    expect(found).toMatchObject({ code: "317245", emailId: email.id });
     await system(() => prisma.botEmailMessage.deleteMany({ where: { botId } }));
   });
 

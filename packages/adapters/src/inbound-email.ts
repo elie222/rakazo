@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "@rakazo/contracts";
 import type { ARCResult } from "mailauth";
 import type { Address } from "postal-mime";
 import { htmlToPlainText } from "./keyless-http-web.js";
@@ -11,9 +12,6 @@ export const INBOUND_EMAIL_MAX_SIGNATURES = 5;
 
 /** How old a message may be when its signature leaves its recipients out. */
 export const INBOUND_EMAIL_UNSIGNED_RECIPIENTS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-/** Body text handed to the bot; longer mail is cut here. */
-export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
 
 /** DNS TXT lookups for DKIM keys; tests pass a fixed one. */
 export type InboundEmailResolver = (

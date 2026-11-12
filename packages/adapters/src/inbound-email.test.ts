@@ -1,11 +1,11 @@
 import { generateKeyPairSync } from "node:crypto";
+import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "@rakazo/contracts";
 import { dkimSign, sealMessage } from "mailauth";
 import { describe, expect, it } from "vitest";
 import type { InboundEmailResolver } from "./inbound-email.js";
 import {
   INBOUND_EMAIL_MAX_BYTES,
   INBOUND_EMAIL_MAX_SIGNATURES,
-  INBOUND_EMAIL_TEXT_MAX_CHARS,
   readInboundEmail,
 } from "./inbound-email.js";
 

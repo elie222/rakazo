@@ -3471,7 +3471,15 @@ describe("answerRunInput approvals", () => {
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         task: { updateMany: vi.fn() },
-        externalEffect: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        externalEffect: {
+          // The run's open requests: the one for this code, and one for something else.
+          findMany: vi.fn().mockResolvedValue([
+            { id: "request-1", request: { label: "Code", oneTimeCode } },
+            { id: "request-2", request: { label: "Password" } },
+          ]),
+          createMany: vi.fn().mockResolvedValue({ count: 1 }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
         thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
         event: {
           create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
@@ -3513,6 +3521,28 @@ describe("answerRunInput approvals", () => {
       const [block] = (tx.message.update.mock.calls[0]![0] as { data: { blocks: unknown[] } }).data
         .blocks as Record<string, unknown>[];
       expect(block).toMatchObject({ status: "answered", answer: "", oneTimeCode });
+    });
+
+    it("notes when the code request was answered, before it settles the request", async () => {
+      const { tx, answer } = codeCard();
+      await expect(answer("123456")).resolves.toBe(true);
+      // One note, for the request that asked for a code, with nothing of the answer in it.
+      expect(tx.externalEffect.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            runId: "run-1",
+            spaceId: "workspace-1",
+            kind: "emailed_code",
+            status: "answered",
+            idempotencyKey: "emailed-code:answered:request-1",
+            request: {},
+          },
+        ],
+        skipDuplicates: true,
+      });
+      expect(tx.externalEffect.createMany.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.externalEffect.updateMany.mock.invocationCallOrder[0]!,
+      );
     });
 
     it("lets only the run's user answer", async () => {

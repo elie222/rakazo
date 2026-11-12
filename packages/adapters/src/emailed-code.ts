@@ -9,19 +9,22 @@ import type {
 } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { readOneTimeCode } from "@rakazo/contracts";
+import { INBOX_DAILY_LIMIT, readOneTimeCode } from "@rakazo/contracts";
 import { isMessagingChannelRun, PUBLIC_MAILBOX_DOMAINS } from "@rakazo/core";
 import { hostSite } from "@rakazo/core/egress";
 import type { CodeSite, MailSharingRuns, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   codeAnsweredSince,
+  contentEncryptionOf,
+  EMAILED_CODE_EFFECT,
   findPendingAsk,
+  holdCodeAnswers,
   otherCodeRequestOpen,
   recordAuditEvent,
   teamChatRunFromOwner,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { connectedContext, selectRunConnections } from "./connection-context.js";
+import { connectedContext, loadConnectedConnections } from "./connection-context.js";
 import { readInboundEmail } from "./inbound-email.js";
 
 /** How long before and after a code request an email may have arrived and still answer it. */
@@ -47,12 +50,46 @@ const EMAIL_BATCH = 50;
  * unsolicited mail; past it there is no code. Mail from other senders is not counted, so it never
  * hides the site's email.
  */
-export const EMAIL_SEARCH_LIMIT = 500;
+export const EMAIL_SEARCH_LIMIT = INBOX_DAILY_LIMIT;
 /**
  * The most emails in all read for one lookup, as each email arriving in an open card's window
- * looks again. Past it there is no code, and the card stays for the owner.
+ * looks again. Past it there is no code, and the card stays for the owner. Only mail the query
+ * finds to hold the site's name is read (inboxMailHolding), so mail that does not name the site
+ * is never counted.
  */
 export const EMAIL_READ_LIMIT = 5_000;
+
+/** The fields of an inbox email its sender wrote, which an inbox search looks in. */
+export const INBOX_SEARCHED_FIELDS = ["fromAddress", "fromName", "subject", "text"] as const;
+type InboxField = (typeof INBOX_SEARCHED_FIELDS)[number];
+
+/**
+ * What narrows a query of an inbox to the mail that may hold `text` in one of `fields`, and
+ * whether what it finds still has to be checked. Plaintext mail matches `text` inside one of
+ * the fields. Encrypted mail matches on blind-index prefix tokens of the words of `text`, which
+ * cover all of an email's fields together and can collide: so it never leaves out mail that
+ * holds those words, and what it finds is checked against the decrypted fields afterwards
+ * (`check`). Text inside a word only matches mail that is still plaintext, as in Space search.
+ */
+export async function inboxMailHolding(
+  prisma: PrismaClient,
+  spaceId: string,
+  text: string,
+  fields: readonly InboxField[],
+): Promise<{ where: Prisma.BotEmailMessageWhereInput; check: boolean }> {
+  const plaintext = fields.map((field) => ({
+    [field]: { contains: text, mode: "insensitive" as const },
+  }));
+  const encryption = contentEncryptionOf(prisma);
+  const keyTokens = encryption ? await encryption.messageSearchTokens(spaceId, text, "prefix") : [];
+  // No keys: nothing in the Space was ever encrypted.
+  if (!keyTokens.length) return { where: { OR: plaintext }, check: false };
+  const tokenSets = keyTokens.filter((tokens) => tokens.length);
+  // No term long enough to be indexed: check the newest mail.
+  if (!tokenSets.length) return { where: {}, check: true };
+  const encrypted = tokenSets.map((tokens) => ({ searchTokens: { hasEvery: tokens } }));
+  return { where: { OR: [...encrypted, ...plaintext] }, check: true };
+}
 
 /**
  * Whether a run may read its bot's inbox: the owner's own run, never another bot's message, a
@@ -93,12 +130,6 @@ export async function isNonOwnerChatRun(
   }));
 }
 
-/**
- * Records of the inbox's codes, kept as effects of the run that took them: `idempotencyKey` is
- * unique, so inserting one is the claim, and two runs (or a run and the inbox) never both get it.
- * Their status is none a tool's effect has, so nothing replays or reads them as tool calls.
- */
-const EMAILED_CODE_EFFECT = "emailed_code";
 /**
  * The claim on an email is on the message, by its key (InboundEmail.key): the signature its
  * sender's domain made, which every copy of the message carries. So one message has one claim,
@@ -167,6 +198,22 @@ type MailKind = {
  */
 export function mayGiveCode(email: MailKind): boolean {
   return email.verified && email.mailingList === false && email.autoReplyOrBulk === false;
+}
+
+/**
+ * What narrows an inbox query to mail whose sender may be on `site`: every address on the site
+ * holds the site's name, so asking for mail that holds it leaves none of the site's out. Only
+ * for a name written in plain letters, digits, dots and hyphens, which an address on the site
+ * writes the same way; for any other (an internationalized name can be written in two ways)
+ * nothing is narrowed.
+ */
+async function mailNaming(
+  prisma: PrismaClient,
+  spaceId: string,
+  site: string,
+): Promise<Prisma.BotEmailMessageWhereInput> {
+  if (!/^[a-z0-9.-]+$/.test(site) || /(^|\.)xn--/.test(site)) return {};
+  return (await inboxMailHolding(prisma, spaceId, site, ["fromAddress"])).where;
 }
 
 /** What a look knows of an email, whichever mailbox holds it. */
@@ -258,10 +305,13 @@ export async function findEmailedCode(
   });
   if (filled) return undefined;
   const rule = { site, botEmailDomain: input.botEmailDomain, ...input.window };
-  // The sender is encrypted, so the whole window (minutes long) is read newest first in batches,
-  // without subject or text, each filtered here: the limit is on the site's mail, so mail from
-  // other senders, however much, never hides the site's email. The query only narrows what is
-  // read: emailMayAnswer decides each email, as it does for every other look.
+  // The sender is encrypted, so the query asks for the window's mail (minutes long) that holds
+  // the site's name, as the inbox's index of words can tell, and what it finds is read newest
+  // first in batches, without subject or text, each filtered here. Mail that does not name the
+  // site is neither read nor counted, however much there is; the limits are on mail that does,
+  // and the search limit on the site's own, so other senders never hide the site's email. The
+  // query only narrows what is read: emailMayAnswer decides each email, as for every other look.
+  const naming = await mailNaming(prisma, input.spaceId, site);
   const fromSite: { id: string; key: string; receivedAt: Date }[] = [];
   let cursor: string | undefined;
   let read = 0;
@@ -274,6 +324,7 @@ export async function findEmailedCode(
         mailingList: false,
         autoReplyOrBulk: false,
         receivedAt: { gte: rule.after, lte: rule.before },
+        ...naming,
       },
       orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -409,19 +460,14 @@ export async function findConnectedMailCode(
     select: { connectedMailCodes: true, name: true },
   });
   if (!bot?.connectedMailCodes) return undefined;
-  const rows = await prisma.connection.findMany({
-    where: { userId: input.userId, spaceId: input.spaceId },
-    select: {
-      id: true,
-      connectorId: true,
-      provider: true,
-      providerRef: true,
-      displayName: true,
-      status: true,
-    },
-  });
-  const readers = selectRunConnections(rows, []).flatMap((row) => {
-    // Each read is scoped to its one connection: the reader can reach no other account.
+  // The owner's own connections in the run's Space that are connected now, as every step
+  // outside a model run reads them: asked afresh on each look, so one revoked or removed since
+  // the last look is not read.
+  const rows = await loadConnectedConnections(prisma, input);
+  const readers = rows.flatMap((row) => {
+    // Each read is given its one connection only, and only a connection that names the one
+    // account its provider is to read (readerFor gives no reader for any other): the reader can
+    // reach no other account, and the provider is never left to pick one.
     const context = connectedContext([row]);
     const connection = context.connectedConnections?.[0];
     const reader = connection && deps.connectedMail.readerFor(connection);
@@ -559,7 +605,8 @@ export class EmailedCodeTaken extends Error {}
 
 /**
  * Take the email's code for `runId` in `tx`, the transaction that keeps the code, deciding there
- * what only the database knows of the email, across every Space: throws EmailedCodeTaken, which
+ * what only the database knows of the email, across every Space, while no code card of the
+ * runs that share the mail can be answered (holdCodeAnswers): throws EmailedCodeTaken, which
  * rolls `tx` back, when a code request for the site was answered since the email came (the owner
  * may have typed its code), when another open request could take it too (asked for the same
  * site, in another run still going of the bot or of its owner, with the email in its window:
@@ -579,6 +626,9 @@ export async function claimEmailedCode(
 ): Promise<void> {
   const { receivedAt, requestId } = input;
   const site = codeSite(input.site);
+  // Before anything is read: a card being answered meanwhile is waited for, and none is
+  // answered until this is done, so what is read here still holds when the code is kept.
+  await holdCodeAnswers(tx, input);
   const [used] = await codeAnsweredSince(tx, input, site, { requestId, times: [receivedAt] });
   if (used) throw new EmailedCodeTaken();
   // Another request's window holds the email when it asked within the window's reach of it.

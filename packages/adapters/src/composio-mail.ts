@@ -8,6 +8,7 @@ import type {
   ConnectedMailSource,
   ConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { pinnedAccountId } from "./composio-connector.js";
 
 /**
  * The only tools the reader calls: its grant also allows sending and changing mail, so the tool
@@ -39,35 +40,39 @@ class ComposioMailReader implements ConnectedMailReader {
     context: AdapterContext,
     query: { fromDomain: string; after: Date; limit: number; page?: string },
   ): Promise<ConnectedMailPage> {
+    // The search names messages and nothing more. It fetches none, sizes none and refuses none:
+    // whatever the provider matches, from whichever sender and however large, the listing goes
+    // on to tell of each, and which of them may be the site's is the caller's to judge.
+    const names = { ids_only: true, max_results: query.limit };
     const listed = await this.call(context, "GMAIL_FETCH_EMAILS", {
+      ...names,
       query: `from:${query.fromDomain} after:${epochSeconds(query.after)}`,
-      max_results: query.limit,
-      ids_only: true,
       ...(query.page ? { page_token: query.page } : {}),
     });
-    const messages: ConnectedMailListing[] = [];
     const ids = messageIds(listed);
     // The page past the limit would be left unread, and the next page starts after it.
     if (ids.length > query.limit) throw new Error("The mail listing has more messages than asked");
-    for (const id of ids) {
-      // Between reads too: once the look gave up or timed out, no further message is asked for.
-      context.signal.throwIfAborted();
-      // Its headers and size only: the search is loose, so who sent a message and how large it
-      // is are learned before any of its content is fetched.
-      const told = await this.call(context, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", {
-        message_id: id,
-        format: "metadata",
-      });
-      const from = senderAddress(told);
-      const size = numberAt(told, "sizeEstimate");
-      const received = numberAt(told, "internalDate");
-      messages.push({
-        id,
-        ...(from ? { from } : {}),
-        ...(Number.isFinite(size) ? { size } : {}),
-        ...(Number.isFinite(received) ? { receivedAt: new Date(received) } : {}),
-      });
-    }
+    // Its headers and size only: the search is loose, so who sent a message and how large it is
+    // are learned before any of its content is fetched. The page's messages are asked about
+    // together, so mail the search matched from other senders costs the look one call's time a
+    // page, not one each. Each call checks first that the look has not given up or timed out.
+    const messages = await Promise.all(
+      ids.map(async (id): Promise<ConnectedMailListing> => {
+        const told = await this.call(context, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", {
+          message_id: id,
+          format: "metadata",
+        });
+        const from = senderAddress(told);
+        const size = numberAt(told, "sizeEstimate");
+        const received = numberAt(told, "internalDate");
+        return {
+          id,
+          ...(from ? { from } : {}),
+          ...(Number.isFinite(size) ? { size } : {}),
+          ...(Number.isFinite(received) ? { receivedAt: new Date(received) } : {}),
+        };
+      }),
+    );
     const next = stringAt(listed, "nextPageToken");
     return next ? { messages, next } : { messages };
   }
@@ -119,14 +124,20 @@ class ComposioMailReader implements ConnectedMailReader {
   }
 }
 
-/** The mail reader for connections the Composio connector serves; none for any other. */
+/**
+ * The mail reader for a Gmail connection the Composio connector serves that names one account
+ * of the provider; none for any other. A connection that names no account (a legacy row) gets
+ * no reader: the connector could not hold its calls to one account, and the provider would
+ * read whichever mailbox of the user it picks, also one that was never connected in the Space.
+ */
 export function composioMailSource(
   connector: Pick<ConnectorProvider, "execute">,
 ): ConnectedMailSource {
   return {
     readerFor(connection) {
       return connection.connectorId === "composio" &&
-        connection.externalId.trim().toLowerCase() === "gmail"
+        connection.externalId.trim().toLowerCase() === "gmail" &&
+        pinnedAccountId(connection) !== undefined
         ? new ComposioMailReader(connector, connection)
         : undefined;
     },

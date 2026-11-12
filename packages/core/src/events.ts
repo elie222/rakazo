@@ -1,4 +1,5 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import { REDACTED_MARK } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
 import { payloadAuthor } from "./message-replies.js";
@@ -622,7 +623,7 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
   let output = "";
   let offset = 0;
   for (const [start, end] of redactedRanges(value, secrets)) {
-    output += `${value.slice(offset, start)}[redacted]`;
+    output += `${value.slice(offset, start)}${REDACTED_MARK}`;
     offset = end;
   }
   return output + value.slice(offset);
@@ -635,7 +636,7 @@ export function redactSecretsAfter(before: string, text: string, secrets: string
   let offset = before.length;
   for (const [start, end] of redactedRanges(value, secrets)) {
     if (end <= offset) continue;
-    output += `${value.slice(offset, Math.max(start, offset))}[redacted]`;
+    output += `${value.slice(offset, Math.max(start, offset))}${REDACTED_MARK}`;
     offset = end;
   }
   return output + value.slice(offset);
@@ -741,7 +742,7 @@ export function createStreamingRedactor(secrets: string[]) {
       output = "";
       for (const [start, end] of redactedRanges(buffer, values)) {
         if (start >= cut) break;
-        if (start >= offset) output += `${buffer.slice(offset, start)}[redacted]`;
+        if (start >= offset) output += `${buffer.slice(offset, start)}${REDACTED_MARK}`;
         offset = Math.max(offset, end);
       }
       output += buffer.slice(Math.min(offset, cut), cut);

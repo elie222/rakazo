@@ -747,7 +747,11 @@ export interface ConnectedMailPage {
   next?: string;
 }
 
-/** The reader for a connected mailbox, from the connections a provider knows how to read. */
+/**
+ * The reader for a connected mailbox, from the connections a provider knows how to read. Only
+ * for a connection whose every read it can hold to that connection's own account: where the
+ * provider would otherwise choose an account itself, there is no reader.
+ */
 export interface ConnectedMailSource {
   readerFor(connection: ConnectedConnector): ConnectedMailReader | undefined;
 }

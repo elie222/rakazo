@@ -144,6 +144,20 @@ function composioSlugKey(slug: string): string {
   return slug.trim().toLowerCase();
 }
 
+/**
+ * The remote connected account a connection names, which a session can be held to: none for
+ * a no-auth or legacy row, which stores the toolkit's slug or nothing. Without one the
+ * provider acts as the user's newest active account for the toolkit, whichever that is.
+ */
+export function pinnedAccountId(
+  connection: Pick<ConnectedConnector, "externalId" | "providerRef">,
+): string | undefined {
+  const accountId = connection.providerRef?.trim();
+  if (!accountId || composioSlugKey(accountId) === composioSlugKey(connection.externalId))
+    return undefined;
+  return accountId;
+}
+
 export function executeSessionKey(
   toolkits: string[],
   connectedAccounts: Record<string, string[]> = {},
@@ -427,11 +441,9 @@ export class ComposioConnector implements ComposioProvider {
     const pinnedToolkits = new Set<string>();
     const accountIdsByToolkit = new Map<string, Set<string>>();
     for (const connection of connections) {
-      const accountId = connection.providerRef?.trim();
+      // Only concrete account ids can scope a session.
+      const accountId = pinnedAccountId(connection);
       if (!accountId) continue;
-      // No-auth and legacy rows store the toolkit slug rather than a remote
-      // connected-account id. Only concrete account ids can scope a session.
-      if (composioSlugKey(accountId) === composioSlugKey(connection.externalId)) continue;
       const toolkit = canonicalByKey.get(composioSlugKey(connection.externalId));
       if (!toolkit) continue;
       pinnedToolkits.add(toolkit);

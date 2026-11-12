@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "./bot-email.js";
 import {
   BOT_SECRET_ORIGIN_MISSING_MESSAGE,
   BotSecretDestination,
@@ -13,7 +14,6 @@ import {
   LoginFieldLabels,
   loginCardFields,
   normalizeOneTimeCode,
-  ONE_TIME_CODE_TEXT_LIMIT,
   ONE_TIME_CODE_TOKENS,
   ONE_TIME_CODE_UNIT_LIMIT,
   OneTimeCodeTarget,
@@ -960,7 +960,7 @@ describe("one-time code contracts", () => {
 
     // An email that gives no code either names none, and says nothing of the site's other
     // emails, or is unclear: it names a code that cannot be taken, so theirs are in doubt.
-    const past = (text: string) => `${text}\n${"x".repeat(ONE_TIME_CODE_TEXT_LIMIT)}`;
+    const past = (text: string) => `${text}\n${"x".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS)}`;
     it.each<[name: string, text: string, unclear: boolean]>([
       ["names no code", "Welcome! Your account is ready.", false],
       ["names an order, not a code", "Order 48213977 confirmed.", false],
@@ -982,17 +982,17 @@ describe("one-time code contracts", () => {
       const sentence = "Your code is 482913.";
       const filler = (length: number) => `\n${"x ".repeat(length / 2)}\n`;
       // The code sentence starts inside what is read and ends outside it: not read as a code.
-      const late = `Hello.${filler(ONE_TIME_CODE_TEXT_LIMIT - 18)}${sentence}`;
-      expect(late.indexOf("482913")).toBe(ONE_TIME_CODE_TEXT_LIMIT + 3);
+      const late = `Hello.${filler(INBOUND_EMAIL_TEXT_MAX_CHARS - 18)}${sentence}`;
+      expect(late.indexOf("482913")).toBe(INBOUND_EMAIL_TEXT_MAX_CHARS + 3);
       expect(readOneTimeCode({ subject: "Hello", text: late })).toEqual({ unclear: false });
       expect(readOneTimeCode({ subject: late, text: "Hello" })).toEqual({ unclear: false });
       // The same sentence wholly inside what is read is the email's code, until the email is
       // longer than is read: then what follows it is not known.
-      const early = `${sentence}${filler(ONE_TIME_CODE_TEXT_LIMIT - 40)}`;
-      expect(early.length).toBeLessThanOrEqual(ONE_TIME_CODE_TEXT_LIMIT);
+      const early = `${sentence}${filler(INBOUND_EMAIL_TEXT_MAX_CHARS - 40)}`;
+      expect(early.length).toBeLessThanOrEqual(INBOUND_EMAIL_TEXT_MAX_CHARS);
       expect(readOneTimeCode({ subject: "Hello", text: early }).code).toBe("482913");
       const longer = `${early}${"x".repeat(40)}`;
-      expect(longer.length).toBeGreaterThan(ONE_TIME_CODE_TEXT_LIMIT);
+      expect(longer.length).toBeGreaterThan(INBOUND_EMAIL_TEXT_MAX_CHARS);
       expect(readOneTimeCode({ subject: "Hello", text: longer })).toEqual({ unclear: true });
     });
 
@@ -1282,7 +1282,7 @@ describe("one-time code contracts", () => {
         const text = (count: number) => Array.from({ length: count }, () => unit).join("\n");
         const count = (units: number) => execs({ subject: "Hello", text: text(units) });
         // As many units as an email may hold, and half of them.
-        const most = Math.floor(ONE_TIME_CODE_TEXT_LIMIT / (unit.length + 1));
+        const most = Math.floor(INBOUND_EMAIL_TEXT_MAX_CHARS / (unit.length + 1));
         const half = Math.floor(most / 2);
         // Each unit past the first adds the same number of runs: no unit reads past its own text
         // and the line below it, and a stale word is looked for once in each sentence.
