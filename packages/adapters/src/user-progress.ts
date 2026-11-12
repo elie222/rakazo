@@ -22,21 +22,6 @@ export function narrationStatusLine(text: string): string {
 }
 
 /**
- * A short status the bot wrote before a step, such as "Checking availability": one
- * line that fits the working line and does not end like a sentence. It is never posted as an
- * interim message.
- */
-export function isStatusNote(text: string): boolean {
-  const line = text.trim();
-  return (
-    line.length > 0 &&
-    line.length <= NARRATION_STATUS_MAX_LENGTH &&
-    !line.includes("\n") &&
-    !/[.!?:;]$/.test(line)
-  );
-}
-
-/**
  * How a message the person sends while the bot works reaches the model: it knows the message
  * came mid-task. The answer goes through message_user, because a plain-text answer ends the
  * turn and the task with it; without that tool it is only asked to take the message into account.

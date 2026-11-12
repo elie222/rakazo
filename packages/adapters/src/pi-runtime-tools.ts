@@ -216,12 +216,13 @@ export function describeToolActivity(
   toolName: string,
   args: unknown,
   findTool?: (name: string) => ConnectorTool | undefined,
+  narrated?: ReadonlySet<string>,
 ): string {
-  const status = stepStatusOf(args);
+  const status = stepStatusOf(toolName, args, narrated);
   if (status) return status;
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
   if (toolName === USE_TOOL)
-    return describeToolActivity(String(record.name), record.arguments, findTool);
+    return describeToolActivity(String(record.name), record.arguments, findTool, narrated);
   const tool = findTool?.(toolName);
   const actions = batchStepActions(tool, args);
   if (actions.length > 0) return `Using ${actions.join(", ")}`;
@@ -369,9 +370,15 @@ function toAgentTool(
   options: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
 ): AgentTool {
   const agentTool = buildAgentTool(tool, host, exposedName, options);
-  return openingAcknowledgementEnabled() && !STATUSLESS_TOOLS.has(tool.name)
-    ? withStepStatusField(agentTool)
-    : agentTool;
+  if (!openingAcknowledgementEnabled() || STATUSLESS_TOOLS.has(tool.name)) return agentTool;
+  const narrated = withStepStatusField(agentTool);
+  // Only a field this runtime added is read as a status; a tool's own `status` argument is
+  // the tool's business.
+  if (narrated !== agentTool) {
+    host.narratedTools ??= new Set();
+    host.narratedTools.add(exposedName);
+  }
+  return narrated;
 }
 
 /** Tools whose own text is what the person reads, so a status line would only repeat it. */
@@ -410,13 +417,25 @@ function withoutStepStatus(args: unknown): unknown {
   return rest;
 }
 
-/** The status the model gave a call, cleaned for the working line, when it gave one. */
-export function stepStatusOf(args: unknown): string | undefined {
-  if (!openingAcknowledgementEnabled() || !args || typeof args !== "object") return undefined;
-  const value = (args as Record<string, unknown>)[STEP_STATUS_FIELD];
-  if (typeof value !== "string") return undefined;
-  const text = sanitizeSensitiveText(value).replaceAll(/\s+/g, " ").trim();
-  return text ? narrationStatusLine(text) : undefined;
+/**
+ * The status the model gave a call, cleaned for the working line, when it gave one. Only tools
+ * in `narrated` carry the added field; a `use_tool` call may carry it outside or, for a
+ * narrated tool, inside its arguments.
+ */
+export function stepStatusOf(
+  toolName: string,
+  args: unknown,
+  narrated: ReadonlySet<string> | undefined,
+): string | undefined {
+  if (!narrated?.has(toolName) || !args || typeof args !== "object") return undefined;
+  const record = args as Record<string, unknown>;
+  const value = record[STEP_STATUS_FIELD];
+  const text =
+    typeof value === "string" ? sanitizeSensitiveText(value).replaceAll(/\s+/g, " ").trim() : "";
+  if (text) return narrationStatusLine(text);
+  return toolName === USE_TOOL
+    ? stepStatusOf(String(record.name), record.arguments, narrated)
+    : undefined;
 }
 
 function buildAgentTool(
@@ -857,6 +876,8 @@ export interface EventQueue {
 }
 
 export interface ToolHost {
+  /** Tools offered the added `status` field, by the name the model calls them. */
+  narratedTools?: Set<string>;
   /** The status the model gave each call, by Pi tool call id, read from its raw arguments. */
   stepStatuses?: Map<string, string>;
   context?: Partial<AdapterContext>;

@@ -5,6 +5,7 @@ import {
   buildComposerMentionOptions,
   channelMessageSender,
   chatUserBubbleColors,
+  heldActivityLine,
   isRunWaitingOnUser,
   isRunWorking,
   liveActivityLine,
@@ -278,14 +279,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
   // The bot's last status stays up between steps, until the next one or the end of the run.
-  const liveLine = liveActivityLine(snap?.messages ?? []);
   const lastActivityLine = useRef<string | undefined>(undefined);
-  const runActive = [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some((run) =>
-    isRunWorking(run.status),
+  lastActivityLine.current = heldActivityLine(
+    lastActivityLine.current,
+    liveActivityLine(snap?.messages ?? []),
+    [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some((run) =>
+      isRunWorking(run.status),
+    ),
   );
-  if (!runActive) lastActivityLine.current = undefined;
-  else if (liveLine) lastActivityLine.current = liveLine;
-  const activityLine = liveLine ?? lastActivityLine.current;
+  const activityLine = lastActivityLine.current;
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>

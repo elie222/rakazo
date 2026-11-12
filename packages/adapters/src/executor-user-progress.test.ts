@@ -2214,16 +2214,22 @@ describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
     expect(finalText(finalizeRun)).toBe("Checked: all clear.");
   });
 
-  it("shows later short statuses only as the working line", async () => {
+  it("keeps text written between steps off the working line, as notes on its steps", async () => {
     const { finalizeRun, messages, append } = await runTurn("Done.", false, [
       "I'll check whether a date was announced.",
       "Checking availability",
       "Looking for updates",
     ]);
     expect(sentTexts(messages)).toEqual(["I'll check whether a date was announced."]);
-    expect(statuses(append)).toEqual(["Checking availability", "Looking for updates"]);
+    // The streamed text is cleared and the line keeps its last status.
+    expect(statuses(append)).toEqual(["", ""]);
     expect(stepNotes(finalizeRun)).toEqual(["Checking availability", "Looking for updates"]);
     expect(finalText(finalizeRun)).toBe("Done.");
+  });
+
+  it("posts the opening sentence even when it reads like a status", async () => {
+    const { messages } = await runTurn("Done.", false, "Checking availability");
+    expect(sentTexts(messages)).toEqual(["Checking availability"]);
   });
 
   it("keeps a later full sentence off the working line and on the long-turn budget", async () => {

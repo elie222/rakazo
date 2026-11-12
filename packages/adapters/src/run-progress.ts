@@ -30,7 +30,6 @@ import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 import {
   clampUserProgressMessage,
   extractNarrationText,
-  isStatusNote,
   isUserProgressClientNonce,
   midTurnProgressBudgetAllows,
   narrationStatusLine,
@@ -292,9 +291,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   // Text the redactor still holds back belongs to the text just taken out.
   reply.redactor.skip();
   const promotes = runPromotesMidTurnNarration(run.trigger);
-  const statusNote = openingAcknowledgementEnabled() && isStatusNote(text);
   if (
-    !statusNote &&
     text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
     (canPublishDurableNarration(ctx) ||
       isOpeningAcknowledgement(ctx, openingText) ||
@@ -304,12 +301,6 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
     reply.narrationStatusShowing = false;
     await publishInterimMessage(ctx, text);
     return undefined;
-  }
-  if (statusNote && promotes && !ctx.allowSilentEmptyRun) {
-    // A status only describes the step; it never stands in for the reply.
-    flushPendingTools(reply);
-    reply.messageSegments = noteLastToolStep(reply.messageSegments, text);
-    return text;
   }
   reply.discardedMidTurnNarration = true;
   reply.lastDiscardedMidTurnNarration = clampUserProgressMessage(text);
@@ -363,10 +354,10 @@ export async function showNarrationStatus(ctx: RunContext, note: string | undefi
     isBackgroundRunTrigger(run.trigger)
   )
     return;
-  // With live narration, only a short status stays on the line as written. Longer text is
-  // the bot thinking aloud: the status model words it as a status, or the line keeps its last.
-  const shown =
-    !openingAcknowledgementEnabled() || isStatusNote(note) ? narrationStatusLine(note) : "";
+  // With live narration the bot's statuses come with its tool calls, so text it writes between
+  // steps never shows as written: the status model words it as a status, or the line keeps
+  // its last one.
+  const shown = openingAcknowledgementEnabled() ? "" : narrationStatusLine(note);
   if (!shown) ctx.statusLive?.step(note);
   ctx.state.reply.narrationStatusShowing = Boolean(shown);
   await deps.events.append({

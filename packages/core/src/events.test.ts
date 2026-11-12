@@ -6,6 +6,7 @@ import {
   containsSecret,
   createStreamingRedactor,
   endsSentence,
+  heldActivityLine,
   humanizeToolName,
   isRunTerminalEvent,
   liveActivityLine,
@@ -1138,5 +1139,20 @@ describe("withToolStepOutcomes", () => {
       segments,
     );
     expect(withToolStepOutcomes(segments, [])).toEqual(segments);
+  });
+});
+
+describe("heldActivityLine", () => {
+  it("keeps the last status between steps and drops it when the run stops", () => {
+    expect(heldActivityLine(undefined, "Checking availability", true)).toBe(
+      "Checking availability",
+    );
+    expect(heldActivityLine("Checking availability", undefined, true)).toBe(
+      "Checking availability",
+    );
+    expect(heldActivityLine("Checking availability", "Looking for updates", true)).toBe(
+      "Looking for updates",
+    );
+    expect(heldActivityLine("Checking availability", undefined, false)).toBeUndefined();
   });
 });

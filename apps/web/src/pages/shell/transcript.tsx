@@ -11,6 +11,7 @@ import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
   expandPeerReplies,
   groupVoiceChats,
+  heldActivityLine,
   isPeerReceiptBlocks,
   liveActivityLine,
   liveMessageComposing,
@@ -256,14 +257,14 @@ export const Transcript = memo(function Transcript({
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
   // The bot's last status stays up between steps, until the next one or the end of the run.
-  const liveLine = liveActivityLine(messages);
   const lastActivityLine = useRef<string | undefined>(undefined);
-  if (!running) lastActivityLine.current = undefined;
-  else if (liveLine) lastActivityLine.current = liveLine;
+  lastActivityLine.current = heldActivityLine(
+    lastActivityLine.current,
+    liveActivityLine(messages),
+    running,
+  );
   const workingLabel =
-    liveLine ??
-    lastActivityLine.current ??
-    (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
+    lastActivityLine.current ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;

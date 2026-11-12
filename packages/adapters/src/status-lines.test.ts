@@ -85,6 +85,38 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("is active only once a status model is known, and until the run ends", async () => {
+    let resolveWriter: (writer: StatusLineWriter | undefined) => void = () => {};
+    const writer = new Promise<StatusLineWriter | undefined>(
+      (resolve) => (resolveWriter = resolve),
+    );
+    const live = startStatusLines({
+      writer,
+      request: "How much is the plan?",
+      opening: Promise.resolve([]),
+      held: () => false,
+      show: async () => {},
+    });
+    expect(live.active()).toBe(false);
+    resolveWriter({ opening: async () => [], step: async () => undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.active()).toBe(true);
+    live.close();
+    expect(live.active()).toBe(false);
+  });
+
+  it("stays inactive without a status model", async () => {
+    const live = startStatusLines({
+      writer: Promise.resolve(undefined),
+      request: "",
+      opening: Promise.resolve([]),
+      held: () => false,
+      show: async () => {},
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.active()).toBe(false);
+  });
+
   it("leaves the line to the bot's own note", async () => {
     const writer: StatusLineWriter = {
       opening: async () => ["Reading your question"],

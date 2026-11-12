@@ -383,6 +383,18 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
+/**
+ * The working line a chat shows for its run: the newest live status, or the last one while the
+ * bot is between steps. Nothing once the run has stopped working.
+ */
+export function heldActivityLine(
+  previous: string | undefined,
+  live: string | undefined,
+  runWorking: boolean,
+): string | undefined {
+  return runWorking ? (live ?? previous) : undefined;
+}
+
 export type ToolStepOutcome = "succeeded" | "failed" | "stopped";
 export type ToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number];
 

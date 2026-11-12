@@ -319,10 +319,10 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
   // With a status model, a step's technical line is worded for the person instead of shown.
-  if (event.activity && ctx.statusLive && event.text.trim()) {
-    if (event.modelStatus) ctx.statusLive.supersede();
+  if (event.activity && ctx.statusLive?.active() && event.text.trim()) {
+    if (event.modelStatus) ctx.statusLive?.supersede();
     else {
-      ctx.statusLive.step(redactSecrets(event.text, ctx.secrets));
+      ctx.statusLive?.step(redactSecrets(event.text, ctx.secrets));
       return;
     }
   }

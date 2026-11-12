@@ -178,6 +178,7 @@ import {
   retryRoutineRun,
   wakeRoutine,
 } from "./run-routines.js";
+import type { LiveStatusLines } from "./run-status-lines.js";
 import { startStatusLines } from "./run-status-lines.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
@@ -491,6 +492,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       let dispatchHandedOff = false;
+      let attemptStatusLive: LiveStatusLines | undefined;
       try {
         // Durable run ownership and its heartbeat now carry recovery. Model,
         // integration and computer setup must not occupy a queue dispatch slot.
@@ -797,47 +799,48 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // A status model, when the member chose one, writes the working line's statuses. It
         // starts now, so its opening statuses are ready while the rest of the run sets up.
         const statusRequestText = turnBlocks ? messageBlocksText(turnBlocks).trim() : "";
-        const statusLinesSetup =
+        const statusLinesWanted =
           openingAcknowledgementEnabled() &&
           runPromotesMidTurnNarration(run.trigger) &&
           isConversationalRun(run.trigger) &&
-          !runAllowsSilentEmpty(run.trigger)
-            ? createStatusLineWriter(
-                deps,
-                {
-                  runId,
-                  spaceId: run.spaceId,
-                  userId: run.userId,
-                  botId: bot.id,
-                  threadId: thread.id,
-                },
-                runSecrets,
-              )
-            : Promise.resolve(undefined);
-        const statusOpening = statusLinesSetup.then(
-          (writer) => writer?.opening(statusRequestText, context.signal) ?? [],
-        );
-        // Shown as soon as they are ready, not once the run has finished setting up.
+          !runAllowsSilentEmpty(run.trigger);
+        // Set up in the background: the run never waits on the status model. Its statuses
+        // show as soon as they are ready, not once the run has finished setting up.
+        const statusLinesSetup = statusLinesWanted
+          ? createStatusLineWriter(
+              deps,
+              {
+                runId,
+                spaceId: run.spaceId,
+                userId: run.userId,
+                botId: bot.id,
+                threadId: thread.id,
+              },
+              runSecrets,
+            )
+          : Promise.resolve(undefined);
         let statusHeld = () => false;
-        const statusLive = await statusLinesSetup.then((writer) =>
-          writer
-            ? startStatusLines({
-                writer: statusLinesSetup,
-                request: statusRequestText,
-                opening: statusOpening,
-                held: () => statusHeld(),
-                show: (text) =>
-                  deps.events.append({
-                    spaceId: run.spaceId,
-                    threadId: thread.id,
-                    botId: bot.id,
-                    type: "thread.progress",
-                    runId,
-                    payload: { text, activity: true },
-                  }),
-              })
-            : undefined,
-        );
+        const statusLive = statusLinesWanted
+          ? startStatusLines({
+              writer: statusLinesSetup,
+              request: statusRequestText,
+              opening: statusLinesSetup.then(
+                (writer) => writer?.opening(statusRequestText, context.signal) ?? [],
+              ),
+              held: () => statusHeld(),
+              show: (text) =>
+                deps.events.append({
+                  spaceId: run.spaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  type: "thread.progress",
+                  runId,
+                  payload: { text, activity: true },
+                }),
+            })
+          : undefined;
+        // A setup that fails before the turn starts must not leave statuses posting.
+        attemptStatusLive = statusLive;
         // A run owns its source message and steering bound to it, including waiting-input
         // replies. message.runId alone is display linkage: a send during background work
         // points at that run but waits for its continuation. Read independently of history.
@@ -2059,6 +2062,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           setupError,
         );
       } finally {
+        attemptStatusLive?.close();
         getLogger().info("run.computer", {
           "run.id": runId,
           trigger: run.trigger,

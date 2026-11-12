@@ -4,6 +4,8 @@ import type { StatusLineWriter } from "./status-lines.js";
 export const OPENING_STATUS_ROTATION_MS = 3_500;
 
 export type LiveStatusLines = {
+  /** Whether a status model is writing statuses; false until it is known, and without one. */
+  active(): boolean;
   /** A step the runtime described technically; the status model words it for the person. */
   step(technical: string): void;
   /** Something else now owns the working line: the model's own status, or its reply text. */
@@ -35,6 +37,13 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   let generation = 0;
   let closed = false;
   let rotation: ReturnType<typeof setTimeout> | undefined;
+  let hasWriter = false;
+  void target.writer.then(
+    (writer) => {
+      hasWriter = Boolean(writer);
+    },
+    () => {},
+  );
   const stopRotation = () => {
     if (rotation) clearTimeout(rotation);
     rotation = undefined;
@@ -61,6 +70,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     });
 
   return {
+    active: () => hasWriter && !closed,
     step(technical) {
       const mine = ++generation;
       stopRotation();

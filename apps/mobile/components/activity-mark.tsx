@@ -112,11 +112,12 @@ export function ActivityMark({
   }, [breathing, breathClock, breathAmount]);
 
   const rowStyle = useAnimatedStyle(() => ({ height: height.value }));
-  const markStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const breathStyle = useAnimatedStyle(() => {
+  // One transform for both the arrival and the breath, so neither overrides the other.
+  const markStyle = useAnimatedStyle(() => {
     const phase = (breathClock.value % BREATH.periodMs) / BREATH.periodMs;
     const swell = (1 - Math.cos(phase * 2 * Math.PI)) / 2;
-    return { transform: [{ scale: 1 + BREATH.scale * swell * breathAmount.value }] };
+    const breath = 1 + BREATH.scale * swell * breathAmount.value;
+    return { transform: [{ scale: scale.value * breath }] };
   });
   if (!bot) return null;
   return (
@@ -124,7 +125,7 @@ export function ActivityMark({
       exiting={reducedMotion ? undefined : FadeOut.duration(ROW_MS)}
       style={[{ flexDirection: "row", alignItems: "center", gap: 8, overflow: "hidden" }, rowStyle]}
     >
-      <Animated.View style={[{ width: MARK_SIZE, height: MARK_SIZE }, markStyle, breathStyle]}>
+      <Animated.View style={[{ width: MARK_SIZE, height: MARK_SIZE }, markStyle]}>
         <Animated.View
           key={bot.id}
           entering={bots.length > 1 ? CROSSFADE.entering : undefined}
