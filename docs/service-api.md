@@ -25,9 +25,9 @@ A key acts as you, in the space it was created in, and never reaches more than y
 | `tickets:read`, `tickets:write`           | Read boards, and read, create, change and comment on tickets  |
 | `usage:read`, `search:read`, `audit:read` | Read usage totals, search, and read the audit log if you may  |
 
-A key may be limited to chosen bots. A key with no list reaches every bot you can reach, including ones you add later. A limited key cannot make a call that spans the whole space, such as search, usage, group chats or listing ticket boards, and it sees only tickets assigned to its bots.
+A key may be limited to chosen bots. A key with no list reaches every bot you can reach, including ones you add later. A limited key cannot make a call that spans the whole space, such as search, usage, group chats or listing ticket boards. It sees only tickets assigned to its bots, and no runs in group chats. A bot's status includes its computer's state only for a key with `computer:read`.
 
-A key always expires, after 365 days at most. To rotate one, create its replacement, move your program over, then revoke the old one. Revoking takes effect on the next request, and within seconds on an open event stream.
+A key always expires, after 365 days at most. To rotate one, create its replacement, move your program over, then revoke the old one. Revoking takes effect on the next request, and within seconds on an open event stream. Leaving a space, or being removed from it, revokes your keys there, and being invited back does not restore them.
 
 ## What no key can do
 
