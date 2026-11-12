@@ -142,7 +142,7 @@ separate from account email. Leaving this unset disables bot sending; it never f
 `EMAIL_PROVIDER` or `SMTP_URL`. Existing receiving and account email settings keep working.
 The bot supplies its own From and Reply-To address, so replies return to its inbox.
 
-Each account starts with five recipient deliveries per rolling 24 hours, shared by every bot
+Each account starts with ten recipient deliveries per rolling 24 hours, shared by every bot
 and Space. CC recipients and failed delivery attempts count too. Deleting mail or a bot never
 resets usage. Reservations from before recipient accounting, including overlapping older
 workers, count as ten deliveries until they leave the rolling window because their recipient

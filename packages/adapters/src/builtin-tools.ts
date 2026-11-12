@@ -1075,7 +1075,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "send_email",
     description:
-      "Send plain-text email from your own address to your owner's verified address or an operator-approved recipient. If external replies are enabled, you can also reply to the authenticated sender of an incoming email received in the last 30 days. Pass its id as inReplyTo to keep the thread; the subject defaults to Re: its subject. Every To and CC recipient, including failed attempts, counts against the account's rolling 24-hour allowance, initially five deliveries shared by all its bots. Replies come back to your inbox. Write as yourself, never as your owner. Never put passwords or codes in an email.",
+      "Send plain-text email from your own address to your owner's verified address or an operator-approved recipient. If external replies are enabled, you can also reply to the authenticated sender of an incoming email received in the last 30 days. Pass its id as inReplyTo to keep the thread; the subject defaults to Re: its subject. Every To and CC recipient, including failed attempts, counts against the account's rolling 24-hour allowance, initially ten deliveries shared by all its bots. Replies come back to your inbox. Write as yourself, never as your owner. Never put passwords or codes in an email.",
     inputSchema: {
       type: "object",
       properties: {

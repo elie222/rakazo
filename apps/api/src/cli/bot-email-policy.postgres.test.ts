@@ -30,7 +30,7 @@ dbTests("operator bot email policy command", { timeout: 120_000 }, () => {
     await prisma.user.create({ data: { id: userId, name: "Fixture", email, deactivatedAt } });
     try {
       expect((await command("status", email)).stdout).toContain(
-        "Daily recipient allowance: 5\nExternal replies: off",
+        "Daily recipient allowance: 10\nExternal replies: off",
       );
       expect((await command("limit", email.toUpperCase(), "20")).stdout).toContain(
         "Daily recipient allowance: 20",
@@ -83,7 +83,7 @@ dbTests("operator bot email policy command", { timeout: 120_000 }, () => {
       );
       expect(events.map((event) => event.metadata)).toContainEqual({
         by: "operator",
-        previousLimit: 5,
+        previousLimit: 10,
         previousReplies: false,
         limit: 20,
         replies: false,

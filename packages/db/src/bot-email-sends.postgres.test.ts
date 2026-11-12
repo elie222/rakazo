@@ -38,7 +38,7 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
       data: {
         emailVerified: true,
         deactivatedAt: null,
-        botEmailDailyLimit: 5,
+        botEmailDailyLimit: 10,
         botEmailRepliesEnabled: false,
         botEmailAllowedRecipients: [],
       },
@@ -87,12 +87,12 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
     expect(await reserve("bot", "space")).toBe("limit");
   });
 
-  it("shares five deliveries across concurrent bots in different Spaces", async () => {
+  it("shares ten deliveries across concurrent bots in different Spaces", async () => {
     const results = await Promise.all(
       Array.from({ length: 12 }, (_, index) => reserve(`bot-${index}`, `space-${index}`)),
     );
-    expect(results.filter((result) => typeof result === "object")).toHaveLength(5);
-    expect(results.filter((result) => result === "limit")).toHaveLength(7);
+    expect(results.filter((result) => typeof result === "object")).toHaveLength(10);
+    expect(results.filter((result) => result === "limit")).toHaveLength(2);
     expect(await reserve("new-bot", "new-space")).toBe("limit");
   });
 
@@ -130,15 +130,15 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
       data: { botEmailRepliesEnabled: true },
     });
     const recipients = [`${userId}@example.test`, "sender@example.test"];
-    expect(await reserve("bot", "space", recipients, "sender@example.test")).toHaveProperty("id");
-    expect(await reserve("bot", "space", recipients, "sender@example.test")).toHaveProperty("id");
+    for (let send = 0; send < 5; send++)
+      expect(await reserve("bot", "space", recipients, "sender@example.test")).toHaveProperty("id");
     expect(await reserve("bot", "space", recipients, "sender@example.test")).toBe("limit");
-    expect(await reserve("bot", "space")).toHaveProperty("id");
+    expect(await reserve("bot", "space")).toBe("limit");
     const total = await asSystem(prisma).botEmailSend.aggregate({
       where: { userId },
       _sum: { recipientCount: true },
     });
-    expect(total._sum.recipientCount).toBe(5);
+    expect(total._sum.recipientCount).toBe(10);
   });
 
   it("requires a verified active owner, permits only the owner by default, and supports a pause", async () => {
@@ -182,13 +182,13 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
           userId,
           botId: "deleted",
           sentAt: new Date(now.getTime() - 86_400_001),
-          recipientCount: 5,
+          recipientCount: 10,
         },
-        { userId, botId: "other", sentAt: new Date(now.getTime() - 1_000), recipientCount: 5 },
+        { userId, botId: "other", sentAt: new Date(now.getTime() - 1_000), recipientCount: 10 },
       ],
     });
     expect(await reserve("bot", "space", undefined, undefined, now)).toBe("limit");
-    await asSystem(prisma).user.update({ where: { id: userId }, data: { botEmailDailyLimit: 6 } });
+    await asSystem(prisma).user.update({ where: { id: userId }, data: { botEmailDailyLimit: 11 } });
     expect(await reserve("bot", "space", undefined, undefined, now)).toHaveProperty("id");
     expect(await reserve("bot", "space", undefined, undefined, now)).toBe("limit");
     expect(

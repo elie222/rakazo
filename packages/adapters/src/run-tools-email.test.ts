@@ -626,7 +626,7 @@ describe("send_email", () => {
         email: options.ownerEmail ?? "a@shop.test",
         emailVerified: options.verified ?? true,
         deactivatedAt: options.deactivated ? new Date() : null,
-        botEmailDailyLimit: options.dailyLimit ?? 5,
+        botEmailDailyLimit: options.dailyLimit ?? 10,
         botEmailRepliesEnabled: options.repliesEnabled ?? false,
         botEmailAllowedRecipients: options.allowedRecipients ?? [],
       }),
@@ -794,7 +794,7 @@ describe("send_email", () => {
   });
 
   it("refuses past the daily limit, too many people, or no subject", async () => {
-    const { call, send } = sendRun({ sentToday: 5 });
+    const { call, send } = sendRun({ sentToday: 10 });
     const many = Array.from({ length: 11 }, (_, index) => `p${index}@shop.test`);
 
     expect(await call({ to: ["a@shop.test"], subject: "Hi", text: "x" })).toEqual({
@@ -802,7 +802,7 @@ describe("send_email", () => {
     });
     expect(
       (
-        await sendRun({ ownerSentToday: 5 }).call({
+        await sendRun({ ownerSentToday: 10 }).call({
           to: ["a@shop.test"],
           subject: "Hi",
           text: "x",
@@ -910,7 +910,7 @@ describe("send_email", () => {
 
   it("counts CC recipients and lets the operator raise, lower, or pause the account allowance", async () => {
     const original = { subject: "Hi", messageId: "<message@example.test>", references: [] };
-    const limited = sendRun({ repliesEnabled: true, original, sentToday: 4 });
+    const limited = sendRun({ repliesEnabled: true, original, sentToday: 9 });
     expect(
       (
         await limited.call({
@@ -922,7 +922,7 @@ describe("send_email", () => {
       ).error,
     ).toContain("allowance");
     expect(limited.send).not.toHaveBeenCalled();
-    const raised = sendRun({ repliesEnabled: true, original, sentToday: 4, dailyLimit: 6 });
+    const raised = sendRun({ repliesEnabled: true, original, sentToday: 9, dailyLimit: 12 });
     expect(
       await raised.call({
         to: "support@shop.test",
