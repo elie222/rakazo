@@ -256,7 +256,16 @@ async function main() {
     );
 
   const reconciler = createRunReconciler(
-    { prisma, jobs, events, notifications, cloudAgent, paymentWallet, mediaGeneration },
+    {
+      prisma,
+      jobs,
+      events,
+      notifications,
+      cloudAgent,
+      userCloudAgents: connectors.userCloudAgents,
+      paymentWallet,
+      mediaGeneration,
+    },
     {
       leadership: createPostgresReconciliationLeadership(pool),
       reconcileRoutineRetryNotices: inMemoryJobs

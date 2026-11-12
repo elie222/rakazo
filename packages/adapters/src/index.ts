@@ -210,6 +210,7 @@ export * from "./storage-migration.js";
 export * from "./strategic-initiative.js";
 export * from "./stripe-billing.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
+export { T3CodeConnections } from "./t3code-connections.js";
 export * from "./task-catalog.js";
 export * from "./teaching-session.js";
 export * from "./team-chat-messaging.js";

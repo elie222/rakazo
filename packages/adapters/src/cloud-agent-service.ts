@@ -8,8 +8,12 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { CloudAgentConnection } from "./cloud-agent-factory.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import type {
+  CloudAgentActor,
+  CloudAgentConnection,
+  UserCloudAgents,
+} from "./cloud-agent-factory.js";
+import { cloudAgentsEnabled, USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { cloudAgentLaunchSchema, cloudAgentReplySchema } from "./cloud-agent-tools.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runLeaseFor } from "./run-messages.js";
@@ -19,7 +23,43 @@ export interface CloudAgentDeps {
   jobs: JobPublisher;
   events: Pick<ThreadEvents, "notify">;
   cloudAgent: CloudAgentConnection | null | undefined;
+  userCloudAgents?: UserCloudAgents;
   runLease?: ExecutorDeps["runLease"];
+}
+
+type Connections = Partial<Pick<CloudAgentDeps, "cloudAgent" | "userCloudAgents">>;
+
+/** Where an actor's new agents run: their own connected environment, else the deployment's. */
+export async function cloudAgentForActor(
+  deps: Connections,
+  actor: CloudAgentActor & { botIds?: string[] },
+) {
+  const own = await deps.userCloudAgents?.forActor(actor).catch((error: unknown) => {
+    getLogger().warn("cloud_agent.user_connections_unavailable", { error });
+    return null;
+  });
+  return own ?? (cloudAgentsEnabled(deps.cloudAgent, actor.spaceId) ? deps.cloudAgent! : null);
+}
+
+/** Everywhere the actor's agents may send work: each environment they connected, and the deployment's. */
+export async function cloudAgentsForActor(deps: Connections, actor: CloudAgentActor) {
+  const own =
+    (await deps.userCloudAgents?.listForActor(actor).catch((error: unknown) => {
+      getLogger().warn("cloud_agent.user_connections_unavailable", { error });
+      return null;
+    })) ?? [];
+  return cloudAgentsEnabled(deps.cloudAgent, actor.spaceId) ? [...own, deps.cloudAgent!] : own;
+}
+
+/** The connection an agent was launched on, while it may still be used for it. */
+export async function cloudAgentFor(
+  deps: Connections,
+  agent: Pick<CloudAgent, "providerKey"> & CloudAgentActor,
+) {
+  if (deps.cloudAgent?.key === agent.providerKey)
+    return cloudAgentsEnabled(deps.cloudAgent, agent.spaceId) ? deps.cloudAgent : null;
+  const { spaceId, userId } = agent;
+  return (await deps.userCloudAgents?.forKey(agent.providerKey, { spaceId, userId })) ?? null;
 }
 
 export function cloudAgentBlock(agent: CloudAgent) {
@@ -28,7 +68,8 @@ export function cloudAgentBlock(agent: CloudAgent) {
 
 /** Queue an intent only after scope and owner checks. The worker owns remote I/O. */
 export async function executeCloudAgentTool(
-  deps: CloudAgentDeps,
+  /** `deployment`: the deployment's connection when the run's own is the user's environment. */
+  deps: CloudAgentDeps & { deployment?: CloudAgentConnection | null },
   context: AdapterContext & { botId: string },
   run: { id: string; threadId: string },
   name: string,
@@ -51,13 +92,11 @@ export async function executeCloudAgentTool(
         where: { operationKey: context.operationId },
       });
       if (existing) {
-        if (
-          existing.spaceId !== context.spaceId ||
-          existing.userId !== context.userId ||
-          existing.providerKey !== connection.key
-        ) {
+        if (existing.spaceId !== context.spaceId || existing.userId !== context.userId) {
           throw new Error("Cloud agent operation scope changed");
         }
+        // A retry returns the agent it started even when new agents now go elsewhere, as after a
+        // T3 Code grant lapsed; the agent's poll reaches it through its own provider key.
         return { agent: existing };
       }
       const created = await tx.cloudAgent.create({
@@ -109,7 +148,14 @@ export async function executeCloudAgentTool(
     const owned = await deps.prisma.cloudAgent.findFirst({
       where: {
         id: String(args.id).trim(),
-        providerKey: connection.key,
+        // The actor's agents wherever they run, not only where new agents go.
+        OR: [
+          { providerKey: connection.key },
+          { providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX } },
+          ...(deps.deployment && cloudAgentsEnabled(deps.deployment, context.spaceId)
+            ? [{ providerKey: deps.deployment.key }]
+            : []),
+        ],
         spaceId: context.spaceId,
         userId: context.userId,
       },
@@ -169,15 +215,22 @@ export async function enqueueCloudAgent(
 }
 
 export async function reconcileCloudAgents(
-  deps: Pick<CloudAgentDeps, "prisma" | "jobs" | "cloudAgent">,
+  deps: Pick<CloudAgentDeps, "prisma" | "jobs" | "cloudAgent" | "userCloudAgents">,
 ) {
-  if (!deps.cloudAgent) return;
+  const keys = [
+    ...(deps.cloudAgent
+      ? [
+          {
+            providerKey: deps.cloudAgent.key,
+            ...(deps.cloudAgent.spaceId ? { spaceId: deps.cloudAgent.spaceId } : {}),
+          },
+        ]
+      : []),
+    ...(deps.userCloudAgents ? [{ providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX } }] : []),
+  ];
+  if (!keys.length) return;
   const due = await deps.prisma.cloudAgent.findMany({
-    where: {
-      providerKey: deps.cloudAgent.key,
-      nextPollAt: { lte: new Date() },
-      ...(deps.cloudAgent.spaceId ? { spaceId: deps.cloudAgent.spaceId } : {}),
-    },
+    where: { OR: keys, nextPollAt: { lte: new Date() } },
     orderBy: [{ nextPollAt: "asc" }, { id: "asc" }],
     take: 100,
     select: { id: true },
