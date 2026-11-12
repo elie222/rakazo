@@ -287,9 +287,11 @@ describe("recall outcome grading", () => {
         ?.stdout,
     ).toBe("/home/rakazo/.config/chromium/Default/Preferences");
     expect(
-      scriptedShell(computer, "grep -o pbnh ~/.config/chromium/Default/Preferences | cut -c1-4")
-        ?.stdout,
-    ).toBe('"pbn');
+      scriptedShell(
+        computer,
+        "grep -i midnight ~/.config/chromium/Default/Preferences | cut -c1-34",
+      )?.stdout,
+    ).toBe(`"pbnhgcfkmdlhnoeajihcmpgkglmbjblb"`);
     expect(scriptedShell(computer, 'ls ~/.config/google-chrome; echo "exit: $?"')?.stdout).toBe(
       "exit: 2",
     );
@@ -365,6 +367,14 @@ describe("recall outcome grading", () => {
         id === "related" || id === "never-told" ? [] : ["no-history-lookup"],
       );
     }
+  });
+
+  it("shows the install judge the checks made in the reply, in anchors as in trials", () => {
+    const installAnchors = RECALL_JUDGE_CALIBRATION.filter((a) =>
+      a.input.rubric.includes("asking whether the bot installed a browser extension"),
+    );
+    expect(installAnchors.length).toBeGreaterThan(0);
+    for (const anchor of installAnchors) expect(anchor.input.evidence).toHaveProperty("checks");
   });
 
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
