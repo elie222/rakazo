@@ -79,6 +79,8 @@ RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
 # Optional: prompt tokens per minute the server accepts (a rate-limited key or quota).
 RAKAZO_LOCAL_TOKENS_PER_MINUTE=200000
+# Optional: off when the server does not cache prompts.
+RAKAZO_LOCAL_PROMPT_CACHE=off
 ```
 
 Set `RAKAZO_LOCAL_MODELS_API_KEY` when the server requires a key, such as LiteLLM, vLLM started
@@ -105,6 +107,13 @@ The estimate is calibrated against the prompt tokens the server reports. Leave s
 other clients share the key; a `429` that still happens keeps the usual `Retry-After` handling.
 Unset, calls are sent as soon as they are ready. Like the other token limits, a value that is not
 a positive integer is rejected when the local provider is configured.
+
+Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
+hitting, and trims old page state only when that saves more than the cache would. A server without
+prompt caching (several hosted gateways and confidential-compute endpoints report no cached
+tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
+`RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
+tokens of it have built up. Unset, behaviour is unchanged.
 
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
 prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,

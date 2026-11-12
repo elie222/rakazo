@@ -13,6 +13,7 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
+import { promptCacheDeclaredOff } from "./pi-local-provider-id.js";
 import {
   effectiveOutputReserve,
   operatorMaxTokens,
@@ -53,6 +54,8 @@ const REBUILD_MIN_SAVED_TOKENS = 16_384;
 const REBUILD_MAX_STALE_IMAGES = 8;
 /** A rebuild forced by the model's window leaves this share of it free for the next calls. */
 const REBUILD_HEADROOM = 0.25;
+/** Stale tokens that justify a rebuild when the provider's prompt cache is declared off. */
+const UNCACHED_REBUILD_MIN_SAVED_TOKENS = 3_000;
 export interface Size {
   tokens: number;
   images: number;
@@ -63,16 +66,19 @@ export interface Size {
  * With cache writes at about 1.25 and reads at about 0.1 times the input price, rebuilding every
  * k calls costs least once stale content reaches about 5 × √(rebuilt size × growth per call), so
  * a run that adds a lot per call rebuilds rarely. `appends` counts calls appended since the
- * transcript was last rebuilt at `rebuiltTokens`.
+ * transcript was last rebuilt at `rebuiltTokens`. Without a prompt cache nothing is lost by
+ * rewriting the prefix, so a rebuild pays off as soon as enough stale content has built up.
  */
 export function rebuildPaysOff(
   kept: Size,
   fresh: Size,
   rebuiltTokens: number,
   appends: number,
+  cacheOff = false,
 ): boolean {
   const stale = kept.tokens - fresh.tokens;
   const growth = (kept.tokens - rebuiltTokens) / (appends + 1);
+  if (cacheOff && stale >= UNCACHED_REBUILD_MIN_SAVED_TOKENS) return true;
   return (
     (stale >= REBUILD_MIN_SAVED_TOKENS && stale * stale >= 25 * fresh.tokens * growth) ||
     kept.images - fresh.images >= REBUILD_MAX_STALE_IMAGES
@@ -678,7 +684,13 @@ export function createRuntimeContextPolicy(
           append =
             overTokens(kept) ||
             overImages(kept) ||
-            !rebuildPaysOff(kept, fresh, previous.rebuiltTokens, previous.appends);
+            !rebuildPaysOff(
+              kept,
+              fresh,
+              previous.rebuiltTokens,
+              previous.appends,
+              promptCacheDeclaredOff(model.provider),
+            );
       }
       if (previous && appended && append) {
         const projection = [
