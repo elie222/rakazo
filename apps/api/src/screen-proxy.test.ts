@@ -1,6 +1,5 @@
 import {
   addScreenProxyCapability,
-  resetRemoteScreenCapabilityReuse,
   SCREEN_TARGET_ENDPOINT,
 } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -178,7 +177,6 @@ describe("screen capability lifecycle authorization", () => {
     }
   });
   it("reuses one remote capability across polls and still revokes it", async () => {
-    resetRemoteScreenCapabilityReuse();
     const upstream =
       "https://6100-sandbox.example/vnc.html?autoconnect=true&resize=scale&path=websockify%3Ftoken%3Dview-1&view_only=true";
     const { path, request, computer } = fixture(false, upstream);
