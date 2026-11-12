@@ -827,6 +827,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     <View style={styles.screen}>
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
+          embedded={embedded}
           initials={initials}
           activityMode={activityMode}
           toggleActivityMode={toggleActivityMode}
