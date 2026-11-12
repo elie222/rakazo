@@ -65,6 +65,7 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
   const artifactTarget = useMemo(() => ({ botId: "bot" }), []);
   const none = useMemo(() => new Set<string>(), []);
   const reply = useCallback(() => undefined, []);
+  const resolved = useCallback(async () => undefined, []);
   const quote = useCallback(() => undefined, []);
   const peer = useCallback(() => undefined, []);
   const refresh = useCallback(async () => undefined, []);
@@ -110,6 +111,7 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
       callHoldsSpeaker={false}
       onSpeak={reply}
       onOpenComputer={reply}
+      onReleaseComputer={resolved}
     />
   );
 }

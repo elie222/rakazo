@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-11
+
+### Security
+
+- Updated the IP-address parser to fix a regular-expression denial of service affecting address parsing in rate limiting and proxy connections.
+- Failed MCP responses now have a total size limit even when they use an event stream, preventing oversized error responses from being buffered without a bound.
+
+### Added
+
+- In the desktop app's **This computer** mode, bots can see and use Mac and Windows apps when **Let bots use this computer** is enabled. Screen access is limited to owner-started chats and asks for approval on the first use of each app in a Space ([computer](docs/computer.md)).
+- See subscription allowances, reset times and remaining credits in the account menu and Settings > Usage, with the same breakdown on the mobile account screen.
+- Voice connections can reuse a supported model sign-in for speech and transcription instead of requiring another key ([voice and calls](docs/voice-and-calls.md)).
+- Added another optional remote computer adapter with suspend and resume support ([computer providers](docs/self-host-sandbox-providers.md#instabox-computers)).
+- Mobile now offers French, Hebrew, Hindi, Korean, Brazilian Portuguese and Turkish; Hebrew uses a right-to-left layout.
+- Owners can delete an unpaid organization from the plan choice, with the existing type-the-name confirmation.
+- Operators can cap an account's total hosted model-credit usage without deactivating it ([billing](docs/self-host-billing.md)).
+
+### Changed
+
+- Deleting a bot on web or desktop names the group chats that will also be deleted, including their messages, files and pages.
+- Bots retain earlier conversation by token budget rather than stopping at eight exchanges, helping them follow decisions made earlier in a chat. Longer retained history can use more input tokens.
+- Bots receive a description of their Docker computer's tools and limits before starting work, and can offer the computer card when you need to see or scan its screen.
+- Admin-granted credit now includes computer hours for organizations without a monthly plan; purchased top-ups remain unchanged.
+- Mobile Activity replaces the regular chat list while the bell is on. Chat messages fade under the header and composer, page cards fill the message column, and Android answer options align to the left.
+- Self-host monitoring now alerts on sustained CPU overload and low available memory.
+
+### Fixed
+
+- Local and compatible model streams honor the configured timeouts without a hidden five-minute limit. Leading inline thought blocks are treated as reasoning instead of appearing in replies, and rejected thinking levels recover from more endpoint error formats.
+- Unresponsive Docker computers recover instead of leaving commands hanging or blaming the model connection. Quiet long-running commands keep their connection alive; recovery retains home files but ends running programs.
+- Team computer file choosers open on the screen that requested them, screen startup waits for a chooser still launching, and stale process records no longer interfere with other screens after a restart.
+- Computer workspace saves avoid repeated large-buffer copies, and mounted-home checkpoints keep screens available. Kubernetes computers whose pods disappear are recognized as gone and replaced automatically.
+- Concurrent page-browser calls no longer read partially written settings. Group computer screens refresh when control changes in another tab, and typed input appears sooner during takeover.
+- Voice calls keep a steady audio session so replies play and the microphone keeps working. Web and desktop no longer transcribe the bot's own spoken reply, and failed playback reports an error.
+- Switching bots returns the transcript to the latest messages reliably. Snoozed open chats suppress ordinary browser notifications, and computer takeover requests produce one notification.
+- The Mac computer-view header clears the window buttons, page views show one scrollbar, and dated bot-to-bot messages are easier to scan.
+- The bot style setting stays available when no preference has been saved, so either style can be chosen.
+- Incoming voice notes and other supported attachments are accepted when their reported media type includes parameters.
+- Group messages, handoffs and membership changes no longer deadlock against a finishing bot turn.
+- Group messages keep author labels after a bot leaves or is deleted. Android incoming-call labels use the selected app language; Android 12 and later still use the phone language for system-provided Answer and Decline buttons.
+- Mobile dictation keeps a pending transcription across backgrounding or screen blur, and Send stays disabled until recording and transcription finish.
+- Android custom server settings show Save, sheets fit tablets and foldables, composer controls align with the text, and voice calls show a hang-up icon.
+
+### Self-host upgrade notes
+
+- If you use hosted model-credit caps, finish updating both API and worker processes before relying on enforcement. Existing admitted calls can finish, and costs above their reservation can exceed a cap; personal model connections remain available ([billing](docs/self-host-billing.md)).
+- Local and compatible model streams now fully respect `MODEL_STREAM_TIMEOUT_MS` and `MODEL_STREAM_IDLE_TIMEOUT_MS`. Setting the idle timeout to `0` allows a stalled stream to wait until cancellation ([model connections](docs/self-host-models.md)).
+- Mobile language resources require the new native mobile build; the desktop release does not distribute that build.
+
 ## [0.9.0] - 2026-11-10
 
 ### Security

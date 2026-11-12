@@ -131,6 +131,10 @@ export async function createSentrySink(
         if (config.pseudonymSecret && typeof userId === "string" && userId.length > 0)
           scope.setUser({ id: monitoringUserId(config.pseudonymSecret, userId), ip_address: null });
         scope.setExtra("log.message", message);
+        const fingerprint = event["error.fingerprint"];
+        // Split on top of the stack: errors rethrown from one place stop sharing one issue.
+        if (Array.isArray(fingerprint) && fingerprint.every((part) => typeof part === "string"))
+          scope.setFingerprint(["{{ default }}", ...fingerprint.map(redactSensitiveText)]);
         if (error) {
           Sentry.captureException(rebuildError(error));
         } else {

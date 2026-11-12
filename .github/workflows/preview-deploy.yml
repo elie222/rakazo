@@ -126,16 +126,11 @@ jobs:
               '{title, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url}' \
               > "$dir/pr.json"
           gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
-          head -c 120000 "$dir/full.diff" > "$dir/pr.diff"
           delimiter="PROMPT_$(openssl rand -hex 16)"
           {
             echo "prompt<<$delimiter"
-            cat .github/prompts/pr-screenshots.md
-            printf '\n<pull_request>\n'
-            cat "$dir/pr.json"
-            printf '</pull_request>\n\n<diff>\n'
-            cat "$dir/pr.diff"
-            printf '\n</diff>\n'
+            python3 .github/scripts/pr-screenshots.py prompt .github/prompts/pr-screenshots.md \
+              "$dir/pr.json" "$dir/full.diff"
             echo "$delimiter"
             echo "pr=$pr"
             echo "preview_url=$preview_url"
@@ -150,8 +145,9 @@ jobs:
           npm=$(command -v npm)
           sudo useradd --create-home --shell /usr/sbin/nologin pr-screenshots
           sudo env PATH="$(dirname "$node"):/usr/bin:/bin" "$npm" install --no-save --no-fund --prefix /opt/pr-screenshots-mcp @playwright/mcp@0.0.84
+          # No --with-deps: ubuntu-latest already has Chromium's libraries, and its apt mirror is flaky.
           sudo env PLAYWRIGHT_BROWSERS_PATH=/opt/pr-screenshots-browsers \
-            "$node" /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install --with-deps chromium
+            "$node" /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install chromium
           sudo install -d -o pr-screenshots -g pr-screenshots -m 755 /srv/pr-screenshots
           jq -n --arg node "$node" --arg origin "$PREVIEW_URL" '{mcpServers: {playwright: {
             command: "sudo",

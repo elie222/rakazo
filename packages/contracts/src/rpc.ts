@@ -618,6 +618,8 @@ export const appContract = {
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Groups this delete removes because fewer than two active bots would remain. */
+    removePreview: oc.input(botId).output(z.array(z.object({ id: Id, name: z.string() }))),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),
     emailAddresses: oc.output(BotEmailAddressesSchema),
     claimEmailAddress: oc
@@ -827,6 +829,8 @@ export const appContract = {
         z.object({
           botId: Id,
           reason: ComputerReleaseReasonSchema.optional(),
+          /** The run a needs-you card answers; the release applies only while it waits on the caller. */
+          runId: Id.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -864,6 +868,16 @@ export const appContract = {
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    /** A still of the screen as an image data URL, or null when the computer is not running. */
+    preview: oc
+      .input(
+        z.object({
+          botId: Id,
+          /** The run a needs-you card shows; no image once that run stops waiting. */
+          runId: Id.optional(),
+        }),
+      )
+      .output(z.object({ image: z.string().nullable() })),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {

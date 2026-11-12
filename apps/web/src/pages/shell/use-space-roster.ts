@@ -448,7 +448,7 @@ export function useSpaceBootstrap({
     const poll = window.setInterval(() => {
       if (botsRefreshInFlight.current > 0) return;
       refreshVisibleBots();
-    }, 3_000);
+    }, 10_000);
     return () => {
       cancelled = true;
       window.clearTimeout(refreshTimer);

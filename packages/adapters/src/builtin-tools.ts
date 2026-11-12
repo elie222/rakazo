@@ -28,6 +28,7 @@ import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 import { SCHEDULE_TIMING_FIELDS } from "./schedule-tools.js";
+import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
@@ -1249,13 +1250,21 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short title for the item." },
+        title: {
+          type: "string",
+          maxLength: SCRATCHPAD_TITLE_MAX_LENGTH,
+          description: "Short title for the item.",
+        },
         status: {
           type: "string",
           enum: ["open", "parked", "done"],
           description: "Defaults to open.",
         },
-        notes: { type: "string", description: "Optional notes." },
+        notes: {
+          type: "string",
+          maxLength: SCRATCHPAD_NOTES_MAX_LENGTH,
+          description: "Optional notes.",
+        },
       },
       required: ["title"],
     },
@@ -1267,9 +1276,13 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         itemId: { type: "string" },
-        title: { type: "string" },
+        title: { type: "string", maxLength: SCRATCHPAD_TITLE_MAX_LENGTH },
         status: { type: "string", enum: ["open", "parked", "done"] },
-        notes: { type: "string" },
+        notes: {
+          type: "string",
+          maxLength: SCRATCHPAD_NOTES_MAX_LENGTH,
+          description: "Replaces the current notes.",
+        },
       },
       required: ["itemId"],
     },
