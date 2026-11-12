@@ -7,7 +7,7 @@ type SpaceRpc = { client: RpcClient; spaceId: string | null | undefined };
 
 const SpaceRpcContext = createContext<SpaceRpc>({ client: rpc, spaceId: undefined });
 
-/** Binds components below to a space, or lets them follow the selected space. */
+/** Pins an explicit space; unset scopes inherit their parent or follow selection at the root. */
 export function SpaceRpcProvider({
   spaceId,
   children,
@@ -15,12 +15,13 @@ export function SpaceRpcProvider({
   spaceId: string | null | undefined;
   children: ReactNode;
 }) {
+  const parent = useContext(SpaceRpcContext);
   const value = useMemo<SpaceRpc>(
     () =>
       spaceId === undefined
-        ? { client: rpc, spaceId }
+        ? parent
         : { client: spaceId === null ? createSpaceRpc(null) : rpcForSpace(spaceId), spaceId },
-    [spaceId],
+    [parent, spaceId],
   );
   return <SpaceRpcContext.Provider value={value}>{children}</SpaceRpcContext.Provider>;
 }

@@ -82,4 +82,24 @@ describe("SpaceRpcProvider", () => {
     });
     expect(calls).toEqual([scenario.expected]);
   });
+
+  it.each([
+    { parentSpaceId: "space-a", expected: "space-a" },
+    { parentSpaceId: null, expected: null },
+  ])("inherits the parent scope when a nested provider is unset", async (scenario) => {
+    window.localStorage.setItem("rakazo:space-id", "space-b");
+    await act(async () => {
+      root.render(
+        <SpaceRpcProvider spaceId={scenario.parentSpaceId}>
+          <SpaceRpcProvider spaceId={undefined}>
+            <ClaimProbe />
+          </SpaceRpcProvider>
+        </SpaceRpcProvider>,
+      );
+    });
+    await act(async () => {
+      container.querySelector("button")?.click();
+    });
+    expect(calls).toEqual([scenario.expected]);
+  });
 });
