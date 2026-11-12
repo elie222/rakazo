@@ -45,7 +45,9 @@ import {
   teamBrowserProfileName,
   withCleanupDeadline,
 } from "./computer-workspace.js";
+import { purgeClearedConversationMemory } from "./conversation-memory-cleanup.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
+import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -219,6 +221,7 @@ type BotLifecycleDeps = {
   home: AgentHomeStore;
   jobs: JobPublisher;
   dataDir?: string;
+  memoryProviders?: MemoryProviderResolver;
   artifacts?: ArtifactStore;
   /** Removes deleted page links' sealed tokens from a remote secret store. */
   secretStore?: Pick<SecretStore, "delete">;
@@ -494,6 +497,7 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        groupMemory: groupCleanup.memory,
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
@@ -523,6 +527,23 @@ export async function destroyBot(
         .catch(() => undefined);
     }),
   );
+  if (deps.memoryProviders) {
+    const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders };
+    await Promise.all(
+      deletion.groupMemory.map((group) =>
+        purgeClearedConversationMemory(
+          memory,
+          context,
+          {
+            kind: "group",
+            threadId: group.threadId,
+            memberBotIds: group.botIds,
+          },
+          group.generation,
+        ).catch((error) => getLogger().error("dissolved group memory cleanup", error)),
+      ),
+    );
+  }
   if (dedicated) {
     await recordComputerRunEnd(deps.prisma, { id: dedicated.id }, "deleted");
     await removeAgentHome(deps.home, dedicated.homeKey, deps.dataDir).catch(() => undefined);
@@ -590,7 +611,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
       members: {
         select: { botId: true, bot: { select: { archivedAt: true } } },
       },
-      thread: { select: { id: true } },
+      thread: { select: { id: true, historyCompactionGeneration: true } },
     },
   });
   const dissolvedGroupIds = groupsDissolvedByRemovingBot(affectedGroups, botId).map(
@@ -600,6 +621,34 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   const dissolvedThreadIds = affectedGroups
     .filter((group) => dissolvedGroupIdSet.has(group.id))
     .flatMap((group) => (group.thread ? [group.thread.id] : []));
+  // Capture all learners before the group cascades away, including bots no longer in it.
+  const learners = dissolvedThreadIds.length
+    ? await tx.run.findMany({
+        where: { threadId: { in: dissolvedThreadIds } },
+        distinct: ["threadId", "botId"],
+        select: { threadId: true, botId: true },
+      })
+    : [];
+  const memory = affectedGroups
+    .filter((group) => dissolvedGroupIdSet.has(group.id))
+    .flatMap((group) =>
+      group.thread
+        ? [
+            {
+              threadId: group.thread.id,
+              generation: group.thread.historyCompactionGeneration,
+              botIds: [
+                ...new Set([
+                  ...group.members.map((member) => member.botId),
+                  ...learners
+                    .filter((run) => run.threadId === group.thread!.id)
+                    .map((run) => run.botId),
+                ]),
+              ],
+            },
+          ]
+        : [],
+    );
   const activeRuns = dissolvedThreadIds.length
     ? await tx.run.findMany({
         where: {
@@ -649,6 +698,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
+    memory,
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
     pageShareSecrets,
     cancelledRuns: cancelledRuns.map((run) => ({
