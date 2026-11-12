@@ -4,6 +4,7 @@ import {
   deleteHindsightDocument,
   HINDSIGHT_CLOUD_BASE_URL,
   hindsightBankExists,
+  hindsightOperationStatus,
   listHindsightDocumentIdsByTag,
   probeHindsightKey,
   recallHindsight,
@@ -67,6 +68,12 @@ describe("Hindsight client", () => {
     await deleteHindsightDocument({ ...config, fetch }, "bank", "document");
     await listHindsightDocumentIdsByTag({ ...config, fetch }, "bank", "session:thread");
     expect(timeout.mock.calls).toEqual([[10_000], [10_000]]);
+  });
+  it("uses a short deadline for operation metadata", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetch = vi.fn(async () => Response.json({ status: "pending" }));
+    await hindsightOperationStatus({ ...config, fetch }, "bank", "operation");
+    expect(timeout.mock.calls).toEqual([[10_000]]);
   });
 
   it("reads a bank nothing was retained to as empty", async () => {

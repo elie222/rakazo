@@ -19,6 +19,7 @@ import {
   HINDSIGHT_CONNECTION_TIMEOUT_MS,
   HINDSIGHT_PURGE_TIMEOUT_MS,
   HINDSIGHT_RECALL_TIMEOUT_MS,
+  HINDSIGHT_STATUS_TIMEOUT_MS,
   hindsightBankExists,
   hindsightOperationStatus,
   listHindsightDocumentIdsByTag,
@@ -653,15 +654,18 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse<{ settled: boolean }>> {
     const operations = parsePendingOperations(pending, context.spaceId);
     if (!operations) return { ok: false, error: "Hindsight got an invalid pending turn." };
-    const connection = await this.connectionForRequest(context.signal);
+    const signal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(HINDSIGHT_STATUS_TIMEOUT_MS),
+    ]);
+    const connection = await this.connectionForRequest(signal);
     if (!connection.ok) return connection;
-    let settled = true;
-    for (const { bank, operationId } of operations) {
-      if (!(await operationDone(connection.value, bank, operationId, context.signal))) {
-        settled = false;
-      }
-    }
-    return { ok: true, value: { settled } };
+    const settled = await Promise.all(
+      operations.map(({ bank, operationId }) =>
+        operationDone(connection.value, bank, operationId, signal),
+      ),
+    );
+    return { ok: true, value: { settled: settled.every(Boolean) } };
   }
 
   /**

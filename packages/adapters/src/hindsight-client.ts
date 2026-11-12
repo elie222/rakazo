@@ -12,6 +12,8 @@ export const HINDSIGHT_CONNECTION_TIMEOUT_MS = 10_000;
 export const HINDSIGHT_RECALL_TIMEOUT_MS = 15_000;
 /** Clear awaits cleanup; its entire purge must not inherit reflection's LLM-sized timeout. */
 export const HINDSIGHT_PURGE_TIMEOUT_MS = 10_000;
+/** Polling operation metadata does not run the provider's LLM. */
+export const HINDSIGHT_STATUS_TIMEOUT_MS = 10_000;
 const MAX_HINDSIGHT_RESPONSE_BYTES = 1024 * 1024;
 
 export interface HindsightConnectionConfig extends LocalServiceConnection {
@@ -164,6 +166,7 @@ export async function hindsightOperationStatus(
     signal,
     readJson: true,
     allowNotFound: true,
+    timeoutMs: HINDSIGHT_STATUS_TIMEOUT_MS,
   });
   if (!result.ok) return result;
   if (result.value === null) return { ok: true, value: "not_found" };
@@ -185,7 +188,7 @@ function parseRecallResult(value: unknown): HindsightRecallResult | undefined {
   return {
     text: result.text,
     ...(updatedAt ? { updatedAt } : {}),
-    score: typeof final === "number" ? final : 1,
+    score: typeof final === "number" && Number.isFinite(final) ? final : 0,
   };
 }
 

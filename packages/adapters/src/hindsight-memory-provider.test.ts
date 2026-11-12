@@ -473,18 +473,18 @@ describe("Hindsight recall", () => {
     await expect(memory.recall({ ...recall, scope: "shared" }, context)).resolves.toEqual({
       ok: true,
       value: [
-        {
-          memory: "Works in Lisbon.",
-          score: 1,
-          updatedAt: "2026-11-01T00:00:00Z",
-          provenance: "hindsight",
-        },
         { memory: "Prefers tea.", score: 0.9, provenance: "hindsight" },
         {
           memory: "Has a dog named Pixel.",
           score: 0.5,
           provenance: "another app via hindsight",
           external: true,
+        },
+        {
+          memory: "Works in Lisbon.",
+          score: 0,
+          updatedAt: "2026-11-01T00:00:00Z",
+          provenance: "hindsight",
         },
       ],
     });
@@ -493,6 +493,8 @@ describe("Hindsight recall", () => {
       TEAM_BANK,
       "other-app",
     ]);
+    const limited = await memory.recall({ ...recall, scope: "shared", limit: 1 }, context);
+    expect(limited).toMatchObject({ ok: true, value: [{ memory: "Prefers tea.", score: 0.9 }] });
     const isolated = await memory.recall({ ...recall, scope: "isolated", limit: 1 }, context);
     expect(isolated).toEqual({
       ok: true,
@@ -577,7 +579,7 @@ describe("Hindsight recall", () => {
       value: [
         {
           memory: "Has a dog named Pixel.",
-          score: 1,
+          score: 0,
           provenance: "another app via hindsight",
           external: true,
         },
@@ -809,6 +811,37 @@ describe("Hindsight conversations", () => {
     await expect(
       retainAndCheck(provider(fake.fetch), { ...turn, scope: "shared" }),
     ).resolves.toEqual({ ok: true, value: { settled: false } });
+  });
+  it("checks banks concurrently under one short settlement deadline", async () => {
+    const fake = hindsightFake({ operations: ["pending"] });
+    let active = 0;
+    let peak = 0;
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const status = String(input).includes("/operations/");
+      if (status) {
+        active++;
+        peak = Math.max(peak, active);
+        await Promise.resolve();
+      }
+      try {
+        return await fake.fetch(input, init);
+      } finally {
+        if (status) active--;
+      }
+    };
+    const memory = provider(fetch);
+    const retained = await memory.retainConversation!({ ...turn, scope: "shared" }, context);
+    if (!retained.ok) throw new Error(retained.error);
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      await expect(
+        memory.retainedConversationSettled(retained.value.pending!, context),
+      ).resolves.toEqual({ ok: true, value: { settled: false } });
+      expect(peak).toBe(2);
+      expect(timeout.mock.calls.every(([ms]) => ms === 10_000)).toBe(true);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("counts a turn the server failed to store as done, without storing it again", async () => {
@@ -1118,7 +1151,7 @@ describe("Hindsight connection", () => {
     }
   });
 
-  it.each(["recall", "purge"] as const)(
+  it.each(["recall", "purge", "settlement"] as const)(
     "includes stalled DNS in the %s deadline",
     async (operation) => {
       const deadline = new AbortController();
@@ -1144,10 +1177,17 @@ describe("Hindsight connection", () => {
                 { query: "context", botId: "bot-1", scope: "isolated", limit: 5 },
                 context,
               )
-            : memory.purgeHistory(
-                { botId: "bot-1", threadId: "thread-1", generations: [3] },
-                context,
-              );
+            : operation === "purge"
+              ? memory.purgeHistory(
+                  { botId: "bot-1", threadId: "thread-1", generations: [3] },
+                  context,
+                )
+              : memory.retainedConversationSettled(
+                  JSON.stringify([
+                    { bank: OWN_BANK, operationId: "00000000-0000-4000-8000-000000000000" },
+                  ]),
+                  context,
+                );
         expect(resolveHostname).toHaveBeenCalledOnce();
         deadline.abort(new Error("operation deadline"));
         await expect(pending).resolves.toMatchObject({ ok: false });
