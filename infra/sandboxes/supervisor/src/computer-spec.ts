@@ -40,6 +40,7 @@ export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "rakazo-browser",
   "rakazo-focus-or-launch",
   "rakazo-page-browser",
+  "rakazo-net",
   "page_secrets.py",
   "install-agent-browser.sh",
   "rakazo-browser.desktop",

@@ -3,7 +3,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
+import { TAILNET_CONNECT_PATH, USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { PreviewServer } from "vite";
 import { preview } from "vite";
 import { afterEach, describe, expect, it } from "vitest";
@@ -109,6 +109,21 @@ describe("apiProxy", () => {
     ]);
   });
 
+  it("forwards a bot computer's tailnet tunnel with its token", async () => {
+    const { target, upgrades } = await startApi();
+    const port = await startPreview(target);
+
+    await expect(
+      upgrade(port, {
+        path: `${TAILNET_CONNECT_PATH}?host=nas.tail1234.ts.net&port=22`,
+        headers: { Authorization: "Bearer fake-tunnel-token" },
+      }),
+    ).resolves.toBe(101);
+    expect(upgrades).toEqual([
+      expect.objectContaining({ authorization: "Bearer fake-tunnel-token" }),
+    ]);
+  });
+
   it("appends the hop it saw to an API request's forwarded address", async () => {
     const { target } = await startApi();
     const port = await startPreview(target);
@@ -126,6 +141,8 @@ describe("apiProxy", () => {
     `${USER_DEVICE_CONNECT_PATH}%2f..%2fthreads`,
     `${USER_DEVICE_CONNECT_PATH}x`,
     `${USER_DEVICE_CONNECT_PATH}/../../threads`,
+    `${TAILNET_CONNECT_PATH}x`,
+    `${TAILNET_CONNECT_PATH}/../../threads`,
   ])("forwards no other upgrade path, such as %s", async (path) => {
     const { target, upgrades } = await startApi();
     const port = await startPreview(target);

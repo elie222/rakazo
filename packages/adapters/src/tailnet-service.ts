@@ -199,6 +199,15 @@ export async function createTailscaledNodeHost(
   return new TailscaledNodeHost({ tailscaled, tailscale, runDir });
 }
 
+/** Whether this machine has the binaries tailnet nodes run on. */
+export async function tailscaledInstalled(path = process.env.PATH ?? ""): Promise<boolean> {
+  const [tailscaled, tailscale] = await Promise.all([
+    findExecutable("tailscaled", path),
+    findExecutable("tailscale", path),
+  ]);
+  return Boolean(tailscaled && tailscale);
+}
+
 async function findExecutable(name: string, path: string): Promise<string | undefined> {
   for (const directory of path.split(delimiter).filter(Boolean)) {
     const candidate = join(directory, name);

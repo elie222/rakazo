@@ -1,0 +1,407 @@
+#!/usr/bin/python3 -I
+"""Reach machines on the tailnet of the person this bot works for.
+
+Rakazo runs the bot's tailnet node outside this computer; this helper reaches it over a WebSocket
+tunnel to Rakazo, one per connection, with the token Rakazo puts in each command's environment
+(RAKAZO_NET_URL, RAKAZO_NET_TOKEN). Rakazo checks every connection against what the person
+approved. Do not install Tailscale or run tailscaled here.
+
+  rakazo-net run COMMAND...            run COMMAND with HTTP(S) to tailnet hosts going through
+                                       the tunnel; other traffic goes out directly as usual
+  rakazo-net nc HOST PORT              connect stdin/stdout to HOST:PORT (ssh ProxyCommand)
+  rakazo-net forward LOCAL HOST:PORT   serve HOST:PORT on 127.0.0.1:LOCAL until stopped
+
+Only TCP to *.ts.net names and 100.64.0.0/10 or fd7a:115c:a1e0::/48 addresses is supported.
+"""
+
+import base64
+import hashlib
+import ipaddress
+import os
+import socket
+import socketserver
+import ssl
+import struct
+import subprocess
+import sys
+import threading
+from urllib.parse import urlencode, urlsplit
+
+WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+CHUNK = 64 * 1024
+MAX_HEAD = 64 * 1024
+TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
+TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
+
+
+class TunnelError(Exception):
+    """A refusal or failure, worded for the person reading the command's output."""
+
+
+def is_tailnet_host(host):
+    host = host.strip("[]").rstrip(".").lower()
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host.endswith(".ts.net") and host.count(".") >= 3
+    return address in TAILNET_V4 or address in TAILNET_V6
+
+
+def tunnel_config():
+    url = os.environ.get("RAKAZO_NET_URL", "")
+    token = os.environ.get("RAKAZO_NET_TOKEN", "")
+    if not url or not token:
+        raise TunnelError("Tailnet access is off for this bot.")
+    return urlsplit(url), token
+
+
+def read_head(sock):
+    """Read an HTTP head; returns (head bytes, bytes already read past it)."""
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = sock.recv(CHUNK)
+        if not chunk:
+            raise TunnelError("The connection closed before a reply.")
+        data += chunk
+        if len(data) > MAX_HEAD:
+            raise TunnelError("The reply was too large.")
+    head, _, rest = data.partition(b"\r\n\r\n")
+    return head, rest
+
+
+class Tunnel:
+    """One TCP connection to a tailnet destination, carried in a WebSocket's binary messages."""
+
+    def __init__(self, sock, buffered):
+        self.sock = sock
+        self.buffered = buffered
+        self.lock = threading.Lock()
+        self.closed = False
+
+    @classmethod
+    def open(cls, host, port):
+        url, token = tunnel_config()
+        secure = url.scheme in ("https", "wss")
+        if url.scheme not in ("http", "https", "ws", "wss") or not url.hostname:
+            raise TunnelError("RAKAZO_NET_URL is not a valid tunnel address.")
+        try:
+            sock = socket.create_connection(
+                (url.hostname, url.port or (443 if secure else 80)), timeout=30
+            )
+        except OSError as error:
+            raise TunnelError(f"Rakazo could not be reached: {error.strerror or error}") from None
+        if secure:
+            sock = ssl.create_default_context().wrap_socket(sock, server_hostname=url.hostname)
+        key = base64.b64encode(os.urandom(16)).decode()
+        target = f"{url.path or '/'}?{urlencode({'host': host, 'port': str(port)})}"
+        host_header = url.netloc.rpartition("@")[2]
+        request = (
+            f"GET {target} HTTP/1.1\r\nHost: {host_header}\r\nUpgrade: websocket\r\n"
+            f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+            f"Authorization: Bearer {token}\r\n\r\n"
+        )
+        sock.sendall(request.encode())
+        head, rest = read_head(sock)
+        lines = head.decode("latin-1").split("\r\n")
+        status = lines[0].split(" ", 2)
+        headers = {}
+        for line in lines[1:]:
+            name, _, value = line.partition(":")
+            headers[name.strip().lower()] = value.strip()
+        if len(status) < 2 or status[1] != "101":
+            body = rest
+            length = int(headers.get("content-length", "0") or 0)
+            while len(body) < length:
+                chunk = sock.recv(CHUNK)
+                if not chunk:
+                    break
+                body += chunk
+            sock.close()
+            reason = body.decode("utf-8", "replace").strip()
+            raise TunnelError(reason or f"Rakazo refused the connection ({' '.join(status[1:])}).")
+        expected = base64.b64encode(hashlib.sha1(key.encode() + WS_GUID).digest()).decode()
+        if headers.get("sec-websocket-accept") != expected:
+            sock.close()
+            raise TunnelError("Rakazo answered with an invalid tunnel handshake.")
+        sock.settimeout(None)
+        return cls(sock, rest)
+
+    def _frame(self, opcode, payload):
+        mask = os.urandom(4)
+        size = len(payload)
+        if size < 126:
+            header = struct.pack("!BB", 0x80 | opcode, 0x80 | size)
+        elif size < 1 << 16:
+            header = struct.pack("!BBH", 0x80 | opcode, 0x80 | 126, size)
+        else:
+            header = struct.pack("!BBQ", 0x80 | opcode, 0x80 | 127, size)
+        # Masking one large integer is far faster than a byte at a time in Python.
+        key = (mask * (size // 4 + 1))[:size]
+        masked = (int.from_bytes(payload, "big") ^ int.from_bytes(key, "big")).to_bytes(size, "big")
+        with self.lock:
+            if not self.closed:
+                self.sock.sendall(header + mask + masked)
+
+    def send(self, data):
+        for start in range(0, len(data), CHUNK):
+            self._frame(0x2, data[start : start + CHUNK])
+
+    def end(self):
+        """End this side's sending: the far side sees end of stream, and can still reply."""
+        self._frame(0x2, b"")
+
+    def _read(self, size):
+        while len(self.buffered) < size:
+            chunk = self.sock.recv(CHUNK)
+            if not chunk:
+                raise EOFError
+            self.buffered += chunk
+        data, self.buffered = self.buffered[:size], self.buffered[size:]
+        return data
+
+    def recv(self):
+        """The next bytes from the far side; b"" once it has closed."""
+        try:
+            while True:
+                first, second = self._read(2)
+                opcode = first & 0x0F
+                size = second & 0x7F
+                if size == 126:
+                    (size,) = struct.unpack("!H", self._read(2))
+                elif size == 127:
+                    (size,) = struct.unpack("!Q", self._read(8))
+                payload = self._read(size)
+                if opcode in (0x0, 0x1, 0x2):
+                    if payload:
+                        return payload
+                elif opcode == 0x8:
+                    self._frame(0x8, payload[:2])
+                    return b""
+                elif opcode == 0x9:
+                    self._frame(0xA, payload)
+        except (EOFError, OSError):
+            return b""
+
+    def close(self):
+        with self.lock:
+            if self.closed:
+                return
+            self.closed = True
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def pump(local_recv, local_send, local_end, tunnel):
+    """Copy both ways until the far side closes. Local end of input becomes a half-close."""
+
+    def outbound():
+        try:
+            while True:
+                data = local_recv()
+                if not data:
+                    tunnel.end()
+                    return
+                tunnel.send(data)
+        except OSError:
+            tunnel.close()
+
+    thread = threading.Thread(target=outbound, daemon=True)
+    thread.start()
+    try:
+        while True:
+            data = tunnel.recv()
+            if not data:
+                break
+            local_send(data)
+    except OSError:
+        pass
+    finally:
+        tunnel.close()
+        local_end()
+
+
+def pump_socket(conn, tunnel):
+    def end():
+        try:
+            conn.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        conn.close()
+
+    pump(lambda: conn.recv(CHUNK), conn.sendall, end, tunnel)
+
+
+def command_nc(host, port):
+    tunnel = Tunnel.open(host, port)
+    stdin = sys.stdin.buffer.raw
+    stdout = sys.stdout.buffer
+
+    def write(data):
+        stdout.write(data)
+        stdout.flush()
+
+    pump(lambda: stdin.read(CHUNK), write, lambda: None, tunnel)
+
+
+def parse_target(value):
+    host, sep, port = value.rpartition(":")
+    if not sep or not port.isdigit() or not host:
+        raise TunnelError(f"Expected HOST:PORT, got {value}.")
+    return host.strip("[]"), int(port)
+
+
+def command_forward(local, target):
+    host, port = parse_target(target)
+    if not local.isdigit():
+        raise TunnelError(f"Expected a local port number, got {local}.")
+    if not is_tailnet_host(host):
+        raise TunnelError(f"{host} is not a tailnet host.")
+
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self):
+            try:
+                tunnel = Tunnel.open(host, port)
+            except TunnelError as error:
+                print(f"rakazo-net: {error}", file=sys.stderr, flush=True)
+                self.request.close()
+                return
+            pump_socket(self.request, tunnel)
+
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", int(local)), Handler) as server:
+        server.daemon_threads = True
+        print(f"Forwarding 127.0.0.1:{local} to {host}:{port}", file=sys.stderr, flush=True)
+        server.serve_forever()
+
+
+class ProxyHandler(socketserver.BaseRequestHandler):
+    """An HTTP proxy for one command: tailnet hosts through the tunnel, the rest directly."""
+
+    def reply(self, status, text, message=""):
+        body = f"{message}\n".encode() if message else b""
+        self.request.sendall(
+            f"HTTP/1.1 {status} {text}\r\nContent-Type: text/plain; charset=utf-8\r\n"
+            f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+            + body
+        )
+
+    def upstream(self, host, port):
+        if is_tailnet_host(host):
+            return Tunnel.open(host, port)
+        return socket.create_connection((host, port), timeout=30)
+
+    def handle(self):
+        try:
+            head, rest = read_head(self.request)
+        except TunnelError:
+            return
+        lines = head.decode("latin-1").split("\r\n")
+        method, _, remainder = lines[0].partition(" ")
+        target, _, version = remainder.partition(" ")
+        try:
+            if method == "CONNECT":
+                host, port = parse_target(target)
+                remote = self.upstream(host, port)
+                self.request.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                first = rest
+            else:
+                url = urlsplit(target)
+                if url.scheme != "http" or not url.hostname:
+                    return self.reply(400, "Bad Request", "Expected an absolute http:// URL.")
+                remote = self.upstream(url.hostname, url.port or 80)
+                path = url.path or "/"
+                if url.query:
+                    path += "?" + url.query
+                headers = [
+                    line
+                    for line in lines[1:]
+                    if not line.lower().startswith(("proxy-", "connection:", "keep-alive:"))
+                ]
+                first = (
+                    f"{method} {path} {version}\r\n".encode("latin-1")
+                    + "".join(f"{line}\r\n" for line in headers).encode("latin-1")
+                    + b"Connection: close\r\n\r\n"
+                    + rest
+                )
+        except TunnelError as error:
+            # Clients rarely show a proxy's reason, so it goes to the command's output too.
+            print(f"rakazo-net: {error}", file=sys.stderr, flush=True)
+            return self.reply(403, "Forbidden", str(error))
+        except OSError as error:
+            return self.reply(502, "Bad Gateway", str(error.strerror or error))
+        if isinstance(remote, Tunnel):
+            if first:
+                remote.send(first)
+            pump_socket(self.request, remote)
+            return
+        if first:
+            remote.sendall(first)
+        relay_sockets(self.request, remote)
+
+
+def relay_sockets(left, right):
+    def copy(source, target):
+        try:
+            while True:
+                data = source.recv(CHUNK)
+                if not data:
+                    break
+                target.sendall(data)
+            target.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+    thread = threading.Thread(target=copy, args=(right, left), daemon=True)
+    thread.start()
+    copy(left, right)
+    thread.join()
+    left.close()
+    right.close()
+
+
+def command_run(argv):
+    tunnel_config()
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), ProxyHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    proxy = f"http://127.0.0.1:{server.server_address[1]}"
+    env = dict(os.environ)
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        env[name] = env[name.lower()] = proxy
+    env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+    env["NODE_USE_ENV_PROXY"] = "1"
+    try:
+        return subprocess.call(argv, env=env)
+    except FileNotFoundError:
+        raise TunnelError(f"{argv[0]}: command not found") from None
+    finally:
+        server.shutdown()
+
+
+def main(argv):
+    usage = __doc__.split("\n\n")[2]
+    try:
+        if len(argv) >= 2 and argv[0] == "run":
+            return command_run(argv[1:])
+        if len(argv) == 3 and argv[0] == "nc":
+            if not argv[2].isdigit():
+                raise TunnelError(f"Expected a port number, got {argv[2]}.")
+            command_nc(argv[1], int(argv[2]))
+            return 0
+        if len(argv) == 3 and argv[0] == "forward":
+            command_forward(argv[1], argv[2])
+            return 0
+    except TunnelError as error:
+        print(f"rakazo-net: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
+    print(usage, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

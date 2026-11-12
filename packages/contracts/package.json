@@ -20,6 +20,11 @@
       "development": "./src/network-host.ts",
       "default": "./src/network-host.ts"
     },
+    "./tailnet-path": {
+      "types": "./src/tailnet-path.ts",
+      "development": "./src/tailnet-path.ts",
+      "default": "./src/tailnet-path.ts"
+    },
     "./user-devices": {
       "types": "./src/user-devices.ts",
       "development": "./src/user-devices.ts",
