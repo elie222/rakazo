@@ -795,6 +795,7 @@ describe("botEmailInstruction", () => {
 
     for (const tool of ["read_email", "send_email", "delete_email"]) expect(all).toContain(tool);
     expect(readOnly).toContain("read_email");
+    expect(readOnly).toContain("sign up for a site as yourself");
     expect(readOnly).not.toContain("send_email");
     expect(readOnly).not.toContain("delete_email");
     expect(
@@ -812,11 +813,14 @@ describe("claim_email_address", () => {
       raceTo?: string;
       tainted?: boolean;
       approved?: boolean;
+      groupId?: string | null;
+      messagingChannelRun?: boolean;
     } = {},
   ) {
     // name → botId, as bot_email_addresses keeps them.
     const names = new Map(Object.entries(options.claimed ?? {}));
     const ctx = {
+      source: { emailInbox: false, messagingChannelRun: Boolean(options.messagingChannelRun) },
       deps: {
         inboundEmailDomain: "domain" in options ? options.domain : "bots.test",
         prisma: {
@@ -842,7 +846,8 @@ describe("claim_email_address", () => {
         },
       },
       bot: { id: "bot-1", userId: "owner-1" },
-      run: { userId: options.runUserId ?? "owner-1" },
+      run: { userId: options.runUserId ?? "owner-1", trigger: "user" },
+      thread: { groupId: options.groupId ?? null },
       state: { tainted: Boolean(options.tainted) },
       runId: "run-1",
       trust: { receivedOutsideMessage: async () => false },
@@ -858,18 +863,32 @@ describe("claim_email_address", () => {
           finish: async (r: unknown) => r,
         } as never,
       ) as Promise<Record<string, unknown>>;
-    return { call, names };
+    return { call, names, ctx };
   }
 
   it("claims the name the owner agreed to, for good", async () => {
-    const { call, names } = claimRun();
+    const { call, names, ctx } = claimRun();
 
-    expect(await call({ name: " Scout " })).toEqual({ address: "scout@bots.test" });
+    expect(await call({ name: " Scout " })).toEqual({
+      address: "scout@bots.test",
+      note: "This is your email address now. Give it when you sign up for a site as yourself; every email sent to it is saved to your inbox.",
+    });
+    expect(ctx.source.emailInbox).toBe(true);
     expect(names.get("scout")).toBe("bot-1");
     expect(await call({ name: "other" })).toEqual({
       error: "You already have an address, and it can't change.",
       address: "scout@bots.test",
     });
+  });
+
+  it("does not open the inbox to a run that cannot read it", async () => {
+    const group = claimRun({ groupId: "group-1" });
+    const channel = claimRun({ messagingChannelRun: true });
+
+    expect((await group.call({ name: "scout" })).address).toBe("scout@bots.test");
+    expect(group.ctx.source.emailInbox).toBe(false);
+    expect((await channel.call({ name: "scout" })).address).toBe("scout@bots.test");
+    expect(channel.ctx.source.emailInbox).toBe(false);
   });
 
   it("claims after outside content only when the owner approved this call", async () => {
@@ -878,7 +897,10 @@ describe("claim_email_address", () => {
 
     expect((await steered.call({ name: "scout" })).error).toContain("read outside content");
     expect(steered.names.size).toBe(0);
-    expect(await approved.call({ name: "scout" })).toEqual({ address: "scout@bots.test" });
+    expect(await approved.call({ name: "scout" })).toEqual({
+      address: "scout@bots.test",
+      note: "This is your email address now. Give it when you sign up for a site as yourself; every email sent to it is saved to your inbox.",
+    });
   });
 
   it("tells a claim that lost a race to another name what the bot got", async () => {

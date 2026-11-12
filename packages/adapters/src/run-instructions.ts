@@ -201,7 +201,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a code a site texts or emails, use request_secret oneTimeCode and browser_act fill_code, never chat.",
+      "For a code a site texts or emails, even to your inbox, use request_secret oneTimeCode and browser_act fill_code, never chat.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {
@@ -468,7 +468,9 @@ export function botEmailInstruction(
 ): string {
   return [
     `Your email address is ${address}.`,
-    tools.read ? "Every email sent to it is saved to your inbox; check it with read_email." : "",
+    tools.read
+      ? "Every email sent to it is saved to your inbox; check it with read_email. Give it when you sign up for a site as yourself."
+      : "",
     tools.send ? "Send email from it with send_email." : "",
     tools.delete ? "Delete emails from your inbox with delete_email." : "",
   ]

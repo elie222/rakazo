@@ -15,7 +15,7 @@ import {
 import { z } from "zod";
 import { RunCodeUnreadableError } from "./bot-secrets.js";
 import { maskPayload, redactConnectorPayload } from "./connector-safety.js";
-import { INBOX_SEARCHED_FIELDS, inboxMailHolding } from "./emailed-code.js";
+import { INBOX_SEARCHED_FIELDS, inboxMailHolding, readsBotInbox } from "./emailed-code.js";
 import type { RunContext } from "./run-context.js";
 import { hideRunEmailedCodes, isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
@@ -386,7 +386,19 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
       address: current ? `${current.name}@${domain}` : undefined,
     });
   }
-  return call.finish({ address: `${parsed.data}@${domain}` });
+  // The run began before this address existed, so its code requests would otherwise skip the
+  // inbox that now holds the sign-up mail. Claiming is offered only in the owner's own chat,
+  // where readsBotInbox is true.
+  ctx.source.emailInbox = readsBotInbox({
+    run: ctx.run,
+    bot: ctx.bot,
+    thread: ctx.thread,
+    nonOwnerChatRun: ctx.source.messagingChannelRun,
+  });
+  return call.finish({
+    address: `${parsed.data}@${domain}`,
+    note: "This is your email address now. Give it when you sign up for a site as yourself; every email sent to it is saved to your inbox.",
+  });
 }
 
 const SEND_RECIPIENTS_MAX = 10;
