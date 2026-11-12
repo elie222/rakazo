@@ -528,14 +528,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
 
   const workingBots =
-    !inGroup && titleBot && isRunWorking(currentBotStatus) && !hasLiveProgress
+    !inGroup && titleBot && threadWorking && !hasLiveProgress
       ? [
           {
             id: titleBot.id,
             name: titleBot.name,
             color: titleBot.color,
             avatarSet: titleBot.avatarSet,
-            status: currentBotStatus,
+            // The footer follows the same work as the header dot, even beside a settled run.
+            status: isRunWorking(currentBotStatus) ? currentBotStatus : "running",
           },
         ]
       : inGroup
