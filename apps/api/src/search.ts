@@ -2,6 +2,7 @@ import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
 import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   displayName,
+  emailDisplayText,
   escapeJsonSearchWildcards,
   escapeSearchWildcards,
   extractLinksFromText,
@@ -402,8 +403,10 @@ function pushMessageHits(
   const title = ctx.groupId ? (ctx.groupName ?? "") : (ctx.botName ?? "");
   let messageHit = false;
   for (const block of blocks) {
-    if (block.kind !== "text") continue;
-    const text = block.text;
+    // The owner's email matches on what the chat shows of it.
+    const text =
+      block.kind === "text" ? block.text : block.kind === "email" ? emailDisplayText(block) : "";
+    if (!text) continue;
     if (matchesSearchQuery(ctx.query, text)) {
       ctx.push({
         kind: "message",

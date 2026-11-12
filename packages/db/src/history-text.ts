@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { toolStepsHistoryText } from "@rakazo/core";
+import { ownerEmailPrompt, toolStepsHistoryText } from "@rakazo/core";
 import type { Prisma } from "./client.js";
 
 function objectBlocks(blocks: Prisma.JsonValue): MessageBlock[] {
@@ -45,7 +45,10 @@ export function historyReadText(blocks: Prisma.JsonValue): string {
   return objectBlocks(blocks)
     .flatMap((block) => {
       const steps = toolSteps(block);
-      return steps.length ? [toolStepsHistoryText(steps, { full: true })] : conversationText(block);
+      if (steps.length) return [toolStepsHistoryText(steps, { full: true })];
+      // Read back in the frame it arrived in, as agent history does: forwarded text stays data.
+      if (block.kind === "email") return [ownerEmailPrompt(block)];
+      return conversationText(block);
     })
     .join("\n");
 }

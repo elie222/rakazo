@@ -389,7 +389,7 @@ export async function searchHistory(
           kind === "bot_messages"
             ? Prisma.sql`jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "bot_message_sent" || @.kind == "bot_message_received" || @.kind == "handoff")')`
             : kind === "user_messages"
-              ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "file" || @.kind == "image")')`
+              ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "email" || @.kind == "file" || @.kind == "image")')`
               : kind === "tool_work"
                 ? TOOL_WORK
                 : // A reply can be only tool steps; search indexes those too.

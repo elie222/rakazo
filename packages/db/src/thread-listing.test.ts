@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { previewFromBlocks, primaryActiveRun, threadRunStatus } from "./thread-listing.js";
 
 describe("previewFromBlocks", () => {
+  it("previews an owner's email by its subject when the body is empty", () => {
+    expect(
+      previewFromBlocks([
+        {
+          kind: "email",
+          emailId: "email-1",
+          from: "Owner <owner@example.test>",
+          to: ["bot@bots.example.test"],
+          subject: "Weekly plan",
+          text: "",
+        },
+      ]),
+    ).toBe("✉︎ Weekly plan");
+  });
+
   it("skips malformed stored elements", () => {
     expect(previewFromBlocks([null, { kind: "text", text: "Hi" }])).toBe("Hi");
   });

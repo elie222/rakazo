@@ -1,7 +1,9 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
+  emailDisplayText,
   isDeliveryMessage,
   plainTextFromMarkdown,
 } from "@rakazo/core";
@@ -78,6 +80,10 @@ export function previewFromBlocks(blocks: unknown): string {
   // A delivery's text is the bot's prompt, hidden in chat.
   if (isDeliveryMessage(rows)) return "";
   for (const block of rows) {
+    // The owner's email previews as the chat shows it, subject first.
+    if ((block as { kind?: unknown } | null)?.kind === "email") {
+      return emailDisplayText(block as Extract<MessageBlock, { kind: "email" }>);
+    }
     if (
       block &&
       typeof block === "object" &&
