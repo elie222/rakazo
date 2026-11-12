@@ -668,6 +668,7 @@ export async function sendThreadMessage(
               answeredByUserId: actor.userId,
               answer: input.text ?? "",
               beforeMessageSeq: message.seq,
+              ...(replyToMessageId ? { messageId: replyToMessageId } : {}),
               answerMessageId: message.id,
             })
           )
@@ -954,6 +955,7 @@ export async function sendThreadMessage(
             answeredByUserId: actor.userId,
             answer: input.text ?? "",
             beforeMessageSeq: message.seq,
+            ...(replyToMessageId ? { messageId: replyToMessageId } : {}),
             answerMessageId: message.id,
           });
           if (answered) {

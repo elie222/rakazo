@@ -636,7 +636,7 @@ export async function eligibleWaitingTextAnswer(
     beforeMessageSeq?: number;
     /** A user message accepted by the composer in the same transaction. */
     answerMessageId?: string;
-    /** Explicit reaction target; composer replies must pass the latest-message check. */
+    /** Explicit reply or reaction target; untargeted composer sends require the latest question. */
     messageId?: string;
   },
 ): Promise<string | null> {

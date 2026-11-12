@@ -1652,132 +1652,148 @@ function groupTarget() {
 }
 
 describe("sendThreadMessage", () => {
-  it("answers a waiting question with a free-text chat message", async () => {
-    const tx = {
-      space: { findUnique: vi.fn(async () => null) },
-      user: { findMany: vi.fn().mockResolvedValue([]) },
-      spaceMember: { count: vi.fn().mockResolvedValue(1) },
-      $executeRaw: vi.fn(async () => 0),
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
-      thread: {
-        update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
-          data.nextMessageSeq ? { nextMessageSeq: 2 } : { nextEventSeq: 3 },
-        ),
-      },
-      message: {
-        create: vi.fn().mockResolvedValue({
-          id: "msg-1",
-          threadId: "thread-1",
-          seq: 1,
-          role: "user",
-          blocks: [{ kind: "text", text: "Paris" }],
-          botId: null,
-          replyToMessageId: null,
-          runId: null,
-          createdAt: new Date("2026-01-01T00:00:00Z"),
-        }),
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "ask-1",
+  it.each([false, true])(
+    "answers a waiting question through the composer (explicit older reply: %s)",
+    async (olderReply) => {
+      const tx = {
+        space: { findUnique: vi.fn(async () => null) },
+        user: { findMany: vi.fn().mockResolvedValue([]) },
+        spaceMember: { count: vi.fn().mockResolvedValue(1) },
+        $executeRaw: vi.fn(async () => 0),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        thread: {
+          update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+            data.nextMessageSeq ? { nextMessageSeq: 2 } : { nextEventSeq: 3 },
+          ),
+        },
+        message: {
+          create: vi.fn().mockResolvedValue({
+            id: "msg-1",
+            threadId: "thread-1",
+            seq: 1,
+            role: "user",
+            blocks: [{ kind: "text", text: "Paris" }],
+            botId: null,
+            replyToMessageId: null,
+            runId: null,
+            createdAt: new Date("2026-01-01T00:00:00Z"),
+          }),
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "ask-1",
+              blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
+            },
+          ]),
+          findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => ({
+            id: olderReply && !where.id ? "newer-message" : "ask-1",
+            role: "bot",
+            botId: "bot-1",
             blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
-          },
-        ]),
-        findFirst: vi.fn().mockResolvedValue({
-          id: "ask-1",
-          blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
-        }),
-        update: vi.fn(),
-      },
-      run: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "run-waiting",
-            taskId: "task-1",
-            status: "waiting_input",
-            userId: "user-1",
-            trigger: "user",
-          },
-        ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
-      },
-      steeringMessage: { create: vi.fn() },
-      event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
-      task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    };
-    const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-    const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
-    const target = {
-      kind: "bot",
-      botId: "bot-1",
-      threadId: "thread-1",
-      bot: { computer: null },
-    } as ThreadTarget;
-    const enqueue = vi.fn().mockResolvedValue(undefined);
-    const analytics = { capture: vi.fn(), flush: async () => undefined };
+          })),
+          update: vi.fn(),
+        },
+        run: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "run-waiting",
+              taskId: "task-1",
+              status: "waiting_input",
+              userId: "user-1",
+              trigger: "user",
+            },
+          ]),
+          findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+        },
+        steeringMessage: { create: vi.fn() },
+        event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
+        task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      };
+      const prisma = {
+        message: { findUnique: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
+      const target = {
+        kind: "bot",
+        botId: "bot-1",
+        threadId: "thread-1",
+        bot: { computer: null },
+      } as ThreadTarget;
+      const enqueue = vi.fn().mockResolvedValue(undefined);
+      const analytics = { capture: vi.fn(), flush: async () => undefined };
 
-    await expect(
-      sendThreadMessage(
-        {
-          prisma,
-          sandbox: {} as never,
-          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
-          jobs: { enqueue } as never,
-          analytics,
-        },
-        actor,
-        target,
-        {
-          text: "Paris",
-          clientNonce: "nonce-ask",
-        },
-      ),
-    ).resolves.toMatchObject({
-      runId: "run-waiting",
-      taskId: "task-1",
-      seq: 1,
-      runIds: ["run-waiting"],
-    });
-    // Snapshot reads can hold the thread row lock for up to 15s; the send must wait
-    // that out on the explicit budget instead of expiring at the default.
-    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-      timeout: 20_000,
-    });
-    expect(tx.task.updateMany).toHaveBeenCalledWith({
-      where: { runs: { some: { id: "run-waiting" } } },
-      data: { prompt: "Paris" },
-    });
-    expect(tx.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ status: "waiting_input" }),
-        data: { status: "queued" },
-      }),
-    );
-    expect(tx.message.update).toHaveBeenCalledWith({
-      where: { id: "ask-1" },
-      data: { blocks: [expect.objectContaining({ answer: "Paris", answerMessageId: "msg-1" })] },
-    });
-    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
-    expect(tx.task.create).not.toHaveBeenCalled();
-    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
-    // The composer send is the main way users talk to a bot; it must count as a message.
-    expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
-      "user-1",
-      { name: "message_sent", trigger: "user" },
-      { id: "msg-1", at: new Date("2026-01-01T00:00:00Z") },
-    );
-    expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("Paris");
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        type: "thread.message.created",
-        payload: expect.objectContaining({ runIds: ["run-waiting"] }),
-      }),
-    });
-  });
+      await expect(
+        sendThreadMessage(
+          {
+            prisma,
+            sandbox: {} as never,
+            events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+            jobs: { enqueue } as never,
+            analytics,
+          },
+          actor,
+          target,
+          {
+            text: "Paris",
+            clientNonce: "nonce-ask",
+            ...(olderReply ? { replyToMessageId: "ask-1" } : {}),
+          },
+        ),
+      ).resolves.toMatchObject({
+        runId: "run-waiting",
+        taskId: "task-1",
+        seq: 1,
+        runIds: ["run-waiting"],
+      });
+      // Snapshot reads can hold the thread row lock for up to 15s; the send must wait
+      // that out on the explicit budget instead of expiring at the default.
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        timeout: 20_000,
+      });
+      expect(tx.task.updateMany).toHaveBeenCalledWith({
+        where: { runs: { some: { id: "run-waiting" } } },
+        data: { prompt: "Paris" },
+      });
+      expect(tx.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: "waiting_input" }),
+          data: { status: "queued" },
+        }),
+      );
+      expect(tx.message.update).toHaveBeenCalledWith({
+        where: { id: "ask-1" },
+        data: { blocks: [expect.objectContaining({ answer: "Paris", answerMessageId: "msg-1" })] },
+      });
+      if (olderReply) {
+        expect(tx.message.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: "ask-1", threadId: "thread-1", runId: "run-waiting", role: "bot" },
+          }),
+        );
+        expect(tx.message.findFirst).not.toHaveBeenCalledWith(
+          expect.objectContaining({ orderBy: { seq: "desc" } }),
+        );
+      }
+      expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+      expect(tx.task.create).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+      // The composer send is the main way users talk to a bot; it must count as a message.
+      expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
+        "user-1",
+        { name: "message_sent", trigger: "user" },
+        { id: "msg-1", at: new Date("2026-01-01T00:00:00Z") },
+      );
+      expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("Paris");
+      expect(tx.event.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: "thread.message.created",
+          payload: expect.objectContaining({ runIds: ["run-waiting"] }),
+        }),
+      });
+    },
+  );
 
   it("resumes the latest question and retires the older question when several private runs wait", async () => {
     const waitingAsk = {
