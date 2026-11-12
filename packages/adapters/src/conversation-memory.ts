@@ -141,6 +141,38 @@ async function trustedBotRuns(
   );
 }
 
+/** History can relay outside text just as a fresh bot message can. Missing provenance is untrusted. */
+export async function historyHasOutsideContent(
+  prisma: PrismaClient,
+  receiver: WordsReceiver,
+  messages: readonly { role: string; runId: string | null; blocks: unknown }[],
+): Promise<boolean> {
+  try {
+    const received = messages.flatMap((message) => {
+      const block = receivedBotMessage(message.blocks);
+      return block ? [block] : [];
+    });
+    const replies = messages.filter((message) => message.role === "bot");
+    const [trustedReplies, trustedReceived] = await Promise.all([
+      trustedBotRuns(
+        prisma,
+        receiver,
+        replies.flatMap((reply) => (reply.runId ? [reply.runId] : [])),
+      ),
+      trustedReceivedMessages(prisma, receiver, received),
+    ]);
+    return (
+      received.some((block) => !trustedReceived.has(block)) ||
+      replies.some((reply) => !reply.runId || !trustedReplies.has(reply.runId)) ||
+      messages.some((message) =>
+        (message.blocks as MessageBlock[]).some((block) => block.kind === "channel_message"),
+      )
+    );
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Of these messages other bots sent the receiver, the ones it may treat as its own trusted
  * memory: the sending bot is in the receiver's Space and has its owner, and the sending run had

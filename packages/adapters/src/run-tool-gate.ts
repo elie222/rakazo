@@ -124,7 +124,7 @@ export interface ToolCall {
 export type ToolHandler = (ctx: RunContext, call: ToolCall) => Promise<unknown>;
 export type ToolHandlers = Record<string, ToolHandler>;
 
-type GateOutcome = { result: unknown } | { call: ToolCall };
+type GateOutcome = { result: unknown; replayed?: true } | { call: ToolCall };
 
 type ToolReview = {
   name: string;
@@ -598,7 +598,7 @@ export async function gateToolCall(
           },
           select: { id: true, createdAt: true },
         });
-        if (!replacementSecret) return { result: gate.result };
+        if (!replacementSecret) return { result: gate.result, replayed: true };
         // Crash between persist and delete leaves the same OTP row. Do not
         // resubmit it to the connector; only newer rows are replacements.
         const effectUpdatedAt = applied.effect.updatedAt;
@@ -612,10 +612,10 @@ export async function gateToolCall(
           await deps.prisma.secret.delete({
             where: { id: replacementSecret.id },
           });
-          return { result: gate.result };
+          return { result: gate.result, replayed: true };
         }
       } else {
-        return { result: gate.result };
+        return { result: gate.result, replayed: true };
       }
     }
     if (gate.action === "paused") {
@@ -631,7 +631,7 @@ export async function gateToolCall(
         // recovery after action approval but before the card was committed.
       } else if (!needsApproval) {
         const early = await call.claimOrReturn("intended");
-        if (early !== undefined) return { result: early };
+        if (early !== undefined) return { result: early, replayed: true };
       } else {
         const current = await deps.prisma.run.findUnique({
           where: { id: runId },
@@ -646,13 +646,13 @@ export async function gateToolCall(
       return { result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName) };
     } else if (gate.action === "execute") {
       const early = await call.claimOrReturn("approved");
-      if (early !== undefined) return { result: early };
+      if (early !== undefined) return { result: early, replayed: true };
     }
   } else if (needsApproval && applied) {
     return { result: await requestApproval(ctx, call, card) };
   } else if (call.bypassApproval && applied) {
     const early = await call.claimOrReturn("intended");
-    if (early !== undefined) return { result: early };
+    if (early !== undefined) return { result: early, replayed: true };
   }
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site.

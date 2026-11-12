@@ -291,7 +291,11 @@ export function createBackgroundJobHandlers(deps: {
           memory,
           payload.runId,
           payload.pending,
-        );
+        ).catch((error) => {
+          // A failed status check or post-clear purge uses the same bounded backoff.
+          getLogger().error("memory.retain-turn settlement failed", error);
+          return { settled: false };
+        });
         if (settled) return;
         next = { ...payload.pending, checks: payload.pending.checks + 1 };
         if (next.checks >= MAX_RETAIN_TURN_CHECKS) {

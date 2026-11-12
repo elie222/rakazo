@@ -303,6 +303,8 @@ export interface RunContext {
   tools: RunTools;
   trust: RunTrust;
   memory: {
+    /** Shared recall can include words from other Space members. */
+    sharedSpace?: boolean;
     semantic: SemanticMemoryProvider | null;
     scope: ReturnType<typeof effectiveMemoryScope> | null;
   };

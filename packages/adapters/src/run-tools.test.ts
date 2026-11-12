@@ -72,6 +72,20 @@ beforeEach(() => {
 });
 
 describe("dispatchTool audit outcomes", () => {
+  it("marks a replayed outside tool result before handing it to the model", async () => {
+    const ctx = dispatchContext(false);
+    vi.mocked(gateToolCall).mockResolvedValueOnce({
+      result: { text: "Outside content from an earlier execution" },
+      replayed: true,
+    } as never);
+    await applyTool(ctx as never, "web_search", { query: "example" }, "call-1");
+    expect(ctx.state.readOutsideContent).toBe(true);
+    expect(ctx.state.tainted).toBe(true);
+    expect(ctx.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
+    );
+  });
+
   it("dispatches a connector named delete_bot to its connector instead of local archival", async () => {
     const execute = vi.fn(async function* () {
       yield { type: "result", data: { deleted: "remote-object" } };

@@ -7,6 +7,7 @@ import {
 import { readHistory, searchHistory } from "@rakazo/db";
 import { sharedMemorySaveError } from "./builtin-tools.js";
 import { redactConnectorPayload } from "./connector-safety.js";
+import { historyHasOutsideContent } from "./conversation-memory.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
@@ -70,6 +71,27 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
     response = await readHistory(deps.prisma, scope, parsed.data);
   }
+  // The returned prose has lost its sender markers. Check its source rows before exposing it.
+  const ids = response.messages.map((message) => message.messageId);
+  let outside = "runs" in response && response.runs.length > 0;
+  if (!outside && ids.length) {
+    try {
+      const rows = await deps.prisma.message.findMany({
+        where: { id: { in: ids }, thread: { spaceId: run.spaceId } },
+        select: { role: true, runId: true, blocks: true },
+      });
+      outside =
+        rows.length !== ids.length ||
+        (await historyHasOutsideContent(
+          deps.prisma,
+          { spaceId: run.spaceId, userId: ctx.bot.userId },
+          rows,
+        ));
+    } catch {
+      outside = true;
+    }
+  }
+  if (outside) await markReadOutsideContent(ctx);
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
@@ -178,7 +200,12 @@ export const memoryTools: ToolHandlers = {
       context,
     );
     // Memory another app wrote is outside text, not this product's own saved state.
-    if (response.ok && response.value.some((result) => result.external)) {
+    if (
+      response.ok &&
+      response.value.length > 0 &&
+      (response.value.some((result) => result.external) ||
+        (ctx.memory.scope === "shared" && ctx.memory.sharedSpace))
+    ) {
       await markReadOutsideContent(ctx);
     }
     return response;

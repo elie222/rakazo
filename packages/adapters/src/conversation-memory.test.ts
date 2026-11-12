@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   abandonRetainedConversation,
   botMessageFromOutsideContent,
+  historyHasOutsideContent,
   retainRunConversation,
   retainsConversationTurn,
   settleRetainedConversation,
@@ -785,5 +786,58 @@ describe("botMessageFromOutsideContent", () => {
   it("does not count a person's message", async () => {
     const { prisma } = harness();
     expect(await botMessageFromOutsideContent(prisma as never, "message-1")).toBe(false);
+  });
+});
+
+describe("history exposure", () => {
+  const receiver = { spaceId: "space-1", userId: "user-1" };
+  const received = {
+    kind: "bot_message_received",
+    fromBotId: "bot-2",
+    fromBotName: "Assistant",
+    text: "A learned preference",
+    intent: "fyi",
+  };
+  const message = { role: "user", runId: null, blocks: [received] };
+  const reply = { role: "bot", runId: "run-1", blocks: [{ kind: "text", text: "A reply" }] };
+  function db(changes = {}) {
+    return {
+      bot: { findMany: vi.fn(async () => [{ id: "bot-2", ...receiver }]) },
+      run: {
+        findMany: vi.fn(async () => [
+          {
+            id: "run-1",
+            status: "completed",
+            readOutsideContent: false,
+            bot: receiver,
+            ...changes,
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+  }
+  it("preserves learning from clean same-owner bots in the same Space", async () => {
+    const clean = { ...message, blocks: [{ ...received, senderClean: true }] };
+    expect(await historyHasOutsideContent(db(), receiver, [clean, reply])).toBe(false);
+  });
+  it("keeps a relayed bot message untrusted after it becomes chat history", async () => {
+    expect(await historyHasOutsideContent(db(), receiver, [message])).toBe(true);
+  });
+  it.each([
+    { readOutsideContent: true },
+    { status: "running" },
+    { bot: { ...receiver, spaceId: "space-2" } },
+    { bot: { ...receiver, userId: "user-2" } },
+  ])("does not trust reply provenance %j", async (changes) => {
+    expect(await historyHasOutsideContent(db(changes), receiver, [reply])).toBe(true);
+  });
+  it("fails closed when provenance is missing or unavailable", async () => {
+    expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, runId: null }])).toBe(true);
+    expect(await historyHasOutsideContent({} as PrismaClient, receiver, [reply])).toBe(true);
+  });
+  it("leaves ordinary human messages clean", async () => {
+    expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, role: "user" }])).toBe(
+      false,
+    );
   });
 });

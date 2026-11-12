@@ -84,7 +84,7 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
-import { receivedBotMessageTrusted } from "./conversation-memory.js";
+import { historyHasOutsideContent, receivedBotMessageTrusted } from "./conversation-memory.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -891,7 +891,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             recalledMemory = formatRecalledMemory(recalled.value);
             // Memory another app wrote is outside text, not this product's own saved state.
             recalledExternalMemory =
-              recalledMemory !== "" && recalled.value.some((result) => result.external);
+              recalledMemory !== "" &&
+              (recalled.value.some((result) => result.external) ||
+                (memoryScope === "shared" && (thread.space?._count.memberships ?? 0) > 1));
           } else if (!recalled.ok) {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
@@ -1420,6 +1422,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
         // Outside text started the run: a webhook or email, someone other than the owner, or a
         // bot message whose words this bot may not trust. A routine runs the owner's own prompt.
+        const historyIds = new Set(history.map((message) => message.id));
+        const outsideHistory =
+          Boolean(compactedHistory.summary) ||
+          (await historyHasOutsideContent(
+            deps.prisma,
+            { spaceId: run.spaceId, userId: bot.userId },
+            historyMessages.filter((message) => historyIds.has(message.id)),
+          ));
         const startedByOutsideText =
           run.trigger === "webhook" ||
           nonOwnerChatRun ||
@@ -1450,10 +1460,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
-          tainted: initiallyTainted,
+          tainted: initiallyTainted || outsideHistory,
           // A resumed attempt restores earlier tool results, which may hold outside content.
           readOutsideContent:
             startedByOutsideText ||
+            outsideHistory ||
             recalledExternalMemory ||
             Boolean(turnCheckpoint) ||
             Boolean(checkpointLoadError),
@@ -1539,7 +1550,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             approvedReplays: approvedEffectReplays,
           },
           trust: { ...trustLoaders, searchResultUrls },
-          memory: { semantic: semanticMemory, scope: memoryScope },
+          memory: {
+            semantic: semanticMemory,
+            scope: memoryScope,
+            sharedSpace: (thread.space?._count.memberships ?? 0) > 1,
+          },
           scripted,
           script,
           allowSilentEmptyRun,

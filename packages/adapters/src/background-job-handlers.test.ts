@@ -394,6 +394,18 @@ describe("memory.retain-turn", () => {
     );
   });
 
+  it("keeps failed post-clear cleanup on the bounded polling backoff", async () => {
+    vi.mocked(settleRetainedConversation).mockRejectedValueOnce(new Error("purge unavailable"));
+    const { jobs, handle } = retainTurn();
+    const pending = { token: "op-1", generation: 3, checks: 6 };
+    await expect(handle({ runId: "run-1", pending })).resolves.toBeUndefined();
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { runId: "run-1", pending: { ...pending, checks: 7 } },
+      }),
+    );
+  });
+
   it.each([
     ["a new turn is stored at once", {}],
     ["a pending turn settles", { pending: { token: "op-1", generation: 3, checks: 4 } }],

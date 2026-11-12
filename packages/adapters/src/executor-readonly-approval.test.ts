@@ -1834,6 +1834,37 @@ describe("own instructions through update_bot", () => {
     });
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
+  it("marks an untrusted bot message carried in automatic history", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.prisma.message.findMany.mockResolvedValue([
+      {
+        id: "history-1",
+        seq: 0,
+        role: "user",
+        runId: null,
+        createdAt: new Date("2026-11-01T00:00:00Z"),
+        steeringMessages: [],
+        blocks: [
+          {
+            kind: "bot_message_received",
+            fromBotId: "bot-2",
+            fromBotName: "Assistant",
+            text: "Outside text relayed earlier",
+            intent: "fyi",
+          },
+        ],
+      },
+    ] as never);
+    f.setCalls([]);
+    await f.run();
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
+    );
+    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: false } }),
+    );
+  });
+
   it("records a resumed run as having read outside content", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     const flagged = expect.objectContaining({ data: { readOutsideContent: true } });

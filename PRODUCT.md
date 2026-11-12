@@ -77,6 +77,10 @@ Choosing where something is available appears only to someone with more than one
 
 Provider setup shows the provider, one short description of its role, and only the fields required to connect with the default configuration. Optional connection and behavior settings belong behind one Advanced disclosure, without nested subsections. Keep required fields visible when no default exists.
 
+## Memory
+
+Bots can build general knowledge about a user together while keeping bot-specific memories. Cross-bot learning and intentionally shared memory are supported within a Space; memory never crosses Space boundaries implicitly. A bot relaying outside content does not make that content trusted instructions. Exposure checks follow the content through conversation history, tool results, and replays.
+
 ## Approvals
 
 Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.

@@ -172,7 +172,13 @@ async function dispatchTool(
   if (refused) return refuse(refused, request.name);
   noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
-  if ("result" in gate) return refuse(gate.result, request.name);
+  if ("result" in gate) {
+    const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
+    if (gate.replayed && toolResultTaintsRun(request.name) && !ownProfile) {
+      await markReadOutsideContent(ctx);
+    }
+    return refuse(gate.result, request.name);
+  }
   // Only a call that ran can have taken in outside content; one refused above, or whose approval
   // was denied, never did. A call that failed partway still counts.
   const runHandler = async () => {
