@@ -162,7 +162,8 @@ function world(printed = "") {
   /** How each attempt ended, as the executor finalized the run. */
   const finalized: Row[] = [];
   /** The bot's switches the owner sets. */
-  const bot = { connectedMailCodes: false };
+  // `turnedOnSince`: the owner turned the switch on after the run loaded its bot.
+  const bot = { connectedMailCodes: false, turnedOnSince: false };
   /** The mail the owner connected: its messages from the site, and the reads made of it. */
   const connectedInbox: Array<{ id: string; raw: Uint8Array; receivedAt: Date }> = [];
   const connectedReads: unknown[] = [];
@@ -247,7 +248,9 @@ function world(printed = "") {
             connectedMailCodes: bot.connectedMailCodes,
             computer: { id: "computer-1", scope: "dedicated", kind: "e2b", homeKey: "home-1" },
           }),
-          findUnique: async () => ({ connectedMailCodes: bot.connectedMailCodes }),
+          findUnique: async () => ({
+            connectedMailCodes: bot.connectedMailCodes || bot.turnedOnSince,
+          }),
           findMany: async () => [],
         },
         connection: {
@@ -1485,6 +1488,18 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     expect(result).toMatchObject({ details: { secret: "paused" } });
     expect(run.asked).toHaveLength(1);
     expect(run.connectedReads).toEqual([]);
+  });
+
+  it("reads it once the owner turns that on while the run is going", async () => {
+    const run = await connectedWorld();
+    // Off when the run loads its bot, on by the time the run asks for the code.
+    run.bot.connectedMailCodes = false;
+    run.bot.turnedOnSince = true;
+    run.connectedInbox.push(await connectedMail());
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ submitted: true, note: EMAILED_NOTE });
+    expect(run.asked).toEqual([]);
+    expect(run.connectedReads).toHaveLength(1);
   });
 
   it("takes the bot's inbox first, and reads no connected mail for that request", async () => {

@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "./bot-email.js";
+import { INBOUND_EMAIL_HEADER_MAX_CHARS, INBOUND_EMAIL_TEXT_MAX_CHARS } from "./bot-email.js";
 import {
   BOT_SECRET_ORIGIN_MISSING_MESSAGE,
   BotSecretDestination,
@@ -14,6 +15,7 @@ import {
   LoginFieldLabels,
   loginCardFields,
   normalizeOneTimeCode,
+  ONE_TIME_CODE_RUBRIC,
   ONE_TIME_CODE_TOKENS,
   ONE_TIME_CODE_UNIT_LIMIT,
   OneTimeCodeTarget,
@@ -976,6 +978,45 @@ describe("one-time code contracts", () => {
       ["says a code expired and is longer than is read", past("This code has expired."), true],
     ])("says an email that %s is unclear: %s", (_name, text, unclear) => {
       expect(readOneTimeCode({ subject: "Hello", text })).toEqual({ unclear });
+    });
+
+    // The calibration set of the rubric: TEMPLATES (emails that give their code) and STALE
+    // (emails that give none, and the look-alikes that do) above, read by the tests around them.
+    it("has calibration emails, giving a code and giving none, in every language it reads", () => {
+      const calibrated = (rows: readonly (readonly [string, ...unknown[]])[]) =>
+        new Set(rows.map(([language]) => language.split("-")[0]));
+      const languages = ONE_TIME_CODE_RUBRIC.languages.map(({ language }) => language).sort();
+      expect([...calibrated(TEMPLATES)].sort()).toEqual(languages);
+      expect([...calibrated(STALE)].sort()).toEqual(languages);
+    });
+
+    it("takes a new version whenever a word list, a form or a limit changes", () => {
+      // Changed a list, a form or a limit? Add its emails to the calibration set, raise
+      // ONE_TIME_CODE_RUBRIC_VERSION, and pin the new version and digest here.
+      const digest = createHash("sha256")
+        .update(JSON.stringify(ONE_TIME_CODE_RUBRIC))
+        .digest("hex");
+      expect({ version: ONE_TIME_CODE_RUBRIC.version, digest }).toEqual({
+        version: 1,
+        digest: "12c02f3736ba7ee58bd7ea020117ecb6269b87353d2a22941c0dc16337141003",
+      });
+    });
+
+    it("gives no code from a subject as long as the inbox keeps, which it may have cut", () => {
+      const sentence = "Your code is 482913.";
+      const cut = `${sentence} ${"x ".repeat(INBOUND_EMAIL_HEADER_MAX_CHARS)}Your code is 731905.`;
+      // As the inbox stores it: the second code is gone, so the first is not taken for the only one.
+      const stored = cut.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS);
+      expect(stored).not.toContain("731905");
+      expect(readOneTimeCode({ subject: stored, text: "Hello" })).toEqual({ unclear: true });
+      expect(readOneTimeCode({ subject: cut, text: "Hello" })).toEqual({ unclear: true });
+      expect(readOneTimeCode({ subject: stored, text: sentence })).toEqual({ unclear: true });
+      // One short of that was never cut.
+      const whole = `${sentence} ${"x ".repeat(INBOUND_EMAIL_HEADER_MAX_CHARS)}`.slice(
+        0,
+        INBOUND_EMAIL_HEADER_MAX_CHARS - 1,
+      );
+      expect(readOneTimeCode({ subject: whole, text: "Hello" }).code).toBe("482913");
     });
 
     it("reads no more of a subject or a text than the length the inbox keeps", () => {

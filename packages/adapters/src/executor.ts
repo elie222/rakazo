@@ -1227,7 +1227,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // never for another bot, which may be answering someone else.
         const inboxRun = readsBotInbox({ run, bot, thread, nonOwnerChatRun });
         const emailInbox = Boolean(botEmail) && inboxRun;
-        const connectedMail = bot.connectedMailCodes && inboxRun && Boolean(deps.connectedMail);
+        // The owner's switch is read at each code request, so turning it on or off counts at once.
+        const connectedMail = inboxRun && Boolean(deps.connectedMail);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,

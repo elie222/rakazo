@@ -454,7 +454,7 @@ export async function findConnectedMailCode(
     select: { id: true },
   });
   if (filled) return undefined;
-  // The owner may have turned it off since the attempt began.
+  // Read at each request: the owner may have turned it on or off since the run began.
   const bot = await prisma.bot.findUnique({
     where: { id: input.botId },
     select: { connectedMailCodes: true, name: true },

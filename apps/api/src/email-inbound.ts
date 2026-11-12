@@ -8,7 +8,11 @@ import {
   readInboundEmail,
 } from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT, INBOX_DAILY_LIMIT } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_COUNT,
+  INBOUND_EMAIL_HEADER_MAX_CHARS,
+  INBOX_DAILY_LIMIT,
+} from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   escapePromptData,
@@ -218,13 +222,13 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   const unavailable = saved.files
     .filter((file) => !file.artifactId)
     .map((file) => `[file: ${sanitizeMessagingLabel(file.name)} (unavailable)]`);
-  const name = email.from.name.slice(0, HEADER_MAX_CHARS);
+  const name = email.from.name.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS);
   const payload = {
     id: saved.id,
     from: name ? `${name} <${sender}>` : sender,
     to: listed(email.to),
     ...(email.cc.length ? { cc: listed(email.cc) } : {}),
-    subject: email.subject.slice(0, HEADER_MAX_CHARS),
+    subject: email.subject.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS),
     ...(email.date ? { date: email.date } : {}),
     text: email.text,
     ...(artifacts.length
@@ -285,7 +289,9 @@ async function saveToInbox(
   // Files cost the owner storage, so only a sender who proved their address gets them kept.
   const files = options.verified
     ? await storeAttachments(deps, bot, email, options.standalone)
-    : email.attachments.map((file) => ({ name: file.name.slice(0, HEADER_MAX_CHARS) }));
+    : email.attachments.map((file) => ({
+        name: file.name.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS),
+      }));
   try {
     const row = await deps.prisma.botEmailMessage.create({
       data: {
@@ -295,13 +301,13 @@ async function saveToInbox(
         messageId: email.messageId,
         references: email.references,
         fromAddress: from.address,
-        fromName: from.name.slice(0, HEADER_MAX_CHARS),
+        fromName: from.name.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS),
         verified: options.verified,
         mailingList: email.mailingList,
         autoReplyOrBulk: email.autoReplyOrBulk,
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
-        subject: email.subject.slice(0, HEADER_MAX_CHARS),
+        subject: email.subject.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS),
         text: email.text,
         attachments: files,
       },
@@ -326,7 +332,7 @@ async function storeAttachments(
   const files: InboxFile[] = [];
   let kept = 0;
   for (const [index, file] of email.attachments.entries()) {
-    const name = file.name.slice(0, HEADER_MAX_CHARS);
+    const name = file.name.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS);
     // Counts what was kept, so a refused file never takes one of the slots.
     if (!deps.storeAttachment || kept >= ATTACHMENT_MAX_COUNT) {
       files.push({ name });
@@ -416,8 +422,6 @@ async function noteUnverifiedOwnerMail(
 export const UNVERIFIED_OWNER_MAIL_NOTE =
   "An email from your address couldn't be verified, so it wasn't acted on.";
 
-/** Longest subject or sender name the bot sees; only the body has its own, larger cap. */
-const HEADER_MAX_CHARS = 500;
 const LIST_MAX_ENTRIES = 50;
 
 /** A long recipient or file list, cut so it cannot crowd out the email itself. */
