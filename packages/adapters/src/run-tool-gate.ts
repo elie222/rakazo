@@ -276,8 +276,8 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  // Current action authorization, not the persistent provenance bit: saved notes, summaries and
-  // recall alone never add a prompt, while fresh outside input or a run the owner didn't start do.
+  // Current action authorization: automatic recall, saved notes and summaries never add a prompt,
+  // while fresh outside input, a resumed attempt or a run the owner didn't start do.
   const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
   const { purchase, cardUse } = request;
   // Typing a saved card is approved like a purchase: every time, by a person.
