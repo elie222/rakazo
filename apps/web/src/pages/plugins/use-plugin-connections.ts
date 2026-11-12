@@ -199,9 +199,10 @@ export function usePluginConnections({
     setPending(key);
     try {
       if (item.mcpAppId) {
-        const { serverId } = await rpc.mcp.apps.connect({ appId: item.mcpAppId });
-        if (controller.signal.aborted) return;
-        if (activeBotId) await rpc.mcp.assignments.approve({ botId: activeBotId, serverId });
+        const { serverId } = await rpc.mcp.apps.connect({
+          appId: item.mcpAppId,
+          ...(activeBotId ? { botId: activeBotId } : {}),
+        });
         if (controller.signal.aborted) return;
         await connectMcpOauth(serverId);
         if (!controller.signal.aborted) await refresh();

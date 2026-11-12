@@ -243,9 +243,35 @@ it("connects an operator-provided app through personal OAuth and assigns only th
   )!;
   await act(async () => add.click());
   await vi.waitFor(() => expect(connectMcpOauth).toHaveBeenCalledWith("server-1"));
-  expect(api.mcp.apps.connect).toHaveBeenCalledWith({ appId: "files" });
-  expect(api.mcp.assignments.approve).toHaveBeenCalledWith({
-    botId: "bot-1",
-    serverId: "server-1",
-  });
+  expect(api.mcp.apps.connect).toHaveBeenCalledWith({ appId: "files", botId: "bot-1" });
+  expect(api.mcp.assignments.approve).not.toHaveBeenCalled();
+});
+
+it("keeps management available for a connected app after operator setup is removed", async () => {
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: true,
+      noAuth: false,
+      mcpAppId: "files",
+      mcpServerId: "server-1",
+      needsSetup: true,
+    },
+  ]);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "Files");
+  expect(host.textContent).not.toContain("Server setup required");
+  expect(
+    Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Added"),
+  ).toBe(true);
 });

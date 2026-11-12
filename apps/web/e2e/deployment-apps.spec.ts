@@ -8,6 +8,7 @@ test("bundled apps disclose missing setup and open account authorization without
   await completeOnboarding(page);
   const app = { id: "files", name: "Files" };
   let needsSetup = true;
+  let connected = false;
   await page.route("**/rpc/connections/catalog", (route) =>
     route.fulfill({
       json: {
@@ -17,7 +18,7 @@ test("bundled apps disclose missing setup and open account authorization without
             slug: app.id,
             name: app.name,
             logo: null,
-            connected: false,
+            connected,
             noAuth: false,
             mcpAppId: app.id,
             needsSetup,
@@ -41,9 +42,6 @@ test("bundled apps disclose missing setup and open account authorization without
   await page.route("**/rpc/mcp/apps/connect", (route) =>
     route.fulfill({ json: { json: { serverId: "test-server" } } }),
   );
-  await page.route("**/rpc/mcp/assignments/approve", (route) =>
-    route.fulfill({ json: { json: {} } }),
-  );
   await page.route("**/rpc/mcp/oauth/begin", (route) =>
     route.fulfill({
       json: {
@@ -59,4 +57,12 @@ test("bundled apps disclose missing setup and open account authorization without
   const popup = await popupPromise;
   await expect(popup).toHaveURL(/mcp\/oauth\/callback/);
   await popup.close();
+
+  connected = true;
+  needsSetup = true;
+  await page.reload();
+  await page.getByPlaceholder("Search apps").fill(app.name);
+  await expect(row.getByRole("button", { name: "Added", exact: true })).toBeVisible();
+  await expect(page.getByText("Server setup required", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "deployment-app-connected");
 });

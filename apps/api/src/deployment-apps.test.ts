@@ -13,6 +13,17 @@ function fixture() {
   const rows: Array<Record<string, unknown>> = [];
   const prisma = {
     $executeRaw: vi.fn(),
+    $queryRaw: vi.fn(async () => []),
+    secret: { count: vi.fn(async () => 0) },
+    botSecret: { count: vi.fn(async () => 0) },
+    vaultCredential: { count: vi.fn(async () => 0) },
+    integrationProviderConfig: { count: vi.fn(async () => 0) },
+    bot: {
+      findFirst: vi.fn(async ({ where }) =>
+        where.id === "bot-a" && where.spaceId === actor.spaceId ? { id: "bot-a" } : null,
+      ),
+    },
+    botMcpServer: { upsert: vi.fn(async () => ({})) },
     mcpServer: {
       findMany: vi.fn(async ({ where }) => rows.filter((row) => row.userId === where.userId)),
       findFirst: vi.fn(async ({ where }) =>
@@ -33,6 +44,8 @@ function fixture() {
       userId: owner.userId,
       spaceId: owner.spaceId,
       enabled: true,
+      allSpaces: true,
+      availableIn: [],
       ...config,
     };
     rows.push(row);
@@ -41,7 +54,7 @@ function fixture() {
   const ctx = {
     deps: {
       prisma,
-      secrets: { put },
+      secrets: { put, delete: vi.fn() },
       env: {
         deploymentApps: JSON.stringify({
           drive: { clientId: "fake-client", clientSecret: "fake-secret" },
@@ -97,5 +110,74 @@ describe("deployment apps", () => {
     expect(put).toHaveBeenCalledTimes(2);
     const catalog = await deploymentAppCatalog(ctx, other);
     expect(catalog[0]?.mcpServerId).not.toBe(first.serverId);
+  });
+  it("assigns the selected bot in the registration transaction and rejects other-space bots before writing secrets", async () => {
+    const { ctx, prisma, put } = fixture();
+    await expect(connectDeploymentApp(ctx, actor, "drive", "other-bot")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(put).not.toHaveBeenCalled();
+    const { serverId } = await connectDeploymentApp(ctx, actor, "drive", "bot-a");
+    expect(prisma.botMcpServer.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          serverId,
+          botId: "bot-a",
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        }),
+      }),
+    );
+    await connectDeploymentApp(ctx, actor, "drive", "bot-a");
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans a prepared external secret if insertion fails before creating a secret row", async () => {
+    const { ctx, insertMcpServer } = fixture();
+    insertMcpServer.mockRejectedValueOnce(new Error("name conflict"));
+    await expect(connectDeploymentApp(ctx, actor, "drive")).rejects.toThrow("name conflict");
+    expect(ctx.deps.secrets.delete).toHaveBeenCalledWith("encrypted-reference", "secret-id");
+  });
+
+  it("does not delete a prepared secret referenced by another owner", async () => {
+    const { ctx, insertMcpServer, prisma } = fixture();
+    prisma.secret.count.mockResolvedValueOnce(1);
+    insertMcpServer.mockRejectedValueOnce(new Error("name conflict"));
+    await expect(connectDeploymentApp(ctx, actor, "drive")).rejects.toThrow("name conflict");
+    expect(ctx.deps.secrets.delete).not.toHaveBeenCalled();
+  });
+
+  it("preserves disabled and space-restricted registrations instead of silently widening access", async () => {
+    const { ctx, rows, put } = fixture();
+    await connectDeploymentApp(ctx, actor, "drive");
+    rows[0]!.enabled = false;
+    await expect(connectDeploymentApp(ctx, actor, "drive")).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+    rows[0]!.enabled = true;
+    rows[0]!.allSpaces = false;
+    await expect(
+      connectDeploymentApp(ctx, { ...actor, spaceId: "space-b" }, "drive"),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an existing connection available when operator setup is removed", async () => {
+    const { ctx } = fixture();
+    await connectDeploymentApp(ctx, actor, "drive");
+    ctx.deps.env.deploymentApps = undefined;
+    expect((await deploymentAppCatalog(ctx, actor))[0]).toMatchObject({
+      connected: true,
+      needsSetup: true,
+    });
+  });
+
+  it("isolates malformed optional configuration from the catalog", async () => {
+    const { ctx } = fixture();
+    ctx.deps.env.deploymentApps = "{invalid";
+    expect(await deploymentAppCatalog(ctx, actor)).toEqual([]);
+    await expect(connectDeploymentApp(ctx, actor, "drive")).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
   });
 });

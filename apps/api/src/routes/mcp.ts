@@ -59,7 +59,7 @@ export function mcpRoutes(ctx: RouterContext) {
     mcp: {
       apps: {
         connect: authed.mcp.apps.connect.handler(({ context, input }) =>
-          connectDeploymentApp(ctx, context.actor, input.appId),
+          connectDeploymentApp(ctx, context.actor, input.appId, input.botId),
         ),
       },
       servers: {

@@ -742,11 +742,12 @@ export default function Integrations() {
     setCatalogError(null);
     try {
       if (item.mcpAppId) {
-        const { serverId } = await rpc("mcp/apps/connect", { appId: item.mcpAppId });
-        if (!isCurrent() || controller.signal.aborted) return;
         const botId = lastBotId || (await loadLastBotId());
         if (!isCurrent() || controller.signal.aborted) return;
-        if (botId) await rpc("mcp/assignments/approve", { botId, serverId });
+        const { serverId } = await rpc("mcp/apps/connect", {
+          appId: item.mcpAppId,
+          ...(botId ? { botId } : {}),
+        });
         if (!isCurrent() || controller.signal.aborted) return;
         setOauthServerId(serverId);
         await authorizeMcp(serverId);
@@ -956,7 +957,8 @@ export default function Integrations() {
     const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
-    if (item.needsSetup) return <Text style={styles.secondary}>{t`Server setup required`}</Text>;
+    if (item.needsSetup && !connected)
+      return <Text style={styles.secondary}>{t`Server setup required`}</Text>;
     if (connected) {
       return (
         <NativeActionButton
@@ -971,7 +973,9 @@ export default function Integrations() {
     }
     return (
       <NativeActionButton
-        accessibilityLabel={t`Add ${ph({ name: label })}`}
+        accessibilityLabel={
+          item.mcpAppId ? t`Connect ${ph({ name: label })}` : t`Add ${ph({ name: label })}`
+        }
         disabled={connecting}
         fill={false}
         label={connecting ? t`Working…` : item.mcpAppId ? t`Connect` : t`Add`}
