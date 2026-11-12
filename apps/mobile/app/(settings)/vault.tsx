@@ -26,6 +26,7 @@ import {
   vaultImportText,
   vaultSaveNotice,
 } from "@rakazo/i18n/vault";
+import { useQuery } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
@@ -44,12 +45,11 @@ import { VaultItemEditor } from "../../components/vault-item-editor";
 import { VaultItemSheet } from "../../components/vault-item-sheet";
 import { VaultTile } from "../../components/vault-tile";
 import { mobileTokens } from "../../lib/appearance";
-import type { ListRead } from "../../lib/list-refresh";
-import { createListRefresh } from "../../lib/list-refresh";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import type { MobileBot } from "../../lib/mobile-types";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
+import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -94,10 +94,21 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [items, setItems] = useState<BotSecretMetadata[] | null>(null);
+  // Sent where `rpc` sends its calls: a Space's vault to that Space, else the selected one.
+  const listRead = rpcQuery(
+    "vault/list",
+    { scope },
+    target.scope === "space" ? target.spaceId : undefined,
+  );
+  const listQuery = useQuery(listRead, queryClient);
+  const { refetch: refetchList } = listQuery;
+  // Null until the first read lands.
+  const items = listQuery.data ?? null;
+  const loadError = listQuery.error
+    ? errorText(listQuery.error, t`Something went wrong. Try again.`)
+    : null;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   // A review plans against the Vault as read, so it waits for a good read.
   const listed = items !== null && !loadError;
   const [filter, setFilter] = useState<VaultKind | "all">("all");
@@ -108,26 +119,12 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   // A saved item to open once the editor has gone, so two sheets are never up at once.
   const afterEditing = useRef<{ name: string; notice: string } | null>(null);
   const [notice, setNotice] = useState<{ name: string; text: string } | null>(null);
-  // Counts changes as they start and as they finish, so a list read that was out across one is
-  // dropped and read again.
-  const changes = useRef(0);
-  const applyList = useRef<(read: ListRead<BotSecretMetadata[]>) => void>(() => undefined);
-  applyList.current = (read) => {
-    if (read.ok) {
-      setItems(read.value);
-      setLoadError(null);
-    } else setLoadError(errorText(read.error, t`Something went wrong. Try again.`));
-  };
-  // The only way the list is read. The screen is keyed by its vault, so the vault stays the same.
-  const [listRefresh] = useState(() =>
-    createListRefresh({
-      vault: () => spaceId ?? "",
-      changes: () => changes.current,
-      read: () => rpc("vault/list", { scope }),
-      apply: (read) => applyList.current(read),
-    }),
-  );
-  const requestListRefresh = listRefresh.request;
+  const setItems = (update: (current: BotSecretMetadata[]) => BotSecretMetadata[]) =>
+    queryClient.setQueryData(listRead.queryKey, (current) => current && update(current));
+  // A read that started before a change never shows what the change replaced.
+  const beforeChange = () => queryClient.cancelQueries({ queryKey: listRead.queryKey });
+  // Read again after every change, also a failed one, which may have saved some of it.
+  const afterChange = () => void queryClient.invalidateQueries({ queryKey: listRead.queryKey });
   // A value that arrives after the screen lost focus is dropped instead of shown.
   const focused = useRef(false);
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
@@ -144,9 +141,8 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   useFocusEffect(
     useCallback(() => {
       setError(null);
-      listRefresh.start();
-      return () => listRefresh.stop();
-    }, [listRefresh]),
+      void refetchList();
+    }, [refetchList]),
   );
 
   useEffect(() => {
@@ -287,9 +283,9 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       ].join("\n");
     };
     async function save() {
-      changes.current += 1;
       setPending(true);
       try {
+        await beforeChange();
         // Each login is encrypted and saved in turn: 100 took about 4 s without a database.
         const result = await rpc(
           "vault/import",
@@ -308,10 +304,9 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
         );
       } finally {
         setPending(false);
-        // Also after a failure, which may come after some logins were saved. A list that can't
-        // be read now is offered again with Retry; until it is read, import waits.
-        changes.current += 1;
-        requestListRefresh();
+        // A list that can't be read now is offered again with Retry; until it is read, import
+        // waits.
+        afterChange();
       }
     }
     Alert.alert(t`Import CSV`, plan.rows.length ? `${lines()}\n\n${importNote}` : lines(), [
@@ -323,33 +318,27 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   importCsv.current = reviewImport;
 
   async function save(change: VaultSave, policy?: VaultPolicy, access?: VaultBots) {
-    changes.current += 1;
     setError(null);
+    await beforeChange();
     const saved = await rpc("vault/put", {
       scope,
       ...change,
       ...access,
       ...(policy ? { policy } : {}),
-    }).finally(() => {
-      changes.current += 1;
-    });
-    setItems((current) => withItem(current ?? [], saved));
-    requestListRefresh();
+    }).finally(afterChange);
+    setItems((current) => withItem(current, saved));
     // An older server drops what it doesn't know silently, but the item is saved, so say what.
     const notice = vaultSaveNotice({ ...change, ...access, ...(policy ? { policy } : {}) }, saved);
     if (notice) afterEditing.current = { name: saved.name, notice };
   }
 
   async function remove(name: string) {
-    changes.current += 1;
     setPending(true);
     setError(null);
     try {
-      await rpc("vault/remove", { scope, name }).finally(() => {
-        changes.current += 1;
-      });
-      setItems((current) => current?.filter((entry) => entry.name !== name) ?? null);
-      requestListRefresh();
+      await beforeChange();
+      await rpc("vault/remove", { scope, name }).finally(afterChange);
+      setItems((current) => current.filter((entry) => entry.name !== name));
       setOpened(null);
       setUses(null);
     } catch (err) {
@@ -486,8 +475,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
             message={unread}
             onRetry={() => {
               setError(null);
-              setLoadError(null);
-              requestListRefresh();
+              void refetchList();
             }}
           />
         ) : null}
