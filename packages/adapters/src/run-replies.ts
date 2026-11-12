@@ -16,10 +16,24 @@ const LIVE_PROGRESS_LIMIT =
 const QUIET_START_GUIDANCE =
   "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting.";
 
-export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
-  const start = openingAcknowledgementEnabled()
-    ? `${LIVE_NARRATION_GUIDANCE} ${LIVE_PROGRESS_LIMIT}`
-    : QUIET_START_GUIDANCE;
+/**
+ * Whether a run's model is told to open with a sentence and narrate its steps: only when live
+ * narration is on and a person in the chat reads the run's text as it comes.
+ */
+export function runNarratesLive(trigger: string): boolean {
+  return (
+    openingAcknowledgementEnabled() &&
+    isConversationalRun(trigger) &&
+    runPromotesMidTurnNarration(trigger) &&
+    !runAllowsSilentEmpty(trigger)
+  );
+}
+
+export function longWorkProgressGuidance(
+  maxLength = messageUserMaxLength(),
+  live = openingAcknowledgementEnabled(),
+): string {
+  const start = live ? `${LIVE_NARRATION_GUIDANCE} ${LIVE_PROGRESS_LIMIT}` : QUIET_START_GUIDANCE;
   return `${start} The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
 }
 
@@ -74,7 +88,9 @@ export function runReplyGuidance(trigger: string, replyMode: ReplyMode = "chat")
   if (replyMode === "messages") return messagesModeReplyGuidance();
   if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
-  return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : longWorkProgressGuidance();
+  return runAllowsSilentEmpty(trigger)
+    ? ROUTINE_SILENT_REPLY_GUIDANCE
+    : longWorkProgressGuidance(undefined, runNarratesLive(trigger));
 }
 
 export function replyGuidanceForOfferedTools(
@@ -82,13 +98,11 @@ export function replyGuidanceForOfferedTools(
   disabled?: ReadonlySet<string>,
 ): string | undefined {
   if (!disabled?.has("message_user")) return guidance;
-  if (guidance === longWorkProgressGuidance()) {
-    const finalAnswer = "Always put the complete final answer in your normal reply.";
-    // Live narration needs no message_user: the opening sentence and statuses still apply.
-    return openingAcknowledgementEnabled()
-      ? `${LIVE_NARRATION_GUIDANCE} ${finalAnswer}`
-      : finalAnswer;
-  }
+  const finalAnswer = "Always put the complete final answer in your normal reply.";
+  // Live narration needs no message_user: the opening sentence and statuses still apply.
+  if (guidance === longWorkProgressGuidance(undefined, true))
+    return `${LIVE_NARRATION_GUIDANCE} ${finalAnswer}`;
+  if (guidance === longWorkProgressGuidance(undefined, false)) return finalAnswer;
   if (guidance === REACTION_SILENT_REPLY_GUIDANCE) {
     return guidance.replace(", with no message_user call.", ".");
   }

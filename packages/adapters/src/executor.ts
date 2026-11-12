@@ -9,7 +9,6 @@ import {
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
   isCallClientNonce,
-  isConversationalRun,
   isMessagingChannelRun,
   isOwnerStartedRun,
   isTerminal,
@@ -169,7 +168,7 @@ import {
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
   messageBlocksText,
   runAllowsSilentEmpty,
-  runPromotesMidTurnNarration,
+  runNarratesLive,
   runReplyGuidance,
   runReplyMode,
 } from "./run-replies.js";
@@ -230,7 +229,6 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
-import { openingAcknowledgementEnabled } from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -802,12 +800,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const groupReplyOptional =
           Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         // A group member a message named nobody may stay silent, so it shows nothing early.
-        const statusLinesWanted =
-          openingAcknowledgementEnabled() &&
-          runPromotesMidTurnNarration(run.trigger) &&
-          isConversationalRun(run.trigger) &&
-          !runAllowsSilentEmpty(run.trigger) &&
-          !groupReplyOptional;
+        const statusLinesWanted = runNarratesLive(run.trigger) && !groupReplyOptional;
         // Set up in the background: the run never waits on the status model. Its statuses
         // show as soon as they are ready, not once the run has finished setting up.
         const statusLinesSetup = statusLinesWanted

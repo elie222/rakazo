@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { describeToolActivity, stepStatusOf } from "./pi-runtime-tools.js";
-import { longWorkProgressGuidance } from "./run-replies.js";
+import {
+  longWorkProgressGuidance,
+  replyGuidanceForOfferedTools,
+  runReplyGuidance,
+} from "./run-replies.js";
 
 /** Tools this runtime offered the `live_status` field to. */
 const narrated = new Set(["shell", "use_tool", "create_space"]);
@@ -62,6 +66,21 @@ describe("step status field", () => {
       const status = stepStatusOf("shell", { live_status: "word ".repeat(20) }, narrated);
       expect(status?.endsWith("…")).toBe(true);
       expect(status!.length).toBeLessThanOrEqual(61);
+    });
+
+    it("narrates live only where a person reads the run as it comes", () => {
+      expect(runReplyGuidance("user")).toContain("live_status field");
+      expect(runReplyGuidance("bot_message")).not.toContain("live_status field");
+      expect(runReplyGuidance("bot_message")).toContain("never to announce that you are starting");
+    });
+
+    it("keeps the live guidance for bots without message_user", () => {
+      const guidance = replyGuidanceForOfferedTools(
+        runReplyGuidance("user"),
+        new Set(["message_user"]),
+      );
+      expect(guidance).toContain("live_status field");
+      expect(guidance).not.toContain("message_user");
     });
 
     it("asks for the status field in the guidance", () => {
