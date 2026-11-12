@@ -1189,17 +1189,17 @@ export async function actorFromMembership(membership: Promise<Actor>): Promise<A
 }
 
 /**
- * The auth library repeats each failure as a bare message after logging it with its error. That
- * echo stays out of the collector; the request's completion reports a failure nothing else did.
+ * The auth library logs a client's bad passkey or an undeliverable address with the same call as
+ * its own crashes, so its logs stay warnings and the request's 5xx completion reports a crash.
  */
-function authLibraryLogger(event: string) {
+export function authLibraryLogger(event: string) {
   return {
     level: "error" as const,
-    log: (_level: string, _message: string, ...args: unknown[]) =>
-      getLogger().error(
-        event,
-        args.find((arg) => arg instanceof Error) ?? { "error.report": false },
-      ),
+    log: (_level: string, message: string, ...args: unknown[]) =>
+      getLogger().warn(event, {
+        error: args.find((arg) => arg instanceof Error),
+        "error.message": message,
+      }),
   };
 }
 
