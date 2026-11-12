@@ -84,7 +84,7 @@ export function ChatHeader({
               aria-hidden="true"
               data-testid="chat-working-dot"
               data-working={working ? "" : undefined}
-              className={`pointer-events-none absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-success ring-2 ring-muted transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none ${
+              className={`pointer-events-none absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-working-dot ring-2 ring-muted transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none ${
                 working ? "scale-100 opacity-100" : "scale-50 opacity-0"
               }`}
             />

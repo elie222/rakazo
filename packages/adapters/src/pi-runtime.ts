@@ -86,7 +86,7 @@ import {
   describeToolActivity,
   redactAskUserDetailInMessage,
   releaseToolCallBudget,
-  stepStatusOf,
+  rememberStepStatus,
   toAgentTools,
   toolCallBudgetExceededMessage,
   toolCallBudgetFor,
@@ -834,11 +834,7 @@ export class PiAgentRuntime implements AgentRuntime {
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
-            const status = stepStatusOf(event.toolName, event.args, host.narratedTools);
-            if (status) {
-              host.stepStatuses ??= new Map();
-              host.stepStatuses.set(event.toolCallId, status);
-            } else host.stepStatuses?.delete(event.toolCallId);
+            const status = rememberStepStatus(host, event.toolCallId, event.toolName, event.args);
             queue.push({
               type: "progress",
               text: describeToolActivity(
@@ -1041,6 +1037,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 let result: AgentToolResult<JsonValue | undefined>;
                 try {
                   signal.throwIfAborted();
+                  // A replayed call keeps the status the model gave it.
+                  rememberStepStatus(host, call.id, call.name, call.arguments);
                   const args = validateToolArguments(tool, {
                     ...call,
                     arguments: (tool.prepareArguments?.(call.arguments) ??

@@ -1143,16 +1143,18 @@ describe("withToolStepOutcomes", () => {
 });
 
 describe("heldActivityLine", () => {
-  it("keeps the last status between steps and drops it when the run stops", () => {
-    expect(heldActivityLine(undefined, "Checking availability", true)).toBe(
-      "Checking availability",
-    );
-    expect(heldActivityLine("Checking availability", undefined, true)).toBe(
-      "Checking availability",
-    );
-    expect(heldActivityLine("Checking availability", "Looking for updates", true)).toBe(
+  it("keeps the last status between steps and drops it when the work stops", () => {
+    const first = heldActivityLine(undefined, "Checking availability", ["run-1"]);
+    expect(first.line).toBe("Checking availability");
+    expect(heldActivityLine(first, undefined, ["run-1"]).line).toBe("Checking availability");
+    expect(heldActivityLine(first, "Looking for updates", ["run-1"]).line).toBe(
       "Looking for updates",
     );
-    expect(heldActivityLine("Checking availability", undefined, false)).toBeUndefined();
+    expect(heldActivityLine(first, undefined, []).line).toBeUndefined();
+  });
+
+  it("drops a finished worker's status while another keeps working", () => {
+    const both = heldActivityLine(undefined, "Checking availability", ["run-1", "run-2"]);
+    expect(heldActivityLine(both, undefined, ["run-2"]).line).toBeUndefined();
   });
 });

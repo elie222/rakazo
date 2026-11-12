@@ -285,6 +285,12 @@ export const fontWeight = { regular: "400", medium: "500", semibold: "600" } as 
  * Native text styles on the system font, in points: iOS body text is 17/22. Titles use the
  * font's own line spacing, written out so they don't inherit a smaller body line height.
  */
+/**
+ * How your sent message enters the chat on web and mobile: it rises `offset` px into place and
+ * fades in from `opacity`, over `ms`, easing out.
+ */
+export const sendEntrance = { ms: 250, offset: 20, opacity: 0.4 } as const;
+
 export const typeScale = {
   title: { fontSize: 22, lineHeight: 26, fontWeight: fontWeight.semibold },
   headline: { fontSize: 19, lineHeight: 23, fontWeight: fontWeight.semibold },

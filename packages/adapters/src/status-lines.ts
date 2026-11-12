@@ -101,66 +101,71 @@ export async function createStatusLineWriter(
     ): Promise<string> => {
       // The time limit covers resolving the model's key as well as the call.
       const timeout = AbortSignal.timeout(STATUS_LINE_TIMEOUT_MS);
-      const key = await untilAborted(keyFor(choice), AbortSignal.any([signal, timeout]));
+      const deadline = AbortSignal.any([signal, timeout]);
+      const key = await untilAborted(keyFor(choice), deadline);
       // Built only now, so it is redacted against the credentials just resolved too.
       const prompt = buildPrompt();
       const startedAt = Date.now();
       let text = "";
       let problem = "";
-      for await (const event of deps.runtime.run(
-        {
-          botId: scope.botId,
-          threadId: scope.threadId,
-          runId: `${scope.runId}:status-line`,
-          usageOperationKind: "setup",
-          onUsage: async (event) => {
-            await onUsage(event);
+      // A provider that does not stop when aborted must not hold up the next model.
+      const consume = (async () => {
+        for await (const event of deps.runtime.run(
+          {
+            botId: scope.botId,
+            threadId: scope.threadId,
+            runId: `${scope.runId}:status-line`,
+            usageOperationKind: "setup",
+            onUsage: async (event) => {
+              await onUsage(event);
+            },
+            prompt,
+            instructions: STATUS_LINE_INSTRUCTIONS,
+            history: [],
+            tools: [],
+            model: {
+              provider: choice.provider,
+              id: choice.modelId,
+              apiKey: key.oauth ? undefined : key.apiKey,
+              accountId: key.accountId,
+              gatewayId: key.gatewayId,
+              baseUrl: key.baseUrl,
+              headers: key.headers,
+              allowPrivateEndpoint: key.allowPrivateEndpoint,
+              cacheCapabilities: key.cacheCapabilities,
+              contextWindow: key.contextWindow,
+              maxTokens: key.maxTokens,
+              reasoning: key.reasoning,
+              // A status line needs no extended thinking; it only adds delay.
+              thinkingLevel: choice.thinkingLevel ?? "off",
+              oauth: key.oauth
+                ? {
+                    credential: key.oauth,
+                    persist: key.persistOAuth,
+                    refresh: key.refreshOAuth,
+                    retire: key.retireOAuth,
+                  }
+                : undefined,
+              callObserver: key.callObserver,
+            },
           },
-          prompt,
-          instructions: STATUS_LINE_INSTRUCTIONS,
-          history: [],
-          tools: [],
-          model: {
-            provider: choice.provider,
-            id: choice.modelId,
-            apiKey: key.oauth ? undefined : key.apiKey,
-            accountId: key.accountId,
-            gatewayId: key.gatewayId,
-            baseUrl: key.baseUrl,
-            headers: key.headers,
-            allowPrivateEndpoint: key.allowPrivateEndpoint,
-            cacheCapabilities: key.cacheCapabilities,
-            contextWindow: key.contextWindow,
-            maxTokens: key.maxTokens,
-            reasoning: key.reasoning,
-            // A status line needs no extended thinking; it only adds delay.
-            thinkingLevel: choice.thinkingLevel ?? "off",
-            oauth: key.oauth
-              ? {
-                  credential: key.oauth,
-                  persist: key.persistOAuth,
-                  refresh: key.refreshOAuth,
-                  retire: key.retireOAuth,
-                }
-              : undefined,
-            callObserver: key.callObserver,
+          {
+            operationId: `status-line:${scope.runId}`,
+            traceId: `status-line:${scope.runId}`,
+            spaceId: scope.spaceId,
+            userId: scope.userId,
+            signal: deadline,
           },
-        },
-        {
-          operationId: `status-line:${scope.runId}`,
-          traceId: `status-line:${scope.runId}`,
-          spaceId: scope.spaceId,
-          userId: scope.userId,
-          signal: AbortSignal.any([signal, timeout]),
-        },
-      )) {
-        if (event.type === "usage" && !event.accounted) await onUsage(event);
-        if (event.type === "text" && isModelFailureText(event.text)) problem = event.text.trim();
-        if (event.type === "done" && event.text) {
-          if (isModelFailureText(event.text)) problem = event.text.trim();
-          else text = event.text;
+        )) {
+          if (event.type === "usage" && !event.accounted) await onUsage(event);
+          if (event.type === "text" && isModelFailureText(event.text)) problem = event.text.trim();
+          if (event.type === "done" && event.text) {
+            if (isModelFailureText(event.text)) problem = event.text.trim();
+            else text = event.text;
+          }
         }
-      }
+      })();
+      await untilAborted(consume, deadline);
       if (problem || !text.trim()) {
         // biome-ignore lint/suspicious/noConsole: One sanitized status-line diagnostic.
         console.warn(

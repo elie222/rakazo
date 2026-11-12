@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import type { HeldActivityLine } from "@rakazo/core";
 import {
   buildComposerMentionOptions,
   channelMessageSender,
@@ -278,21 +279,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
-  // The bot's last status stays up between steps, until the next one or the end of the run.
-  // It belongs to its chat: opening another chat starts without it.
-  const lastActivityLine = useRef<{ threadKey?: string; line?: string }>({});
-  const previousActivityLine =
-    lastActivityLine.current.threadKey === threadKey ? lastActivityLine.current.line : undefined;
-  lastActivityLine.current = {
-    threadKey,
-    line: heldActivityLine(
-      previousActivityLine,
-      liveActivityLine(snap?.messages ?? []),
-      [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some((run) =>
-        isRunWorking(run.status),
-      ),
-    ),
-  };
+  // The bot's last status stays up between steps, until the next one or the end of its run.
+  // It belongs to the runs that were working: another chat's or a finished peer's never shows.
+  const lastActivityLine = useRef<HeldActivityLine | undefined>(undefined);
+  lastActivityLine.current = heldActivityLine(
+    lastActivityLine.current,
+    liveActivityLine(snap?.messages ?? []),
+    [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])]
+      .filter((run) => isRunWorking(run.status))
+      .map((run) => run.id),
+  );
   const activityLine = lastActivityLine.current.line;
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(

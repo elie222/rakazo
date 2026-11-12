@@ -439,6 +439,21 @@ export function stepStatusOf(
     : undefined;
 }
 
+/** Remembers the status the model gave a call, by call id, for the step it becomes. */
+export function rememberStepStatus(
+  host: ToolHost,
+  callId: string,
+  toolName: string,
+  args: unknown,
+) {
+  const status = stepStatusOf(toolName, args, host.narratedTools);
+  if (status) {
+    host.stepStatuses ??= new Map();
+    host.stepStatuses.set(callId, status);
+  } else host.stepStatuses?.delete(callId);
+  return status;
+}
+
 function buildAgentTool(
   tool: ConnectorTool,
   host: ToolHost,

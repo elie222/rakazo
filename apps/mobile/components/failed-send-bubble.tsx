@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { isModelRequiredSendError } from "@rakazo/core";
-import { typeScale } from "@rakazo/ui-tokens";
+import { sendEntrance, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import { Alert, Image, Platform, Pressable, Text, View } from "react-native";
 import type { EntryExitAnimationFunction } from "react-native-reanimated";
@@ -18,7 +18,7 @@ import { NativeSymbol } from "./native-symbol";
  * A message just sent rises into place above the composer: it starts this far below and this
  * faint, and eases out over this long, with no bounce.
  */
-export const SEND_ENTER = { ms: 250, offset: 20, opacity: 0.4 } as const;
+export const SEND_ENTER = sendEntrance;
 /** "Sending…" shows only once a send takes this long; a quick send never shows it. */
 export const SLOW_SEND_MS = 1500;
 const CAPTION_FADE_MS = 200;

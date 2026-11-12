@@ -22,6 +22,11 @@ export type StatusLineTarget = {
   writer: Promise<StatusLineWriter | undefined>;
   /** The person's message the run answers. */
   request: string;
+  /**
+   * Settles once the run's own credentials are registered for redaction. Nothing reaches the
+   * status model before then. Without it, calls start at once.
+   */
+  ready?: Promise<unknown>;
   /** Shows one status as the working line. */
   show(text: string): Promise<unknown>;
   /** Whether the bot's own note holds the working line right now. */
@@ -54,10 +59,17 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     return showing;
   };
 
+  // The writer, once the run's credentials are known; nothing is sent to the model before.
+  const writer = Promise.all([target.writer, target.ready]).then(([found]) => found);
+  void target.writer.then(
+    (found) => {
+      hasWriter = Boolean(found);
+    },
+    () => {},
+  );
   const opening = ++generation;
-  void target.writer
+  void writer
     .then(async (writer) => {
-      hasWriter = Boolean(writer);
       if (!writer || closed) return;
       const lines = await writer.opening(target.request, abort.signal);
       let index = 0;
@@ -78,7 +90,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     step(text, { fallback = true } = {}) {
       const mine = ++generation;
       stopRotation();
-      void target.writer
+      void writer
         .then((writer) => writer?.step(target.request, text, abort.signal))
         .catch(() => undefined)
         .then((line) => {

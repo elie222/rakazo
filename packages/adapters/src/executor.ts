@@ -822,10 +822,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             )
           : Promise.resolve(undefined);
         let statusHeld = () => false;
+        // The status model hears nothing before the main model's key is registered for redaction.
+        let markStatusSecretsReady = () => {};
+        const statusSecretsReady = new Promise<void>((resolve) => {
+          markStatusSecretsReady = resolve;
+        });
         const statusLive = statusLinesWanted
           ? startStatusLines({
               writer: statusLinesSetup,
               request: statusRequestText,
+              ready: statusSecretsReady,
               held: () => statusHeld(),
               show: (text) =>
                 deps.events.append({
@@ -1039,6 +1045,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved,
         } = started.start;
         runSecrets.push(...resolved.redact);
+        markStatusSecretsReady();
         // A pin stays as it was created. Unpinned runs still record the model they
         // used; modelPinned is what keeps that record from becoming the next choice.
         if (!run.modelPinned) {

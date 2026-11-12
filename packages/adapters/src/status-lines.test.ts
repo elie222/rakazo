@@ -130,6 +130,20 @@ describe("startStatusLines", () => {
     expect(t.shown).toEqual([]);
   });
 
+  it("sends nothing to the status model before the run's credentials are registered", async () => {
+    const opening = vi.fn(async () => ["Reading your question"]);
+    let markReady: () => void = () => {};
+    const ready = new Promise<void>((resolve) => (markReady = resolve));
+    const t = target({ opening, step: async () => undefined });
+    startStatusLines({ ...t.target, ready });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opening).not.toHaveBeenCalled();
+    markReady();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opening).toHaveBeenCalledOnce();
+    expect(t.shown).toEqual(["Reading your question"]);
+  });
+
   it("leaves the line to the bot's own note", async () => {
     const t = target({
       opening: async () => ["Reading your question"],

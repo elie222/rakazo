@@ -383,16 +383,23 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
+/** The working line a chat holds, and the work it belongs to. */
+export type HeldActivityLine = { line?: string; workers: string };
+
 /**
- * The working line a chat shows for its run: the newest live status, or the last one while the
- * bot is between steps. Nothing once the run has stopped working.
+ * The working line a chat shows: the newest live status, or the last one while the same work
+ * is between steps. `workers` names what is working (run or bot ids); when it changes, as when
+ * one bot finishes while another keeps going, the old line goes.
  */
 export function heldActivityLine(
-  previous: string | undefined,
+  previous: HeldActivityLine | undefined,
   live: string | undefined,
-  runWorking: boolean,
-): string | undefined {
-  return runWorking ? (live ?? previous) : undefined;
+  workers: readonly string[],
+): HeldActivityLine {
+  const key = [...workers].sort().join(",");
+  if (!key) return { workers: "" };
+  const kept = previous?.workers === key ? previous.line : undefined;
+  return { line: live ?? kept, workers: key };
 }
 
 export type ToolStepOutcome = "succeeded" | "failed" | "stopped";

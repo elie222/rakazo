@@ -1,13 +1,15 @@
+import { sendEntrance } from "@rakazo/ui-tokens";
+
 /** How long after a send its message may still arrive and enter with the send animation. */
 export const SENT_ENTRANCE_WINDOW_MS = 15_000;
 
 /** Your sent message rises from just above the composer into its place. */
 export const SENT_ENTRANCE_KEYFRAMES: Keyframe[] = [
-  { opacity: 0.4, transform: "translateY(20px)" },
+  { opacity: sendEntrance.opacity, transform: `translateY(${sendEntrance.offset}px)` },
   { opacity: 1, transform: "translateY(0)" },
 ];
 export const SENT_ENTRANCE_TIMING: KeyframeAnimationOptions = {
-  duration: 250,
+  duration: sendEntrance.ms,
   easing: "cubic-bezier(0.22, 1, 0.36, 1)",
 };
 
