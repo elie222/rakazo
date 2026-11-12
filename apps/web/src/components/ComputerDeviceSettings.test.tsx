@@ -219,3 +219,21 @@ it("keeps the local switch when a later profile read fails", async () => {
   expect(toggle?.checked).toBe(true);
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
 });
+
+it("marks only the server-selected connected computer as bound", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([
+    { ...laptop, bound: false },
+    { ...desk, connected: true, bound: true },
+  ]);
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.textContent).toContain("Desk PCBound to bots");
+  expect(host.textContent?.match(/Bound to bots/g)).toHaveLength(1);
+});
+
+it("never marks an offline computer as bound", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([{ ...desk, bound: true }]);
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  expect(host.textContent).toContain("Desk PCOffline");
+  expect(host.textContent).not.toContain("Bound to bots");
+});

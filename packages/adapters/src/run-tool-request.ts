@@ -329,7 +329,7 @@ export async function prepareToolRequest(
     );
   }
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
-  if (USER_COMPUTER_TOOLS.has(name)) {
+  if (USER_COMPUTER_TOOLS.has(name) || name === "user_computer_list") {
     if (!ctx.source.userComputerOwner || !deps.userDevices)
       return refusal(
         "user_computer_unavailable",

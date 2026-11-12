@@ -13,8 +13,14 @@ export const USER_DEVICE_EMULATOR_OUTPUT = "fixture-mac\n";
 export class UserDeviceEmulator implements UserDeviceGateway {
   readonly requests: Array<{ userId: string; request: HostComputerRequest }> = [];
 
-  async connected(_userId: string): Promise<UserDevice> {
+  async connected(_userId: string, deviceId?: string): Promise<UserDevice | null> {
+    if (deviceId !== undefined && deviceId !== "emulated-device") return null;
     return { deviceId: "emulated-device", name: "Fixture Mac", platform: "darwin" };
+  }
+
+  async list(userId: string) {
+    const device = (await this.connected(userId))!;
+    return [{ deviceId: device.deviceId, name: device.name, connected: true, bound: true }];
   }
 
   async pairedSince(_userId: string): Promise<Date> {
@@ -25,7 +31,9 @@ export class UserDeviceEmulator implements UserDeviceGateway {
     userId: string,
     request: HostComputerRequest,
     _signal: AbortSignal,
+    deviceId?: string,
   ): AsyncIterable<T> {
+    if (!(await this.connected(userId, deviceId))) throw new Error("Computer unavailable");
     this.requests.push({ userId, request });
     if (request.method === "environment") {
       const environment: HostComputerEnvironment = {

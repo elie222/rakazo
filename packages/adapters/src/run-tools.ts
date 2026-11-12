@@ -30,6 +30,7 @@ import {
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SHELL_TOOL,
   userComputerAct,
+  userComputerList,
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
@@ -48,6 +49,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(messagingTools),
   ...Object.entries(secretTools),
   ...Object.entries(fleetTools),
+  ["user_computer_list", userComputerList],
   [USER_COMPUTER_SHELL_TOOL, userComputerShell],
   [USER_COMPUTER_OBSERVE_TOOL, userComputerObserve],
   [USER_COMPUTER_ACT_TOOL, userComputerAct],

@@ -94,7 +94,15 @@ export function ComputerDeviceSettings() {
             <p className="flex min-w-0 items-baseline gap-2">
               <span className="truncate">{device.name}</span>
               <span className="shrink-0 text-body-sm text-muted-foreground">
-                {device.connected ? <Trans>Connected</Trans> : <Trans>Offline</Trans>}
+                {device.connected ? (
+                  device.bound ? (
+                    <Trans>Bound to bots</Trans>
+                  ) : (
+                    <Trans>Connected</Trans>
+                  )
+                ) : (
+                  <Trans>Offline</Trans>
+                )}
               </span>
             </p>
           }

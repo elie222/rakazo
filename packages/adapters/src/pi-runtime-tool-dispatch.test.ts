@@ -599,6 +599,34 @@ describe("Pi connector tool dispatch", () => {
     delete process.env.MAX_TOOL_CALLS_PER_TURN;
   });
 
+  it("preserves an explicit computer id through shell argument preparation", async () => {
+    fakeAgentState.invoke = {
+      name: "user_computer_shell",
+      args: { command: "pwd", computerId: "device-2" },
+    };
+    const executeTool = vi.fn(async () => ({ code: 0 }));
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "computer-target",
+        prompt: "Check the selected computer",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [builtinAgentTools.find((tool) => tool.name === "user_computer_shell")!],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+    }
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(executeTool.mock.calls[0]?.slice(0, 2)).toEqual([
+      "user_computer_shell",
+      { command: "pwd", computerId: "device-2" },
+    ]);
+  });
+
   it("injects durable steering at Pi's next safe turn boundary", async () => {
     fakeAgentState.mode = "empty";
     let claimCount = 0;

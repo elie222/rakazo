@@ -471,12 +471,25 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "user_computer_list",
+    description:
+      "List the user's connected, allowed computers with computerId, name and bound (the computer used when computerId is omitted). Pass computerId to user_computer_shell, user_computer_observe or user_computer_act to target one explicitly.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "user_computer_shell",
     description:
       "Run a command on the user's own computer. Use only when the task needs their local files, credentials, or network. cwd defaults to their home folder and must stay inside it.",
     inputSchema: {
       type: "object",
       properties: {
+        computerId: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          description:
+            "Id from user_computer_list. Omit to use the most recently connected computer.",
+        },
         command: { type: "string" },
         cwd: { type: "string" },
       },
@@ -490,6 +503,13 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        computerId: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          description:
+            "Id from user_computer_list. Omit to use the most recently connected computer.",
+        },
         app: { type: "string", minLength: 1, maxLength: 200 },
         query: { type: "string", maxLength: 200 },
       },
@@ -503,6 +523,13 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        computerId: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          description:
+            "Id from user_computer_list. Omit to use the most recently connected computer.",
+        },
         app: { type: "string", minLength: 1, maxLength: 200 },
         actions: {
           type: "array",

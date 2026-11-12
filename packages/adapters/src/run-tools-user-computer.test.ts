@@ -3,8 +3,11 @@ import type { HostComputerRequest } from "./host-computer-protocol.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import {
+  userComputerAct,
   userComputerCwd,
   userComputerGate,
+  userComputerList,
+  userComputerObserve,
   userComputerOwner,
   userComputerShell,
 } from "./run-tools-user-computer.js";
@@ -18,6 +21,7 @@ function setup(execute: (signal: AbortSignal) => AsyncIterable<unknown>, secrets
   const signals: AbortSignal[] = [];
   const deviceIds: (string | undefined)[] = [];
   const gateway: UserDeviceGateway = {
+    list: async () => [],
     connected: async () => ({ deviceId: "device-1", name: "Laptop", platform: "darwin" }),
     pairedSince: async () => new Date(0),
     async *request<T>(
@@ -204,5 +208,90 @@ describe("userComputerShell", () => {
     controller.abort();
     await expect(pending).rejects.toThrow("aborted");
     expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+});
+
+describe("explicit computer targeting", () => {
+  it("pins every shell request to the selected computer", async () => {
+    const { ctx, call, deviceIds } = setup(async function* () {
+      yield { type: "exit", code: 0 };
+    });
+    const connected = vi.fn(async (_owner: string, id?: string) => ({
+      deviceId: id ?? "device-1",
+      name: "Desk PC",
+      platform: "linux",
+    }));
+    ctx.deps.userDevices!.connected = connected;
+    await userComputerShell(ctx, call({ command: "pwd", computerId: "device-2" }));
+    expect(connected).toHaveBeenCalledWith("user-1", "device-2");
+    expect(deviceIds).toEqual(["device-2", "device-2", "device-2"]);
+  });
+
+  it.each([userComputerObserve, userComputerAct])(
+    "pins screen requests to the selected computer",
+    async (tool) => {
+      const { ctx, call, deviceIds } = setup(async function* () {
+        yield { app: "Notes", tree: "Window", completed: 1 };
+      });
+      ctx.computer = { acceptsImages: false } as RunContext["computer"];
+      ctx.deps.userDevices!.connected = vi.fn(async (_owner, id) => ({
+        deviceId: id!,
+        name: "Desk PC",
+        platform: "darwin",
+      }));
+      await tool(
+        ctx,
+        call({ app: "Notes", actions: [{ kind: "wait", ms: 1 }], computerId: "device-2" }),
+      );
+      expect(deviceIds).toEqual(["device-2"]);
+    },
+  );
+
+  it.each([userComputerShell, userComputerObserve, userComputerAct])(
+    "refuses unavailable targets without requests",
+    async (tool) => {
+      const { ctx, call, requests } = setup(async function* () {});
+      ctx.deps.userDevices!.connected = vi.fn(async () => null);
+      const result = await tool(
+        ctx,
+        call({
+          command: "pwd",
+          app: "Notes",
+          actions: [{ kind: "wait", ms: 1 }],
+          computerId: "missing",
+        }),
+      );
+      expect(result).toMatchObject({ error: expect.stringContaining("selected computer") });
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it.each(["", null, 42])(
+    "rejects malformed ids (%s) instead of using the default",
+    async (computerId) => {
+      const { ctx, call, requests } = setup(async function* () {});
+      expect(await userComputerShell(ctx, call({ command: "pwd", computerId }))).toMatchObject({
+        error: expect.stringContaining("computerId"),
+      });
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it("lists only the owner's connected computers, with the omitted-id binding", async () => {
+    const { ctx, call } = setup(async function* () {});
+    ctx.deps.userDevices!.list = vi.fn(async () => [
+      { deviceId: "d1", name: "Laptop", connected: true, bound: false },
+      { deviceId: "d2", name: "Desk PC", connected: true, bound: true },
+      { deviceId: "d3", name: "Offline PC", connected: false },
+    ]);
+    expect(await userComputerList(ctx, call({}))).toEqual({
+      computers: [
+        { computerId: "d1", name: "Laptop", bound: false },
+        { computerId: "d2", name: "Desk PC", bound: true },
+      ],
+    });
+    expect(ctx.deps.userDevices!.list).toHaveBeenCalledWith("user-1");
+    ctx.source.userComputerOwner = undefined;
+    expect(await userComputerList(ctx, call({}))).toHaveProperty("error");
   });
 });
