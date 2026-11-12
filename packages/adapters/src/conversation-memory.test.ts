@@ -317,6 +317,47 @@ const fromBea = () =>
   });
 
 describe("retainRunConversation", () => {
+  it.each([
+    ["large messages", 40, '"\\😀'.repeat(4_000)],
+    ["many messages", 400, "A short message."],
+  ] as const)(
+    "bounds the aggregate direct-chat transcript with %s",
+    async (_case, count, content) => {
+      const people = Array.from({ length: count }, (_, index) =>
+        message({ id: `m-${index}`, seq: index * 2 + 1, role: "user" }, `${index}: ${content}`),
+      );
+      const replies = Array.from({ length: count }, (_, index) =>
+        message(
+          { id: `r-${index}`, seq: index * 2 + 2, role: "bot", botId: "bot-1", runId: "run-1" },
+          `${index}: ${content}`,
+        ),
+      );
+      const { deps, provider } = harness({
+        sourceMessageId: people[0]!.id,
+        messages: [...people, ...replies],
+      });
+      await retainRunConversation(
+        deps,
+        "run-1",
+        people.map((person) => person.id),
+      );
+      const [request] = provider.retainConversation.mock.calls[0] as unknown as [
+        { turns: Array<{ role: string; content: string }> },
+      ];
+      expect(request.turns.length).toBeLessThanOrEqual(200);
+      expect(
+        request.turns.reduce((size, turn) => size + turn.content.length, 0),
+      ).toBeLessThanOrEqual(32_400);
+      expect(new TextEncoder().encode(JSON.stringify(request)).byteLength).toBeLessThan(256_000);
+      for (const role of ["user", "assistant"]) {
+        expect(
+          request.turns.some(
+            (turn) => turn.role === role && turn.content.includes(`${count - 1}:`),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
   it.each([undefined, "", "   "])(
     "refuses to submit without a connection identity: %j",
     async (identity) => {

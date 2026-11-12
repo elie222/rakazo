@@ -40,7 +40,8 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   Shared scope, bots also share one memory for the Space, including learned direct-chat turns.
   Bots learn from their conversations (their
   own chats, group chats, and messages between bots) unless you turn off **Learn from
-  conversations**. Each cleanup attempt has a ten-second deadline and deletes per-turn documents
+  conversations**. Learning uses bounded excerpts from recent human messages and replies,
+  for both direct and group chats. Each cleanup attempt has a ten-second deadline and deletes per-turn documents
   in bounded parallel batches. Failed cleanup is retried up to twelve times through the existing
   queue, using the captured connection identity. Cleanup remains best effort if publication fails
   or the process stops before the retry is queued. If the configured connection cannot be loaded,

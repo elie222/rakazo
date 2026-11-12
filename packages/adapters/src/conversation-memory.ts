@@ -49,12 +49,12 @@ export function retainsConversationTurn(input: {
   );
 }
 
-/** At most this many group messages are sent for one turn. */
-const MAX_GROUP_WINDOW_MESSAGES = 200;
-/** Group transcript cap per turn, matching the group-chat window other agents use. */
-const MAX_GROUP_WINDOW_CHARS = 32_000;
-/** A single longer group message is cut to a marked excerpt of this many characters. */
-const MAX_GROUP_MESSAGE_CHARS = 8_000;
+/** At most this many messages are sent for one learned turn. */
+const MAX_CONVERSATION_MESSAGES = 200;
+/** Transcript cap per turn, shared by direct and group learning. */
+const MAX_CONVERSATION_CHARS = 32_000;
+/** A single longer message is cut to a marked excerpt of this many characters. */
+const MAX_CONVERSATION_MESSAGE_CHARS = 8_000;
 const EXCERPT_MARKER = " […]";
 
 type SaidMessage = {
@@ -78,33 +78,45 @@ function excerpt(text: string, max: number): string {
 }
 
 /**
- * Cuts oversized group messages, then keeps the newest that fit the transcript cap. This run's
- * replies take at most half of it, newest first, so long replies never crowd out what the room
+ * Cuts oversized messages, then keeps the newest that fit the shared transcript cap. This run's
+ * replies take at most half of it, newest first, so long replies never crowd out what people
  * said; everyone else's messages get the rest.
  */
-function capGroupWindow(messages: SaidMessage[]): SaidMessage[] {
+function capConversationWindow(messages: SaidMessage[]): SaidMessage[] {
   const newestFirst = messages
     .map((message) => {
       const text = conversationText(message.blocks);
       return {
         ...message,
-        text: { ...text, content: excerpt(text.content, MAX_GROUP_MESSAGE_CHARS) },
+        text: { ...text, content: excerpt(text.content, MAX_CONVERSATION_MESSAGE_CHARS) },
       };
     })
+    .filter((message) => message.text.content.length > 0)
     .sort((a, b) => b.seq - a.seq);
-  const keepNewest = (role: SaidMessage["role"], budget: number) => {
+  const keepNewest = (role: SaidMessage["role"], budget: number, limit: number) => {
     const kept: SaidMessage[] = [];
     let used = 0;
     for (const message of newestFirst) {
       if (message.role !== role) continue;
-      if (used + message.text.content.length > budget) break;
+      if (kept.length >= limit || used + message.text.content.length > budget) break;
       used += message.text.content.length;
       kept.push(message);
     }
     return { kept, used };
   };
-  const replies = keepNewest("assistant", MAX_GROUP_WINDOW_CHARS / 2);
-  return [...replies.kept, ...keepNewest("user", MAX_GROUP_WINDOW_CHARS - replies.used).kept];
+  const replies = keepNewest(
+    "assistant",
+    MAX_CONVERSATION_CHARS / 2,
+    MAX_CONVERSATION_MESSAGES / 2,
+  );
+  return [
+    ...replies.kept,
+    ...keepNewest(
+      "user",
+      MAX_CONVERSATION_CHARS - replies.used,
+      MAX_CONVERSATION_MESSAGES - replies.kept.length,
+    ).kept,
+  ];
 }
 
 type ReceivedBotMessage = Extract<MessageBlock, { kind: "bot_message_received" }>;
@@ -238,7 +250,7 @@ export async function retainRunConversation(
     const lastReply = kept.at(-1);
     if (!lastReply) return done;
     const room = await groupWindow(deps.prisma, run, source.seq, lastReply.seq);
-    said.push(...capGroupWindow(room));
+    said.push(...room);
   } else {
     said.push(
       { ...source, role: "user" },
@@ -248,8 +260,9 @@ export async function retainRunConversation(
       ...kept.map((reply) => ({ ...reply, role: "assistant" as const })),
     );
   }
+  const selected = capConversationWindow(said);
   // Keep different people's words separate instead of attributing the whole turn to its starter.
-  const humans = said.filter(
+  const humans = selected.filter(
     (message) => message.role === "user" && !receivedBotMessage(message.blocks) && !message.speaker,
   );
   const authorIds = [
@@ -266,11 +279,11 @@ export async function retainRunConversation(
         : "another person";
     }
   }
-  said.sort((a, b) => a.seq - b.seq);
+  selected.sort((a, b) => a.seq - b.seq);
   // In the order it happened, with consecutive messages from one speaker joined.
   const turns: SemanticMemoryConversationTurn[] = [];
   let previousSpeakerIdentity: string | undefined;
-  for (const message of said) {
+  for (const message of selected) {
     const text = message.text ?? conversationText(message.blocks);
     if (!text.content) continue;
     const speaker = message.speaker ?? text.speaker;
@@ -523,7 +536,7 @@ async function groupWindow(
       ],
     },
     orderBy: { seq: "desc" },
-    take: MAX_GROUP_WINDOW_MESSAGES,
+    take: MAX_CONVERSATION_MESSAGES,
     select: {
       seq: true,
       role: true,
