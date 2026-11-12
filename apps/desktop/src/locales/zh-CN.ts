@@ -191,4 +191,6 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Starting {app}…": "正在启动 {app}…",
   "Waiting for Docker Desktop…": "正在等待 Docker Desktop…",
   "Waiting for Docker…": "正在等待 Docker…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker 已安装但未运行。请启动 Docker 服务以继续。",
 };

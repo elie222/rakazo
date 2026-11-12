@@ -319,7 +319,9 @@ test("a stopped Docker daemon is reported and setup keeps asking Docker on its o
   await setup.getByRole("button", { name: "Continue" }).click();
   // The fake docker belongs to no desktop app, so there is nothing for setup to open itself.
   await expect(setup.locator("#stack-phase")).toHaveText(
-    "Docker is installed but not running. Open it to continue.",
+    process.platform === "linux"
+      ? "Docker is installed but not running. Start the Docker service to continue."
+      : "Docker is installed but not running. Open it to continue.",
   );
   await expect(setup.locator("#stack-waiting")).toBeVisible();
   // Setup looks again on its own, so there is no button to press.

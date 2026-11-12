@@ -204,4 +204,6 @@ export const HE_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} מופעל…",
   "Waiting for Docker Desktop…": "ממתין ל-Docker Desktop…",
   "Waiting for Docker…": "ממתין ל-Docker…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker מותקן אבל לא פועל. יש להפעיל את שירות Docker כדי להמשיך.",
 };

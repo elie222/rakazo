@@ -207,4 +207,6 @@ export const KO_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} 시작 중…",
   "Waiting for Docker Desktop…": "Docker Desktop 기다리는 중…",
   "Waiting for Docker…": "Docker 기다리는 중…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 Docker 서비스를 시작하세요.",
 };

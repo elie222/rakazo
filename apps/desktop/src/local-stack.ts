@@ -545,7 +545,10 @@ export class LocalStackController {
       }
       const now = this.deps.now ?? Date.now;
       if (this.dockerAppLaunch === undefined) {
-        const app = (await this.deps.launchDockerApp?.(binary)) ?? null;
+        // A daemon chosen by DOCKER_HOST or another context is not the app behind this CLI.
+        const app = usesLocalDaemon(this.deps.env)
+          ? ((await this.deps.launchDockerApp?.(binary)) ?? null)
+          : null;
         this.dockerAppLaunch = { app, at: now() };
       }
       const { app, at } = this.dockerAppLaunch;
@@ -554,7 +557,7 @@ export class LocalStackController {
         message:
           app !== null && now() - at < DOCKER_APP_START_GRACE_MS
             ? t("Starting {app}…", { app })
-            : t("Docker is installed but not running. Open it to continue."),
+            : notRunningMessage(this.deps.platform),
       });
       return;
     }
@@ -717,4 +720,20 @@ export class LocalStackController {
       signal,
     );
   }
+}
+
+/** Contexts Docker Desktop and OrbStack create for their own local daemon. */
+const LOCAL_DOCKER_CONTEXTS = new Set(["default", "desktop-linux", "orbstack"]);
+
+function usesLocalDaemon(env: NodeJS.ProcessEnv): boolean {
+  if (env.DOCKER_HOST?.trim()) return false;
+  const context = env.DOCKER_CONTEXT?.trim();
+  return !context || LOCAL_DOCKER_CONTEXTS.has(context);
+}
+
+/** Linux runs Docker Engine as a service, which is started rather than opened. */
+function notRunningMessage(platform: string): string {
+  return platform === "linux"
+    ? t("Docker is installed but not running. Start the Docker service to continue.")
+    : t("Docker is installed but not running. Open it to continue.");
 }

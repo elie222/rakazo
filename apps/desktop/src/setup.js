@@ -422,7 +422,8 @@
       // Unlock immediately when nothing on this mode owns the controls; followStack exits on its
       // next poll.
       if (selectedMode() !== "new" || interruptedCheck) setBusy(false);
-      // Coming back to a stack still waiting for Docker resumes the look for it.
+      // Coming back to a stack still waiting for Docker resumes the look for it. Any other stack
+      // waits for Continue, which follows it again and saves it once it is ready.
       if (selectedMode() === "new" && lastStack !== null && isDockerPhase(lastStack.phase)) {
         renderStack(lastStack);
       }

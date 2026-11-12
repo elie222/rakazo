@@ -213,4 +213,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app}を起動しています…",
   "Waiting for Docker Desktop…": "Docker Desktopを待っています…",
   "Waiting for Docker…": "Dockerを待っています…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Dockerはインストールされていますが、実行されていません。続行するにはDockerサービスを起動してください。",
 };

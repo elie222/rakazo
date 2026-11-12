@@ -203,4 +203,6 @@ export const HI_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} शुरू हो रहा है…",
   "Waiting for Docker Desktop…": "Docker Desktop का इंतज़ार…",
   "Waiting for Docker…": "Docker का इंतज़ार…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker इंस्टॉल है लेकिन चल नहीं रहा। जारी रखने के लिए Docker सेवा शुरू करें।",
 };

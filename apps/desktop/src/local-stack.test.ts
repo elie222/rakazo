@@ -725,7 +725,7 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-not-running",
-      message: "Docker is installed but not running. Open it to continue.",
+      message: "Docker is installed but not running. Start the Docker service to continue.",
     });
     expect(calls).toHaveLength(2);
   });
@@ -763,10 +763,30 @@ describe("LocalStackController", () => {
     expect(launched).toHaveLength(2);
   });
 
+  it("does not open a local Docker app for a daemon chosen by DOCKER_HOST", async () => {
+    const launched: string[] = [];
+    const stack = controller(
+      {
+        platform: "darwin",
+        env: { PATH: "/usr/bin", HOME: "/Users/me", DOCKER_HOST: "ssh://build-box" },
+        launchDockerApp: async (binary) => {
+          launched.push(binary);
+          return "Docker Desktop";
+        },
+      },
+      (args) =>
+        args[0] === "info" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+    );
+    expect((await stack.start()).message).toBe(
+      "Docker is installed but not running. Open it to continue.",
+    );
+    expect(launched).toEqual([]);
+  });
+
   it("asks the person to open Docker once the app setup opened has not come up", async () => {
     let clock = 0;
     const stack = controller(
-      { launchDockerApp: async () => "Docker Desktop", now: () => clock },
+      { platform: "darwin", launchDockerApp: async () => "Docker Desktop", now: () => clock },
       (args) =>
         args[0] === "info"
           ? {

@@ -215,4 +215,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} wird gestartet …",
   "Waiting for Docker Desktop…": "Warte auf Docker Desktop …",
   "Waiting for Docker…": "Warte auf Docker …",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker ist installiert, läuft aber nicht. Starte den Docker-Dienst, um fortzufahren.",
 };
