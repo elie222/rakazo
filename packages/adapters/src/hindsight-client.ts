@@ -6,6 +6,8 @@ export const HINDSIGHT_CLOUD_BASE_URL = "https://api.hindsight.vectorize.io";
 
 /** Default request timeout; reflect runs an LLM and can take that long. */
 const HINDSIGHT_TIMEOUT_MS = 120_000;
+/** Credential and bank checks are interactive setup, not LLM-backed work. */
+export const HINDSIGHT_CONNECTION_TIMEOUT_MS = 10_000;
 /** Recall runs synchronously before every reply, so a slow server must not stall runs for long. */
 export const HINDSIGHT_RECALL_TIMEOUT_MS = 15_000;
 /** Clear awaits cleanup; its entire purge must not inherit reflection's LLM-sized timeout. */
@@ -110,9 +112,14 @@ function done(
 /** Listing banks proves the key works and writes nothing. */
 export async function probeHindsightKey(
   config: HindsightConnectionConfig,
+  signal?: AbortSignal,
 ): Promise<HindsightResponse<void>> {
   return done(
-    await hindsightRequest(config, "/v1/default/banks?limit=1", undefined, { method: "GET" }),
+    await hindsightRequest(config, "/v1/default/banks?limit=1", undefined, {
+      method: "GET",
+      signal,
+      timeoutMs: HINDSIGHT_CONNECTION_TIMEOUT_MS,
+    }),
   );
 }
 
@@ -124,6 +131,7 @@ export async function hindsightBankExists(
   const result = await hindsightRequest(config, `${bankPath(bank)}/config`, undefined, {
     method: "GET",
     signal,
+    timeoutMs: HINDSIGHT_CONNECTION_TIMEOUT_MS,
     allowNotFound: true,
   });
   return result.ok ? { ok: true, value: result.value !== null } : result;

@@ -53,12 +53,12 @@ describe("Hindsight client", () => {
     });
   });
 
-  it("gives recall a shorter timeout than other requests", async () => {
+  it("gives setup and recall short interactive deadlines", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     const fetch = vi.fn(async () => Response.json({ results: [] }));
     await hindsightBankExists({ ...config, fetch }, "other-app");
     await recallHindsight({ ...config, fetch }, "other-app", { query: "tea" });
-    expect(timeout.mock.calls).toEqual([[120_000], [15_000]]);
+    expect(timeout.mock.calls).toEqual([[10_000], [15_000]]);
   });
 
   it("uses short deadlines for document cleanup instead of the reflection timeout", async () => {

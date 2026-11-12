@@ -373,28 +373,28 @@ describe("Hindsight recall", () => {
     expect(fake.requests[1]!.body).not.toHaveProperty("min_scores");
   });
 
-  it("merges its banks, then other apps' banks, dropping repeated text", async () => {
+  it("ranks its banks and imported banks together, dropping repeated text", async () => {
     const fake = hindsightFake({
       recall: {
         [OWN_BANK]: [{ id: "a", text: "Prefers tea.", scores: { final: 0.9 } }],
         [TEAM_BANK]: [
-          { id: "b", text: " Prefers tea. " },
+          { id: "b", text: " Prefers tea. ", scores: { final: 0.8 } },
           { id: "c", text: "Works in Lisbon.", mentioned_at: "2026-11-01T00:00:00Z" },
         ],
         "other-app": [{ id: "d", text: "Has a dog named Pixel.", scores: { final: 0.5 } }],
       },
     });
-    const memory = provider(fake.fetch, { recallBanks: ["other-app", TEAM_BANK] });
+    const memory = provider(fake.fetch, { recallBanks: ["other-app"] });
     await expect(memory.recall({ ...recall, scope: "shared" }, context)).resolves.toEqual({
       ok: true,
       value: [
-        { memory: "Prefers tea.", score: 0.9, provenance: "hindsight" },
         {
           memory: "Works in Lisbon.",
           score: 1,
           updatedAt: "2026-11-01T00:00:00Z",
           provenance: "hindsight",
         },
+        { memory: "Prefers tea.", score: 0.9, provenance: "hindsight" },
         {
           memory: "Has a dog named Pixel.",
           score: 0.5,
@@ -413,6 +413,69 @@ describe("Hindsight recall", () => {
       ok: true,
       value: [{ memory: "Prefers tea.", score: 0.9, provenance: "hindsight" }],
     });
+  });
+
+  it("keeps relevant shared and imported matches when the own bank fills the limit", async () => {
+    const fake = hindsightFake({
+      recall: {
+        [OWN_BANK]: Array.from({ length: 6 }, (_, index) => ({
+          text: `Own fact ${index}`,
+          scores: { final: 0.2 },
+        })),
+        [TEAM_BANK]: [{ text: "Shared finding", scores: { final: 0.95 } }],
+        "other-app": [{ text: "Imported finding", scores: { final: 0.9 } }],
+      },
+    });
+    const result = await provider(fake.fetch, { recallBanks: ["other-app"] }).recall(
+      { ...recall, scope: "shared", limit: 2 },
+      context,
+    );
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        { memory: "Shared finding", score: 0.95, provenance: "hindsight" },
+        {
+          memory: "Imported finding",
+          score: 0.9,
+          provenance: "another app via hindsight",
+          external: true,
+        },
+      ],
+    });
+  });
+
+  it("keeps the strongest duplicate and prefers the own bank on ties", async () => {
+    const fake = hindsightFake({
+      recall: {
+        [OWN_BANK]: [{ text: "A finding", scores: { final: 0.4 } }],
+        "other-app": [{ text: "A finding", scores: { final: 0.8 } }],
+      },
+    });
+    const memory = provider(fake.fetch, { recallBanks: ["other-app"] });
+    const stronger = await memory.recall({ ...recall, scope: "isolated", limit: 1 }, context);
+    expect(stronger).toEqual({
+      ok: true,
+      value: [
+        {
+          memory: "A finding",
+          score: 0.8,
+          provenance: "another app via hindsight",
+          external: true,
+        },
+      ],
+    });
+    const tied = hindsightFake({
+      recall: {
+        [OWN_BANK]: [{ text: "A finding", scores: { final: 0.8 } }],
+        "other-app": [{ text: "A finding", scores: { final: 0.8 } }],
+      },
+    });
+    expect(
+      await provider(tied.fetch, { recallBanks: ["other-app"] }).recall(
+        { ...recall, scope: "isolated", limit: 1 },
+        context,
+      ),
+    ).toEqual({ ok: true, value: [{ memory: "A finding", score: 0.8, provenance: "hindsight" }] });
   });
 
   it("reads a bank nothing was written to as empty and skips a failing extra bank", async () => {
@@ -999,6 +1062,39 @@ describe("Hindsight connection", () => {
         { fetch: hindsightFake({ banks: ["other-app"] }).fetch },
       ),
     ).rejects.toThrow('Hindsight bank "missing" was not found.');
+  });
+
+  it("checks banks concurrently under the setup deadline and names an unverified bank", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+    let markBanksStarted!: () => void;
+    const banksStarted = new Promise<void>((resolve) => {
+      markBanksStarted = resolve;
+    });
+    let banks = 0;
+    const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (!String(url).endsWith("/config")) return Response.json({ banks: [] });
+      if (++banks === 2) markBanksStarted();
+      const signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    try {
+      const preparing = prepareHindsightConnection(
+        { recallBanks: "notes,profile" },
+        { apiKey: "hsk-test-key" },
+        { fetch },
+      );
+      await banksStarted;
+      deadline.abort();
+      await expect(preparing).rejects.toThrow('Hindsight bank "notes" could not be verified:');
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(fetch.mock.calls.every(([, init]) => init?.signal?.aborted)).toBe(true);
+      expect(timeout).toHaveBeenNthCalledWith(1, 10_000);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("rejects malformed or too many recall banks before any request", async () => {

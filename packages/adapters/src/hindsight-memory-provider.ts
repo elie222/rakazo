@@ -16,6 +16,7 @@ import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
   deleteHindsightDocument,
   HINDSIGHT_CLOUD_BASE_URL,
+  HINDSIGHT_CONNECTION_TIMEOUT_MS,
   HINDSIGHT_PURGE_TIMEOUT_MS,
   HINDSIGHT_RECALL_TIMEOUT_MS,
   hindsightBankExists,
@@ -228,14 +229,19 @@ export async function prepareHindsightConnection(
     resolveHostname: options?.resolveHostname,
     ...(pinnedAddresses ? { pinnedAddresses } : {}),
   };
-  const probe = await probeHindsightKey(probeConnection);
+  const signal = AbortSignal.timeout(HINDSIGHT_CONNECTION_TIMEOUT_MS);
+  const probe = await probeHindsightKey(probeConnection, signal);
   if (!probe.ok) throw new Error(probe.error);
   const { recallBanks, retainConversations, autoRecall, recallBudget, recallFacts, skipUnrelated } =
     parsed;
   // The bots' own banks are created on first write, but another app's must already be there.
-  for (const bank of recallBanks) {
-    const exists = await hindsightBankExists(probeConnection, bank);
-    if (!exists.ok) throw new Error(exists.error);
+  const checked = await Promise.all(
+    recallBanks.map((bank) => hindsightBankExists(probeConnection, bank, signal)),
+  );
+  for (const [index, bank] of recallBanks.entries()) {
+    const exists = checked[index]!;
+    if (!exists.ok)
+      throw new Error(`Hindsight bank "${bank}" could not be verified: ${exists.error}`);
     if (!exists.value) throw new Error(`Hindsight bank "${bank}" was not found.`);
   }
   return {
@@ -422,8 +428,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
 
   /**
    * Recalls the bot's write banks, then the other apps' banks, all at once. The bot's own bank
-   * failing fails the recall; any other bank failing is skipped. A result whose text an earlier
-   * bank already returned is dropped.
+   * failing fails the recall; any other bank failing is skipped. Rank all results together,
+   * keeping the strongest duplicate and preferring the own bank on tied scores.
    */
   async recall(
     request: SemanticMemoryRecallRequest,
@@ -463,7 +469,6 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       }),
     );
     const results: SemanticMemoryResult[] = [];
-    const seen = new Set<string>();
     for (const [index, bank] of banks.entries()) {
       const answer = found[index];
       if (!answer) continue;
@@ -472,9 +477,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         continue;
       }
       const external = !written.includes(bank);
-      const kept = answer.value.filter((memory) => !seen.has(memory.text.trim()));
-      for (const memory of kept) {
-        seen.add(memory.text.trim());
+      for (const memory of answer.value) {
         results.push({
           memory: memory.text,
           score: memory.score,
@@ -484,7 +487,17 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         });
       }
     }
-    return { ok: true, value: results.slice(0, request.limit) };
+    // Stable sorting keeps the own bank first on ties. Rank before deduplication so a repeated
+    // fact keeps its strongest match instead of its first bank's lower score.
+    results.sort((left, right) => right.score - left.score);
+    const seen = new Set<string>();
+    const unique = results.filter((result) => {
+      const text = result.memory.trim();
+      if (seen.has(text)) return false;
+      seen.add(text);
+      return true;
+    });
+    return { ok: true, value: unique.slice(0, request.limit) };
   }
 
   async save(
