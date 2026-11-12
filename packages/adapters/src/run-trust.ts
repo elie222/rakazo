@@ -52,6 +52,9 @@ export function connectorTrustKeys(
   });
 }
 
+// How many of the owner's messages before the one that started a run count as their words.
+const EARLIER_OWNER_MESSAGES = 5;
+
 /** Approval and trust lookups a run's tool calls share, each loaded at most once. */
 export function createRunTrustLoaders(
   deps: ExecutorDeps,
@@ -62,7 +65,7 @@ export function createRunTrustLoaders(
     taskPrompt: string;
     ownerStartedRun: boolean;
     messagingChannelRun: boolean;
-    sourceMessage: { role: string; blocks: unknown } | null;
+    sourceMessage: { role: string; blocks: unknown; threadId: string; seq: number } | null;
     connectedPlugins: readonly { provider: string }[];
   },
 ) {
@@ -105,14 +108,32 @@ export function createRunTrustLoaders(
     }));
     return autoReviewPreferencePromise;
   };
-  // The owner's own words for this run: the message they sent, or the instructions of the
-  // routine that started it. Never a bot, channel or webhook message, or a tool result.
-  // These name the sites a run is given, and are all Auto Review sees of a new site's run.
+  // The owner's own words for this run: the message they sent with the few they wrote before it
+  // in this chat, or the instructions of the routine that started it. Never a bot, channel or
+  // webhook message, or a tool result. These name the sites a run is given, and are all Auto
+  // Review sees of a new site's run, so a task described before a short "go ahead" still counts.
   let ownerWordsPromise: Promise<string> | undefined;
   const loadOwnerWords = () => {
     ownerWordsPromise ??= (async () => {
       if (ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user") {
-        return ((sourceMessage.blocks ?? []) as MessageBlock[])
+        // Only messages the owner wrote carry their id: a parent bot's task, a channel post or
+        // another member's message never matches. A message from their linked messaging address
+        // carries it too, but forwarded text and file names there are not theirs, and a
+        // messaging run never counted as their words.
+        const earlier = await deps.prisma.message.findMany({
+          where: {
+            threadId: sourceMessage.threadId,
+            role: "user",
+            authorUserId: run.userId,
+            seq: { lt: sourceMessage.seq },
+            OR: [{ clientNonce: null }, { NOT: { clientNonce: { startsWith: "messaging:" } } }],
+          },
+          orderBy: { seq: "desc" },
+          take: EARLIER_OWNER_MESSAGES,
+          select: { blocks: true },
+        });
+        return [...earlier.reverse(), sourceMessage]
+          .flatMap((message) => (message.blocks ?? []) as MessageBlock[])
           .flatMap((block) => (block.kind === "text" ? [block.text] : []))
           .join("\n");
       }
