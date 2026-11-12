@@ -27,7 +27,9 @@ import {
 import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
+import { DEFAULT_AGENT_LOOP_SETTINGS } from "./agent-loop-settings.js";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
+import { listUnblockedOpenWork, maybeScheduleOpenWorkLoop } from "./open-work-loop.js";
 import { isToolPauseResult } from "./approval-effect.js";
 import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
@@ -399,6 +401,10 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
 async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+  const loop = deps.agentLoop ?? DEFAULT_AGENT_LOOP_SETTINGS;
+  const openWork =
+    loop.nonBlockingAsks &&
+    (await listUnblockedOpenWork(deps, { spaceId: run.spaceId, botId: bot.id })).length > 0;
   await publishNarrationBeforeAsk(ctx);
   const safeText = redactSecrets(event.text, ctx.secrets);
   // The bot's own words under its question, capped like an approval card's detail.
@@ -409,6 +415,31 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     id: action.id,
     label: redactSecrets(action.label, ctx.secrets),
   }));
+  const blocks = [
+    {
+      kind: "ask" as const,
+      text: safeText,
+      detail: safeDetail,
+      ...(safeDetail ? { detailFormat: "text" as const } : {}),
+      status: "pending" as const,
+      actions: safeActions,
+    },
+  ];
+  if (openWork) {
+    await ctx.computer.checkpoint.flush();
+    await deps.events.publishAskCardWithoutPausing({
+      spaceId: run.spaceId,
+      threadId: run.threadId,
+      botId: run.botId,
+      runId,
+      attemptId: ctx.attempt.id,
+      leaseOwner: workerId,
+      leaseFence: fence,
+      blocks,
+      offeredActions: event.actions,
+    });
+    return;
+  }
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, event.executionId);
   await ctx.settleRunningHelpers();
@@ -420,17 +451,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     attemptId: ctx.attempt.id,
     leaseOwner: workerId,
     leaseFence: fence,
-    blocks: [
-      {
-        kind: "ask",
-        text: safeText,
-        detail: safeDetail,
-        // A runtime ask's detail is prose the bot wrote, never tool arguments.
-        ...(safeDetail ? { detailFormat: "text" as const } : {}),
-        status: "pending",
-        actions: safeActions,
-      },
-    ],
+    blocks,
     // Keep unredacted labels on the run for resume; message blocks stay redacted.
     offeredActions: event.actions,
   });
@@ -937,6 +958,21 @@ export async function completeRun(ctx: RunContext) {
   }
   const { screenRelease } = ctx.state.computerUse;
   if (screenRelease) screenRelease.keepWarm = true;
+  const loop = deps.agentLoop ?? DEFAULT_AGENT_LOOP_SETTINGS;
+  const openWorkScheduled = await maybeScheduleOpenWorkLoop(
+    { prisma: deps.prisma, jobs: deps.jobs },
+    loop,
+    {
+      spaceId: run.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+      userId: run.userId,
+      runId,
+      trigger: run.trigger,
+      checkpoint: run.checkpoint,
+      blocks,
+    },
+  );
   await enqueueSteeringContinuation(deps, completed.continuationRunId);
   if (botMessageOutcome) {
     // Prefer the final reply. If the turn only posted mid-turn progress, return that
@@ -962,7 +998,8 @@ export async function completeRun(ctx: RunContext) {
     runSendsFinishNotification(run.trigger) &&
     marksUnread &&
     notifyBody &&
-    !completed.continuationRunId
+    !completed.continuationRunId &&
+    !openWorkScheduled
   ) {
     await notifyRun(deps, run, {
       kind: "completion",

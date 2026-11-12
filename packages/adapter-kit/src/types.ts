@@ -555,6 +555,16 @@ export interface AgentRunRequest {
   /** Awaited producer-side accounting, independent of event-consumer cancellation. */
   onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
   contextStrategy?: AgentContextStrategy;
+  /** Optional cap for silent tool continuations; unset keeps the runtime default. */
+  silentToolContinuationsMax?: number;
+  silentToolContinuationMode?: "ask" | "keep_going";
+  /** When true and other open work remains, question tools may post cards without pausing. */
+  nonBlockingAsks?: boolean;
+  hasUnblockedOpenWork?: () => Promise<boolean>;
+  publishNonBlockingAsk?: (input: {
+    blocks: import("@rakazo/contracts").MessageBlock[];
+    offeredActions?: Array<{ id: string; label: string }>;
+  }) => Promise<boolean>;
   /**
    * MCP servers that must return tool results whole. Direct tools match `slugs`
    * (`mcp__<slug>__<tool>`); catalog calls match `ids` (`<server id>:<tool>`).

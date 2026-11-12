@@ -775,6 +775,58 @@ export async function pauseRunForInput(
   return { continuationRunId: committed.continuationRunId };
 }
 
+/** Posts a question card while the run keeps going (non-blocking ask mode). */
+export async function publishAskCardWithoutPausing(
+  prisma: PrismaClient,
+  input: PauseRunForInput,
+  realtime?: RealtimeFanout,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const run = await tx.run.findFirst({
+      where: {
+        id: input.runId,
+        spaceId: input.spaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        status: "running",
+        leaseOwner: input.leaseOwner,
+        leaseFence: input.leaseFence,
+      },
+      select: { id: true },
+    });
+    if (!run) return null;
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: input.threadId,
+      role: "bot",
+      blocks: input.blocks,
+      botId: input.botId,
+      runId: input.runId,
+    });
+    const response = await appendEventInTransaction(tx, {
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.created",
+      runId: input.runId,
+      payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+    });
+    return {
+      threadId: input.threadId,
+      seq: response.seq,
+      firstResponseRunId: response.firstResponse ? input.runId : undefined,
+    };
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
+  if (!committed) return false;
+  await notifyCommittedEvent(
+    prisma,
+    realtime,
+    committed.threadId,
+    committed.seq,
+    committed.firstResponseRunId,
+  );
+  return true;
+}
+
 function alwaysAllowedSite(effect: {
   kind: string;
   request: Prisma.JsonValue;

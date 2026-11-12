@@ -1,5 +1,10 @@
 import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY, runContinueJob } from "@rakazo/adapter-kit";
+import {
+  DEFAULT_AGENT_LOOP_SETTINGS,
+  effectiveContextStrategy,
+} from "./agent-loop-settings.js";
+import { listUnblockedOpenWork } from "./open-work-loop.js";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
@@ -246,7 +251,11 @@ async function verbatimMcpServersForRun(
 }
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
-  const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
+  const agentLoop = executorDeps.agentLoop ?? DEFAULT_AGENT_LOOP_SETTINGS;
+  const contextStrategy = effectiveContextStrategy(
+    agentLoop,
+    executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY,
+  );
   const web = executorDeps.web ?? createWebProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
   const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
@@ -275,10 +284,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       return result;
     },
   };
-  const baseDeps: ExecutorDeps = { ...executorDeps, events };
+  const baseDeps: ExecutorDeps = { ...executorDeps, events, agentLoop, contextStrategy };
   return {
     resolveConnectedModel,
     contextStrategy,
+    agentLoop,
     resolveModel: resolveRunModel.bind(undefined, baseDeps),
     wakeRoutine: wakeRoutine.bind(undefined, baseDeps),
     notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(
@@ -1767,6 +1777,32 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
+              silentToolContinuationsMax: agentLoop.silentToolContinuations.max,
+              silentToolContinuationMode: agentLoop.silentToolContinuations.mode,
+              nonBlockingAsks: agentLoop.nonBlockingAsks,
+              hasUnblockedOpenWork: agentLoop.nonBlockingAsks
+                ? async () =>
+                    (
+                      await listUnblockedOpenWork(deps, {
+                        spaceId: run.spaceId,
+                        botId: bot.id,
+                      })
+                    ).length > 0
+                : undefined,
+              publishNonBlockingAsk: agentLoop.nonBlockingAsks
+                ? async ({ blocks, offeredActions }) =>
+                    deps.events.publishAskCardWithoutPausing({
+                      spaceId: run.spaceId,
+                      threadId: thread.id,
+                      botId: bot.id,
+                      runId,
+                      attemptId: attempt.id,
+                      leaseOwner: workerId,
+                      leaseFence: fence,
+                      blocks,
+                      offeredActions,
+                    })
+                : undefined,
               instructions: userTurnInstructions({
                 botInstructions: [
                   runIdentityInstruction(bot, run.trigger),

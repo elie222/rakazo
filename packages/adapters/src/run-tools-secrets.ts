@@ -27,6 +27,8 @@ import {
   resolveRequestSecretDestination,
   sameSecretDestination,
 } from "./bot-secrets.js";
+import { DEFAULT_AGENT_LOOP_SETTINGS } from "./agent-loop-settings.js";
+import { listUnblockedOpenWork } from "./open-work-loop.js";
 import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
@@ -339,6 +341,52 @@ export const secretTools: ToolHandlers = {
     if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {
       return pauseForSecret(ctx);
     }
+    const loop = deps.agentLoop ?? DEFAULT_AGENT_LOOP_SETTINGS;
+    const openWork =
+      loop.nonBlockingAsks &&
+      (await listUnblockedOpenWork(deps, { spaceId: run.spaceId, botId: bot.id })).length > 0;
+    const askBlocks = [
+      {
+        kind: "ask" as const,
+        text: askText,
+        ...(codeOrigin && args.label ? { detail: String(args.label).slice(0, 200) } : {}),
+        input: "secret" as const,
+        ...(destination ? { credential: destination } : {}),
+        ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
+        ...(replaces ? { replaces } : {}),
+        ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
+        ...(loginFields && (await spaceIsShared(deps.prisma, run.spaceId))
+          ? { sharedBrowser: true as const }
+          : {}),
+        purpose: codeOrigin
+          ? ("otp" as const)
+          : normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
+        status: "pending" as const,
+      },
+    ];
+    if (openWork) {
+      await ctx.computer.checkpoint.flush();
+      const posted = await deps.events.publishAskCardWithoutPausing({
+        spaceId: run.spaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        runId,
+        attemptId: ctx.attempt.id,
+        leaseOwner: ctx.workerId,
+        leaseFence: ctx.fence,
+        blocks: askBlocks,
+      });
+      if (!posted) {
+        throw new Error("Could not post protected input without pausing; try again.");
+      }
+      await notifyRun(deps, run, {
+        kind: "help",
+        ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),
+        botId: bot.id,
+        threadId: thread.id,
+      });
+      return { ok: true, posted: true, continueWork: true };
+    }
     await ctx.computer.checkpoint.flush();
     await persistTurnCheckpoint(ctx, executionId);
     await ctx.settleRunningHelpers();
@@ -350,26 +398,7 @@ export const secretTools: ToolHandlers = {
       attemptId: ctx.attempt.id,
       leaseOwner: ctx.workerId,
       leaseFence: ctx.fence,
-      blocks: [
-        {
-          kind: "ask",
-          text: askText,
-          // The site is the server's words in the title; the bot's own label is plain detail.
-          ...(codeOrigin && args.label ? { detail: String(args.label).slice(0, 200) } : {}),
-          input: "secret",
-          ...(destination ? { credential: destination } : {}),
-          ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
-          ...(replaces ? { replaces } : {}),
-          ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
-          ...(loginFields && (await spaceIsShared(deps.prisma, run.spaceId))
-            ? { sharedBrowser: true as const }
-            : {}),
-          purpose: codeOrigin
-            ? "otp"
-            : normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
-          status: "pending",
-        },
-      ],
+      blocks: askBlocks,
     });
     if (!paused) {
       throw new Error("Could not pause this run for protected input; try sending again.");

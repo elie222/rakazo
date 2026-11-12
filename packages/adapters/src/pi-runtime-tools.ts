@@ -560,6 +560,40 @@ function toAgentTool(
                 ) {
                   throw new Error("ask_user requires two to four unique, non-empty options");
                 }
+                const actions = options.map((label, index) => ({
+                  id: `choice-${index + 1}`,
+                  label,
+                }));
+                const blocks = [
+                  {
+                    kind: "ask" as const,
+                    text: String(args.question ?? "What should I use?"),
+                    ...(typeof args.detail === "string" && args.detail
+                      ? { detail: args.detail, detailFormat: "text" as const }
+                      : {}),
+                    status: "pending" as const,
+                    actions,
+                  },
+                ];
+                const nonBlocking =
+                  Boolean(host.request.nonBlockingAsks) &&
+                  Boolean(host.request.publishNonBlockingAsk) &&
+                  (await host.request.hasUnblockedOpenWork?.());
+                if (nonBlocking) {
+                  await host.request.publishNonBlockingAsk!({
+                    blocks,
+                    offeredActions: actions,
+                  });
+                  return {
+                    content: [
+                      {
+                        type: "text",
+                        text: "Posted the question. Continue with remaining open work; the answer will arrive as steering.",
+                      },
+                    ],
+                    details: args,
+                  };
+                }
                 host.pausePending = true;
                 host.queue.push({
                   type: "ask",
@@ -568,10 +602,7 @@ function toAgentTool(
                   ...(typeof args.detail === "string" && args.detail
                     ? { detail: args.detail }
                     : {}),
-                  actions: options.map((label, index) => ({
-                    id: `choice-${index + 1}`,
-                    label,
-                  })),
+                  actions,
                 });
                 return {
                   content: [{ type: "text", text: "Waiting for the user's choice." }],
