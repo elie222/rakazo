@@ -96,6 +96,8 @@ export function useComposerActions({
   const [sentCount, setSentCount] = useState(0);
   // Sends that produced no message of yours: a routine-only submission or a failed send.
   const [unsentCount, setUnsentCount] = useState(0);
+  // The text of the latest send, so only that message enters with the send animation.
+  const [sentText, setSentText] = useState<string | undefined>(undefined);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
     return () => setComposerUnsavedWork({ sending: false, attachments: false });
@@ -378,6 +380,7 @@ export function useComposerActions({
       setSending(true);
       setSendError(null);
       clearReadBoundary();
+      setSentText(trimmed);
       setSentCount((count) => count + 1);
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
@@ -628,6 +631,7 @@ export function useComposerActions({
     clearReply,
     sending,
     sentCount,
+    sentText,
     unsentCount,
     sendMessage,
     stopRun,

@@ -45,6 +45,13 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   let closed = false;
   let hasWriter = false;
   let rotation: ReturnType<typeof setTimeout> | undefined;
+  // The request for whatever the line shows now; a newer step or status cancels it.
+  let current = new AbortController();
+  const replaceCurrent = () => {
+    current.abort();
+    current = new AbortController();
+    return AbortSignal.any([abort.signal, current.signal]);
+  };
   // Each status waits for the one before it, so a slow write never lands after a newer one.
   let showing: Promise<unknown> = Promise.resolve();
   const stopRotation = () => {
@@ -71,7 +78,10 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   void writer
     .then(async (writer) => {
       if (!writer || closed) return;
-      const lines = await writer.opening(target.request, abort.signal);
+      const lines = await writer.opening(
+        target.request,
+        AbortSignal.any([abort.signal, current.signal]),
+      );
       let index = 0;
       const next = async () => {
         if (closed || opening !== generation || index >= lines.length) return;
@@ -90,8 +100,9 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     step(text, { fallback = true } = {}) {
       const mine = ++generation;
       stopRotation();
+      const signal = replaceCurrent();
       void writer
-        .then((writer) => writer?.step(target.request, text, abort.signal))
+        .then((writer) => writer?.step(target.request, text, signal))
         .catch(() => undefined)
         .then((line) => {
           const shown = line || (fallback ? text : undefined);
@@ -102,6 +113,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     supersede() {
       generation += 1;
       stopRotation();
+      replaceCurrent();
     },
     close() {
       closed = true;

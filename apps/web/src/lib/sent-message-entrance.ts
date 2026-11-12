@@ -17,6 +17,14 @@ interface EntranceMessage {
   id: string;
   role: string;
   author?: { id: string } | null;
+  /** The message's written text, trimmed. */
+  text?: string;
+}
+
+/** A send from this tab: when it was made and the text it carried. */
+export interface PendingSend {
+  sentAt: number;
+  text?: string;
 }
 
 /**
@@ -33,11 +41,11 @@ export function sentMessageEntrances({
 }: {
   messages: readonly EntranceMessage[];
   seenIds: ReadonlySet<string>;
-  pendingSends: readonly number[];
+  pendingSends: readonly PendingSend[];
   meId: string | undefined;
   now: number;
-}): { entering: string[]; pendingSends: number[] } {
-  const pending = pendingSends.filter((sentAt) => now - sentAt <= SENT_ENTRANCE_WINDOW_MS);
+}): { entering: string[]; pendingSends: PendingSend[] } {
+  const pending = pendingSends.filter((send) => now - send.sentAt <= SENT_ENTRANCE_WINDOW_MS);
   const entering: string[] = [];
   if (!pending.length) return { entering, pendingSends: pending };
   // Only the tail after the last message already shown: an older page loads above it.
@@ -49,6 +57,9 @@ export function sentMessageEntrances({
     if (!pending.length) break;
     if (seenIds.has(message.id) || message.role !== "user") continue;
     if (meId && message.author && message.author.id !== meId) continue;
+    // The same person writing from another tab sends other text, so it does not claim the send.
+    const send = pending[0]!;
+    if (send.text !== undefined && (message.text ?? "") !== send.text) continue;
     pending.shift();
     entering.push(message.id);
   }

@@ -47,6 +47,7 @@ import {
   quoteDraftForSelection,
 } from "../../lib/quote-selection";
 import type { createSpaceRpc } from "../../lib/rpc";
+import type { PendingSend } from "../../lib/sent-message-entrance";
 import {
   SENT_ENTRANCE_KEYFRAMES,
   SENT_ENTRANCE_TIMING,
@@ -72,6 +73,7 @@ export const Transcript = memo(function Transcript({
   scrollRequest,
   onScrollRequestHandled,
   followRequest,
+  sentText,
   unsentRequests = 0,
   artifactTarget,
   transcript,
@@ -116,6 +118,8 @@ export const Transcript = memo(function Transcript({
   onScrollRequestHandled: () => void;
   /** Changes when you send: the view moves to the end and follows the reply. */
   followRequest: number;
+  /** The text of the latest send from this tab, so only that message enters with it. */
+  sentText?: string;
   /** Sends from this tab that produced no message: their entrance is dropped. */
   unsentRequests?: number;
   artifactTarget: ArtifactTarget;
@@ -453,13 +457,13 @@ export const Transcript = memo(function Transcript({
 
   const followedRequest = useRef(followRequest);
   /** When each send from this tab was made, until its message arrives. */
-  const pendingSends = useRef<number[]>([]);
+  const pendingSends = useRef<PendingSend[]>([]);
   useLayoutEffect(() => {
     if (followedRequest.current === followRequest) return;
     followedRequest.current = followRequest;
-    pendingSends.current.push(Date.now());
+    pendingSends.current.push({ sentAt: Date.now(), text: sentText });
     snapToEnd();
-  }, [followRequest, snapToEnd]);
+  }, [followRequest, snapToEnd, sentText]);
 
   const droppedRequests = useRef(unsentRequests);
   useLayoutEffect(() => {
@@ -484,7 +488,13 @@ export const Transcript = memo(function Transcript({
     seenMessageIds.current = new Set(messages.map((message) => message.id));
     if (!seenIds) return;
     const { entering, pendingSends: stillPending } = sentMessageEntrances({
-      messages,
+      messages: messages.map((message) => ({
+        ...message,
+        text: message.blocks
+          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+          .join("")
+          .trim(),
+      })),
       seenIds,
       pendingSends: pendingSends.current,
       meId,

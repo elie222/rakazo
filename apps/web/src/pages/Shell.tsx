@@ -1101,6 +1101,7 @@ function SpaceShell() {
               scrollRequest={scrollRequest}
               onScrollRequestHandled={clearScrollRequest}
               followRequest={composer.sentCount}
+              sentText={composer.sentText}
               unsentRequests={composer.unsentCount}
               artifactTarget={transcriptArtifactTarget}
               markedUnreadMessageId={read.markedUnreadMessageId}

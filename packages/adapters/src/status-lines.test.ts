@@ -144,6 +144,26 @@ describe("startStatusLines", () => {
     expect(t.shown).toEqual(["Reading your question"]);
   });
 
+  it("cancels the request for a step that a newer one replaced", async () => {
+    const signals: AbortSignal[] = [];
+    const t = target({
+      opening: async () => [],
+      step: (_request, _step, signal) => {
+        signals.push(signal);
+        return new Promise(() => {});
+      },
+    });
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    await vi.advanceTimersByTimeAsync(0);
+    live.step("Reading ledger.json");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+    live.supersede();
+    expect(signals[1]?.aborted).toBe(true);
+    live.close();
+  });
+
   it("leaves the line to the bot's own note", async () => {
     const t = target({
       opening: async () => ["Reading your question"],

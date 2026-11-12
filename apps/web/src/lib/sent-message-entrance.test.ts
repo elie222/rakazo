@@ -9,7 +9,7 @@ describe("sentMessageEntrances", () => {
     const result = sentMessageEntrances({
       messages: [mine("a"), bot("b"), mine("c")],
       seenIds: new Set(["a", "b"]),
-      pendingSends: [1_000],
+      pendingSends: [{ sentAt: 1_000 }],
       meId: "me",
       now: 1_500,
     });
@@ -31,29 +31,29 @@ describe("sentMessageEntrances", () => {
     const result = sentMessageEntrances({
       messages: [mine("a"), bot("b"), { id: "c", role: "user", author: { id: "someone" } }],
       seenIds: new Set(["a"]),
-      pendingSends: [1_000],
+      pendingSends: [{ sentAt: 1_000 }],
       meId: "me",
       now: 1_500,
     });
-    expect(result).toEqual({ entering: [], pendingSends: [1_000] });
+    expect(result).toEqual({ entering: [], pendingSends: [{ sentAt: 1_000 }] });
   });
 
   it("never animates an older page loaded above the shown messages", () => {
     const result = sentMessageEntrances({
       messages: [mine("old"), mine("a")],
       seenIds: new Set(["a"]),
-      pendingSends: [1_000],
+      pendingSends: [{ sentAt: 1_000 }],
       meId: "me",
       now: 1_500,
     });
-    expect(result).toEqual({ entering: [], pendingSends: [1_000] });
+    expect(result).toEqual({ entering: [], pendingSends: [{ sentAt: 1_000 }] });
   });
 
   it("drops a send whose message never came within the window", () => {
     const result = sentMessageEntrances({
       messages: [mine("a"), mine("c")],
       seenIds: new Set(["a"]),
-      pendingSends: [0],
+      pendingSends: [{ sentAt: 0 }],
       meId: "me",
       now: SENT_ENTRANCE_WINDOW_MS + 1,
     });
@@ -64,10 +64,25 @@ describe("sentMessageEntrances", () => {
     const result = sentMessageEntrances({
       messages: [mine("a"), mine("b"), mine("c")],
       seenIds: new Set(["a"]),
-      pendingSends: [1_000],
+      pendingSends: [{ sentAt: 1_000 }],
       meId: "me",
       now: 1_500,
     });
     expect(result).toEqual({ entering: ["b"], pendingSends: [] });
+  });
+
+  it("leaves the send to its own text when the same person writes from another tab", () => {
+    const result = sentMessageEntrances({
+      messages: [
+        mine("a"),
+        { id: "b", role: "user", author: { id: "me" }, text: "From the other tab" },
+        { id: "c", role: "user", author: { id: "me" }, text: "Hello" },
+      ],
+      seenIds: new Set(["a"]),
+      pendingSends: [{ sentAt: 1_000, text: "Hello" }],
+      meId: "me",
+      now: 1_500,
+    });
+    expect(result).toEqual({ entering: ["c"], pendingSends: [] });
   });
 });
