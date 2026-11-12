@@ -1,7 +1,7 @@
 import type { RosterSignals } from "./use-browser-notifications";
 
 /** How often the poll looks; it re-reads the roster this often while the server's signals are down. */
-export const ROSTER_POLL_MS = 3_000;
+export const ROSTER_POLL_MS = 10_000;
 /** While signals are live, a missed one still heals within this long. */
 export const ROSTER_SAFETY_POLL_MS = 60_000;
 
