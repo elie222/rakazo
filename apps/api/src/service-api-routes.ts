@@ -304,9 +304,12 @@ async function runDetail(
         status: true,
         trigger: true,
         updatedAt: true,
+        thread: { select: { groupId: true } },
       },
     });
     if (!run || !mayReach(credential, run.botId)) throw new ServiceRejection("not_found");
+    // Group chats are refused to a key limited to some bots, and their runs with them.
+    if (credential.botIds.length && run.thread.groupId) throw new ServiceRejection("not_found");
     const settled = isTerminal(run.status) || run.status === "waiting_input";
     if (settled || Date.now() >= deadline || abort.signal.aborted) {
       const messages = await prisma.message.findMany({
@@ -569,7 +572,12 @@ export const SERVICE_HANDLERS: Handlers = {
   },
   async listRuns({ client, credential, query }) {
     const { runs } = await client.runs.list({ filter: query?.filter ?? "active" });
-    return { runs: runs.filter((run) => mayReach(credential, run.botId)) };
+    // Group chats are refused to a key limited to some bots, and their runs with them.
+    return {
+      runs: runs.filter(
+        (run) => mayReach(credential, run.botId) && (!credential.botIds.length || !run.groupId),
+      ),
+    };
   },
 
   async getRun(context) {
