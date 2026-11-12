@@ -192,6 +192,8 @@ export const HI_MESSAGES: Record<string, string> = {
     "Docker से आपका डेटा नहीं ले जाया जा सका। नीचे का आउटपुट देखें, फिर दोबारा कोशिश करें।",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "पहले से चल रहा कंप्यूटर रनटाइम बहुत पुराना है। इसे अपडेट करें या बंद करें, फिर दोबारा कोशिश करें।",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "आपका Rakazo डेटा किसी दूसरे कंप्यूटर रनटाइम में है। चल रहे रनटाइम को बंद करें, फिर दोबारा कोशिश करें।",
   "Run Rakazo without Docker?": "Rakazo को Docker के बिना चलाएँ?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "आपके बॉट और डेटा साथ आ जाएँगे। Docker रोका जाएगा, हटाया नहीं जाएगा।",

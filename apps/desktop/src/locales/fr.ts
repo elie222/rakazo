@@ -199,6 +199,8 @@ export const FR_MESSAGES: Record<string, string> = {
     "Impossible de transférer vos données depuis Docker. Consultez la sortie ci-dessous, puis réessayez.",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "L’environnement d’exécution des ordinateurs déjà lancé est trop ancien. Mettez-le à jour ou quittez-le, puis réessayez.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Vos données Rakazo se trouvent dans un autre environnement d’exécution des ordinateurs. Quittez celui qui est lancé, puis réessayez.",
   "Run Rakazo without Docker?": "Utiliser Rakazo sans Docker ?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Vos bots et vos données sont transférés. Docker est arrêté, pas supprimé.",

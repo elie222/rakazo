@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunDocker } from "./docker-cli.js";
+import type { PipeCommands } from "./docker-move.js";
 import {
   chooseStack,
   moveDockerStack,
+  pipeCommands,
   readStackChoice,
   stackExists,
   writeStackChoice,
@@ -51,11 +53,36 @@ describe("chooseStack", () => {
   });
 });
 
+const target = (dataDir: string) => ({
+  cli: "/usr/local/bin/container",
+  container: "rakazo-postgres",
+  env: { PATH: "/usr/bin:/bin" },
+  user: "rakazo",
+  database: "rakazo",
+  dataDir,
+  signal: new AbortController().signal,
+  onLine: () => undefined,
+});
+const deps = (run: RunDocker, pipe: PipeCommands) => ({
+  stackDir: dir,
+  platform: "darwin",
+  env: {},
+  exists: (file: string) => file === "/usr/local/bin/docker",
+  run,
+  sleep: async () => undefined,
+  pipe,
+});
+const compose = (args: string[]) =>
+  args
+    .filter((arg) => !["--env-file", ".env", "-f"].includes(arg))
+    .slice(0, 6)
+    .join(" ");
+
 describe("moveDockerStack", () => {
-  it("restores into the native database through the container and copies the data", async () => {
-    const calls: { args: string[]; env: Record<string, string> }[] = [];
-    const run: RunDocker = async (_binary, args, options) => {
-      calls.push({ args, env: options.env });
+  it("streams the dump into the native database through the app and copies the data", async () => {
+    const calls: { binary: string; args: string[]; input?: string }[] = [];
+    const run: RunDocker = async (binary, args, options) => {
+      calls.push({ binary, args, input: options.input });
       if (args.at(-1) === "api" && args.includes("ps")) {
         return { code: 0, stdout: "abc123\n", stderr: "" };
       }
@@ -65,52 +92,59 @@ describe("moveDockerStack", () => {
       }
       return { code: 0, stdout: "", stderr: "" };
     };
+    const piped: Parameters<PipeCommands>[] = [];
+    const pipe: PipeCommands = async (...args) => {
+      calls.push({ binary: "pipe", args: [] });
+      piped.push(args);
+    };
     const dataDir = path.join(dir, "data");
     await mkdir(dataDir);
     await writeFile(path.join(dataDir, "stale"), "");
-    await moveDockerStack(
-      {
-        stackDir: dir,
-        platform: "darwin",
-        env: {},
-        exists: (file) => file === "/usr/local/bin/docker",
-        run,
-        sleep: async () => undefined,
-      },
-      {
-        port: 41234,
-        user: "rakazo",
-        password: "secret-owner-password",
-        database: "rakazo",
-        dataDir,
-        signal: new AbortController().signal,
-        onLine: () => undefined,
-      },
-    );
+    await moveDockerStack(deps(run, pipe), target(dataDir));
 
-    const commands = calls.map((call) =>
-      call.args
-        .filter((arg) => !["--env-file", ".env", "-f"].includes(arg))
-        .slice(0, 6)
-        .join(" "),
-    );
-    expect(commands).toEqual([
+    expect(
+      calls.map((call) =>
+        call.binary === "/usr/local/bin/docker"
+          ? compose(call.args)
+          : `${call.binary} ${call.args.slice(0, 3).join(" ")}`.trim(),
+      ),
+    ).toEqual([
       "compose docker-compose.images.yml --project-name rakazo-desktop stop web",
       "compose docker-compose.images.yml --project-name rakazo-desktop start postgres",
       "compose docker-compose.images.yml --project-name rakazo-desktop exec -T",
-      "compose docker-compose.images.yml --project-name rakazo-desktop exec -T",
+      "/usr/local/bin/container exec --interactive rakazo-postgres",
+      "pipe",
       "compose docker-compose.images.yml --project-name rakazo-desktop ps --all",
       `cp abc123:/data/. ${dataDir}`,
       "compose docker-compose.images.yml --project-name rakazo-desktop stop",
     ]);
-    const restore = calls[3]!;
-    expect(restore.env).toMatchObject({
-      PGHOST: "host.docker.internal",
-      PGPORT: "41234",
-      PGPASSWORD: "secret-owner-password",
+    expect(calls[3]?.input).toContain("CREATE ROLE rakazo_app NOLOGIN NOSUPERUSER NOBYPASSRLS");
+    const [from, to] = piped[0]!;
+    expect(from.command).toBe("/usr/local/bin/docker");
+    expect(from.args.slice(-6)).toEqual([
+      "exec",
+      "-T",
+      "postgres",
+      "bash",
+      "-c",
+      'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom',
+    ]);
+    expect(to).toEqual({
+      command: "/usr/local/bin/container",
+      args: [
+        "exec",
+        "--interactive",
+        "rakazo-postgres",
+        "pg_restore",
+        "--no-owner",
+        "--exit-on-error",
+        "-U",
+        "rakazo",
+        "-d",
+        "rakazo",
+      ],
+      env: { PATH: "/usr/bin:/bin" },
     });
-    // The password travels in the environment, never on a command line.
-    expect(calls.some((call) => call.args.join(" ").includes("secret-owner-password"))).toBe(false);
     expect(await readdir(dataDir)).toEqual(["homes"]);
   });
 
@@ -119,36 +153,47 @@ describe("moveDockerStack", () => {
     const run: RunDocker = async (_binary, args) => {
       calls.push(args);
       // The restart fails too; the restore's error is the one reported.
-      const code = args.includes("bash")
-        ? 1
-        : args.includes("web") && args.includes("start")
-          ? 2
-          : 0;
+      const code = args.includes("web") && args.includes("start") ? 2 : 0;
       return { code, stdout: "", stderr: code ? "failed" : "" };
     };
-    await expect(
-      moveDockerStack(
-        {
-          stackDir: dir,
-          platform: "darwin",
-          env: {},
-          exists: (file) => file === "/usr/local/bin/docker",
-          run,
-          sleep: async () => undefined,
-        },
-        {
-          port: 41234,
-          user: "rakazo",
-          password: "pw",
-          database: "rakazo",
-          dataDir: path.join(dir, "data"),
-          signal: new AbortController().signal,
-          onLine: () => undefined,
-        },
-      ),
-    ).rejects.toThrow(/exited with code 1/);
+    const pipe: PipeCommands = async () => {
+      calls.push(["pipe"]);
+      throw new Error("pg_restore exited with code 1");
+    };
+    await expect(moveDockerStack(deps(run, pipe), target(path.join(dir, "data")))).rejects.toThrow(
+      "pg_restore exited with code 1",
+    );
     expect(calls.some((args) => args[0] === "cp")).toBe(false);
-    expect(calls.at(-2)).toContain("bash");
+    expect(calls.at(-2)).toEqual(["pipe"]);
     expect(calls.at(-1)?.slice(-5)).toEqual(["start", "web", "api", "worker", "supervisor"]);
+  });
+});
+
+describe("pipeCommands", () => {
+  const node = (script: string) => ({ command: process.execPath, args: ["-e", script], env: {} });
+  const options = () => ({
+    cwd: dir,
+    timeoutMs: 10_000,
+    signal: new AbortController().signal,
+    onLine: () => undefined,
+  });
+
+  it("streams one command's output into the other", async () => {
+    const out = path.join(dir, "out");
+    await pipeCommands(
+      node("process.stdout.write('dump bytes')"),
+      node(`process.stdin.pipe(require("fs").createWriteStream(${JSON.stringify(out)}))`),
+      options(),
+    );
+    expect(await readFile(out, "utf8")).toBe("dump bytes");
+  });
+
+  it("fails when either side fails", async () => {
+    await expect(
+      pipeCommands(node("process.exit(3)"), node("process.stdin.resume()"), options()),
+    ).rejects.toThrow(/exited with code 3/);
+    await expect(
+      pipeCommands(node("process.stdout.write('x')"), node("process.exit(4)"), options()),
+    ).rejects.toThrow(/exited with code 4/);
   });
 });

@@ -12,8 +12,10 @@ import { DownloadError } from "./mac-runtime.js";
 import type { NativeStackDeps, SpawnProcess } from "./native-stack.js";
 import {
   choosePort,
+  DATABASE_CONTAINER,
   NATIVE_PORTS_FILE,
   NativeStackController,
+  POSTGRES_IMAGE,
   restartDelay,
 } from "./native-stack.js";
 
@@ -33,6 +35,8 @@ class FakeChild extends EventEmitter {
   stdout = new PassThrough();
   stderr = new PassThrough();
   exitCode: number | null = null;
+  signalCode: string | null = null;
+  readonly signals: string[] = [];
   constructor(
     readonly pid: number | undefined,
     readonly args: string[],
@@ -40,7 +44,8 @@ class FakeChild extends EventEmitter {
   ) {
     super();
   }
-  kill() {
+  kill(signal = "SIGTERM") {
+    this.signals.push(signal);
     this.exit();
     return true;
   }
@@ -72,26 +77,90 @@ afterEach(async () => {
   await rm(path.dirname(stackDir), { recursive: true, force: true });
 });
 
-function harness(overrides: Partial<NativeStackDeps> = {}) {
+const CLI = "/usr/local/bin/container";
+
+/** What the computer runtime holds between launches: the database VM and its image. */
+function fakeRuntime() {
+  return {
+    image: false,
+    database: null as { running: boolean; port: number; fresh: boolean } | null,
+    listening: false,
+  };
+}
+
+function harness(
+  overrides: Partial<NativeStackDeps> = {},
+  runtime: ReturnType<typeof fakeRuntime> = fakeRuntime(),
+) {
   const children: FakeChild[] = [];
-  const runs: { binary: string; args: string[]; env: Record<string, string> }[] = [];
+  const runs: {
+    binary: string;
+    args: string[];
+    env: Record<string, string>;
+    input?: string;
+    listening: boolean;
+  }[] = [];
   let nextPid = 1000;
   let nextPort = 40000;
   const spawn: SpawnProcess = (_command, args, options) => {
     const child = new FakeChild(nextPid++, args, options.env);
     children.push(child);
-    if (args.includes("listen_addresses=127.0.0.1")) {
-      setImmediate(() =>
-        child.stderr.write("LOG:  database system is ready to accept connections\n"),
-      );
+    if (args.join(" ") === `start --attach ${DATABASE_CONTAINER}`) {
+      const database = runtime.database;
+      if (database) database.running = true;
+      child.once("exit", () => {
+        if (database) database.running = false;
+        runtime.listening = false;
+      });
+      setImmediate(() => {
+        // A new volume is first initialized on a socket-only server that also reports ready.
+        if (database?.fresh)
+          child.stdout.write("LOG:  database system is ready to accept connections\n");
+        setImmediate(() => {
+          if (database) database.fresh = false;
+          runtime.listening = true;
+          child.stdout.write('LOG:  listening on IPv4 address "0.0.0.0", port 5432\n');
+          child.stdout.write("LOG:  database system is ready to accept connections\n");
+        });
+      });
     }
     return child as unknown as ChildProcess;
   };
   const run: RunDocker = async (binary, args, options) => {
-    runs.push({ binary, args, env: options.env });
-    if (binary.endsWith("initdb")) await mkdir(args[1]!, { recursive: true });
-    if (args.includes("--single")) await writeFile(path.join(args[2]!, "PG_VERSION"), "16\n");
-    return { code: 0, stdout: "", stderr: "" };
+    runs.push({
+      binary,
+      args,
+      env: options.env,
+      input: options.input,
+      listening: runtime.listening,
+    });
+    const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
+    if (binary !== CLI) return ok();
+    const command = args.join(" ");
+    if (command === `inspect ${DATABASE_CONTAINER}`) {
+      const database = runtime.database;
+      if (!database)
+        return { code: 1, stdout: "", stderr: `Error: container not found: ${DATABASE_CONTAINER}` };
+      return ok(
+        JSON.stringify([
+          {
+            configuration: { publishedPorts: [{ containerPort: 5432, hostPort: database.port }] },
+            status: { state: database.running ? "running" : "stopped" },
+          },
+        ]),
+      );
+    }
+    if (command === `image inspect ${POSTGRES_IMAGE}`)
+      return runtime.image ? ok() : { code: 1, stdout: "", stderr: "not found" };
+    if (args[0] === "image" && args[1] === "pull" && args.at(-1) === POSTGRES_IMAGE)
+      runtime.image = true;
+    if (args[0] === "create") {
+      const publish = args[args.indexOf("--publish") + 1] ?? "";
+      runtime.database = { running: false, port: Number(publish.split(":")[1]), fresh: true };
+    }
+    if (args[0] === "rm") runtime.database = null;
+    if (args[0] === "stop" && runtime.database) runtime.database.running = false;
+    return ok();
   };
   const deps: NativeStackDeps = {
     stackDir,
@@ -112,7 +181,6 @@ function harness(overrides: Partial<NativeStackDeps> = {}) {
     portFree: async () => true,
     allocatePort: async () => nextPort++,
     installers: {
-      postgres: async () => "/runtime/postgres-16.15.0",
       server: async () => ({
         dir: "/runtime/server-1.0.0/rakazo-server",
         manifest: {
@@ -125,13 +193,15 @@ function harness(overrides: Partial<NativeStackDeps> = {}) {
           },
         },
       }),
-      containerRuntime: async () => ({ cli: "/usr/local/bin/container", ours: false }),
+      containerRuntime: async () => ({ cli: CLI, ours: false }),
     },
     ...overrides,
   };
   const byName = (entry: string) =>
     children.filter((child) => child.args.some((arg) => arg.endsWith(entry)));
-  return { deps, children, runs, byName };
+  const commands = () =>
+    runs.filter((call) => call.binary === CLI).map((call) => call.args.slice(0, 2).join(" "));
+  return { deps, children, runs, byName, commands, runtime };
 }
 
 describe("restartDelay", () => {
@@ -162,10 +232,30 @@ describe("NativeStackController", () => {
     expect(state.phase).toBe("ready");
     await expect(controller.matchesDesiredStack()).resolves.toBe(true);
 
-    const initdb = runs.find((call) => call.binary.endsWith("initdb"));
-    expect(initdb?.args).toContain("--auth=scram-sha-256");
-    expect(initdb?.args.some((arg) => arg.includes("cdcd"))).toBe(false);
+    const pull = runs.find(
+      (call) => call.args.at(-1) === POSTGRES_IMAGE && call.args[1] === "pull",
+    );
+    expect(pull?.args).toContain("linux/arm64");
+    const create = runs.find((call) => call.args[0] === "create");
+    expect(create?.args).toEqual(
+      expect.arrayContaining([
+        "--platform",
+        "linux/arm64",
+        "--network",
+        DATABASE_CONTAINER,
+        `${DATABASE_CONTAINER}:/var/lib/postgresql/data`,
+        "PGDATA=/var/lib/postgresql/data/pgdata",
+        "POSTGRES_USER=rakazo",
+        "127.0.0.1:40000:5432",
+      ]),
+    );
+    // The password reaches the VM through the CLI's environment, never its arguments.
+    expect(create?.args.some((arg) => arg.includes("cdcd"))).toBe(false);
+    expect(create?.env.POSTGRES_PASSWORD).toBe("cd".repeat(16));
+    expect(byName(DATABASE_CONTAINER)[0]?.args).toEqual(["start", "--attach", DATABASE_CONTAINER]);
     const migrate = runs.find((call) => call.args[0]?.endsWith("migrate-database.js"));
+    // Migrations wait for the real server, not the one that initializes a new volume.
+    expect(migrate?.listening).toBe(true);
     expect(migrate?.env.DATABASE_MIGRATION_URL).toBe(
       `postgres://rakazo:${"cd".repeat(16)}@127.0.0.1:40000/rakazo`,
     );
@@ -178,7 +268,7 @@ describe("NativeStackController", () => {
       API_HOST: "127.0.0.1",
       API_PORT: "40001",
       SANDBOX_PROVIDER: "local-vm",
-      LOCAL_VM_CLI: "/usr/local/bin/container",
+      LOCAL_VM_CLI: CLI,
       LOCAL_VM_COMPUTER_IMAGE: "ghcr.io/elie222/rakazo/computer:v1.0.0",
       OPENROUTER_API_KEY: "sk-or-test",
       WEB_ORIGIN: "http://127.0.0.1:5173",
@@ -205,17 +295,20 @@ describe("NativeStackController", () => {
 
     await controller.stop();
     expect(controller.hasProcesses()).toBe(false);
+    // The runtime CLI passes SIGINT on, so Postgres shuts down fast and cleanly.
+    expect(byName(DATABASE_CONTAINER)[0]?.signals).toEqual(["SIGINT"]);
   });
 
-  it("keeps its ports across restarts while they stay free", async () => {
+  it("keeps its database and ports across restarts while they stay free", async () => {
     const first = harness();
     const controller = new NativeStackController(first.deps);
     await controller.start();
     await controller.stop();
+    expect(first.runtime.database?.running).toBe(false);
     const ports = JSON.parse(await readFile(path.join(stackDir, NATIVE_PORTS_FILE), "utf8"));
-    expect(ports).toEqual({ postgres: 40000, api: 40001 });
+    expect(ports).toEqual({ postgres: 40000, api: 40001, database: "theirs" });
 
-    const second = harness({ portFree: async (port) => port !== 5173 });
+    const second = harness({ portFree: async (port) => port !== 5173 }, first.runtime);
     const again = new NativeStackController(second.deps);
     await again.start();
     expect(JSON.parse(await readFile(path.join(stackDir, NATIVE_PORTS_FILE), "utf8"))).toEqual(
@@ -224,8 +317,85 @@ describe("NativeStackController", () => {
     // The web port was taken, so the web URL moved, past the database and API ports, and was saved.
     expect(again.webUrl()).toBe("http://127.0.0.1:40002");
     expect(await readFile(path.join(stackDir, STACK_WEB_URL_FILE), "utf8")).toBe(again.webUrl());
-    expect(second.runs.some((call) => call.binary.endsWith("initdb"))).toBe(false);
+    expect(second.commands()).not.toContain("create --name");
+    expect(
+      second.runs.some((call) => call.args[1] === "pull" && call.args.at(-1) === POSTGRES_IMAGE),
+    ).toBe(false);
     await again.stop();
+  });
+
+  it("stops a database VM a crashed launch left running before attaching to it", async () => {
+    const runtime = fakeRuntime();
+    runtime.image = true;
+    runtime.database = { running: true, port: 41000, fresh: false };
+    const { deps, commands } = harness({}, runtime);
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    expect(commands()).toContain("stop --time");
+    expect(commands()).not.toContain("create --name");
+    expect(
+      JSON.parse(await readFile(path.join(stackDir, NATIVE_PORTS_FILE), "utf8")).postgres,
+    ).toBe(41000);
+    await controller.stop();
+  });
+
+  it("recreates the database VM on a new port when its port is taken, keeping the volume", async () => {
+    const runtime = fakeRuntime();
+    runtime.image = true;
+    runtime.database = { running: false, port: 41000, fresh: false };
+    const { deps, runs, commands } = harness({ portFree: async (port) => port !== 41000 }, runtime);
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    expect(commands().filter((command) => /^(rm|create|volume)/.test(command))).toEqual([
+      `rm ${DATABASE_CONTAINER}`,
+      "volume create",
+      "create --name",
+    ]);
+    expect(runs.find((call) => call.args[0] === "create")?.args).toContain("127.0.0.1:40000:5432");
+    expect(
+      runs.find((call) => call.args[0]?.endsWith("migrate-database.js"))?.env.DATABASE_URL,
+    ).toMatch(/@127\.0\.0\.1:40000\//);
+    await controller.stop();
+  });
+
+  it("restarts the database VM like any service when it stops on its own", async () => {
+    const { deps, byName } = harness();
+    const controller = new NativeStackController(deps);
+    await controller.start();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    byName(DATABASE_CONTAINER)[0]!.exit();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(byName(DATABASE_CONTAINER)).toHaveLength(2);
+    expect(controller.state().phase).toBe("ready");
+    vi.useRealTimers();
+    await controller.stop();
+  });
+
+  it("refuses to start an empty database when its data is in the other runtime", async () => {
+    await mkdir(stackDir, { recursive: true });
+    await writeFile(
+      path.join(stackDir, NATIVE_PORTS_FILE),
+      JSON.stringify({ postgres: 41000, database: "ours" }),
+    );
+    const resolved: (boolean | undefined)[] = [];
+    const { deps, commands } = harness();
+    const controller = new NativeStackController({
+      ...deps,
+      installers: {
+        ...deps.installers,
+        containerRuntime: async (input) => {
+          resolved.push(input.keepOurs);
+          return { cli: CLI, ours: false };
+        },
+      },
+    });
+    const state = await controller.start();
+    expect(resolved).toEqual([true]);
+    expect(state.phase).toBe("failed");
+    expect(state.message).toBe(
+      "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.",
+    );
+    expect(commands()).not.toContain("create --name");
   });
 
   it("keeps the database owner apart from the runtime login, whatever the .env names", async () => {
@@ -242,8 +412,7 @@ describe("NativeStackController", () => {
     });
     const controller = new NativeStackController(deps);
     expect((await controller.start()).phase).toBe("ready");
-    const initdb = runs.find((call) => call.binary.endsWith("initdb"));
-    expect(initdb?.args[initdb.args.indexOf("-U") + 1]).toBe("rakazo");
+    expect(runs.find((call) => call.args[0] === "create")?.args).toContain("POSTGRES_USER=rakazo");
     expect(targets).toEqual(["rakazo"]);
     const migrate = runs.find((call) => call.args[0]?.endsWith("migrate-database.js"));
     expect(migrate?.env.DATABASE_MIGRATION_URL).toMatch(/^postgres:\/\/rakazo:/);
@@ -268,10 +437,9 @@ describe("NativeStackController", () => {
     const controller = new NativeStackController({
       ...deps,
       installers: {
-        postgres: async () => {
-          throw new DownloadError("postgres does not match its pinned checksum");
+        server: async () => {
+          throw new DownloadError("the server bundle does not match its pinned checksum");
         },
-        server: waitForAbort("server"),
         containerRuntime: waitForAbort("runtime"),
       },
     });
@@ -280,7 +448,7 @@ describe("NativeStackController", () => {
     expect(state.message).toBe(
       "Downloading Rakazo failed. Check the internet connection, then retry.",
     );
-    expect(order).toEqual(["server stopped", "runtime stopped", "start failed"]);
+    expect(order).toEqual(["runtime stopped", "start failed"]);
   });
 
   it("never gives the web the port just chosen for the API", async () => {
@@ -360,83 +528,78 @@ describe("NativeStackController", () => {
     const { deps, children } = harness();
     const controller = new NativeStackController({
       ...deps,
-      installers: {
-        ...deps.installers,
-        postgres: async () => {
-          throw new DownloadError("postgres does not match its pinned checksum");
-        },
-      },
+      run: async (binary, args, options) =>
+        args[1] === "pull" && args.at(-1) === POSTGRES_IMAGE
+          ? { code: 1, stdout: "", stderr: "" }
+          : deps.run(binary, args, options),
     });
     const state = await controller.start();
     expect(state.phase).toBe("failed");
     expect(state.message).toBe(
       "Downloading Rakazo failed. Check the internet connection, then retry.",
     );
-    expect(state.output).toContain("postgres does not match its pinned checksum");
+    expect(state.output).toContain("Pulling the database image exited with code 1");
     expect(children).toEqual([]);
   });
 
-  it("imports a Docker stack once, into a new database, before migrating", async () => {
-    const imported: number[] = [];
+  it("imports a Docker stack once, into an emptied database, before migrating", async () => {
+    const order: string[] = [];
     const { deps, runs } = harness({
       importFromDocker: async (target) => {
-        imported.push(target.port);
+        order.push(`import ${target.cli} ${target.container} ${target.user} ${target.database}`);
       },
     });
-    const controller = new NativeStackController(deps);
-    await controller.start();
-    expect(imported).toEqual([40000]);
-    const migrateIndex = runs.findIndex((call) => call.args[0]?.endsWith("migrate-database.js"));
-    expect(migrateIndex).toBeGreaterThan(-1);
+    const controller = new NativeStackController({
+      ...deps,
+      run: async (binary, args, options) => {
+        if (args.includes("psql")) order.push(`psql ${options.input?.trim()}`);
+        if (args[0]?.endsWith("migrate-database.js")) order.push("migrate");
+        return deps.run(binary, args, options);
+      },
+    });
+    expect((await controller.start()).phase).toBe("ready");
+    expect(order).toEqual([
+      "psql DROP DATABASE IF EXISTS rakazo WITH (FORCE);\nCREATE DATABASE rakazo;",
+      `import ${CLI} ${DATABASE_CONTAINER} rakazo rakazo`,
+      "migrate",
+    ]);
+    expect(runs.find((call) => call.args.includes("psql"))?.args).not.toContain("-h");
     await controller.stop();
     await controller.start();
-    expect(imported).toEqual([40000]);
+    expect(order.filter((entry) => entry.startsWith("import"))).toHaveLength(1);
     await controller.stop();
   });
 
-  it("reruns a move that was cut short before it finished", async () => {
-    // A launch that quit mid-move left a cluster and some copied files, but no import marker.
-    await mkdir(path.join(stackDir, "postgres"), { recursive: true });
-    await writeFile(path.join(stackDir, "postgres", "PG_VERSION"), "16\n");
+  it("reruns a move that was cut short, or failed, until it completes", async () => {
+    // A launch that quit mid-move left copied files, but no import marker.
     await mkdir(path.join(stackDir, "data"), { recursive: true });
     await writeFile(path.join(stackDir, "data", "partial"), "");
+    const runtime = fakeRuntime();
+    let fail = true;
     const imported: string[] = [];
-    const { deps, runs } = harness({
-      importFromDocker: async (target) => {
-        imported.push(target.dataDir);
-      },
-    });
-    const controller = new NativeStackController(deps);
-    expect((await controller.start()).phase).toBe("ready");
-    expect(runs.some((call) => call.binary.endsWith("initdb"))).toBe(true);
-    expect(existsSync(path.join(stackDir, "data", "partial"))).toBe(false);
-    expect(imported).toEqual([path.join(stackDir, "data")]);
-    await controller.stop();
-
-    const again = harness({
-      importFromDocker: async (target) => {
-        imported.push(target.dataDir);
-      },
-    });
-    const next = new NativeStackController(again.deps);
-    await next.start();
-    expect(imported).toHaveLength(1);
-    expect(again.runs.some((call) => call.binary.endsWith("initdb"))).toBe(false);
-    await next.stop();
-  });
-
-  it("drops the half-imported database so a retry imports again", async () => {
-    const { deps } = harness({
-      importFromDocker: async () => {
-        throw new Error("pg_restore exited with code 1");
-      },
-    });
-    const controller = new NativeStackController(deps);
-    const state = await controller.start();
-    expect(state.phase).toBe("failed");
-    expect(state.message).toBe(
+    const importFromDocker = async (target: { dataDir: string }) => {
+      expect(existsSync(path.join(target.dataDir, "partial"))).toBe(false);
+      imported.push(target.dataDir);
+      if (fail) throw new Error("pg_restore exited with code 1");
+    };
+    const first = new NativeStackController(harness({ importFromDocker }, runtime).deps);
+    const failed = await first.start();
+    expect(failed.phase).toBe("failed");
+    expect(failed.message).toBe(
       "Could not move your data from Docker. Check the output below, then retry.",
     );
-    expect(existsSync(path.join(stackDir, "postgres"))).toBe(false);
+    expect(first.hasProcesses()).toBe(false);
+
+    fail = false;
+    const retry = harness({ importFromDocker }, runtime);
+    const second = new NativeStackController(retry.deps);
+    expect((await second.start()).phase).toBe("ready");
+    expect(retry.runs.some((call) => call.input?.includes("DROP DATABASE"))).toBe(true);
+    await second.stop();
+
+    const third = new NativeStackController(harness({ importFromDocker }, runtime).deps);
+    await third.start();
+    expect(imported).toHaveLength(2);
+    await third.stop();
   });
 });

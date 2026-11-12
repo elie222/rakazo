@@ -1,6 +1,6 @@
 // What This computer runs on an Apple silicon Mac without Docker, fetched only when it is chosen:
-// a database server, the Rakazo server bundle and, unless the person already runs one, the
-// computer runtime. Every download is pinned by size and SHA-256 and checked before it is unpacked.
+// the Rakazo server bundle and, unless the person already runs one, the computer runtime. Every
+// download is pinned by size and SHA-256 and checked before it is unpacked.
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -26,14 +26,6 @@ export interface PinnedDownload {
   sha256: string;
   size: number;
 }
-
-export const POSTGRES_VERSION = "16.15.0";
-export const POSTGRES_DOWNLOAD: PinnedDownload = {
-  url: `https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-darwin-arm64v8/${POSTGRES_VERSION}/embedded-postgres-binaries-darwin-arm64v8-${POSTGRES_VERSION}.jar`,
-  sha256: "65b953905f0a4d46030767a6b44a52360170d69a7985f1b02aa435f2f6256a83",
-  size: 61_884_586,
-};
-const POSTGRES_ARCHIVE = "postgres-darwin-arm_64.txz";
 
 export const CONTAINER_RUNTIME_VERSION = "1.7.1";
 export const CONTAINER_RUNTIME_DOWNLOAD: PinnedDownload = {
@@ -231,26 +223,6 @@ async function installVersion(
   }
 }
 
-/** Returns the directory holding `bin/initdb`, `bin/postgres` and their libraries. */
-export function installPostgres(deps: RuntimeDeps): Promise<string> {
-  return installVersion(
-    deps,
-    `postgres-${POSTGRES_VERSION}`,
-    POSTGRES_DOWNLOAD,
-    async (jar, into) => {
-      await runChecked(
-        deps,
-        "/usr/bin/unzip",
-        ["-q", "-o", jar, POSTGRES_ARCHIVE, "-d", into],
-        RUNTIME_TIMEOUT_MS,
-      );
-      const archive = path.join(into, POSTGRES_ARCHIVE);
-      await runChecked(deps, "/usr/bin/tar", ["-xJf", archive, "-C", into], RUNTIME_TIMEOUT_MS);
-      await rm(archive);
-    },
-  );
-}
-
 export interface ServerManifest {
   version: string;
   entrypoints: Record<"api" | "worker" | "web" | "migrate", string>;
@@ -359,6 +331,8 @@ export interface ResolveRuntimeDeps extends RuntimeDeps {
   /** Where the app's own system keeps its images, VMs and logs. */
   appRoot: string;
   logRoot: string;
+  /** Our copy holds the database's volume, so it is never handed over to the person's install. */
+  keepOurs?: boolean;
 }
 
 interface RunningSystem {
@@ -437,8 +411,9 @@ async function isInside(dir: string, file: string): Promise<boolean> {
 /**
  * Only one computer runtime can run per macOS session. Use the one already running, else the
  * person's own install, else our copy (downloaded on first use). A system we started gives way to
- * the person's own install once they have one, and an outdated one is replaced; a system we did
- * not start is never stopped, and one too old to use fails the start instead.
+ * the person's own install once they have one, unless it holds the database (`keepOurs`), and an
+ * outdated one is replaced; a system we did not start is never stopped, and one too old to use
+ * fails the start instead.
  */
 export async function resolveContainerRuntime(
   deps: ResolveRuntimeDeps,
@@ -455,7 +430,7 @@ export async function resolveContainerRuntime(
       throw new RuntimeTooOldError(
         `The running computer runtime is ${running.version ?? "of an unknown version"}; computers need ${MIN_CONTAINER_RUNTIME} or newer`,
       );
-    if (current && (!ours || !userUsable)) return { cli: running.cli, ours };
+    if (current && (!ours || !userUsable || deps.keepOurs)) return { cli: running.cli, ours };
     deps.onLine(
       current
         ? "Handing computers over to the installed runtime"
@@ -470,7 +445,7 @@ export async function resolveContainerRuntime(
     "--timeout",
     String(SYSTEM_START_TIMEOUT_S),
   ];
-  if (userUsable) {
+  if (userUsable && !deps.keepOurs) {
     deps.onLine("Starting the computer runtime");
     await runChecked(deps, USER_CONTAINER_CLI, start, RUNTIME_TIMEOUT_MS);
     return { cli: USER_CONTAINER_CLI, ours: false };

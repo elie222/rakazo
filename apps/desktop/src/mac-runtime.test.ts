@@ -9,7 +9,7 @@ import {
   DownloadError,
   downloadVerified,
   installContainerRuntime,
-  installPostgres,
+  installServerBundle,
   nativeStackEligible,
   pruneRuntimes,
   RuntimeTooOldError,
@@ -155,14 +155,20 @@ describe("downloadVerified", () => {
 });
 
 describe("installers", () => {
-  it("never unpacks a database download whose checksum does not match", async () => {
+  it("never unpacks a download whose checksum does not match", async () => {
     const calls: string[][] = [];
     const run: RunDocker = async (binary, args) => {
       calls.push([binary, ...args]);
       return ok();
     };
     const { deps } = runtimeDeps(run, { fetch: bytesFetch(new TextEncoder().encode("tampered")) });
-    await expect(installPostgres(deps)).rejects.toBeInstanceOf(DownloadError);
+    const download = pinnedFor(
+      new TextEncoder().encode("expected"),
+      "https://example.test/s.tar.xz",
+    );
+    await expect(installServerBundle(deps, { version: "1.0.0", download })).rejects.toBeInstanceOf(
+      DownloadError,
+    );
     expect(calls).toEqual([]);
     expect(await readdir(path.join(dir, "downloads"))).toEqual([]);
   });
@@ -185,10 +191,22 @@ describe("installers", () => {
   });
 
   it("reuses a completely unpacked version without downloading again", async () => {
-    await mkdir(path.join(dir, "postgres-16.15.0"), { recursive: true });
-    await writeFile(path.join(dir, "postgres-16.15.0", ".complete"), "");
-    const { deps } = runtimeDeps(async () => fail());
-    await expect(installPostgres(deps)).resolves.toBe(path.join(dir, "postgres-16.15.0"));
+    const server = path.join(dir, "server-1.0.0", "rakazo-server");
+    await mkdir(server, { recursive: true });
+    await writeFile(path.join(dir, "server-1.0.0", ".complete"), "");
+    const entrypoints = { api: "a.js", worker: "w.js", web: "web.js", migrate: "m.js" };
+    await writeFile(
+      path.join(server, "manifest.json"),
+      JSON.stringify({ version: "1.0.0", entrypoints }),
+    );
+    const { deps } = runtimeDeps(async () => fail(), {
+      fetch: async () => {
+        throw new Error("must not download");
+      },
+    });
+    await expect(
+      installServerBundle(deps, { version: "1.0.0", download: pinnedFor(new Uint8Array()) }),
+    ).resolves.toMatchObject({ dir: server });
   });
 
   it("accepts only the publisher's notarized signature", () => {
@@ -320,6 +338,25 @@ describe("resolveContainerRuntime", () => {
       [ourCli(), "stop"],
       [USER_CONTAINER_CLI, "start"],
     ]);
+  });
+
+  it("keeps our copy, which holds the database, even once the person has their own", async () => {
+    const root = path.join(dir, "container-1.7.1");
+    const running = fakeRuntime({ running: { root }, launchdRoot: root, userVersion: "1.8.0" });
+    const first = runtimeDeps(running.run, { exists: running.exists, keepOurs: true });
+    await expect(resolveContainerRuntime(first.deps, async () => ourCli())).resolves.toEqual({
+      cli: ourCli(),
+      ours: true,
+    });
+    expect(running.calls.some((call) => call.includes("stop"))).toBe(false);
+
+    const stopped = fakeRuntime({ userVersion: "1.8.0" });
+    const second = runtimeDeps(stopped.run, { exists: stopped.exists, keepOurs: true });
+    await expect(resolveContainerRuntime(second.deps, async () => ourCli())).resolves.toEqual({
+      cli: ourCli(),
+      ours: true,
+    });
+    expect(stopped.calls.at(-1)?.slice(0, 3)).toEqual([ourCli(), "system", "start"]);
   });
 
   it("never stops a running system that is not ours", async () => {

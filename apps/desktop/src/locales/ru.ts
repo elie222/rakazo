@@ -200,6 +200,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Не удалось перенести данные из Docker. Посмотрите вывод ниже и повторите попытку.",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "Уже запущенная среда выполнения компьютеров слишком старая. Обновите или закройте её, затем повторите попытку.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "Ваши данные Rakazo находятся в другой среде выполнения компьютеров. Закройте запущенную среду, затем повторите попытку.",
   "Run Rakazo without Docker?": "Запускать Rakazo без Docker?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Ваши боты и данные будут перенесены. Docker будет остановлен, но не удалён.",

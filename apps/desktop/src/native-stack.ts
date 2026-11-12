@@ -1,9 +1,9 @@
-// This computer without Docker: the database, API, worker and web run as the person's own
-// processes on loopback, and bot computers run as VMs through the `local-vm` sandbox provider.
+// This computer without Docker: the API, worker and web run as the person's own processes on
+// loopback, the database as the official Postgres image in a VM of its own, and bot computers as
+// VMs through the `local-vm` sandbox provider, all through the same computer runtime.
 // Drives the same state and events as the Docker controller, so the setup screen is unchanged.
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -38,9 +38,7 @@ import type {
 import {
   CONTAINER_RUNTIME_VERSION,
   DownloadError,
-  installPostgres,
   installServerBundle,
-  POSTGRES_VERSION,
   pruneRuntimes,
   RuntimeTooOldError,
   resolveContainerRuntime,
@@ -48,17 +46,24 @@ import {
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const NATIVE_PORTS_FILE = ".native-ports";
-export const POSTGRES_DIR = "postgres";
-/** The cluster's owner. Fixed, so it can never be the runtime login whatever the `.env` names. */
+/** The database VM, its network and its volume; computers are `rakazo-<uuid>` with a bot label. */
+export const DATABASE_CONTAINER = "rakazo-postgres";
+/** The image and digest Compose runs, so both stacks run the same database. */
+export const POSTGRES_IMAGE =
+  "postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5";
+const POSTGRES_PLATFORM = "linux/arm64";
+/** The owner and database. Fixed, so the owner can never be the runtime login whatever the `.env` names. */
 const NATIVE_OWNER = "rakazo";
-/** Written into the cluster once a Docker move has copied everything, so a cut-short move reruns. */
+const NATIVE_DATABASE = "rakazo";
+/** Written once a Docker move has copied everything, so a cut-short move reruns. */
 const DOCKER_IMPORTED = ".docker-imported";
 const COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer";
+const POSTGRES_LISTENING = "listening on IPv4 address";
 const POSTGRES_READY = "database system is ready to accept connections";
 const HEALTH_POLL_INTERVAL_MS = 1_000;
-const POSTGRES_READY_TIMEOUT_MS = 60_000;
+const POSTGRES_READY_TIMEOUT_MS = 120_000;
 const MIGRATE_TIMEOUT_MS = 10 * 60_000;
-const INIT_TIMEOUT_MS = 2 * 60_000;
+const CLI_TIMEOUT_MS = 60_000;
 const IMAGE_PULL_TIMEOUT_MS = 60 * 60_000;
 const STOP_GRACE_MS = 10_000;
 /** A process that stayed up this long starts its next crash from the shortest delay again. */
@@ -85,7 +90,7 @@ interface ServiceSpec {
   args: string[];
   cwd: string;
   env: Record<string, string>;
-  /** Postgres shuts down fast, and cleanly, on SIGINT. */
+  /** The runtime CLI passes SIGINT to Postgres, which then shuts down fast and cleanly. */
   stopSignal: NodeJS.Signals;
 }
 
@@ -159,8 +164,12 @@ class Service {
     }, delay);
   }
 
-  /** Resolves on the first line matching `pattern`; rejects if the process exits or time runs out. */
-  waitForLine(pattern: string, timeoutMs: number, signal: AbortSignal): Promise<void> {
+  /** Resolves on the first line `matches` accepts; rejects if the process exits or time runs out. */
+  waitForLine(
+    matches: (line: string) => boolean,
+    timeoutMs: number,
+    signal: AbortSignal,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const done = (error?: Error) => {
         clearTimeout(timer);
@@ -171,7 +180,7 @@ class Service {
         else resolve();
       };
       const onLine = (line: string) => {
-        if (line.includes(pattern)) done();
+        if (matches(line)) done();
       };
       const onExit = () => done(new Error(`${this.spec.name} exited while starting`));
       const onAbort = () => done(new Error("aborted"));
@@ -215,12 +224,16 @@ class Service {
 interface NativePorts {
   postgres?: number;
   api?: number;
+  /** Which runtime holds the database's volume: our own copy, or one the person runs. */
+  database?: "ours" | "theirs";
 }
 
 export interface DockerImportTarget {
-  port: number;
+  /** The runtime CLI, which runs Postgres's own tools inside the database VM. */
+  cli: string;
+  container: string;
+  env: Record<string, string>;
   user: string;
-  password: string;
   database: string;
   dataDir: string;
   signal: AbortSignal;
@@ -252,7 +265,6 @@ export interface NativeStackDeps {
   allocatePort?: () => Promise<number>;
   healthTimeoutMs?: number;
   installers?: Partial<{
-    postgres: (deps: RuntimeDeps) => Promise<string>;
     server: (
       deps: RuntimeDeps,
       bundle: ServerBundle,
@@ -263,6 +275,7 @@ export interface NativeStackDeps {
         exists: (file: string) => boolean;
         appRoot: string;
         logRoot: string;
+        keepOurs?: boolean;
       },
     ) => Promise<ContainerRuntime>;
   }>;
@@ -416,11 +429,10 @@ export class NativeStackController extends StackLifecycle {
       onLine: (line) => this.push({ type: "output", line }),
     };
     const installers = this.deps.installers ?? {};
-    let postgresDir: string;
+    const ports = await this.ports();
     let server: { dir: string; manifest: ServerManifest };
     let runtime: ContainerRuntime;
     const installs = [
-      (installers.postgres ?? installPostgres)(runtimeDeps),
       (installers.server ?? installServerBundle)(runtimeDeps, this.deps.serverBundle),
       (installers.containerRuntime ?? resolveContainerRuntime)({
         ...runtimeDeps,
@@ -428,10 +440,14 @@ export class NativeStackController extends StackLifecycle {
         exists: this.deps.exists,
         appRoot: this.dir("vm"),
         logRoot: this.dir("vm-logs"),
+        keepOurs: ports.database === "ours",
+      }).then(async (resolved) => {
+        await this.pullDatabaseImage(resolved.cli, runtimeDeps.signal);
+        return resolved;
       }),
     ] as const;
     try {
-      [postgresDir, server, runtime] = await Promise.all(installs);
+      [server, runtime] = await Promise.all(installs);
     } catch (error) {
       installing.abort();
       await Promise.allSettled(installs);
@@ -448,56 +464,67 @@ export class NativeStackController extends StackLifecycle {
 
     this.push({ type: "up-start" });
     const user = NATIVE_OWNER;
-    const database = stackEnv.get("POSTGRES_DB") || "rakazo";
+    const database = NATIVE_DATABASE;
     const password = stackEnv.get("POSTGRES_PASSWORD") ?? "";
     const appPassword = stackEnv.get("POSTGRES_APP_PASSWORD") ?? "";
-    const imported = this.dir(POSTGRES_DIR, DOCKER_IMPORTED);
+    const imported = this.dir(DOCKER_IMPORTED);
     const moving = this.deps.importFromDocker !== undefined && !this.deps.exists(imported);
     if (moving) {
-      // A cluster without the marker holds a move that was cut short; start that move over.
-      await rm(this.dir(POSTGRES_DIR), { recursive: true, force: true });
+      // Without the marker, files copied by a move that was cut short are copied again.
       await rm(this.dir("data"), { recursive: true, force: true });
       await mkdir(this.dir("data"), { recursive: true, mode: 0o700 });
     }
-    await this.ensureCluster(postgresDir, user, password, database, signal);
-    const ports = await this.ports();
     const portFree = this.deps.portFree ?? portFreeOnLoopback;
     const allocate = this.deps.allocatePort ?? allocateLoopbackPort;
-    ports.postgres = await choosePort(ports.postgres, portFree, allocate);
-    await writePrivateFile(this.dir(NATIVE_PORTS_FILE), JSON.stringify(ports));
+    const databasePort = await this.ensureDatabase(
+      runtime,
+      ports,
+      password,
+      portFree,
+      allocate,
+      signal,
+    );
     const postgres = this.service({
       name: "postgres",
-      command: path.join(postgresDir, "bin", "postgres"),
-      args: [
-        "-D",
-        this.dir(POSTGRES_DIR),
-        "-p",
-        String(ports.postgres),
-        "-c",
-        "listen_addresses=127.0.0.1",
-        // macOS caps socket paths at 103 bytes, which user data paths exceed.
-        "-c",
-        "unix_socket_directories=",
-      ],
+      command: runtime.cli,
+      args: ["start", "--attach", DATABASE_CONTAINER],
       cwd: this.deps.stackDir,
       env: this.baseEnv(),
       stopSignal: "SIGINT",
     });
     postgres.start();
+    // On first start the image initializes the database on a socket-only server, which reports
+    // ready too; the real server is the one that then listens on the network.
+    let listening = false;
     await postgres
-      .waitForLine(POSTGRES_READY, POSTGRES_READY_TIMEOUT_MS, signal)
+      .waitForLine(
+        (line) => {
+          listening ||= line.includes(POSTGRES_LISTENING);
+          return listening && line.includes(POSTGRES_READY);
+        },
+        POSTGRES_READY_TIMEOUT_MS,
+        signal,
+      )
       .catch((error: Error) => {
         throw new StartFailure(servicesFailed(), [...postgres.tail, error.message]);
       });
 
     const at = (login: string, secret: string) =>
-      `postgres://${encodeURIComponent(login)}:${encodeURIComponent(secret)}@127.0.0.1:${ports.postgres}/${encodeURIComponent(database)}`;
+      `postgres://${encodeURIComponent(login)}:${encodeURIComponent(secret)}@127.0.0.1:${databasePort}/${encodeURIComponent(database)}`;
     if (moving && this.deps.importFromDocker) {
       try {
+        // A retry restores into an empty database again; the Docker stack is untouched.
+        await this.psql(
+          runtime.cli,
+          "postgres",
+          `DROP DATABASE IF EXISTS ${database} WITH (FORCE);\nCREATE DATABASE ${database};\n`,
+          signal,
+        );
         await this.deps.importFromDocker({
-          port: ports.postgres,
+          cli: runtime.cli,
+          container: DATABASE_CONTAINER,
+          env: this.baseEnv(),
           user,
-          password,
           database,
           dataDir: this.dir("data"),
           signal,
@@ -505,9 +532,6 @@ export class NativeStackController extends StackLifecycle {
         });
         await writeFile(imported, "", { mode: 0o600 });
       } catch (error) {
-        // A retry imports into a clean database again; the Docker stack is untouched.
-        await this.stopServices();
-        await rm(this.dir(POSTGRES_DIR), { recursive: true, force: true });
         if (signal.aborted) throw error;
         throw new StartFailure(
           t("Could not move your data from Docker. Check the output below, then retry."),
@@ -535,10 +559,10 @@ export class NativeStackController extends StackLifecycle {
     );
     if (migrated.code !== 0) throw new StartFailure(servicesFailed());
 
-    ports.api = await choosePort(ports.api, portFree, allocate, [ports.postgres]);
+    ports.api = await choosePort(ports.api, portFree, allocate, [databasePort]);
     await writePrivateFile(this.dir(NATIVE_PORTS_FILE), JSON.stringify(ports));
     const webPort = Number(new URL(this.currentWebUrl).port);
-    const chosenWeb = await choosePort(webPort, portFree, allocate, [ports.postgres, ports.api]);
+    const chosenWeb = await choosePort(webPort, portFree, allocate, [databasePort, ports.api]);
     if (chosenWeb !== webPort) this.currentWebUrl = `http://127.0.0.1:${chosenWeb}`;
     await writePrivateFile(this.dir(STACK_WEB_URL_FILE), this.currentWebUrl);
 
@@ -606,7 +630,6 @@ export class NativeStackController extends StackLifecycle {
       ) {
         this.push({ type: "ready" });
         await pruneRuntimes(this.dir("runtime"), [
-          `postgres-${POSTGRES_VERSION}`,
           `container-${CONTAINER_RUNTIME_VERSION}`,
           path.basename(path.dirname(server.dir)),
           ...this.runtimeRoot(runtime.cli),
@@ -630,58 +653,171 @@ export class NativeStackController extends StackLifecycle {
     return path.dirname(root) === this.dir("runtime") ? [path.basename(root)] : [];
   }
 
-  /** Created once, in a scratch directory renamed into place, so a half-made cluster never stays. */
-  private async ensureCluster(
-    postgresDir: string,
-    user: string,
+  /**
+   * Leaves the database VM created and stopped, publishing the saved port while it is free. A VM
+   * left running by a launch that crashed is stopped first, since the runtime only attaches to a
+   * VM it starts. A taken port recreates the VM on a new one; the volume, and so the data, stays.
+   */
+  private async ensureDatabase(
+    runtime: ContainerRuntime,
+    ports: NativePorts,
     password: string,
-    database: string,
+    portFree: (port: number) => Promise<boolean>,
+    allocate: () => Promise<number>,
     signal: AbortSignal,
-  ): Promise<void> {
-    const target = this.dir(POSTGRES_DIR);
-    if (this.deps.exists(path.join(target, "PG_VERSION"))) return;
-    const scratch = this.dir(`.postgres.${randomUUID()}`);
-    const passwordFile = this.dir(`.postgres-password.${randomUUID()}`);
-    const options = {
+  ) {
+    const cli = runtime.cli;
+    const holder = runtime.ours ? "ours" : "theirs";
+    let existing = await this.inspectDatabase(cli, signal);
+    if (existing === null && ports.database !== undefined && ports.database !== holder) {
+      throw new StartFailure(
+        t("Your Rakazo data is in a different computer runtime. Quit the one running, then retry."),
+      );
+    }
+    if (existing?.running)
+      await this.runtimeCommand(cli, ["stop", "--time", "30", DATABASE_CONTAINER], signal);
+    const port = await choosePort(existing?.port ?? ports.postgres, portFree, allocate);
+    ports.postgres = port;
+    if (existing && existing.port !== port) {
+      await this.runtimeCommand(cli, ["rm", DATABASE_CONTAINER], signal);
+      existing = null;
+    }
+    if (existing === null) {
+      for (const kind of ["network", "volume"]) {
+        await this.runtimeCommand(cli, [kind, "create", DATABASE_CONTAINER], signal, {
+          exists: true,
+        });
+      }
+      await this.runtimeCommand(
+        cli,
+        [
+          "create",
+          "--name",
+          DATABASE_CONTAINER,
+          "--platform",
+          POSTGRES_PLATFORM,
+          "--network",
+          DATABASE_CONTAINER,
+          "--volume",
+          `${DATABASE_CONTAINER}:/var/lib/postgresql/data`,
+          // The volume's root holds lost+found, which initdb refuses.
+          "--env",
+          "PGDATA=/var/lib/postgresql/data/pgdata",
+          "--env",
+          `POSTGRES_USER=${NATIVE_OWNER}`,
+          "--env",
+          `POSTGRES_DB=${NATIVE_DATABASE}`,
+          // Named only, so the value comes from the CLI's environment instead of its arguments.
+          "--env",
+          "POSTGRES_PASSWORD",
+          "--publish",
+          `127.0.0.1:${port}:5432`,
+          "--memory",
+          "1g",
+          POSTGRES_IMAGE,
+        ],
+        signal,
+        { env: { POSTGRES_PASSWORD: password } },
+      );
+      ports.database = holder;
+    }
+    await writePrivateFile(this.dir(NATIVE_PORTS_FILE), JSON.stringify(ports));
+    return port;
+  }
+
+  private async inspectDatabase(
+    cli: string,
+    signal: AbortSignal,
+  ): Promise<{ running: boolean; port: number | undefined } | null> {
+    const result = await this.deps.run(cli, ["inspect", DATABASE_CONTAINER], {
       cwd: this.deps.stackDir,
       env: this.baseEnv(),
-      timeoutMs: INIT_TIMEOUT_MS,
+      timeoutMs: CLI_TIMEOUT_MS,
       signal,
-    };
-    try {
-      await writePrivateFile(passwordFile, `${password}\n`);
-      const init = await this.deps.run(
-        path.join(postgresDir, "bin", "initdb"),
-        [
-          "-D",
-          scratch,
-          "-U",
-          user,
-          `--pwfile=${passwordFile}`,
-          "--auth=scram-sha-256",
-          "--encoding=UTF8",
-          "--locale-provider=icu",
-          "--icu-locale=en-US",
-          "--locale=en_US.UTF-8",
-        ],
-        options,
-      );
-      if (init.code !== 0)
-        throw new StartFailure(servicesFailed(), init.stderr.split("\n").slice(-5));
-      // Single-user mode creates the database before anything can connect.
-      const created = await this.deps.run(
-        path.join(postgresDir, "bin", "postgres"),
-        ["--single", "-D", scratch, "postgres"],
-        { ...options, input: `CREATE DATABASE "${database.replaceAll('"', '""')}";\n` },
-      );
-      if (created.code !== 0)
-        throw new StartFailure(servicesFailed(), created.stderr.split("\n").slice(-5));
-      await rm(target, { recursive: true, force: true });
-      await rename(scratch, target);
-    } finally {
-      await rm(passwordFile, { force: true });
-      await rm(scratch, { recursive: true, force: true });
+    });
+    if (result.code !== 0) {
+      if (/not found/i.test(result.stderr)) return null;
+      throw new Error(`container inspect exited with code ${result.code}: ${result.stderr.trim()}`);
     }
+    const [record] = JSON.parse(result.stdout || "[]") as {
+      configuration?: { publishedPorts?: { containerPort?: number; hostPort?: number }[] };
+      status?: { state?: string };
+    }[];
+    if (!record) return null;
+    return {
+      running: record.status?.state === "running",
+      port: record.configuration?.publishedPorts?.find((entry) => entry.containerPort === 5432)
+        ?.hostPort,
+    };
+  }
+
+  /** Fetches only the image's Apple silicon variant; one already present is not fetched again. */
+  private async pullDatabaseImage(cli: string, signal: AbortSignal) {
+    const options = { cwd: this.deps.stackDir, env: this.baseEnv(), signal };
+    const present = await this.deps.run(cli, ["image", "inspect", POSTGRES_IMAGE], {
+      ...options,
+      timeoutMs: CLI_TIMEOUT_MS,
+    });
+    if (present.code === 0) return;
+    const pulled = await this.deps.run(
+      cli,
+      ["image", "pull", "--platform", POSTGRES_PLATFORM, "--progress", "plain", POSTGRES_IMAGE],
+      {
+        ...options,
+        timeoutMs: IMAGE_PULL_TIMEOUT_MS,
+        onLine: (line) => this.push({ type: "output", line }),
+      },
+    );
+    if (pulled.code !== 0 && !signal.aborted)
+      throw new DownloadError(`Pulling the database image exited with code ${pulled.code}`);
+  }
+
+  private async runtimeCommand(
+    cli: string,
+    args: string[],
+    signal: AbortSignal,
+    options: { env?: Record<string, string>; exists?: boolean } = {},
+  ) {
+    const result = await this.deps.run(cli, args, {
+      cwd: this.deps.stackDir,
+      env: { ...this.baseEnv(), ...options.env },
+      timeoutMs: CLI_TIMEOUT_MS,
+      signal,
+    });
+    if (result.code === 0 || (options.exists && /already exists/i.test(result.stderr))) return;
+    throw new StartFailure(servicesFailed(), [
+      ...result.stderr.trim().split("\n").slice(-3),
+      `container ${args.slice(0, 2).join(" ")} exited with code ${result.code}`,
+    ]);
+  }
+
+  /** Runs SQL as the owner over the VM's own socket, so no password is needed or passed. */
+  private async psql(cli: string, database: string, sql: string, signal: AbortSignal) {
+    const result = await this.deps.run(
+      cli,
+      [
+        "exec",
+        "--interactive",
+        DATABASE_CONTAINER,
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-q",
+        "-U",
+        NATIVE_OWNER,
+        "-d",
+        database,
+      ],
+      {
+        cwd: this.deps.stackDir,
+        env: this.baseEnv(),
+        timeoutMs: CLI_TIMEOUT_MS,
+        signal,
+        input: sql,
+      },
+    );
+    if (result.code !== 0)
+      throw new Error(`psql exited with code ${result.code}: ${result.stderr.trim()}`);
   }
 
   private async ports(): Promise<NativePorts> {
@@ -691,6 +827,8 @@ export class NativeStackController extends StackLifecycle {
       return {
         postgres: Number.isInteger(parsed.postgres) ? parsed.postgres : undefined,
         api: Number.isInteger(parsed.api) ? parsed.api : undefined,
+        database:
+          parsed.database === "ours" || parsed.database === "theirs" ? parsed.database : undefined,
       };
     } catch {
       return {};

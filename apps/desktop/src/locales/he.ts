@@ -193,6 +193,8 @@ export const HE_MESSAGES: Record<string, string> = {
     "לא ניתן להעביר את הנתונים מ-Docker. בדקו את הפלט למטה ונסו שוב.",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "סביבת ההרצה של המחשבים שכבר פועלת ישנה מדי. עדכנו או סגרו אותה ונסו שוב.",
+  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
+    "הנתונים שלכם ב-Rakazo נמצאים בסביבת הרצה אחרת של המחשבים. סגרו את זו שפועלת ונסו שוב.",
   "Run Rakazo without Docker?": "להפעיל את Rakazo בלי Docker?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "הבוטים והנתונים שלכם יועברו. Docker ייעצר, לא יוסר.",

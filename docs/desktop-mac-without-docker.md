@@ -7,18 +7,19 @@ unchanged.
 
 ## Summary
 
-- The server side does not need containers. Postgres 16 runs as a native binary and the API,
-  worker and web run as plain Node processes, all bound to `127.0.0.1` under the app's data
-  directory. Verified on this Mac (below).
+- The server side does not need Docker. The API, worker and web run as plain Node processes bound
+  to `127.0.0.1`, and the database is the official `postgres:16` image, at the digest Compose pins,
+  running as a VM of its own through the same computer runtime and published on `127.0.0.1` only.
+  Verified on this Mac (below).
 - Bot computers run as one lightweight Linux VM each through Apple's open-source `container`
   runtime (Apache 2.0, Virtualization.framework), from the **unchanged** published computer
   image. A new sandbox provider, `local-vm`, plugs into the existing `SandboxProvider` seam the
   way the Incus provider does: no supervisor, no Docker socket, screen reached on the VM's address.
   Verified end to end through the real API (below).
-- Nothing is bundled: the app download does not grow. The database, the server bundle and (unless
-  the person already runs one) the computer runtime are downloaded, pinned by size and SHA-256, only
-  when **This computer** is chosen. First start measured below at under a minute plus the
-  computer runtime download; later starts take about 4 seconds.
+- Nothing is bundled: the app download does not grow. The server bundle and (unless the person
+  already runs one) the computer runtime are downloaded, pinned by size and SHA-256, and the
+  database image is pulled by digest, only when **This computer** is chosen. First start measured
+  below at about a minute plus the computer runtime download; later starts take about 5 seconds.
 - Isolation is stronger than today: each computer gets its own kernel and VM instead of sharing
   Docker Desktop's VM, sits on its own network, and a firewall inside the VM keeps anything running
   on it away from the Mac, the local network and other computers. It still reaches the internet.
@@ -39,12 +40,13 @@ existed; the egress row shows the result with it.
 | Two computers on separate networks                          | Cannot reach each other; each reaches the internet                                                                                                                   |
 | VM reaching the host                                        | With the firewall: host listeners on `127.0.0.1` and `0.0.0.0` and the LAN router refused; internet, DNS and SSH to github.com work; uid 1000 cannot flush the rules |
 | `local-vm` provider, opt-in live test                       | Provisioned in 2.8 s; shared workspace contract, Chromium screenshot on the bot's display, screen URL, workspace export, stop and network cleanup all passed         |
-| Postgres 16.15 native binary (embedded-postgres build)      | `initdb` 1.7 s, start < 1 s, loopback only; all Prisma and job-queue migrations plus runtime role in 6.6 s                                                           |
+| Official `postgres:16` image as a VM (Compose's digest)     | Pull of the linux/arm64 variant only: 25 s, 151.5 MB, 452 MB unpacked. First start with init about 3 s, restarts about 2 s; published on `127.0.0.1` only            |
+| Desktop controller end to end (Node, scratch runtime)       | First start 64 s; sign-up and bot creation; restart 4.6 s with data intact; DB VM killed while ready recovered in 3.4 s; taken DB port recreated the VM, data intact  |
 | API, worker, web as Node processes                          | `/internal/health` reports `sandbox: local-vm`; Graphile worker connected; web preview served and proxied the API                                                    |
 | Sign up, create bot, `computer.boot` through the web origin | Computer running 4 s after boot; `computer.screenUrl` issued a capability URL                                                                                        |
 | Proxied screen                                              | Capability URL page served through the web proxy; its websocket returned the VNC `RFB 003.008` banner from the VM                                                    |
 | Persistence                                                 | File written in VM 1 survived `computer.stop` (checkpoint into `DATA_DIR/homes`) and was present in a brand-new VM 2 after `computer.boot`                           |
-| Memory                                                      | One running computer with Chromium: about 970 MB host RSS (2 GB cap). Native API + worker + web + Postgres together: about 245 MB                                    |
+| Memory                                                      | One computer with Chromium: about 970 MB host RSS (2 GB cap). Database VM: about 540 MB (1 GB cap). API + worker + web: under 245 MB (measured with native Postgres)  |
 
 The live provider test is `VERIFY_LOCAL_VM=1 LOCAL_VM_CLI=<path to container> pnpm exec vitest run
 packages/adapters/src/apple-container-sandbox.test.ts`. It is skipped by default and in CI.
@@ -57,7 +59,7 @@ behavior, and anything packaged or signed as part of the app.
 
 | Today (Docker Compose)                 | Mac without Docker                                                                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `postgres:16` container, named volume  | Postgres 16 binaries (downloaded), cluster in `<userData>/stack/postgres`, `listen_addresses=127.0.0.1`, random port, Unix socket disabled |
+| `postgres:16` container, named volume  | The same image and digest as a VM through the computer runtime: `rakazo-postgres` VM, network and volume, 1 GB, `127.0.0.1:<port>` only   |
 | `migrate` container (`pnpm db:deploy`) | Same migration code run by Electron-as-Node before the API starts                                                                          |
 | `api`, `worker` containers             | `dist/index.js` of each, run with `ELECTRON_RUN_AS_NODE=1` from the app binary (no separate Node)                                          |
 | `web` container (`vite preview`)       | The built web assets plus the existing screen/API proxy, served by a small Node process on loopback                                        |
@@ -75,13 +77,19 @@ A start, in order:
 1. Shares the Docker path's `.env` (generated secrets, the person's own settings), stack token and
    web URL file in `<userData>/stack`, and stops processes a crashed launch left behind (recorded in
    `run/*.pid` and checked against their command line; the database last).
-2. In parallel: the database binaries, the server bundle (`server-bundle.json` in the app's
-   resources; `RAKAZO_SERVER_BUNDLE=<local .tar.xz>` in unpackaged builds) and the computer runtime
-   (below). Each download streams to a temporary file, is checked for size and SHA-256, and only
+2. In parallel: the server bundle (`server-bundle.json` in the app's resources;
+   `RAKAZO_SERVER_BUNDLE=<local .tar.xz>` in unpackaged builds) and the computer runtime (below),
+   then the database image through that runtime (by digest, `--platform linux/arm64`, only when it
+   is missing). Each download streams to a temporary file, is checked for size and SHA-256, and only
    then unpacked into a scratch folder that is renamed to `runtime/<name>-<version>`.
-3. Creates the cluster once (`initdb` with scram-sha-256 and ICU `en-US`, then `CREATE DATABASE` in
-   single-user mode, in a scratch folder renamed into place), starts it on a loopback port with the
-   Unix socket disabled, and waits for it to report ready.
+3. Creates the database VM once: `rakazo-postgres` on a network of its own, a volume of the same
+   name with `PGDATA` in a subdirectory (the volume's root holds `lost+found`), owner and database
+   `rakazo`, and `POSTGRES_PASSWORD` passed through the CLI's environment rather than its arguments.
+   The saved port is kept while free; a taken one recreates the VM on a new port, keeping the
+   volume. A VM a crashed launch left running is stopped first, since the runtime only attaches to
+   VMs it starts. The VM then runs under `container start --attach`, so its output goes to
+   `logs/postgres.log` and the app sees it stop. The start waits for the server that listens on the
+   network: on a new volume the image's setup server also reports ready.
 4. Runs the bundle's migrate entrypoint (owner login `rakazo` with `POSTGRES_PASSWORD`, runtime
    login `rakazo_app` with `POSTGRES_APP_PASSWORD`). The owner's name is fixed rather than read
    from `POSTGRES_USER`, so it can never be the runtime login.
@@ -93,12 +101,14 @@ A start, in order:
 6. Waits for the API's `/health` and the web's authenticated stack probe, then removes unused
    runtime versions and pulls the computer image in the background.
 
-Ports are saved in `.native-ports` (database, API) and `.desktop-web-url` (web) and reused while
-free, so the web origin and its sign-in survive relaunches; a taken port is replaced and saved.
-A process that crashes after the stack is ready restarts with backoff (1 s doubling to 30 s,
-reset after a minute up); a crash during start fails the start with that process's last log lines.
-Output goes to `logs/<name>.log` (the previous launch's in `<name>.previous.log`). Quitting the app
-stops everything: SIGTERM, then the database with SIGINT (fast shutdown), SIGKILL after a grace.
+Ports are saved in `.native-ports` (database, API, and which runtime holds the database) and
+`.desktop-web-url` (web) and reused while free, so the web origin and its sign-in survive
+relaunches; a taken port is replaced and saved. A process that crashes after the stack is ready,
+the database VM included, restarts with backoff (1 s doubling to 30 s, reset after a minute up); a
+crash during start fails the start with that process's last log lines. Output goes to
+`logs/<name>.log` (the previous launch's in `<name>.previous.log`). Quitting the app stops
+everything: SIGTERM, then the database VM with SIGINT, which the runtime passes to Postgres for a
+fast clean shutdown, SIGKILL after a grace.
 
 ### Computer runtime resolution
 
@@ -115,7 +125,11 @@ labels). The app asks the registered launchd service, `/usr/local/bin/container`
    install, app and log roots under `<userData>/stack`.
 
 If our copy is running and the person later installs their own, the next start stops ours and
-starts theirs; a copy of ours older than 1.7.0 is stopped and replaced the same way. A system the
+starts theirs, unless ours holds the database; a copy of ours older than 1.7.0 is stopped and
+replaced the same way. The database volume lives in the app root of the runtime that created it, so
+once our copy holds it, ours is started in preference to the person's install. If the database is
+missing from the running system and `.native-ports` says it lives in the other one, the start fails
+asking the person to quit the running one, instead of creating an empty database. A system the
 app did not start is never stopped: one older than 1.7.0 fails the start with a message asking the
 person to update or quit it.
 
@@ -171,7 +185,7 @@ Nothing below is in the app download. All of it is fetched the first time **This
 | Component                                       | Download | On disk | Source                                                            |
 | ----------------------------------------------- | -------- | ------- | ----------------------------------------------------------------- |
 | Server bundle (API, worker, web, migrations)    | 117 MB   | ~900 MB | This release's GitHub asset, pinned by `server-bundle.json`       |
-| Postgres 16.15 binaries                         | 62 MB    | ~110 MB | Maven Central (`io.zonky.test` embedded binaries), pinned in code |
+| Postgres 16 image (linux/arm64)                 | 152 MB   | 452 MB  | Docker Hub through the runtime, Compose's digest pinned in code   |
 | Computer runtime 1.7.1 (only when none is used) | 170 MB   | 182 MB  | Apple's signed release package, pinned in code                    |
 | Linux kernel for the VMs                        | ~30 MB   | ~30 MB  | Fetched by the runtime itself on its first start                  |
 | Computer image                                  | —        | 1.58 GB | Pulled in the background once the stack is ready                  |
@@ -183,10 +197,10 @@ computer runtime that was already running:
 
 | Run                                                             | Time to ready           |
 | --------------------------------------------------------------- | ----------------------- |
-| First start (database download, bundle unpack, migrations)      | 55 s                    |
-| Later start                                                     | 4 s                     |
-| Later start after a crashed launch left processes behind        | 4.5 s                   |
-| Move from a Docker stack (dump, restore, file copy, migrations) | 9 s (small sample data) |
+| First start (database image pull, bundle unpack, init, migrations) | 64 s                 |
+| Later start                                                     | 4.6 s                   |
+| Database VM killed while ready, until sign-in works again       | 3.4 s                   |
+| Move from a Docker stack (dump, restore, file copy)             | 13 s (small sample data) |
 | Computer runtime package: download, verify, expand              | 47 s                    |
 
 A first start that also downloads the runtime adds its 47 s in parallel with the other downloads,
@@ -195,29 +209,32 @@ plus the kernel download on its first start (about 45 s measured). The computer 
 
 ## Upgrade and data directory
 
-- Layout under `<userData>/stack`: `postgres/` (cluster), `data/` (`DATA_DIR`: homes, revisions),
-  `vm/` (the runtime's app root: images, kernels, networks), plus the existing secrets and token
-  files.
+- Layout under `<userData>/stack`: `data/` (`DATA_DIR`: homes, revisions), `vm/` (our runtime's
+  app root: images, kernels, networks, and the database volume when ours holds it), plus the
+  existing secrets and token files. With the person's own runtime, the volume lives in its app root.
 - App updates run migrations with the same rules as servers (the previous release must still work),
   then restart the processes. No rolling deploy is needed on one machine.
-- Postgres major upgrades: keep the old major's binaries for one release and run `pg_upgrade`, the
-  native equivalent of `infra/compose/upgrade-postgres.sh`. Until then pin 16, as Compose does.
+- Postgres major upgrades: the same move as `infra/compose/upgrade-postgres.sh`, run through the
+  runtime: dump every role and database from the 16 VM, restore into the new major on a new volume,
+  check, then switch. Not built yet; until then the image stays pinned to 16 by digest, as in
+  Compose.
 - Computer image updates: the existing **Update computer** flow rebuilds from the configured image;
   the app pins the image tag of its own version.
 - Docker users: when a Docker stack exists (its compose file is in the stack folder), no native
-  database exists yet, the saved setup is **This computer** and Docker answers, the app asks once
-  ("Run Rakazo without Docker?" with **Move** and **Keep Docker**) and remembers the answer in
-  `.desktop-stack-choice`. **Keep Docker** keeps today's path. **Move** keeps the same `.env`
-  (so `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY` and the other secrets carry over) and, on the next
-  start, after the new database is up and before migrations: stops the Docker API, worker, web
-  and supervisor, creates the `rakazo_app` role in the new database, then inside the Docker
-  database container pipes `pg_dump --format=custom` into `pg_restore --no-owner --exit-on-error`
-  against the native database at `host.docker.internal` (credentials in the environment, never on
-  a command line), copies `/data` out of the stopped API container with `docker cp`, and stops the
-  whole Docker stack without removing it or its volumes. Only then is the move marked done
-  (`postgres/.docker-imported`). If any step fails the Docker services it stopped are started
-  again, the new database is removed, the Docker data is untouched and **Retry** runs the move again; a move cut short by a quit or crash has no marker, so
-  the next start discards the partial database and copied files and runs it again.
+  stack exists yet (`.native-ports`), the saved setup is **This computer** and Docker answers, the
+  app asks once ("Run Rakazo without Docker?" with **Move** and **Keep Docker**) and remembers the
+  answer in `.desktop-stack-choice`. **Keep Docker** keeps today's path. **Move** keeps the same
+  `.env` (so `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY` and the other secrets carry over) and, on the
+  next start, after the database VM is up and before migrations: empties the `rakazo` database,
+  stops the Docker API, worker, web and supervisor, creates the `rakazo_app` role if it is missing,
+  then streams `pg_dump --format=custom` from the Docker database container through the app into
+  `pg_restore --no-owner --exit-on-error` in the database VM. Both run each database's own tools
+  over its local socket, so no password is used and no shell runs on the Mac. It then copies `/data`
+  out of the stopped API container with `docker cp` and stops the whole Docker stack without
+  removing it or its volumes. Only then is the move marked done (`.docker-imported`). If any step
+  fails the Docker services it stopped are started again, the Docker data is untouched and
+  **Retry** runs the move again; without the marker, a move cut short by a quit or crash is rerun on
+  the next start from an emptied database and copied files.
 - Computers re-provision from saved homes because the provider kind changes, which the lifecycle
   already handles.
 - Rollback to Docker: the Docker stack and its volumes are left in place; nothing moves back
@@ -232,7 +249,8 @@ plus the kernel download on its first start (about 45 s measured). The computer 
 | Egress restriction    | Unsupported on Docker Desktop (`open`)                                    | Always on: public internet only, enforced inside each VM; a bot that gained root in its VM could lift it |
 | Privileged component  | Supervisor holds the Docker socket, root-equivalent on the Docker VM      | No socket. The API and worker can create VMs as the signed-in user, nothing more                         |
 | Server processes      | Inside the Docker VM                                                      | Run as the user on the host, bound to loopback. They are our code; bot commands still only run in VMs    |
-| Third-party code      | Docker Desktop (user-installed)                                           | Apple's signed `container` and zonky's Postgres 16 build, downloaded on demand and pinned by SHA-256     |
+| Database              | Container on a Compose network only the server containers join            | A VM on its own network, published only on the Mac's `127.0.0.1`; computers cannot reach it. Its own egress is not firewalled (the official image has no `nft`); it runs only Postgres |
+| Third-party code      | Docker Desktop (user-installed)                                           | Apple's signed `container`, pinned by SHA-256, and the official `postgres:16` image at Compose's digest |
 
 The native server processes do gain the user's file access. Bot commands never run on the host
 unless the user turns on the existing local computer access, which is unchanged.
@@ -246,7 +264,10 @@ unless the user turns on the existing local computer access, which is unchanged.
 - Requested CPUs are a soft hint: one VM reported 3 CPUs when 2 were asked.
 - `container`'s services use fixed `com.apple.container.*` launchd labels, so the app shares a
   running system instead of starting a second one (see runtime resolution). Our resources are
-  namespaced (`rakazo-` names, the `rakazo.bot-id` label), so we never touch the person's own.
+  namespaced (`rakazo-` names, the `rakazo.bot-id` label), so we never touch the person's own. The
+  database VM, network and volume are `rakazo-postgres` with no bot label; the `local-vm` provider
+  only removes VMs labelled for a bot, so its cleanup never touches them. One runtime holds one
+  native stack's database.
 - Worker jobs running at quit get a short grace (not Compose's 50 minutes) before the process is
   killed; their locks expire as after any crash.
 - `SANDBOX_PROVIDER` is always `local-vm` on this path, whatever the shared `.env` says.
@@ -261,9 +282,8 @@ unless the user turns on the existing local computer access, which is unchanged.
 - Starting our own downloaded runtime copy with only the four kept plugins (a system was already
   running on the test Mac and only one can run at a time); the download, signature check and
   expansion were run for real.
-- The Docker move against Docker Desktop: verified on OrbStack, where `host.docker.internal` reaches
-  a listener bound to the Mac's `127.0.0.1`. Docker Desktop documents the same forwarding but was
-  not tried.
+- The Docker move against Docker Desktop: verified on OrbStack only. It uses `docker compose exec`
+  and `docker cp` streams, nothing specific to how Docker reaches the Mac.
 - A full computer boot through the desktop controller: the published `edge` computer image has no
   `nft` yet, so `local-vm` failed closed with its error, as designed. The provider's live test did
   boot a locally built image with `nft` and passed with the firewall on. Computers start once an
@@ -277,6 +297,8 @@ unless the user turns on the existing local computer access, which is unchanged.
 - A `container` system the person already runs or installed is reused; ours is downloaded only when
   there is none.
 - Existing Docker users are offered the move once.
+- The database is the official `postgres:16` image at the same digest as Compose, run through the
+  computer runtime. It replaces the test-fixture Postgres binaries the first version downloaded.
 
 ## Later
 
