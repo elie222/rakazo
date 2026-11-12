@@ -15,6 +15,7 @@ import {
   CodexCatalogCache,
   configuredEmailProvider,
   contentKeyProviderFromEnv,
+  coreBuiltinToolNames,
   createAgentHomeStore,
   createApnsActivityProvider,
   createApnsVoipProvider,
@@ -85,6 +86,10 @@ import { watchEventLoopStalls } from "@rakazo/logging/event-loop";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
 const logger = await createRootLogger(SERVICE_NAMES.worker);
+
+// The list is otherwise first read when a run selects tools; force it so startup logs which
+// list (default, override or fallback) this process will serve.
+coreBuiltinToolNames();
 
 async function main() {
   const stopStallWatch = watchEventLoopStalls("worker.event_loop_stalled");

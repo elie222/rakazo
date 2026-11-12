@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  CORE_BUILTIN_TOOL_NAMES,
-  FIND_TOOL,
-  findTools,
-  partitionTools,
-  USE_TOOL,
-} from "./builtin-tool-bridge.js";
+import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
+import { coreBuiltinToolNames } from "./core-tools.js";
 import { describeToolActivity } from "./pi-runtime-tools.js";
 import { BUILTIN_AGENT_TOOL_NAMES, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
@@ -34,6 +29,7 @@ describe("built-in tool bridge", () => {
       "ask_user",
       "attach_file",
       "connect_app",
+      "create_page",
       "find_tool",
       "list_files",
       "message_user",
@@ -59,18 +55,24 @@ describe("built-in tool bridge", () => {
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
     // read_file takes a line range; ask_user carries the content being decided about;
     // search_history lists earlier tool work by kind without a keyword.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_579);
+    // create_page was added to the core list (+966); schedule_create was trimmed back (-177),
+    // so the measured listed is 33545; the cap rounds up to 33600 for a little headroom.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(33_600);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
   });
 
-  it("names only real built-ins as core", () => {
-    for (const name of CORE_BUILTIN_TOOL_NAMES) expect(BUILTIN_AGENT_TOOL_NAMES).toContain(name);
+  it("names only real built-ins or the bridge tools as core", () => {
+    const core = coreBuiltinToolNames().names;
+    for (const name of core)
+      expect(BUILTIN_AGENT_TOOL_NAMES.has(name) || name === FIND_TOOL || name === USE_TOOL).toBe(
+        true,
+      );
   });
 
   it("lists every tool when none is deferred", () => {
-    const core = ownerChat.filter((tool) => CORE_BUILTIN_TOOL_NAMES.has(tool.name));
+    const core = ownerChat.filter((tool) => coreBuiltinToolNames().names.has(tool.name));
     expect(partitionTools(core)).toEqual({ listed: core, deferred: [] });
   });
 

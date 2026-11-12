@@ -663,7 +663,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "render_plot",
     description:
-      'Render a chart from tabular data as a PNG and attach it to the chat. Backed by Observable Plot: bar, line, area, scatter, histogram, heatmap, box plot, facets, and more via a declarative JSON spec. Call with {"charts": true} FIRST to list every chart type with a complete runnable example spec ({"charts": "<keyword>"} searches), then copy the closest example and substitute your rows and columns. {"help": true} returns the full guide. Pass rows inline as data, or data_path for a .csv/.tsv/.json file in your home.',
+      'Render a chart from tabular data as a PNG attached to chat, backed by Observable Plot (bar, line, area, scatter, histogram, heatmap, box plot, facets, and more) via a declarative spec. Call with {"charts": true} first to list every chart type with a runnable example spec \u2014 search with {"charts": "trend"} \u2014 then copy the closest and substitute your rows. A minimal spec is {"x": "day", "y": "sales", "marks": [{"type": "bar"}]}. Pass rows inline as data (objects) or via data_path for a .csv/.tsv/.json file in your home; set "attach": false to save to path without sending it. {"help": true} returns the full guide.',
     inputSchema: {
       type: "object",
       properties: {
@@ -701,16 +701,29 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "create_page",
+    description:
+      `Create a page the user opens from the chat — a dashboard, report, tracker or comparison — in one call, giving both a title and the page as source. source is the whole page as a JSX string with exactly one export default; kit components and React hooks are already in scope, so no imports. Minimal: {"title": "Sunny", "source": "<Page title='Sunny'><Section heading='Welcome'><Text>Hello World</Text></Section></Page>"}. {"help": true} returns the kit guide. After you create it, mention it in your reply as [Sunny](page:PAGE_ID) so the user can open it. Use save_page only to read or change a page that already exists.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        help: { type: "boolean", description: "Return the page kit guide instead of creating." },
+        title: { type: "string", description: "Page title, 1 to 200 characters." },
+        source: { type: "string", description: "The whole page as JSX." },
+      },
+      required: ["title", "source"],
+    },
+  },
+  {
     name: "save_page",
     description:
-      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
+      `Change a page the user opened from the chat, or read its current source — but to make a new page, use create_page with both a title and the page as source, not save_page. To change one, pass its pageId with edits (each find must occur once) or the whole new source. Pass only pageId to read the current source. Problems return with line numbers and nothing is saved. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.`,
     inputSchema: {
       type: "object",
       properties: {
         help: { type: "boolean", description: "Return the page kit guide instead of saving." },
         pageId: { type: "string", description: "The page to read or update." },
-        title: { type: "string", description: "Page title; required for a new page." },
-        source: { type: "string", description: "The whole page as JSX." },
+        source: { type: "string", description: "The whole page as JSX, to replace the current source." },
         edits: {
           type: "array",
           description: "Changes to the current source; each find must occur exactly once.",

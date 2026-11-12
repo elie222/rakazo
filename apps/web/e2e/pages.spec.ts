@@ -73,7 +73,7 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
     </Page>;
   }
   export default CalendarPage;`;
-  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  await send(page, `call create_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
   const card = page.getByTestId("page-card");
   await expect(card).toHaveCount(1, { timeout: 30_000 });
   await card.getByRole("button", { name: `Open ${title}` }).click();
@@ -142,7 +142,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   const title = "Test dashboard (example data)";
   await send(
     page,
-    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say I made a ${title} with made-up example data.`,
+    `call create_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say I made a ${title} with made-up example data.`,
   );
   const card = page.getByTestId("page-card");
   await expect(card).toHaveCount(1, { timeout: 30_000 });
@@ -374,7 +374,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
 
   await send(
     page,
-    `call save_page with ${JSON.stringify({ pageId, title: "Signups dashboard", source: dashboard("1.9%") })}\nthen say Updated [Signups dashboard](page:${pageId}) with the new churn figure.`,
+    `call save_page with ${JSON.stringify({ pageId, source: dashboard("1.9%") })}\nthen say Updated [Signups dashboard](page:${pageId}) with the new churn figure.`,
   );
   // Anyone with the link would see the change at once, so the bot asks first. The sidebar's
   // unread preview can show the same words, so look for the card in the transcript.
@@ -500,7 +500,7 @@ test("in the macOS app a page's top row sits below the window controls and its c
   const title = "Test dashboard (example data)";
   await send(
     page,
-    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say done.`,
+    `call create_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say done.`,
   );
   await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
   // The desktop app's bridge on macOS, whose traffic lights sit 16px in from the top left.
@@ -565,7 +565,7 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   const save = async (title: string) => {
     await send(
       page,
-      `call save_page with ${JSON.stringify({ title, source: tiny(title) })}\nthen say Made ${title}.`,
+      `call create_page with ${JSON.stringify({ title, source: tiny(title) })}\nthen say Made ${title}.`,
     );
     await expect(cards.filter({ hasText: title })).toHaveCount(1, { timeout: 30_000 });
   };
@@ -851,7 +851,7 @@ test("a group's pages show in its settings, and the palette finds and opens a pa
 
   await send(
     page,
-    `@Planner call save_page with ${JSON.stringify({ title: "Launch checklist", source: tiny("Launch checklist") })}\nthen say Made the Launch checklist.`,
+    `@Planner call create_page with ${JSON.stringify({ title: "Launch checklist", source: tiny("Launch checklist") })}\nthen say Made the Launch checklist.`,
   );
   await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
   await page.getByTestId("bot-settings-trigger").click();
@@ -939,7 +939,7 @@ test("a page acts for its reader only after a click in it, never on load or from
 
   await send(
     page,
-    `call save_page with ${JSON.stringify({ title: "Rogue", source: ROGUE })}\nthen say Done.`,
+    `call create_page with ${JSON.stringify({ title: "Rogue", source: ROGUE })}\nthen say Done.`,
   );
   const card = page.getByTestId("page-card");
   await expect(card).toHaveCount(1, { timeout: 30_000 });

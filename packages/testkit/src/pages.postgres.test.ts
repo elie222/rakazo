@@ -27,6 +27,13 @@ let harness: BotIntroHarness | undefined;
 const page = (heading: string) =>
   `const App = () => (\n  <Page title="${heading}">\n    <Metrics metrics={[{ value: "42", label: "Users" }]} />\n  </Page>\n);\nexport default App;\n`;
 
+// A call with a source and no pageId makes a page (create_page); a pageId edits or reads one
+// (save_page), as does {"help": true}.
+const pageCall = (args: unknown): "create_page" | "save_page" =>
+  typeof args === "object" && args !== null && !("pageId" in args) && "source" in args
+    ? "create_page"
+    : "save_page";
+
 describePages("pages", () => {
   let app: App;
   let stop: () => Promise<void>;
@@ -97,11 +104,11 @@ describePages("pages", () => {
     return effect?.result as Record<string, unknown> | undefined;
   };
 
-  it("saves, edits and guards pages through the bot's save_page", async () => {
+  it("saves, edits and guards pages through the page tools", async () => {
     const cookie = await signup(app, `pages-${stamp}@rakazo.test`, "Page Owner");
     const bot = await createBot(app, cookie, "Reporter");
     const save = (args: unknown, botId = bot.id, as = cookie) =>
-      sendAndWait(app, as, botId, { text: `call save_page with ${JSON.stringify(args)}` });
+      sendAndWait(app, as, botId, { text: `call ${pageCall(args)} with ${JSON.stringify(args)}` });
 
     await save({ help: true });
     expect((await lastResult(bot.id))?.guide).toContain("export default");
@@ -248,7 +255,7 @@ describePages("pages", () => {
     const maker = await createBot(app, cookie, "Maker");
     const other = await createBot(app, cookie, "Other");
     const save = (botId: string, args: unknown) =>
-      sendAndWait(app, cookie, botId, { text: `call save_page with ${JSON.stringify(args)}` });
+      sendAndWait(app, cookie, botId, { text: `call ${pageCall(args)} with ${JSON.stringify(args)}` });
     await save(maker.id, { title: "Private plan", source: page("Mine") });
     const { pageId } = (await lastResult(maker.id)) as { pageId: string };
     const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
@@ -259,7 +266,7 @@ describePages("pages", () => {
       const before = await db().run.count({ where: { threadId: group.threadId, botId: bot.id } });
       await rpc(app, cookie, "threads/send", {
         groupId: group.id,
-        text: `@${name} call save_page with ${JSON.stringify(args)}`,
+        text: `@${name} call ${pageCall(args)} with ${JSON.stringify(args)}`,
         mentions: [{ kind: "bot", id: bot.id }],
       });
       await expect
@@ -316,7 +323,7 @@ describePages("pages", () => {
     const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
       botId: bot.id,
       name: "Hourly board",
-      prompt: `call save_page with ${JSON.stringify({ title: "Hourly board", source: page("v1") })}`,
+      prompt: `call create_page with ${JSON.stringify({ title: "Hourly board", source: page("v1") })}`,
       crons: ["0 * * * *"],
       timezone: "UTC",
       notify: true,
@@ -377,7 +384,7 @@ describePages("pages", () => {
       [other.id, "Elsewhere"],
     ] as const) {
       await sendAndWait(app, cookie, botId, {
-        text: `call save_page with ${JSON.stringify({ title, source: page(title) })}`,
+        text: `call create_page with ${JSON.stringify({ title, source: page(title) })}`,
       });
       ids.push((await lastResult(botId))!.pageId as string);
     }
@@ -509,7 +516,7 @@ describePages("pages", () => {
     const bot = await createBot(app, cookie, "Racer");
     const partner = await createBot(app, cookie, "Partner");
     await sendAndWait(app, cookie, bot.id, {
-      text: `call save_page with ${JSON.stringify({ title: "Race", source: page("Race") })}`,
+      text: `call create_page with ${JSON.stringify({ title: "Race", source: page("Race") })}`,
     });
     const pageId = (await lastResult(bot.id))!.pageId as string;
     const share = (visibility: "private" | "link") =>
@@ -538,7 +545,7 @@ describePages("pages", () => {
 
     // Removing while a link is being turned on leaves no sealed token behind.
     await sendAndWait(app, cookie, bot.id, {
-      text: `call save_page with ${JSON.stringify({ title: "Gone", source: page("Gone") })}`,
+      text: `call create_page with ${JSON.stringify({ title: "Gone", source: page("Gone") })}`,
     });
     const goneId = (await lastResult(bot.id))!.pageId as string;
     const before = await secrets();
@@ -633,7 +640,7 @@ describePages("pages", () => {
     const third = await createBot(app, cookie, "Also staying");
     const saved = async (title: string) => {
       await sendAndWait(app, cookie, bot.id, {
-        text: `call save_page with ${JSON.stringify({ title, source: page(title) })}`,
+        text: `call create_page with ${JSON.stringify({ title, source: page(title) })}`,
       });
       const pageId = (await lastResult(bot.id))!.pageId as string;
       const link = await rpc<{ shareUrl: string }>(app, cookie, "pages/setVisibility", {
@@ -667,7 +674,7 @@ describePages("pages", () => {
     const builder = await createBot(app, cookie, "Builder");
     const args = { title: "Peer report", source: page("Peer report") };
     await sendAndWait(app, cookie, asker.id, {
-      text: `message the bot named Builder saying call save_page with ${JSON.stringify(args)}`,
+      text: `message the bot named Builder saying call ${pageCall(args)} with ${JSON.stringify(args)}`,
     });
     const start = Date.now();
     let blocks: unknown[] = [];
@@ -876,7 +883,7 @@ describePages("pages", () => {
     const first = await createBot(app, cookie, "First");
     const second = await createBot(app, cookie, "Second");
     await sendAndWait(app, cookie, first.id, {
-      text: `call save_page with ${JSON.stringify({ title: "Race", source: page("One") })}`,
+      text: `call create_page with ${JSON.stringify({ title: "Race", source: page("One") })}`,
     });
     const pageId = (await lastResult(first.id))!.pageId as string;
     // A page of both bots' group: its maker saves from its own chat, the other in the group.
@@ -930,7 +937,7 @@ describePages("pages", () => {
     const cookie = await signup(app, `pages-export-race-${stamp}@rakazo.test`, "Export Racer");
     const bot = await createBot(app, cookie, "Builder");
     await sendAndWait(app, cookie, bot.id, {
-      text: `call save_page with ${JSON.stringify({ title: "Plan", source: page("One") })}`,
+      text: `call create_page with ${JSON.stringify({ title: "Plan", source: page("One") })}`,
     });
     const pageId = (await lastResult(bot.id))!.pageId as string;
     const confirmed = await app.request("/api/auth/confirm-identity", {
@@ -976,7 +983,7 @@ describePages("pages", () => {
     const cookie = await signup(app, `pages-rename-race-${stamp}@rakazo.test`, "Rename Racer");
     const bot = await createBot(app, cookie, "Builder");
     await sendAndWait(app, cookie, bot.id, {
-      text: `call save_page with ${JSON.stringify({ title: "Q3 plan", source: page("One") })}`,
+      text: `call create_page with ${JSON.stringify({ title: "Q3 plan", source: page("One") })}`,
     });
     const pageId = (await lastResult(bot.id))!.pageId as string;
     const edits = [{ find: 'title="One"', replace: 'title="Two"' }];
