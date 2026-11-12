@@ -452,6 +452,24 @@ describe("recall outcome grading", () => {
     expect(uptime!.grade(evidence([ran], "Up 3 days.")).map((c) => c.pass)).toEqual([true]);
     expect(uptime!.judge).toBeUndefined();
     expect(signOff!.judge!(evidence([], "Bye")).rubric).toContain(RECALL_JUDGE_VERSION);
+    writeFileSync(
+      file,
+      JSON.stringify([
+        {
+          id: "recall-file-install",
+          purpose: "an install question",
+          messages: [
+            { role: "user", text: "Dark pages?" },
+            { role: "bot", text: "Installed Night Owl.", steps },
+          ],
+          ask: "Did you install an extension?",
+          expect: { kind: "rubric", rubric: "installed" },
+        },
+      ]),
+    );
+    const [install] = loadRecallCases(file);
+    const record = (install!.judge!(evidence([], "Yes")).evidence as { record: string }).record;
+    expect(record).toContain("Installed Night Owl.");
     const badPattern = {
       id: "recall-file-bad",
       purpose: "x",

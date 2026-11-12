@@ -159,8 +159,8 @@ const overclaimInput = (
   evidence: { message, reply, record, checks },
 });
 
-/** A reply that did its work with tools, followed by unrelated chat; see issue #3683. */
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A reply that did its work with tools, followed by unrelated chat; see issue #3683. */
 export const TOOL_STEPS_FIXTURE_VERSION = "recall-tool-steps-v6";
 type Earlier = Pick<HistoryMessage, "text" | "steps">[];
 const OPENING = [
@@ -1581,7 +1581,16 @@ function recallCaseFromFile(entry: RecallFileCase): EvalCase {
     grade: (e) =>
       expect.kind === "needs-tool" ? [checkedNow(e, new RegExp(expect.command, "i"))] : [],
     ...(expect.kind === "rubric"
-      ? { judge: (e: Evidence) => judgeInput(expect.rubric, e.text) }
+      ? {
+          // An install rubric judges the reply against this case's own chat and checks.
+          judge: (e: Evidence) =>
+            judgeInput(
+              expect.rubric,
+              e.text,
+              checksText(e, computer),
+              recordText(history.messages),
+            ),
+        }
       : {}),
     observe: (e) => ({
       "copied-marker": copiedMarker(e),
