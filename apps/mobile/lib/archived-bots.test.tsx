@@ -317,6 +317,7 @@ describe("archived chat read failures", () => {
       focus.current!();
     });
     // The stale refresh is restarted after the change, and the server no longer lists the bot.
+    if (action === "Delete") rpc.mockResolvedValueOnce([]);
     rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
     const button = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === action,
@@ -603,6 +604,7 @@ describe("archived chat read failures", () => {
         (item) => item.textContent === "Try again",
       )!;
       await act(async () => retry.click());
+      if (action === "Delete") rpc.mockResolvedValueOnce([]);
       rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
       groupRpc.mockResolvedValueOnce([group]);
       const button = [...container.querySelectorAll("button")].find(

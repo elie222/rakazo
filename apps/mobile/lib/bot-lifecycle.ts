@@ -7,13 +7,35 @@ import { notifyConversationCleared } from "./conversation-cleared";
 import { removeFromSearchInbox } from "./search-inbox";
 import { errorText } from "./user-error";
 
-export function confirmDeleteBot(
+export async function confirmDeleteBot(
   bot: { id: string; name: string },
   onDeleted: () => void,
   // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
   current: () => boolean = () => true,
   requestContext?: ApiRequestContext,
 ) {
+  // Native alerts cannot update their message: resolve the preview before opening one.
+  let groupWarning = "";
+  try {
+    const groups = requestContext
+      ? await rpc(
+          "bots/removePreview",
+          { botId: bot.id },
+          { requestContext, skipSpaceAuthRecovery: true },
+        )
+      : await rpc("bots/removePreview", { botId: bot.id });
+    const names = groups.map((group) => group.name).join(", ");
+    if (groups.length === 1) {
+      groupWarning = t`The group ${ph({ names })} will be deleted too, including its messages, files, and pages.`;
+    } else if (groups.length > 1) {
+      groupWarning = t`The groups ${ph({ names })} will be deleted too, including their messages, files, and pages.`;
+    }
+  } catch {
+    // Match the web dialog: a failed preview warns generally rather than hiding the risk.
+    groupWarning = t`Groups left with fewer than two bots are deleted too, including their messages, files, and pages.`;
+  }
+  if (!current()) return;
+
   const remove = async (deleteMemories: boolean) => {
     try {
       if (requestContext) {
@@ -34,7 +56,12 @@ export function confirmDeleteBot(
 
   Alert.alert(
     t`Delete ${ph({ name: bot.name })}?`,
-    t`Its conversation, files, and routines will be permanently deleted. What should happen to its memories?`,
+    [
+      t`Its conversation, files, and routines will be permanently deleted. What should happen to its memories?`,
+      groupWarning,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
     [
       { text: t`Cancel`, style: "cancel" },
       { text: t`Keep memories`, style: "destructive", onPress: () => void remove(false) },

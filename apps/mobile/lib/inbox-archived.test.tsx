@@ -339,8 +339,9 @@ describe("bot profile menu archive notifications", () => {
   it("notifies after confirmed deletion succeeds", async () => {
     const { listener, stop } = listenForArchiveChanges();
     const action = renderActions();
-    mocks.rpc.mockResolvedValueOnce({});
+    mocks.rpc.mockResolvedValueOnce([]).mockResolvedValueOnce({});
     action("Delete…").onPress();
+    await flush();
     expect(listener).not.toHaveBeenCalled();
     alertButton(0, "Keep memories").onPress!();
     await flush();
