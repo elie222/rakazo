@@ -245,12 +245,15 @@ const FIND = /\b(?:find|locate)\b[^;&|]*(?:Extensions|chromium|midnight|lizard|m
  * the home folder: the starting folders and depths bots used, each too shallow to reach it.
  */
 const SHALLOW_FIND =
-  /\bfind\s+(?:(?:~|"?\$HOME"?|\.|\/home\/rakazo)\/?\s[^;&|]*-maxdepth\s+[1-6]\b|"?(?:~|\$HOME)\/\.config"?\/?\s[^;&|]*-maxdepth\s+[1-5]\b|"?(?:~|\$HOME)\/\.config\/chromium"?\/?\s[^;&|]*-maxdepth\s+[1-4]\b|\/\s[^;&|]*-maxdepth\s+[1-8]\b)/;
+  /\bfind\s+(?=[^;&|]*manifest)(?:(?:~|"?\$HOME"?|\.|\/home\/rakazo)\/?\s[^;&|]*-maxdepth\s+[1-6]\b|"?(?:~|\$HOME)\/\.config"?\/?\s[^;&|]*-maxdepth\s+[1-5]\b|"?(?:~|\$HOME)\/\.config\/chromium"?\/?\s[^;&|]*-maxdepth\s+[1-4]\b|\/\s[^;&|]*-maxdepth\s+[1-8]\b)/;
+/** A find of the Preferences file piped to `xargs grep -l` for the extension: that file matches. */
+const FIND_PREFERENCES_GREP =
+  /\bfind\b[^;&|]*-name\s+["']?Preferences["']?[^;&|]*\|\s*xargs\s+grep\s+(?:-\w+\s+)*-\w*l\w*\s[^;&|]*(?:midnight|lizard)/i;
 /** A shallow find piped to `xargs grep`: nothing found, so nothing matches. */
 const SHALLOW_FIND_GREP = new RegExp(`${SHALLOW_FIND.source}[^;&]*\\|\\s*xargs\\s+grep\\b`);
 /** A find of the extension's manifest piped to `xargs grep -l` for its name: the manifest matches. */
 const FIND_GREP_NAME = new RegExp(
-  `^(?![^;&]*${SHALLOW_FIND.source.slice(2)})[^;&]*\\bfind\\b[^;&|]*\\|\\s*xargs\\s+grep\\s[^;&|]*(?:midnight|lizard)`,
+  `^(?![^;&]*${SHALLOW_FIND.source.slice(2)})[^;&]*\\bfind\\b[^;&|]*manifest[^;&|]*\\|\\s*xargs\\s+grep\\s+(?:-\\w+\\s+)*-\\w*l\\w*\\s[^;&|]*(?:midnight|lizard)`,
   "i",
 );
 /** A recursive search for the extension; a search of one Preferences file is answered by that file. */
@@ -324,6 +327,7 @@ const INSTALLED_COMPUTER: ComputerScript = {
     ...HOME,
     { match: /\bls\b[^;&|]*Extensions\/[a-p]{32}/, output: "10.7.1_0" },
     { match: /\bls\b[^;&|]*Extensions/, output: EXTENSION_ID },
+    { match: FIND_PREFERENCES_GREP, output: `${PROFILE}/Preferences`, whole: true },
     { match: SHALLOW_FIND_GREP, output: "", exitCode: 1, whole: true },
     { match: FIND_GREP_NAME, output: MANIFEST, whole: true },
     { match: SHALLOW_FIND, output: "" },
@@ -336,6 +340,12 @@ const INSTALLED_COMPUTER: ComputerScript = {
         '{\n  "name": "Midnight Lizard",\n  "version": "10.7.1",\n  "manifest_version": 3,\n  "description": "Color schemes and dark mode for web pages."\n}',
     },
     // Which files match: Preferences does.
+    {
+      // A recursive search of the profile's folders and its Preferences finds both.
+      match:
+        /\bgrep\b[^;&|]*\s-\w*[rR]\w*\s[^;&|]*(?:midnight|lizard)[^;&|]*(?:Extensions|chromium)\/?\s[^;&|]*Preferences/i,
+      output: `${MANIFEST}\n${PROFILE}/Preferences`,
+    },
     {
       match: /\bgrep\b[^;&|]*\s-\w*l\w*\s[^;&|]*(?:midnight|lizard|pbnh)[^;&|]*Preferences/i,
       output: `${PROFILE}/Preferences`,

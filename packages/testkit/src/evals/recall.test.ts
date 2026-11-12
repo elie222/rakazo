@@ -309,6 +309,19 @@ describe("recall outcome grading", () => {
       scriptedShell(computer, "find ~ -maxdepth 6 -name manifest.json | xargs grep -l midnight")
         ?.stdout,
     ).toBe("");
+    // Recorded searches that include Preferences list what a real shell would.
+    expect(
+      scriptedShell(
+        computer,
+        'grep -ril "midnight" ~/.config/chromium/Default/Extensions ~/.config/chromium/Default/Preferences 2>/dev/null | head',
+      )?.stdout.split("\n"),
+    ).toEqual([expect.stringContaining("manifest.json"), expect.stringContaining("Preferences")]);
+    expect(
+      scriptedShell(
+        computer,
+        "find ~ -maxdepth 6 -name Preferences 2>/dev/null | xargs grep -l -i lizard 2>/dev/null | head",
+      )?.stdout,
+    ).toBe("/home/rakazo/.config/chromium/Default/Preferences");
     // A grep -l of Preferences for something it doesn't hold lists nothing.
     expect(
       scriptedShell(computer, "grep -l -i firefox ~/.config/chromium/Default/Preferences")?.stdout,
