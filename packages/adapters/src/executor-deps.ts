@@ -25,12 +25,14 @@ import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
+import type { AgentLoopSettings } from "./agent-loop-settings.js";
 
 export interface ExecutorDeps {
   /** The present moment the agent is told; evals move it to a follow-up's due time. */
   now?: () => Date;
   maxUploadSizeBytes?: number;
   contextStrategy?: AgentContextStrategy;
+  agentLoop?: AgentLoopSettings;
   prisma: PrismaClient;
   events: ThreadEvents;
   runtime: AgentRuntime;

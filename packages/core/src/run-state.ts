@@ -133,6 +133,9 @@ export const COMPUTER_USING_RUNS = { trigger: { not: BACKGROUND_HELPER_TRIGGER }
 /** Prompt of a run created to answer messages that waited behind another turn. */
 export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering context.";
 
+/** Automated continuation when scratchpad open work remains after a conversational reply. */
+export const OPEN_WORK_LOOP_TRIGGER = "open_work_loop";
+
 /** Routine runs and the creation intro stay isolated from thread history. */
 export function runReadsThreadHistory(trigger: string | null | undefined): boolean {
   return trigger !== "created" && trigger !== "routine";

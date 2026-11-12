@@ -1,6 +1,7 @@
 export * from "./advisory-lock.js";
 export * from "./agent-connections.js";
 export * from "./agent-environment.js";
+export * from "./agent-loop-settings.js";
 export * from "./agent-import-settings.js";
 export * from "./ai-consent.js";
 export type { ApnsVoipConfig } from "./apns-voip.js";
@@ -145,6 +146,7 @@ export * from "./model-vision.js";
 export * from "./none-sandbox.js";
 export * from "./novita-sandbox.js";
 export * from "./novita-template.js";
+export * from "./open-work-loop.js";
 export * from "./openai-compatible-url.js";
 export * from "./openai-compatible-voice.js";
 export * from "./openai-voice.js";
