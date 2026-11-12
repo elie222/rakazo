@@ -34,7 +34,7 @@ class FakeChild extends EventEmitter {
   stderr = new PassThrough();
   exitCode: number | null = null;
   constructor(
-    readonly pid: number,
+    readonly pid: number | undefined,
     readonly args: string[],
     readonly env: Record<string, string>,
   ) {
@@ -48,6 +48,13 @@ class FakeChild extends EventEmitter {
     if (this.exitCode !== null) return;
     this.exitCode = 0;
     queueMicrotask(() => this.emit("exit", 0, null));
+  }
+  /** What Node does when the binary cannot be spawned: `error` and `close`, never `exit`. */
+  failToSpawn() {
+    queueMicrotask(() => {
+      this.emit("error", new Error("spawn ENOENT"));
+      this.emit("close", -2, null);
+    });
   }
 }
 
@@ -214,11 +221,48 @@ describe("NativeStackController", () => {
     expect(JSON.parse(await readFile(path.join(stackDir, NATIVE_PORTS_FILE), "utf8"))).toEqual(
       ports,
     );
-    // The web port was taken, so the web URL moved and was saved for the next launch.
-    expect(again.webUrl()).toBe("http://127.0.0.1:40000");
+    // The web port was taken, so the web URL moved, past the database and API ports, and was saved.
+    expect(again.webUrl()).toBe("http://127.0.0.1:40002");
     expect(await readFile(path.join(stackDir, STACK_WEB_URL_FILE), "utf8")).toBe(again.webUrl());
     expect(second.runs.some((call) => call.binary.endsWith("initdb"))).toBe(false);
     await again.stop();
+  });
+
+  it("never gives the web the port just chosen for the API", async () => {
+    const { deps, byName } = harness({ localWebUrl: "http://127.0.0.1:40001" });
+    const controller = new NativeStackController(deps);
+    await controller.start();
+    expect(byName("apps/api/dist/index.js")[0]?.env.API_PORT).toBe("40001");
+    expect(controller.webUrl()).toBe("http://127.0.0.1:40002");
+    expect(await readFile(path.join(stackDir, STACK_WEB_URL_FILE), "utf8")).toBe(
+      controller.webUrl(),
+    );
+    expect(byName("apps/api/dist/index.js")[0]?.env.WEB_ORIGIN).toBe(controller.webUrl());
+    await controller.stop();
+  });
+
+  it("fails the start when a service cannot be spawned, and still stops", async () => {
+    const base = harness({
+      fetch: async () => new Response("", { status: 503 }),
+      healthTimeoutMs: 1_000,
+    });
+    const controller = new NativeStackController({
+      ...base.deps,
+      spawn: (command, args, options) => {
+        const child = base.deps.spawn!(command, args, options) as unknown as FakeChild;
+        if (!args.some((arg) => arg.endsWith("apps/api/dist/index.js")))
+          return child as unknown as ChildProcess;
+        const failed = new FakeChild(undefined, args, options.env);
+        failed.failToSpawn();
+        return failed as unknown as ChildProcess;
+      },
+    });
+    const state = await controller.start();
+    expect(state.phase).toBe("failed");
+    expect(state.output).toContain("spawn ENOENT");
+    expect(state.output).toContain("api exited");
+    expect(controller.hasProcesses()).toBe(false);
+    await expect(controller.stop()).resolves.toMatchObject({ phase: "idle" });
   });
 
   it("restarts a crashed service with growing delays once the stack is up", async () => {
@@ -293,6 +337,37 @@ describe("NativeStackController", () => {
     await controller.start();
     expect(imported).toEqual([40000]);
     await controller.stop();
+  });
+
+  it("reruns a move that was cut short before it finished", async () => {
+    // A launch that quit mid-move left a cluster and some copied files, but no import marker.
+    await mkdir(path.join(stackDir, "postgres"), { recursive: true });
+    await writeFile(path.join(stackDir, "postgres", "PG_VERSION"), "16\n");
+    await mkdir(path.join(stackDir, "data"), { recursive: true });
+    await writeFile(path.join(stackDir, "data", "partial"), "");
+    const imported: string[] = [];
+    const { deps, runs } = harness({
+      importFromDocker: async (target) => {
+        imported.push(target.dataDir);
+      },
+    });
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    expect(runs.some((call) => call.binary.endsWith("initdb"))).toBe(true);
+    expect(existsSync(path.join(stackDir, "data", "partial"))).toBe(false);
+    expect(imported).toEqual([path.join(stackDir, "data")]);
+    await controller.stop();
+
+    const again = harness({
+      importFromDocker: async (target) => {
+        imported.push(target.dataDir);
+      },
+    });
+    const next = new NativeStackController(again.deps);
+    await next.start();
+    expect(imported).toHaveLength(1);
+    expect(again.runs.some((call) => call.binary.endsWith("initdb"))).toBe(false);
+    await next.stop();
   });
 
   it("drops the half-imported database so a retry imports again", async () => {

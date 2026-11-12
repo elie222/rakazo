@@ -189,7 +189,6 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     return [
       "run",
       "--detach",
-      "--rm",
       "--name",
       name,
       "--network",
@@ -407,7 +406,10 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
 
   private async inspect(name: string, signal: AbortSignal): Promise<ContainerRecord | undefined> {
     const result = await this.cliRun(["inspect", name], signal, { allowFailure: true });
-    if (result.code !== 0) return undefined;
+    if (result.code !== 0) {
+      if (/not found/i.test(result.stderr)) return undefined;
+      throw new Error(`container inspect failed: ${result.stderr.trim() || `exit ${result.code}`}`);
+    }
     return (JSON.parse(result.stdout || "[]") as ContainerRecord[])[0];
   }
 

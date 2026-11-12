@@ -192,6 +192,8 @@ export const TR_MESSAGES: Record<string, string> = {
     "Rakazo indirilemedi. İnternet bağlantısını kontrol edip yeniden deneyin.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Verileriniz Docker'dan taşınamadı. Aşağıdaki çıktıyı kontrol edip yeniden deneyin.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "Zaten çalışan bilgisayar çalışma ortamı çok eski. Güncelleyin veya kapatın, ardından yeniden deneyin.",
   "Run Rakazo without Docker?": "Rakazo Docker olmadan çalıştırılsın mı?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Botlarınız ve verileriniz taşınır. Docker durdurulur, kaldırılmaz.",

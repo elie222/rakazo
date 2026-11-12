@@ -9,6 +9,7 @@ import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import type { Duplex } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import tls from "node:tls";
 import { pathToFileURL } from "node:url";
 import { createServiceLogger } from "@rakazo/logging";
@@ -61,7 +62,7 @@ function staticFiles(dist: string): Middleware {
       "cache-control": "no-cache",
     });
     if (req.method === "HEAD") res.end();
-    else createReadStream(found.file).pipe(res);
+    else pipeline(createReadStream(found.file), res).catch(() => res.destroy());
   };
 }
 

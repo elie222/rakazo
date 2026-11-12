@@ -7,12 +7,10 @@ import { randomUUID } from "node:crypto";
 import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
 import path from "node:path";
 import type { DesktopLocalStackState } from "@rakazo/contracts";
 import type { RunDocker } from "./docker-cli.js";
 import { t } from "./i18n.js";
-import type { LocalStackEvent, StackController } from "./local-stack.js";
 import {
   allocateLoopbackPort,
   defaultSleep,
@@ -20,13 +18,14 @@ import {
   ensureStackToken,
   initialStackState,
   parseStackEnv,
+  portFreeOnLoopback,
   readStackToken,
-  reduceStackState,
   STACK_ENV_FILE,
   STACK_ENV_TEMPLATE,
   STACK_HEALTH_TIMEOUT_MS,
   STACK_OUTPUT_LINES,
   STACK_WEB_URL_FILE,
+  StackLifecycle,
   startInterrupted,
 } from "./local-stack.js";
 import type {
@@ -43,12 +42,15 @@ import {
   installServerBundle,
   POSTGRES_VERSION,
   pruneRuntimes,
+  RuntimeTooOldError,
   resolveContainerRuntime,
 } from "./mac-runtime.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const NATIVE_PORTS_FILE = ".native-ports";
 export const POSTGRES_DIR = "postgres";
+/** Written into the cluster once a Docker move has copied everything, so a cut-short move reruns. */
+const DOCKER_IMPORTED = ".docker-imported";
 const COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer";
 const POSTGRES_READY = "database system is ready to accept connections";
 const HEALTH_POLL_INTERVAL_MS = 1_000;
@@ -136,18 +138,23 @@ class Service {
       });
     }
     child.once("error", (error) => this.line(error.message));
-    child.once("exit", () => {
-      if (this.child !== child) return;
-      this.child = null;
-      for (const listener of this.exitListeners) listener();
-      if (this.stopping || !this.ctx.onCrash(this)) return;
-      if (Date.now() - startedAt >= STABLE_RUN_MS) this.attempts = 0;
-      const delay = restartDelay(this.attempts++);
-      this.line(`${this.spec.name} exited; restarting in ${delay / 1000}s`);
-      this.restartTimer = setTimeout(() => {
-        if (!this.stopping) this.start();
-      }, delay);
-    });
+    // A process that fails to spawn emits `close` but never `exit`.
+    child.once("exit", () => this.settle(child, startedAt));
+    child.once("close", () => this.settle(child, startedAt));
+  }
+
+  /** Runs once per child, whichever of its exit events comes first. */
+  private settle(child: ChildProcess, startedAt: number) {
+    if (this.child !== child) return;
+    this.child = null;
+    for (const listener of this.exitListeners) listener();
+    if (this.stopping || !this.ctx.onCrash(this)) return;
+    if (Date.now() - startedAt >= STABLE_RUN_MS) this.attempts = 0;
+    const delay = restartDelay(this.attempts++);
+    this.line(`${this.spec.name} exited; restarting in ${delay / 1000}s`);
+    this.restartTimer = setTimeout(() => {
+      if (!this.stopping) this.start();
+    }, delay);
   }
 
   /** Resolves on the first line matching `pattern`; rejects if the process exits or time runs out. */
@@ -178,7 +185,9 @@ class Service {
     this.stopping = true;
     clearTimeout(this.restartTimer);
     const child = this.child;
-    if (child) {
+    if (child && (child.pid === undefined || child.exitCode !== null || child.signalCode !== null))
+      this.settle(child, 0);
+    else if (child) {
       const exited = new Promise<void>((resolve) => this.exitListeners.add(resolve));
       child.kill(this.spec.stopSignal);
       const timer = setTimeout(() => child.kill("SIGKILL"), graceMs);
@@ -233,7 +242,7 @@ export interface NativeStackDeps {
   probe: (url: string, signal: AbortSignal, token: string) => Promise<string | null>;
   randomHex: (bytes: number) => string;
   onState?: (state: DesktopLocalStackState) => void;
-  /** Set once the person agreed to move a Docker stack; runs once, into a new database. */
+  /** Set once the person agreed to move a Docker stack; reruns into a new database until it completes. */
   importFromDocker?: (target: DockerImportTarget) => Promise<void>;
   spawn?: SpawnProcess;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -287,23 +296,27 @@ const WEB_ENV = [
   "LOG_FORMAT",
 ];
 
-export async function portFreeOnLoopback(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.once("error", () => resolve(false));
-    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
-  });
-}
-
-/** A saved port is kept while it is free, so the web origin (and its sign-in) survives relaunches. */
+/**
+ * A saved port is kept while it is free, so the web origin (and its sign-in) survives relaunches.
+ * `taken` holds ports already chosen for this start that nothing has bound yet.
+ */
 export async function choosePort(
   saved: number | undefined,
   portFree: (port: number) => Promise<boolean>,
   allocate: () => Promise<number>,
+  taken: number[] = [],
 ): Promise<number> {
-  if (saved !== undefined && saved >= 1024 && saved <= 65535 && (await portFree(saved)))
+  if (
+    saved !== undefined &&
+    saved >= 1024 &&
+    saved <= 65535 &&
+    !taken.includes(saved) &&
+    (await portFree(saved))
+  )
     return saved;
-  return allocate();
+  let port = await allocate();
+  while (taken.includes(port)) port = await allocate();
+  return port;
 }
 
 class StartFailure extends Error {
@@ -320,28 +333,12 @@ const downloadFailed = () =>
 const servicesFailed = () =>
   t("Rakazo services did not start. Check the output below, then retry.");
 
-export class NativeStackController implements StackController {
-  private current: DesktopLocalStackState;
-  private currentWebUrl: string;
-  private running: Promise<DesktopLocalStackState> | null = null;
-  private stopping: Promise<DesktopLocalStackState> | null = null;
-  private inFlight: AbortController | null = null;
+export class NativeStackController extends StackLifecycle {
   private background: AbortController | null = null;
-  private ticket = 0;
-  private voidBefore = 0;
   private services: Service[] = [];
 
   constructor(private readonly deps: NativeStackDeps) {
-    this.current = initialStackState(deps.imageTag);
-    this.currentWebUrl = deps.localWebUrl;
-  }
-
-  webUrl(): string {
-    return this.currentWebUrl;
-  }
-
-  state(): DesktopLocalStackState {
-    return this.current;
+    super(deps.imageTag, deps.localWebUrl, deps.onState);
   }
 
   /** True while any server process of this app is running, so quitting must stop them first. */
@@ -365,81 +362,32 @@ export class NativeStackController implements StackController {
     }
   }
 
-  start(): Promise<DesktopLocalStackState> {
-    if (this.running !== null) return this.running;
-    const ticket = ++this.ticket;
-    const attempt = (this.stopping ?? Promise.resolve())
-      .then(() => (ticket <= this.voidBefore ? this.current : this.run()))
-      .finally(() => {
-        if (this.running === attempt) this.running = null;
-      });
-    this.running = attempt;
-    return attempt;
-  }
-
-  abort() {
-    this.inFlight?.abort();
-  }
-
   /** Stops every process; the database, data and downloads stay for the next start. */
-  stop(): Promise<DesktopLocalStackState> {
-    this.voidBefore = this.ticket;
-    if (this.stopping !== null && this.running === null) return this.stopping;
-    this.abort();
-    const settled = [this.stopping, this.running].map((pending) => pending?.catch(() => undefined));
-    this.running = null;
-    const stopping = Promise.all(settled)
-      .then(() => this.stopServices())
-      .then(() => {
-        this.setState(initialStackState(this.deps.imageTag));
-        return this.current;
-      })
-      .finally(() => {
-        if (this.stopping === stopping) this.stopping = null;
+  protected async shutdown() {
+    await this.stopServices();
+    this.setState(initialStackState(this.deps.imageTag));
+  }
+
+  protected async attemptFailed(error: unknown, signal: AbortSignal) {
+    await this.stopServices();
+    if (signal.aborted) {
+      this.push({ type: "failed", message: startInterrupted() });
+    } else if (error instanceof StartFailure) {
+      this.push({ type: "failed", message: error.userMessage, output: error.output });
+    } else {
+      this.push({
+        type: "failed",
+        message: servicesFailed(),
+        output: [error instanceof Error ? error.message : String(error)],
       });
-    this.stopping = stopping;
-    return stopping;
-  }
-
-  private push(event: LocalStackEvent) {
-    this.setState(reduceStackState(this.current, event));
-  }
-
-  private setState(next: DesktopLocalStackState) {
-    if (next === this.current) return;
-    this.current = next;
-    this.deps.onState?.(next);
-  }
-
-  private async run(): Promise<DesktopLocalStackState> {
-    const controller = new AbortController();
-    this.inFlight = controller;
-    try {
-      await this.attempt(controller.signal);
-    } catch (error) {
-      await this.stopServices();
-      if (controller.signal.aborted) {
-        this.push({ type: "failed", message: startInterrupted() });
-      } else if (error instanceof StartFailure) {
-        this.push({ type: "failed", message: error.userMessage, output: error.output });
-      } else {
-        this.push({
-          type: "failed",
-          message: servicesFailed(),
-          output: [error instanceof Error ? error.message : String(error)],
-        });
-      }
-    } finally {
-      if (this.inFlight === controller) this.inFlight = null;
     }
-    return this.current;
   }
 
   private dir(...parts: string[]) {
     return path.join(this.deps.stackDir, ...parts);
   }
 
-  private async attempt(signal: AbortSignal) {
+  protected async attempt(signal: AbortSignal) {
     this.push({ type: "check-start" });
     await this.stopServices();
     for (const sub of ["runtime", "logs", "run", "data"]) {
@@ -483,6 +431,11 @@ export class NativeStackController implements StackController {
       if (signal.aborted) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       if (error instanceof DownloadError) throw new StartFailure(downloadFailed(), [detail]);
+      if (error instanceof RuntimeTooOldError)
+        throw new StartFailure(
+          t("The computer runtime already running is too old. Update or quit it, then retry."),
+          [detail],
+        );
       throw new StartFailure(servicesFailed(), [detail]);
     }
 
@@ -491,7 +444,15 @@ export class NativeStackController implements StackController {
     const database = stackEnv.get("POSTGRES_DB") || "rakazo";
     const password = stackEnv.get("POSTGRES_PASSWORD") ?? "";
     const appPassword = stackEnv.get("POSTGRES_APP_PASSWORD") ?? "";
-    const fresh = await this.ensureCluster(postgresDir, user, password, database, signal);
+    const imported = this.dir(POSTGRES_DIR, DOCKER_IMPORTED);
+    const moving = this.deps.importFromDocker !== undefined && !this.deps.exists(imported);
+    if (moving) {
+      // A cluster without the marker holds a move that was cut short; start that move over.
+      await rm(this.dir(POSTGRES_DIR), { recursive: true, force: true });
+      await rm(this.dir("data"), { recursive: true, force: true });
+      await mkdir(this.dir("data"), { recursive: true, mode: 0o700 });
+    }
+    await this.ensureCluster(postgresDir, user, password, database, signal);
     const ports = await this.ports();
     const portFree = this.deps.portFree ?? portFreeOnLoopback;
     const allocate = this.deps.allocatePort ?? allocateLoopbackPort;
@@ -524,7 +485,7 @@ export class NativeStackController implements StackController {
 
     const at = (login: string, secret: string) =>
       `postgres://${encodeURIComponent(login)}:${encodeURIComponent(secret)}@127.0.0.1:${ports.postgres}/${encodeURIComponent(database)}`;
-    if (fresh && this.deps.importFromDocker) {
+    if (moving && this.deps.importFromDocker) {
       try {
         await this.deps.importFromDocker({
           port: ports.postgres,
@@ -535,6 +496,7 @@ export class NativeStackController implements StackController {
           signal,
           onLine: (line) => this.push({ type: "output", line }),
         });
+        await writeFile(imported, "", { mode: 0o600 });
       } catch (error) {
         // A retry imports into a clean database again; the Docker stack is untouched.
         await this.stopServices();
@@ -566,10 +528,10 @@ export class NativeStackController implements StackController {
     );
     if (migrated.code !== 0) throw new StartFailure(servicesFailed());
 
-    ports.api = await choosePort(ports.api, portFree, allocate);
+    ports.api = await choosePort(ports.api, portFree, allocate, [ports.postgres]);
     await writePrivateFile(this.dir(NATIVE_PORTS_FILE), JSON.stringify(ports));
     const webPort = Number(new URL(this.currentWebUrl).port);
-    const chosenWeb = await choosePort(webPort, portFree, allocate);
+    const chosenWeb = await choosePort(webPort, portFree, allocate, [ports.postgres, ports.api]);
     if (chosenWeb !== webPort) this.currentWebUrl = `http://127.0.0.1:${chosenWeb}`;
     await writePrivateFile(this.dir(STACK_WEB_URL_FILE), this.currentWebUrl);
 
@@ -668,9 +630,9 @@ export class NativeStackController implements StackController {
     password: string,
     database: string,
     signal: AbortSignal,
-  ): Promise<boolean> {
+  ): Promise<void> {
     const target = this.dir(POSTGRES_DIR);
-    if (this.deps.exists(path.join(target, "PG_VERSION"))) return false;
+    if (this.deps.exists(path.join(target, "PG_VERSION"))) return;
     const scratch = this.dir(`.postgres.${randomUUID()}`);
     const passwordFile = this.dir(`.postgres-password.${randomUUID()}`);
     const options = {
@@ -709,7 +671,6 @@ export class NativeStackController implements StackController {
         throw new StartFailure(servicesFailed(), created.stderr.split("\n").slice(-5));
       await rm(target, { recursive: true, force: true });
       await rename(scratch, target);
-      return true;
     } finally {
       await rm(passwordFile, { force: true });
       await rm(scratch, { recursive: true, force: true });

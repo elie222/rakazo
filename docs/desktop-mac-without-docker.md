@@ -114,7 +114,9 @@ labels). The app asks the registered launchd service, `/usr/local/bin/container`
    install, app and log roots under `<userData>/stack`.
 
 If our copy is running and the person later installs their own, the next start stops ours and
-starts theirs. A system the app did not start is never stopped.
+starts theirs; a copy of ours older than 1.7.0 is stopped and replaced the same way. A system the
+app did not start is never stopped: one older than 1.7.0 fails the start with a message asking the
+person to update or quit it.
 
 ## Bot computers
 
@@ -133,8 +135,8 @@ starts theirs. A system the app did not start is never stopped.
 `packages/adapters/src/apple-container-sandbox.ts` (about 400 lines, mostly delegating to the
 shared `ExecComputer` and `LinuxDesktop`), selected with `SANDBOX_PROVIDER=local-vm`:
 
-- **Provision**: a new name per start, a network of the same name, then `container run --detach
-  --rm` with the bot id as a label, 2 CPUs and 2 GB by default, `--uid 1000 --gid 1000 --cap-drop
+- **Provision**: a new name per start, a network of the same name, then `container run --detach`
+  (no `--rm`, so a VM that exits stays listed and cleanup removes it with its network) with the bot id as a label, 2 CPUs and 2 GB by default, `--uid 1000 --gid 1000 --cap-drop
   ALL --cap-add CAP_NET_ADMIN`, and the image command under `setpriv --no-new-privs`, as the Incus
   provider does. A stored running VM owned by the same bot is reused; anything else labelled for
   that bot is removed.
@@ -211,8 +213,10 @@ plus the kernel download on its first start (about 45 s measured). The computer 
   database container pipes `pg_dump --format=custom` into `pg_restore --no-owner --exit-on-error`
   against the native database at `host.docker.internal` (credentials in the environment, never on
   a command line), copies `/data` out of the stopped API container with `docker cp`, and stops the
-  whole Docker stack without removing it or its volumes. If any step fails the new database is
-  removed, the Docker data is untouched and **Retry** runs the move again.
+  whole Docker stack without removing it or its volumes. Only then is the move marked done
+  (`postgres/.docker-imported`). If any step fails the new database is removed, the Docker data is
+  untouched and **Retry** runs the move again; a move cut short by a quit or crash has no marker, so
+  the next start discards the partial database and copied files and runs it again.
 - Computers re-provision from saved homes because the provider kind changes, which the lifecycle
   already handles.
 - Rollback to Docker: the Docker stack and its volumes are left in place; nothing moves back

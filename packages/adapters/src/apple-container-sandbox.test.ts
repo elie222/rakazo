@@ -55,7 +55,8 @@ if (command === "exec") {
     };
     save();
   } else if (command === "inspect") {
-    if (!state.vms[sub]) process.exit(1);
+    if (sub === "rakazo-unreadable") { process.stderr.write("Error: XPC connection interrupted"); process.exit(1); }
+    if (!state.vms[sub]) { process.stderr.write("Error: container not found: " + sub); process.exit(1); }
     process.stdout.write(JSON.stringify([state.vms[sub]]));
   } else if (command === "ls") {
     process.stdout.write(JSON.stringify(Object.values(state.vms)));
@@ -134,10 +135,9 @@ describe("AppleContainerSandboxProvider", () => {
       "rakazo-1",
       "bot-a",
     );
-    expect(args.slice(0, 9)).toEqual([
+    expect(args.slice(0, 8)).toEqual([
       "run",
       "--detach",
-      "--rm",
       "--name",
       "rakazo-1",
       "--network",
@@ -229,6 +229,12 @@ describe("AppleContainerSandboxProvider", () => {
     expect(fake.calls().some((call) => call.argv[0] === "run")).toBe(false);
   });
 
+  it("removes nothing when it cannot tell who owns a VM", async () => {
+    const fake = fakeCli();
+    await expect(fake.provider.stop(ref("rakazo-unreadable"))).rejects.toThrow(/inspect failed/);
+    expect(fake.calls().some((call) => call.argv[0] === "rm")).toBe(false);
+  });
+
   it("refuses a VM that belongs to another bot", async () => {
     const fake = fakeCli({ "rakazo-other": { botId: "bot-b" } });
     await expect(
@@ -264,7 +270,7 @@ describe("AppleContainerSandboxProvider", () => {
     await expect(
       fake.provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
     ).rejects.toThrow(/could not lock down its network; local-vm needs a computer image with nft/);
-    const name = fake.calls().find((call) => call.argv[0] === "run")!.argv[4];
+    const name = fake.calls().find((call) => call.argv[0] === "run")!.argv[3];
     expect(fake.vms()).toEqual({});
     expect(fake.calls().map((call) => call.argv.join(" "))).toContain(`network rm ${name}`);
   });

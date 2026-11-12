@@ -201,6 +201,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Rakazo konnte nicht heruntergeladen werden. Prüfe die Internetverbindung und versuche es dann erneut.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Deine Daten konnten nicht aus Docker übertragen werden. Prüfe die Ausgabe unten und versuche es dann erneut.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "Die bereits laufende Computer-Laufzeitumgebung ist zu alt. Aktualisiere oder beende sie und versuche es dann erneut.",
   "Run Rakazo without Docker?": "Rakazo ohne Docker ausführen?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Deine Bots und Daten werden übernommen. Docker wird gestoppt, nicht entfernt.",

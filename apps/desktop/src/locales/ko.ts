@@ -193,6 +193,8 @@ export const KO_MESSAGES: Record<string, string> = {
     "Rakazo를 다운로드하지 못했습니다. 인터넷 연결을 확인한 다음 다시 시도하세요.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Docker에서 데이터를 옮기지 못했습니다. 아래 출력을 확인한 다음 다시 시도하세요.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "이미 실행 중인 컴퓨터 런타임이 너무 오래되었습니다. 업데이트하거나 종료한 다음 다시 시도하세요.",
   "Run Rakazo without Docker?": "Docker 없이 Rakazo를 실행할까요?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "봇과 데이터가 함께 옮겨집니다. Docker는 삭제되지 않고 중지됩니다.",

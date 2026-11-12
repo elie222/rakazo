@@ -199,6 +199,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "Rakazoをダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Dockerからデータを移行できませんでした。下の出力を確認してから、もう一度お試しください。",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "すでに実行中のコンピューターランタイムが古すぎます。更新するか終了してから、もう一度お試しください。",
   "Run Rakazo without Docker?": "DockerなしでRakazoを実行しますか？",
   "Your bots and data move over. Docker is stopped, not removed.":
     "ボットとデータは引き継がれます。Dockerは停止されますが、削除はされません。",

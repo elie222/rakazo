@@ -12,6 +12,7 @@ import {
   installPostgres,
   nativeStackEligible,
   pruneRuntimes,
+  RuntimeTooOldError,
   readServerBundle,
   resolveContainerRuntime,
   USER_CONTAINER_CLI,
@@ -331,16 +332,34 @@ describe("resolveContainerRuntime", () => {
     expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(false);
   });
 
-  it("treats a running system older than the minimum as not running", async () => {
+  it("refuses to start beside an outdated system it did not start", async () => {
     const fake = fakeRuntime({
       running: { root: "/opt/old", version: "1.6.2" },
       launchdRoot: "/opt/old",
+      userVersion: "1.7.1",
     });
+    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+    await expect(
+      resolveContainerRuntime(deps, async () => {
+        throw new Error("must not download");
+      }),
+    ).rejects.toBeInstanceOf(RuntimeTooOldError);
+    expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(false);
+  });
+
+  it("replaces an outdated copy of its own", async () => {
+    const root = path.join(dir, "container-1.7.1");
+    const fake = fakeRuntime({ running: { root, version: "1.6.2" }, launchdRoot: root });
     const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
     await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
       cli: ourCli(),
       ours: true,
     });
+    const lifecycle = fake.calls.filter((call) => call[1] === "system" && call[2] !== "status");
+    expect(lifecycle.map((call) => [call[0], call[2]])).toEqual([
+      [ourCli(), "stop"],
+      [ourCli(), "start"],
+    ]);
   });
 });
 

@@ -200,6 +200,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "Rakazo downloaden is mislukt. Controleer de internetverbinding en probeer het opnieuw.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Je gegevens konden niet uit Docker worden overgezet. Bekijk de uitvoer hieronder en probeer het opnieuw.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "De computerruntime die al draait is te oud. Werk hem bij of sluit hem af en probeer het opnieuw.",
   "Run Rakazo without Docker?": "Rakazo zonder Docker gebruiken?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Je bots en gegevens gaan mee. Docker wordt gestopt, niet verwijderd.",

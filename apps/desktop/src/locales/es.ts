@@ -212,6 +212,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "No se pudo descargar Rakazo. Revisa la conexión a internet y vuelve a intentarlo.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "No se pudieron mover tus datos desde Docker. Revisa la salida de abajo y vuelve a intentarlo.",
+  "The computer runtime already running is too old. Update or quit it, then retry.":
+    "El entorno de ejecución de computadoras que ya está en marcha es demasiado antiguo. Actualízalo o ciérralo y vuelve a intentarlo.",
   "Run Rakazo without Docker?": "¿Usar Rakazo sin Docker?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Tus bots y datos se trasladan. Docker se detiene, no se elimina.",

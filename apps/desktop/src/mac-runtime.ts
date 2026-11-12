@@ -111,6 +111,9 @@ const SYSTEM_START_TIMEOUT_S = 120;
 /** The download itself failed or did not match its pin; retrying (or the network) fixes it. */
 export class DownloadError extends Error {}
 
+/** A system the app did not start is running a version computers cannot use. */
+export class RuntimeTooOldError extends Error {}
+
 export type Fetch = (url: string, init: { signal: AbortSignal }) => Promise<Response>;
 
 export interface RuntimeDeps {
@@ -357,9 +360,13 @@ export interface ResolveRuntimeDeps extends RuntimeDeps {
 interface RunningSystem {
   cli: string;
   installRoot: string;
+  version: string | undefined;
 }
 
-async function runningSystem(deps: ResolveRuntimeDeps, ourCli: string) {
+async function runningSystem(
+  deps: ResolveRuntimeDeps,
+  ourCli: string,
+): Promise<RunningSystem | null> {
   const launchd = await deps.run(
     "/bin/launchctl",
     ["print", `gui/${deps.uid}/${CONTAINER_API_LABEL}`],
@@ -392,16 +399,13 @@ async function runningSystem(deps: ResolveRuntimeDeps, ourCli: string) {
       continue;
     }
     // Every client asks the same launchd service, so the first answer is the answer.
-    if (
-      parsed.status !== "running" ||
-      !versionAtLeast(parsed.server?.version, MIN_CONTAINER_RUNTIME)
-    )
-      return null;
+    if (parsed.status !== "running") return null;
     const installRoot = parsed.paths?.installRoot;
     const ownCli = installRoot ? path.join(installRoot, "bin", "container") : "";
     return {
       cli: installRoot && deps.exists(ownCli) ? ownCli : cli,
       installRoot: installRoot ?? "",
+      version: parsed.server?.version,
     };
   }
   return null;
@@ -429,20 +433,30 @@ async function isInside(dir: string, file: string): Promise<boolean> {
 /**
  * Only one computer runtime can run per macOS session. Use the one already running, else the
  * person's own install, else our copy (downloaded on first use). A system we started gives way to
- * the person's own install once they have one; a system we did not start is never stopped.
+ * the person's own install once they have one, and an outdated one is replaced; a system we did
+ * not start is never stopped, and one too old to use fails the start instead.
  */
 export async function resolveContainerRuntime(
   deps: ResolveRuntimeDeps,
   install: () => Promise<string> = () => installContainerRuntime(deps),
 ): Promise<ContainerRuntime> {
   const ourCli = path.join(deps.dir, `container-${CONTAINER_RUNTIME_VERSION}`, "bin", "container");
-  const running: RunningSystem | null = await runningSystem(deps, ourCli);
+  const running = await runningSystem(deps, ourCli);
   const userVersion = await cliVersion(deps, USER_CONTAINER_CLI);
   const userUsable = versionAtLeast(userVersion, MIN_CONTAINER_RUNTIME);
   if (running) {
     const ours = running.installRoot !== "" && (await isInside(deps.dir, running.installRoot));
-    if (!ours || !userUsable) return { cli: running.cli, ours };
-    deps.onLine("Handing computers over to the installed runtime");
+    const current = versionAtLeast(running.version, MIN_CONTAINER_RUNTIME);
+    if (!ours && !current)
+      throw new RuntimeTooOldError(
+        `The running computer runtime is ${running.version ?? "of an unknown version"}; computers need ${MIN_CONTAINER_RUNTIME} or newer`,
+      );
+    if (current && (!ours || !userUsable)) return { cli: running.cli, ours };
+    deps.onLine(
+      current
+        ? "Handing computers over to the installed runtime"
+        : "Replacing an outdated computer runtime",
+    );
     await runChecked(deps, running.cli, ["system", "stop"], RUNTIME_TIMEOUT_MS);
   }
   const start = [
