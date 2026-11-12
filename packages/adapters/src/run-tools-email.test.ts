@@ -910,6 +910,24 @@ describe("send_email", () => {
 
   it("counts CC recipients and lets the operator raise, lower, or pause the account allowance", async () => {
     const original = { subject: "Hi", messageId: "<message@example.test>", references: [] };
+    const lowered = sendRun({ repliesEnabled: true, original, dailyLimit: 1 });
+    expect(
+      await lowered.call({
+        to: "support@shop.test",
+        cc: "a@shop.test",
+        text: "Hello",
+        inReplyTo: "in-1",
+      }),
+    ).toEqual({
+      error:
+        "This email has more recipients than your account's allowance. Send to fewer recipients.",
+    });
+    expect(lowered.send).not.toHaveBeenCalled();
+    expect(lowered.sends).toHaveLength(0);
+    expect(lowered.saved).toHaveLength(0);
+    expect(await lowered.call({ to: "a@shop.test", subject: "Hi", text: "Hello" })).toMatchObject({
+      sent: true,
+    });
     const limited = sendRun({ repliesEnabled: true, original, sentToday: 9 });
     expect(
       (

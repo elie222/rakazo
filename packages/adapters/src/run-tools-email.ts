@@ -398,6 +398,8 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   if (typeof reserved === "string") {
     const errors = {
       limit: "Your account has reached its email allowance for the last 24 hours. Try again later.",
+      too_many:
+        "This email has more recipients than your account's allowance. Send to fewer recipients.",
       disabled: "Email sending is paused for this account.",
       unverified: "Verify your account email before sending.",
       recipient: "This recipient isn't approved for this account.",

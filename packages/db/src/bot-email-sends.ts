@@ -10,7 +10,7 @@ export function reserveBotEmailSend(
   prisma: PrismaClient,
   send: { userId: string; botId: string; recipients: string[]; verifiedReplySender?: string },
   now = new Date(),
-): Promise<{ id: string } | "limit" | "disabled" | "unverified" | "recipient"> {
+): Promise<{ id: string } | "limit" | "disabled" | "unverified" | "recipient" | "too_many"> {
   if (!send.recipients.length || send.recipients.length > 10)
     throw new Error("Reserve between one and ten recipients");
   const since = new Date(now.getTime() - DAY_MS);
@@ -49,6 +49,7 @@ export function reserveBotEmailSend(
         })
       )
         return "recipient";
+      if (send.recipients.length > owner.botEmailDailyLimit) return "too_many";
       await tx.botEmailSend.deleteMany({ where: { userId: send.userId, sentAt: { lt: since } } });
       const total = await tx.botEmailSend.aggregate({
         where: { userId: send.userId },
