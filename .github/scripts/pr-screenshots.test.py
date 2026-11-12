@@ -274,45 +274,52 @@ class SourcesReadyTest(unittest.TestCase):
     sha = "a" * 40
     repo = "example/repo"
 
-    def artifacts(self, source, **overrides):
+    def preview(self, **overrides):
+        return [[{"user": {"login": "github-actions[bot]"}, "body": "<!-- rakazo-preview -->\n" + shots.commit_marker(self.sha), **overrides}]]
+
+    def artifacts(self, source="e2e", **overrides):
         return [{"artifacts": [{"name": f"pr-screenshot-{source}-{self.sha}", "expired": False, "workflow_run": {"id": 1}, **overrides}]}]
 
-    def source_run(self, workflow, **overrides):
+    def source_run(self, workflow="publish-playwright-report", **overrides):
         return {"event": "workflow_run", "path": f".github/workflows/{workflow}.yml", "head_repository": {"full_name": self.repo}, **overrides}
 
     def test_both_signals_allow_capture(self):
-        responses = [self.artifacts("preview"), self.source_run("preview-deploy"), self.artifacts("e2e"), self.source_run("publish-playwright-report")]
-        with mock.patch.object(shots, "api", side_effect=responses):
-            self.assertTrue(shots.sources_ready(self.repo, self.sha))
+        with mock.patch.object(shots, "api", side_effect=[self.preview(), self.artifacts(), self.source_run()]):
+            self.assertTrue(shots.sources_ready(self.repo, "1", self.sha))
 
-    def test_e2e_finishes_first(self):
-        with mock.patch.object(shots, "api", return_value=[{"artifacts": []}]):
-            self.assertFalse(shots.sources_ready(self.repo, self.sha))
+    def test_e2e_finishes_first_or_another_pr_has_the_preview(self):
+        with mock.patch.object(shots, "api", return_value=[[]]) as api:
+            self.assertFalse(shots.sources_ready(self.repo, "2", self.sha))
+            api.assert_called_once_with(f"repos/{self.repo}/issues/2/comments?per_page=100", paginate=True)
 
     def test_preview_finishes_first(self):
-        with mock.patch.object(shots, "api", side_effect=[self.artifacts("preview"), self.source_run("preview-deploy"), [{"artifacts": []}]]):
-            self.assertFalse(shots.sources_ready(self.repo, self.sha))
+        with mock.patch.object(shots, "api", side_effect=[self.preview(), [{"artifacts": []}]]):
+            self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
+
+    def test_author_and_stale_preview_comments_do_not_prove_deployment(self):
+        for overrides in ({"user": {"login": "contributor"}}, {"body": "<!-- rakazo-preview -->\n" + shots.commit_marker("b" * 40)}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", return_value=self.preview(**overrides)) as api:
+                self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
+                self.assertEqual(api.call_count, 1)
 
     def test_expired_or_other_commit_signal_does_not_allow_capture(self):
-        for overrides in ({"expired": True}, {"name": "pr-screenshot-preview-" + "b" * 40}):
-            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", return_value=self.artifacts("preview", **overrides)) as api:
-                self.assertFalse(shots.sources_ready(self.repo, self.sha))
-                self.assertEqual(api.call_count, 1)
+        for overrides in ({"expired": True}, {"name": "pr-screenshot-e2e-" + "b" * 40}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", side_effect=[self.preview(), self.artifacts(**overrides)]):
+                self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
 
     def test_pr_cannot_forge_trusted_readiness_with_an_artifact_name(self):
         for overrides in ({"event": "pull_request"}, {"path": ".github/workflows/ci.yml"}, {"head_repository": {"full_name": "other/repo"}}):
-            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", side_effect=[self.artifacts("preview"), self.source_run("preview-deploy", **overrides)]):
-                self.assertFalse(shots.sources_ready(self.repo, self.sha))
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", side_effect=[self.preview(), self.artifacts(), self.source_run(**overrides)]):
+                self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
 
     def test_forged_artifact_does_not_hide_a_trusted_one_on_another_page(self):
-        pages = self.artifacts("preview") + self.artifacts("preview")
-        responses = [pages, self.source_run("preview-deploy", event="pull_request"), self.source_run("preview-deploy"), self.artifacts("e2e"), self.source_run("publish-playwright-report")]
+        responses = [self.preview(), self.artifacts() + self.artifacts(), self.source_run(event="pull_request"), self.source_run()]
         with mock.patch.object(shots, "api", side_effect=responses):
-            self.assertTrue(shots.sources_ready(self.repo, self.sha))
+            self.assertTrue(shots.sources_ready(self.repo, "1", self.sha))
 
     def test_assessment_requires_trusted_exact_pr_and_commit_artifact(self):
         name = f"pr-screenshot-reviewed-1-{self.sha}"
-        artifact = self.artifacts("preview", name=name)
+        artifact = self.artifacts(name=name)
         with mock.patch.object(shots, "api", side_effect=[artifact, self.source_run("preview-deploy")]):
             self.assertTrue(shots.assessed(self.repo, "1", self.sha))
         with mock.patch.object(shots, "api", side_effect=[artifact, self.source_run("preview-deploy", event="pull_request")]):
@@ -322,7 +329,7 @@ class SourcesReadyTest(unittest.TestCase):
 
     def test_invalid_sha_is_rejected_before_api_access(self):
         with mock.patch.object(shots, "api") as api, self.assertRaises(ValueError):
-            shots.sources_ready(self.repo, "../other")
+            shots.sources_ready(self.repo, "1", "../other")
         api.assert_not_called()
 
 
@@ -383,6 +390,14 @@ class CliTest(unittest.TestCase):
             self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 0)
             self.assertIn("good.png", (root / "out" / "section.md").read_text())
             self.assertFalse((root / "out" / "complete.txt").exists())
+
+    def test_duplicate_references_keep_each_valid_file_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "good.png").write_bytes(PNG)
+            result = {"complete": True, "screenshots": [{"file": "good.png", "caption": "View"}] * 2}
+            self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 0)
+            self.assertEqual((root / "out" / "uploads.txt").read_text(), "good.png\n")
 
     def test_prepare_requires_explicit_boolean_completion(self):
         with tempfile.TemporaryDirectory() as directory:

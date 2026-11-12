@@ -82,18 +82,6 @@ jobs:
           for PR in $PRS; do
             PR=$PR bash infra/preview/deploy.sh
           done
-      - name: Mark preview ready for screenshots
-        if: steps.pr.outputs.numbers
-        run: |
-          mkdir -p "$RUNNER_TEMP/screenshot-ready"
-          printf 'ready\n' > "$RUNNER_TEMP/screenshot-ready/ready.txt"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: steps.pr.outputs.numbers
-        with:
-          name: pr-screenshot-preview-${{ github.event.workflow_run.head_sha }}
-          path: ${{ runner.temp }}/screenshot-ready/ready.txt
-          retention-days: 90
-          overwrite: true
 
   screenshots:
     needs: deploy

@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
-          ready=$(python3 .github/scripts/pr-screenshots.py ready "$GITHUB_REPOSITORY" "$HEAD_SHA")
+          ready=$(python3 .github/scripts/pr-screenshots.py ready "$GITHUB_REPOSITORY" "$PR" "$HEAD_SHA")
           if [[ $ready != ready ]]; then
             echo "Screenshot sources are not both ready; their completion will trigger another run."
             exit 0
@@ -177,9 +177,32 @@ jobs:
             --allowedTools ${{ steps.browser.outputs.tools }}
             --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
             --json-schema '${{ steps.browser.outputs.schema }}'
-      - name: Install Codex
+      - name: Prepare isolated Codex user
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
-        run: npm install --global @openai/codex@0.164.0
+        run: |
+          set -euo pipefail
+          npm install --global @openai/codex@0.164.0
+          install -d -m 700 "$RUNNER_TEMP/screenshot-codex"
+          sudo useradd --create-home --shell /usr/sbin/nologin codex-screenshots
+          sudo install -d -o codex-screenshots -g codex-screenshots -m 700 \
+            /home/codex-screenshots/.codex /srv/pr-screenshot-agent
+          # Root-owned, fixed command: no arguments or environment from the agent.
+          {
+            echo '#!/bin/sh'
+            printf 'exec '
+            jq -r '.mcpServers.playwright | ([.command] + .args) | map(@sh) | join(" ")' "$RUNNER_TEMP/pr-screenshots-mcp.json"
+          } | sudo tee /opt/pr-screenshots-browser > /dev/null
+          sudo chmod 755 /opt/pr-screenshots-browser
+          sudo tee /etc/sudoers.d/codex-screenshots > /dev/null <<'SUDOERS'
+          codex-screenshots ALL=(root) NOPASSWD: /opt/pr-screenshots-browser ""
+          SUDOERS
+          sudo chmod 440 /etc/sudoers.d/codex-screenshots
+          sudo visudo -cf /etc/sudoers.d/codex-screenshots
+          jq '.mcpServers.playwright = {command: "sudo", args: ["-n", "/opt/pr-screenshots-browser"]}' \
+            "$RUNNER_TEMP/pr-screenshots-mcp.json" > "$RUNNER_TEMP/codex-mcp.json"
+          sudo python3 .github/scripts/pr-screenshot-codex.py "$RUNNER_TEMP/codex-mcp.json" /home/codex-screenshots/.codex
+          sudo chown -R codex-screenshots:codex-screenshots /home/codex-screenshots/.codex
+          sudo chmod 600 /home/codex-screenshots/.codex/config.toml /home/codex-screenshots/.codex/schema.json
       - name: Restore subscription login
         id: auth
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
@@ -192,50 +215,57 @@ jobs:
           printf '%s' "$CODEX_SUBSCRIPTION_AUTH" | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-codex/auth.json"
           # Verify write-back before Codex can rotate the refresh token.
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-codex/auth.json"
-          python3 .github/scripts/pr-screenshot-codex.py "$RUNNER_TEMP/pr-screenshots-mcp.json" "$RUNNER_TEMP/screenshot-codex"
+          sudo install -o codex-screenshots -g codex-screenshots -m 600 \
+            "$RUNNER_TEMP/screenshot-codex/auth.json" /home/codex-screenshots/.codex/auth.json
       - name: Run Codex screenshot agent
         id: codex
         if: steps.auth.outcome == 'success'
         env:
-          CODEX_HOME: ${{ runner.temp }}/screenshot-codex
+          CODEX_HOME: /home/codex-screenshots/.codex
           PROMPT: ${{ needs.screenshot-context.outputs.prompt }}
           MODEL: ${{ vars.PR_SCREENSHOT_MODEL }}
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/screenshot-work"
+          log="$RUNNER_TEMP/screenshot-codex/session.log"
+          codex=$(command -v codex)
           args=()
           [[ -z $MODEL ]] || args+=(--model "$MODEL")
           # No checkout instructions or inherited credentials; browser tools only.
           status=0
-          printf '%s' "$PROMPT" | env -u GH_TOKEN -u GITHUB_TOKEN -u OPENAI_API_KEY -u CODEX_API_KEY \
-            timeout --kill-after=30s 20m codex exec --ephemeral --skip-git-repo-check \
-            -C "$RUNNER_TEMP/screenshot-work" "${args[@]}" \
-            --output-schema "$CODEX_HOME/schema.json" --output-last-message "$CODEX_HOME/result.json" - \
-            > "$CODEX_HOME/session.log" 2>&1 || status=$?
+          printf '%s' "$PROMPT" | timeout --kill-after=30s 20m sudo -n -H -u codex-screenshots env -i \
+            PATH="$PATH" HOME=/home/codex-screenshots CODEX_HOME="$CODEX_HOME" \
+            "$codex" exec --ephemeral --skip-git-repo-check \
+            -C /srv/pr-screenshot-agent "${args[@]}" \
+            --output-schema "$CODEX_HOME/schema.json" --output-last-message /srv/pr-screenshot-agent/result.json - \
+            > "$log" 2>&1 || status=$?
           if [[ $status -ne 0 ]]; then
             echo "::error::Codex exited with status $status"
             # As in the dependency updater, show only filtered error lines. The
             # private transcript may contain refreshed credentials or hostile text.
             resume="$(openssl rand -hex 16)"
             echo "::stop-commands::$resume"
-            grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$CODEX_HOME/session.log" \
+            grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$log" \
               | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
               | tail -n 20 | cut -c1-300 || true
             echo "::$resume::"
             exit "$status"
           fi
-          echo "result=$(jq -c . "$CODEX_HOME/result.json")" >> "$GITHUB_OUTPUT"
+          result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
+          echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Persist refreshed subscription login
         if: always() && steps.auth.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |
           set -euo pipefail
-          cat "$RUNNER_TEMP/screenshot-codex/auth.json" | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-auth.json"
+          timeout 10s sudo -n -u codex-screenshots head -c 65537 /home/codex-screenshots/.codex/auth.json \
+            | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-auth.json"
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-auth.json"
       - name: Remove subscription login and logs
         if: always() && env.SCREENSHOT_AGENT == 'codex'
-        run: rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/screenshot-auth.json"
+        run: |
+          sudo rm -rf /home/codex-screenshots/.codex /srv/pr-screenshot-agent
+          rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/screenshot-auth.json" "$RUNNER_TEMP/codex-mcp.json"
       - name: Collect screenshots
         if: steps.claude.outputs.structured_output != '' || steps.codex.outputs.result != ''
         run: |

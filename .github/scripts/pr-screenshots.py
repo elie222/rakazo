@@ -4,7 +4,7 @@
 The agent browsed a preview built from the pull request, so its JSON and images are
 untrusted. Only PNG files it saved, and plain-text captions, get through.
 
-  pr-screenshots.py ready REPO SHA
+  pr-screenshots.py ready REPO PR SHA
       prints "ready" when trusted preview deployment and E2E publication have finished
   pr-screenshots.py prompt PROMPT_FILE PR_JSON_FILE DIFF_FILE
       prints the agent's prompt, cut to fit in one environment variable
@@ -136,13 +136,18 @@ def trusted_artifact(repo: str, name: str, workflows: list[str]) -> bool:
     return False
 
 
-def sources_ready(repo: str, sha: str) -> bool:
-    if not re.fullmatch(r"[0-9a-f]{40}", sha):
-        raise ValueError("Expected a commit SHA")
-    return all(
-        trusted_artifact(repo, f"pr-screenshot-{source}-{sha}", [workflow])
-        for source, workflow in SOURCE_WORKFLOWS.items()
+def sources_ready(repo: str, pr: str, sha: str) -> bool:
+    marker = commit_marker(sha)
+    if not re.fullmatch(r"[1-9][0-9]*", pr):
+        raise ValueError("Expected a pull request number")
+    pages = api(f"repos/{repo}/issues/{pr}/comments?per_page=100", paginate=True)
+    deployed = any(
+        comment.get("user", {}).get("login") == "github-actions[bot]"
+        and (comment.get("body") or "").startswith("<!-- rakazo-preview -->")
+        and marker in comment["body"]
+        for page in pages for comment in page
     )
+    return deployed and trusted_artifact(repo, f"pr-screenshot-e2e-{sha}", [SOURCE_WORKFLOWS["e2e"]])
 
 
 def assessed(repo: str, pr: str, sha: str) -> bool:
@@ -269,8 +274,8 @@ def main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[1] == "marker":
         print(commit_marker(argv[2]))
         return 0
-    if len(argv) == 4 and argv[1] == "ready":
-        if sources_ready(argv[2], argv[3]):
+    if len(argv) == 5 and argv[1] == "ready":
+        if sources_ready(argv[2], argv[3], argv[4]):
             print("ready")
         return 0
     if len(argv) == 2 and argv[1] == "contract":
@@ -302,8 +307,11 @@ def main(argv: list[str]) -> int:
             return 2
         if not isinstance(result, dict) or not isinstance(result.get("screenshots"), list) or type(result.get("complete")) is not bool:
             return 2
+        requested = result["screenshots"]
+        if len(requested) > MAX_SHOTS or any(not isinstance(shot, dict) or not isinstance(shot.get("file"), str) for shot in requested):
+            return 2
         selected = select(result, Path(shots_dir))
-        if len(selected) != len(result["screenshots"]):
+        if len(selected) != len({shot["file"] for shot in requested}):
             sys.stderr.write("Every selected screenshot must pass publication validation.\n")
             return 2
         out = Path(out_dir)
