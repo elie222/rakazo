@@ -31,6 +31,7 @@ export function useThreadHeader({
   titleName,
   groupMembers,
   currentBotStatus,
+  working,
   composingBots,
   onCleared,
 }: {
@@ -44,6 +45,8 @@ export function useThreadHeader({
   titleName?: string;
   groupMembers?: ChatTitle["members"];
   currentBotStatus?: MobileBot["status"];
+  /** Whether the chat's thread has a run at work; the title's working dot follows it. */
+  working?: boolean;
   /** Bots writing reply text right now, comma-separated. */
   composingBots: string;
   /** Runs once the server has cleared the conversation, from the bot's profile. */
@@ -76,6 +79,7 @@ export function useThreadHeader({
       publishChatTitle(route.key, {
         bot: titleBot,
         status: currentBotStatus,
+        working,
         composing: titleComposing,
         name: titleName,
         members: groupMembers,
@@ -89,6 +93,7 @@ export function useThreadHeader({
       readOnly,
       titleBot,
       currentBotStatus,
+      working,
       titleComposing,
       titleName,
       groupMembers,

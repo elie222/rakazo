@@ -9,6 +9,7 @@ import {
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
   isCallClientNonce,
+  isConversationalRun,
   isMessagingChannelRun,
   isOwnerStartedRun,
   isTerminal,
@@ -166,7 +167,9 @@ import { createReplyState } from "./run-progress.js";
 import {
   DELEGATED_EMPTY_NOTICE,
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  messageBlocksText,
   runAllowsSilentEmpty,
+  runPromotesMidTurnNarration,
   runReplyGuidance,
   runReplyMode,
 } from "./run-replies.js";
@@ -175,6 +178,7 @@ import {
   retryRoutineRun,
   wakeRoutine,
 } from "./run-routines.js";
+import { startStatusLines } from "./run-status-lines.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   followUpsOffered,
@@ -199,6 +203,7 @@ import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
 import { builtinAgentSkillRecords, listAgentSkillRecords } from "./skill-tools.js";
+import { createStatusLineWriter } from "./status-lines.js";
 import {
   filterStrategicInitiativeTools,
   isStrategicInitiativeRun,
@@ -224,6 +229,7 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
 import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { openingAcknowledgementEnabled } from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
@@ -788,6 +794,50 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           run.sourceMessageId,
         );
         const turnBlocks = currentTurnMessage?.blocks;
+        // A status model, when the member chose one, writes the working line's statuses. It
+        // starts now, so its opening statuses are ready while the rest of the run sets up.
+        const statusRequestText = turnBlocks ? messageBlocksText(turnBlocks).trim() : "";
+        const statusLinesSetup =
+          openingAcknowledgementEnabled() &&
+          runPromotesMidTurnNarration(run.trigger) &&
+          isConversationalRun(run.trigger) &&
+          !runAllowsSilentEmpty(run.trigger)
+            ? createStatusLineWriter(
+                deps,
+                {
+                  runId,
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  botId: bot.id,
+                  threadId: thread.id,
+                },
+                runSecrets,
+              )
+            : Promise.resolve(undefined);
+        const statusOpening = statusLinesSetup.then(
+          (writer) => writer?.opening(statusRequestText, context.signal) ?? [],
+        );
+        // Shown as soon as they are ready, not once the run has finished setting up.
+        let statusHeld = () => false;
+        const statusLive = await statusLinesSetup.then((writer) =>
+          writer
+            ? startStatusLines({
+                writer: statusLinesSetup,
+                request: statusRequestText,
+                opening: statusOpening,
+                held: () => statusHeld(),
+                show: (text) =>
+                  deps.events.append({
+                    spaceId: run.spaceId,
+                    threadId: thread.id,
+                    botId: bot.id,
+                    type: "thread.progress",
+                    runId,
+                    payload: { text, activity: true },
+                  }),
+              })
+            : undefined,
+        );
         // A run owns its source message and steering bound to it, including waiting-input
         // replies. message.runId alone is display linkage: a send during background work
         // points at that run but waits for its continuation. Read independently of history.
@@ -1440,6 +1490,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         };
 
         const ctx: RunContext = {
+          statusLive,
           deps,
           providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
           run,
@@ -1512,6 +1563,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           settleRunningHelpers: settleHelpers,
           stopHeartbeatAfterCompletion,
         };
+        statusHeld = () => ctx.state.reply.narrationStatusShowing;
         const pluginLine =
           connectedPlugins.length > 0
             ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`

@@ -8,7 +8,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -2182,5 +2182,75 @@ describe("completion pushes", () => {
     vi.mocked(notifyRun).mockClear();
     await runTurn("Done.", false, "I will check.", [], "fyi", { trigger: "user" });
     expect(completionPushes()).toHaveLength(1);
+  });
+});
+
+describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
+  beforeEach(() => {
+    vi.stubEnv("RAKAZO_OPENING_ACKNOWLEDGEMENT", "1");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const finalText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+  const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+  const statuses = (append: Awaited<ReturnType<typeof runTurn>>["append"]) =>
+    append.mock.calls
+      .map(([event]) => event)
+      .filter(
+        (event) => event.type === "thread.progress" && (event.payload as { reset?: boolean }).reset,
+      )
+      .map((event) => (event.payload as { text: string }).text);
+
+  it("posts the opening sentence at once on a fresh turn", async () => {
+    const { finalizeRun, messages } = await runTurn("Checked: all clear.", false);
+    expect(sentTexts(messages)).toEqual(["I will check that."]);
+    expect(finalText(finalizeRun)).toBe("Checked: all clear.");
+  });
+
+  it("shows later short statuses only as the working line", async () => {
+    const { finalizeRun, messages, append } = await runTurn("Done.", false, [
+      "I'll check whether a date was announced.",
+      "Checking availability",
+      "Looking for updates",
+    ]);
+    expect(sentTexts(messages)).toEqual(["I'll check whether a date was announced."]);
+    expect(statuses(append)).toEqual(["Checking availability", "Looking for updates"]);
+    expect(stepNotes(finalizeRun)).toEqual(["Checking availability", "Looking for updates"]);
+    expect(finalText(finalizeRun)).toBe("Done.");
+  });
+
+  it("keeps a later full sentence off the working line and on the long-turn budget", async () => {
+    const { messages, append, finalizeRun } = await runTurn("Done.", false, [
+      "I'll look it up.",
+      "Found two sources, comparing them now.",
+    ]);
+    expect(sentTexts(messages)).toEqual(["I'll look it up."]);
+    // The streamed sentence is cleared, and the line keeps its last status.
+    expect(statuses(append)).toEqual([""]);
+    expect(stepNotes(finalizeRun)).toEqual(["Found two sources, comparing them now."]);
+  });
+
+  it.each(["routine", "webhook", "bot_message"])(
+    "does not post an opening sentence on %s runs",
+    async (trigger) => {
+      const { messages } = await runTurn("Done.", true, "I will check that.", [], "fyi", {
+        trigger,
+      });
+      expect(sentTexts(messages)).toEqual([]);
+    },
+  );
+
+  it("does not post an opening sentence for a group message that named nobody", async () => {
+    const { messages } = await runTurn("Done.", false, "I will check that.", [], "fyi", {
+      group: { optional: true },
+    });
+    expect(sentTexts(messages)).toEqual([]);
   });
 });

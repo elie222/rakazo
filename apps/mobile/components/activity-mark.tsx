@@ -43,8 +43,16 @@ const PHOTO_DOT = { size: 6, gap: 4 };
 const CYCLE_MS = 2000;
 const SWAP_MS = 350;
 const CROSSFADE = { entering: FadeIn.duration(SWAP_MS), exiting: FadeOut.duration(SWAP_MS) };
-/** A clock long enough to never wrap while the photo dots pulse. */
+/** A clock long enough to never wrap while the photo dots pulse or the mark breathes. */
 const DOTS_RUN_MS = 24 * 60 * 60 * 1000;
+/**
+ * While its bot works, the mark breathes: a slow, slight swell that keeps it visibly alive
+ * whatever its avatar can do by itself. Period, how much it grows, and how long it takes to
+ * start or settle.
+ */
+const BREATH = { periodMs: 1800, scale: 0.07, easeMs: 300 } as const;
+/** A new status phrase cross-fades over the last one. */
+const LABEL_FADE_MS = 200;
 
 /**
  * The bot at the end of a chat while it works: its avatar moves (or turns into the
@@ -83,17 +91,40 @@ export function ActivityMark({
     return () => clearInterval(timer);
   }, [bots.length, reducedMotion, onScreen]);
 
+  const bot = bots[index % bots.length];
+  const photo = bot?.color.startsWith("data:image/") ?? false;
+  // Photo dots pulse by themselves and writing turns the mark into typing dots: neither breathes.
+  const breathing = !reducedMotion && onScreen && !photo && !bot?.composing;
+  const breathClock = useSharedValue(0);
+  const breathAmount = useSharedValue(0);
+  useEffect(() => {
+    breathAmount.value = withTiming(breathing ? 1 : 0, {
+      duration: BREATH.easeMs,
+      easing: Easing.inOut(Easing.quad),
+    });
+    if (!breathing) return;
+    // Resume from where the breath stopped.
+    breathClock.value = withTiming(breathClock.value + DOTS_RUN_MS, {
+      duration: DOTS_RUN_MS,
+      easing: Easing.linear,
+    });
+    return () => cancelAnimation(breathClock);
+  }, [breathing, breathClock, breathAmount]);
+
   const rowStyle = useAnimatedStyle(() => ({ height: height.value }));
   const markStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const bot = bots[index % bots.length];
+  const breathStyle = useAnimatedStyle(() => {
+    const phase = (breathClock.value % BREATH.periodMs) / BREATH.periodMs;
+    const swell = (1 - Math.cos(phase * 2 * Math.PI)) / 2;
+    return { transform: [{ scale: 1 + BREATH.scale * swell * breathAmount.value }] };
+  });
   if (!bot) return null;
-  const photo = bot.color.startsWith("data:image/");
   return (
     <Animated.View
       exiting={reducedMotion ? undefined : FadeOut.duration(ROW_MS)}
       style={[{ flexDirection: "row", alignItems: "center", gap: 8, overflow: "hidden" }, rowStyle]}
     >
-      <Animated.View style={[{ width: MARK_SIZE, height: MARK_SIZE }, markStyle]}>
+      <Animated.View style={[{ width: MARK_SIZE, height: MARK_SIZE }, markStyle, breathStyle]}>
         <Animated.View
           key={bot.id}
           entering={bots.length > 1 ? CROSSFADE.entering : undefined}
@@ -116,16 +147,40 @@ export function ActivityMark({
           )}
         </Animated.View>
       </Animated.View>
-      {label ? (
-        <Text
-          numberOfLines={1}
-          maxFontSizeMultiplier={MAX_FONT_SCALE}
-          style={{ flexShrink: 1, color: tokens.mutedForeground, ...typeScale.secondary }}
-        >
+      {label ? <ActivityLabel label={label} color={tokens.mutedForeground} /> : null}
+    </Animated.View>
+  );
+}
+
+/**
+ * What the bot is doing, in a short phrase. A new phrase cross-fades over the last one; an
+ * invisible copy of the current phrase holds the line's height, so a swap never moves the row.
+ */
+function ActivityLabel({ label, color }: { label: string; color: string }) {
+  const reducedMotion = useReducedMotion();
+  const textStyle = { color, ...typeScale.secondary };
+  return (
+    <View style={{ flexShrink: 1, flexGrow: 1 }}>
+      <Text
+        numberOfLines={1}
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[textStyle, { opacity: 0 }]}
+      >
+        {label}
+      </Text>
+      <Animated.View
+        key={label}
+        entering={reducedMotion ? undefined : FadeIn.duration(LABEL_FADE_MS)}
+        exiting={reducedMotion ? undefined : FadeOut.duration(LABEL_FADE_MS)}
+        style={{ position: "absolute", top: 0, start: 0, end: 0 }}
+      >
+        <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={textStyle}>
           {label}
         </Text>
-      ) : null}
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 

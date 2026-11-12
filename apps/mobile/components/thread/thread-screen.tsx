@@ -62,6 +62,7 @@ import { useThreadSync } from "../../lib/thread-sync";
 import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
+import { threadRunWorking } from "../../lib/thread-working";
 import { FailedSendBubble } from "../failed-send-bubble";
 import { NewestPageCards } from "../pages/page-card";
 import { RunErrorSheet } from "../run-error-sheet";
@@ -258,6 +259,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     snap && (!showingSaved || error)
       ? snap.run?.status
       : (titleBot?.threadStatus ?? snap?.run?.status);
+  // The title's working dot follows the thread's own runs, so writing the reply (which hides
+  // the bot-status dot) or a settled latest run beside newer work never hides it.
+  const threadWorking =
+    !inGroup &&
+    threadRunWorking(
+      currentBotStatus,
+      snap && (!showingSaved || error)
+        ? (snap.activeRuns ?? (snap.run ? [snap.run] : []))
+        : undefined,
+      botId,
+    );
   // The group's members in its order, once the chat or its group list has loaded them; the
   // title seats the inbox's copy until then.
   const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
@@ -265,7 +277,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
-  const activityLine = liveActivityLine(snap?.messages ?? []);
+  // The bot's last status stays up between steps, until the next one or the end of the run.
+  const liveLine = liveActivityLine(snap?.messages ?? []);
+  const lastActivityLine = useRef<string | undefined>(undefined);
+  const runActive = [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some((run) =>
+    isRunWorking(run.status),
+  );
+  if (!runActive) lastActivityLine.current = undefined;
+  else if (liveLine) lastActivityLine.current = liveLine;
+  const activityLine = liveLine ?? lastActivityLine.current;
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>
@@ -326,6 +346,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     titleName,
     groupMembers,
     currentBotStatus,
+    working: threadWorking,
     composingBots,
     onCleared: history.clear,
   });

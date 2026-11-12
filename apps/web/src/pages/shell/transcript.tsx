@@ -46,6 +46,11 @@ import {
   quoteDraftForSelection,
 } from "../../lib/quote-selection";
 import type { createSpaceRpc } from "../../lib/rpc";
+import {
+  SENT_ENTRANCE_KEYFRAMES,
+  SENT_ENTRANCE_TIMING,
+  sentMessageEntrances,
+} from "../../lib/sent-message-entrance";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
 import { transcriptIsNearEnd, transcriptMovedDown } from "../../lib/transcript-scroll";
@@ -250,8 +255,15 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
+  // The bot's last status stays up between steps, until the next one or the end of the run.
+  const liveLine = liveActivityLine(messages);
+  const lastActivityLine = useRef<string | undefined>(undefined);
+  if (!running) lastActivityLine.current = undefined;
+  else if (liveLine) lastActivityLine.current = liveLine;
   const workingLabel =
-    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
+    liveLine ??
+    lastActivityLine.current ??
+    (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -436,9 +448,12 @@ export const Transcript = memo(function Transcript({
   }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled, exchanges.lineOf]);
 
   const followedRequest = useRef(followRequest);
+  /** When each send from this tab was made, until its message arrives. */
+  const pendingSends = useRef<number[]>([]);
   useLayoutEffect(() => {
     if (followedRequest.current === followRequest) return;
     followedRequest.current = followRequest;
+    pendingSends.current.push(Date.now());
     snapToEnd();
   }, [followRequest, snapToEnd]);
 
@@ -448,6 +463,29 @@ export const Transcript = memo(function Transcript({
     // Content can grow below a reader who is not following without any scroll event.
     else if (element) setAtEnd(transcriptIsNearEnd(element));
   }, [messages, running, scrollRef, snapToEnd]);
+
+  // Your message rises into place the first time it appears after you send it from this tab.
+  // It runs before paint, after the snap above, so the row starts just above the composer.
+  const seenMessageIds = useRef<ReadonlySet<string> | null>(null);
+  useLayoutEffect(() => {
+    const seenIds = seenMessageIds.current;
+    seenMessageIds.current = new Set(messages.map((message) => message.id));
+    if (!seenIds) return;
+    const { entering, pendingSends: stillPending } = sentMessageEntrances({
+      messages,
+      seenIds,
+      pendingSends: pendingSends.current,
+      meId,
+      now: Date.now(),
+    });
+    pendingSends.current = stillPending;
+    if (!entering.length || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    for (const id of entering) {
+      scrollRef.current
+        ?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)
+        ?.animate?.(SENT_ENTRANCE_KEYFRAMES, SENT_ENTRANCE_TIMING);
+    }
+  }, [messages, meId, scrollRef]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;

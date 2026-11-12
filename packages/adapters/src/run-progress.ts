@@ -30,9 +30,11 @@ import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 import {
   clampUserProgressMessage,
   extractNarrationText,
+  isStatusNote,
   isUserProgressClientNonce,
   midTurnProgressBudgetAllows,
   narrationStatusLine,
+  openingAcknowledgementEnabled,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -250,6 +252,26 @@ export async function flushProgress(ctx: RunContext) {
 }
 
 /**
+ * The bot's first words in a conversational turn, written before its first step, say what it
+ * is about to do. They are posted at once, without waiting for the turn to grow long, so the
+ * person knows the bot is on it.
+ */
+export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean) {
+  const { reply } = ctx.state;
+  const firstStep = reply.toolCalls.at(-1)?.executionId;
+  return (
+    openingText &&
+    openingAcknowledgementEnabled() &&
+    narrationBecomesMessages(ctx) &&
+    isConversationalRun(ctx.run.trigger) &&
+    !runAllowsSilentEmpty(ctx.run.trigger) &&
+    !ctx.groupReplyOptional &&
+    reply.midTurnProgressCount === 0 &&
+    reply.toolCalls.every((call) => call.executionId === firstStep)
+  );
+}
+
+/**
  * Text the bot wrote before a step. It is posted as an interim message when the budget allows
  * and it fits; otherwise it is a note on that step, kept out of the reply. Returns the note so
  * the caller can show it as the working line.
@@ -261,6 +283,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   reply.messageSegments = extracted.remaining;
   reply.currentTextSegment = "";
   const text = redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim();
+  const openingText = !reply.narrationSoFar.trim();
   reply.narrationSoFar += extracted.text;
   if (!text) return undefined;
   reply.assembled = "";
@@ -269,14 +292,24 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   // Text the redactor still holds back belongs to the text just taken out.
   reply.redactor.skip();
   const promotes = runPromotesMidTurnNarration(run.trigger);
+  const statusNote = openingAcknowledgementEnabled() && isStatusNote(text);
   if (
+    !statusNote &&
     text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
-    (canPublishDurableNarration(ctx) || (beforeConnectCard && narrationBecomesMessages(ctx)))
+    (canPublishDurableNarration(ctx) ||
+      isOpeningAcknowledgement(ctx, openingText) ||
+      (beforeConnectCard && narrationBecomesMessages(ctx)))
   ) {
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
     await publishInterimMessage(ctx, text);
     return undefined;
+  }
+  if (statusNote && promotes && !ctx.allowSilentEmptyRun) {
+    // A status only describes the step; it never stands in for the reply.
+    flushPendingTools(reply);
+    reply.messageSegments = noteLastToolStep(reply.messageSegments, text);
+    return text;
   }
   reply.discardedMidTurnNarration = true;
   reply.lastDiscardedMidTurnNarration = clampUserProgressMessage(text);
@@ -330,13 +363,18 @@ export async function showNarrationStatus(ctx: RunContext, note: string | undefi
     isBackgroundRunTrigger(run.trigger)
   )
     return;
-  ctx.state.reply.narrationStatusShowing = true;
+  // With live narration, only a short status stays on the line as written. Longer text is
+  // the bot thinking aloud: the status model words it as a status, or the line keeps its last.
+  const shown =
+    !openingAcknowledgementEnabled() || isStatusNote(note) ? narrationStatusLine(note) : "";
+  if (!shown) ctx.statusLive?.step(note);
+  ctx.state.reply.narrationStatusShowing = Boolean(shown);
   await deps.events.append({
     spaceId: run.spaceId,
     threadId: thread.id,
     botId: bot.id,
     type: "thread.progress",
     runId,
-    payload: { reset: true, text: narrationStatusLine(note), activity: true },
+    payload: { reset: true, text: shown, activity: true },
   });
 }

@@ -14,7 +14,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FailedSendBubble } from "../components/failed-send-bubble";
+import { FailedSendBubble, SLOW_SEND_MS } from "../components/failed-send-bubble";
 import type { rpc } from "./api";
 import { showIOSActionSheet } from "./ios-action-sheet";
 import type { MobileSnapshot } from "./mobile-types";
@@ -25,7 +25,9 @@ import {
   configureUnsentSends,
   confirmEchoes,
   deliverSend,
+  FRESH_SEND_MS,
   hasUnsentSends,
+  isFreshSend,
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
@@ -66,6 +68,15 @@ vi.mock("react-native", () => ({
     ),
   Platform: { OS: "ios" },
   Alert: { alert: vi.fn() },
+}));
+vi.mock("react-native-reanimated", () => ({
+  default: {
+    View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
+  },
+  Easing: { out: (easing: unknown) => easing, cubic: 0 },
+  FadeIn: { duration: () => ({}) },
+  useReducedMotion: () => false,
+  withTiming: (value: unknown) => value,
 }));
 vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: vi.fn() }));
 vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
@@ -201,7 +212,9 @@ describe("scoped mobile outbox", () => {
       sending = feedback.send(attempt);
     });
     expect(container.textContent).toContain("Hello");
-    expect(container.textContent).toContain("Sending…");
+    // A quick send has no caption to remove when the echo replaces it; it still says so aloud.
+    expect(container.textContent).not.toContain("Sending…");
+    expect(container.querySelector("button")?.getAttribute("aria-label")).toContain("Sending…");
     await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     const writes = disk.save.mock.calls.length;
     act(() => confirmEchoes("bot-1", []));
@@ -1470,7 +1483,7 @@ describe("a send and its echo", () => {
     act(() => {
       sending = feedback.send(attempt);
     });
-    expect(container.textContent).toContain("Sending…");
+    expect(container.querySelector("button")?.getAttribute("aria-label")).toContain("Sending…");
     await act(async () => {
       await accept({ seq: 42 });
       await sending;
@@ -1544,5 +1557,89 @@ describe("a send and its echo", () => {
     echo(10);
     expect(copies()).toBe(1);
     expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+});
+
+describe("a send's own bubble", () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  const attempt = (state: SendAttempt["state"]) =>
+    ({ payload: { displayText: "Hello", attachments: [] }, state }) as unknown as SendAttempt;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    container = document.createElement("div");
+    root = createRoot(container);
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  const render = (sent: SendAttempt) =>
+    act(() =>
+      root.render(<FailedSendBubble attempt={sent} onRetry={() => {}} onDelete={() => {}} />),
+    );
+
+  it("says it is still sending only once a send is slow", () => {
+    const sent = attempt("pending");
+    render(sent);
+    expect(container.textContent).toBe("Hello");
+    act(() => vi.advanceTimersByTime(SLOW_SEND_MS - 1));
+    expect(container.textContent).not.toContain("Sending…");
+    act(() => vi.advanceTimersByTime(1));
+    expect(container.textContent).toContain("Sending…");
+  });
+
+  it("names a failed send at once", () => {
+    render(attempt("failed"));
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+  });
+
+  it("counts a send as just sent only right after its tap", () => {
+    expect(isFreshSend(attempt("pending"))).toBe(false);
+  });
+});
+
+describe("a just-sent message", () => {
+  beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    clearFailedSends();
+    configureUnsentSends({
+      request: vi.fn(),
+      scope: () => ({ apiBase: "http://api.test", spaceId: null, userId: "u", cacheSession: "c" }),
+      serverReachable: () => true,
+      passwordChanging: () => false,
+      disk: {
+        admit: () => true,
+        hydrate: async () => undefined,
+        forget: () => undefined,
+        load: () => [],
+        save: () => undefined,
+        clear: () => undefined,
+      },
+      errorText: String,
+      notDelivered: () => undefined,
+    });
+    restoreUnsentSends();
+  });
+  afterEach(() => {
+    clearFailedSends();
+    vi.unstubAllGlobals();
+  });
+
+  it("slides in only for a moment after the tap that sent it", () => {
+    let created!: SendAttempt;
+    function Sender() {
+      const sends = useThreadFeedback("bot-1", () => "nonce-fresh");
+      created ??= sends.sendAttempt(payload());
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    act(() => root.render(<Sender />));
+    const now = Date.now();
+    expect(isFreshSend(created, now)).toBe(true);
+    expect(isFreshSend(created, now + FRESH_SEND_MS)).toBe(false);
+    act(() => root.unmount());
   });
 });

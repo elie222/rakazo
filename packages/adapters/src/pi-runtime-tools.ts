@@ -43,6 +43,7 @@ import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
+import { narrationStatusLine, openingAcknowledgementEnabled } from "./user-progress.js";
 import { isVerbatimMcpResult } from "./verbatim-mcp-result.js";
 import { positiveIntegerArg } from "./workspace-file-tools.js";
 
@@ -216,6 +217,8 @@ export function describeToolActivity(
   args: unknown,
   findTool?: (name: string) => ConnectorTool | undefined,
 ): string {
+  const status = stepStatusOf(args);
+  if (status) return status;
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
   if (toolName === USE_TOOL)
     return describeToolActivity(String(record.name), record.arguments, findTool);
@@ -360,6 +363,63 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
 }
 
 function toAgentTool(
+  tool: ConnectorTool,
+  host: ToolHost,
+  exposedName: string,
+  options: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
+): AgentTool {
+  const agentTool = buildAgentTool(tool, host, exposedName, options);
+  return openingAcknowledgementEnabled() && !STATUSLESS_TOOLS.has(tool.name)
+    ? withStepStatusField(agentTool)
+    : agentTool;
+}
+
+/** Tools whose own text is what the person reads, so a status line would only repeat it. */
+const STATUSLESS_TOOLS = new Set(["message_user", "ask_user", "request_secret"]);
+
+export const STEP_STATUS_FIELD = "status";
+
+const STEP_STATUS_DESCRIPTION =
+  "Two to five words, in the person's language, saying what this call does for them, shown live while it runs (for example “Checking availability”). Not passed to the tool.";
+
+/**
+ * Offers the model a `status` field on the tool, the line the thread shows while the call runs.
+ * It is taken out before the tool's own argument handling, so the tool never sees it.
+ */
+function withStepStatusField(agentTool: AgentTool): AgentTool {
+  const schema = agentTool.parameters as unknown as {
+    type?: unknown;
+    properties?: Record<string, unknown>;
+  };
+  if (schema?.type !== "object" || !schema.properties || STEP_STATUS_FIELD in schema.properties)
+    return agentTool;
+  schema.properties[STEP_STATUS_FIELD] = { type: "string", description: STEP_STATUS_DESCRIPTION };
+  const prepare = agentTool.prepareArguments;
+  return {
+    ...agentTool,
+    prepareArguments: (args: unknown) => {
+      const rest = withoutStepStatus(args);
+      return prepare ? prepare(rest) : rest;
+    },
+  };
+}
+
+function withoutStepStatus(args: unknown): unknown {
+  if (!args || typeof args !== "object" || !(STEP_STATUS_FIELD in args)) return args;
+  const { [STEP_STATUS_FIELD]: _status, ...rest } = args as Record<string, unknown>;
+  return rest;
+}
+
+/** The status the model gave a call, cleaned for the working line, when it gave one. */
+export function stepStatusOf(args: unknown): string | undefined {
+  if (!openingAcknowledgementEnabled() || !args || typeof args !== "object") return undefined;
+  const value = (args as Record<string, unknown>)[STEP_STATUS_FIELD];
+  if (typeof value !== "string") return undefined;
+  const text = sanitizeSensitiveText(value).replaceAll(/\s+/g, " ").trim();
+  return text ? narrationStatusLine(text) : undefined;
+}
+
+function buildAgentTool(
   tool: ConnectorTool,
   host: ToolHost,
   exposedName: string,
@@ -529,6 +589,9 @@ function toAgentTool(
             executionId,
             response: host.modelResponses,
             ...(viaUseTool ? { viaUseTool } : {}),
+            ...(host.stepStatuses?.has(rawCallId)
+              ? { status: host.stepStatuses.get(rawCallId) }
+              : {}),
           });
           const startedAt = Date.now();
           let result: unknown;
@@ -794,6 +857,8 @@ export interface EventQueue {
 }
 
 export interface ToolHost {
+  /** The status the model gave each call, by Pi tool call id, read from its raw arguments. */
+  stepStatuses?: Map<string, string>;
   context?: Partial<AdapterContext>;
   modelFetch?: typeof globalThis.fetch;
   onContextDecision?: PiAgentRuntimeOptions["onContextDecision"];
