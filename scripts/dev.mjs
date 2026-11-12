@@ -35,7 +35,7 @@ import {
   BRANCH_DATABASE_COMMENT,
   branchDatabaseName,
   branchDatabaseOwner,
-} from "./dev-branch-databases.mjs";
+} from "./dev-branch-databases.ts";
 import { runPnpm, spawnPnpm } from "./pnpm.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

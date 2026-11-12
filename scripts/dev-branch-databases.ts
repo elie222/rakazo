@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 export const BRANCH_DATABASE_COMMENT = "rakazo dev branch: ";
 
 /** Keep database names safe as both SQL identifiers and local directory names. */
-export function branchDatabaseName(sharedName, branch) {
+export function branchDatabaseName(sharedName: string, branch: string): string {
   const safeShared = sharedName.replace(/[^A-Za-z0-9_-]/g, "_");
   // Preserve existing names for ordinary databases; distinguish escaped shared names too.
   const identity = safeShared === sharedName ? branch : JSON.stringify([sharedName, branch]);
@@ -17,7 +17,11 @@ export function branchDatabaseName(sharedName, branch) {
 }
 
 /** Catalog comments alone must not authorize SQL or recursive filesystem deletion. */
-export function branchDatabaseOwner(row, sharedName, repo) {
+export function branchDatabaseOwner(
+  row: { owner: string; name: string },
+  sharedName: string,
+  repo: string,
+): string | undefined {
   try {
     const owner = JSON.parse(row.owner);
     if (
