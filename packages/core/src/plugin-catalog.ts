@@ -238,7 +238,7 @@ export function matchesPluginQuery(
 }
 
 function brandKey(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 /** The managed app a plugin is for, matched by name, so one brand is listed once. */
@@ -246,7 +246,7 @@ export function managedAppFor<T extends { name: string; slug: string }>(
   entry: Pick<PluginMarketplaceEntry, "name" | "displayName">,
   apps: readonly T[],
 ): T | undefined {
-  const keys = new Set([brandKey(entry.displayName), brandKey(entry.name)]);
+  const keys = new Set([brandKey(entry.displayName), brandKey(entry.name)].filter(Boolean));
   return apps.find((app) => keys.has(brandKey(app.name)) || keys.has(brandKey(app.slug)));
 }
 
