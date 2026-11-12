@@ -32,6 +32,7 @@ type DefaultModel = { defaultProvider: string | null; defaultModel: string | nul
 export type ConnectionFormFields = {
   enabledModelIds: string[];
   baseUrl: string;
+  label: string;
   apiProtocol: ModelApiProtocol;
   reasoning: boolean;
   thinkingLevel: ThinkingLevel | null;
@@ -81,6 +82,7 @@ export function connectionFormFields(input: {
     | "modelId"
     | "enabledModelIds"
     | "baseUrl"
+    | "label"
     | "apiProtocol"
     | "reasoning"
     | "thinkingLevel"
@@ -104,6 +106,7 @@ export function connectionFormFields(input: {
   return {
     enabledModelIds: credential?.enabledModelIds ?? [],
     baseUrl: compatible ? (credential?.baseUrl ?? presetBaseUrl ?? "") : "",
+    label: credential?.label ?? "",
     apiProtocol: credential?.apiProtocol ?? "chat-completions",
     reasoning: credential?.reasoning ?? false,
     thinkingLevel: clampCatalogThinkingLevel(
@@ -247,7 +250,7 @@ export function modelConnectRequest(input: {
           form.supportsImages && !form.maxImagesPerPrompt.trim() ? null : maxImagesPerPrompt,
         ...makeDefault,
         apiKey: form.apiKey.trim() || undefined,
-        label,
+        label: form.label.trim() || label,
         credentialId,
       },
     };

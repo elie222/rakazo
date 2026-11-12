@@ -58,6 +58,7 @@ export function useModelConnectionForm({
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [label, setLabel] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
@@ -94,6 +95,7 @@ export function useModelConnectionForm({
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);
     setBaseUrl(fields.baseUrl);
+    setLabel(fields.label);
     setApiProtocol(fields.apiProtocol);
     setReasoning(fields.reasoning);
     setThinkingLevel(fields.thinkingLevel);
@@ -252,6 +254,8 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    label,
+    setLabel,
     routingReady,
     contextWindow,
     enabledModelIds,

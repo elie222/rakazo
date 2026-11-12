@@ -22,6 +22,8 @@ type CompatibleEndpointFormProps = {
   probing: boolean;
   baseUrl: string;
   onChangeBaseUrl: (next: string) => void;
+  label: string;
+  onChangeLabel: (next: string) => void;
   onFindModels: () => void;
   /** A known endpoint needs no setup help. */
   hasPreset: boolean;
@@ -63,6 +65,8 @@ export function CompatibleEndpointForm({
   probing,
   baseUrl,
   onChangeBaseUrl,
+  label,
+  onChangeLabel,
   onFindModels,
   hasPreset,
   showEndpointHelp,
@@ -119,6 +123,18 @@ export function CompatibleEndpointForm({
         placeholderTextColor={native.tertiaryLabel}
         style={styles.keyInput}
         value={baseUrl}
+      />
+      <Text style={styles.sectionTitle}>{t("Display name")}</Text>
+      <TextInput
+        accessibilityLabel={t("Display name")}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!busy}
+        onChangeText={onChangeLabel}
+        placeholder={t("Optional")}
+        placeholderTextColor={native.tertiaryLabel}
+        style={styles.keyInput}
+        value={label}
       />
       <NativeActionButton
         disabled={busy || probing || !effectiveBaseUrl}

@@ -26,6 +26,8 @@ export function CompatibleModelFields({
   credential,
   apiProtocol,
   baseUrl,
+  label,
+  setLabel,
   busy,
   cancelOAuthAttempt,
   compatibleRows,
@@ -68,6 +70,8 @@ export function CompatibleModelFields({
   | "credential"
   | "apiProtocol"
   | "baseUrl"
+  | "label"
+  | "setLabel"
   | "busy"
   | "cancelOAuthAttempt"
   | "compatibleRows"
@@ -133,6 +137,18 @@ export function CompatibleModelFields({
           onChange={(event) => updateBaseUrl(event.target.value)}
           aria-label={t`OpenAI-compatible server URL`}
           placeholder="http://127.0.0.1:8000/v1"
+          autoComplete="off"
+          className="mt-2 h-10 text-foreground"
+        />
+      </label>
+      <label className="block" htmlFor="model-label">
+        <Trans>Display name</Trans>
+        <Input
+          id="model-label"
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          aria-label={t`Display name`}
+          placeholder={t`Optional`}
           autoComplete="off"
           className="mt-2 h-10 text-foreground"
         />
