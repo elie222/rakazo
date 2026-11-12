@@ -168,7 +168,7 @@ export async function executeCloudAgentTool(
         !(await deps.userCloudAgents?.forKey(agent.providerKey, {
           spaceId: context.spaceId,
           userId: context.userId,
-          botIds: [context.botId],
+          botIds: [context.botId, agent.botId],
         }))
       )
         return { error: "Unknown cloud agent." };
