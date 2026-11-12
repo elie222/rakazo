@@ -28,6 +28,7 @@ import type {
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  configuredBotEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -420,6 +421,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  const botEmail: TransactionalEmailProvider | undefined =
+    configuredBotEmailProvider({
+      smtpUrl: env.botEmailSmtpUrl,
+      domain: env.inboundEmail?.domain,
+    }) ?? localEmailEmulator;
   const emailErrorLogger = (message: string) => (error: unknown) => {
     if (error instanceof EmailRecipientRejectedError) {
       getLogger().warn(message, { "error.message": error.message });
@@ -626,7 +632,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     jobs,
     events,
     onTicketChange: ticketChanges,
-    email,
+    email: botEmail,
     messaging,
     cloudAgent,
     userDevices:
@@ -1132,6 +1138,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await mcpArgsMove;
       await runsStopped;
       await requestsSettled;
+      await botEmail?.drain?.();
       await email?.drain?.();
       await jobs.close();
       await secrets.close();

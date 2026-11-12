@@ -13,7 +13,7 @@ import {
   apnsVoipConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
-  configuredEmailProvider,
+  configuredBotEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -203,12 +203,9 @@ async function main() {
   });
   const activityPush = await createApnsActivityProvider(apnsVoipConfig(process.env));
   if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
-  const email = configuredEmailProvider({
-    provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
-    apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
-    from: process.env.EMAIL_FROM?.trim() || undefined,
-    replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
-    smtpUrl: process.env.SMTP_URL?.trim() || undefined,
+  const email = configuredBotEmailProvider({
+    smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
+    domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
   const { executor, jobHandlers } = createRunRuntime(env, connectors, {
     mediaGeneration,
@@ -226,7 +223,7 @@ async function main() {
     jobs,
     events,
     onTicketChange: ticketChanges,
-    // Bots send from their own address through the same provider as account email.
+    // Bots use a separate sending connection from account email.
     email,
     messaging,
     cloudAgent,
