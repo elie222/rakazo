@@ -48,6 +48,11 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
   Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
+A bot's own saved replies and local summaries remain its historical context; they do not make every
+later turn an outside-content run. Exposure tracking checks fresh sources and messages from other
+bots, not the complete ancestry of saved knowledge. Recalled memory is untrusted historical data,
+not instructions. Spaces remain separate authorization boundaries.
+
 Once connected, **Default scope** decides what bots share in the provider:
 
 - **Isolated**: each bot recalls only what it saved. This is the default.

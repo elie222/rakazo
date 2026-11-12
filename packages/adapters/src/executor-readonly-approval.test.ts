@@ -1931,6 +1931,8 @@ describe("own instructions through update_bot", () => {
   });
   it.each([
     ["a webhook", "webhook", true],
+    ["a bot-created startup prompt", "spawn", true],
+    ["a helper result", "helper_result", true],
     ["a routine", "routine", false],
   ])("records whether a run started by %s read outside content", async (_case, trigger, read) => {
     const f = fixture({ name: "update_bot", builtin: true, trigger });

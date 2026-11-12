@@ -122,7 +122,7 @@ function receiverOwns(bot: { spaceId: string; userId: string }, receiver: WordsR
  * finalizes, and the flag is final only then, so a running, waiting, failed or cancelled run is
  * not trusted, and neither is a run that can't be found.
  */
-async function trustedBotRuns(
+export async function trustedBotRuns(
   prisma: PrismaClient,
   receiver: WordsReceiver,
   runIds: readonly string[],

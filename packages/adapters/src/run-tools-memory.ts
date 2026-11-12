@@ -7,7 +7,7 @@ import {
 import { readHistory, searchHistory } from "@rakazo/db";
 import { sharedMemorySaveError } from "./builtin-tools.js";
 import { redactConnectorPayload } from "./connector-safety.js";
-import { historyHasOutsideContent } from "./conversation-memory.js";
+import { historyHasOutsideContent, trustedBotRuns } from "./conversation-memory.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
@@ -73,7 +73,23 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   }
   // The returned prose has lost its sender markers. Check its source rows before exposing it.
   const ids = response.messages.map((message) => message.messageId);
-  let outside = "runs" in response && response.runs.length > 0;
+  let outside = false;
+  if ("runs" in response && response.runs.length > 0) {
+    try {
+      const runIds = response.runs.map((run) => run.id);
+      const trusted = await trustedBotRuns(
+        deps.prisma,
+        {
+          spaceId: run.spaceId,
+          userId: ctx.bot.userId,
+        },
+        runIds,
+      );
+      outside = runIds.some((id) => !trusted.has(id));
+    } catch {
+      outside = true;
+    }
+  }
   if (!outside && ids.length) {
     try {
       const rows = await deps.prisma.message.findMany({

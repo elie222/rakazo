@@ -110,3 +110,47 @@ it.each(["Provider-generated context", ""])(
     expect(ctx.state.readOutsideContent).toBe(Boolean(text));
   },
 );
+
+it.each([
+  ["clean", "completed", false, "space-1", "user-1", false],
+  ["outside content", "completed", true, "space-1", "user-1", true],
+  ["in progress", "running", false, "space-1", "user-1", true],
+  ["another Space", "completed", false, "space-2", "user-1", true],
+  ["another owner", "completed", false, "space-1", "user-2", true],
+])(
+  "checks linked history run provenance: %s",
+  async (_case, status, readOutsideContent, spaceId, userId, exposed) => {
+    vi.mocked(readHistory).mockResolvedValueOnce({
+      messages: [],
+      runs: [{ id: "past-run" }],
+    } as never);
+    const ctx = {
+      runId: "run-1",
+      run: { spaceId: "space-1", threadId: "thread-1", botId: "bot-1" },
+      bot: { id: "bot-1", userId: "user-1" },
+      source: {},
+      secrets: [],
+      state: { readOutsideContent: false },
+      computer: { copyEarlierFiles: vi.fn() },
+      deps: {
+        prisma: {
+          run: {
+            findMany: vi.fn(async () => [
+              { id: "past-run", status, readOutsideContent, bot: { spaceId, userId } },
+            ]),
+            updateMany: vi.fn(async () => ({ count: 1 })),
+          },
+        },
+      },
+    };
+    await memoryTools.read_history!(
+      ctx as never,
+      {
+        name: "read_history",
+        args: { messageId: "cmw3l7emsa1sfb5bml8d0doe0" },
+        finish: async (result: unknown) => result,
+      } as never,
+    );
+    expect(ctx.state.readOutsideContent).toBe(exposed);
+  },
+);

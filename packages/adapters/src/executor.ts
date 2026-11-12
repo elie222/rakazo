@@ -1431,6 +1431,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         );
         const startedByOutsideText =
           run.trigger === "webhook" ||
+          run.trigger === "spawn" ||
+          run.trigger === "helper_result" ||
           nonOwnerChatRun ||
           (run.trigger === "bot_message" &&
             !(
