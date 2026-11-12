@@ -919,8 +919,8 @@ importers:
         specifier: 1.5.0
         version: 1.5.0
       '@insforge/instabox-sdk':
-        specifier: 0.8.0
-        version: 0.8.0
+        specifier: 0.9.0
+        version: 0.9.0
       '@kubernetes/client-node':
         specifier: 2.0.2
         version: 2.0.2(supports-color@8.1.1)
@@ -3653,8 +3653,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@insforge/instabox-sdk@0.8.0':
-    resolution: {integrity: sha512-doGu9feH4nfi4/qU1ToXqZ9fNEwUMqMDzjMcGBO5i1XOh0R64XdayN7FNHjSOQs9/uNzwRKTJn6QfjZCFl4aHQ==}
+  '@insforge/instabox-sdk@0.9.0':
+    resolution: {integrity: sha512-dEFYkmGuewhNUX2P4ExduSzjskyYONEFqwEF4yfEh4KHX8DYTdqBm3uzjONKyOY2j+JFr0iAiQwTBTOUjngjSQ==}
     engines: {node: '>=18'}
 
   '@isaacs/cliui@8.0.2':
@@ -16501,7 +16501,7 @@ snapshots:
   '@img/sharp-win32-x64@0.35.5':
     optional: true
 
-  '@insforge/instabox-sdk@0.8.0': {}
+  '@insforge/instabox-sdk@0.9.0': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:

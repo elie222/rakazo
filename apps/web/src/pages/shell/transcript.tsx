@@ -17,6 +17,7 @@ import {
   peerExchangeLines,
   projectBotMentions,
   projectMessageReactions,
+  separateAskAnswers,
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
@@ -236,6 +237,10 @@ export const Transcript = memo(function Transcript({
     [onJumpToMessage],
   );
   const reactionView = useMemo(() => projectMessageReactions(pageView.visibleMessages), [pageView]);
+  const separateAnswers = useMemo(
+    () => separateAskAnswers(reactionView.visibleMessages),
+    [reactionView.visibleMessages],
+  );
   const visibleReceipts = reactionView.visibleMessages.filter((message) =>
     messageHasVisibleBlocks(message.blocks, showToolActivity),
   );
@@ -615,6 +620,7 @@ export const Transcript = memo(function Transcript({
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}
+                      separateAnswers={separateAnswers.get(message.id)}
                       meId={meId}
                       markedUnread={message.id === markedUnreadMessageId}
                       mentions={mentionView.mentions.get(message.id)}

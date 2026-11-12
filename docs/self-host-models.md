@@ -77,6 +77,8 @@ RAKAZO_LOCAL_MAX_TOKENS=4096
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 # Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
+# Optional: prompt tokens per minute the server accepts (a rate-limited key or quota).
+RAKAZO_LOCAL_TOKENS_PER_MINUTE=200000
 # Optional: off when the server does not cache prompts.
 RAKAZO_LOCAL_PROMPT_CACHE=off
 ```
@@ -96,6 +98,15 @@ receive the field.
 connection sets its own max-tokens value. It never exceeds a quarter of
 `RAKAZO_LOCAL_CONTEXT_WINDOW`, so the prompt keeps the rest; a higher limit leaves less room for the
 prompt, so long chats are compacted sooner.
+
+A server behind a rate-limited key (a free tier, an organisation token quota) often answers `429`
+with a fixed `Retry-After` of a minute, so each rejected call costs a minute. Set
+`RAKAZO_LOCAL_TOKENS_PER_MINUTE` to the server's prompt-token limit and Rakazo paces calls to the
+local provider under it with a sliding one-minute window, waiting only as long as the window needs.
+The estimate is calibrated against the prompt tokens the server reports. Leave some headroom if
+other clients share the key; a `429` that still happens keeps the usual `Retry-After` handling.
+Unset, calls are sent as soon as they are ready. Like the other token limits, a value that is not
+a positive integer is rejected when the local provider is configured.
 
 Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
 hitting, and trims old page state only when that saves more than the cache would. A server without

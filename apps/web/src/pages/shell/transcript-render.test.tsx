@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { ThreadMessage } from "@rakazo/contracts";
+import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, useCallback, useMemo, useRef } from "react";
 import type { Root } from "react-dom/client";
@@ -13,9 +13,18 @@ const messageRenders = vi.hoisted(() => new Map<string, number>());
 vi.mock("./message-view", async () => {
   const { createElement, memo } = await import("react");
   return {
-    MessageView: memo(function MessageView({ message }: { message: { id: string } }) {
+    MessageView: memo(function MessageView({
+      message,
+      separateAnswers,
+    }: {
+      message: { id: string };
+      separateAnswers?: ReadonlySet<MessageBlock>;
+    }) {
       messageRenders.set(message.id, (messageRenders.get(message.id) ?? 0) + 1);
-      return createElement("div", { "data-testid": `message-${message.id}` });
+      return createElement("div", {
+        "data-testid": `message-${message.id}`,
+        "data-separate-answer": separateAnswers ? "linked" : undefined,
+      });
     }),
   };
 });
@@ -165,3 +174,45 @@ it("redraws a page card's reply only when a newer card supersedes it", () => {
   act(() => root.render(<Host messages={[...earlier, card("card-2", 2)]} />));
   expect(messageRenders.get("reply")).toBe(2);
 });
+
+it.each(["Build a plan", "👍"])(
+  "only marks a question's answer as repeated while its user message is visible (%s)",
+  (answer) => {
+    const question: ThreadMessage = {
+      ...message("question", ""),
+      blocks: [
+        {
+          kind: "ask",
+          text: "What next?",
+          status: "answered",
+          answer,
+          answerMessageId: "reply",
+        },
+      ],
+    };
+    const reply: ThreadMessage = {
+      ...message("reply", answer),
+      replyToMessageId: question.id,
+      role: "user",
+      seq: 2,
+    };
+    act(() => root.render(<Host messages={[question]} />));
+    expect(
+      container
+        .querySelector('[data-testid="message-question"]')
+        ?.getAttribute("data-separate-answer"),
+    ).toBeNull();
+    act(() => root.render(<Host messages={[question, reply]} />));
+    expect(
+      container
+        .querySelector('[data-testid="message-question"]')
+        ?.getAttribute("data-separate-answer"),
+    ).toBe("linked");
+    act(() => root.render(<Host messages={[question]} />));
+    expect(
+      container
+        .querySelector('[data-testid="message-question"]')
+        ?.getAttribute("data-separate-answer"),
+    ).toBeNull();
+  },
+);
