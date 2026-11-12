@@ -284,6 +284,10 @@ test("a webhook delivery stays out of the chat, like a scheduled run", async ({
 
   // The run's own output shows; the prompt the delivery woke it with never does.
   const transcript = page.getByTestId("transcript");
+  // The chat has loaded: the bot's own messages are there.
+  await expect(transcript.getByTestId("message-bot-bubble").first()).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "routine-webhook-delivery");
 });
