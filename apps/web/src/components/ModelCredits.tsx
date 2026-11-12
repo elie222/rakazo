@@ -662,6 +662,13 @@ export function ModelCreditsSettings({
             <Trans>Computer hours left</Trans>
           </h3>
           <p className="mt-2 text-display font-medium tabular-nums">{status.computerHoursLeft}</p>
+          {status.computerHoursResetAt ? (
+            <p className="mt-2 text-body text-muted-foreground">
+              <Trans>
+                Resets {formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")}
+              </Trans>
+            </p>
+          ) : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
