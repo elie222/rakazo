@@ -1,14 +1,20 @@
 import type { ChildProcess } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo, Server as NetServer } from "node:net";
 import { connect, createServer as createNetServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { TAILNET_CONNECT_PATH, tailnetDestinationKey } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
+import { tailnetHelper } from "./page-browser-install.js";
 import type { TailnetTunnelDeps } from "./tailnet-tunnel.js";
 import {
   sealTailnetTunnelToken,
@@ -221,5 +227,48 @@ describe("rakazo-net", () => {
       env: { PATH: process.env.PATH },
     }).catch((error: { stderr: string }) => error);
     expect(stderr).toBe("rakazo-net: Tailnet access is off for this bot.\n");
+  });
+});
+
+describe("the shell launcher", () => {
+  it("installs rakazo-net from a command's tunnel settings and puts it on PATH", async () => {
+    const home = await mkdtemp(join(tmpdir(), "rkz-home-"));
+    try {
+      const helper = tailnetHelper();
+      const launch = (command: string, extra: NodeJS.ProcessEnv) =>
+        run(
+          "bash",
+          [
+            "-c",
+            BACKGROUND_WORK_LAUNCH,
+            "rakazo-background-launch",
+            "computer",
+            "run",
+            randomUUID(),
+            command,
+          ],
+          { env: { PATH: process.env.PATH, HOME: home, ...extra } },
+        );
+      const settings = {
+        ...environment(),
+        RAKAZO_NET_HELPER: helper.base64,
+        RAKAZO_NET_VERSION: helper.version,
+      };
+      const found = await launch(
+        'command -v rakazo-net; [ -z "$RAKAZO_NET_HELPER" ] && echo hidden',
+        settings,
+      );
+      expect(found.stdout).toBe(`${join(home, ".cache/rakazo/bin/rakazo-net")}\nhidden\n`);
+      const installed = await readFile(join(home, ".cache/rakazo/bin/rakazo-net"), "utf8");
+      expect(installed).toBe(await readFile(HELPER, "utf8"));
+      // The installed helper reaches the tailnet through the same command settings.
+      const reply = await launch("printf hello | rakazo-net nc nas.tail1234.ts.net 7", settings);
+      expect(reply.stdout).toBe("hello");
+      // A command without tunnel settings neither gets nor needs it.
+      const plain = await launch("echo plain", { PATH: process.env.PATH });
+      expect(plain.stdout).toBe("plain\n");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

@@ -40,28 +40,17 @@ export function installAgentBrowserCommand(): string {
 }
 
 /**
- * Writes the page-browser wrapper, its secrets helper and the tailnet helper where the computer
- * image keeps them, from this release's copy, unless they already match it. Small enough to run
- * on every boot, so a hosted computer always runs the helpers its API was released with.
+ * Writes the page-browser wrapper and its secrets helper where the computer image keeps them,
+ * from this release's copy, unless they already match it. Small enough to run on every boot,
+ * so a hosted computer always runs the helper its API was released with.
  */
 export function installPageBrowserFilesCommand(): string {
   const wrapper = computerFile("rakazo-page-browser");
   const secrets = computerFile("page_secrets.py");
-  const tailnet = computerFile("rakazo-net");
-  const version = createHash("sha256")
-    .update(wrapper)
-    .update("\0")
-    .update(secrets)
-    .update("\0")
-    .update(tailnet)
-    .digest("hex");
-  // One archive, so the files change together.
+  const version = createHash("sha256").update(wrapper).update("\0").update(secrets).digest("hex");
+  // One archive, so both files change together.
   const archive = gzipSync(
-    JSON.stringify({
-      "rakazo-page-browser": wrapper,
-      "page_secrets.py": secrets,
-      "rakazo-net": tailnet,
-    }),
+    JSON.stringify({ "rakazo-page-browser": wrapper, "page_secrets.py": secrets }),
     { level: 9 },
   ).toString("base64");
   const unpack = [
@@ -69,8 +58,7 @@ export function installPageBrowserFilesCommand(): string {
     "files = json.loads(gzip.decompress(sys.stdin.buffer.read()))",
     "os.makedirs('/usr/local/lib/rakazo', exist_ok=True)",
     "for name, mode, target in (('page_secrets.py', 0o644, '/usr/local/lib/rakazo/page_secrets.py'),",
-    "                           ('rakazo-page-browser', 0o755, '/usr/local/bin/rakazo-page-browser'),",
-    "                           ('rakazo-net', 0o755, '/usr/local/bin/rakazo-net')):",
+    "                           ('rakazo-page-browser', 0o755, '/usr/local/bin/rakazo-page-browser')):",
     "    with open(target + '.new', 'w', encoding='utf-8') as file:",
     "        file.write(files[name])",
     "    os.chmod(target + '.new', mode)",
@@ -84,6 +72,22 @@ export function installPageBrowserFilesCommand(): string {
     `printf '%s' ${shellQuote(archive)} | base64 -d | $root python3 -c ${shellQuote(unpack)}`,
   ].join("\n");
 }
+
+/**
+ * rakazo-net, which a command with tailnet tunnel settings writes to its computer before it runs
+ * (see the shell launcher), with a version so a computer rewrites it only when it changed.
+ */
+export function tailnetHelper(): { base64: string; version: string } {
+  tailnetHelperCache ??= (() => {
+    const source = computerFile("rakazo-net");
+    return {
+      base64: Buffer.from(source).toString("base64"),
+      version: createHash("sha256").update(source).digest("hex").slice(0, 16),
+    };
+  })();
+  return tailnetHelperCache;
+}
+let tailnetHelperCache: { base64: string; version: string } | undefined;
 
 /** Everything a hosted Linux computer needs for the page tools; idempotent and cheap once done. */
 export function installPageBrowserCommand(): string {
