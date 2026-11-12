@@ -260,6 +260,13 @@ export function vaultImportOrigin(cell: string): string | undefined {
  * fit, so a row it refuses never takes a place the next one could use. A repeat in the file takes
  * no place either; it gets the answer its first copy gets.
  */
+/**
+ * What makes two logins one to an import: the site and the username, trimmed. The one rule for
+ * the review's plan here and for the server's check as it saves, which has the last word.
+ */
+export const vaultLoginKey = (origin: string, username = "") =>
+  JSON.stringify([origin, username.trim()]);
+
 export function newVaultImportRows(
   rows: readonly VaultImportRow[],
   saved: readonly BotSecretMetadata[],
@@ -276,7 +283,7 @@ export function newVaultImportRows(
   /** Rows repeating a sent one, with the place of the one they follow. */
   repeats: (VaultImportProblem & { of: number })[];
 } {
-  const key = (origin: string, username = "") => JSON.stringify([origin, username.trim()]);
+  const key = vaultLoginKey;
   const known = new Set(
     saved.flatMap((item) =>
       // One whose value the list couldn't read may be anyone's: the server checks it.

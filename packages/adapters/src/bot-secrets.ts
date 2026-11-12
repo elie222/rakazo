@@ -43,6 +43,7 @@ import {
   sameLoginFieldLabel,
   UNCHOSEN_ITEM_ANSWER,
   VAULT_ITEM_LIMIT,
+  vaultLoginKey,
 } from "@rakazo/contracts";
 import { resolveEncryptionKey } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -946,9 +947,9 @@ async function savedLoginKey(
 
 export const LOGIN_ALREADY_SAVED = "A login for this site and username is already saved";
 
-// Trimmed as the apps compare it, also for a login saved before fields.
+// Also for a login saved before fields. Compared as vaultLoginKey does, as the apps compare it.
 function loginUsername(plaintext: string): string {
-  return (decodeLoginSecret(plaintext).fields.find((field) => !field.hidden)?.value ?? "").trim();
+  return decodeLoginSecret(plaintext).fields.find((field) => !field.hidden)?.value ?? "";
 }
 
 async function loginSaved(
@@ -960,7 +961,7 @@ async function loginSaved(
   usernames: Map<string, string>,
 ): Promise<boolean> {
   if (destination.auth.type !== "login") return false;
-  const username = loginUsername(plaintext);
+  const login = vaultLoginKey(destination.origin, loginUsername(plaintext));
   const rows = await tx.vaultCredential.findMany({
     // A login that is also on this site fills here too, so it counts.
     where: {
@@ -985,7 +986,7 @@ async function loginSaved(
       }
       usernames.set(key, saved);
     }
-    if (saved === username) return true;
+    if (vaultLoginKey(destination.origin, saved) === login) return true;
   }
   return false;
 }
