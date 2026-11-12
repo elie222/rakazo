@@ -229,13 +229,26 @@ async function saveMemoryProviderConnection(
     );
   } catch (error) {
     // A remote secret store keeps the value it was given until it is deleted there too.
-    if (stored) await deps.secrets.delete(stored.ciphertext, stored.id).catch(() => undefined);
+    if (stored) await deleteStoredSecret(deps, stored);
     throw error;
   }
   if (saved.replaced) {
-    await deps.secrets.delete(saved.replaced.ciphertext, saved.replaced.id).catch(() => undefined);
+    await deleteStoredSecret(deps, saved.replaced);
   }
   return serializeSpaceMemoryConfig(saved.config);
+}
+
+/** Best effort, but logged: a value left in a remote secret store needs an operator to remove it. */
+async function deleteStoredSecret(
+  deps: MemoryProviderConfigDeps,
+  secret: { id: string; ciphertext: string },
+) {
+  await deps.secrets.delete(secret.ciphertext, secret.id).catch((error: unknown) => {
+    getLogger().warn("Memory provider secret could not be removed from the secret store", {
+      "secret.id": secret.id,
+      "error.message": error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 export async function updateMemoryProviderDefaultScope(
