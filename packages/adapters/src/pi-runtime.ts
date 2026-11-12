@@ -34,6 +34,12 @@ import {
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
+import {
+  boundedInRunCheckpoint,
+  compactedInRunContext,
+  inRunCheckpointPrompt,
+  shouldCreateInRunCheckpoint,
+} from "./in-run-checkpoint.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
   COMPUTER_MODE_TOOLS,
@@ -440,6 +446,11 @@ export class PiAgentRuntime implements AgentRuntime {
         let activeStreamTarget = host.activeModel;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
+        let toolCalls = 0;
+        let checkpointPhase: "idle" | "summarizing" | "installing" = "idle";
+        let checkpointText = "";
+        let checkpointSource: Context | undefined;
+        const checkpointSummaryPending = () => checkpointPhase === "summarizing";
         let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -471,7 +482,10 @@ export class PiAgentRuntime implements AgentRuntime {
                     (event) => queue.push(event),
                     target.config.callObserver ?? this.modelCallObserver,
                     {
-                      operationKind: request.usageOperationKind ?? "answer",
+                      operationKind:
+                        checkpointPhase === "summarizing"
+                          ? "compaction"
+                          : (request.usageOperationKind ?? "answer"),
                       userId: context?.userId,
                       runId: request.runId,
                     },
@@ -639,9 +653,28 @@ export class PiAgentRuntime implements AgentRuntime {
               turn,
               turnSignal,
             );
+            if (
+              checkpointPhase === "summarizing" &&
+              (host.pausePending || signal.aborted || turnSignal?.aborted)
+            ) {
+              checkpointSource = undefined;
+              checkpointText = "";
+              return;
+            }
+            if (
+              checkpointPhase === "summarizing" &&
+              turn.message.role === "assistant" &&
+              turn.message.stopReason !== "error" &&
+              turn.message.stopReason !== "aborted" &&
+              !messageHasToolCall(turn.message) &&
+              boundedInRunCheckpoint(assistantText(turn.message))
+            ) {
+              checkpointPhase = "installing";
+              return { action: "continue" as const };
+            }
           },
           prepareNextTurnWithContext: async (turn) => {
-            const update = computer
+            let update = computer
               ? {
                   context: {
                     ...turn.context,
@@ -658,6 +691,70 @@ export class PiAgentRuntime implements AgentRuntime {
                   ),
                 }
               : undefined;
+            if (
+              checkpointPhase === "idle" &&
+              !host.pausePending &&
+              shouldCreateInRunCheckpoint({
+                decision: contextPolicy.getDecision(),
+                model: activeStreamTarget.model,
+                configuredContextWindow: activeStreamTarget.config.contextWindow,
+                toolCalls,
+                operationKind: request.usageOperationKind,
+              })
+            ) {
+              checkpointPhase = "summarizing";
+              checkpointText = "";
+              const checkpointContext = update?.context ?? turn.context;
+              checkpointSource = {
+                ...checkpointContext,
+                messages: [...checkpointContext.messages],
+                tools: [...(checkpointContext.tools ?? [])],
+              };
+              return {
+                ...update,
+                context: {
+                  ...checkpointContext,
+                  messages: [...checkpointContext.messages],
+                  tools: [],
+                },
+                messages: [inRunCheckpointPrompt()],
+              };
+            }
+            if (checkpointPhase === "summarizing") {
+              const checkpointContext = update?.context ?? turn.context;
+              return {
+                ...update,
+                context: { ...checkpointContext, tools: [] },
+              };
+            }
+            if (checkpointPhase === "installing") {
+              if (!checkpointSource) throw new Error("in-run compaction source is missing");
+              const lateMessages = turn.context.messages
+                .slice(checkpointSource.messages.length)
+                .filter((message) => message.role === "user");
+              const compacted = compactedInRunContext({
+                source: checkpointSource,
+                lateMessages,
+                tools,
+                summary: checkpointText,
+              });
+              agent.state.messages = compacted.messages;
+              agent.state.tools = tools;
+              checkpointPhase = "idle";
+              checkpointSource = undefined;
+              checkpointText = "";
+              toolCalls = 0;
+              contextPolicy = contextPolicyFor(activeStreamTarget);
+              update = {
+                ...update,
+                context: { ...compacted, tools },
+                model: activeStreamTarget.model,
+                thinkingLevel: thinkingLevelFor(
+                  activeStreamTarget.model,
+                  activeStreamTarget.config.thinkingLevel,
+                ),
+              };
+            }
             if (!request.claimSteering) return update;
             // The turn is ending at a terminating result that aborted the agent; no
             // model request would answer a follow-up claimed now, and a completed run
@@ -778,7 +875,6 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let streamed = "";
         let currentMessageStreamed = "";
-        let toolCalls = 0;
         let toolActivityShowing = false;
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
@@ -850,7 +946,8 @@ export class PiAgentRuntime implements AgentRuntime {
             if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
-            if (streamed && !joinCutReply) queue.push({ type: "turn" });
+            if (checkpointPhase === "idle" && streamed && !joinCutReply)
+              queue.push({ type: "turn" });
           }
           if (
             event.type === "message_update" &&
@@ -858,6 +955,10 @@ export class PiAgentRuntime implements AgentRuntime {
           ) {
             const delta = event.assistantMessageEvent.delta;
             if (delta) {
+              if (checkpointPhase !== "idle") {
+                checkpointText += delta;
+                return;
+              }
               if (toolActivityShowing) {
                 // Real text replaces the activity line instead of appending to it.
                 toolActivityShowing = false;
@@ -877,6 +978,7 @@ export class PiAgentRuntime implements AgentRuntime {
             }
           }
           if (event.type === "turn_end") {
+            if (checkpointPhase !== "idle") return;
             const messageText =
               event.message.role === "assistant" ? assistantText(event.message) : "";
             const hasToolCalls = messageHasToolCall(event.message);
@@ -919,6 +1021,11 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_end" && event.message.role === "assistant") {
             const text = assistantText(event.message);
+            if (checkpointPhase !== "idle") {
+              checkpointText = text || checkpointText;
+              currentMessageStreamed = "";
+              return;
+            }
             // The completed text can hold more of a continuation than arrived as deltas, so its
             // repeat of the cut reply is judged on all of it.
             if (
@@ -1147,7 +1254,11 @@ export class PiAgentRuntime implements AgentRuntime {
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
         const error = outputCutFailed
           ? MODEL_OUTPUT_CUT_ERROR
-          : agent.state.errorMessage || providerFailure;
+          : agent.state.errorMessage ||
+            providerFailure ||
+            (checkpointSummaryPending() && !host.pausePending && !signal.aborted
+              ? "In-run compaction completed without a usable summary"
+              : undefined);
         // A turn ended at a terminating tool result leaves the abort's message on the
         // agent; the reply that result carries is the answer, not a failure.
         const endedAtToolResult = Boolean(terminatedReply) && !host.pausePending && !signal.aborted;
@@ -1184,6 +1295,7 @@ export class PiAgentRuntime implements AgentRuntime {
         // a trailing tool result is tool output, not the model's reply.
         if (
           !budgetExceeded &&
+          checkpointPhase === "idle" &&
           terminalMessage?.role === "assistant" &&
           !messageHasToolCall(terminalMessage)
         ) {
@@ -1225,14 +1337,14 @@ export class PiAgentRuntime implements AgentRuntime {
             queue.push({ type: "text", text: terminatedReply });
             streamed = terminatedReply;
           }
-        } else if (!host.pausePending && toolWorkPendingFinal) {
+        } else if (!host.pausePending && checkpointPhase === "idle" && toolWorkPendingFinal) {
           if (request.allowSilentEmpty) {
             // Scheduled/FYI runs may finish after tools with no user-visible text.
             streamed = "";
           } else {
             throw new ModelOutputError(MISSING_TOOL_FINAL_RESPONSE_ERROR);
           }
-        } else if (!streamed.trim() && !host.pausePending) {
+        } else if (!streamed.trim() && !host.pausePending && checkpointPhase === "idle") {
           streamed = "";
           const lastMessage = agent.state.messages.at(-1);
           const fallback = lastMessage?.role === "assistant" ? assistantText(lastMessage) : "";
