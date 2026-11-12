@@ -53,6 +53,15 @@ describe("in-run checkpoint pressure", () => {
       shouldCreateInRunCheckpoint({
         decision,
         model,
+        toolCalls: 1,
+        fraction: 0.6,
+        minimumInputTokens: 60_001,
+      }),
+    ).toBe(false);
+    expect(
+      shouldCreateInRunCheckpoint({
+        decision,
+        model,
         toolCalls: 100,
         operationKind: "compaction",
         fraction: 0.6,
@@ -101,5 +110,32 @@ describe("in-run checkpoint pressure", () => {
     expect(compacted.messages.map((message) => message.role)).toEqual(["system", "user", "user"]);
     expect(JSON.stringify(compacted.messages)).not.toContain("large raw browser result");
     expect(JSON.stringify(compacted.messages)).toContain("Checked page one");
+  });
+
+  it("keeps recent user images and bounds user text to the active model window", () => {
+    const compacted = compactedInRunContext({
+      source: {
+        tools: [],
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `begin ${"detail ".repeat(2_000)} end` },
+              { type: "image", data: "fixture-image", mimeType: "image/png" },
+            ],
+            timestamp: 1,
+          },
+        ],
+      },
+      tools: [],
+      summary: "Continue from the screenshot.",
+      contextWindow: 5_000,
+    });
+
+    const wire = JSON.stringify(compacted.messages);
+    expect(wire).toContain("fixture-image");
+    expect(wire).toContain("older user text clipped");
+    expect(wire).toContain("Continue from the screenshot");
+    expect(wire.length).toBeLessThan(10_000);
   });
 });

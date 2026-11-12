@@ -253,4 +253,177 @@ describe("long tool-loop replay", () => {
     expect(JSON.stringify(contexts)).not.toContain("<progress_checkpoint>");
     expect(JSON.stringify(events)).not.toContain("This cancelled checkpoint must stay hidden.");
   });
+
+  it("locks real tools during checkpointing and returns a partial result when it fails", async () => {
+    const contexts: Context[] = [];
+    let normalCalls = 0;
+    providerState.stream.mockImplementation((_model: unknown, context: Context) => {
+      contexts.push(structuredClone(context));
+      const wire = JSON.stringify(context.messages);
+      if (wire.includes("The progress checkpoint could not be created")) {
+        return response(
+          assistant([{ type: "text", text: "Verified one page; the rest is pending." }]),
+        );
+      }
+      if (wire.includes("Create a compact progress checkpoint")) {
+        return response(
+          assistant([
+            {
+              type: "toolCall",
+              id: "forbidden-checkpoint-call",
+              name: "computer_act",
+              arguments: { step: 999 },
+            },
+          ]),
+        );
+      }
+      normalCalls += 1;
+      return response(
+        assistant(
+          [
+            {
+              type: "toolCall",
+              id: `normal-call-${normalCalls}`,
+              name: "computer_act",
+              arguments: { step: normalCalls },
+            },
+          ],
+          12_000,
+        ),
+      );
+    });
+    const executeTool = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({
+      ok: true,
+      evidence: "recorded page",
+    }));
+    const events: AgentRuntimeEvent[] = [];
+
+    for await (const event of new PiAgentRuntime().run(
+      {
+        botId: "bot",
+        threadId: "thread",
+        runId: "failed-checkpoint-run",
+        prompt: "Survey listings in the browser",
+        instructions: "Use the computer and keep verified notes.",
+        history: [],
+        tools: [
+          {
+            name: "computer_act",
+            description: "Perform one browser action",
+            inputSchema: { type: "object", properties: {} },
+            readOnly: false,
+          },
+        ],
+        model: { provider: model.provider, id: model.id, apiKey: "fixture-key" },
+        executeTool,
+      } as unknown as AgentRunRequest,
+      {
+        operationId: "operation",
+        traceId: "trace",
+        spaceId: "space",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(
+      executeTool.mock.calls.some(([, args]) => (args as { step?: number }).step === 999),
+    ).toBe(false);
+    expect(
+      contexts.find((context) => JSON.stringify(context.messages).includes("Create a compact"))
+        ?.tools ?? [],
+    ).toEqual([]);
+    expect(events.filter((event) => event.type === "text")).toEqual([
+      { type: "text", text: "Verified one page; the rest is pending." },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("forbidden-checkpoint-call");
+  });
+
+  it("waits for meaningful context growth before another checkpoint", async () => {
+    const contexts: Context[] = [];
+    let workStep = 0;
+    let compacted = false;
+    let workAfterCompaction = 0;
+    providerState.stream.mockImplementation((_model: unknown, context: Context) => {
+      contexts.push(structuredClone(context));
+      const wire = JSON.stringify(context.messages);
+      if (wire.includes("Create a compact progress checkpoint")) {
+        compacted = true;
+        return response(
+          assistant([{ type: "text", text: "Completed step one. Next: step two." }], 12_000),
+        );
+      }
+      if (wire.includes("<progress_checkpoint>") && workAfterCompaction === 0) {
+        workAfterCompaction += 1;
+        return response(
+          assistant(
+            [{ type: "toolCall", id: "after-compact", name: "computer_act", arguments: {} }],
+            12_500,
+          ),
+        );
+      }
+      if (compacted) {
+        return response(assistant([{ type: "text", text: "Done after one checkpoint." }], 13_000));
+      }
+      const current = workStep++;
+      return response(
+        assistant(
+          [
+            {
+              type: "toolCall",
+              id: `before-compact-${current}`,
+              name: "computer_act",
+              arguments: {},
+            },
+          ],
+          1_000 + current * 500,
+        ),
+      );
+    });
+
+    const events: AgentRuntimeEvent[] = [];
+    for await (const event of new PiAgentRuntime().run(
+      {
+        botId: "bot",
+        threadId: "thread",
+        runId: "checkpoint-growth-run",
+        prompt: "Survey listings in the browser",
+        instructions: "Use the computer and keep verified notes.",
+        history: [],
+        tools: [
+          {
+            name: "computer_act",
+            description: "Perform one browser action",
+            inputSchema: { type: "object", properties: {} },
+            readOnly: false,
+          },
+        ],
+        model: { provider: model.provider, id: model.id, apiKey: "fixture-key" },
+        executeTool: vi.fn(async () => ({
+          ok: true,
+          evidence: `recorded page ${"detail ".repeat(1_200)}`,
+        })),
+      } as unknown as AgentRunRequest,
+      {
+        operationId: "operation",
+        traceId: "trace",
+        spaceId: "space",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(
+      contexts.filter((context) =>
+        JSON.stringify(context.messages).includes("Create a compact progress checkpoint"),
+      ),
+    ).toHaveLength(1);
+    expect(events.filter((event) => event.type === "text")).toEqual([
+      { type: "text", text: "Done after one checkpoint." },
+    ]);
+  });
 });

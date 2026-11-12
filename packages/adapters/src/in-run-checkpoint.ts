@@ -1,9 +1,12 @@
-import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
+import type { Api, Context, Message, Model, UserMessage } from "@earendil-works/pi-ai";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 
 export const DEFAULT_IN_RUN_CHECKPOINT_CONTEXT_FRACTION = 0.6;
 export const MAX_IN_RUN_CHECKPOINT_CHARS = 20_000;
 const MAX_RETAINED_USER_CHARS = 80_000;
+const RETAINED_USER_CONTEXT_SHARE = 0.2;
+const CHECKPOINT_CONTEXT_SHARE = 0.2;
+const ESTIMATED_CHARS_PER_TOKEN = 4;
 
 const COMPACTION_PROMPT = [
   "Create a compact progress checkpoint for this unusually long tool-driven task.",
@@ -27,6 +30,7 @@ export function shouldCreateInRunCheckpoint(options: {
   toolCalls: number;
   operationKind?: string;
   fraction?: number;
+  minimumInputTokens?: number;
 }): boolean {
   if (options.operationKind === "compaction" || options.toolCalls === 0) return false;
   const estimated = options.decision?.estimatedInputTokens;
@@ -34,44 +38,96 @@ export function shouldCreateInRunCheckpoint(options: {
   const window = options.configuredContextWindow ?? options.model.contextWindow;
   if (!Number.isFinite(window) || window <= 0) return false;
   const fraction = options.fraction ?? inRunCheckpointContextFraction();
-  return estimated >= window * fraction;
+  return estimated >= window * fraction && estimated >= (options.minimumInputTokens ?? 0);
 }
 
 export function inRunCheckpointPrompt(): Message {
   return { role: "user", timestamp: Date.now(), content: COMPACTION_PROMPT };
 }
 
+export function inRunCheckpointRecoveryPrompt(): Message {
+  return {
+    role: "user",
+    timestamp: Date.now(),
+    content:
+      "The progress checkpoint could not be created. Do not call tools. Return a concise partial result from the work already completed, including verified findings, remaining uncertainty, approval boundaries, and the safest next action.",
+  };
+}
+
 export function isInRunCheckpointPrompt(message: Message): boolean {
   return message.role === "user" && message.content === COMPACTION_PROMPT;
 }
 
-export function boundedInRunCheckpoint(value: string): string {
+export function boundedInRunCheckpoint(
+  value: string,
+  maxChars = MAX_IN_RUN_CHECKPOINT_CHARS,
+): string {
   const checkpoint = value.trim();
-  if (checkpoint.length <= MAX_IN_RUN_CHECKPOINT_CHARS) return checkpoint;
-  return checkpoint.slice(0, MAX_IN_RUN_CHECKPOINT_CHARS).trimEnd();
+  if (checkpoint.length <= maxChars) return checkpoint;
+  return checkpoint.slice(0, maxChars).trimEnd();
 }
 
-function textOnlyUserMessage(message: Message): Message | undefined {
+function boundedText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  if (maxChars <= 40) return value.slice(0, maxChars);
+  const marker = "\n[...older user text clipped...]\n";
+  const available = maxChars - marker.length;
+  const head = Math.floor(available * 0.7);
+  return `${value.slice(0, head)}${marker}${value.slice(-(available - head))}`;
+}
+
+function userMessage(message: Message): UserMessage | undefined {
   if (message.role !== "user" || isInRunCheckpointPrompt(message)) return undefined;
   if (typeof message.content === "string") return message.content.trim() ? message : undefined;
-  const content = message.content.filter((part) => part.type === "text");
-  if (content.length === 0) return undefined;
+  return message.content.length > 0 ? message : undefined;
+}
+
+function boundedUserMessage(message: UserMessage, maxChars: number): UserMessage {
+  if (typeof message.content === "string") {
+    return { ...message, content: boundedText(message.content, maxChars) };
+  }
+  let remaining = maxChars;
+  const content: typeof message.content = [];
+  for (const part of message.content) {
+    if (part.type !== "text") {
+      content.push(part);
+      continue;
+    }
+    if (remaining === 0) continue;
+    const text = boundedText(part.text, remaining);
+    remaining -= text.length;
+    if (text) content.push({ ...part, text });
+  }
   return { ...message, content };
 }
 
-function retainedUserMessages(messages: Message[]): Message[] {
+function retainedUserMessages(messages: Message[], maxChars: number): Message[] {
   const retained: Message[] = [];
-  let remaining = MAX_RETAINED_USER_CHARS;
+  let remaining = maxChars;
   for (const candidate of messages.toReversed()) {
-    const message = textOnlyUserMessage(candidate);
+    const message = userMessage(candidate);
     if (!message) continue;
-    const size = JSON.stringify(message.content).length;
+    const size =
+      typeof message.content === "string"
+        ? message.content.length
+        : message.content.reduce(
+            (total, part) => total + (part.type === "text" ? part.text.length : 0),
+            0,
+          );
     if (size > remaining && retained.length > 0) break;
-    retained.push(message);
-    remaining = Math.max(0, remaining - size);
+    retained.push(boundedUserMessage(message, remaining));
+    remaining = Math.max(0, remaining - Math.min(size, remaining));
     if (remaining === 0) break;
   }
   return retained.reverse();
+}
+
+function contextScaledChars(contextWindow: number | undefined, share: number, ceiling: number) {
+  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= 0) return ceiling;
+  return Math.min(
+    ceiling,
+    Math.max(4_000, Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * share)),
+  );
 }
 
 /**
@@ -84,12 +140,23 @@ export function compactedInRunContext(options: {
   lateMessages?: Message[];
   tools: Context["tools"];
   summary: string;
+  contextWindow?: number;
 }): Context {
-  const summary = boundedInRunCheckpoint(options.summary);
+  const summary = boundedInRunCheckpoint(
+    options.summary,
+    contextScaledChars(
+      options.contextWindow,
+      CHECKPOINT_CONTEXT_SHARE,
+      MAX_IN_RUN_CHECKPOINT_CHARS,
+    ),
+  );
   if (!summary) throw new Error("in-run compaction completed without a summary");
   const sourceMessages = [...options.source.messages, ...(options.lateMessages ?? [])];
   const systemMessages = sourceMessages.filter((message) => message.role === "system");
-  const userMessages = retainedUserMessages(sourceMessages);
+  const userMessages = retainedUserMessages(
+    sourceMessages,
+    contextScaledChars(options.contextWindow, RETAINED_USER_CONTEXT_SHARE, MAX_RETAINED_USER_CHARS),
+  );
   const checkpoint: Message = {
     role: "user",
     timestamp: Date.now(),

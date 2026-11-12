@@ -33,11 +33,13 @@ import {
 } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
+import { imagePartCount } from "./context-pruning.js";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
 import {
   boundedInRunCheckpoint,
   compactedInRunContext,
   inRunCheckpointPrompt,
+  inRunCheckpointRecoveryPrompt,
   shouldCreateInRunCheckpoint,
 } from "./in-run-checkpoint.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
@@ -447,9 +449,14 @@ export class PiAgentRuntime implements AgentRuntime {
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
         let toolCalls = 0;
-        let checkpointPhase: "idle" | "summarizing" | "installing" = "idle";
+        let checkpointPhase: "idle" | "summarizing" | "installing" | "recovering" = "idle";
         let checkpointText = "";
         let checkpointSource: Context | undefined;
+        let checkpointCount = 0;
+        let checkpointBaselineTokens: number | undefined;
+        let checkpointNeedsBaseline = false;
+        let checkpointDisabled = false;
+        const maxInRunCheckpoints = 3;
         const checkpointSummaryPending = () => checkpointPhase === "summarizing";
         let fallbackState: FallbackStreamState = {
           request,
@@ -672,6 +679,11 @@ export class PiAgentRuntime implements AgentRuntime {
               checkpointPhase = "installing";
               return { action: "continue" as const };
             }
+            if (checkpointPhase === "summarizing") {
+              checkpointText = "";
+              checkpointPhase = "recovering";
+              return { action: "continue" as const };
+            }
           },
           prepareNextTurnWithContext: async (turn) => {
             let update = computer
@@ -691,15 +703,29 @@ export class PiAgentRuntime implements AgentRuntime {
                   ),
                 }
               : undefined;
+            const checkpointDecision = contextPolicy.getDecision();
+            if (checkpointNeedsBaseline && checkpointDecision) {
+              checkpointBaselineTokens = checkpointDecision.estimatedInputTokens;
+              checkpointNeedsBaseline = false;
+            }
+            const contextWindow =
+              activeStreamTarget.config.contextWindow ?? activeStreamTarget.model.contextWindow;
+            const checkpointGrowthTokens = Math.max(8_192, Math.floor(contextWindow * 0.1));
             if (
               checkpointPhase === "idle" &&
+              !checkpointDisabled &&
+              checkpointCount < maxInRunCheckpoints &&
               !host.pausePending &&
               shouldCreateInRunCheckpoint({
-                decision: contextPolicy.getDecision(),
+                decision: checkpointDecision,
                 model: activeStreamTarget.model,
                 configuredContextWindow: activeStreamTarget.config.contextWindow,
                 toolCalls,
                 operationKind: request.usageOperationKind,
+                minimumInputTokens:
+                  checkpointBaselineTokens === undefined
+                    ? undefined
+                    : checkpointBaselineTokens + checkpointGrowthTokens,
               })
             ) {
               checkpointPhase = "summarizing";
@@ -710,6 +736,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 messages: [...checkpointContext.messages],
                 tools: [...(checkpointContext.tools ?? [])],
               };
+              agent.state.tools = [];
               return {
                 ...update,
                 context: {
@@ -722,6 +749,7 @@ export class PiAgentRuntime implements AgentRuntime {
             }
             if (checkpointPhase === "summarizing") {
               const checkpointContext = update?.context ?? turn.context;
+              agent.state.tools = [];
               return {
                 ...update,
                 context: { ...checkpointContext, tools: [] },
@@ -737,17 +765,46 @@ export class PiAgentRuntime implements AgentRuntime {
                 lateMessages,
                 tools,
                 summary: checkpointText,
+                contextWindow,
               });
               agent.state.messages = compacted.messages;
               agent.state.tools = tools;
+              hasCurrentImages = compacted.messages.some((message) => imagePartCount(message) > 0);
+              computerSpan = undefined;
+              computerFrom = compacted.messages.length;
+              mainFallbackState.messagesBeforeSwitch = undefined;
+              if (computerFallbackState) computerFallbackState.messagesBeforeSwitch = undefined;
               checkpointPhase = "idle";
               checkpointSource = undefined;
               checkpointText = "";
+              checkpointCount += 1;
+              checkpointNeedsBaseline = true;
+              checkpointBaselineTokens = undefined;
               toolCalls = 0;
               contextPolicy = contextPolicyFor(activeStreamTarget);
               update = {
                 ...update,
                 context: { ...compacted, tools },
+                model: activeStreamTarget.model,
+                thinkingLevel: thinkingLevelFor(
+                  activeStreamTarget.model,
+                  activeStreamTarget.config.thinkingLevel,
+                ),
+              };
+            }
+            if (checkpointPhase === "recovering") {
+              if (!checkpointSource) throw new Error("in-run compaction source is missing");
+              agent.state.messages = checkpointSource.messages;
+              agent.state.tools = [];
+              checkpointDisabled = true;
+              checkpointPhase = "idle";
+              checkpointText = "";
+              const recovered = checkpointSource;
+              checkpointSource = undefined;
+              contextPolicy = contextPolicyFor(activeStreamTarget);
+              return {
+                context: { ...recovered, tools: [] },
+                messages: [inRunCheckpointRecoveryPrompt()],
                 model: activeStreamTarget.model,
                 thinkingLevel: thinkingLevelFor(
                   activeStreamTarget.model,
@@ -1234,6 +1291,32 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         } finally {
           try {
+            await agent.waitForIdle();
+          } finally {
+            signal.removeEventListener("abort", onAbort);
+          }
+        }
+        if (
+          checkpointSummaryPending() &&
+          checkpointSource &&
+          !host.pausePending &&
+          !signal.aborted
+        ) {
+          const recovery = inRunCheckpointRecoveryPrompt();
+          agent.state.messages = checkpointSource.messages;
+          agent.state.tools = [];
+          checkpointSource = undefined;
+          checkpointText = "";
+          checkpointDisabled = true;
+          checkpointPhase = "idle";
+          contextPolicy = contextPolicyFor(activeStreamTarget);
+          signal.addEventListener("abort", onAbort, { once: true });
+          try {
+            await agent.prompt(
+              typeof recovery.content === "string"
+                ? recovery.content
+                : "Return a concise partial result without calling tools.",
+            );
             await agent.waitForIdle();
           } finally {
             signal.removeEventListener("abort", onAbort);
