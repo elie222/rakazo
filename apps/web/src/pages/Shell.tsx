@@ -61,6 +61,7 @@ import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from
 import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
@@ -1422,9 +1423,13 @@ function SpaceShell() {
   );
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
-  return initialBotsLoaded || initialLoadFailed ? (
-    <PagesProvider value={pages}>{shell}</PagesProvider>
-  ) : (
-    <PageLoading />
+  return (
+    <SpaceRpcProvider spaceId={shellSpaceId}>
+      {initialBotsLoaded || initialLoadFailed ? (
+        <PagesProvider value={pages}>{shell}</PagesProvider>
+      ) : (
+        <PageLoading />
+      )}
+    </SpaceRpcProvider>
   );
 }
