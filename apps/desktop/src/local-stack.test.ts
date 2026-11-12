@@ -302,11 +302,11 @@ describe("reduceStackState", () => {
   it("records why Docker is unavailable", () => {
     const state = reduceStackState(reduceStackState(start, { type: "check-start" }), {
       type: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
     expect(state).toMatchObject({
       phase: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
   });
 });
@@ -634,7 +634,7 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
     expect(calls).toEqual([]);
     await expect(stat(path.join(root, "stack", STACK_ENV_FILE))).rejects.toThrow();
@@ -709,6 +709,13 @@ describe("LocalStackController", () => {
     await expect(stat(path.join(root, "stack", STACK_COMPOSE_FILE))).rejects.toThrow();
   });
 
+  it("names Docker Desktop when it is missing on macOS and Windows", async () => {
+    const stack = controller({ platform: "darwin", exists: () => false });
+    expect((await stack.start()).message).toBe(
+      "Rakazo needs Docker Desktop to run on this computer.",
+    );
+  });
+
   it("waits for the daemon when docker info fails", async () => {
     const stack = controller({}, (args) =>
       args[0] === "info"
@@ -718,9 +725,42 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-not-running",
-      message: "Docker is installed but not running. Start Docker, then check again.",
+      message: "Docker is installed but not running. Open it to continue.",
     });
     expect(calls).toHaveLength(2);
+  });
+
+  it("opens the Docker app once while it is not running, and again after it was up", async () => {
+    let daemonUp = false;
+    const launched: string[] = [];
+    const stack = controller(
+      {
+        launchDockerApp: async (binary) => {
+          launched.push(binary);
+          return "Docker Desktop";
+        },
+      },
+      (args) =>
+        args[0] === "info" && !daemonUp
+          ? {
+              code: 1,
+              stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            }
+          : ok(args),
+    );
+    expect(await stack.start()).toMatchObject({
+      phase: "docker-not-running",
+      message: "Starting Docker Desktop…",
+    });
+    // A re-check while it boots must not bring the app back to the front.
+    expect((await stack.start()).message).toBe("Starting Docker Desktop…");
+    expect(launched).toEqual(["/usr/bin/docker"]);
+
+    daemonUp = true;
+    expect((await stack.start()).phase).toBe("ready");
+    daemonUp = false;
+    await stack.start();
+    expect(launched).toHaveLength(2);
   });
 
   it("explains the docker group when the socket is not accessible", async () => {

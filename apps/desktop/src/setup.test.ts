@@ -10,7 +10,7 @@ import type {
   DesktopSetupState,
   RakazoSetup,
 } from "@rakazo/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ES_MESSAGES } from "./locales/es.js";
 import { HE_MESSAGES } from "./locales/he.js";
 import { PL_MESSAGES } from "./locales/pl.js";
@@ -77,8 +77,12 @@ interface Harness {
   nextCheck: () => Deferred<DesktopReachability>;
   /** Resolves the oldest pending `test` call, in call order. */
   resolveCheck: (result: DesktopReachability) => void;
-  /** The one `stack.start` call this mount can receive. */
+  /** What every `stack.start` call this mount receives resolves with. */
   startResult: Deferred<DesktopLocalStackState>;
+  /** How many times `stack.start` was called. */
+  starts: () => number;
+  /** Links passed to `openLink`. */
+  links: string[];
   /** Resolves the oldest pending `state` call, in call order. */
   resolveAppState: (saved: DesktopSetup | null) => void;
   /** Resolves the oldest pending `stack.state` call, in call order. */
@@ -91,7 +95,7 @@ interface Harness {
   resolveSave: (result: DesktopSetupResult) => void;
 }
 
-function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
+function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux"): Harness {
   document.body.innerHTML = setupBody ?? "";
   const checkCalls: Array<Deferred<DesktopReachability>> = [];
   const startResult = deferred<DesktopLocalStackState>();
@@ -100,9 +104,11 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
   const pushListeners: Array<(state: DesktopLocalStackState) => void> = [];
   const saves: DesktopSetup[] = [];
   const saveCalls: Array<Deferred<DesktopSetupResult>> = [];
+  const links: string[] = [];
+  let starts = 0;
 
   const bridge: RakazoSetup = {
-    platform: "linux",
+    platform,
     locale,
     state: () => {
       const call = deferred<DesktopSetupState>();
@@ -121,14 +127,20 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
       return call.promise;
     },
     quit: () => Promise.resolve(),
-    openLink: () => Promise.resolve(),
+    openLink: (link) => {
+      links.push(link);
+      return Promise.resolve();
+    },
     stack: {
       state: () => {
         const call = deferred<DesktopLocalStackState>();
         stackStateCalls.push(call);
         return call.promise;
       },
-      start: () => startResult.promise,
+      start: () => {
+        starts += 1;
+        return startResult.promise;
+      },
       onChange: (listener) => {
         pushListeners.push(listener);
       },
@@ -148,6 +160,8 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
     },
     resolveCheck: (result) => checkCalls.shift()?.resolve(result),
     startResult,
+    starts: () => starts,
+    links,
     resolveAppState: (next) =>
       stateCalls
         .shift()
@@ -162,8 +176,12 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH): Harness {
 }
 
 /** Loads the page and lets init settle on an idle stack. */
-async function boot(saved: DesktopSetup | null, locale = ENGLISH): Promise<Harness> {
-  const ui = mount(saved, locale);
+async function boot(
+  saved: DesktopSetup | null,
+  locale = ENGLISH,
+  platform = "linux",
+): Promise<Harness> {
+  const ui = mount(saved, locale, platform);
   await flush(); // init reaches its stack.state call only after its state await resumes
   ui.resolveStackState(stackState("idle"));
   await flush();
@@ -173,6 +191,7 @@ async function boot(saved: DesktopSetup | null, locale = ENGLISH): Promise<Harne
 
 describe("setup", () => {
   afterEach(() => {
+    vi.useRealTimers();
     document.body.innerHTML = "";
     delete (window as { rakazoSetup?: RakazoSetup }).rakazoSetup;
   });
@@ -406,6 +425,64 @@ describe("setup", () => {
     expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
   });
 
+  it("offers the Docker Desktop download as a next step, not an error", async () => {
+    const ui = await boot(null, ENGLISH, "darwin");
+    selectMode("new");
+    submitForm();
+    const missing = {
+      ...stackState("docker-missing"),
+      message: "Rakazo needs Docker Desktop to run on this computer.",
+    };
+    ui.startResult.resolve(missing);
+    await flush();
+    ui.resolveStackState(missing);
+    await flush();
+
+    expect(element("stack-phase").textContent).toBe(missing.message);
+    expect(element("stack-phase").hasAttribute("data-tone")).toBe(false);
+    expect(element("stack-hint").hidden).toBe(false);
+    expect(element("stack-waiting").hidden).toBe(false);
+    expect(element("stack-waiting").textContent).toContain("Waiting for Docker Desktop…");
+    expect(element("continue").textContent).toBe("Download Docker Desktop");
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+
+    submitForm();
+    await flush();
+    expect(ui.links).toEqual(["docker-download"]);
+    expect(ui.starts()).toBe(1);
+  });
+
+  it("keeps looking for Docker in the background and moves on once it answers", async () => {
+    vi.useFakeTimers();
+    const ui = await boot(null, ENGLISH, "darwin");
+    selectMode("new");
+    submitForm();
+    const missing = { ...stackState("docker-missing"), message: "Rakazo needs Docker Desktop." };
+    ui.startResult.resolve(missing);
+    await flush();
+    ui.resolveStackState(missing);
+    await flush();
+    expect(ui.starts()).toBe(1);
+
+    vi.advanceTimersByTime(3000);
+    await flush();
+    expect(ui.starts()).toBe(2);
+    // The look itself does not replace the waiting view or lock the download button.
+    ui.pushStackState(stackState("checking-docker"));
+    ui.resolveStackState(stackState("checking-docker"));
+    await flush();
+    expect(element("stack-phase").textContent).toBe(missing.message);
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+
+    vi.advanceTimersByTime(1000);
+    await flush();
+    ui.resolveStackState(stackState("preparing"));
+    await flush();
+    expect(element("stack-phase").textContent).toBe("Getting ready…");
+    expect(element("stack-waiting").hidden).toBe(true);
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(true);
+  });
+
   // The follow may be waiting on the stack, or reading the app's state after the stack became
   // ready, when the person switches to an existing instance.
   for (const leaveAfterReady of [false, true]) {
@@ -449,10 +526,13 @@ describe("setup", () => {
     expect(document.documentElement.lang).toBe("es");
     expect(document.documentElement.dir).toBe("ltr");
     expect(document.querySelector("h1")?.textContent).toBe("Te damos la bienvenida a Rakazo");
-    expect(document.querySelector('label[for="mode-new"]')?.textContent?.trim()).toBe(
+    expect(document.querySelector('label[for="mode-new"] .choice-title')?.textContent).toBe(
       "Esta computadora",
     );
-    expect(document.querySelector('label[for="mode-cloud"]')?.textContent?.trim()).toBe(
+    expect(document.querySelector('label[for="mode-new"] .choice-description')?.textContent).toBe(
+      "Tus datos se quedan en esta computadora.",
+    );
+    expect(document.querySelector('label[for="mode-cloud"] .choice-title')?.textContent).toBe(
       "Rakazo Cloud",
     );
     expect(element("quit").textContent).toBe("Salir");

@@ -321,6 +321,8 @@ export interface LocalStackDeps {
   env: NodeJS.ProcessEnv;
   exists: (file: string) => boolean;
   run: RunDocker;
+  /** Starts the app that owns `binary` (Docker Desktop, OrbStack); resolves to its name, or null. */
+  launchDockerApp?: (binary: string) => Promise<string | null>;
   stackDir: string;
   resourceDir: string;
   localWebUrl: string;
@@ -360,6 +362,8 @@ export class LocalStackController {
   private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
   private ticket = 0;
+  /** Set once setup has tried to start the Docker app, so a re-check never reopens it on top of the person's work. */
+  private launchedDockerApp: string | null | undefined;
   /** Starts ticketed at or below this were superseded by a later stop and must not run. */
   private voidBefore = 0;
 
@@ -487,7 +491,10 @@ export class LocalStackController {
     if (binary === null) {
       this.push({
         type: "docker-missing",
-        message: t("Docker is not installed on this computer."),
+        message:
+          this.deps.platform === "linux"
+            ? t("Rakazo needs Docker to run on this computer.")
+            : t("Rakazo needs Docker Desktop to run on this computer."),
       });
       return;
     }
@@ -528,15 +535,24 @@ export class LocalStackController {
     if (interrupted(signal, info))
       return this.push({ type: "failed", message: startInterrupted() });
     if (info.code !== 0) {
+      if (failureKind(info) === "socket-permission") {
+        this.push({ type: "docker-not-running", message: dockerGroupHint() });
+        return;
+      }
+      if (this.launchedDockerApp === undefined) {
+        this.launchedDockerApp = (await this.deps.launchDockerApp?.(binary)) ?? null;
+      }
       this.push({
         type: "docker-not-running",
         message:
-          failureKind(info) === "socket-permission"
-            ? dockerGroupHint()
-            : t("Docker is installed but not running. Start Docker, then check again."),
+          this.launchedDockerApp === null
+            ? t("Docker is installed but not running. Open it to continue.")
+            : t("Starting {app}…", { app: this.launchedDockerApp }),
       });
       return;
     }
+    // Docker answered; if it is quit later, the next start may open it again.
+    this.launchedDockerApp = undefined;
 
     this.push({ type: "prepare" });
     await copyFile(

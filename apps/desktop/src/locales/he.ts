@@ -75,7 +75,7 @@ export const HE_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "הגדרת Rakazo",
   "Quit Rakazo": "יציאה מ-Rakazo",
   "Welcome to Rakazo": "ברוכים הבאים ל-Rakazo",
-  "Choose which server this app should use.": "יש לבחור באיזה שרת האפליקציה תשתמש.",
+  "Choose where Rakazo runs.": "בחרו איפה Rakazo יפעל.",
   Instance: "מופע",
   "This computer": "המחשב הזה",
   "Existing instance": "מופע קיים",
@@ -86,7 +86,6 @@ export const HE_MESSAGES: Record<string, string> = {
   "Name: value": "שם: ערך",
   "Check connection": "בדיקת חיבור",
   Continue: "המשך",
-  "Check again": "בדיקה חוזרת",
   Retry: "ניסיון חוזר",
   "Getting ready…": "מתכוננים…",
   "Downloading Rakazo…": "מוריד את Rakazo…",
@@ -142,13 +141,10 @@ export const HE_MESSAGES: Record<string, string> = {
     "החיבור הצליח, אבל לא ניתן היה לשמור את ההגדרה להפעלה הבאה. יש ללחוץ שוב על ״המשך״.",
   "The app-managed Rakazo services are not ready. Retry setup.":
     "שירותי Rakazo שהאפליקציה מנהלת אינם מוכנים. יש לנסות את ההגדרה שוב.",
-  "Docker is not installed on this computer.": "Docker לא מותקן במחשב הזה.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker מותקן, אבל Docker Compose חסר. יש להתקין את Docker Desktop או את docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "לא ניתן היה לבדוק את Docker Compose. יש לעיין בפלט שלמטה ולנסות שוב.",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "Docker מותקן אבל לא פועל. יש להפעיל את Docker ולבדוק שוב.",
   "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
     "למשתמש הזה אין גישה ל-Docker. יש להוסיף אותו לקבוצה docker (sudo usermod -aG docker $USER), לצאת מהמערכת ולהיכנס שוב, ואז לבדוק שוב.",
   "The start was interrupted. Retry to continue.": "ההפעלה נקטעה. יש לנסות שוב כדי להמשיך.",
@@ -191,4 +187,21 @@ export const HE_MESSAGES: Record<string, string> = {
   "Chat Details": "פרטי הצ׳אט",
   Help: "עזרה",
   "Keyboard Shortcuts": "קיצורי מקלדת",
+  "Nothing to install.": "אין מה להתקין.",
+  "Your data stays on this computer.": "הנתונים שלכם נשארים במחשב הזה.",
+  "Connect to a server you or your team already run.":
+    "התחברות לשרת שאתם או הצוות שלכם כבר מפעילים.",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "Rakazo צריך את Docker Desktop כדי לפעול במחשב הזה.",
+  "Rakazo needs Docker to run on this computer.": "Rakazo צריך את Docker כדי לפעול במחשב הזה.",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktop היא אפליקציה חינמית שמפעילה את Rakazo ברקע. מתקינים ופותחים אותה פעם אחת.",
+  "Install Docker Engine and start it.": "מתקינים את Docker Engine ומפעילים אותו.",
+  "Download Docker Desktop": "הורדת Docker Desktop",
+  "Install Docker": "התקנת Docker",
+  "Docker is installed but not running. Open it to continue.":
+    "Docker מותקן אבל לא פועל. פותחים אותו כדי להמשיך.",
+  "Starting {app}…": "{app} מופעל…",
+  "Waiting for Docker Desktop…": "ממתין ל-Docker Desktop…",
+  "Waiting for Docker…": "ממתין ל-Docker…",
 };

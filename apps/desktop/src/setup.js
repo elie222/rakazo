@@ -44,13 +44,19 @@
   const stackDetails = document.getElementById("stack-details");
   const stackProgress = document.getElementById("stack-progress");
   const stackProgressFill = document.getElementById("stack-progress-fill");
-  const stackDockerHelp = document.getElementById("stack-docker-help");
+  const stackHint = document.getElementById("stack-hint");
+  const stackWaiting = document.getElementById("stack-waiting");
+  const stackWaitingText = document.getElementById("stack-waiting-text");
   const status = document.getElementById("status");
   const checkButton = document.getElementById("check");
   const continueButton = document.getElementById("continue");
   const quitButton = document.getElementById("quit");
 
   const STACK_POLL_MS = 1000;
+  /** How often setup looks for Docker again while it waits for the person to install or open it. */
+  const DOCKER_RECHECK_MS = 3000;
+  // Linux has Docker Engine and no single installer; macOS and Windows get Docker Desktop.
+  const dockerDesktop = bridge?.platform !== "linux";
   const PHASE_LABELS = {
     "checking-docker": t("Getting ready…"),
     preparing: t("Getting ready…"),
@@ -92,6 +98,9 @@
   let detailsOpenedByFailure = false;
   /** Resolves the poll wait early when the main process pushes a new state. */
   let wakePoll = null;
+  let dockerRecheckTimer = null;
+  /** True from a background look for Docker until it reports something other than its own check. */
+  let dockerRechecking = false;
 
   function selectedMode() {
     const checked = form.querySelector('input[name="mode"]:checked');
@@ -121,6 +130,8 @@
     panelNew.hidden = mode !== "new";
     panelExisting.hidden = mode !== "existing";
     checkButton.hidden = mode !== "existing";
+    // Only This computer can be waiting on Docker, where setup looks again on its own.
+    continueButton.hidden = false;
     if (mode !== "new") continueButton.textContent = t("Continue");
     setStatus("");
   }
@@ -189,27 +200,69 @@
   }
 
   function renderStack(stack) {
-    lastStack = stack;
     const { phase } = stack;
+    // A background re-check for Docker would flash "Getting ready…"; keep the waiting view until it
+    // either finds Docker (and moves on) or settles back on a Docker phase.
+    if (phase === "checking-docker" && dockerRechecking) return;
+    dockerRechecking = false;
+    lastStack = stack;
     stackSection.hidden = phase === "idle";
+    continueButton.hidden = phase === "docker-not-running";
     if (phase === "idle") {
       continueButton.textContent = t("Continue");
       return;
     }
-    const failed = isDockerPhase(phase) || phase === "failed";
-    stackPhase.textContent = (failed ? stack.message : PHASE_LABELS[phase]) ?? "";
-    if (failed) stackPhase.setAttribute("data-tone", "error");
+    const waitingForDocker = isDockerPhase(phase);
+    stackPhase.textContent =
+      (waitingForDocker || phase === "failed" ? stack.message : PHASE_LABELS[phase]) ?? "";
+    // Waiting for Docker is a step the person takes, not an error.
+    if (phase === "failed") stackPhase.setAttribute("data-tone", "error");
     else if (phase === "ready") stackPhase.setAttribute("data-tone", "ok");
     else stackPhase.removeAttribute("data-tone");
 
     renderProgress(stack);
     renderDetails(stack);
-    stackDockerHelp.hidden = !isDockerPhase(phase);
+    renderDockerHelp(phase);
 
-    if (isDockerPhase(phase)) continueButton.textContent = t("Check again");
+    if (phase === "docker-missing")
+      continueButton.textContent = dockerDesktop
+        ? t("Download Docker Desktop")
+        : t("Install Docker");
     else if (phase === "failed") continueButton.textContent = t("Retry");
     else continueButton.textContent = t("Continue");
     setBusy(!TERMINAL_PHASES.has(phase));
+    if (waitingForDocker) scheduleDockerRecheck();
+  }
+
+  function renderDockerHelp(phase) {
+    stackHint.hidden = phase !== "docker-missing";
+    stackHint.textContent = dockerDesktop
+      ? t(
+          "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.",
+        )
+      : t("Install Docker Engine and start it.");
+    stackWaiting.hidden = !isDockerPhase(phase);
+    stackWaitingText.textContent = dockerDesktop
+      ? t("Waiting for Docker Desktop…")
+      : t("Waiting for Docker…");
+  }
+
+  /** Looks for Docker again on a timer, so installing or opening it is all the person has to do. */
+  function scheduleDockerRecheck() {
+    if (dockerRecheckTimer !== null) return;
+    dockerRecheckTimer = setTimeout(() => {
+      dockerRecheckTimer = null;
+      if (selectedMode() !== "new" || !isDockerPhase(lastStack?.phase)) return;
+      dockerRechecking = true;
+      // Rendering the settled phase schedules the next look while Docker is still unavailable.
+      bridge.stack
+        .start()
+        .then(() => followStack())
+        .catch(() => {
+          dockerRechecking = false;
+          scheduleDockerRecheck();
+        });
+    }, DOCKER_RECHECK_MS);
   }
 
   /** One "Name: value" per line; null when a line has no name. The main process validates the rest. */
@@ -366,6 +419,10 @@
       // Unlock immediately when nothing on this mode owns the controls; followStack exits on its
       // next poll.
       if (selectedMode() !== "new" || interruptedCheck) setBusy(false);
+      // Coming back to a stack still waiting for Docker resumes the look for it.
+      if (selectedMode() === "new" && lastStack !== null && isDockerPhase(lastStack.phase)) {
+        renderStack(lastStack);
+      }
     }
   });
 
@@ -391,11 +448,6 @@
     if (lastStack !== null) renderDetails(lastStack);
   });
 
-  stackDockerHelp.addEventListener("click", (event) => {
-    const link = event.target instanceof HTMLElement ? event.target.dataset.link : undefined;
-    if (link) void bridge.openLink(link);
-  });
-
   quitButton.addEventListener("click", () => {
     if (bridge === undefined) {
       window.close();
@@ -407,7 +459,10 @@
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const mode = selectedMode();
-    if (mode === "new") void runStack();
+    // Without Docker the main button is the download; setup keeps looking for Docker meanwhile.
+    if (mode === "new" && lastStack?.phase === "docker-missing")
+      void bridge.openLink("docker-download");
+    else if (mode === "new") void runStack();
     // Cloud is an existing server at a fixed address.
     else if (mode === "cloud") void save("existing", cloudUrl);
     else {
@@ -424,7 +479,8 @@
       // A follow that ended on an error restarts here instead of leaving the panel frozen;
       // hold the controls until it has rendered the state it is restarting on.
       if (!stackPolling && selectedMode() === "new") {
-        setBusy(true);
+        // A background look for Docker keeps the download button usable.
+        if (!dockerRechecking) setBusy(true);
         void followStack();
       }
     });

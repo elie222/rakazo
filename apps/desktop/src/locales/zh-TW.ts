@@ -72,7 +72,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "設定 Rakazo",
   "Quit Rakazo": "結束 Rakazo",
   "Welcome to Rakazo": "歡迎使用 Rakazo",
-  "Choose which server this app should use.": "選擇此 App 要使用的伺服器。",
+  "Choose where Rakazo runs.": "選擇 Rakazo 的執行位置。",
   Instance: "執行個體",
   "This computer": "這台電腦",
   "Existing instance": "現有執行個體",
@@ -83,7 +83,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Name: value": "名稱: 值",
   "Check connection": "檢查連線",
   Continue: "繼續",
-  "Check again": "再次檢查",
   Retry: "重試",
   "Getting ready…": "準備中…",
   "Downloading Rakazo…": "正在下載 Rakazo…",
@@ -134,13 +133,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "已連線，但無法為下次啟動儲存設定。請再按一次「繼續」。",
   "The app-managed Rakazo services are not ready. Retry setup.":
     "由 App 管理的 Rakazo 服務尚未就緒。請重新設定。",
-  "Docker is not installed on this computer.": "這台電腦未安裝 Docker。",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "已安裝 Docker，但缺少 Docker Compose。請安裝 Docker Desktop 或 docker-compose-plugin。",
   "Could not check Docker Compose. Check the output below, then retry.":
     "無法檢查 Docker Compose。請查看下方輸出後再試一次。",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "已安裝 Docker，但未在執行。請啟動 Docker 後再次檢查。",
   "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
     "此使用者無法存取 Docker。請將其加入 docker 群組（sudo usermod -aG docker $USER），登出後重新登入，然後再次檢查。",
   "The start was interrupted. Retry to continue.": "啟動已中斷。請重試以繼續。",
@@ -182,4 +178,20 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Chat Details": "聊天詳細資料",
   Help: "說明",
   "Keyboard Shortcuts": "鍵盤快速鍵",
+  "Nothing to install.": "無需安裝。",
+  "Your data stays on this computer.": "你的資料保留在這台電腦上。",
+  "Connect to a server you or your team already run.": "連線到你或你的團隊已在執行的伺服器。",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "Rakazo 需要 Docker Desktop 才能在這台電腦上執行。",
+  "Rakazo needs Docker to run on this computer.": "Rakazo 需要 Docker 才能在這台電腦上執行。",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktop 是一款免費應用程式，可在背景執行 Rakazo。安裝並開啟一次即可。",
+  "Install Docker Engine and start it.": "安裝並啟動 Docker Engine。",
+  "Download Docker Desktop": "下載 Docker Desktop",
+  "Install Docker": "安裝 Docker",
+  "Docker is installed but not running. Open it to continue.":
+    "Docker 已安裝但未執行。開啟它即可繼續。",
+  "Starting {app}…": "正在啟動 {app}…",
+  "Waiting for Docker Desktop…": "正在等待 Docker Desktop…",
+  "Waiting for Docker…": "正在等待 Docker…",
 };

@@ -78,7 +78,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "Rakazo einrichten",
   "Quit Rakazo": "Rakazo beenden",
   "Welcome to Rakazo": "Willkommen bei Rakazo",
-  "Choose which server this app should use.": "Wähle, welchen Server diese App verwenden soll.",
+  "Choose where Rakazo runs.": "Wähle, wo Rakazo läuft.",
   Instance: "Instanz",
   "This computer": "Dieser Computer",
   "Existing instance": "Bestehende Instanz",
@@ -89,7 +89,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Name: value": "Name: Wert",
   "Check connection": "Verbindung prüfen",
   Continue: "Weiter",
-  "Check again": "Erneut prüfen",
   Retry: "Erneut versuchen",
   "Getting ready…": "Wird vorbereitet …",
   "Downloading Rakazo…": "Rakazo wird heruntergeladen …",
@@ -150,13 +149,10 @@ export const DE_MESSAGES: Record<string, string> = {
     "Verbunden, aber die Einrichtung konnte nicht für den nächsten Start gespeichert werden. Klicke erneut auf „Weiter“.",
   "The app-managed Rakazo services are not ready. Retry setup.":
     "Die von der App verwalteten Rakazo-Dienste sind nicht bereit. Starte die Einrichtung erneut.",
-  "Docker is not installed on this computer.": "Docker ist auf diesem Computer nicht installiert.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker ist installiert, aber Docker Compose fehlt. Installiere Docker Desktop oder das docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose konnte nicht geprüft werden. Sieh dir die Ausgabe unten an und versuche es erneut.",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "Docker ist installiert, läuft aber nicht. Starte Docker und prüfe erneut.",
   "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
     "Dieser Benutzer hat keinen Zugriff auf Docker. Füge ihn der Gruppe docker hinzu (sudo usermod -aG docker $USER), melde dich ab und wieder an und prüfe dann erneut.",
   "The start was interrupted. Retry to continue.":
@@ -201,4 +197,22 @@ export const DE_MESSAGES: Record<string, string> = {
   "Chat Details": "Chatdetails",
   Help: "Hilfe",
   "Keyboard Shortcuts": "Tastaturkurzbefehle",
+  "Nothing to install.": "Nichts zu installieren.",
+  "Your data stays on this computer.": "Deine Daten bleiben auf diesem Computer.",
+  "Connect to a server you or your team already run.":
+    "Mit einem Server verbinden, den du oder dein Team bereits betreibt.",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "Rakazo braucht Docker Desktop, um auf diesem Computer zu laufen.",
+  "Rakazo needs Docker to run on this computer.":
+    "Rakazo braucht Docker, um auf diesem Computer zu laufen.",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktop ist eine kostenlose App, die Rakazo im Hintergrund ausführt. Installiere sie und öffne sie einmal.",
+  "Install Docker Engine and start it.": "Installiere Docker Engine und starte es.",
+  "Download Docker Desktop": "Docker Desktop herunterladen",
+  "Install Docker": "Docker installieren",
+  "Docker is installed but not running. Open it to continue.":
+    "Docker ist installiert, läuft aber nicht. Öffne es, um fortzufahren.",
+  "Starting {app}…": "{app} wird gestartet …",
+  "Waiting for Docker Desktop…": "Warte auf Docker Desktop …",
+  "Waiting for Docker…": "Warte auf Docker …",
 };
