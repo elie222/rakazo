@@ -29,7 +29,7 @@ const NOW = new Date("2026-03-02T09:00:00.000Z");
 const MINUTE = 60_000;
 
 interface Scenario {
-  error: Error;
+  error?: Error;
   trigger?: string;
   retryOfRunId?: string | null;
   routineNotify?: boolean;
@@ -49,6 +49,7 @@ interface Scenario {
   resumeAfterScheduleEdit?: boolean;
   lateLookupFails?: boolean;
   setupFailsOnce?: boolean;
+  oneShot?: boolean;
 }
 
 async function failRun(scenario: Scenario) {
@@ -90,7 +91,8 @@ async function failRun(scenario: Scenario) {
     }
     const backup = scenario.switchToBackup;
     if (backup) await request.onModelChange?.(backup.provider, backup.modelId);
-    throw scenario.error;
+    if (scenario.error) throw scenario.error;
+    yield { type: "text" as const, text: "Reminder sent." };
   });
   const prisma = {
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
@@ -119,8 +121,9 @@ async function failRun(scenario: Scenario) {
       findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean } }) => {
         if (scenario.lateLookupFails && select?.crons) throw new Error("lookup unavailable");
         return {
-          crons:
-            scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
+          crons: scenario.oneShot
+            ? ["@once"]
+            : scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
               ? ["0 * * * *"]
               : ["0 8 * * *"],
           timezone: "UTC",
@@ -131,6 +134,8 @@ async function failRun(scenario: Scenario) {
               : scenario.nextRunAt,
         };
       }),
+      count: vi.fn(async () => 0),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
@@ -283,10 +288,14 @@ async function failRun(scenario: Scenario) {
     await executor.continueRun(run.id, "worker-1");
   }
   expect(finalizeRun).toHaveBeenCalledWith(
-    expect.objectContaining({
-      outcome: "failed",
-      error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
-    }),
+    expect.objectContaining(
+      scenario.error
+        ? {
+            outcome: "failed",
+            error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
+          }
+        : { outcome: "completed" },
+    ),
   );
   const retries = enqueue.mock.calls
     .map(([job]) => job)
@@ -1151,4 +1160,30 @@ describe("reporting a failed run", () => {
       expect(JSON.stringify(fields)).not.toMatch(/fake-deployment-key|:\/\//);
     },
   );
+});
+
+describe("a one-time routine after its run", () => {
+  it("deletes the routine once the run completes", async () => {
+    const { prisma } = await failRun({ oneShot: true, nextRunAt: null });
+
+    expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "routine-1",
+        userId: "user-1",
+        crons: { equals: ["@once"] },
+        active: false,
+        nextRunAt: null,
+      }),
+    });
+  });
+
+  it("keeps the routine when the run fails", async () => {
+    const { prisma } = await failRun({
+      error: new Error("Invalid API key"),
+      oneShot: true,
+      nextRunAt: null,
+    });
+
+    expect(prisma.routine.deleteMany).not.toHaveBeenCalled();
+  });
 });

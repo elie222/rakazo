@@ -8,11 +8,14 @@ import {
 } from "@rakazo/adapter-kit";
 import { ROUTINE_WATCH_DEFAULT_MINUTES } from "@rakazo/contracts";
 import {
+  ACTIVE_RUN_STATUSES,
   displayName,
   expandSkillReferencesInPrompt,
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
+  ONCE_ROUTINE_CRON,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   accountDeactivated,
   isUniqueViolation,
@@ -93,6 +96,28 @@ export async function scheduleRoutineRetry(
     getLogger().error("routine retry schedule", scheduleError);
     return false;
   }
+}
+
+export async function deleteSpentOneShotRoutine(
+  prisma: PrismaClient,
+  run: { routineId: string; userId: string },
+): Promise<void> {
+  await prisma.routine
+    .deleteMany({
+      where: {
+        id: run.routineId,
+        userId: run.userId,
+        crons: { equals: [ONCE_ROUTINE_CRON] },
+        active: false,
+        nextRunAt: null,
+        webhookEnabled: false,
+        githubEnabled: false,
+        messageProvider: null,
+        emailSenders: null,
+        runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
+      },
+    })
+    .catch((error: unknown) => getLogger().error("routine.one_shot_delete", error));
 }
 
 async function notifyFailedRoutineRun(
