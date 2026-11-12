@@ -103,6 +103,25 @@ describe("purgeClearedThreadMemory", () => {
     expect(findMany).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])(
+    "limits a departing group member's cleanup to that bot (byThread=%s)",
+    async (byThread) => {
+      await purgeClearedThreadMemory(
+        depsWith({
+          purgeHistory,
+          describe: () => ({ capabilities: { purgesByThread: byThread } }),
+        }),
+        actor,
+        { kind: "group-member", botId: "departing-bot", threadId: "group-thread" },
+        3,
+      );
+      expect(findMany).not.toHaveBeenCalled();
+      expect(purgeHistory.mock.calls.map(([request]) => request)).toEqual(
+        byThread ? [{ botId: "departing-bot", threadId: "group-thread", generations: [2, 3] }] : [],
+      );
+    },
+  );
+
   it("purges the bot of a direct chat without learned turns", async () => {
     const target = { kind: "bot", botId: "bot-1", threadId: "thread-2" } as ThreadTarget;
     await purgeClearedThreadMemory(depsWith({ purgeHistory }), actor, target, 0);

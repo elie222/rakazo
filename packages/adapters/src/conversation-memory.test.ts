@@ -845,6 +845,25 @@ describe("retainRunConversation", () => {
 });
 
 describe("settleRetainedConversation", () => {
+  it.each([false, true])(
+    "purges a late write after its bot is deleted from a surviving group (unconfirmed=%s)",
+    async (unconfirmed) => {
+      const { deps, provider, prisma } = harness({ groupId: "group-1" });
+      provider.retainConversation.mockResolvedValueOnce({ ok: true, value: { pending: "op-1" } });
+      const retained = await retainRunConversation(deps, "run-1");
+      prisma.bot.findUnique.mockResolvedValue(null);
+      const pending = unconfirmed
+        ? { ...retained.pending!, token: undefined, unconfirmed: true as const }
+        : retained.pending!;
+      await expect(settleRetainedConversation(deps, "run-1", pending)).resolves.toEqual({
+        settled: !unconfirmed,
+      });
+      expect(provider.purgeHistory).toHaveBeenCalledWith(
+        { botId: "bot-1", threadId: "thread-1", generations: [3] },
+        expect.objectContaining({ spaceId: "space-1", botId: "bot-1" }),
+      );
+    },
+  );
   const pending = {
     token: "op-1",
     generation: 3,

@@ -465,6 +465,16 @@ export async function destroyBot(
       const pageShareSecrets = await deletePageShareSecrets(tx, botPages);
       await tx.page.deleteMany({ where: botPages });
       const groupCleanup = await detachBotFromGroups(tx, bot.id);
+      // Membership can have ended earlier; recorded runs still name every surviving group
+      // whose learned sessions belong to this bot, until the bot's cascade removes those runs.
+      const groupMemberMemory =
+        deleteMemories && deps.memoryProviders
+          ? await tx.run.findMany({
+              where: { botId: bot.id, thread: { groupId: { not: null } } },
+              distinct: ["threadId"],
+              select: { thread: { select: { id: true, historyCompactionGeneration: true } } },
+            })
+          : [];
       await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
       await tx.computer.updateMany({
         where: {
@@ -506,6 +516,7 @@ export async function destroyBot(
           ...groupCleanup.artifactKeys,
         ],
         directMemory,
+        groupMemberMemory: groupMemberMemory.map((run) => run.thread),
         groupMemory: groupCleanup.memory,
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
@@ -550,6 +561,20 @@ export async function destroyBot(
           },
           group.generation,
         ).catch((error) => getLogger().error("dissolved group memory cleanup", error)),
+      ),
+    );
+    await Promise.all(
+      deletion.groupMemberMemory.map((thread) =>
+        purgeClearedConversationMemory(
+          memory,
+          context,
+          {
+            kind: "group-member",
+            botId: bot.id,
+            threadId: thread.id,
+          },
+          thread.historyCompactionGeneration,
+        ).catch((error) => getLogger().error("deleted bot group memory cleanup", error)),
       ),
     );
     if (deletion.directMemory) {

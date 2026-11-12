@@ -629,8 +629,15 @@ describe("destroyBot", () => {
           },
         },
       ];
-      const findRuns = vi.fn(async (args: { distinct?: string[] }) =>
-        args.distinct ? [{ threadId: "thread-1", botId: "former-member" }] : activeGroupRuns,
+      const findRuns = vi.fn(async (args: { distinct?: string[]; where?: { botId?: string } }) =>
+        args.where?.botId
+          ? [
+              { thread: { id: "thread-2", historyCompactionGeneration: 9 } },
+              { thread: { id: "former-group-thread", historyCompactionGeneration: 11 } },
+            ]
+          : args.distinct
+            ? [{ threadId: "thread-1", botId: "former-member" }]
+            : activeGroupRuns,
       );
       const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
         callback({
@@ -792,7 +799,11 @@ describe("destroyBot", () => {
         { botId: "bot-2", threadId: "thread-3", generations: [4, 5] },
         { botId: "bot-3", threadId: "thread-3", generations: [4, 5] },
         ...(deleteMemories
-          ? [{ botId: "bot-1", threadId: "direct-thread", generations: [6, 7] }]
+          ? [
+              { botId: "bot-1", threadId: "thread-2", generations: [8, 9] },
+              { botId: "bot-1", threadId: "former-group-thread", generations: [10, 11] },
+              { botId: "bot-1", threadId: "direct-thread", generations: [6, 7] },
+            ]
           : []),
       ]);
       expect(directThread).toHaveBeenCalledTimes(deleteMemories ? 1 : 0);

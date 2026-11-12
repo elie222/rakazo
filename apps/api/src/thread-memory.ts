@@ -13,7 +13,7 @@ export function purgeClearedThreadMemory(
     deps,
     computerContext(
       actor,
-      target.kind === "bot" ? target.botId : (target.memberBotIds[0] ?? ""),
+      target.kind === "group" ? (target.memberBotIds[0] ?? "") : target.botId,
       `thread-clear:${target.threadId}`,
     ),
     target,

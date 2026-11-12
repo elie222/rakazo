@@ -363,12 +363,10 @@ export async function settleRetainedConversation(
 ): Promise<{ settled: boolean }> {
   if (pending.unconfirmed) {
     // An ambiguous write only needs remote cleanup after clear/deletion. Avoid resolving
-    // credentials or contacting the service while its original conversation still exists.
-    const thread = await deps.prisma.thread.findUnique({
-      where: { id: pending.source.threadId },
-      select: { historyCompactionGeneration: true },
-    });
-    if (thread?.historyCompactionGeneration === pending.generation) return { settled: false };
+    // credentials or contacting the service while its conversation and retaining bot still exist.
+    if (await retainedConversationStillCurrent(deps.prisma, pending.source, pending.generation)) {
+      return { settled: false };
+    }
   }
   const found = await retainedRunProvider(deps, runId, pending);
   if (!found) return { settled: true };
@@ -435,8 +433,8 @@ function retainContext(run: RetainRun) {
 }
 
 /**
- * A clear can commit and purge while a turn is being stored; purge again so the late write cannot
- * leave cleared conversation data behind. Throws when the purge fails, so the caller retries.
+ * A clear or bot deletion can purge while a turn is still being stored. Purge again after the
+ * write settles; failures throw so the caller retries.
  */
 async function purgeIfCleared(
   prisma: PrismaClient,
@@ -445,11 +443,7 @@ async function purgeIfCleared(
   generation: number,
   context: ReturnType<typeof retainContext>,
 ): Promise<void> {
-  const latest = await prisma.thread.findUnique({
-    where: { id: run.threadId },
-    select: { historyCompactionGeneration: true },
-  });
-  if (latest?.historyCompactionGeneration === generation) return;
+  if (await retainedConversationStillCurrent(prisma, run, generation)) return;
   const removed = await provider.purgeHistory(
     { botId: run.botId, threadId: run.threadId, generations: [generation] },
     context,
@@ -457,6 +451,23 @@ async function purgeIfCleared(
   if (!removed.ok) {
     throw new Error(`memory.retain-turn could not purge a cleared conversation: ${removed.error}`);
   }
+}
+
+async function retainedConversationStillCurrent(
+  prisma: PrismaClient,
+  source: { threadId: string; botId: string },
+  generation: number,
+): Promise<boolean> {
+  const latest = await prisma.thread.findUnique({
+    where: { id: source.threadId },
+    select: { historyCompactionGeneration: true, botId: true },
+  });
+  if (latest?.historyCompactionGeneration !== generation) return false;
+  if (latest.botId === source.botId) return true;
+  // A group can survive its retaining bot. Late writes must still be purged after bot deletion.
+  return Boolean(
+    await prisma.bot.findUnique({ where: { id: source.botId }, select: { id: true } }),
+  );
 }
 
 /**

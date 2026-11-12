@@ -18,7 +18,7 @@ export async function purgeClearedConversationMemory(
   },
   context: AdapterContext,
   target:
-    | { kind: "bot"; botId: string; threadId: string }
+    | { kind: "bot" | "group-member"; botId: string; threadId: string }
     | { kind: "group"; memberBotIds: string[]; threadId: string },
   historyCompactionGeneration: number,
 ): Promise<void> {
@@ -32,10 +32,13 @@ export async function purgeClearedConversationMemory(
   // others key history by bot and generation alone, so purging a group's generations there would
   // delete the member bots' direct-chat summaries. A bot removed from the group still learned
   // from it, and its runs outlive the clear.
-  let botIds: string[] = [];
-  if (target.kind === "bot") {
-    botIds = [target.botId];
-  } else if (configuredMemory.provider.describe().capabilities.purgesByThread === true) {
+  if (
+    target.kind !== "bot" &&
+    configuredMemory.provider.describe().capabilities.purgesByThread !== true
+  )
+    return;
+  let botIds: string[];
+  if (target.kind === "group") {
     const ranHere = await deps.prisma.run
       .findMany({
         where: { threadId: target.threadId },
@@ -48,6 +51,9 @@ export async function purgeClearedConversationMemory(
         return [];
       });
     botIds = [...new Set([...target.memberBotIds, ...ranHere.map((run) => run.botId)])];
+  } else {
+    // A departing member's cleanup must not widen to the other learners in a surviving group.
+    botIds = [target.botId];
   }
   await Promise.all(
     botIds.map(async (botId) => {

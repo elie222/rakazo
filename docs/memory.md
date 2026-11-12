@@ -50,7 +50,9 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   check without resolving credentials; a later refusal cannot prove an earlier attempt stored
   nothing. Disconnecting or changing
   the connection stops cleanup on the old service; it does not delete data there. Bots can't forget a
-  single memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
+  single memory here. Deleting a bot with its memories removes that bot's retained conversation
+  sessions, including groups it left. Other bots' independently learned copies remain.
+  To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks only through explicit recall, never automatic context, and never write to them. Names beginning with
   `rakazo-` are reserved for Space isolation and cannot be imported. Bots can also ask
   their own bot memory to answer a question by combining what it knows; reflection does not query
