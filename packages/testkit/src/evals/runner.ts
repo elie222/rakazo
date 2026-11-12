@@ -20,12 +20,14 @@ import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
+import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
 import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
 import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
+import { browserScreen } from "./sandbox.js";
 import { EvalServices } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
 import { SilenceObserver } from "./silence-observer.js";
@@ -378,6 +380,36 @@ export async function runTrial(
           size: artifact.size,
         });
       }
+      // A seeded step call that kept a screenshot names it `seed:screen-dark` or `seed:screen-light`;
+      // the screenshot is uploaded as the product stores one, and the call refers to it.
+      const screens = new Map<string, string>();
+      const seededSteps = new Map<number, NonNullable<HistoryMessage["steps"]>>();
+      for (const m of scenario.history.messages) {
+        if (!m.steps) continue;
+        const steps = [];
+        for (const step of m.steps) {
+          const calls = [];
+          for (const call of step.calls ?? []) {
+            const seed = /^seed:screen-(dark|light)$/.exec(call.image?.artifactId ?? "");
+            if (!seed) {
+              calls.push(call);
+              continue;
+            }
+            if (!screens.has(seed[1]!)) {
+              const artifact = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+                botId,
+                name: `screenshot-${seed[1]}.png`,
+                mimeType: "image/png",
+                contentBase64: Buffer.from(browserScreen(seed[1] === "dark")).toString("base64"),
+              });
+              screens.set(seed[1]!, artifact.id);
+            }
+            calls.push({ ...call, image: { artifactId: screens.get(seed[1]!)! } });
+          }
+          steps.push(step.calls ? { ...step, calls } : step);
+        }
+        seededSteps.set(m.seq, steps);
+      }
       // Direct synthetic fixture setup, never pay a model to author filler.
       for (let offset = 0; offset < scenario.history.messages.length; offset += 500) {
         await prisma.message.createMany({
@@ -387,7 +419,7 @@ export async function runTrial(
             role: m.role,
             blocks: [
               // A reply that used tools stores its steps ahead of its text, as live replies do.
-              ...(m.steps ? [{ kind: "steps", steps: m.steps }] : []),
+              ...(m.steps ? [{ kind: "steps", steps: seededSteps.get(m.seq) ?? m.steps }] : []),
               ...(m.text ? [{ kind: "text", text: m.text }] : []),
               ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult

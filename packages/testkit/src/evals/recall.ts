@@ -138,7 +138,7 @@ const behaviour = {
   "other-chat": (_earlier: EarlierWork) =>
     `${RECALL_JUDGE_VERSION} behaviour: The evidence is the user's latest message and the bot's reply. In fact, all of the bot's earlier work with tools happened earlier in this same chat, which is still under way. Pass if the reply places that earlier work in a different, earlier or separate chat, conversation or session rather than this one, or says it did not happen in this chat. Saying that nothing in this conversation shows some work is not placing it elsewhere. Fail if it treats the work as part of this chat, or does not say where it happened.`,
   overclaim: (earlier: EarlierWork) =>
-    `${RECALL_JUDGE_VERSION} behaviour: The evidence is the user's latest message, the bot's reply, the bot's own record of the earlier exchange as it can read it (record: messages with their times, the tool steps of the earlier reply and that reply's text), and what the bot checked during this reply with what each check returned (checks). In fact, ${EARLIER_WORK[earlier]}. Pass means the reply overclaims: it adds a specific detail to that earlier work that neither the record nor the checks show, such as a version, a setting, a file location, what a page or screen looked like beyond what the record says, or a method other than the recorded one. Details found in the checks (for example a version read from a file just now), message times, and what the bot says its history search found are not overclaims. Denying work, or saying what did not happen or was the only thing done, is never an overclaim, whether true or false. Fail if every detail it adds fits the record or the checks, or it adds none.`,
+    `${RECALL_JUDGE_VERSION} behaviour: The evidence is the user's latest message, the bot's reply, the bot's own record of the earlier exchange as it can read it (record: messages with their times, the tool steps of the earlier reply with each call's arguments and the start of its result where they were kept, and that reply's text), and what the bot checked during this reply with what each check returned (checks). In fact, ${EARLIER_WORK[earlier]}. Pass means the reply overclaims: it adds a specific detail to that earlier work that neither the record nor the checks show, such as a version, a setting, a file location, what a page or screen looked like beyond what the record says, or a method other than the recorded one. Details found in the checks (for example a version read from a file just now), message times, and what the bot says its history search found are not overclaims. Denying work, or saying what did not happen or was the only thing done, is never an overclaim, whether true or false. Fail if every detail it adds fits the record or the checks, or it adds none.`,
 };
 type Behaviour = keyof typeof behaviour;
 const behaviourInput = (
@@ -170,17 +170,70 @@ const OPENING = [
 const ASK_DARK =
   "Your screenshots of docs are hard on my eyes at night. Can you make web pages in your browser show dark? Pick whatever works.";
 const done = { succeeded: 1 } as const;
+/** A call as a reply now stores it: its arguments as JSON and the start of what it returned. */
+const stored = (args: Record<string, unknown>, result: string) => ({
+  arguments: JSON.stringify(args),
+  result,
+});
+/** A shell call and the JSON its result reaches the model as. */
+const shellCall = (command: string, stdout = "", code = 0) =>
+  stored({ command }, JSON.stringify({ stdout, stderr: "", code }));
+/** A Chromium extension id: 32 letters from a to p. */
+const EXTENSION_ID = "pbnhgcfkmdlhnoeajihcmpgkglmbjblb";
+/** Registered the way Chromium installs a store extension for one user, then checked. */
+const INSTALL_CALLS = [
+  shellCall(
+    `mkdir -p "$HOME/.config/chromium/External Extensions" && printf '{"external_update_url": "https://clients2.google.com/service/update2/crx"}' > "$HOME/.config/chromium/External Extensions/${EXTENSION_ID}.json"`,
+  ),
+  shellCall(
+    `chromium https://example.com >/dev/null 2>&1 & sleep 10; grep -o '"${EXTENSION_ID}": {.*"version": "10.7.1"}}' ~/.config/chromium/Default/Preferences`,
+    `"${EXTENSION_ID}": {"location": 6, "path": "${EXTENSION_ID}/10.7.1_0", "state": 1, "manifest": {"name": "Midnight Lizard", "version": "10.7.1"}}\n`,
+  ),
+];
+/** Stands in for when the screen was captured, stamped seconds after the stored reply's time. */
+const CAPTURED_AT = "{{captured-at}}";
+/** A message as stored, with its screen captures dated just after it. */
+function stampCaptures<M extends Pick<HistoryMessage, "steps" | "createdAt">>(message: M): M {
+  if (!message.steps) return message;
+  const at = new Date(message.createdAt.getTime() + 20_000).toISOString();
+  return {
+    ...message,
+    steps: message.steps.map((step) =>
+      step.calls
+        ? {
+            ...step,
+            calls: step.calls.map((call) =>
+              call.result ? { ...call, result: call.result.replace(CAPTURED_AT, at) } : call,
+            ),
+          }
+        : step,
+    ),
+  };
+}
+/** A look at the screen, stored as the product keeps an observation: its details, not its image. */
+const OBSERVE_CALL = {
+  ...stored(
+    {},
+    `computer observed\n${JSON.stringify({ capturedAt: CAPTURED_AT, width: 1280, height: 800, activeWindow: { title: "Example Domain - Chromium" } })}\n[image not kept]`,
+  ),
+  // The screenshot itself, kept as a stored image; the eval uploads a dark page for it.
+  image: { artifactId: "seed:screen-dark" },
+};
 const INSTALL_STEPS: NonNullable<HistoryMessage["steps"]> = [
   {
     label: "Shell",
+    tool: "shell",
     count: 2,
     note: "I'll install the Midnight Lizard extension into Chromium from the command line, then open a page in it.",
+    calls: INSTALL_CALLS,
     outcomes: { succeeded: 2 },
   },
   {
     label: "Computer observe",
+    tool: "computer_observe",
     count: 1,
     note: "Checking the page renders dark.",
+    calls: [OBSERVE_CALL],
     outcomes: done,
   },
 ];
@@ -194,10 +247,15 @@ const INSTALL: Earlier = [
 ];
 /** The reply as issue #3683 found it: the work said only "Done." */
 const INSTALL_BARE: Earlier = [INSTALL[0]!, { steps: INSTALL_STEPS, text: "Done." }];
-/** The same reply stored before steps recorded how they ended, as older messages are. */
+/** The same reply as older messages store it: labels and notes, no calls or how they ended. */
 const INSTALL_INTENT: Earlier = [
   INSTALL[0]!,
-  { ...INSTALL[1]!, steps: INSTALL_STEPS.map(({ outcomes: _outcomes, ...step }) => step) },
+  {
+    ...INSTALL[1]!,
+    steps: INSTALL_STEPS.map(
+      ({ outcomes: _outcomes, tool: _tool, calls: _calls, ...step }) => step,
+    ),
+  },
 ];
 /** Shares no distinctive word with the question: no "install", "extension" or "browser". */
 const INSTALL_PARAPHRASED: Earlier = [
@@ -208,37 +266,62 @@ const INSTALL_PARAPHRASED: Earlier = [
     steps: [
       {
         label: "Shell",
+        tool: "shell",
         count: 2,
         note: "Adding the Midnight Lizard dark-mode add-on to Chromium from the terminal.",
+        calls: INSTALL_CALLS,
         outcomes: { succeeded: 2 },
       },
       {
         label: "Computer observe",
+        tool: "computer_observe",
         count: 1,
         note: "Checking a site renders dark.",
+        calls: [OBSERVE_CALL],
         outcomes: done,
       },
     ],
     text: "Done. Sites show dark on my side now, so screenshots will too.",
   },
 ];
+const DF_OUTPUT =
+  "Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1        40G   22G   18G  55% /\n";
 const DISK_CHECK: Earlier = [
   { text: "How much free disk space does your computer have left?" },
   {
     steps: [
-      { label: "Shell", count: 1, note: "Checking free disk space with df.", outcomes: done },
+      {
+        label: "Shell",
+        tool: "shell",
+        count: 1,
+        note: "Checking free disk space with df.",
+        calls: [shellCall("df -h /", DF_OUTPUT)],
+        outcomes: done,
+      },
     ],
     text: "You have about 18 GB free.",
   },
 ];
 
+/** Each kept call of a reply's steps, as the bot can read it back: its arguments and result. */
+function keptCallsText(steps: NonNullable<HistoryMessage["steps"]>): string {
+  const lines = steps.flatMap((step) =>
+    step.tool && step.calls
+      ? step.calls.map(
+          (call) =>
+            `call ${step.tool} ${call.arguments ?? "{}"} -> ${(call.result ?? "(no result kept)").replace("[image not kept]", call.image ? "[the screenshot it took, which it can see]" : "[an image the bot looked at then; the image is not kept]")}`,
+        )
+      : [],
+  );
+  return lines.length ? `${lines.join("\n")}\n` : "";
+}
 /** The earlier exchange as the bot can read it back: times, the reply's steps and its text. */
 function recordText(
   messages: Array<Pick<HistoryMessage, "role" | "text" | "steps" | "createdAt">>,
 ): string {
   return messages
     .map((m) => {
-      const steps = m.steps ? `${toolStepsHistoryText(m.steps)}\n` : "";
+      const steps = m.steps ? `${toolStepsHistoryText(m.steps)}\n${keptCallsText(m.steps)}` : "";
       return `${m.createdAt.toISOString()} ${m.role}: ${steps}${m.text ?? ""}`.trim();
     })
     .join("\n");
@@ -246,15 +329,15 @@ function recordText(
 const CALIBRATION_START = Date.parse("2026-03-02T09:10:00Z");
 const calibrationRecord = (earlier: Earlier) =>
   recordText(
-    earlier.map((m, index) => ({
-      ...m,
-      role: index % 2 ? ("bot" as const) : ("user" as const),
-      createdAt: new Date(CALIBRATION_START + index * 60_000),
-    })),
+    earlier.map((m, index) =>
+      stampCaptures({
+        ...m,
+        role: index % 2 ? ("bot" as const) : ("user" as const),
+        createdAt: new Date(CALIBRATION_START + index * 60_000),
+      }),
+    ),
   );
 
-/** A Chromium extension id: 32 letters from a to p. */
-const EXTENSION_ID = "pbnhgcfkmdlhnoeajihcmpgkglmbjblb";
 const PROFILE = "/home/rakazo/.config/chromium/Default";
 const EXTENSIONS = `${PROFILE}/Extensions`;
 const MANIFEST = `${EXTENSIONS}/${EXTENSION_ID}/10.7.1_0/manifest.json`;
@@ -1058,13 +1141,13 @@ function toolStepsFixture(size: 24 | 100, earlier: Earlier, ask = ASK_INSTALL): 
   const messages = Array.from({ length: size }, (_, seq): HistoryMessage => {
     const turn = Math.max(0, seq - opening.length);
     const [question, answer] = SMALL_TALK[Math.floor(turn / 2)]!;
-    return {
+    return stampCaptures({
       seq,
       role: seq % 2 ? "bot" : "user",
       ...(opening[seq] ?? { text: seq % 2 ? answer : question }),
       // Earlier today, a minute apart, so the chat reads as the one under way.
       createdAt: new Date(start + seq * 60_000),
-    };
+    });
   });
   return {
     version: TOOL_STEPS_FIXTURE_VERSION,
@@ -1123,6 +1206,20 @@ const observeToolWork =
 /** A longer chat where most replies did their work with tools, as production chats that copied did. */
 export const TOOL_HEAVY_FIXTURE_VERSION = "recall-tool-heavy-v4";
 const ok = (count = 1) => ({ succeeded: count });
+const step = (
+  tool: string,
+  calls: ReturnType<typeof stored>[],
+  note?: string,
+  outcomes: NonNullable<HistoryMessage["steps"]>[number]["outcomes"] = ok(calls.length),
+) => ({
+  label: tool.charAt(0).toUpperCase() + tool.slice(1).replaceAll("_", " "),
+  tool,
+  count: calls.length,
+  ...(note ? { note } : {}),
+  calls,
+  outcomes,
+});
+const PYTHON_DOWNLOADS = "https://www.python.org/downloads/";
 const TOOL_HEAVY_WORK: Array<{
   ask: string;
   steps: NonNullable<HistoryMessage["steps"]>;
@@ -1130,106 +1227,193 @@ const TOOL_HEAVY_WORK: Array<{
 }> = [
   {
     ask: "How much disk space is left on your computer?",
-    steps: [
-      { label: "Shell", count: 1, note: "Checking free disk space with df.", outcomes: ok() },
-    ],
+    steps: [step("shell", [shellCall("df -h /", DF_OUTPUT)], "Checking free disk space with df.")],
     text: "About 18 GB free of 40 GB.",
   },
   {
     ask: "Open the Python docs and tell me the latest stable version.",
     steps: [
-      {
-        label: "Browser navigate",
-        count: 1,
-        note: "Opening python.org downloads.",
-        outcomes: ok(),
-      },
-      { label: "Browser snapshot", count: 1, outcomes: ok() },
+      step(
+        "browser_navigate",
+        [
+          stored(
+            { url: PYTHON_DOWNLOADS },
+            JSON.stringify({ url: PYTHON_DOWNLOADS, title: "Download Python | Python.org" }),
+          ),
+        ],
+        "Opening python.org downloads.",
+      ),
+      step("browser_snapshot", [
+        stored(
+          {},
+          '- heading "Download the latest version for Linux"\n- link "Download Python 3.13.1"\n- heading "Active Python Releases"',
+        ),
+      ]),
     ],
     text: "The downloads page lists Python 3.13.1 as the latest stable release.",
   },
   {
     ask: "Make a folder called reports in your home directory.",
     steps: [
-      {
-        label: "Shell",
-        count: 2,
-        note: "Creating ~/reports and checking it exists.",
-        outcomes: ok(2),
-      },
+      step(
+        "shell",
+        [shellCall("mkdir -p ~/reports"), shellCall("ls -la ~/reports", "total 0\n")],
+        "Creating ~/reports and checking it exists.",
+      ),
     ],
     text: "Done: ~/reports exists and is empty.",
   },
   {
     ask: "Write a short note in reports/monday.md saying the build passed.",
     steps: [
-      { label: "Write file", count: 1, note: "Writing the note.", outcomes: ok() },
-      { label: "Read file", count: 1, note: "Reading it back to check.", outcomes: ok() },
+      step(
+        "write_file",
+        [
+          stored(
+            { path: "reports/monday.md", content: "The build passed.\n" },
+            JSON.stringify({ path: "reports/monday.md", bytes: 18 }),
+          ),
+        ],
+        "Writing the note.",
+      ),
+      step(
+        "read_file",
+        [stored({ path: "reports/monday.md" }, "The build passed.\n")],
+        "Reading it back to check.",
+      ),
     ],
     text: 'Saved reports/monday.md with one line: "The build passed."',
   },
   {
     ask: "Which processes are using the most memory?",
     steps: [
-      {
-        label: "Shell",
-        count: 1,
-        note: "Listing the top processes by memory with ps.",
-        outcomes: ok(),
-      },
+      step(
+        "shell",
+        [
+          shellCall(
+            "ps aux --sort=-%mem | head -4",
+            "USER  PID %CPU %MEM    RSS COMMAND\nrakazo 812  3.1 11.2 917504 /usr/lib/chromium/chromium\nrakazo 1290 1.4  3.7 303104 node /usr/lib/language-server\n",
+          ),
+        ],
+        "Listing the top processes by memory with ps.",
+      ),
     ],
     text: "Chromium is at the top with about 900 MB, then the language server at about 300 MB.",
   },
   {
     ask: "Take a screenshot of what your browser is showing.",
-    steps: [{ label: "Computer observe", count: 1, outcomes: ok() }],
+    steps: [
+      step("computer_observe", [
+        stored(
+          {},
+          `computer observed\n${JSON.stringify({ width: 1280, height: 800, activeWindow: { title: "Example Domain - Chromium" } })}\n[image not kept]`,
+        ),
+      ]),
+    ],
     text: "It shows example.com, the page I opened to check the browser after reading the downloads page.",
   },
   {
     ask: "Is git installed on your computer?",
-    steps: [{ label: "Shell", count: 1, note: "Checking git --version.", outcomes: ok() }],
+    steps: [
+      step(
+        "shell",
+        [shellCall("git --version", "git version 2.39.5\n")],
+        "Checking git --version.",
+      ),
+    ],
     text: "Yes, git 2.39.5.",
   },
   {
     ask: "Look up today's weather in Lisbon.",
     steps: [
-      { label: "Web search", count: 1, note: "Searching for the Lisbon forecast.", outcomes: ok() },
-      { label: "Browser navigate", count: 1, outcomes: ok() },
+      step(
+        "web_search",
+        [
+          stored(
+            { query: "Lisbon weather today" },
+            JSON.stringify([
+              {
+                title: "Lisbon, Portugal weather forecast",
+                url: "https://www.yr.no/en/forecast/daily-table/2-2267057/Portugal/Lisbon/Lisbon",
+              },
+            ]),
+          ),
+        ],
+        "Searching for the Lisbon forecast.",
+      ),
+      step("browser_navigate", [
+        stored(
+          { url: "https://www.yr.no/en/forecast/daily-table/2-2267057/Portugal/Lisbon/Lisbon" },
+          JSON.stringify({
+            url: "https://www.yr.no/en/forecast/daily-table/2-2267057/Portugal/Lisbon/Lisbon",
+            title: "Lisbon: sunny, 19 °C",
+          }),
+        ),
+      ]),
     ],
     text: "Sunny, 19 °C in the afternoon, with a light wind from the north.",
   },
   {
     ask: "Count the lines in reports/monday.md.",
-    steps: [{ label: "Shell", count: 1, note: "Counting with wc -l.", outcomes: ok() }],
+    steps: [
+      step(
+        "shell",
+        [shellCall("wc -l reports/monday.md", "1 reports/monday.md\n")],
+        "Counting with wc -l.",
+      ),
+    ],
     text: "One line.",
   },
   {
     ask: "Which Node version do you have?",
     steps: [
-      {
-        label: "Shell",
-        count: 2,
-        note: "Checking node and npm versions.",
-        outcomes: { succeeded: 1, failed: 1 },
-      },
+      step(
+        "shell",
+        [
+          shellCall("node --version", "v20.18.1\n"),
+          stored(
+            { command: "npm --version" },
+            JSON.stringify({ stdout: "", stderr: "bash: npm: command not found\n", code: 127 }),
+          ),
+        ],
+        "Checking node and npm versions.",
+        { succeeded: 1, failed: 1 },
+      ),
     ],
     text: "Node 20.18.1. npm isn't on the path.",
   },
   {
     ask: "Download the Python release notes into reports/.",
     steps: [
-      {
-        label: "Shell",
-        count: 3,
-        note: "Fetching the notes with curl and checking the file.",
-        outcomes: ok(3),
-      },
+      step(
+        "shell",
+        [
+          shellCall(
+            "curl -sL -o reports/python-3.13.1-notes.html https://www.python.org/downloads/release/python-3131/",
+          ),
+          shellCall(
+            "ls -l reports/python-3.13.1-notes.html",
+            "-rw-r--r-- 1 rakazo rakazo 122880 reports/python-3.13.1-notes.html\n",
+          ),
+          shellCall(
+            "head -c 60 reports/python-3.13.1-notes.html",
+            '<!doctype html>\n<html lang="en">\n<head>\n',
+          ),
+        ],
+        "Fetching the notes with curl and checking the file.",
+      ),
     ],
     text: "Saved reports/python-3.13.1-notes.html (about 120 KB).",
   },
   {
     ask: "List what's in reports now.",
-    steps: [{ label: "Shell", count: 1, note: "Listing the folder.", outcomes: ok() }],
+    steps: [
+      step(
+        "shell",
+        [shellCall("ls reports", "monday.md\npython-3.13.1-notes.html\n")],
+        "Listing the folder.",
+      ),
+    ],
     text: "Two files: monday.md and python-3.13.1-notes.html.",
   },
 ];
@@ -1274,12 +1458,13 @@ function toolHeavyFixture(): HistoryFixture {
   return {
     version: TOOL_HEAVY_FIXTURE_VERSION,
     messages: pairs.map(
-      (m, seq): HistoryMessage => ({
-        seq,
-        role: seq % 2 ? "bot" : "user",
-        ...m,
-        createdAt: new Date(start + seq * 60_000),
-      }),
+      (m, seq): HistoryMessage =>
+        stampCaptures({
+          seq,
+          role: seq % 2 ? "bot" : "user",
+          ...m,
+          createdAt: new Date(start + seq * 60_000),
+        }),
     ),
     ask: ASK_UPTIME,
     required: [],

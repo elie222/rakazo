@@ -66,6 +66,8 @@ export async function createReplyState(
     pendingToolNames: [],
     toolCalls: [],
     toolOutcomes: new Map(),
+    toolStepCalls: new Map(),
+    keptResultChars: 0,
     pendingProgress: "",
     lastProgressAt: 0,
     hasStreamedText: false,
@@ -195,6 +197,7 @@ export function withReplyToolOutcomes(
     reply.toolCalls.map(({ label, executionId }) => ({
       label,
       outcome: reply.toolOutcomes.get(executionId) ?? unfinished,
+      call: reply.toolStepCalls.get(executionId),
     })),
   );
 }

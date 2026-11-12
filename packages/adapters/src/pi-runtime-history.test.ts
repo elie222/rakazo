@@ -54,6 +54,9 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { isHistoryReply, toHistory } from "./pi-runtime-history.js";
+
+const OFFERED = new Set(["shell", "SLACK_FIND_CHANNELS", "read_file"]);
 
 async function replay(overrides: Partial<AgentRunRequest>) {
   const request: AgentRunRequest = {
@@ -334,5 +337,247 @@ describe("Pi history replay", () => {
     const steered = (await captured.options!.prepareNextTurnWithContext!())?.messages ?? [];
     expect(String(steered[0]!.content)).toContain("And C.");
     expect(String(steered[0]!.content)).not.toContain("[User]");
+  });
+});
+
+describe("replaying an earlier reply's tool steps", () => {
+  const shell = (command: string, stdout: string) => ({
+    arguments: JSON.stringify({ command }),
+    result: JSON.stringify({ stdout, stderr: "", code: 0 }),
+  });
+  const toolReply: AgentRunRequest["history"][number] = {
+    id: "m2",
+    role: "assistant",
+    createdAt: "2026-01-02T03:04:06.000Z",
+    content: "[tool calls this reply made]\n- Shell ×2 (succeeded): Installing it.\nDone.",
+    segments: [
+      {
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 2,
+            note: "Installing it.",
+            calls: [
+              shell("curl -o x.crx https://example.test/x", ""),
+              shell("ls ext", "10.7.1_0\n"),
+            ],
+            outcomes: { succeeded: 2 },
+          },
+          {
+            label: "Slack find channels",
+            tool: "SLACK_FIND_CHANNELS",
+            count: 1,
+            calls: [{ arguments: '{"query":"general"}' }],
+            outcomes: { failed: 1 },
+          },
+        ],
+      },
+      { text: "Done." },
+    ],
+  };
+  const history: AgentRunRequest["history"] = [
+    { id: "m1", role: "user", content: "Make pages dark." },
+    toolReply,
+  ];
+  const shape = (messages: ReturnType<typeof toHistory>) =>
+    messages.map((message) =>
+      message.role === "toolResult"
+        ? { result: message.toolName, text: message.content, isError: message.isError }
+        : message.role === "assistant"
+          ? message.content.map((part) =>
+              part.type === "toolCall" ? { call: part.name, arguments: part.arguments } : part,
+            )
+          : message.content,
+    );
+  const text = (value: string) => [{ type: "text", text: value }];
+
+  it("replays stored calls with their arguments and the start of what they returned", () => {
+    const messages = toHistory(history, "Next question.", undefined, OFFERED);
+    expect(shape(messages)).toEqual([
+      "Make pages dark.",
+      [
+        { type: "text", text: "Installing it." },
+        { call: "shell", arguments: { command: "curl -o x.crx https://example.test/x" } },
+        { call: "shell", arguments: { command: "ls ext" } },
+      ],
+      { result: "shell", text: text('{"stdout":"","stderr":"","code":0}'), isError: false },
+      {
+        result: "shell",
+        text: text('{"stdout":"10.7.1_0\\n","stderr":"","code":0}'),
+        isError: false,
+      },
+      [{ call: "SLACK_FIND_CHANNELS", arguments: { query: "general" } }],
+      // Nothing was kept of this result, so it says only how the call ended.
+      { result: "SLACK_FIND_CHANNELS", text: text("Failed."), isError: true },
+      [{ type: "text", text: "Done." }],
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("[tool calls this reply made]");
+    for (const message of messages.slice(1)) {
+      expect(message).toMatchObject({ rakazoHistory: true, rakazoMessageId: "m2" });
+      expect(isHistoryReply(message)).toBe(true);
+    }
+  });
+
+  it("says in its result when a replayed call's tool is not offered now", () => {
+    const [, result] = toHistory([toolReply], "", undefined, new Set(["read_file"]));
+    expect(result).toMatchObject({
+      role: "toolResult",
+      content: [
+        {
+          type: "text",
+          text: '{"stdout":"","stderr":"","code":0}\n[shell is not available to you now.]',
+        },
+      ],
+    });
+  });
+
+  it("replays an image result with how it ended and the bot's own next words, never its content", () => {
+    const observed = {
+      ...toolReply,
+      segments: [
+        {
+          steps: [
+            {
+              label: "Computer observe",
+              tool: "computer_observe",
+              count: 1,
+              note: "Checking the page.",
+              calls: [
+                { arguments: "{}", result: 'computer observed\n{"width":1280}\n[image not kept]' },
+              ],
+              outcomes: { succeeded: 1 },
+            },
+          ],
+        },
+        { text: "Done. The page shows dark now." },
+      ],
+    };
+    const [, result] = toHistory([observed], "", undefined, new Set(["computer_observe"]));
+    expect(result).toMatchObject({
+      role: "toolResult",
+      content: [
+        {
+          type: "text",
+          text: 'computer observed\n{"width":1280}\n[Succeeded. You looked at this image then; it is not kept. What you wrote next: "Done. The page shows dark now."]',
+        },
+      ],
+    });
+  });
+
+  it("puts the kept screenshot back on the call that took it, when the run hydrated it", () => {
+    const observedWithImage = {
+      ...toolReply,
+      images: [
+        { name: "screenshot", mimeType: "image/png" as const, data: new Uint8Array([1, 2]) },
+      ],
+      segments: [
+        {
+          steps: [
+            {
+              label: "Computer observe",
+              tool: "computer_observe",
+              count: 1,
+              calls: [
+                {
+                  arguments: "{}",
+                  result: 'computer observed\n{"width":1280}\n[image not kept]',
+                  image: { artifactId: "a1" },
+                },
+              ],
+              outcomes: { succeeded: 1 },
+            },
+          ],
+        },
+        { text: "Done. The page shows dark now." },
+      ],
+    };
+    const [, result] = toHistory([observedWithImage], "", undefined, new Set(["computer_observe"]));
+    expect(result).toMatchObject({
+      role: "toolResult",
+      content: [
+        { type: "text", text: 'computer observed\n{"width":1280}\n[the screenshot you took:]' },
+        { type: "image", mimeType: "image/png", data: "AQI=" },
+      ],
+    });
+  });
+
+  it("pairs every call with its result under a stable id made from the message", () => {
+    const first = toHistory(history, "", undefined, OFFERED);
+    expect(JSON.stringify(toHistory(history, "", undefined, OFFERED))).toBe(JSON.stringify(first));
+    const calls = first.flatMap((message) =>
+      message.role === "assistant"
+        ? message.content.flatMap((part) => (part.type === "toolCall" ? [part.id] : []))
+        : [],
+    );
+    const results = first.flatMap((message) =>
+      message.role === "toolResult" ? [message.toolCallId] : [],
+    );
+    expect(new Set(calls).size).toBe(3);
+    expect(results).toEqual(calls);
+    for (const id of calls) expect(id).toMatch(/^[A-Za-z0-9_-]{1,40}$/);
+  });
+
+  it("keeps the text form for older steps, which stored no calls", () => {
+    const older = {
+      ...toolReply,
+      segments: [
+        { steps: [{ label: "Shell", count: 1, note: "Installing it." }] },
+        { text: "Done." },
+      ],
+    };
+    expect(shape(toHistory([older], "", undefined, OFFERED))).toEqual([
+      [{ type: "text", text: toolReply.content }],
+    ]);
+    // A reply with one older step among new ones reads as text too, never half and half.
+    const mixed = {
+      ...toolReply,
+      segments: [
+        ...toolReply.segments!,
+        { steps: [{ label: "Read file", tool: "read_file", count: 1 }] },
+      ],
+    };
+    expect(shape(toHistory([mixed], "", undefined, OFFERED))).toEqual([
+      [{ type: "text", text: toolReply.content }],
+    ]);
+  });
+
+  it("replays the calls a reply kept, up to the cap, and keeps text for any step past it", () => {
+    const many = {
+      ...toolReply,
+      segments: [
+        {
+          steps: [
+            {
+              label: "Shell",
+              tool: "shell",
+              count: 40,
+              calls: Array.from({ length: 40 }, (_, index) => shell(`echo ${index}`, `${index}`)),
+            },
+            // Past the calls a reply keeps: no calls of its own, and not replayed.
+            { label: "Shell", tool: "shell", count: 5 },
+          ],
+        },
+      ],
+    };
+    const messages = toHistory([many], "", undefined, OFFERED);
+    expect(messages.filter((message) => message.role === "toolResult")).toHaveLength(40);
+  });
+
+  it("keeps the text form when the run has no tools, or for a reply that used none", () => {
+    expect(shape(toHistory(history, ""))).toEqual([
+      "Make pages dark.",
+      [{ type: "text", text: toolReply.content }],
+    ]);
+    const plain = { id: "m3", role: "assistant" as const, content: "Hello." };
+    expect(shape(toHistory([plain], "", undefined, OFFERED))).toEqual([
+      [{ type: "text", text: "Hello." }],
+    ]);
+  });
+
+  it("does not replay another bot's steps, which reach this bot as a labelled turn", () => {
+    const messages = toHistory([{ ...toolReply, speaker: "Anya" }], "", undefined, OFFERED);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ role: "user" });
   });
 });

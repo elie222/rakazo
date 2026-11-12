@@ -410,3 +410,56 @@ export async function claimRunSteering(
     }),
   );
 }
+
+/**
+ * The most recent screenshot this bot kept from its own earlier replies, as an image on the
+ * reply that took it, so a later turn sees what it saw. Older screenshots stay as how the call
+ * ended and what the bot wrote next.
+ */
+export async function withLatestStepScreenshot(
+  deps: ExecutorDeps,
+  history: AgentRunRequest["history"],
+  context: {
+    operationId: string;
+    traceId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    runId: string;
+    signal: AbortSignal;
+  },
+  maxBytes = RECENT_TURN_IMAGE_BYTES,
+): Promise<AgentRunRequest["history"]> {
+  if (!deps.artifacts) return history;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (entry?.role !== "assistant" || entry.speaker || !entry.segments) continue;
+    const artifactId = entry.segments
+      .flatMap((segment) => ("steps" in segment ? segment.steps : []))
+      .flatMap((step) => step.calls ?? [])
+      .findLast((call) => call.image)?.image?.artifactId;
+    if (!artifactId) continue;
+    const row = await deps.prisma.artifact.findFirst({
+      where: { id: artifactId, spaceId: context.spaceId },
+      select: { storageKey: true, mimeType: true, size: true },
+    });
+    if (!row || !isAttachmentImageMimeType(row.mimeType)) return history;
+    const declared = declaredArtifactBytes(row.size);
+    if (declared !== undefined && declared > maxBytes) return history;
+    let data: Uint8Array;
+    try {
+      data = await deps.artifacts.get(row.storageKey, context);
+    } catch (error) {
+      if (context.signal.aborted) throw error;
+      return history;
+    }
+    if (data.byteLength > maxBytes) return history;
+    const image = {
+      name: "screenshot",
+      mimeType: row.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+      data,
+    };
+    return history.map((item, at) => (at === index ? { ...item, images: [image] } : item));
+  }
+  return history;
+}

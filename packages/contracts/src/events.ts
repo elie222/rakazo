@@ -255,9 +255,26 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     steps: z.array(
       z.object({
         label: z.string(),
+        /** The tool's own name; older steps have only the label. */
+        tool: z.string().optional(),
         count: z.number().int().positive(),
         /** What the bot wrote just before this step, kept out of its reply. */
         note: z.string().optional(),
+        /**
+         * Each call's arguments and a short excerpt of its result, in call order, so a later turn
+         * can replay them. Redacted and capped when saved; older steps have none.
+         */
+        calls: z
+          .array(
+            z.object({
+              /** The call's arguments as JSON. */
+              arguments: z.string().optional(),
+              result: z.string().optional(),
+              /** A screenshot the call returned, kept as a stored image. */
+              image: z.object({ artifactId: z.string() }).optional(),
+            }),
+          )
+          .optional(),
         /** How many of this step's calls succeeded, failed, or were stopped before finishing. */
         outcomes: z
           .object({

@@ -1,6 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { truncateReplyQuote } from "@rakazo/contracts";
-import { blocksToAgentHistoryText, messageReaction } from "@rakazo/core";
+import type { AgentHistorySegment } from "@rakazo/core";
+import {
+  blocksToAgentHistorySegments,
+  blocksToAgentHistoryText,
+  messageReaction,
+} from "@rakazo/core";
 import { isPageCardMessage } from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
 
@@ -59,6 +64,16 @@ export function messageToAgentHistoryText(message: ReplyMessage): string {
   return [replyContext(message, message.threadId), blocksToAgentHistoryText(messageBlocks(message))]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** A message split at its tool steps, as messageToAgentHistoryText reads it; none without steps. */
+export function messageToAgentHistorySegments(
+  message: ReplyMessage,
+): AgentHistorySegment[] | undefined {
+  const segments = blocksToAgentHistorySegments(messageBlocks(message));
+  if (!segments.some((segment) => "steps" in segment)) return undefined;
+  const context = replyContext(message, message.threadId);
+  return context ? [{ text: context }, ...segments] : segments;
 }
 
 /** Fetch the explicit target even when it has fallen outside the history window. */

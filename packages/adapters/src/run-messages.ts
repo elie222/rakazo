@@ -8,6 +8,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { redactConnectorPayload } from "./connector-safety.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 
 /** Deps for one attempt: its run's history writes carry the lease, so a superseded attempt cannot write. */
@@ -29,6 +30,15 @@ export function runLeaseFor(
   return deps.runLease?.runId === runId ? deps.runLease : undefined;
 }
 
+/** Stored call arguments with the run's secrets redacted inside their values, still valid JSON. */
+function redactedArguments(json: string, secrets: string[]): string {
+  try {
+    return JSON.stringify(redactConnectorPayload(JSON.parse(json), secrets));
+  } catch {
+    return "{}";
+  }
+}
+
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
   return blocks.map((block) => {
     if (block.kind === "text") {
@@ -48,6 +58,19 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
           ...step,
           label: redactSecrets(step.label, secrets),
           ...(step.note === undefined ? {} : { note: redactSecrets(step.note, secrets) }),
+          // Secrets a later call revealed are redacted from earlier calls' arguments too.
+          ...(step.calls
+            ? {
+                calls: step.calls.map((call) => ({
+                  ...(call.arguments === undefined
+                    ? {}
+                    : { arguments: redactedArguments(call.arguments, secrets) }),
+                  ...(call.result === undefined
+                    ? {}
+                    : { result: redactSecrets(call.result, secrets) }),
+                })),
+              }
+            : {}),
         })),
       };
     }

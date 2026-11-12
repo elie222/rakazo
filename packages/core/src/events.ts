@@ -386,14 +386,19 @@ export function liveActivityLine(
 export type ToolStepOutcome = "succeeded" | "failed" | "stopped";
 export type ToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number];
 
+export type ToolStepCall = NonNullable<ToolStep["calls"]>[number];
+/** Calls a reply keeps arguments and results for; a later turn replays no more than these. */
+export const TOOL_STEP_CALLS_KEPT = 40;
+
 /**
- * Records how each call ended on the step it shows as. `calls` lists every step a call made, in
- * call order (a connector call can make several). If they stop lining up with the steps, the
- * steps are returned as they were rather than credited to the wrong step.
+ * Records how each call ended on the step it shows as, and what it was called with and returned
+ * when every call of the step has that. `calls` lists every step a call made, in call order (a
+ * connector call can make several). If they stop lining up with the steps, the steps are
+ * returned as they were rather than credited to the wrong step.
  */
 export function withToolStepOutcomes(
   segments: readonly MessageBlock[],
-  calls: readonly { label: string; outcome: ToolStepOutcome | undefined }[],
+  calls: readonly { label: string; outcome: ToolStepOutcome | undefined; call?: ToolStepCall }[],
 ): MessageBlock[] {
   let next = 0;
   const annotated: MessageBlock[] = [];
@@ -405,13 +410,19 @@ export function withToolStepOutcomes(
     const steps: ToolStep[] = [];
     for (const step of block.steps) {
       const outcomes: NonNullable<ToolStep["outcomes"]> = {};
+      const kept: ToolStepCall[] = [];
       for (let index = 0; index < step.count; index += 1) {
         const call = calls[next++];
         if (call?.label !== step.label) return [...segments];
         if (call.outcome) outcomes[call.outcome] = (outcomes[call.outcome] ?? 0) + 1;
+        if (call.call && next <= TOOL_STEP_CALLS_KEPT) kept.push(call.call);
       }
-      const { outcomes: _previous, ...rest } = step;
-      steps.push(Object.keys(outcomes).length > 0 ? { ...rest, outcomes } : rest);
+      const { outcomes: _previous, calls: _calls, ...rest } = step;
+      steps.push({
+        ...rest,
+        ...(kept.length === step.count ? { calls: kept } : {}),
+        ...(Object.keys(outcomes).length > 0 ? { outcomes } : {}),
+      });
     }
     annotated.push({ ...block, steps });
   }
@@ -421,10 +432,10 @@ export function withToolStepOutcomes(
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
   const label = humanizeToolName(toolName);
   const last = steps.at(-1);
-  if (last && last.label === label) {
+  if (last && last.label === label && last.tool === toolName) {
     return [...steps.slice(0, -1), { ...last, count: last.count + 1 }];
   }
-  return [...steps, { label, count: 1 }];
+  return [...steps, { label, tool: toolName, count: 1 }];
 }
 
 /** Puts a note on the newest step, splitting it off a run of the same step so it stays in order. */
@@ -435,7 +446,10 @@ export function noteLastToolStep(segments: readonly MessageBlock[], note: string
   if (block?.kind !== "steps" || !last) return [...segments];
   const steps = block.steps.slice(0, -1);
   if (last.count > 1)
-    steps.push({ ...last, count: last.count - 1 }, { label: last.label, count: 1, note });
+    steps.push(
+      { ...last, count: last.count - 1 },
+      { label: last.label, ...(last.tool ? { tool: last.tool } : {}), count: 1, note },
+    );
   else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
   const next = [...segments];
   next[index] = { ...block, steps };

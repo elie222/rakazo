@@ -10,7 +10,7 @@ import type {
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
-import type { ToolStepOutcome } from "@rakazo/core";
+import type { ToolStepCall, ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -128,6 +128,10 @@ export interface ReplyState {
   toolCalls: { label: string; executionId: string }[];
   /** How each finished call ended, by execution id. */
   toolOutcomes: Map<string, ToolStepOutcome>;
+  /** What each call that shows as its own step was called with and returned, by execution id. */
+  toolStepCalls: Map<string, ToolStepCall>;
+  /** Characters of results the reply has kept so far, against its budget. */
+  keptResultChars: number;
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;
