@@ -232,8 +232,16 @@ function matchesProtocol(tools: ConnectorTool[]): boolean {
   });
 }
 
-function acceptsInput(schema: unknown, input: unknown, depth = 0, root = schema): boolean {
-  if (depth > 12) return false;
+function acceptsInput(
+  schema: unknown,
+  input: unknown,
+  depth = 0,
+  root = schema,
+  work = { remaining: 1024 },
+): boolean {
+  // The depth limit alone does not bound branching references or alternatives.
+  // Share one budget across every branch of this representative call.
+  if (--work.remaining < 0 || depth > 12) return false;
   // Unconstrained schemas accept leaf values only: an object argument, including a whole
   // tool input, must be described as one, or any server could advertise `{}` for every tool.
   const leaf = input === null || typeof input !== "object";
@@ -264,17 +272,17 @@ function acceptsInput(schema: unknown, input: unknown, depth = 0, root = schema)
       if (!Object.hasOwn(target, key)) return false;
       target = (target as Record<string, unknown>)[key];
     }
-    return acceptsInput(target, input, depth + 1, root);
+    return acceptsInput(target, input, depth + 1, root, work);
   }
   if (value.not !== undefined || value.if !== undefined) return false;
   if (
     Array.isArray(value.allOf) &&
-    !value.allOf.every((part) => acceptsInput(part, input, depth + 1, root))
+    !value.allOf.every((part) => acceptsInput(part, input, depth + 1, root, work))
   )
     return false;
   const alternatives = value.anyOf ?? value.oneOf;
   if (Array.isArray(alternatives))
-    return alternatives.some((part) => acceptsInput(part, input, depth + 1, root));
+    return alternatives.some((part) => acceptsInput(part, input, depth + 1, root, work));
   if (value.const !== undefined) return value.const === input;
   if (Array.isArray(value.enum)) return value.enum.includes(input);
   if (typeof input === "object" && input !== null) {
@@ -286,7 +294,7 @@ function acceptsInput(schema: unknown, input: unknown, depth = 0, root = schema)
         (Array.isArray(value.required) &&
           value.required.every((key) => typeof key === "string" && Object.hasOwn(args, key)))) &&
       Object.entries(args).every(([key, item]) =>
-        acceptsInput(properties?.[key], item, depth + 1, root),
+        acceptsInput(properties?.[key], item, depth + 1, root, work),
       )
     );
   }
