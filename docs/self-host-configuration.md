@@ -62,6 +62,14 @@ BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 `COMPUTER_TAKEOVER_TTL_MS` (default `900000`, 15 minutes) is how long a person's takeover of a bot's
 screen lasts before control expires.
 
+`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run or an unanswered
+question may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
+(default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
+thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
+anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
+takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
+queued runs after 4 hours.
+
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
 
