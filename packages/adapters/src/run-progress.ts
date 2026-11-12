@@ -255,11 +255,16 @@ export async function flushProgress(ctx: RunContext) {
  * is about to do. They are posted at once, without waiting for the turn to grow long, so the
  * person knows the bot is on it.
  */
-export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean) {
+/** An opening is one short line; anything longer waits for the long-turn budget like any note. */
+export const OPENING_ACKNOWLEDGEMENT_MAX_LENGTH = 200;
+
+export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean, text: string) {
   const { reply } = ctx.state;
   const firstStep = reply.toolCalls.at(-1)?.executionId;
   return (
     openingText &&
+    text.length <= OPENING_ACKNOWLEDGEMENT_MAX_LENGTH &&
+    !text.includes("\n") &&
     openingAcknowledgementEnabled() &&
     narrationBecomesMessages(ctx) &&
     isConversationalRun(ctx.run.trigger) &&
@@ -296,7 +301,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   if (
     text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
     (canPublishDurableNarration(ctx) ||
-      isOpeningAcknowledgement(ctx, openingText) ||
+      isOpeningAcknowledgement(ctx, openingText, text) ||
       (beforeConnectCard && narrationBecomesMessages(ctx)))
   ) {
     reply.workingNotes.length = 0;

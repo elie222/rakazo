@@ -2227,6 +2227,12 @@ describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
     expect(finalText(finalizeRun)).toBe("Done.");
   });
 
+  it("keeps a long opening for the long-turn budget instead of posting it at once", async () => {
+    const paragraph = `${"I checked the first source and it says something long. ".repeat(5)}`;
+    const { messages } = await runTurn("Done.", false, paragraph.trim());
+    expect(sentTexts(messages)).toEqual([]);
+  });
+
   it("posts the opening sentence even when it reads like a status", async () => {
     const { messages } = await runTurn("Done.", false, "Checking availability");
     expect(sentTexts(messages)).toEqual(["Checking availability"]);
