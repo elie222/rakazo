@@ -134,7 +134,11 @@ API and worker.
 The server image also includes an optional Drive MCP adapter that calls the Drive API directly.
 It does not require a managed connector account. It searches file names, reads files (exporting
 native documents, spreadsheets and presentations), and creates UTF-8 text files. File content
-is limited to 2 MiB per call; spreadsheet exports return the first sheet as CSV. It does not
+is limited to 2 MiB per call. Spreadsheet CSV exports return the first tab only; use
+`get_spreadsheet` to list all tabs and named ranges, then `read_spreadsheet_ranges` to read
+selected A1 ranges across tabs as displayed values, computed values, or formulas. Read large
+tabs in bounded row ranges; allocated grid size is not a record count, and trailing empty
+rows are omitted. Oversized responses fail rather than silently truncate. It does not
 delete files, change sharing, or edit existing files.
 
 On the API and worker, enable `MCP_STDIO_ENABLED=true` and add
@@ -143,7 +147,7 @@ the list. This launcher accepts no arguments; there is no need to allow a genera
 JavaScript interpreter. The bundled app can be connected by each signed-in user. Web, desktop
 and mobile bots use the same backend connection.
 
-In a Google Cloud project, enable the Drive API and configure the OAuth consent screen. Create
+In a Google Cloud project, enable the Drive API and Google Sheets API and configure the OAuth consent screen. Create
 a **Web application** OAuth client with `<your web origin>/mcp/oauth/callback` as an authorized
 redirect URI. If the app is in testing, add the connecting account as a test user. Follow the
 [Google OAuth setup guide](https://developers.google.com/identity/protocols/oauth2/web-server)
@@ -163,7 +167,10 @@ bot; existing MCP server controls manage later assignments and disconnects. Web 
 a login popup; mobile opens the same registered web callback in the browser.
 
 The bundled adapter requests `drive.readonly` to read existing files and `drive.file` to create
-files. Folder permissions still apply. Rakazo refreshes grants and restarts the process before
+files. The Sheets read tools accept the existing `drive.readonly` grant; enabling the Sheets
+API in the same project does not require a new OAuth scope or reconnect. See the
+[Sheets batch read reference](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/batchGet).
+Folder permissions still apply. Rakazo refreshes grants and restarts the process before
 its short-lived access token expires. External apps in testing normally receive refresh tokens
 that expire after seven days. Public apps requesting the restricted `drive.readonly` scope need
 Google's verification; server-side storage or transmission of restricted data can also require
@@ -194,7 +201,6 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                                              |
 | iMessage (Photon)           | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>` |
 | Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                      |
-| Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
 | Slack                       | See below                                                                                                                                                                                          |
 
 Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
@@ -212,19 +218,6 @@ instead gives unknown senders their own chat-only accounts, whose runs use the d
 
 In rooms, a bot decides whether to answer ambient messages with its own model. To use a separate
 model for that decision, set both `TEAM_CHAT_JUDGE_PROVIDER` and `TEAM_CHAT_JUDGE_MODEL`.
-
-### Microsoft Teams
-
-Register a single-tenant Azure bot with the Teams channel enabled. Set `TEAMS_APP_ID`,
-`TEAMS_APP_PASSWORD` (the client secret value), and `TEAMS_APP_TENANT_ID` on the server.
-Set its messaging endpoint to `https://your-domain.example/api/v1/messaging/webhook/teams`.
-Install the Teams app with the bot's `personal` scope in your tenant; your administrator may
-need to allow custom apps. Microsoft JWT verification remains enabled.
-
-Choose `teams` under **Settings → Messaging**, then send the link code to the bot in a direct
-message. Replies and later messages use the linked conversation, including after a server
-restart. Starting a new DM by user address, Teams channels, and group chats are not supported.
-No Microsoft Graph history permissions are needed for this direct-message flow.
 
 ### Slack
 

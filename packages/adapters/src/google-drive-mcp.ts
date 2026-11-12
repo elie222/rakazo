@@ -6,6 +6,9 @@ import { z } from "zod";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const API = "https://www.googleapis.com";
+const SHEETS_API = "https://sheets.googleapis.com";
+const SHEETS_ERROR =
+  "Spreadsheet request failed. Check file access and that Google Sheets API is enabled in the OAuth client project. For large sheets, request smaller ranges within the 2 MiB tool limit.";
 const FILE_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,parents";
 const fileId = z
   .string()
@@ -15,12 +18,17 @@ const fileId = z
 /** Rakazo owns OAuth and refresh; this process receives only a short-lived access token. */
 export function createDriveMcpServer(accessToken: string, fetcher: typeof fetch = fetch) {
   if (!accessToken || /[\r\n]/.test(accessToken)) throw new Error("An access token is required");
-  const server = new McpServer({ name: "google-drive", version: "1.0.0" });
+  const server = new McpServer({ name: "google-drive", version: "1.1.0" });
 
-  async function request(path: string, init: RequestInit = {}, signal?: AbortSignal) {
+  async function request(
+    path: string,
+    init: RequestInit = {},
+    signal?: AbortSignal,
+    service: "drive" | "sheets" = "drive",
+  ) {
     const deadline = AbortSignal.timeout(30_000);
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
-    const response = await fetcher(`${API}${path}`, {
+    const response = await fetcher(`${service === "sheets" ? SHEETS_API : API}${path}`, {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
       redirect: "error",
@@ -42,7 +50,10 @@ export function createDriveMcpServer(accessToken: string, fetcher: typeof fetch 
     return JSON.parse(new TextDecoder().decode(bytes));
   }
 
-  async function result(action: () => Promise<unknown>) {
+  async function result(
+    action: () => Promise<unknown>,
+    failure = "Drive request failed. Check authorization, file access and the 2 MiB tool limit before retrying.",
+  ) {
     try {
       return { content: [{ type: "text" as const, text: JSON.stringify(await action()) }] };
     } catch {
@@ -51,7 +62,7 @@ export function createDriveMcpServer(accessToken: string, fetcher: typeof fetch 
         content: [
           {
             type: "text" as const,
-            text: "Drive request failed. Check authorization, file access and the 2 MiB tool limit before retrying.",
+            text: failure,
           },
         ],
       };
@@ -93,7 +104,7 @@ export function createDriveMcpServer(accessToken: string, fetcher: typeof fetch 
     "read_file",
     {
       description:
-        "Read a Google Drive file (up to 2 MiB). Native Docs export as text, Sheets as CSV, Slides as text. Other files return base64 bytes.",
+        "Read a Google Drive file (up to 2 MiB). Native Docs and Slides export as text. Sheets CSV contains only the first tab; use get_spreadsheet and read_spreadsheet_ranges for other tabs, ranges or formulas. Other files return base64 bytes.",
       inputSchema: { fileId },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
@@ -123,10 +134,72 @@ export function createDriveMcpServer(accessToken: string, fetcher: typeof fetch 
         const text = !!exportType || metadata.mimeType.startsWith("text/");
         return {
           metadata,
+          ...(metadata.mimeType === "application/vnd.google-apps.spreadsheet"
+            ? {
+                notice:
+                  "CSV contains only the first tab. Use get_spreadsheet to list tabs and read_spreadsheet_ranges to read selected ranges.",
+              }
+            : {}),
           encoding: text ? "utf-8" : "base64",
           content: text ? new TextDecoder().decode(bytes) : Buffer.from(bytes).toString("base64"),
         };
       }),
+  );
+
+  server.registerTool(
+    "get_spreadsheet",
+    {
+      description:
+        "Inspect a Google spreadsheet by its Drive file ID: list all tabs (including hidden tabs), their IDs and titles, grid sizes, and named ranges. Grid rowCount is allocated capacity, NOT the number of records. Read actual rows with read_spreadsheet_ranges to count or compare entries.",
+      inputSchema: { spreadsheetId: fileId },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    ({ spreadsheetId }, extra) =>
+      result(async () => {
+        const params = new URLSearchParams({
+          fields:
+            "spreadsheetId,spreadsheetUrl,properties(title,locale,timeZone),sheets(properties(sheetId,title,index,sheetType,hidden,gridProperties)),namedRanges",
+        });
+        return json(
+          await request(`/v4/spreadsheets/${spreadsheetId}?${params}`, {}, extra.signal, "sheets"),
+        );
+      }, SHEETS_ERROR),
+  );
+
+  server.registerTool(
+    "read_spreadsheet_ranges",
+    {
+      description:
+        "Read one or more Google Sheets ranges across any tabs, in request order. Use explicit tab-qualified A1 ranges, e.g. 'Sales 2026'!A1:F200; quote titles and double embedded apostrophes. Inspect tabs with get_spreadsheet first. FORMATTED_VALUE returns displayed text, UNFORMATTED_VALUE returns computed numbers/booleans, FORMULA returns formulas. Empty trailing rows/cells are omitted; grid capacity is not a record count. For large tabs, read successive bounded row ranges and count nonempty records excluding headers; do not infer a total from one chunk. Responses over 2 MiB fail rather than truncate.",
+      inputSchema: {
+        spreadsheetId: fileId,
+        ranges: z.array(z.string().trim().min(1).max(1000)).min(1).max(20),
+        valueRenderOption: z
+          .enum(["FORMATTED_VALUE", "UNFORMATTED_VALUE", "FORMULA"])
+          .default("FORMATTED_VALUE"),
+        dateTimeRenderOption: z
+          .enum(["SERIAL_NUMBER", "FORMATTED_STRING"])
+          .default("FORMATTED_STRING"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    ({ spreadsheetId, ranges, valueRenderOption, dateTimeRenderOption }, extra) =>
+      result(async () => {
+        const params = new URLSearchParams({
+          majorDimension: "ROWS",
+          valueRenderOption,
+          dateTimeRenderOption,
+        });
+        for (const range of ranges) params.append("ranges", range);
+        return json(
+          await request(
+            `/v4/spreadsheets/${spreadsheetId}/values:batchGet?${params}`,
+            {},
+            extra.signal,
+            "sheets",
+          ),
+        );
+      }, SHEETS_ERROR),
   );
 
   server.registerTool(
