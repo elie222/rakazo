@@ -92,13 +92,11 @@ export async function executeCloudAgentTool(
         where: { operationKey: context.operationId },
       });
       if (existing) {
-        if (
-          existing.spaceId !== context.spaceId ||
-          existing.userId !== context.userId ||
-          existing.providerKey !== connection.key
-        ) {
+        if (existing.spaceId !== context.spaceId || existing.userId !== context.userId) {
           throw new Error("Cloud agent operation scope changed");
         }
+        // A retry returns the agent it started even when new agents now go elsewhere, as after a
+        // T3 Code grant lapsed; the agent's poll reaches it through its own provider key.
         return { agent: existing };
       }
       const created = await tx.cloudAgent.create({

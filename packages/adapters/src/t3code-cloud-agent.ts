@@ -84,6 +84,8 @@ const OPEN_PR = "When you finish, open a pull request with your changes.";
 // Between two runs the next one waits only a moment. A wait this long, which also covers clock
 // drift between the two machines, is a hold.
 const HOLD_MS = 60_000;
+/** The most runs T3 Code returns in one read. */
+const RUN_LIMIT = 50;
 
 export interface T3CodeCloudAgentOptions
   extends Pick<RemoteMcpOptions, "fetch" | "resolveHostname" | "allowPrivateEndpoint"> {
@@ -216,8 +218,9 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
     if (snapshot.status !== "running") return snapshot;
     const target = snapshot.latestRunId;
     // Only the tracked run is stopped, which after a finished run is the newer run the card
-    // followed: a thread-wide Stop would also hold every queued message and end other work. A queued run that started meanwhile is refused by the queue; the
-    // read still shows it running, so the caller's next cancel interrupts it.
+    // followed: a thread-wide Stop would also hold every queued message and end other work. A
+    // queued run that started meanwhile is refused by the queue; the read still shows it
+    // running, so the caller's next cancel interrupts it.
     if (queued)
       await this.call(
         "t3_queue",
@@ -235,13 +238,20 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
 
   private async inspect(id: string, signal: AbortSignal, runId?: string) {
     const parsed = readSchema.safeParse(
-      await this.call("t3_thread_read", { threadId: id, limit: 1, runLimit: 50 }, signal),
+      await this.call("t3_thread_read", { threadId: id, limit: 1, runLimit: RUN_LIMIT }, signal),
     );
     if (!parsed.success || parsed.data.thread.threadId !== id)
       throw new Error("Invalid cloud agent response");
     const { thread, recentRuns } = parsed.data;
     // Newest first, so a newer run has a lower index.
     const tracked = runId ? recentRuns.findIndex((candidate) => candidate.runId === runId) : -1;
+    // A thread's runs take turns, so a tracked run that is not active and is older than a full
+    // read of newer runs has ended. The read no longer says how, and other runs say nothing of it.
+    const ended =
+      runId !== undefined &&
+      tracked === -1 &&
+      thread.activeRunId !== runId &&
+      recentRuns.length >= RUN_LIMIT;
     const active = recentRuns.findIndex((candidate) => candidate.runId === thread.activeRunId);
     // After a run finishes T3 Code may start the next itself, as when a background task the agent
     // left completes. That run carries on the same work, so it is followed.
@@ -257,7 +267,7 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
       id,
       title: thread.title || "Cloud agent",
       url: thread.link ?? "",
-      status: statusOf(run?.status ?? thread.status),
+      status: ended ? "finished" : statusOf(run?.status ?? thread.status),
       // A tracked run past the recent list is still the one followed, not whatever ran last.
       ...((run?.runId ?? runId ?? thread.latestRunId)
         ? { latestRunId: run?.runId ?? runId ?? thread.latestRunId! }
@@ -367,8 +377,10 @@ type Failure = { code: string; message: string };
 
 /** T3 Code reports declared failures as `{_tag, code, message}` JSON text. */
 function failureOf(content: unknown): Failure | undefined {
-  const text = z.array(z.object({ type: z.literal("text"), text: z.string() })).safeParse(content)
-    .data?.[0]?.text;
+  const blocks = z
+    .array(z.object({ type: z.literal("text"), text: z.string() }))
+    .safeParse(content);
+  const text = blocks.data?.[0]?.text;
   try {
     return z
       .object({

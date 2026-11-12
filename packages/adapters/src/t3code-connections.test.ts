@@ -55,8 +55,13 @@ function fakes(rows: Row[], unreadable: string[] = []) {
     },
   } as unknown as PrismaClient;
   const dropped: string[] = [];
+  const reads = { open: 0, most: 0 };
   const oauth = {
     providerFor: async (row: Row) => {
+      reads.open += 1;
+      reads.most = Math.max(reads.most, reads.open);
+      await Promise.resolve();
+      reads.open -= 1;
       if (unreadable.includes(row.id)) throw new Error("secret store unavailable");
       return {
         discoveryState: () => ({
@@ -73,7 +78,7 @@ function fakes(rows: Row[], unreadable: string[] = []) {
       };
     },
   } as unknown as Pick<McpOAuthBroker, "providerFor">;
-  return { prisma, oauth, dropped };
+  return { prisma, oauth, dropped, reads };
 }
 
 describe("T3 Code environments connected as MCP servers", () => {
@@ -85,8 +90,10 @@ describe("T3 Code environments connected as MCP servers", () => {
       server("disconnected", { secretId: null }),
       server("t3"),
     ];
-    const { prisma, oauth } = fakes(rows);
+    const { prisma, oauth, reads } = fakes(rows);
     const connection = await new T3CodeConnections(prisma, oauth).forActor(actor);
+    // The three candidates' stored logins are read together, not one after another.
+    expect(reads.most).toBe(3);
     expect(connection).toMatchObject({
       key: "mcp:t3",
       baseUrl: "https://t3.example.test/mcp",

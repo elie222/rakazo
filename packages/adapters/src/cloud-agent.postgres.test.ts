@@ -875,6 +875,30 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       return { h, actor, t3, deps, forActor, tool, launch, poll };
     }
 
+    it("returns a retried launch's agent after new agents moved to the deployment's provider", async () => {
+      const { h, actor, deps, forActor } = await connected();
+      const server = await connectServer(actor);
+      const operationId = randomUUID();
+      const launch = (cloudAgent: CloudAgentConnection) =>
+        runAsSystem("agent run tool call", () =>
+          executeCloudAgentTool(
+            { ...deps, cloudAgent, deployment: h.connection },
+            { ...h.context, operationId },
+            h.run,
+            "cloud_agent_launch",
+            { prompt: "Add README" },
+          ),
+        );
+      const first = await launch((await forActor())!);
+      expect(
+        await prisma.cloudAgent.findFirst({ where: { operationKey: operationId } }),
+      ).toMatchObject({
+        providerKey: `mcp:${server.id}`,
+      });
+      // The run retries the call after the T3 Code grant lapsed: new agents use the deployment's.
+      expect(await launch(h.connection)).toMatchObject({ id: (first as { id: string }).id });
+    });
+
     it("offers only the actor's connected T3 Code server in this Space, else the deployment's", async () => {
       const { h, actor, forActor } = await connected();
       const other = await setup();

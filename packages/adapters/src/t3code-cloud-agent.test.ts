@@ -226,9 +226,19 @@ describe("T3 Code adapter over its MCP wire emulator (offline)", () => {
       status: "finished",
       latestRunId: "run-2",
     });
-    // A tracked run that left the recent list is still the one followed.
-    for (let index = 0; index < 50; index += 1) emulator.continueRun(first.id);
-    expect((await provider.get(first.id, ctx, continued.latestRunId)).latestRunId).toBe("run-2");
+    // A tracked run that left the recent list is still the one followed, and has ended whatever
+    // runs now, so cancelling its card stops nothing.
+    for (let index = 0; index < 50; index += 1) {
+      emulator.continueRun(first.id);
+      emulator.complete(first.id);
+    }
+    emulator.continueRun(first.id);
+    expect(await provider.get(first.id, ctx, continued.latestRunId)).toMatchObject({
+      status: "finished",
+      latestRunId: "run-2",
+    });
+    expect((await provider.cancel(first.id, ctx, continued.latestRunId)).status).toBe("finished");
+    expect(emulator.threads.get(first.id)!.runs.at(-1)!.status).toBe("running");
   });
 
   it("cancels a run waiting for approval", async () => {

@@ -59,21 +59,21 @@ export class T3CodeConnections implements UserCloudAgents {
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    const found: CloudAgentConnection[] = [];
-    for (const server of servers) {
-      try {
-        const connection = await this.connect(server, actor, true);
-        if (connection) found.push(connection);
-        if (connection && firstOnly) break;
-      } catch (error) {
-        // One unreadable server must not hide the others or the deployment's provider.
-        getLogger().warn("cloud_agent.connection_unreadable", {
-          "mcp.server.id": server.id,
-          error,
-        });
-      }
-    }
-    return found;
+    // Each check reads a stored login, so the servers are read together, not one after another.
+    const found = await Promise.all(
+      servers.map((server) =>
+        this.connect(server, actor, true).catch((error: unknown) => {
+          // One unreadable server must not hide the others or the deployment's provider.
+          getLogger().warn("cloud_agent.connection_unreadable", {
+            "mcp.server.id": server.id,
+            error,
+          });
+          return null;
+        }),
+      ),
+    );
+    const connections = found.filter((connection) => connection !== null);
+    return firstOnly ? connections.slice(0, 1) : connections;
   }
 
   async forKey(key: string, actor: CloudAgentActor): Promise<CloudAgentConnection | null> {
