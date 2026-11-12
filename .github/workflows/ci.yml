@@ -158,6 +158,8 @@ jobs:
         run: node --test .github/scripts/app-store-review.test.mjs
       - name: Optional vendor SDKs load lazily
         run: node --test scripts/lazy-vendors.test.mjs
+      - name: Dev branch database safety tests
+        run: node --test scripts/dev-branch-databases.test.mjs
 
   # The unit suite is CPU-bound; six runners keep it under the native install floor.
   unit-tests-shard:
