@@ -56,7 +56,7 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
-import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { diskNoteInstruction, recordComputerDisk } from "./computer-disk.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -252,7 +252,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
-  const cloudAgent = executorDeps.cloudAgent;
   const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
 
   // Run-scoped connector state (installed MCP sessions) outlives one attempt
@@ -716,6 +715,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
+        // A connection that cannot be read now leaves the cloud-agent tools out of this turn only.
+        const cloudAgentPromise = cloudAgentForActor(executorDeps, {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botIds: [bot.id],
+        }).catch(() => null);
         // Group threads and spaces several people share: who wrote each message, so the model can
         // tell the bots and the people apart. A personal space's direct chat stays plain turns.
         const people = await loadSpacePeople(
@@ -1256,6 +1261,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputerScreen = device.platform === "darwin" || device.platform === "win32";
           } else userComputer = "offline";
         }
+        const cloudAgent = await cloudAgentPromise;
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1272,7 +1278,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            cloudAgentEnabled: Boolean(cloudAgent),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,

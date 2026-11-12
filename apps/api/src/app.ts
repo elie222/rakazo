@@ -456,7 +456,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       connectors: connectorOverrides,
     },
   );
-  const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack } = connectors;
+  const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents } =
+    connectors;
   const runtime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
@@ -644,6 +645,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         events,
         notifications,
         cloudAgent,
+        userCloudAgents,
         paymentWallet,
         mediaGeneration,
         billingEnabled: modelCreditsEnabled,
@@ -710,6 +712,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     pluginRepoFetcher,
     pluginMarketplaceRead,
     cloudAgent,
+    userCloudAgents,
     paymentWallet,
     codexCatalog,
     prisma,

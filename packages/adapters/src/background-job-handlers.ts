@@ -21,7 +21,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { settleCallRequest } from "./call-request.js";
-import type { CloudAgentConnection } from "./cloud-agent-factory.js";
+import type { CloudAgentConnection, UserCloudAgents } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl, scheduleComputerControlExpiry } from "./computer-control.js";
 import { rateLimitEnds, scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
@@ -78,6 +78,7 @@ export function createBackgroundJobHandlers(deps: {
   deploymentModelConfigured?: boolean;
   messaging?: MessagingSurface;
   cloudAgent?: CloudAgentConnection | null;
+  userCloudAgents?: UserCloudAgents;
   paymentWallet?: PaymentWalletProvider | null;
   notifications?: ExpoPushProvider;
   mediaGeneration?: MediaGenerationProvider;
@@ -219,7 +220,13 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "cloud_agent.poll": asOwner(cloudAgent, async (payload) => {
       await pollCloudAgent(
-        { prisma: deps.prisma, jobs: deps.jobs, events: deps.events, cloudAgent: deps.cloudAgent },
+        {
+          prisma: deps.prisma,
+          jobs: deps.jobs,
+          events: deps.events,
+          cloudAgent: deps.cloudAgent,
+          userCloudAgents: deps.userCloudAgents,
+        },
         payload,
       );
     }),

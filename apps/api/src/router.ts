@@ -28,6 +28,7 @@ import type {
   PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
+  UserCloudAgents,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
@@ -72,6 +73,7 @@ export interface RouterDeps {
   notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
+  userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
   prisma: PrismaClient;

@@ -56,5 +56,6 @@ function recipientName(provider: string, use: AiDataUse) {
     return provider;
   }
   if (provider === "cursor") return "Cursor";
+  if (provider === "t3code") return "T3 Code";
   return listPiCatalog().find((entry) => entry.provider === provider)?.providerName ?? provider;
 }
