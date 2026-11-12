@@ -72,6 +72,7 @@ export * from "./connector-catalog.js";
 export * from "./connector-registry.js";
 export * from "./createos-sandbox.js";
 export * from "./current-time.js";
+export * from "./cursor-cli.js";
 export * from "./cursor-cloud-agent.js";
 export * from "./decision-models.js";
 export * from "./deployment-model.js";

@@ -100,6 +100,8 @@ services:
       PAYMENT_WALLET_PROVIDER: ${PAYMENT_WALLET_PROVIDER:-none}
       PAYMENT_WALLET_CLIENT_ID: ${PAYMENT_WALLET_CLIENT_ID:-}
       CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      CURSOR_CLI: ${CURSOR_CLI:-}
+      CURSOR_CLI_BIN: ${CURSOR_CLI_BIN:-}
       AGENT_RUNTIME: scripted
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}

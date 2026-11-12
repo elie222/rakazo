@@ -13,6 +13,7 @@ import {
   PAGE_BROWSER_TOOL_NAMES,
 } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { cursorCliTools } from "./run-tools-cursor-cli.js";
 import { emailTools } from "./run-tools-email.js";
 import { feedbackTools } from "./run-tools-feedback.js";
 import { fileTools } from "./run-tools-files.js";
@@ -40,6 +41,7 @@ import { argumentGiven } from "./update-bot-patch.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
+  ...Object.entries(cursorCliTools),
   ...Object.entries(fileTools),
   ...Object.entries(pageTools),
   ...Object.entries(memoryTools),

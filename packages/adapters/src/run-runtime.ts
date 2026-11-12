@@ -17,6 +17,7 @@ import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
 import { createIdleComputerSweeper } from "./computer-idle.js";
 import { reconcileComputerUpdates } from "./computer-update.js";
 import { createConnectorStack } from "./connector-registry.js";
+import { cursorCliBin, cursorCliEnabled } from "./cursor-cli.js";
 import { deploymentModelUsageLookup, resolveDeploymentModel } from "./deployment-model.js";
 import { createRunExecutor } from "./executor.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -49,6 +50,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   dataDir: string;
   composioApiKey: string | undefined;
   cursorApiKey: string | undefined;
+  cursorCliEnabled: boolean;
+  cursorCliBin: string;
   deploymentModelKey: string | undefined;
   deploymentModelConfigured: boolean;
   mcpStdioEnabled: boolean;
@@ -73,6 +76,8 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     encryptionKey: resolveEncryptionKey(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     cursorApiKey: source.CURSOR_API_KEY,
+    cursorCliEnabled: cursorCliEnabled(source),
+    cursorCliBin: cursorCliBin(source),
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
@@ -207,6 +212,9 @@ export function createRunRuntime(
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     inboundEmailDomain: env.inboundEmailDomain,
+    cursorCliEnabled: env.cursorCliEnabled,
+    cursorApiKey: env.cursorApiKey,
+    cursorCliBin: env.cursorCliBin,
     messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
     web: createWebProvider(),
   });
