@@ -58,6 +58,7 @@ import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
 import {
+  hasTakenInOutsideContent,
   isRunTainted,
   nextMutatingEffectOccurrence,
   pauseForApproval,
@@ -276,9 +277,9 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  const memoryWriteGated = await memoryWriteNeedsApproval(
-    name,
-    async () => ctx.state.readOutsideContent || (await ctx.trust.receivedOutsideMessage()),
+  // Restored and replayed results, earlier attempts and outside text claimed mid-turn all count.
+  const memoryWriteGated = await memoryWriteNeedsApproval(name, () =>
+    hasTakenInOutsideContent(ctx),
   );
   const { purchase, cardUse } = request;
   // Typing a saved card is approved like a purchase: every time, by a person.

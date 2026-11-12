@@ -942,6 +942,25 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.commit).toHaveBeenCalledOnce();
     });
 
+    it("gives the approval model the owner's own chat-app message as the task", async () => {
+      reviewMock.mockResolvedValue({ decision: "pass", reason: "Asked", model: "mock" });
+      const f = fixture({
+        name: "remember",
+        builtin: true,
+        autoReview: true,
+        trigger: "messaging",
+        sourceRole: "user",
+        prompt: "Remember that my dentist moved to Thursday.",
+      });
+      f.claimedOutsideSteering(true);
+      f.setCalls([{ args: { content: "Dentist moved to Thursday." }, executionId: "call-1" }]);
+      await f.run();
+      expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({
+        memoryWrite: true,
+        userTask: "Remember that my dentist moved to Thursday.",
+      });
+    });
+
     it("saves without asking in Never ask", async () => {
       const f = fixture({ name: "save_shared_memory", builtin: true, skipApprovals: true });
       f.claimedOutsideSteering(true);

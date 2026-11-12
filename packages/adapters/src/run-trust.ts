@@ -63,6 +63,8 @@ export function createRunTrustLoaders(
     ownerStartedRun: boolean;
     messagingChannelRun: boolean;
     sourceMessage: { role: string; blocks: unknown } | null;
+    /** The owner's own chat-app message that started a messaging run; absent for anyone else. */
+    ownerChatMessageBlocks?: unknown;
     connectedPlugins: readonly { provider: string }[];
   },
 ) {
@@ -74,6 +76,7 @@ export function createRunTrustLoaders(
     ownerStartedRun,
     messagingChannelRun,
     sourceMessage,
+    ownerChatMessageBlocks,
     connectedPlugins,
   } = input;
   let approvalRulesPromise: Promise<ActionApprovalRule[]> | undefined;
@@ -105,14 +108,20 @@ export function createRunTrustLoaders(
     }));
     return autoReviewPreferencePromise;
   };
-  // The owner's own words for this run: the message they sent, or the instructions of the
-  // routine that started it. Never a bot, channel or webhook message, or a tool result.
-  // These name the sites a run is given, and are all Auto Review sees of a new site's run.
+  // The owner's own words for this run: the message they sent (in Rakazo or their own chat app),
+  // or the instructions of the routine that started it. Never a bot, channel or webhook message,
+  // or a tool result. These name the sites a run is given, and are all Auto Review sees of a new
+  // site's run and of a memory save after outside content.
   let ownerWordsPromise: Promise<string> | undefined;
   const loadOwnerWords = () => {
     ownerWordsPromise ??= (async () => {
       if (ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user") {
         return ((sourceMessage.blocks ?? []) as MessageBlock[])
+          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+          .join("\n");
+      }
+      if (run.trigger === "messaging" && !messagingChannelRun && ownerChatMessageBlocks) {
+        return ((ownerChatMessageBlocks ?? []) as MessageBlock[])
           .flatMap((block) => (block.kind === "text" ? [block.text] : []))
           .join("\n");
       }
