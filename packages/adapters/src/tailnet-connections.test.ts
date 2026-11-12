@@ -6,6 +6,7 @@ import {
   resolveRunTailnet,
   saveTailnetConnection,
   setTailnetBotAccess,
+  TailnetBotNotFoundError,
 } from "./tailnet-connections.js";
 import { tailnetDatabase as database } from "./tailnet-connections.test-support.js";
 
@@ -131,7 +132,7 @@ describe("tailnet connections", () => {
     ]);
     await expect(
       setTailnetBotAccess({ prisma, scope: ALICE, botId: "elsewhere", enabled: true }),
-    ).rejects.toThrow("Bot not found");
+    ).rejects.toBeInstanceOf(TailnetBotNotFoundError);
     expect(
       await setTailnetBotAccess({ prisma, scope: ALICE, botId: "helper", enabled: false }),
     ).toEqual({ tag: "tag:rakazo", botIds: [] });

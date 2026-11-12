@@ -210,6 +210,7 @@ import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 import { SpaceAvailabilitySchema } from "./space-availability.js";
+import { TailnetStatusSchema, TailscaleConnectionConfigSchema } from "./tailnet.js";
 import { VaultImportInput, VaultImportResult } from "./vault-import.js";
 
 const botId = z.object({ botId: Id });
@@ -1662,6 +1663,16 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
   },
   /** The vault this Space uses, for apps that predate it. The bot only checks access. */
+  /** The signed-in member's own tailnet connection in the current Space. */
+  tailnet: {
+    status: oc.output(TailnetStatusSchema),
+    /** Checks the OAuth client with Tailscale before saving it; replacing one keeps the bots. */
+    connect: oc.input(TailscaleConnectionConfigSchema).output(TailnetStatusSchema),
+    disconnect: oc.output(TailnetStatusSchema),
+    setBotAccess: oc
+      .input(z.object({ botId: Id, enabled: z.boolean() }).strict())
+      .output(TailnetStatusSchema),
+  },
   botSecrets: {
     list: oc.input(z.object({ botId: Id })).output(z.array(BotSecretMetadata)),
     put: oc.input(BotSecretPutInput).output(BotSecretMetadata),

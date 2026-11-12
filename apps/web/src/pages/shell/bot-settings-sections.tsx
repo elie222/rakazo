@@ -51,7 +51,7 @@ export function ComputerModePicker({
 }
 
 /** `plain` drops the card for a section whose single control already draws its own frame. */
-function BotPanelGroup({
+export function BotPanelGroup({
   label,
   plain = false,
   children,

@@ -59,6 +59,8 @@ import { paymentWalletRoutes } from "./routes/payment-wallet.js";
 import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
 import { spendingLimitRoutes } from "./routes/spending-limit.js";
+import type { TailnetRouteDeps } from "./routes/tailnet.js";
+import { tailnetRoutes } from "./routes/tailnet.js";
 import { threadsRoutes } from "./routes/threads.js";
 import type { VoiceDeps } from "./voice.js";
 
@@ -79,6 +81,8 @@ export interface RouterDeps {
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
   prisma: PrismaClient;
+  /** Members' tailnet connections; absent when this process serves none. */
+  tailnet?: TailnetRouteDeps;
   events: ThreadEvents;
   boardEvents: BoardEvents;
   ticketChanges: TicketChangeNotifier;
@@ -189,5 +193,6 @@ export function createRouter(deps: RouterDeps) {
     ...pagesRoutes(ctx),
     ...paymentWalletRoutes(ctx),
     ...spendingLimitRoutes(ctx),
+    ...tailnetRoutes(ctx),
   });
 }

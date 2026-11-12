@@ -749,6 +749,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
 
   const router = createRouter({
+    tailnet: { service: tailnet, serverOrigin: runtimeEnv.tailnetServerOrigin },
     speechSummary:
       env.voiceSummaryMinChars === undefined
         ? undefined

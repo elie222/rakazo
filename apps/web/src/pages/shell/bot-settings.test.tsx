@@ -16,6 +16,8 @@ vi.mock("../../lib/rpc", () => {
       list: vi.fn(async () => []),
     },
     me: vi.fn(async () => ({})),
+    // This server can't put bots on a tailnet, so the panel shows no tailnet group.
+    tailnet: { status: vi.fn(async () => ({ unavailable: "no_tailscale", connection: null })) },
     // This server receives no email, so the panel offers no address.
     bots: { emailAddress: vi.fn(async () => null) },
   };

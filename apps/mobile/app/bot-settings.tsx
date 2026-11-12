@@ -1,6 +1,13 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { Bot, BotAvatarSet, ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  Bot,
+  BotAvatarSet,
+  ComputerMode,
+  ReplyMode,
+  TailnetStatus,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -86,6 +93,8 @@ export default function BotSettingsScreen() {
   const [dailyCheckIns, setDailyCheckIns] = useState(true);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
   const [fleetManagement, setFleetManagement] = useState(true);
+  // The member's own tailnet connection here; connecting one is done on web or desktop.
+  const [tailnet, setTailnet] = useState<TailnetStatus | null>(null);
   const [replyMode, setReplyMode] = useState<ReplyMode>("chat");
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -221,6 +230,12 @@ export default function BotSettingsScreen() {
       })
       .catch((err) => setError(errorText(err, t`Could not load bot`)));
   }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, replyModeSave, notifySave, nameSave]);
+
+  useEffect(() => {
+    void rpc("tailnet/status")
+      .then(setTailnet)
+      .catch(() => setTailnet(null));
+  }, []);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -678,6 +693,20 @@ export default function BotSettingsScreen() {
                 value={fleetManagement}
               />
             </SettingsGroup>
+            {botId && tailnet?.connection && !tailnet.unavailable ? (
+              <SettingsGroup label={t`Tailnet`}>
+                <SettingsSwitch
+                  label={t`Reach machines on your tailnet`}
+                  value={tailnet.connection.botIds.includes(botId)}
+                  onChange={(enabled) => {
+                    setError(null);
+                    void rpc("tailnet/setBotAccess", { botId, enabled })
+                      .then(setTailnet)
+                      .catch((err) => setError(errorText(err, t`Couldn't update tailnet access`)));
+                  }}
+                />
+              </SettingsGroup>
+            ) : null}
             <SettingsGroup label={t`Replies`}>
               <MenuPicker
                 choices={[

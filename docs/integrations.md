@@ -73,3 +73,7 @@ pick. App connections stay in the space you connected them in.
 
 For a service with only an API key or a website login, ask the bot to save it. See
 [Reusable credentials](./bot-secrets.md).
+
+## Machines on your tailnet
+
+To let a bot reach machines on your Tailscale network, see [Tailnet access](./tailnet.md).

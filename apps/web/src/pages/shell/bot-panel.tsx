@@ -42,6 +42,7 @@ import {
   ToolsGroup,
   VoiceGroup,
 } from "./bot-settings-sections";
+import { TailnetGroup } from "./tailnet-group";
 
 const ScratchpadSection = lazyComponent(() =>
   import("../ScratchpadSection").then((module) => module.ScratchpadSection),
@@ -624,6 +625,7 @@ export function BotSettings({
                 void enqueueSave({ fleetManagement: checked });
               }}
             />
+            <TailnetGroup botId={bot.id} />
             <RepliesGroup
               ids={ids}
               saving={saving}
