@@ -92,14 +92,28 @@ describe("screen capability lifecycle authorization", () => {
     computer.screenGeneration++;
     expect((await request()).status).toBe(403);
   });
-  it("serves a booting computer and rejects one that is suspending or has no sandbox", async () => {
+  it("serves a booting or saving computer and rejects one with no sandbox", async () => {
     const { request, computer } = fixture();
     computer.state = "booting";
     expect((await request()).status).toBe(200);
     computer.state = "suspending";
-    expect((await request()).status).toBe(403);
+    expect((await request()).status).toBe(200);
     computer.state = "running";
+    expect((await request()).status).toBe(200);
     computer.providerRef = "";
+    expect((await request()).status).toBe(403);
+  });
+  it.each(["suspended", "stopped", "error"])("rejects a computer in %s", async (state) => {
+    const { request, computer } = fixture();
+    computer.state = state;
+    expect((await request()).status).toBe(403);
+  });
+  it.each(["generation", "control lease"])("still checks %s while saving", async (change) => {
+    const { request, computer } = fixture(true);
+    computer.state = "suspending";
+    expect((await request()).status).toBe(200);
+    if (change === "generation") computer.screenGeneration++;
+    else computer.controlLeaseExpiresAt = new Date(0);
     expect((await request()).status).toBe(403);
   });
   it("revokes archived, reassigned, and restored bots", async () => {
