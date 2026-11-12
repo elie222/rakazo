@@ -7,6 +7,7 @@ import {
   createThreadMessageInTransaction,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { approvedAccounts } from "./pipedream-connector.js";
 
 const RECENT_MESSAGES = 50;
 
@@ -43,12 +44,18 @@ export async function connectApp(
       app,
     ) ?? matchAppCatalog(catalog, app);
   if (!entry) return { error: "No such app is available in the connector catalog." };
-  if (entry.connected)
+  // The catalog lists Pipedream's remote accounts. A saved row that names none of them
+  // (made before account pinning) gets no tools, so the user has to connect again.
+  const reconnect =
+    entry.connected &&
+    entry.connectorId === "pipedream" &&
+    approvedAccounts(context, entry.slug).length === 0;
+  if (entry.connected && !reconnect)
     return {
       status: "connected",
       message: "This app is already connected and its tools are available.",
     };
-  const block = appConnectCard(entry);
+  const block = appConnectCard({ ...entry, connected: false });
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const nonce = `connect-app:${effectId}`;
@@ -98,10 +105,11 @@ export async function connectApp(
       committed.seq,
       committed.firstResponse ? target.id : undefined,
     );
+  const shown = committed ? "Connection card shown." : "Connection card already shown.";
   return {
     status: "pending",
-    message: committed
-      ? "Connection card shown. Wait for the user to connect the app."
-      : "Connection card already shown. Wait for the user to connect the app.",
+    message: reconnect
+      ? `${shown} The saved connection gives this app no tools, so the user must reconnect it. Wait for them to do so.`
+      : `${shown} Wait for the user to connect the app.`,
   };
 }

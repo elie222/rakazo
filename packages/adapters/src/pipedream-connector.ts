@@ -576,7 +576,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
  * the run context omits revoked and pending rows, so it cannot tell which remote
  * account such a row stands for.
  */
-function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
+export function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
   const approved = new Map<string, ApprovedAccount>();
   for (const connection of context.connectedConnections ?? []) {
     if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
