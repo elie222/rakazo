@@ -22,19 +22,33 @@ export async function writeStackChoice(stackDir: string, choice: StackChoice): P
   await writePrivateFile(path.join(stackDir, STACK_CHOICE_FILE), `${choice}\n`);
 }
 
-/**
- * Which stack runs This computer. A Mac that never used Docker goes native; one with a Docker
- * stack keeps it unless the person agreed to move ("ask" means they have not been asked yet).
- */
-export function chooseStack(input: {
-  eligible: boolean;
+interface StackFacts {
   dockerStack: boolean;
-  nativeStack: boolean;
+  /** Docker itself is still installed, whether or not it is running now. */
+  dockerInstalled: boolean;
   choice: StackChoice | null;
-}): StackChoice | "ask" {
+}
+
+/**
+ * Which stack runs This computer. A Mac that never used Docker, or no longer has it, goes native;
+ * one with a Docker stack keeps it unless the person agreed to move ("ask" means they have not
+ * been asked yet).
+ */
+export function chooseStack(
+  input: StackFacts & { eligible: boolean; nativeStack: boolean },
+): StackChoice | "ask" {
   if (!input.eligible) return "docker";
-  if (input.nativeStack || !input.dockerStack) return "native";
+  if (input.nativeStack || !input.dockerStack || !input.dockerInstalled) return "native";
   return input.choice ?? "ask";
+}
+
+/**
+ * Only a move the person accepted copies data, and only while Docker is there to copy from. A
+ * native stack that started because Docker was gone never imports, so a later reinstall of
+ * Docker cannot replace its database with the old one.
+ */
+export function moveAccepted(input: StackFacts): boolean {
+  return input.dockerStack && input.dockerInstalled && input.choice === "native";
 }
 
 export function stackExists(stackDir: string, exists: (file: string) => boolean) {
@@ -94,24 +108,30 @@ export const pipeCommands: PipeCommands = (from, to, options) =>
     producer.stdout.pipe(consumer.stdin);
     const failures: string[] = [];
     let pending = 2;
-    for (const [child, command] of [
+    const pair = [
       [producer, from],
       [consumer, to],
-    ] as const) {
+    ] as const;
+    // One side failing would leave the other blocked on a full or empty pipe until the timeout.
+    const fail = (message: string) => {
+      failures.push(message);
+      for (const [child] of pair)
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+    };
+    for (const [child, command] of pair) {
       for (const stream of [child.stderr, child === consumer ? consumer.stdout : null]) {
         stream?.setEncoding("utf8");
         stream?.on("data", (text: string) => {
           for (const line of text.split(/\r?\n/)) if (line) options.onLine(line);
         });
       }
-      child.once("error", (error) => failures.push(error.message));
+      child.once("error", (error) => fail(error.message));
       child.once("close", (code) => {
-        if (code !== 0)
-          failures.push(
-            `${path.basename(command.command)} ${command.args[0]} exited with code ${code}`,
-          );
+        if (code !== 0 && failures.length === 0)
+          fail(`${path.basename(command.command)} ${command.args[0]} exited with code ${code}`);
         if (--pending > 0) return;
-        if (failures.length > 0) reject(new Error(failures.join("; ")));
+        // The first failure is the cause; the other side was stopped because of it.
+        if (failures.length > 0) reject(new Error(failures[0]));
         else resolve();
       });
     }
@@ -241,5 +261,8 @@ export async function moveDockerStack(deps: DockerMoveDeps, target: DockerImport
   }
 
   target.onLine("Stopping the Docker stack");
-  await compose(["stop"]);
+  // The data is already copied, so a stack that does not stop cleanly does not undo the move.
+  await compose(["stop"]).catch((error: Error) =>
+    target.onLine(`Could not stop the Docker stack: ${error.message}`),
+  );
 }

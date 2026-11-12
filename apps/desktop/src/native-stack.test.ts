@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -322,6 +322,23 @@ describe("NativeStackController", () => {
       second.runs.some((call) => call.args[1] === "pull" && call.args.at(-1) === POSTGRES_IMAGE),
     ).toBe(false);
     await again.stop();
+  });
+
+  it("keeps the running runtime copy when it reports its path resolved", async () => {
+    const runtimeDir = path.join(stackDir, "runtime");
+    await mkdir(path.join(runtimeDir, "container-1.6.0", "bin"), { recursive: true });
+    await mkdir(path.join(runtimeDir, "server-0.9.0"), { recursive: true });
+    // macOS reports `/private/var/…` for a stack under `/var/…`.
+    const cli = path.join(await realpath(runtimeDir), "container-1.6.0", "bin", "container");
+    const { deps } = harness();
+    const controller = new NativeStackController({
+      ...deps,
+      installers: { ...deps.installers, containerRuntime: async () => ({ cli, ours: true }) },
+    });
+    expect((await controller.start()).phase).toBe("ready");
+    expect(existsSync(path.join(runtimeDir, "container-1.6.0"))).toBe(true);
+    expect(existsSync(path.join(runtimeDir, "server-0.9.0"))).toBe(false);
+    await controller.stop();
   });
 
   it("stops a database VM a crashed launch left running before attaching to it", async () => {

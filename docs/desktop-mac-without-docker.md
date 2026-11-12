@@ -231,10 +231,16 @@ plus the kernel download on its first start (about 45 s measured). The computer 
   `pg_restore --no-owner --exit-on-error` in the database VM. Both run each database's own tools
   over its local socket, so no password is used and no shell runs on the Mac. It then copies `/data`
   out of the stopped API container with `docker cp` and stops the whole Docker stack without
-  removing it or its volumes. Only then is the move marked done (`.docker-imported`). If any step
-  fails the Docker services it stopped are started again, the Docker data is untouched and
+  removing it or its volumes (best effort: a stack that does not stop cleanly is noted in the
+  output and does not undo the move). Only then is the move marked done (`.docker-imported`). If
+  any step fails the Docker services it stopped are started again, the Docker data is untouched and
   **Retry** runs the move again; without the marker, a move cut short by a quit or crash is rerun on
-  the next start from an emptied database and copied files.
+  the next start from an emptied database and copied files. If one side of the dump stream fails,
+  the other is stopped at once.
+- A compose file left behind by a Docker that is no longer installed does not keep the Docker
+  path: the native stack starts, nothing is asked and nothing is imported. Only a move the person
+  accepted imports, so reinstalling Docker later never replaces the native database. Docker that is
+  installed but not running keeps the Docker path as before.
 - Computers re-provision from saved homes because the provider kind changes, which the lifecycle
   already handles.
 - Rollback to Docker: the Docker stack and its volumes are left in place; nothing moves back

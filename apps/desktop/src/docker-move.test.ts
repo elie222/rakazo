@@ -6,6 +6,7 @@ import type { RunDocker } from "./docker-cli.js";
 import type { PipeCommands } from "./docker-move.js";
 import {
   chooseStack,
+  moveAccepted,
   moveDockerStack,
   pipeCommands,
   readStackChoice,
@@ -22,7 +23,13 @@ afterEach(async () => {
 });
 
 describe("chooseStack", () => {
-  const base = { eligible: true, dockerStack: false, nativeStack: false, choice: null };
+  const base = {
+    eligible: true,
+    dockerStack: false,
+    dockerInstalled: true,
+    nativeStack: false,
+    choice: null,
+  };
 
   it("keeps Docker wherever the native stack cannot run", () => {
     expect(chooseStack({ ...base, eligible: false })).toBe("docker");
@@ -45,6 +52,19 @@ describe("chooseStack", () => {
     expect(chooseStack({ ...ask, choice: await readStackChoice(dir) })).toBe("docker");
     await writeStackChoice(dir, "native");
     expect(chooseStack({ ...ask, choice: await readStackChoice(dir) })).toBe("native");
+  });
+
+  it("goes native without asking when Docker is no longer installed, and never imports", () => {
+    const gone = { ...base, dockerStack: true, dockerInstalled: false };
+    expect(chooseStack(gone)).toBe("native");
+    expect(moveAccepted(gone)).toBe(false);
+    // Docker installed again later: the native stack is kept and its data is not replaced.
+    const back = { ...base, dockerStack: true, nativeStack: true };
+    expect(chooseStack(back)).toBe("native");
+    expect(moveAccepted(back)).toBe(false);
+    // Installed but not running right now still asks (or keeps Docker); only the agreed move imports.
+    expect(chooseStack({ ...base, dockerStack: true })).toBe("ask");
+    expect(moveAccepted({ ...base, dockerStack: true, choice: "native" })).toBe(true);
   });
 
   it("detects each stack from its own files", async () => {
@@ -148,6 +168,26 @@ describe("moveDockerStack", () => {
     expect(await readdir(dataDir)).toEqual(["homes"]);
   });
 
+  it("keeps a finished move when the Docker stack does not stop cleanly", async () => {
+    const lines: string[] = [];
+    const run: RunDocker = async (_binary, args) => {
+      if (args.at(-1) === "api" && args.includes("ps"))
+        return { code: 0, stdout: "abc123\n", stderr: "" };
+      const finalStop = args.at(-1) === "stop";
+      return { code: finalStop ? 1 : 0, stdout: "", stderr: "" };
+    };
+    await expect(
+      moveDockerStack(
+        deps(run, async () => undefined),
+        {
+          ...target(path.join(dir, "data")),
+          onLine: (line) => lines.push(line),
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(lines.at(-1)).toMatch(/^Could not stop the Docker stack: .*exited with code 1$/);
+  });
+
   it("stops at the first failing step and starts the Docker services again", async () => {
     const calls: string[][] = [];
     const run: RunDocker = async (_binary, args) => {
@@ -186,6 +226,18 @@ describe("pipeCommands", () => {
       options(),
     );
     expect(await readFile(out, "utf8")).toBe("dump bytes");
+  });
+
+  it("stops a producer blocked on a full pipe once the consumer gives up", async () => {
+    const started = Date.now();
+    await expect(
+      pipeCommands(
+        node("const b = Buffer.alloc(1 << 20); for (;;) process.stdout.write(b)"),
+        node("process.exit(4)"),
+        options(),
+      ),
+    ).rejects.toThrow(/exited with code 4$/);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it("fails when either side fails", async () => {

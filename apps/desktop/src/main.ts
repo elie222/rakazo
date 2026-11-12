@@ -49,11 +49,12 @@ import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
-import { launchDockerApp, runDocker } from "./docker-cli.js";
+import { launchDockerApp, resolveDockerBinary, runDocker } from "./docker-cli.js";
 import type { StackChoice } from "./docker-move.js";
 import {
   chooseStack,
   dockerRunning,
+  moveAccepted,
   moveDockerStack,
   readStackChoice,
   stackExists,
@@ -655,12 +656,21 @@ app.whenReady().then(async () => {
         override: process.env.RAKAZO_SERVER_BUNDLE,
       })
     : null;
+  const stacks = stackExists(userStackDir, existsSync);
+  // Installed but not running keeps the Docker path; no Docker at all leaves nothing to keep.
+  const dockerInstalled = resolveDockerBinary(process.platform, process.env, existsSync) !== null;
   let choice = chooseStack({
     eligible: serverBundle !== null,
-    ...stackExists(userStackDir, existsSync),
+    ...stacks,
+    dockerInstalled,
     choice: await readStackChoice(userStackDir),
   });
   if (choice === "ask") choice = await offerDockerMove(userStackDir);
+  const moving = moveAccepted({
+    ...stacks,
+    dockerInstalled,
+    choice: await readStackChoice(userStackDir),
+  });
   const moveDeps = {
     stackDir: userStackDir,
     platform: process.platform,
@@ -687,9 +697,7 @@ app.whenReady().then(async () => {
           probe,
           randomHex,
           onState,
-          importFromDocker: stackExists(userStackDir, existsSync).dockerStack
-            ? (target) => moveDockerStack(moveDeps, target)
-            : undefined,
+          importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
         })
       : new LocalStackController({
           hostComputer: desktop.hostComputer?.connection,

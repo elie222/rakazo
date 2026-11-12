@@ -39,6 +39,7 @@ import {
   CONTAINER_RUNTIME_VERSION,
   DownloadError,
   installServerBundle,
+  isInside,
   pruneRuntimes,
   RuntimeTooOldError,
   resolveContainerRuntime,
@@ -632,7 +633,7 @@ export class NativeStackController extends StackLifecycle {
         await pruneRuntimes(this.dir("runtime"), [
           `container-${CONTAINER_RUNTIME_VERSION}`,
           path.basename(path.dirname(server.dir)),
-          ...this.runtimeRoot(runtime.cli),
+          ...(await this.runtimeRoot(runtime.cli)),
         ]).catch(() => undefined);
         this.pullComputerImage(runtime.cli, computerImage);
         return;
@@ -648,9 +649,9 @@ export class NativeStackController extends StackLifecycle {
   }
 
   /** Our own runtime copy may be an older pinned version still running; keep its directory. */
-  private runtimeRoot(cli: string): string[] {
+  private async runtimeRoot(cli: string): Promise<string[]> {
     const root = path.dirname(path.dirname(cli));
-    return path.dirname(root) === this.dir("runtime") ? [path.basename(root)] : [];
+    return (await isInside(this.dir("runtime"), root)) ? [path.basename(root)] : [];
   }
 
   /**

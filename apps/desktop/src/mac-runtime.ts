@@ -401,7 +401,7 @@ async function cliVersion(deps: ResolveRuntimeDeps, cli: string): Promise<string
 }
 
 /** The runtime reports its root resolved (`/private/var/…`), which a plain path may not be. */
-async function isInside(dir: string, file: string): Promise<boolean> {
+export async function isInside(dir: string, file: string): Promise<boolean> {
   const inside = (root: string, target: string) =>
     target === root || target.startsWith(`${root}${path.sep}`);
   const real = (value: string) => realpath(value).catch(() => path.resolve(value));
