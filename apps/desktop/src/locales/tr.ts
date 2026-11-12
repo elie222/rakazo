@@ -146,8 +146,8 @@ export const TR_MESSAGES: Record<string, string> = {
     "Docker yüklü ancak Docker Compose eksik. Docker Desktop’ı veya docker-compose-plugin’i yükleyin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose denetlenemedi. Aşağıdaki çıktıyı inceleyip yeniden deneyin.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "Bu kullanıcı Docker’a erişemiyor. Kullanıcıyı docker grubuna ekleyin (sudo usermod -aG docker $USER), oturumu kapatıp yeniden açın ve tekrar denetleyin.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "Bu kullanıcı Docker’a erişemiyor. Kullanıcıyı docker grubuna ekleyin (sudo usermod -aG docker $USER), ardından oturumu kapatıp yeniden açın.",
   "The start was interrupted. Retry to continue.":
     "Başlatma kesildi. Devam etmek için yeniden deneyin.",
   "Images for {tag} are not published yet. Try again in a few minutes.":

@@ -54,19 +54,32 @@ export function dockerAppFor(platform: string, binaryRealPath: string): DockerAp
   return null;
 }
 
-/** Starts the Docker app behind `binary`; resolves to its name, or null when there is none to start. */
+const LAUNCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Starts the Docker app behind `binary`; resolves to its name, or null when there is none to
+ * start. Bounded, because a stop waits for the start attempt that is launching it.
+ */
 export async function launchDockerApp(platform: string, binary: string): Promise<string | null> {
   const app = dockerAppFor(platform, await realpath(binary).catch(() => binary));
   if (app === null) return null;
   return new Promise((resolve) => {
     const child = spawn(app.command, app.args, { detached: true, stdio: "ignore" });
-    child.once("error", () => resolve(null));
+    const timer = setTimeout(() => {
+      child.unref();
+      resolve(null);
+    }, LAUNCH_TIMEOUT_MS);
+    const settle = (name: string | null) => {
+      clearTimeout(timer);
+      resolve(name);
+    };
+    child.once("error", () => settle(null));
     // `open` reports a missing app through its exit code; Docker Desktop.exe keeps running.
-    if (platform === "darwin") child.once("exit", (code) => resolve(code === 0 ? app.name : null));
+    if (platform === "darwin") child.once("exit", (code) => settle(code === 0 ? app.name : null));
     else
       child.once("spawn", () => {
         child.unref();
-        resolve(app.name);
+        settle(app.name);
       });
   });
 }

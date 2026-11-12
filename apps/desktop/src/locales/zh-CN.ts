@@ -134,8 +134,8 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
     "已安装 Docker，但缺少 Docker Compose。请安装 Docker Desktop 或 docker-compose-plugin。",
   "Could not check Docker Compose. Check the output below, then retry.":
     "无法检查 Docker Compose。请查看下方输出后重试。",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "此用户无法访问 Docker。请将其加入 docker 用户组（sudo usermod -aG docker $USER），注销后重新登录，然后再次检查。",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "此用户无法访问 Docker。请将其加入 docker 用户组（sudo usermod -aG docker $USER），然后注销并重新登录。",
   "The start was interrupted. Retry to continue.": "启动已中断。请重试以继续。",
   "Images for {tag} are not published yet. Try again in a few minutes.":
     "{tag} 的镜像尚未发布。请几分钟后重试。",

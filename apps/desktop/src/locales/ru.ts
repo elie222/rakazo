@@ -151,8 +151,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Docker установлен, но Docker Compose отсутствует. Установите Docker Desktop или docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Не удалось проверить Docker Compose. Посмотрите вывод ниже и повторите попытку.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "У этого пользователя нет доступа к Docker. Добавьте его в группу docker (sudo usermod -aG docker $USER), выйдите из системы, войдите снова и проверьте ещё раз.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "У этого пользователя нет доступа к Docker. Добавьте его в группу docker (sudo usermod -aG docker $USER), затем выйдите из системы и войдите снова.",
   "The start was interrupted. Retry to continue.":
     "Запуск прерван. Повторите попытку, чтобы продолжить.",
   "Images for {tag} are not published yet. Try again in a few minutes.":

@@ -147,8 +147,8 @@ export const KO_MESSAGES: Record<string, string> = {
     "Docker는 설치되어 있지만 Docker Compose가 없습니다. Docker Desktop 또는 docker-compose-plugin을 설치하세요.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose를 확인할 수 없습니다. 아래 출력을 확인한 후 다시 시도하세요.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "이 사용자는 Docker에 접근할 수 없습니다. docker 그룹에 추가하고(sudo usermod -aG docker $USER) 로그아웃했다가 다시 로그인한 후 다시 확인하세요.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "이 사용자는 Docker에 접근할 수 없습니다. docker 그룹에 추가한 후(sudo usermod -aG docker $USER) 로그아웃했다가 다시 로그인하세요.",
   "The start was interrupted. Retry to continue.":
     "시작이 중단되었습니다. 계속하려면 다시 시도하세요.",
   "Images for {tag} are not published yet. Try again in a few minutes.":

@@ -144,8 +144,8 @@ export const HI_MESSAGES: Record<string, string> = {
     "Docker इंस्टॉल है, लेकिन Docker Compose नहीं है। Docker Desktop या docker-compose-plugin इंस्टॉल करें।",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose की जाँच नहीं हो सकी। नीचे दिया आउटपुट देखें, फिर से कोशिश करें।",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "यह यूज़र Docker को एक्सेस नहीं कर सकता। इसे docker ग्रुप में जोड़ें (sudo usermod -aG docker $USER), साइन आउट करके फिर से साइन इन करें, फिर से जाँचें।",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "यह यूज़र Docker को एक्सेस नहीं कर सकता। इसे docker ग्रुप में जोड़ें (sudo usermod -aG docker $USER), फिर साइन आउट करके फिर से साइन इन करें।",
   "The start was interrupted. Retry to continue.":
     "शुरुआत बीच में रुक गई। जारी रखने के लिए फिर से कोशिश करें।",
   "Images for {tag} are not published yet. Try again in a few minutes.":

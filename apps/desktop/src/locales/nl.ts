@@ -152,8 +152,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "Docker is geïnstalleerd, maar Docker Compose ontbreekt. Installeer Docker Desktop of de docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose kon niet worden gecontroleerd. Bekijk de uitvoer hieronder en probeer het opnieuw.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "Deze gebruiker heeft geen toegang tot Docker. Voeg de gebruiker toe aan de groep docker (sudo usermod -aG docker $USER), log uit en weer in en controleer opnieuw.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "Deze gebruiker heeft geen toegang tot Docker. Voeg de gebruiker toe aan de groep docker (sudo usermod -aG docker $USER) en log daarna uit en weer in.",
   "The start was interrupted. Retry to continue.":
     "Het starten is onderbroken. Probeer het opnieuw om door te gaan.",
   "Images for {tag} are not published yet. Try again in a few minutes.":

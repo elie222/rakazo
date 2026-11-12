@@ -145,8 +145,8 @@ export const HE_MESSAGES: Record<string, string> = {
     "Docker מותקן, אבל Docker Compose חסר. יש להתקין את Docker Desktop או את docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "לא ניתן היה לבדוק את Docker Compose. יש לעיין בפלט שלמטה ולנסות שוב.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "למשתמש הזה אין גישה ל-Docker. יש להוסיף אותו לקבוצה docker (sudo usermod -aG docker $USER), לצאת מהמערכת ולהיכנס שוב, ואז לבדוק שוב.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "למשתמש הזה אין גישה ל-Docker. יש להוסיף אותו לקבוצה docker (sudo usermod -aG docker $USER), ואז לצאת מהמערכת ולהיכנס שוב.",
   "The start was interrupted. Retry to continue.": "ההפעלה נקטעה. יש לנסות שוב כדי להמשיך.",
   "Images for {tag} are not published yet. Try again in a few minutes.":
     "האימג׳ים עבור {tag} עדיין לא פורסמו. כדאי לנסות שוב בעוד כמה דקות.",

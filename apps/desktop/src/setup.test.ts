@@ -87,6 +87,8 @@ interface Harness {
   resolveAppState: (saved: DesktopSetup | null) => void;
   /** Resolves the oldest pending `stack.state` call, in call order. */
   resolveStackState: (state: DesktopLocalStackState) => void;
+  /** Rejects the oldest pending `stack.state` call. */
+  rejectStackState: (reason: unknown) => void;
   /** Delivers a pushed stack state the way the `desktop.setup.stack.changed` push does. */
   pushStackState: (state: DesktopLocalStackState) => void;
   /** Payloads received by `save`. */
@@ -167,6 +169,7 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux")
         .shift()
         ?.resolve({ defaultLocalUrl: DEFAULT_LOCAL_URL, cloudUrl: CLOUD_URL, saved: next }),
     resolveStackState: (state) => stackStateCalls.shift()?.resolve(state),
+    rejectStackState: (reason) => stackStateCalls.shift()?.reject(reason),
     pushStackState: (state) => {
       for (const listener of pushListeners) listener(state);
     },
@@ -481,6 +484,28 @@ describe("setup", () => {
     expect(element("stack-phase").textContent).toBe("Getting ready…");
     expect(element("stack-waiting").hidden).toBe(true);
     expect(element<HTMLButtonElement>("continue").disabled).toBe(true);
+  });
+
+  it("keeps looking for Docker after a background look fails to read the stack", async () => {
+    vi.useFakeTimers();
+    const ui = await boot(null, ENGLISH, "darwin");
+    selectMode("new");
+    submitForm();
+    const missing = { ...stackState("docker-missing"), message: "Rakazo needs Docker Desktop." };
+    ui.startResult.resolve(missing);
+    await flush();
+    ui.resolveStackState(missing);
+    await flush();
+
+    vi.advanceTimersByTime(3000);
+    await flush();
+    expect(ui.starts()).toBe(2);
+    ui.rejectStackState(new Error("Setup is not active"));
+    await flush();
+
+    vi.advanceTimersByTime(3000);
+    await flush();
+    expect(ui.starts()).toBe(3);
   });
 
   // The follow may be waiting on the stack, or reading the app's state after the stack became

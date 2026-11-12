@@ -57,6 +57,8 @@ const PULL_TIMEOUT_MS = 30 * 60_000;
 const UP_TIMEOUT_MS = (COMPOSE_WAIT_TIMEOUT_S + 60) * 1_000;
 const LOGS_TIMEOUT_MS = 15_000;
 const STOP_TIMEOUT_MS = 90_000;
+/** After this long, a Docker app setup opened has likely quit or is waiting on the person. */
+const DOCKER_APP_START_GRACE_MS = 90_000;
 const MAX_STACK_TOKEN_BYTES = 1024;
 
 /** The compose project lives under the app's user data, next to the `.env` it generates. */
@@ -268,7 +270,7 @@ export function reduceStackState(
 
 const dockerGroupHint = () =>
   t(
-    "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.",
+    "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.",
   );
 const startInterrupted = () => t("The start was interrupted. Retry to continue.");
 
@@ -323,6 +325,7 @@ export interface LocalStackDeps {
   run: RunDocker;
   /** Starts the app that owns `binary` (Docker Desktop, OrbStack); resolves to its name, or null. */
   launchDockerApp?: (binary: string) => Promise<string | null>;
+  now?: () => number;
   stackDir: string;
   resourceDir: string;
   localWebUrl: string;
@@ -363,7 +366,7 @@ export class LocalStackController {
   private inFlight: AbortController | null = null;
   private ticket = 0;
   /** Set once setup has tried to start the Docker app, so a re-check never reopens it on top of the person's work. */
-  private launchedDockerApp: string | null | undefined;
+  private dockerAppLaunch: { app: string | null; at: number } | undefined;
   /** Starts ticketed at or below this were superseded by a later stop and must not run. */
   private voidBefore = 0;
 
@@ -508,8 +511,9 @@ export class LocalStackController {
       return this.push({ type: "failed", message: startInterrupted() });
     if (version.code !== 0) {
       if (failureKind(version) === "compose-missing") {
+        // Docker itself is installed, so the Docker download would not help.
         this.push({
-          type: "docker-missing",
+          type: "failed",
           message: t(
             "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.",
           ),
@@ -539,20 +543,23 @@ export class LocalStackController {
         this.push({ type: "docker-not-running", message: dockerGroupHint() });
         return;
       }
-      if (this.launchedDockerApp === undefined) {
-        this.launchedDockerApp = (await this.deps.launchDockerApp?.(binary)) ?? null;
+      const now = this.deps.now ?? Date.now;
+      if (this.dockerAppLaunch === undefined) {
+        const app = (await this.deps.launchDockerApp?.(binary)) ?? null;
+        this.dockerAppLaunch = { app, at: now() };
       }
+      const { app, at } = this.dockerAppLaunch;
       this.push({
         type: "docker-not-running",
         message:
-          this.launchedDockerApp === null
-            ? t("Docker is installed but not running. Open it to continue.")
-            : t("Starting {app}…", { app: this.launchedDockerApp }),
+          app !== null && now() - at < DOCKER_APP_START_GRACE_MS
+            ? t("Starting {app}…", { app })
+            : t("Docker is installed but not running. Open it to continue."),
       });
       return;
     }
     // Docker answered; if it is quit later, the next start may open it again.
-    this.launchedDockerApp = undefined;
+    this.dockerAppLaunch = undefined;
 
     this.push({ type: "prepare" });
     await copyFile(

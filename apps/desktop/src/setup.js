@@ -254,11 +254,14 @@
       dockerRecheckTimer = null;
       if (selectedMode() !== "new" || !isDockerPhase(lastStack?.phase)) return;
       dockerRechecking = true;
-      // Rendering the settled phase schedules the next look while Docker is still unavailable.
+      // Rendering the settled phase schedules the next look while Docker is still unavailable;
+      // a look whose start or state read failed schedules its own, so polling never just stops.
       bridge.stack
         .start()
         .then(() => followStack())
-        .catch(() => {
+        .catch(() => undefined)
+        .finally(() => {
+          if (stackPolling || selectedMode() !== "new" || !isDockerPhase(lastStack?.phase)) return;
           dockerRechecking = false;
           scheduleDockerRecheck();
         });

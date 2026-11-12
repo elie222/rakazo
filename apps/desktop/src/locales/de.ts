@@ -153,8 +153,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Docker ist installiert, aber Docker Compose fehlt. Installiere Docker Desktop oder das docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose konnte nicht geprüft werden. Sieh dir die Ausgabe unten an und versuche es erneut.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "Dieser Benutzer hat keinen Zugriff auf Docker. Füge ihn der Gruppe docker hinzu (sudo usermod -aG docker $USER), melde dich ab und wieder an und prüfe dann erneut.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "Dieser Benutzer hat keinen Zugriff auf Docker. Füge ihn der Gruppe docker hinzu (sudo usermod -aG docker $USER), melde dich dann ab und wieder an.",
   "The start was interrupted. Retry to continue.":
     "Der Start wurde unterbrochen. Versuche es erneut, um fortzufahren.",
   "Images for {tag} are not published yet. Try again in a few minutes.":

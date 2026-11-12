@@ -152,8 +152,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "Dockerはインストールされていますが、Docker Composeがありません。Docker Desktopまたはdocker-compose-pluginをインストールしてください。",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Composeを確認できませんでした。下の出力を確認してから再試行してください。",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "このユーザはDockerにアクセスできません。dockerグループに追加し（sudo usermod -aG docker $USER）、サインアウトしてサインインし直してから、もう一度確認してください。",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "このユーザはDockerにアクセスできません。dockerグループに追加し（sudo usermod -aG docker $USER）、サインアウトしてサインインし直してください。",
   "The start was interrupted. Retry to continue.":
     "起動が中断されました。続けるには再試行してください。",
   "Images for {tag} are not published yet. Try again in a few minutes.":

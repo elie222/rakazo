@@ -640,14 +640,14 @@ describe("LocalStackController", () => {
     await expect(stat(path.join(root, "stack", STACK_ENV_FILE))).rejects.toThrow();
   });
 
-  it("reports a missing Compose plugin as docker-missing", async () => {
+  it("reports a missing Compose plugin as a failure, not a missing Docker", async () => {
     const stack = controller({}, (args) =>
       args[1] === "version"
         ? { code: 1, stderr: "docker: 'compose' is not a docker command" }
         : ok(args),
     );
     const state = await stack.start();
-    expect(state.phase).toBe("docker-missing");
+    expect(state.phase).toBe("failed");
     expect(state.message).toContain("Docker Compose is missing");
     expect(calls).toHaveLength(1);
   });
@@ -761,6 +761,25 @@ describe("LocalStackController", () => {
     daemonUp = false;
     await stack.start();
     expect(launched).toHaveLength(2);
+  });
+
+  it("asks the person to open Docker once the app setup opened has not come up", async () => {
+    let clock = 0;
+    const stack = controller(
+      { launchDockerApp: async () => "Docker Desktop", now: () => clock },
+      (args) =>
+        args[0] === "info"
+          ? {
+              code: 1,
+              stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            }
+          : ok(args),
+    );
+    expect((await stack.start()).message).toBe("Starting Docker Desktop…");
+    clock = 90_000;
+    expect((await stack.start()).message).toBe(
+      "Docker is installed but not running. Open it to continue.",
+    );
   });
 
   it("explains the docker group when the socket is not accessible", async () => {
