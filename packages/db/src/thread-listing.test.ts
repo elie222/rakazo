@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { previewFromBlocks, primaryActiveRun, threadRunStatus } from "./thread-listing.js";
 
 describe("previewFromBlocks", () => {
+  it("skips malformed stored elements", () => {
+    expect(previewFromBlocks([null, { kind: "text", text: "Hi" }])).toBe("Hi");
+  });
   it("shows nothing for a delivery, whose text is the bot's hidden prompt", () => {
     expect(
       previewFromBlocks([{ kind: "delivery" }, { kind: "text", text: 'Run routine "CRM sync":' }]),

@@ -1,4 +1,3 @@
-import type { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
@@ -77,7 +76,7 @@ export async function withLatestBotRuns<T extends { thread: { id: string } | nul
 export function previewFromBlocks(blocks: unknown): string {
   const rows = Array.isArray(blocks) ? blocks : [];
   // A delivery's text is the bot's prompt, hidden in chat.
-  if (isDeliveryMessage(rows as MessageBlock[])) return "";
+  if (isDeliveryMessage(rows)) return "";
   for (const block of rows) {
     if (
       block &&

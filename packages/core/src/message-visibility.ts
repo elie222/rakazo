@@ -32,8 +32,9 @@ export type UserVisibleMessagesOptions = {
 };
 
 /** What woke the bot (see the `delivery` block): its prompt, never shown as a message. */
-export function isDeliveryMessage(blocks: readonly MessageBlock[]): boolean {
-  return blocks.some((block) => block.kind === "delivery");
+export function isDeliveryMessage(blocks: readonly unknown[]): boolean {
+  // Also reads stored JSON, whose elements are not checked.
+  return blocks.some((block) => (block as { kind?: unknown } | null)?.kind === "delivery");
 }
 
 export function isPeerReceiptBlocks(blocks: readonly MessageBlock[]): boolean {

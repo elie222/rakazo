@@ -5,7 +5,6 @@ import {
   escapeJsonSearchWildcards,
   escapeSearchWildcards,
   extractLinksFromText,
-  isDeliveryMessage,
   matchesSearchQuery,
   snippetAroundMatch,
 } from "@rakazo/core";
@@ -30,6 +29,12 @@ const UNINDEXED_SCAN_LIMIT = 200;
  * matches are whole words or word prefixes, so text inside a word only matches
  * on rows that are still plaintext.
  */
+/**
+ * A delivery is the bot's prompt, hidden in chat, so it is never a result. Filtered before
+ * paging so deliveries can't fill the candidate pages; `kind` stays plaintext when encrypted.
+ */
+const NOT_DELIVERY = Prisma.sql`NOT (m.blocks @> ${JSON.stringify([{ kind: "delivery" }])}::jsonb)`;
+
 async function messageMatch(prisma: PrismaClient, spaceId: string, query: string) {
   const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${escapeJsonSearchWildcards(query)}%`}`;
   const encryption = contentEncryptionOf(prisma);
@@ -317,6 +322,7 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND b."archivedAt" IS NULL
         AND ${match.sql}
+        AND ${NOT_DELIVERY}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}
     `,
@@ -355,6 +361,7 @@ export async function querySpaceSearch(
         AND t."groupId" IS NOT NULL
         AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
         AND ${match.sql}
+        AND ${NOT_DELIVERY}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}
     `,
@@ -392,8 +399,6 @@ function pushMessageHits(
   const destination = ctx.groupId
     ? { groupId: ctx.groupId, groupName: ctx.groupName ?? "" }
     : { botId: ctx.botId!, botName: ctx.botName! };
-  // A delivery is hidden in chat, so a hit on it would lead nowhere.
-  if (isDeliveryMessage(blocks)) return;
   const title = ctx.groupId ? (ctx.groupName ?? "") : (ctx.botName ?? "");
   let messageHit = false;
   for (const block of blocks) {
