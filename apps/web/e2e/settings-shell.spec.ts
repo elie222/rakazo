@@ -341,6 +341,7 @@ test("a connected memory provider edits with its saved settings", async ({ page 
   const settings = await openUserSettings(page, "memory");
   const memory = settings.getByTestId("memory-settings");
   await memory.getByRole("button", { name: "Edit", exact: true }).click();
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
