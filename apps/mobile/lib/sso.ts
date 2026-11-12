@@ -42,7 +42,7 @@ export async function continueWithSso(
           "content-type": "application/json",
           origin: "rakazo://",
           "x-skip-oauth-proxy": "true",
-          [SIGNUP_SURFACE_HEADER]: Platform.OS === "ios" ? "ios" : "android",
+          [SIGNUP_SURFACE_HEADER]: Platform.OS,
           ...headers,
         },
         body: JSON.stringify({

@@ -50,7 +50,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
         "content-type": "application/json",
         origin: "rakazo://",
         "accept-language": getActiveUiLocale(),
-        [SIGNUP_SURFACE_HEADER]: Platform.OS === "ios" ? "ios" : "android",
+        [SIGNUP_SURFACE_HEADER]: Platform.OS,
       },
       body: JSON.stringify(input),
     },
