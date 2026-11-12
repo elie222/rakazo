@@ -85,7 +85,7 @@ import {
   createDirectory,
   isBlockedAuthPath,
 } from "@rakazo/auth";
-import type { Actor, AuthCapabilities } from "@rakazo/contracts";
+import type { Actor, AuthCapabilities, ModelCredential } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
   PLUGIN_SUBMISSIONS_PATH,
@@ -388,7 +388,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       secrets,
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
@@ -1128,7 +1128,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       // Aborted runs hand themselves back while realtime is still open to announce them.
       const runsStopped = runs?.stop();
       await userDeviceHub?.close();
-      oauthLogins.abortAll();
+      await oauthLogins.abortAll();
       await messagingRuntime?.stop();
       await stopReferralEmails?.();
       await stopHomeRetention?.();

@@ -10,7 +10,7 @@ import {
   routineWakeupJob,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
-import type { McpOAuthSummary } from "@rakazo/adapters";
+import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -5197,6 +5197,32 @@ describe("model credential persistence", () => {
     return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
   }
 
+  /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
+   *  finish returns what it saved. */
+  async function finishSignIn(
+    { deps, finish, handler }: ReturnType<typeof persistDeps>,
+    login: Omit<PiOAuthConnected, "signal">,
+  ) {
+    let persist: PiOAuthPersist<unknown> | undefined;
+    Object.assign(deps.oauthLogins, {
+      begin: vi.fn(async (input: { persist: PiOAuthPersist<unknown> }) => {
+        persist = input.persist;
+        return {
+          loginId: "login-1",
+          provider: login.provider,
+          mode: "device-code" as const,
+          userCode: "CODE",
+          verificationUri: "https://auth.example.com/device",
+          expiresInSeconds: 60,
+        };
+      }),
+    });
+    await call(handler, "models/beginOAuth", { provider: login.provider });
+    const value = await persist?.({ ...login, signal: new AbortController().signal });
+    finish.mockResolvedValue({ status: "connected", value, provider: login.provider });
+    return call(handler, "models/finishOAuth", { loginId: "login-1" });
+  }
+
   async function call(
     handler: RouterHandler,
     path: string,
@@ -5259,25 +5285,19 @@ describe("model credential persistence", () => {
   });
 
   it("does not persist a stringified null model id from subscription sign-in", async () => {
-    const { upsert, finish, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "anthropic",
-        modelId: "null",
-        label: "Anthropic",
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { upsert } = setup;
+    const response = await finishSignIn(setup, {
+      provider: "anthropic",
+      modelId: "null",
+      label: "Anthropic",
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
     expect(response.status).toBe(200);
     const persisted = upsert.mock.calls[0]?.[0] as {
       create: { modelId: string | null };
@@ -5837,22 +5857,16 @@ describe("model credential persistence", () => {
   });
 
   it("names a second subscription account by the email it signed in with", async () => {
-    const { finish, deps, handler } = persistDeps();
+    const setup = persistDeps();
+    const { deps } = setup;
     const access = `fake.${Buffer.from(
       JSON.stringify({ "https://api.openai.com/profile": { email: "work@example.com" } }),
     ).toString("base64url")}.fake`;
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "openai-codex",
-        credentialId: null,
-        credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const response = await finishSignIn(setup, {
+      provider: "openai-codex",
+      credentialId: null,
+      credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -5867,23 +5881,17 @@ describe("model credential persistence", () => {
     ["openai-codex", "OpenAI Codex"],
     ["anthropic", "Anthropic"],
   ])("labels a %s subscription sign-in with its own provider name", async (provider, label) => {
-    const { finish, deps, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider,
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { deps } = setup;
+    const response = await finishSignIn(setup, {
+      provider,
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(

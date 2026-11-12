@@ -12,12 +12,13 @@ import {
 } from "./model-credential-refresh.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import { PiRuntimeCredentialStore } from "./pi-credentials.js";
-import type { PiOAuthBegin } from "./pi-oauth.js";
+import type { PiOAuthBegin, PiOAuthConnected } from "./pi-oauth.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
   loadProviderOAuth,
+  ModelSignInError,
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
   OAUTH_RECONNECT_REQUIRED_ERROR,
@@ -27,6 +28,7 @@ import {
   RetiredModelCredentialError,
   resolveModelApiKey,
   resolveModelAuth,
+  SIGN_IN_LEASE_RENEW_MS,
   terminalOAuthRefreshErrorMarker,
   tryRetireModelCredential,
   XAI_OAUTH_PROVIDER,
@@ -50,8 +52,7 @@ const chatGptAccountClaim = (accountId: string) => ({
 });
 
 async function flushMicrotasks() {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
 }
 
 type TestActor = { userId: string; spaceId: string };
@@ -61,10 +62,35 @@ function deviceCodeResult(started: PiOAuthBegin) {
   return started;
 }
 
+/** Saves nothing; the "saved" value is the access token, so tests can tell sign-ins apart. */
+const keep = async (login: PiOAuthConnected) => login.credential.access;
+
+/** A save that holds until released, recording the signal each save ran under. */
+function gatedPersist() {
+  let release!: (error?: unknown) => void;
+  let markStarted!: () => void;
+  const gate = new Promise<void>((resolve, reject) => {
+    release = (error) => (error ? reject(error) : resolve());
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const signals: AbortSignal[] = [];
+  const saved: string[] = [];
+  const persist = async (login: PiOAuthConnected) => {
+    signals.push(login.signal);
+    markStarted();
+    await gate;
+    saved.push(login.credential.access);
+    return login.credential.access;
+  };
+  return { persist, started, release, signals, saved };
+}
+
 function createControlledOAuthLogins() {
   let startedCount = 0;
   const resolvers = new Map<number, (credential: Credential) => void>();
-  const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+  const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
     const index = startedCount++;
     interaction.notify({
       type: "device_code",
@@ -93,10 +119,16 @@ function createControlledOAuthLogins() {
 
 type ControlledOAuthLogins = ReturnType<typeof createControlledOAuthLogins>;
 
-async function beginControlledOAuth(control: ControlledOAuthLogins, actor: TestActor, index = 0) {
+async function beginControlledOAuth(
+  control: ControlledOAuthLogins,
+  actor: TestActor,
+  persist: (login: PiOAuthConnected) => Promise<string> = keep,
+  index = 0,
+) {
   const started = await control.logins.begin({
     ...actor,
     provider: CHATGPT_OAUTH_PROVIDER,
+    persist,
   });
   control.resolve(index);
   await flushMicrotasks();
@@ -1476,13 +1508,13 @@ describe("PiOAuthLogins", () => {
 
   it.each(["openrouter", "openai"])("rejects subscription sign-in for %s", async (provider) => {
     const logins = new PiOAuthLogins();
-    await expect(logins.begin({ userId: "u", spaceId: "w", provider })).rejects.toThrow(
-      /ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/,
-    );
+    await expect(
+      logins.begin({ userId: "u", spaceId: "w", provider, persist: keep }),
+    ).rejects.toThrow(/ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/);
   });
 
   it("runs the anthropic auth-url flow via submitted code", async () => {
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({
         type: "auth_url",
         url: "https://claude.ai/oauth/authorize?code=true",
@@ -1499,34 +1531,39 @@ describe("PiOAuthLogins", () => {
       userId: "u",
       spaceId: "w",
       provider: "anthropic",
+      persist: keep,
     });
     expect(started.mode).toBe("auth-url");
     expect(started.verificationUri).toContain("claude.ai/oauth/authorize");
     expect("userCode" in started).toBe(false);
 
     await expect(
-      logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "pasted-code#state"),
+      logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "pasted-code#state", keep),
     ).rejects.toThrow(/not found/);
     await expect(
-      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "   "),
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "   ", keep),
     ).rejects.toThrow(/Paste an authorization code/);
 
     await expect(
-      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state"),
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state", keep),
     ).resolves.toEqual({ ok: true });
     await expect(
-      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state"),
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state", keep),
     ).resolves.toEqual({ ok: true });
 
     await flushMicrotasks();
     const done = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
-    expect(done.status).toBe("connected");
-    if (done.status === "connected") expect(done.credential.access).toBe("claude-access");
+    expect(done).toEqual({ status: "connected", provider: "anthropic" });
+    await expect(logins.finish(started.loginId, { userId: "u", spaceId: "w" })).resolves.toEqual({
+      status: "connected",
+      value: "claude-access",
+      provider: "anthropic",
+    });
   });
 
   it("passes the client's code-page choice to the provider login", async () => {
     const seen: Array<boolean | undefined> = [];
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction, options) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction, options) => {
       seen.push(options?.codePage);
       interaction.notify({
         type: "auth_url",
@@ -1536,14 +1573,25 @@ describe("PiOAuthLogins", () => {
       await interaction.prompt({ type: "manual_code", message: "paste" });
       return oauthCred();
     });
-    const desktop = await logins.begin({ userId: "u", spaceId: "w", provider: "anthropic" });
+    const desktop = await logins.begin({
+      userId: "u",
+      spaceId: "w",
+      provider: "anthropic",
+      persist: keep,
+    });
     await logins.cancel(desktop.loginId, { userId: "u", spaceId: "w" });
-    await logins.begin({ userId: "u", spaceId: "w", provider: "anthropic", codePage: true });
+    await logins.begin({
+      userId: "u",
+      spaceId: "w",
+      provider: "anthropic",
+      codePage: true,
+      persist: keep,
+    });
     expect(seen).toEqual([undefined, true]);
   });
 
   it("rejects submit for a login that is not waiting for a code", async () => {
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       await interaction.prompt({
         type: "select",
         message: "method",
@@ -1561,16 +1609,17 @@ describe("PiOAuthLogins", () => {
       userId: "u",
       spaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
     await expect(
-      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "x"),
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "x", keep),
     ).rejects.toThrow(/not waiting for a pasted code/);
     await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
   });
 
   it("releases a pending manual-code prompt when the login is cancelled", async () => {
     let promptSettled = false;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({
         type: "auth_url",
         url: "https://claude.ai/oauth/authorize?code=true",
@@ -1587,6 +1636,7 @@ describe("PiOAuthLogins", () => {
       userId: "u",
       spaceId: "w",
       provider: "anthropic",
+      persist: keep,
     });
 
     await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
@@ -1598,7 +1648,7 @@ describe("PiOAuthLogins", () => {
   it("honors provider cancellation of a manual-code prompt", async () => {
     const promptAbort = new AbortController();
     let promptSettled = false;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({
         type: "auth_url",
         url: "https://claude.ai/oauth/authorize?code=true",
@@ -1614,33 +1664,34 @@ describe("PiOAuthLogins", () => {
       }
       return oauthCred();
     });
-    const started = await logins.begin({
-      userId: "u",
-      spaceId: "w",
-      provider: "anthropic",
-    });
+    const actor = { userId: "u", spaceId: "w" };
+    const started = await logins.begin({ ...actor, provider: "anthropic", persist: keep });
 
     promptAbort.abort(new Error("Callback completed elsewhere"));
     await flushMicrotasks();
 
     expect(promptSettled).toBe(true);
-    await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
+    await expect(logins.complete(started.loginId, actor)).resolves.toEqual({
+      status: "error",
+      error: "Callback completed elsewhere",
+      provider: "anthropic",
+    });
   });
 
   it("rejects non-HTTPS authorization URLs", async () => {
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({ type: "auth_url", url: "javascript:alert(1)" });
       return oauthCred();
     });
 
     await expect(
-      logins.begin({ userId: "u", spaceId: "w", provider: "anthropic" }),
+      logins.begin({ userId: "u", spaceId: "w", provider: "anthropic", persist: keep }),
     ).rejects.toThrow(/must use HTTPS/);
   });
 
   it("does not start a login for an already-aborted request", async () => {
     let started = false;
-    const logins = new PiOAuthLogins(async () => {
+    const logins = new PiOAuthLogins<string>(async () => {
       started = true;
       return oauthCred();
     });
@@ -1653,13 +1704,14 @@ describe("PiOAuthLogins", () => {
         spaceId: "w",
         provider: CHATGPT_OAUTH_PROVIDER,
         signal: controller.signal,
+        persist: keep,
       }),
     ).rejects.toBeDefined();
     expect(started).toBe(false);
   });
 
   it("returns a device code after selecting device_code login", async () => {
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       const method = await interaction.prompt({
         type: "select",
         message: "method",
@@ -1684,17 +1736,18 @@ describe("PiOAuthLogins", () => {
       userId: "u",
       spaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
     expect(deviceCodeResult(started).userCode).toBe("ABCD-1234");
     expect(started.verificationUri).toContain("auth.openai.com");
     const pending = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
     expect(pending.status).toBe("pending");
-    logins.abortAll();
+    await logins.abortAll();
   });
 
-  it("returns the OAuth credential when login finishes", async () => {
+  it("saves the credential when the provider sign-in finishes", async () => {
     let finish!: (credential: OAuthCredential) => void;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       await interaction.prompt({
         type: "select",
         message: "method",
@@ -1710,34 +1763,42 @@ describe("PiOAuthLogins", () => {
         finish = (credential) => resolve(credential);
       });
     });
+    const saved: PiOAuthConnected[] = [];
+    const actor = { userId: "u", spaceId: "w" };
     const started = await logins.begin({
-      userId: "u",
-      spaceId: "w",
+      ...actor,
       provider: CHATGPT_OAUTH_PROVIDER,
       modelId: "gpt-5.4",
+      persist: async (login) => {
+        saved.push(login);
+        return login.credential.access;
+      },
     });
+    expect(await logins.finish(started.loginId, actor)).toEqual({ status: "pending" });
     finish(oauthCred({ access: "live-access" }));
     await flushMicrotasks();
-    const done = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
-    expect(done).toMatchObject({
+    expect(saved).toEqual([
+      expect.objectContaining({
+        provider: CHATGPT_OAUTH_PROVIDER,
+        modelId: "gpt-5.4",
+        credential: expect.objectContaining({ access: "live-access" }),
+      }),
+    ]);
+    await expect(logins.complete(started.loginId, actor)).resolves.toEqual({
       status: "connected",
       provider: CHATGPT_OAUTH_PROVIDER,
-      modelId: "gpt-5.4",
     });
-    if (done.status === "connected") expect(done.credential.access).toBe("live-access");
-    const persisted = await logins.finish(
-      started.loginId,
-      { userId: "u", spaceId: "w" },
-      async (result) => result.credential.access,
-    );
-    expect(persisted).toEqual({ status: "connected", value: "live-access" });
-    const gone = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
-    expect(gone.status).toBe("error");
+    await expect(logins.finish(started.loginId, actor)).resolves.toEqual({
+      status: "connected",
+      value: "live-access",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    expect((await logins.complete(started.loginId, actor)).status).toBe("error");
   });
 
   it("only lets the owning user and workspace cancel a login", async () => {
     let aborted = false;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({
         type: "device_code",
         userCode: "CANCEL",
@@ -1754,6 +1815,7 @@ describe("PiOAuthLogins", () => {
       userId: "owner",
       spaceId: "workspace",
       provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
 
     await logins.cancel(started.loginId, { userId: "other", spaceId: "workspace" });
@@ -1768,76 +1830,35 @@ describe("PiOAuthLogins", () => {
     ).toBe("error");
   });
 
-  it("orders cancellation behind an in-flight persistence claim", async () => {
-    let finishLogin!: (credential: OAuthCredential) => void;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
-      interaction.notify({
-        type: "device_code",
-        userCode: "COMMIT",
-        verificationUri: "https://auth.openai.com/codex/device",
-      });
-      return new Promise<Credential>((resolve) => {
-        finishLogin = (credential) => resolve(credential);
-      });
+  it("orders cancellation behind a save under way", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const save = gatedPersist();
+    const started = await beginControlledOAuth(control, actor, save.persist);
+    await save.started;
+    expect(save.signals[0]?.aborted).toBe(false);
+    await expect(control.logins.finish(started.loginId, actor)).resolves.toEqual({
+      status: "pending",
     });
-    const started = await logins.begin({
-      userId: "owner",
-      spaceId: "workspace",
-      provider: CHATGPT_OAUTH_PROVIDER,
-    });
-    finishLogin(oauthCred());
-    await flushMicrotasks();
-
-    let releasePersistence!: () => void;
-    const persistence = new Promise<void>((resolve) => {
-      releasePersistence = resolve;
-    });
-    let persistenceStarted!: () => void;
-    let persistenceSignal!: AbortSignal;
-    const startedPersistence = new Promise<void>((resolve) => {
-      persistenceStarted = resolve;
-    });
-    const finishing = logins.finish(
-      started.loginId,
-      { userId: "owner", spaceId: "workspace" },
-      async (result) => {
-        persistenceSignal = result.signal;
-        persistenceStarted();
-        await persistence;
-        return "saved";
-      },
-    );
-    await startedPersistence;
-    expect(persistenceSignal.aborted).toBe(false);
-
-    await expect(
-      logins.finish(started.loginId, { userId: "owner", spaceId: "workspace" }, async () => {
-        throw new Error("duplicate persistence");
-      }),
-    ).resolves.toEqual({ status: "pending" });
 
     let cancellationFinished = false;
-    const cancelling = logins
-      .cancel(started.loginId, { userId: "owner", spaceId: "workspace" })
-      .then(() => {
-        cancellationFinished = true;
-      });
-    await Promise.resolve();
+    const cancelling = control.logins.cancel(started.loginId, actor).then(() => {
+      cancellationFinished = true;
+    });
+    await flushMicrotasks();
     expect(cancellationFinished).toBe(false);
-    expect(persistenceSignal.aborted).toBe(false);
+    expect(save.signals[0]?.aborted).toBe(false);
 
-    releasePersistence();
-    await expect(finishing).resolves.toEqual({ status: "connected", value: "saved" });
+    save.release();
     await cancelling;
-    expect(cancellationFinished).toBe(true);
-    // The persist signal is the session's own — cancel never aborted the
-    // in-flight write; teardown aborts it only after the write settled.
-    expect(persistenceSignal.aborted).toBe(true);
+    expect(save.saved).toEqual(["access-token"]);
+    // Cancel never aborted the save under way; teardown aborts its signal only after.
+    expect(save.signals[0]?.aborted).toBe(true);
   });
 
-  it("does not persist after cancellation wins before finalization", async () => {
+  it("does not save after cancellation wins", async () => {
     let finishLogin!: (credential: OAuthCredential) => void;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       interaction.notify({
         type: "device_code",
         userCode: "CANCEL-FIRST",
@@ -1847,105 +1868,68 @@ describe("PiOAuthLogins", () => {
         finishLogin = resolve;
       });
     });
-    const started = await logins.begin({
-      userId: "owner",
-      spaceId: "workspace",
-      provider: CHATGPT_OAUTH_PROVIDER,
-    });
-    finishLogin(oauthCred());
-    await flushMicrotasks();
-
-    await logins.cancel(started.loginId, { userId: "owner", spaceId: "workspace" });
+    const actor = { userId: "owner", spaceId: "workspace" };
     let persisted = false;
-    await expect(
-      logins.finish(started.loginId, { userId: "owner", spaceId: "workspace" }, async () => {
+    const started = await logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: async () => {
         persisted = true;
         return "saved";
-      }),
-    ).resolves.toMatchObject({ status: "error" });
+      },
+    });
+
+    await logins.cancel(started.loginId, actor);
+    finishLogin(oauthCred());
+    await flushMicrotasks();
     expect(persisted).toBe(false);
+    await expect(logins.finish(started.loginId, actor)).resolves.toMatchObject({
+      status: "error",
+    });
   });
 
-  it("allows a failed finalization to be retried", async () => {
-    let finishLogin!: (credential: OAuthCredential) => void;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
-      interaction.notify({
-        type: "device_code",
-        userCode: "RETRY",
-        verificationUri: "https://auth.openai.com/codex/device",
-      });
-      return new Promise<Credential>((resolve) => {
-        finishLogin = resolve;
-      });
+  it("reports a failed save as a failed sign-in", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const refused = await beginControlledOAuth(control, actor, async () => {
+      throw new ModelSignInError("Choose a model this account can use.");
     });
-    const started = await logins.begin({
-      userId: "owner",
-      spaceId: "workspace",
+    await flushMicrotasks();
+    await expect(control.logins.complete(refused.loginId, actor)).resolves.toEqual({
+      status: "error",
+      error: "Choose a model this account can use.",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
-    finishLogin(oauthCred());
+
+    const broken = await beginControlledOAuth(
+      control,
+      actor,
+      async () => {
+        throw new Error("connection reset with internal details");
+      },
+      1,
+    );
     await flushMicrotasks();
-
-    const failure = new Error("persistence failed");
-    await expect(
-      logins.finish(started.loginId, { userId: "owner", spaceId: "workspace" }, async () => {
-        throw failure;
-      }),
-    ).rejects.toBe(failure);
-    expect(
-      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
-    ).toBe("connected");
-
-    await expect(
-      logins.finish(
-        started.loginId,
-        { userId: "owner", spaceId: "workspace" },
-        async (result) => result.credential.access,
-      ),
-    ).resolves.toEqual({ status: "connected", value: "access-token" });
-    expect(
-      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
-    ).toBe("error");
+    await expect(control.logins.finish(broken.loginId, actor)).resolves.toEqual({
+      status: "error",
+      error: "Could not save the sign-in. Try again.",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
   });
 
-  it("does not allow another actor to finish or persist a login", async () => {
-    let finishLogin!: (credential: OAuthCredential) => void;
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
-      interaction.notify({
-        type: "device_code",
-        userCode: "OWNER-ONLY",
-        verificationUri: "https://auth.openai.com/codex/device",
-      });
-      return new Promise<Credential>((resolve) => {
-        finishLogin = resolve;
-      });
-    });
-    const started = await logins.begin({
-      userId: "owner",
-      spaceId: "workspace",
-      provider: CHATGPT_OAUTH_PROVIDER,
-    });
-    finishLogin(oauthCred());
+  it("does not let another actor read or finish a login", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const started = await beginControlledOAuth(control, actor);
     await flushMicrotasks();
 
-    let persisted = false;
     await expect(
-      logins.finish(started.loginId, { userId: "other", spaceId: "workspace" }, async () => {
-        persisted = true;
-        return "saved";
-      }),
+      control.logins.finish(started.loginId, { userId: "other", spaceId: "workspace" }),
     ).resolves.toMatchObject({ status: "error" });
-    expect(persisted).toBe(false);
     await expect(
-      logins.finish(started.loginId, { userId: "owner", spaceId: "other-workspace" }, async () => {
-        persisted = true;
-        return "saved";
-      }),
+      control.logins.finish(started.loginId, { userId: "owner", spaceId: "other-workspace" }),
     ).resolves.toMatchObject({ status: "error" });
-    expect(persisted).toBe(false);
-    expect(
-      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
-    ).toBe("connected");
+    expect((await control.logins.complete(started.loginId, actor)).status).toBe("connected");
   });
 
   it("keeps a sign-in renewing one connection while another account signs in", async () => {
@@ -1955,22 +1939,13 @@ describe("PiOAuthLogins", () => {
       ...actor,
       provider: CHATGPT_OAUTH_PROVIDER,
       credentialId: "personal",
+      persist: keep,
     });
     const adding = await control.logins.begin({
       ...actor,
       provider: CHATGPT_OAUTH_PROVIDER,
       credentialId: null,
-    });
-    control.resolve(0);
-    control.resolve(1);
-    await flushMicrotasks();
-    expect(control.logins.complete(renewing.loginId, actor)).toMatchObject({
-      status: "connected",
-      credentialId: "personal",
-    });
-    expect(control.logins.complete(adding.loginId, actor)).toMatchObject({
-      status: "connected",
-      credentialId: null,
+      persist: keep,
     });
 
     // Disconnecting the renewed connection leaves the new account's sign-in running.
@@ -1979,118 +1954,94 @@ describe("PiOAuthLogins", () => {
       provider: CHATGPT_OAUTH_PROVIDER,
       credentialId: "personal",
     });
-    expect(control.logins.complete(renewing.loginId, actor).status).toBe("error");
-    expect(control.logins.complete(adding.loginId, actor).status).toBe("connected");
-    control.logins.abortAll();
+    expect((await control.logins.complete(renewing.loginId, actor)).status).toBe("error");
+    expect((await control.logins.complete(adding.loginId, actor)).status).toBe("pending");
+    await control.logins.abortAll();
   });
 
   it("retires a sign-in that named no connection when one connection is disconnected", async () => {
     const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
-    const legacy = await control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
-    control.resolve(0);
-    await flushMicrotasks();
+    const legacy = await control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
     await control.logins.cancelProvider({
       userId: actor.userId,
       provider: CHATGPT_OAUTH_PROVIDER,
       credentialId: "personal",
     });
-    expect(control.logins.complete(legacy.loginId, actor).status).toBe("error");
-    control.logins.abortAll();
+    expect((await control.logins.complete(legacy.loginId, actor)).status).toBe("error");
+    await control.logins.abortAll();
   });
 
-  it("waits for successful finalization before starting a replacement", async () => {
+  it("waits for a save under way before starting a replacement", async () => {
     const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
-    const original = await beginControlledOAuth(control, actor);
+    const save = gatedPersist();
+    const original = await beginControlledOAuth(control, actor, save.persist);
+    await save.started;
 
-    let releasePersistence!: () => void;
-    let persistenceStarted!: () => void;
-    const persistence = new Promise<void>((resolve) => {
-      releasePersistence = resolve;
+    const replacement = control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
-    const startedPersistence = new Promise<void>((resolve) => {
-      persistenceStarted = resolve;
-    });
-    const finishing = control.logins.finish(original.loginId, actor, async () => {
-      persistenceStarted();
-      await persistence;
-      return "saved";
-    });
-    await startedPersistence;
-
-    const replacement = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
     await flushMicrotasks();
     expect(control.startedCount).toBe(1);
 
-    releasePersistence();
-    await expect(finishing).resolves.toEqual({ status: "connected", value: "saved" });
+    save.release();
     await expect(replacement).resolves.toMatchObject({ userCode: "CODE-1" });
+    expect(save.saved).toEqual(["access-token"]);
     expect(control.startedCount).toBe(2);
     expect((await control.logins.complete(original.loginId, actor)).status).toBe("error");
-    control.logins.abortAll();
+    await control.logins.abortAll();
   });
 
-  it("starts a replacement after failed finalization returns to ready", async () => {
+  it("starts a replacement after a failed save", async () => {
     const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
-    const original = await beginControlledOAuth(control, actor);
+    const save = gatedPersist();
+    const original = await beginControlledOAuth(control, actor, save.persist);
+    await save.started;
 
-    let failPersistence!: (reason?: unknown) => void;
-    let persistenceStarted!: () => void;
-    const persistence = new Promise<void>((_, reject) => {
-      failPersistence = reject;
+    const replacement = control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
-    const startedPersistence = new Promise<void>((resolve) => {
-      persistenceStarted = resolve;
-    });
-    const failure = new Error("persistence failed");
-    const finishing = control.logins.finish(original.loginId, actor, async () => {
-      persistenceStarted();
-      await persistence;
-      return "unreachable";
-    });
-    await startedPersistence;
-
-    const replacement = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
     await flushMicrotasks();
     expect(control.startedCount).toBe(1);
 
-    failPersistence(failure);
-    await expect(finishing).rejects.toBe(failure);
+    save.release(new Error("persistence failed"));
     await expect(replacement).resolves.toMatchObject({ userCode: "CODE-1" });
     expect(control.startedCount).toBe(2);
     expect((await control.logins.complete(original.loginId, actor)).status).toBe("error");
-    control.logins.abortAll();
+    await control.logins.abortAll();
   });
 
   it("serializes concurrent replacements for one workspace scope", async () => {
     const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
-    const original = await beginControlledOAuth(control, actor);
+    const save = gatedPersist();
+    await beginControlledOAuth(control, actor, save.persist);
+    await save.started;
 
-    let releasePersistence!: () => void;
-    let persistenceStarted!: () => void;
-    const persistence = new Promise<void>((resolve) => {
-      releasePersistence = resolve;
+    const replacementA = control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
-    const startedPersistence = new Promise<void>((resolve) => {
-      persistenceStarted = resolve;
+    const replacementB = control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
-    const finishing = control.logins.finish(original.loginId, actor, async () => {
-      persistenceStarted();
-      await persistence;
-      return "saved";
-    });
-    await startedPersistence;
-
-    const replacementA = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
-    const replacementB = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
     await flushMicrotasks();
     expect(control.startedCount).toBe(1);
 
-    releasePersistence();
-    await finishing;
+    save.release();
     const replacements = await Promise.allSettled([replacementA, replacementB]);
     expect(control.startedCount).toBe(3);
     const fulfilled = replacements.flatMap((result) =>
@@ -2103,69 +2054,44 @@ describe("PiOAuthLogins", () => {
       }
     }
     expect(active).toHaveLength(1);
-    control.logins.abortAll();
+    await control.logins.abortAll();
   });
 
-  it("does not start an aborted replacement after finalization wait", async () => {
+  it("does not start an aborted replacement after waiting for a save", async () => {
     const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
-    const original = await beginControlledOAuth(control, actor);
-
-    let releasePersistence!: () => void;
-    let persistenceStarted!: () => void;
-    const persistence = new Promise<void>((resolve) => {
-      releasePersistence = resolve;
-    });
-    const startedPersistence = new Promise<void>((resolve) => {
-      persistenceStarted = resolve;
-    });
-    const finishing = control.logins.finish(original.loginId, actor, async () => {
-      persistenceStarted();
-      await persistence;
-      return "saved";
-    });
-    await startedPersistence;
+    const save = gatedPersist();
+    await beginControlledOAuth(control, actor, save.persist);
+    await save.started;
 
     const request = new AbortController();
     const replacement = control.logins.begin({
       ...actor,
       provider: CHATGPT_OAUTH_PROVIDER,
       signal: request.signal,
+      persist: keep,
     });
     await flushMicrotasks();
     request.abort(new Error("replacement cancelled"));
-    releasePersistence();
+    save.release();
 
-    await finishing;
     await expect(replacement).rejects.toBeDefined();
     expect(control.startedCount).toBe(1);
-    control.logins.abortAll();
+    await control.logins.abortAll();
   });
 
   it("keeps replacement scopes isolated by workspace", async () => {
     const ownerWorkspace = { userId: "owner", spaceId: "workspace-a" };
     const otherWorkspace = { userId: "owner", spaceId: "workspace-b" };
     const control = createControlledOAuthLogins();
-    const original = await beginControlledOAuth(control, ownerWorkspace);
-
-    let releasePersistence!: () => void;
-    let persistenceStarted!: () => void;
-    const persistence = new Promise<void>((resolve) => {
-      releasePersistence = resolve;
-    });
-    const startedPersistence = new Promise<void>((resolve) => {
-      persistenceStarted = resolve;
-    });
-    const finishing = control.logins.finish(original.loginId, ownerWorkspace, async () => {
-      persistenceStarted();
-      await persistence;
-      return "saved";
-    });
-    await startedPersistence;
+    const save = gatedPersist();
+    const original = await beginControlledOAuth(control, ownerWorkspace, save.persist);
+    await save.started;
 
     const otherWorkspaceLogin = await control.logins.begin({
       ...otherWorkspace,
       provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
     });
     expect(deviceCodeResult(otherWorkspaceLogin).userCode).toBe("CODE-1");
     expect(control.startedCount).toBe(2);
@@ -2173,17 +2099,19 @@ describe("PiOAuthLogins", () => {
       "pending",
     );
 
-    releasePersistence();
-    await expect(finishing).resolves.toMatchObject({ status: "connected", value: "saved" });
-    expect((await control.logins.complete(original.loginId, ownerWorkspace)).status).toBe("error");
+    save.release();
+    await flushMicrotasks();
+    expect((await control.logins.complete(original.loginId, ownerWorkspace)).status).toBe(
+      "connected",
+    );
     expect(
       (await control.logins.complete(otherWorkspaceLogin.loginId, otherWorkspace)).status,
     ).toBe("pending");
-    control.logins.abortAll();
+    await control.logins.abortAll();
   });
 
   it("answers Copilot's enterprise prompt with github.com and returns a device code", async () => {
-    const logins = new PiOAuthLogins(async (provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (provider, _type, interaction) => {
       expect(provider).toBe(COPILOT_OAUTH_PROVIDER);
       const host = await interaction.prompt({
         type: "text",
@@ -2205,14 +2133,15 @@ describe("PiOAuthLogins", () => {
       userId: "u",
       spaceId: "w",
       provider: COPILOT_OAUTH_PROVIDER,
+      persist: keep,
     });
     expect(deviceCodeResult(started).userCode).toBe("GH-CODE");
     expect(started.verificationUri).toContain("github.com");
-    logins.abortAll();
+    await logins.abortAll();
   });
 
   it("returns an xAI device code with no login prompts", async () => {
-    const logins = new PiOAuthLogins(async (provider, _type, interaction) => {
+    const logins = new PiOAuthLogins<string>(async (provider, _type, interaction) => {
       expect(provider).toBe(XAI_OAUTH_PROVIDER);
       interaction.notify({
         type: "device_code",
@@ -2229,9 +2158,10 @@ describe("PiOAuthLogins", () => {
       userId: "u",
       spaceId: "w",
       provider: XAI_OAUTH_PROVIDER,
+      persist: keep,
     });
     expect(deviceCodeResult(started).userCode).toBe("XAI-CODE");
-    logins.abortAll();
+    await logins.abortAll();
   });
 
   describe("session timers", () => {
@@ -2239,30 +2169,10 @@ describe("PiOAuthLogins", () => {
       vi.useRealTimers();
     });
 
-    it("still expires a session that is not finalizing", async () => {
-      vi.useFakeTimers();
-      const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
-        interaction.notify({
-          type: "device_code",
-          userCode: "EXPIRE",
-          verificationUri: "https://auth.openai.com/codex/device",
-          expiresInSeconds: 60,
-        });
-        return oauthCred();
-      });
-      const actor = { userId: "u", spaceId: "w" };
-      const started = await logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
-      await flushMicrotasks();
-
-      vi.advanceTimersByTime(61_000);
-      expect((await logins.complete(started.loginId, actor)).status).toBe("error");
-    });
-
-    it("keeps a finalizing session when expiry elapses so a replacement cannot overwrite it", async () => {
-      vi.useFakeTimers();
-      const actor = { userId: "u", spaceId: "w" };
+    function expiringLogins() {
       let startedCount = 0;
-      const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      const resolvers: Array<(credential: Credential) => void> = [];
+      const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
         startedCount += 1;
         interaction.notify({
           type: "device_code",
@@ -2270,80 +2180,61 @@ describe("PiOAuthLogins", () => {
           verificationUri: "https://auth.openai.com/codex/device",
           expiresInSeconds: 60,
         });
-        return oauthCred({ access: `access-${startedCount}` });
+        return new Promise<Credential>((resolve) => resolvers.push(resolve));
       });
-      const started = await logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
-      await flushMicrotasks();
+      return {
+        logins,
+        get startedCount() {
+          return startedCount;
+        },
+        resolve: (index: number) => resolvers[index]?.(oauthCred({ access: `access-${index}` })),
+      };
+    }
 
-      let releasePersist!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        releasePersist = resolve;
+    it("expires a sign-in still waiting on the provider", async () => {
+      vi.useFakeTimers();
+      const { logins } = expiringLogins();
+      const actor = { userId: "u", spaceId: "w" };
+      const started = await logins.begin({
+        ...actor,
+        provider: CHATGPT_OAUTH_PROVIDER,
+        persist: keep,
       });
-      let persistedAccess: string | undefined;
-      const finishing = logins.finish(started.loginId, actor, async (result) => {
-        await gate;
-        // The expiry timer must not abort this write. A replacement that
-        // started underneath it would be overwritten by this persist.
-        if (result.signal.aborted) throw result.signal.reason;
-        persistedAccess = result.credential.access;
-        return "saved-original";
-      });
-      await Promise.resolve();
 
       vi.advanceTimersByTime(61_000);
-      expect((await logins.complete(started.loginId, actor)).status).toBe("pending");
+      expect((await logins.complete(started.loginId, actor)).status).toBe("error");
+    });
 
-      const replacement = logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    it("keeps a saving sign-in when expiry elapses so a replacement cannot overwrite it", async () => {
+      vi.useFakeTimers();
+      const actor = { userId: "u", spaceId: "w" };
+      const control = expiringLogins();
+      const save = gatedPersist();
+      const started = await control.logins.begin({
+        ...actor,
+        provider: CHATGPT_OAUTH_PROVIDER,
+        persist: save.persist,
+      });
+      control.resolve(0);
+      await save.started;
+
+      vi.advanceTimersByTime(61_000);
+      expect((await control.logins.complete(started.loginId, actor)).status).toBe("pending");
+
+      const replacement = control.logins.begin({
+        ...actor,
+        provider: CHATGPT_OAUTH_PROVIDER,
+        persist: keep,
+      });
       await flushMicrotasks();
-      expect(startedCount).toBe(1);
+      expect(control.startedCount).toBe(1);
 
-      releasePersist();
-      await expect(finishing).resolves.toEqual({ status: "connected", value: "saved-original" });
-      expect(persistedAccess).toBe("access-1");
+      save.release();
       await expect(replacement).resolves.toMatchObject({ userCode: "CODE-2" });
-      expect(startedCount).toBe(2);
-      logins.abortAll();
-    });
-
-    it("drops a session whose save fails after expiry instead of restoring it", async () => {
-      vi.useFakeTimers();
-      const actor = { userId: "u", spaceId: "w" };
-      let startedCount = 0;
-      const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
-        startedCount += 1;
-        interaction.notify({
-          type: "device_code",
-          userCode: `CODE-${startedCount}`,
-          verificationUri: "https://auth.openai.com/codex/device",
-          expiresInSeconds: 60,
-        });
-        return oauthCred();
-      });
-      const started = await logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
-      await flushMicrotasks();
-
-      let releasePersist!: (error?: unknown) => void;
-      const gate = new Promise<void>((resolve, reject) => {
-        releasePersist = (error) => (error ? reject(error) : resolve());
-      });
-      const failure = new Error("persistence failed");
-      const finishing = logins.finish(started.loginId, actor, async () => {
-        await gate;
-        return "saved";
-      });
-      await Promise.resolve();
-
-      vi.advanceTimersByTime(61_000);
-      expect((await logins.complete(started.loginId, actor)).status).toBe("pending");
-
-      releasePersist(failure);
-      await expect(finishing).rejects.toBe(failure);
-      expect((await logins.complete(started.loginId, actor)).status).toBe("error");
-
-      const replacement = await logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
-      expect(deviceCodeResult(replacement).userCode).toBe("CODE-2");
-      expect(startedCount).toBe(2);
-      logins.abortAll();
+      // The expiry did not abort the save, and the replacement started after it.
+      expect(save.saved).toEqual(["access-0"]);
+      expect(control.startedCount).toBe(2);
+      await control.logins.abortAll();
     });
 
     it("clears armed expiry timers when abortAll runs", async () => {
@@ -2353,11 +2244,12 @@ describe("PiOAuthLogins", () => {
         userId: "u",
         spaceId: "w",
         provider: CHATGPT_OAUTH_PROVIDER,
+        persist: keep,
       });
       const armed = vi.getTimerCount();
       expect(armed).toBeGreaterThan(0);
 
-      control.logins.abortAll();
+      await control.logins.abortAll();
       expect(vi.getTimerCount()).toBe(armed - 1);
     });
   });
@@ -2374,51 +2266,83 @@ it("redacts long custom header secrets without corrupting short routing values",
   expect(secrets).toEqual(["long-session-secret"]);
 });
 
-describe("PiOAuthLogins hand-off between API processes", () => {
+describe("PiOAuthLogins across API processes", () => {
   type Row = {
     id: string;
     spaceId: string;
     userId: string;
     provider: string;
     scope: string;
-    ciphertext: string;
+    ciphertext: string | null;
+    status: string;
+    error: string | null;
+    result: unknown;
+    leaseExpiresAt: Date | null;
     createdAt: Date;
   };
-  type Where = Partial<Omit<Row, "createdAt">> & { createdAt?: { gte?: Date; lt?: Date } };
   type HandoffStore = ConstructorParameters<typeof PiOAuthLogins>[1];
+
+  /** Prisma's filter shapes the sign-in store uses, over rows in memory. */
+  function satisfies(value: unknown, condition: unknown): boolean {
+    if (condition === undefined) return true;
+    if (condition === null) return value === null || value === undefined;
+    if (typeof condition !== "object" || condition instanceof Date) return value === condition;
+    const filter = condition as {
+      not?: unknown;
+      in?: unknown[];
+      endsWith?: string;
+      gt?: Date;
+      gte?: Date;
+      lt?: Date;
+    };
+    if ("not" in filter && value === filter.not) return false;
+    if (filter.in && !filter.in.includes(value)) return false;
+    if (filter.endsWith !== undefined && !String(value).endsWith(filter.endsWith)) return false;
+    if (filter.gt && !(value instanceof Date && value > filter.gt)) return false;
+    if (filter.gte && !(value instanceof Date && value >= filter.gte)) return false;
+    if (filter.lt && !(value instanceof Date && value < filter.lt)) return false;
+    return true;
+  }
 
   function handoffStore() {
     const rows = new Map<string, Row>();
     let clock = Date.now();
-    const matches = (row: Row, where: Where) =>
-      (where.id === undefined || row.id === where.id) &&
-      (where.scope === undefined || row.scope === where.scope) &&
-      (where.spaceId === undefined || row.spaceId === where.spaceId) &&
-      (where.userId === undefined || row.userId === where.userId) &&
-      (where.provider === undefined || row.provider === where.provider) &&
-      (where.createdAt?.gte === undefined || row.createdAt >= where.createdAt.gte) &&
-      (where.createdAt?.lt === undefined || row.createdAt < where.createdAt.lt);
+    const matching = (where: Record<string, unknown>) =>
+      [...rows.values()].filter((row) =>
+        Object.entries(where).every(([key, condition]) =>
+          satisfies(row[key as keyof Row], condition),
+        ),
+      );
     const prisma = {
       modelOAuthSession: {
-        create: vi.fn(async ({ data }: { data: Omit<Row, "createdAt"> }) => {
+        create: vi.fn(async ({ data }: { data: Partial<Row> }) => {
           clock += 1;
-          const row = { ...data, createdAt: new Date(clock) };
+          const row = {
+            ciphertext: null,
+            status: "pending",
+            error: null,
+            result: null,
+            leaseExpiresAt: null,
+            ...data,
+            createdAt: new Date(clock),
+          } as Row;
           rows.set(row.id, row);
           return row;
         }),
         findFirst: vi.fn(
-          async ({ where }: { where: Where }) =>
-            [...rows.values()].find((row) => matches(row, where)) ?? null,
+          async ({ where }: { where: Record<string, unknown> }) => matching(where)[0] ?? null,
         ),
-        deleteMany: vi.fn(async ({ where }: { where: Where }) => {
-          let count = 0;
-          for (const row of [...rows.values()]) {
-            if (matches(row, where)) {
-              rows.delete(row.id);
-              count += 1;
-            }
-          }
-          return { count };
+        updateMany: vi.fn(
+          async ({ where, data }: { where: Record<string, unknown>; data: Partial<Row> }) => {
+            const found = matching(where);
+            for (const row of found) Object.assign(row, data);
+            return { count: found.length };
+          },
+        ),
+        deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          const found = matching(where);
+          for (const row of found) rows.delete(row.id);
+          return { count: found.length };
         }),
       },
     };
@@ -2436,10 +2360,10 @@ describe("PiOAuthLogins hand-off between API processes", () => {
     return { rows, store: { prisma, secrets } as unknown as HandoffStore, secrets };
   }
 
-  /** One API process: its own memory, the shared store. */
+  /** One API process with a pasted-code provider: its own memory, the shared store. */
   function apiProcess(store: HandoffStore) {
     const seen: Array<{ verifier?: string; code: string }> = [];
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction, options) => {
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction, options) => {
       interaction.notify({
         type: "auth_url",
         url: "https://claude.ai/oauth/authorize?code=true",
@@ -2452,7 +2376,41 @@ describe("PiOAuthLogins hand-off between API processes", () => {
     return { logins, seen };
   }
 
+  /** One API process with a device-code provider the test answers. */
+  function deviceCodeProcess(store: HandoffStore) {
+    let answerWith!: (credential: Credential) => void;
+    const answered = new Promise<Credential>((resolve) => {
+      answerWith = resolve;
+    });
+    let signal: AbortSignal | undefined;
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
+      signal = interaction.signal;
+      interaction.notify({
+        type: "device_code",
+        userCode: "CODE",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<Credential>((resolve, reject) => {
+        void answered.then(resolve);
+        interaction.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+      });
+    }, store);
+    return {
+      logins,
+      answer: (credential: Credential = oauthCred()) => answerWith(credential),
+      get stopped() {
+        return signal?.aborted === true;
+      },
+    };
+  }
+
   const member = { userId: "u", spaceId: "w" };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("finishes a sign-in on the API process that receives the code", async () => {
     const { rows, store, secrets } = handoffStore();
@@ -2463,116 +2421,168 @@ describe("PiOAuthLogins hand-off between API processes", () => {
       modelId: "claude-model",
       label: "Claude",
       codePage: true,
+      persist: keep,
     });
     const row = rows.get(started.loginId);
-    expect(row).toMatchObject({ ...member, provider: "anthropic" });
+    expect(row).toMatchObject({ ...member, provider: "anthropic", leaseExpiresAt: null });
     expect(secrets.put).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
       recordId: started.loginId,
       ephemeral: true,
     });
     // A deploy replaces the process that started the sign-in.
-    before.logins.abortAll();
-    expect(rows.has(started.loginId)).toBe(true);
+    await before.logins.abortAll();
+    expect(rows.get(started.loginId)?.status).toBe("pending");
 
     const after = apiProcess(store);
-    await expect(after.logins.submit(started.loginId, member, "the-code")).resolves.toEqual({
-      ok: true,
-    });
+    const saved: PiOAuthConnected[] = [];
+    await expect(
+      after.logins.submit(started.loginId, member, "the-code", async (login) => {
+        saved.push(login);
+        return login.credential.access;
+      }),
+    ).resolves.toEqual({ ok: true });
     await flushMicrotasks();
     const stored = JSON.parse(await secrets.load(row?.ciphertext ?? "")) as { verifier: string };
     expect(stored.verifier).toEqual(expect.any(String));
     expect(after.seen).toEqual([{ verifier: stored.verifier, code: "the-code" }]);
-    const done = await after.logins.complete(started.loginId, member);
-    expect(done).toMatchObject({
+    expect(saved).toEqual([
+      expect.objectContaining({ provider: "anthropic", modelId: "claude-model", label: "Claude" }),
+    ]);
+
+    // Any process reports and finishes it.
+    const elsewhere = apiProcess(store);
+    await expect(elsewhere.logins.complete(started.loginId, member)).resolves.toEqual({
       status: "connected",
       provider: "anthropic",
-      modelId: "claude-model",
-      label: "Claude",
-      credential: { access: "exchanged-the-code" },
+    });
+    await expect(elsewhere.logins.finish(started.loginId, member)).resolves.toEqual({
+      status: "connected",
+      value: "exchanged-the-code",
+      provider: "anthropic",
     });
     expect(rows.size).toBe(0);
     await expect(
-      apiProcess(store).logins.submit(started.loginId, member, "the-code"),
+      apiProcess(store).logins.submit(started.loginId, member, "the-code", keep),
     ).rejects.toThrow(/not found/);
   });
 
   it("only hands a sign-in to the member who started it", async () => {
     const { rows, store } = handoffStore();
-    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const started = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
     const other = apiProcess(store);
     await expect(
-      other.logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "the-code"),
+      other.logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "the-code", keep),
     ).rejects.toThrow(/not found/);
     await expect(
-      other.logins.submit(started.loginId, { userId: "u", spaceId: "other" }, "the-code"),
+      other.logins.submit(started.loginId, { userId: "u", spaceId: "other" }, "the-code", keep),
     ).rejects.toThrow(/not found/);
-    expect(rows.has(started.loginId)).toBe(true);
+    await expect(
+      other.logins.complete(started.loginId, { userId: "other", spaceId: "w" }),
+    ).resolves.toMatchObject({ status: "error" });
+    expect(rows.get(started.loginId)?.leaseExpiresAt).toBeNull();
     expect(other.seen).toEqual([]);
   });
 
   it("queries the hand-off by owner columns when the caller passes its whole actor", async () => {
     const { store } = handoffStore();
-    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const started = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
     const actor = { ...member, email: "member@example.test", isDeploymentOwner: false };
     await expect(
-      apiProcess(store).logins.submit(started.loginId, actor, "the-code"),
+      apiProcess(store).logins.submit(started.loginId, actor, "the-code", keep),
     ).resolves.toEqual({ ok: true });
     expect(store?.prisma.modelOAuthSession.findFirst).toHaveBeenCalledWith({
-      where: { id: started.loginId, ...member, createdAt: { gte: expect.any(Date) } },
+      where: {
+        id: started.loginId,
+        ...member,
+        status: "pending",
+        leaseExpiresAt: null,
+        createdAt: { gte: expect.any(Date) },
+      },
       select: { ciphertext: true },
     });
   });
 
   it("does not resume an expired sign-in", async () => {
     const { rows, store } = handoffStore();
-    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const started = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
     const row = rows.get(started.loginId);
     if (row) row.createdAt = new Date(Date.now() - 16 * 60_000);
     const after = apiProcess(store);
-    await expect(after.logins.submit(started.loginId, member, "the-code")).rejects.toThrow(
+    await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
       /not found/,
     );
     expect(after.seen).toEqual([]);
   });
 
-  it("drops the hand-off once the code is in, or the sign-in is cancelled or disconnected", async () => {
+  it("lets one process take the code, and drops the sign-in when cancelled or disconnected", async () => {
     const { rows, store } = handoffStore();
     const local = apiProcess(store);
-    const submitted = await local.logins.begin({ ...member, provider: "anthropic" });
-    await local.logins.submit(submitted.loginId, member, "the-code");
-    expect(rows.has(submitted.loginId)).toBe(false);
+    const submitted = await local.logins.begin({ ...member, provider: "anthropic", persist: keep });
+    await local.logins.submit(submitted.loginId, member, "the-code", keep);
+    // Taken: no other process may resume it with the stored verifier.
+    const other = apiProcess(store);
+    await expect(other.logins.submit(submitted.loginId, member, "the-code", keep)).rejects.toThrow(
+      /not found/,
+    );
+    await flushMicrotasks();
+    expect(rows.get(submitted.loginId)?.status).toBe("connected");
+    expect(other.seen).toEqual([]);
 
-    const cancelled = await local.logins.begin({ ...member, provider: "anthropic" });
+    const cancelled = await local.logins.begin({ ...member, provider: "anthropic", persist: keep });
     await local.logins.cancel(cancelled.loginId, member);
     await flushMicrotasks();
     expect(rows.has(cancelled.loginId)).toBe(false);
 
-    const elsewhere = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const elsewhere = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
     await local.logins.cancelProvider({ userId: "u", provider: "anthropic" });
     expect(rows.has(elsewhere.loginId)).toBe(false);
   });
 
   it("cancels a sign-in another process started", async () => {
     const { rows, store } = handoffStore();
-    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const started = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
     const after = apiProcess(store);
     await after.logins.cancel(started.loginId, member);
     expect(rows.has(started.loginId)).toBe(false);
-    await expect(after.logins.submit(started.loginId, member, "the-code")).rejects.toThrow(
+    await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
       /not found/,
     );
   });
 
   it("does not let an older sign-in's code replace a newer one", async () => {
     const { rows, store } = handoffStore();
-    const older = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const older = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
     const after = apiProcess(store);
-    const newer = await after.logins.begin({ ...member, provider: "anthropic" });
+    const newer = await after.logins.begin({ ...member, provider: "anthropic", persist: keep });
     expect(rows.has(older.loginId)).toBe(false);
-    await expect(after.logins.submit(older.loginId, member, "old-code")).rejects.toThrow(
+    await expect(after.logins.submit(older.loginId, member, "old-code", keep)).rejects.toThrow(
       /not found/,
     );
-    await expect(after.logins.submit(newer.loginId, member, "new-code")).resolves.toEqual({
+    await expect(after.logins.submit(newer.loginId, member, "new-code", keep)).resolves.toEqual({
       ok: true,
     });
   });
@@ -2583,28 +2593,167 @@ describe("PiOAuthLogins hand-off between API processes", () => {
       ...member,
       provider: "anthropic",
       credentialId: "connection-a",
+      persist: keep,
     });
     const adding = await apiProcess(store).logins.begin({
       ...member,
       provider: "anthropic",
       credentialId: null,
+      persist: keep,
     });
     expect(rows.has(renewing.loginId)).toBe(true);
     expect(rows.has(adding.loginId)).toBe(true);
   });
 
-  it("keeps device-code sign-ins in memory", async () => {
+  it("reports a device-code sign-in that finished on another process", async () => {
     const { rows, store } = handoffStore();
-    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
-      interaction.notify({
-        type: "device_code",
-        userCode: "CODE",
-        verificationUri: "https://auth.openai.com/codex/device",
-      });
-      return new Promise<Credential>(() => undefined);
-    }, store);
-    await logins.begin({ ...member, provider: CHATGPT_OAUTH_PROVIDER });
+    const a = deviceCodeProcess(store);
+    const b = deviceCodeProcess(store);
+    const started = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+    expect(rows.get(started.loginId)?.leaseExpiresAt).toEqual(expect.any(Date));
+    await expect(b.logins.complete(started.loginId, member)).resolves.toEqual({
+      status: "pending",
+    });
+
+    a.answer(oauthCred({ access: "device-access" }));
+    await flushMicrotasks();
+    await expect(b.logins.complete(started.loginId, member)).resolves.toEqual({
+      status: "connected",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    await expect(b.logins.finish(started.loginId, member)).resolves.toEqual({
+      status: "connected",
+      value: "device-access",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
     expect(rows.size).toBe(0);
-    logins.abortAll();
+    await a.logins.abortAll();
+  });
+
+  it("stops a device-code sign-in cancelled on another process", async () => {
+    vi.useFakeTimers();
+    const { rows, store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    const started = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+
+    await deviceCodeProcess(store).logins.cancel(started.loginId, member);
+    expect(rows.has(started.loginId)).toBe(false);
+    expect(a.stopped).toBe(false);
+    await vi.advanceTimersByTimeAsync(SIGN_IN_LEASE_RENEW_MS);
+    expect(a.stopped).toBe(true);
+  });
+
+  it("does not save a sign-in cancelled elsewhere before its owner noticed", async () => {
+    const { store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    let saved = false;
+    const started = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: async () => {
+        saved = true;
+        return "saved";
+      },
+    });
+    await deviceCodeProcess(store).logins.cancel(started.loginId, member);
+    a.answer();
+    await flushMicrotasks();
+    expect(saved).toBe(false);
+    expect(a.stopped).toBe(true);
+  });
+
+  it("reports a sign-in whose process went away as interrupted", async () => {
+    const { rows, store } = handoffStore();
+    const b = deviceCodeProcess(store);
+
+    // Shut down: it says so at once.
+    const drained = deviceCodeProcess(store);
+    const first = await drained.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+    await drained.logins.abortAll();
+    await expect(b.logins.complete(first.loginId, member)).resolves.toEqual({
+      status: "error",
+      error: "Sign-in was interrupted. Start sign-in again.",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+
+    // Crashed: its lease lapses.
+    const crashed = deviceCodeProcess(store);
+    const second = await crashed.logins.begin({
+      ...member,
+      provider: COPILOT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+    await expect(b.logins.complete(second.loginId, member)).resolves.toEqual({
+      status: "pending",
+    });
+    const row = rows.get(second.loginId);
+    if (row) row.leaseExpiresAt = new Date(Date.now() - 1);
+    await expect(b.logins.complete(second.loginId, member)).resolves.toEqual({
+      status: "error",
+      error: "Sign-in was interrupted. Start sign-in again.",
+      provider: COPILOT_OAUTH_PROVIDER,
+    });
+    await crashed.logins.abortAll();
+  });
+
+  it("lets a save under way on another process land before a disconnect", async () => {
+    const { rows, store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    const save = gatedPersist();
+    const started = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+      persist: save.persist,
+    });
+    a.answer();
+    await save.started;
+    expect(rows.get(started.loginId)?.status).toBe("saving");
+
+    let disconnected = false;
+    const disconnecting = deviceCodeProcess(store)
+      .logins.cancelProvider({
+        userId: "u",
+        provider: CHATGPT_OAUTH_PROVIDER,
+        credentialId: "personal",
+      })
+      .then(() => {
+        disconnected = true;
+      });
+    await flushMicrotasks();
+    expect(disconnected).toBe(false);
+    save.release();
+    await disconnecting;
+    expect(save.saved).toEqual(["access-token"]);
+  });
+
+  it("leaves another connection's sign-in running when one connection is disconnected", async () => {
+    const { rows, store } = handoffStore();
+    const a = deviceCodeProcess(store);
+    const adding = await a.logins.begin({
+      ...member,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: null,
+      persist: keep,
+    });
+    await deviceCodeProcess(store).logins.cancelProvider({
+      userId: "u",
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    expect(rows.has(adding.loginId)).toBe(true);
+    await a.logins.abortAll();
   });
 });
