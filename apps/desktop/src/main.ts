@@ -43,7 +43,7 @@ import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
-import { runDocker } from "./docker-cli.js";
+import { launchDockerApp, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
 import {
   createDesktopHostScreen,
@@ -575,6 +575,7 @@ app.whenReady().then(async () => {
     env: process.env,
     exists: existsSync,
     run: runDocker,
+    launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
     stackDir: stackDir(userDataDir),
     resourceDir: stackResourceDir({
       packaged: app.isPackaged,

@@ -77,7 +77,7 @@ export const KO_MESSAGES: Record<string, string> = {
   "Set up Rakazo": "Rakazo 설정",
   "Quit Rakazo": "Rakazo 종료",
   "Welcome to Rakazo": "Rakazo에 오신 것을 환영합니다",
-  "Choose which server this app should use.": "이 앱에서 사용할 서버를 선택하세요.",
+  "Choose where Rakazo runs.": "Rakazo를 실행할 위치를 선택하세요.",
   Instance: "인스턴스",
   "This computer": "이 컴퓨터",
   "Existing instance": "기존 인스턴스",
@@ -88,7 +88,6 @@ export const KO_MESSAGES: Record<string, string> = {
   "Name: value": "이름: 값",
   "Check connection": "연결 확인",
   Continue: "계속",
-  "Check again": "다시 확인",
   Retry: "다시 시도",
   "Getting ready…": "준비 중…",
   "Downloading Rakazo…": "Rakazo 다운로드 중…",
@@ -144,15 +143,12 @@ export const KO_MESSAGES: Record<string, string> = {
     "연결되었지만 다음 실행을 위해 설정을 저장할 수 없습니다. 계속을 다시 클릭하세요.",
   "The app-managed Rakazo services are not ready. Retry setup.":
     "앱에서 관리하는 Rakazo 서비스가 준비되지 않았습니다. 설정을 다시 시도하세요.",
-  "Docker is not installed on this computer.": "이 컴퓨터에 Docker가 설치되어 있지 않습니다.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker는 설치되어 있지만 Docker Compose가 없습니다. Docker Desktop 또는 docker-compose-plugin을 설치하세요.",
   "Could not check Docker Compose. Check the output below, then retry.":
     "Docker Compose를 확인할 수 없습니다. 아래 출력을 확인한 후 다시 시도하세요.",
-  "Docker is installed but not running. Start Docker, then check again.":
-    "Docker는 설치되어 있지만 실행 중이 아닙니다. Docker를 시작한 후 다시 확인하세요.",
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.":
-    "이 사용자는 Docker에 접근할 수 없습니다. docker 그룹에 추가하고(sudo usermod -aG docker $USER) 로그아웃했다가 다시 로그인한 후 다시 확인하세요.",
+  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.":
+    "이 사용자는 Docker에 접근할 수 없습니다. docker 그룹에 추가한 후(sudo usermod -aG docker $USER) 로그아웃했다가 다시 로그인하세요.",
   "The start was interrupted. Retry to continue.":
     "시작이 중단되었습니다. 계속하려면 다시 시도하세요.",
   "Images for {tag} are not published yet. Try again in a few minutes.":
@@ -193,4 +189,24 @@ export const KO_MESSAGES: Record<string, string> = {
   "Chat Details": "채팅 세부정보",
   Help: "도움말",
   "Keyboard Shortcuts": "키보드 단축키",
+  "Nothing to install.": "설치할 것이 없습니다.",
+  "Your data stays on this computer.": "데이터가 이 컴퓨터에 보관됩니다.",
+  "Connect to a server you or your team already run.":
+    "나 또는 팀이 이미 운영 중인 서버에 연결합니다.",
+  "Rakazo needs Docker Desktop to run on this computer.":
+    "이 컴퓨터에서 Rakazo를 실행하려면 Docker Desktop이 필요합니다.",
+  "Rakazo needs Docker to run on this computer.":
+    "이 컴퓨터에서 Rakazo를 실행하려면 Docker가 필요합니다.",
+  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
+    "Docker Desktop은 Rakazo를 백그라운드에서 실행하는 무료 앱입니다. 설치하고 한 번 여세요.",
+  "Install Docker Engine and start it.": "Docker Engine을 설치하고 시작하세요.",
+  "Download Docker Desktop": "Docker Desktop 다운로드",
+  "Install Docker": "Docker 설치",
+  "Docker is installed but not running. Open it to continue.":
+    "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 여세요.",
+  "Starting {app}…": "{app} 시작 중…",
+  "Waiting for Docker Desktop…": "Docker Desktop 기다리는 중…",
+  "Waiting for Docker…": "Docker 기다리는 중…",
+  "Docker is installed but not running. Start the Docker service to continue.":
+    "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 Docker 서비스를 시작하세요.",
 };
