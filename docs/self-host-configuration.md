@@ -62,6 +62,14 @@ BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 `COMPUTER_TAKEOVER_TTL_MS` (default `900000`, 15 minutes) is how long a person's takeover of a bot's
 screen lasts before control expires.
 
+`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run or an unanswered
+question may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
+(default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
+thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
+anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
+takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
+queued runs after 4 hours.
+
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
 
@@ -172,6 +180,15 @@ background runs execute in the worker, so both hold live agent turns. In the pro
 file, `RAKAZO_API_MEMORY_LIMIT` and `RAKAZO_WORKER_MEMORY_LIMIT` cap them (Compose sizes such as
 `2g` or `3072m`, default `2g` each). Raise them on a larger host. Deploys briefly run the old and
 new container of each side by side, so leave room for both.
+
+## More API and worker containers
+
+Each API and worker container runs on about one CPU core. On a host with more cores,
+`RAKAZO_API_REPLICAS` and `RAKAZO_WORKER_REPLICAS` (default `1` each) run several; they share work
+through Postgres and Caddy spreads requests across the API containers. The deploy script applies a
+new count on its next run, starting that many new containers before it stops the old ones, so
+leave memory for twice the count during a deploy. With more than one API container, give Telegram
+bots and iMessage projects a webhook secret: without one each API polls for the same messages.
 
 ## Postgres memory
 

@@ -28,6 +28,7 @@ import type {
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  configuredBotEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -73,6 +74,7 @@ import {
   userDeviceInternalAddress,
   verifyModelServesAgents,
   WorkActivities,
+  withHostComputerScreen,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
@@ -83,7 +85,7 @@ import {
   createDirectory,
   isBlockedAuthPath,
 } from "@rakazo/auth";
-import type { Actor, AuthCapabilities } from "@rakazo/contracts";
+import type { Actor, AuthCapabilities, ModelCredential } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
   PLUGIN_SUBMISSIONS_PATH,
@@ -366,10 +368,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     ticketBoardEnabled,
   });
+  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...sandboxProviderOptionsFromEnv(),
+      ...hostComputer,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
       e2bApiKey: env.e2bApiKey,
@@ -385,7 +388,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       secrets,
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
@@ -418,6 +421,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  const botEmail: TransactionalEmailProvider | undefined =
+    configuredBotEmailProvider({
+      smtpUrl: env.botEmailSmtpUrl,
+      domain: env.inboundEmail?.domain,
+    }) ?? localEmailEmulator;
   const emailErrorLogger = (message: string) => (error: unknown) => {
     if (error instanceof EmailRecipientRejectedError) {
       getLogger().warn(message, { "error.message": error.message });
@@ -624,10 +632,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     jobs,
     events,
     onTicketChange: ticketChanges,
-    email,
+    email: botEmail,
     messaging,
     cloudAgent,
-    userDevices: userDevicesOverride ?? userDevices,
+    userDevices:
+      userDevicesOverride ??
+      withHostComputerScreen(userDevices, {
+        prisma,
+        sandboxKind: env.sandboxProvider,
+        url: hostComputer.hostComputerUrl,
+        token: hostComputer.hostComputerToken,
+      }),
     paymentWallet,
     shutdownSignal: shutdown.signal,
     now,
@@ -1113,7 +1128,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       // Aborted runs hand themselves back while realtime is still open to announce them.
       const runsStopped = runs?.stop();
       await userDeviceHub?.close();
-      oauthLogins.abortAll();
+      await oauthLogins.abortAll();
       await messagingRuntime?.stop();
       await stopReferralEmails?.();
       await stopHomeRetention?.();
@@ -1123,6 +1138,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await mcpArgsMove;
       await runsStopped;
       await requestsSettled;
+      await botEmail?.drain?.();
       await email?.drain?.();
       await jobs.close();
       await secrets.close();

@@ -293,6 +293,8 @@ export interface ManagedConnectorProvider
     Omit<ConnectionAuthProvider, "describe"> {
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
+  /** Whether a connected app needs reconnecting because its saved connection gives this run no tools. */
+  needsReconnect?(context: AdapterContext, externalId: string): Promise<boolean>;
   /** Connection refs the provider reports as dead until the user reconnects them. */
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;

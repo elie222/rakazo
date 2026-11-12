@@ -51,7 +51,7 @@ export function VoiceSettingsOverlay({
   scope: SettingsScope;
 }) {
   const rpc = useSpaceRpc();
-  const spaceId = useBoundSpaceId();
+  const spaceId = useBoundSpaceId() ?? null;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const scoped = { input: { scope } };

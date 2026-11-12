@@ -1,5 +1,11 @@
 import * as z from "zod";
 
+/** Preserve mailbox casing; only the domain is case-insensitive. */
+export const BotEmailRecipientSchema = z.email().transform((address) => {
+  const at = address.lastIndexOf("@");
+  return `${address.slice(0, at)}@${address.slice(at + 1).toLowerCase()}`;
+});
+
 export const BOT_EMAIL_NAME_TAKEN = "That address isn't available";
 
 /**

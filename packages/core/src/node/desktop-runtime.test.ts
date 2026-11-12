@@ -1627,6 +1627,69 @@ describe("shared Linux desktop lifecycle", () => {
   );
 
   it.skipIf(process.platform !== "linux")(
+    "waits for a file chooser that is slow to exec",
+    async () => {
+      const { runtime, bin, screenEnv, run, relocate, alive, extraDisplay, cleanup } =
+        await portalScreenFixture();
+      // Holds the forked pid on nohup's own executable before it execs the portal.
+      writeFileSync(path.join(bin, "nohup"), '#!/bin/bash\nsleep 0.3\nexec "$@"\n');
+      chmodSync(path.join(bin, "nohup"), 0o755);
+      try {
+        const result = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(result.status, result.stderr).toBe(0);
+        const gtk = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
+        expect(alive(recordedPid(gtk))).toBe(true);
+      } finally {
+        // Let both portals finish exec and log their pids so cleanup can stop them.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "accepts a file chooser that execs between process checks",
+    async () => {
+      const { bin, libexec, screenEnv, run, relocate, cleanup } = await portalScreenFixture();
+      // The first executable read sees nohup; the next sees the portal after exec.
+      writeFileSync(
+        path.join(bin, "readlink"),
+        [
+          "#!/bin/bash",
+          'target=$(/usr/bin/readlink "$@") || exit 1',
+          'case "$1" in',
+          "  /proc/*/exe)",
+          '    proc_dir=$(dirname "$1")',
+          `    if [ ! -f "$0.seen" ] && tr '\\0' '\\n' < "$proc_dir/cmdline" 2>/dev/null | grep -Fx -- ${shellQuote(path.join(libexec, "xdg-desktop-portal-gtk"))} >/dev/null; then`,
+          "      for i in $(seq 1 100); do",
+          '        target=$(/usr/bin/readlink "$@") || exit 1',
+          '        case "$target" in */xdg-desktop-portal-gtk) break ;; esac',
+          "        sleep 0.01",
+          "      done",
+          '      case "$target" in */xdg-desktop-portal-gtk) ;; *) exit 1 ;; esac',
+          '      touch "$0.seen"',
+          "      printf '/usr/bin/nohup\\n'",
+          "      exit 0",
+          "    fi ;;",
+          "esac",
+          `printf '%s\\n' "$target"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(path.join(bin, "readlink"), 0o755);
+      try {
+        const result = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(existsSync(path.join(bin, "readlink.seen"))).toBe(true);
+        expect(result.status, result.stderr).toBe(0);
+      } finally {
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
     "restarts a dead screen bus without killing an unrelated pid",
     async () => {
       const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =

@@ -124,6 +124,7 @@ export interface AppEnv {
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
+  botEmailSmtpUrl?: string;
   emailProvider?: string;
   welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
@@ -140,6 +141,9 @@ export interface AppEnv {
   slackClientSecret?: string;
   slackBotToken: string | undefined;
   slackSigningSecret: string | undefined;
+  teamsAppId?: string;
+  teamsAppPassword?: string;
+  teamsAppTenantId?: string;
   whatsappAccessToken: string | undefined;
   whatsappPhoneNumberId: string | undefined;
   whatsappAppSecret: string | undefined;
@@ -313,6 +317,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
+    botEmailSmtpUrl: optional(source.BOT_EMAIL_SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
@@ -327,6 +332,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     slackBotToken: optional(source.SLACK_BOT_TOKEN),
     slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
+    teamsAppId: optional(source.TEAMS_APP_ID),
+    teamsAppPassword: optional(source.TEAMS_APP_PASSWORD),
+    teamsAppTenantId: optional(source.TEAMS_APP_TENANT_ID),
     whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
     whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
     whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),

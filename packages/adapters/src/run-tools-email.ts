@@ -2,6 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import {
   BOT_EMAIL_NAME_TAKEN,
   BotEmailNameSchema,
+  BotEmailRecipientSchema,
   hideOneTimeCodeInEmail,
   REDACTED_MARK,
 } from "@rakazo/contracts";
@@ -388,25 +389,14 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   return call.finish({ address: `${parsed.data}@${domain}` });
 }
 
-/** Emails one bot sends a day at most, so a looping bot cannot spam from the shared domain. */
-export const SEND_EMAIL_DAILY_LIMIT = 50;
-/** Across all of one owner's bots, so more bots never mean more mail from the shared domain. */
-export const SEND_EMAIL_OWNER_DAILY_LIMIT = 200;
 const SEND_RECIPIENTS_MAX = 10;
 const SEND_TEXT_MAX_CHARS = 20_000;
 const SUBJECT_MAX_CHARS = 500;
 const MAX_REFERENCES = 20;
 
-const Recipients = z.union([z.email(), z.array(z.email())]).transform((value) =>
-  // Only the domain is case-insensitive; the part before the @ goes out exactly as given.
-  (Array.isArray(value) ? value : [value]).map((address) => {
-    const at = address.trim().lastIndexOf("@");
-    return `${address.trim().slice(0, at)}@${address
-      .trim()
-      .slice(at + 1)
-      .toLowerCase()}`;
-  }),
-);
+const Recipients = z
+  .union([BotEmailRecipientSchema, z.array(BotEmailRecipientSchema)])
+  .transform((value) => (Array.isArray(value) ? value : [value]));
 const SendEmailSchema = z
   .object({
     to: Recipients.refine((list) => list.length > 0, "Name at least one recipient."),
@@ -450,7 +440,15 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   const original = input.inReplyTo
     ? await deps.prisma.botEmailMessage.findFirst({
         where: { id: input.inReplyTo, botId: bot.id },
-        select: { subject: true, messageId: true, references: true },
+        select: {
+          subject: true,
+          messageId: true,
+          references: true,
+          fromAddress: true,
+          verified: true,
+          sent: true,
+          receivedAt: true,
+        },
       })
     : null;
   if (input.inReplyTo && !original) {
@@ -497,20 +495,31 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
       id: earlier.id,
     });
   }
-  const reserved = await reserveBotEmailSend(
-    deps.prisma,
-    { userId: bot.userId, botId: bot.id },
-    { bot: SEND_EMAIL_DAILY_LIMIT, owner: SEND_EMAIL_OWNER_DAILY_LIMIT },
-  );
-  if (reserved === "bot") {
-    return call.finish({
-      error: "You've sent as many emails today as you can. Try again tomorrow.",
-    });
-  }
-  if (reserved === "owner") {
-    return call.finish({
-      error: "You've sent as many emails today as your owner's bots can. Try again tomorrow.",
-    });
+  // Only a recent, authenticated incoming message authorizes a reply recipient.
+  // A sent copy, forged message, or caller-supplied address can never grant that permission.
+  const verifiedReplySender =
+    original?.verified &&
+    !original.sent &&
+    original.receivedAt.getTime() >= Date.now() - 30 * 24 * 60 * 60 * 1000 &&
+    original.fromAddress.split("@").at(-1)?.toLowerCase() !== domain.toLowerCase()
+      ? original.fromAddress
+      : undefined;
+  const reserved = await reserveBotEmailSend(deps.prisma, {
+    userId: bot.userId,
+    botId: bot.id,
+    recipients: [...input.to, ...cc],
+    verifiedReplySender,
+  });
+  if (typeof reserved === "string") {
+    const errors = {
+      limit: "Your account has reached its email allowance for the last 24 hours. Try again later.",
+      too_many:
+        "This email has more recipients than your account's allowance. Send to fewer recipients.",
+      disabled: "Email sending is paused for this account.",
+      unverified: "Verify your account email before sending.",
+      recipient: "This recipient isn't approved for this account.",
+    };
+    return call.finish({ error: errors[reserved] });
   }
   // Saved before it goes: a retry after a crash finds it and never sends the email twice.
   const row = await deps.prisma.botEmailMessage.create({

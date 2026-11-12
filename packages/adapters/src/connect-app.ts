@@ -43,12 +43,15 @@ export async function connectApp(
       app,
     ) ?? matchAppCatalog(catalog, app);
   if (!entry) return { error: "No such app is available in the connector catalog." };
-  if (entry.connected)
+  const provider = providers.find((provider) => provider.describe().id === entry.connectorId);
+  const reconnect =
+    entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
+  if (entry.connected && !reconnect)
     return {
       status: "connected",
       message: "This app is already connected and its tools are available.",
     };
-  const block = appConnectCard(entry);
+  const block = appConnectCard({ ...entry, connected: false });
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const nonce = `connect-app:${effectId}`;
@@ -98,10 +101,11 @@ export async function connectApp(
       committed.seq,
       committed.firstResponse ? target.id : undefined,
     );
+  const shown = committed ? "Connection card shown." : "Connection card already shown.";
   return {
     status: "pending",
-    message: committed
-      ? "Connection card shown. Wait for the user to connect the app."
-      : "Connection card already shown. Wait for the user to connect the app.",
+    message: reconnect
+      ? `${shown} The saved connection gives this app no tools, so the user must reconnect it. Wait for them to do so.`
+      : `${shown} Wait for the user to connect the app.`,
   };
 }

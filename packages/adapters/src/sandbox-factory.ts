@@ -38,6 +38,7 @@ export interface SandboxProviderOptions {
   boatApiUrl?: string;
   boxdApiKey?: string;
   boxdOrg?: string;
+  instaboxApiKey?: string;
   kubernetesNamespace?: string;
   kubernetesRuntimeClassName?: string;
   kubernetesComputerImage?: string;
@@ -58,6 +59,10 @@ export interface SandboxProviderOptions {
   incusCpuLimit?: string;
   incusMemoryLimit?: string;
   incusProcessLimit?: string;
+  localVmCli?: string;
+  localVmComputerImage?: string;
+  localVmCpus?: string;
+  localVmMemory?: string;
   wuyingAccessKeyId?: string;
   wuyingAccessKeySecret?: string;
   wuyingRegionId?: string;
@@ -76,6 +81,7 @@ function missingRemoteKey(
     | "createos"
     | "boat"
     | "boxd"
+    | "instabox"
     | "railway"
     | "incus"
     | "wuying",
@@ -94,7 +100,7 @@ export async function createSandboxProvider(
   const parsed = SandboxKind.safeParse(kind);
   if (!parsed.success) {
     throw new Error(
-      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | incus | wuying | desktop | fake.`,
+      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | local-vm | wuying | desktop | fake.`,
     );
   }
   const sandboxKind = parsed.data;
@@ -138,6 +144,14 @@ export async function createSandboxProvider(
       if (!opts.boxdApiKey?.trim()) return missingRemoteKey("boxd", "BOXD_API_KEY");
       const { createBoxdSandboxProvider } = await import("./boxd-sandbox.js");
       return createBoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
+    }
+    case "instabox": {
+      if (!opts.instaboxApiKey?.trim()) return missingRemoteKey("instabox", "INSTABOX_API_KEY");
+      const { InstaboxSandboxProvider } = await import("./instabox-sandbox.js");
+      return new InstaboxSandboxProvider({
+        apiKey: opts.instaboxApiKey,
+        onUnsafeStop: opts.onUnsafeStop,
+      });
     }
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
@@ -183,6 +197,15 @@ export async function createSandboxProvider(
         processLimit: opts.incusProcessLimit,
       });
     }
+    case "local-vm": {
+      const { AppleContainerSandboxProvider } = await import("./apple-container-sandbox.js");
+      return new AppleContainerSandboxProvider({
+        cli: opts.localVmCli,
+        computerImage: opts.localVmComputerImage,
+        cpus: opts.localVmCpus,
+        memory: opts.localVmMemory,
+      });
+    }
     case "wuying": {
       const required = {
         WUYING_ACCESS_KEY_ID: opts.wuyingAccessKeyId,
@@ -221,7 +244,7 @@ export async function createSandboxProvider(
     default: {
       const _exhaustive: never = sandboxKind;
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | incus | wuying | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | local-vm | wuying | desktop | fake.`,
       );
     }
   }

@@ -37,7 +37,10 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
   });
 
   it("replaces the client-supplied forwarding header on API and RPC requests", () => {
-    expect(httpsSite.match(/header_up X-Forwarded-For \{client_ip\}/g)).toHaveLength(2);
-    expect(httpsSite).not.toContain("{remote_host}");
+    expect(config).toMatch(
+      /\(api\) \{\s*reverse_proxy \{[\s\S]*?header_up X-Forwarded-For \{client_ip\}\n/,
+    );
+    expect(httpsSite).toContain("handle @api {\n\t\timport api\n\t}");
+    expect(config).not.toContain("{remote_host}");
   });
 });

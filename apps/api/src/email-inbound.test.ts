@@ -229,6 +229,10 @@ describe("inbound email route", () => {
     expect(sent.prompt).toContain("Owner &lt;owner@example.test&gt;");
     expect(sent.prompt).toContain("wire money");
     expect(sent.clientNonce).toMatch(/^email:bot-1:/);
+    expect((sent as unknown as { blocks: unknown[] }).blocks).toEqual([
+      { kind: "delivery" },
+      { kind: "text", text: sent.prompt },
+    ]);
     expect(enqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -584,6 +588,7 @@ describe("inbound email route", () => {
     expect(sent.prompt.startsWith("[Email from your owner]")).toBe(true);
     expect(sent.prompt).toContain('"id": "email-1"');
     expect(sent.prompt).not.toContain("Run routine");
+    expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({ kind: "delivery" });
   });
 
   it("tells the owner, not a stranger, when mail from their address fails the check", async () => {
@@ -707,7 +712,9 @@ describe("inbound email route", () => {
       prompt: string;
       blocks: Array<{ kind: string }>;
     };
-    expect(sent.blocks.filter((block) => block.kind !== "text")).toHaveLength(4);
+    expect(
+      sent.blocks.filter((block) => block.kind === "file" || block.kind === "image"),
+    ).toHaveLength(4);
     expect(sent.prompt).toContain("[file: setup.exe (unavailable)]");
     expect(sent.prompt).not.toContain("[file: d.png (unavailable)]");
   });

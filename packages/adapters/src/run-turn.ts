@@ -17,6 +17,7 @@ import {
   humanizeToolName,
   isBackgroundRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  normalizeRunError,
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -1008,6 +1009,15 @@ export function handoffEndedTurn(state: Pick<RunState, "handedOff">, error: unkn
   );
 }
 
+/**
+ * Groups failures by provider and the kind and status the provider reported, never by message
+ * text, which quotes ids and user content.
+ */
+function runFailureFingerprint(provider: string, message: string): string[] {
+  const { kind, status } = normalizeRunError(message);
+  return ["run.failed", provider || "unknown", kind ?? "unclassified", String(status ?? "none")];
+}
+
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */
 export async function failRun(
   ctx: RunContext,
@@ -1093,6 +1103,7 @@ export async function failRun(
       {
         "run.outcome": "failed",
         ...model.active,
+        "error.fingerprint": runFailureFingerprint(model.active["model.provider"], message),
       },
     );
   }

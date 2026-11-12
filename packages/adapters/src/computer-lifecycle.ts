@@ -170,6 +170,16 @@ export class ComputerBusyError extends Error {
   }
 }
 
+/** A stop was not confirmed, so this computer must remain isolated until recovery. */
+export class ComputerRecoveryRequiredError extends Error {
+  constructor() {
+    super(
+      "Computer requires recovery after an unconfirmed stop. Recover the computer to rebuild it.",
+    );
+    this.name = "ComputerRecoveryRequiredError";
+  }
+}
+
 /** The computer's Space is being deleted, so it takes no maintenance until that ends. */
 export class ComputerSpaceDeletingError extends ComputerBusyError {}
 
@@ -227,8 +237,7 @@ export async function provisionComputer(
     });
     return new ComputerBusyError();
   };
-  if (existing.state === "quarantined")
-    throw new Error("Computer requires recovery after an unconfirmed stop");
+  if (existing.state === "quarantined") throw new ComputerRecoveryRequiredError();
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
     throw busy("maintenance");
   if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
@@ -1021,10 +1030,12 @@ export function computerSupportsTerminal(kind: string): boolean {
     kind === "docker" ||
     kind === "e2b" ||
     kind === "novita" ||
+    kind === "instabox" ||
     kind === "daytona" ||
     kind === "boat" ||
     kind === "kubernetes" ||
     kind === "incus" ||
+    kind === "local-vm" ||
     kind === "fake"
   );
 }

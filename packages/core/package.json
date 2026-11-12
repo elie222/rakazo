@@ -44,6 +44,11 @@
       "development": "./src/node/screen-proxy-response.ts",
       "default": "./src/node/screen-proxy-response.ts"
     },
+    "./secrets-guard": {
+      "types": "./src/secrets-guard.ts",
+      "development": "./src/secrets-guard.ts",
+      "default": "./src/secrets-guard.ts"
+    },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
       "development": "./src/plot/plot-spec.ts",

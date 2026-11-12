@@ -22,6 +22,7 @@ import type {
   MemoryProviderResolver,
   MessagingInstallations,
   PiOAuthLogins,
+  PlanLimitsReader,
   PluginRepoFetcher,
   PluginTextReader,
   ProviderCatalogCache,
@@ -32,7 +33,7 @@ import type {
   WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { NavLink } from "@rakazo/contracts";
+import type { ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing.js";
 import { accountRoutes } from "./routes/account.js";
@@ -85,10 +86,12 @@ export interface RouterDeps {
   memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;
   secrets: SecretStore;
-  oauthLogins: PiOAuthLogins;
+  oauthLogins: PiOAuthLogins<ModelCredential>;
   /** Live Codex catalog seam; defaults to the shared per-process cache. */
   codexCatalog?: CodexLiveCatalog;
   providerCatalog?: ProviderCatalogCache;
+  /** Subscription allowance readings; defaults to the shared per-process cache. */
+  planLimits?: PlanLimitsReader;
   /** HTTP transport for model connection checks and catalog probes. */
   modelConnectionFetch?: typeof fetch;
   /** One real request proving a newly keyed model can serve agents; absent skips it. */

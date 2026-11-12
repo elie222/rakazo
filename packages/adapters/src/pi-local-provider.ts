@@ -6,6 +6,8 @@ import { Agent, EnvHttpProxyAgent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
 import { MODEL_STREAM_AGENT_TIMEOUTS } from "./pi-runtime-limits.js";
+import { splitLeadingThinkBlock } from "./pi-think-tags.js";
+import { pacerTokensPerMinute } from "./token-pacer.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 /**
@@ -100,15 +102,21 @@ function localApi(): ProviderStreams {
   const api = openAICompletionsApi();
   return {
     stream: (model, context, options) =>
-      api.stream(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      splitLeadingThinkBlock(
+        api.stream(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      ),
     streamSimple: (model, context, options) =>
-      api.streamSimple(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      splitLeadingThinkBlock(
+        api.streamSimple(model, context, { ...options, fetch: localModelFetch(options?.fetch) }),
+      ),
   };
 }
 
 export function localProvider(): Provider | undefined {
   const ids = localModelIds();
   if (!ids.length) return undefined;
+  // Fail on a bad pacing limit with the other token limits, not on the first model call.
+  pacerTokensPerMinute(LOCAL_PROVIDER_ID);
   return createProvider({
     id: LOCAL_PROVIDER_ID,
     name: "Local (Ollama / LM Studio)",
