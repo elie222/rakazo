@@ -107,6 +107,7 @@ function botSecretDeps(seed: Row[] = []) {
     // Counted before a prepared value that was never committed is deleted from the store.
     secret: { count: vi.fn(async () => 0) },
     botSecret: { count: vi.fn(async () => 0) },
+    tailnetConnection: { count: vi.fn(async () => 0) },
     integrationProviderConfig: { count: vi.fn(async () => 0) },
     spaceSettingOverride: {
       findUnique: vi.fn<() => Promise<{ setting: string } | null>>(async () => null),

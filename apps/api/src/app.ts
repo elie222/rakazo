@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -46,6 +48,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
+  createTailscaledNodeHost,
   createTicketChangeNotifier,
   drainRuns,
   EmailEmulator,
@@ -73,6 +76,7 @@ import {
   StripeBillingProvider,
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
+  TailnetService,
   UserDeviceHub,
   UserDevices,
   userDeviceForwardSecret,
@@ -328,6 +332,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // The queue is built from this client below; a secret dropped before then gets no retry.
   let secretCleanupJobs: JobPublisher | undefined;
   prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
+  // Bot nodes on members' tailnets run in this process; without tailscaled the feature says why.
+  const tailnet = new TailnetService({
+    prisma,
+    secretStore: secrets,
+    nodeHost: await createTailscaledNodeHost(join(tmpdir(), "rakazo-tailnet")),
+  });
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
@@ -1210,6 +1220,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
         auth.disposeOidcDiscovery();
         await userDeviceHub?.close();
+        tailnetTunnel.close();
         await oauthLogins.abortAll();
         await stopReferralEmails?.();
         await stopHomeRetention?.();
@@ -1223,6 +1234,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await botEmail?.drain?.();
         await email?.drain?.();
         await jobs.close();
+        await tailnet.close();
         await secrets.close();
         await realtime.close();
         await mcp.close();
