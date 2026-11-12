@@ -824,7 +824,9 @@ export class PiAgentRuntime implements AgentRuntime {
                   messages: [...checkpointContext.messages],
                   tools: [],
                 },
-                messages: [inRunCheckpointPrompt()],
+                messages: [
+                  inRunCheckpointPrompt(inRunCheckpointBudgets(contextWindow).checkpointChars),
+                ],
               };
             }
             if (checkpointPhase === "summarizing") {

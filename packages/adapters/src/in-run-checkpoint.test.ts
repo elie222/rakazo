@@ -6,6 +6,7 @@ import {
   DEFAULT_IN_RUN_CHECKPOINT_CONTEXT_FRACTION,
   inRunCheckpointBudgets,
   inRunCheckpointContextFraction,
+  inRunCheckpointPrompt,
   shouldCreateInRunCheckpoint,
 } from "./in-run-checkpoint.js";
 
@@ -169,5 +170,33 @@ describe("in-run checkpoint pressure", () => {
         contextWindow: 2_048,
       }),
     ).toThrow("without a summary");
+  });
+
+  it("uses the active window limit in the prompt and drops an older generated checkpoint", () => {
+    const budgets = inRunCheckpointBudgets(16_000);
+    expect(inRunCheckpointPrompt(budgets.checkpointChars).content).toContain(
+      `under ${budgets.checkpointChars} characters`,
+    );
+
+    const first = compactedInRunContext({
+      source: {
+        tools: [],
+        messages: [{ role: "user", content: "Keep the original request.", timestamp: 1 }],
+      },
+      tools: [],
+      summary: "First checkpoint is now stale.",
+      contextWindow: 16_000,
+    });
+    const second = compactedInRunContext({
+      source: first,
+      tools: [],
+      summary: "Second checkpoint is current.",
+      contextWindow: 16_000,
+    });
+
+    const wire = JSON.stringify(second.messages);
+    expect(wire).toContain("Keep the original request");
+    expect(wire).toContain("Second checkpoint is current");
+    expect(wire).not.toContain("First checkpoint is now stale");
   });
 });
