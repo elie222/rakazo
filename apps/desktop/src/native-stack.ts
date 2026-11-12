@@ -362,9 +362,10 @@ export class NativeStackController extends StackLifecycle {
     return this.services.some((service) => service.alive);
   }
 
-  /** Processes stop with the app, so only ones this session still runs need the off-switch. */
+  /** Processes stop with the app, so only ones this session still runs need the off-switch.
+   * From `up-start` on, Postgres may start before the next phase change rebuilds the menu. */
   managedStackRunning(): boolean {
-    return this.hasProcesses();
+    return this.hasProcesses() || this.current.phase === "starting";
   }
 
   /** Only processes this app started count: an orphan from a crashed launch is replaced. */
