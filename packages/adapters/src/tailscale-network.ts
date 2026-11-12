@@ -33,7 +33,8 @@ export interface TailnetNodeHost {
 
 /**
  * Tailscale's control-plane API through an admin's OAuth client. It only mints one-use, ephemeral,
- * pre-approved auth keys for the client's tag; it never reads or changes anything else.
+ * pre-approved auth keys for the client's tag; it never reads or changes anything else. It works on
+ * every plan: posture attributes are added where the client and plan allow them.
  */
 export class TailscaleApi {
   private token: { value: string; expiresAt: number } | undefined;
@@ -49,7 +50,31 @@ export class TailscaleApi {
   }
 
   /** A one-use auth key that joins one ephemeral, pre-approved node with the client's tag. */
+  /**
+   * Node attributes need the devices:posture_attributes scope and a Premium or Enterprise plan.
+   * Once Tailscale refuses a key with them and accepts it without, this client's keys carry none.
+   */
+  private attributesRefused = false;
+
+  /** A one-use auth key that joins one ephemeral, pre-approved node with the client's tag. */
   async createNodeKey(
+    input: { description: string; attributes: Record<string, string>; ttlSeconds?: number },
+    signal: AbortSignal,
+  ): Promise<{ id: string; key: string }> {
+    const attributes = this.attributesRefused ? {} : input.attributes;
+    try {
+      return await this.mintKey({ ...input, attributes }, signal);
+    } catch (error) {
+      const refused = error instanceof PrivateNetworkError && error.code === "permission";
+      if (!refused || Object.keys(attributes).length === 0) throw error;
+      // A refusal for any other reason (the tag) refuses the plain key too, and reports that.
+      const key = await this.mintKey({ ...input, attributes: {} }, signal);
+      this.attributesRefused = true;
+      return key;
+    }
+  }
+
+  private async mintKey(
     input: { description: string; attributes: Record<string, string>; ttlSeconds?: number },
     signal: AbortSignal,
   ): Promise<{ id: string; key: string }> {
@@ -66,7 +91,9 @@ export class TailscaleApi {
                 ephemeral: true,
                 preauthorized: true,
                 tags: [this.config.tag],
-                nodeAttributes: input.attributes,
+                ...(Object.keys(input.attributes).length > 0
+                  ? { nodeAttributes: input.attributes }
+                  : {}),
               },
             },
           },
@@ -85,7 +112,7 @@ export class TailscaleApi {
     return { id: body.id, key: body.key };
   }
 
-  /** Mint a short key with node attributes, which proves the scopes and tag, then revoke it. */
+  /** Mint a short key, which proves the scope and tag, then revoke it. Attributes are optional. */
   async verify(signal: AbortSignal): Promise<void> {
     const key = await this.createNodeKey(
       { description: "rakazo check", attributes: { "custom:rakazoCheck": "1" }, ttlSeconds: 60 },
@@ -180,7 +207,7 @@ export class TailscaleApi {
     if (response.status === 400 || response.status === 403) {
       return new PrivateNetworkError(
         "permission",
-        `This OAuth client can't create keys for ${this.config.tag}. Give it the auth_keys and devices:posture_attributes scopes and that tag.${detail ? ` Tailscale said: ${detail}` : ""}`,
+        `This OAuth client can't create keys for ${this.config.tag}. Give it the auth_keys scope and that tag.${detail ? ` Tailscale said: ${detail}` : ""}`,
       );
     }
     return new PrivateNetworkError(

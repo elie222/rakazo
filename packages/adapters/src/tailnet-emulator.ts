@@ -39,6 +39,8 @@ export class TailscaleApiEmulator {
   private readonly tokens = new Map<string, EmulatedClient>();
   /** Answer every request with this status instead, for outage tests. */
   failWith: number | undefined;
+  /** Custom posture attributes are a Premium and Enterprise feature; false is a free plan. */
+  customAttributes = true;
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -138,6 +140,9 @@ export class TailscaleApiEmulator {
       !client.scopes.includes("devices:posture_attributes")
     ) {
       return json(403, { message: "missing scope devices:posture_attributes" });
+    }
+    if (Object.keys(attributes).length > 0 && !this.customAttributes) {
+      return json(403, { message: "custom posture attributes are not available on this plan" });
     }
     const key: EmulatedKey = {
       id: `k${randomUUID().replaceAll("-", "").slice(0, 12)}CNTRL`,
