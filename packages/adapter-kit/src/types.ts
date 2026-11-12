@@ -878,6 +878,15 @@ export interface BackgroundJobPayloads {
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
+  /** Retry a failed post-clear purge without relying on deleted thread/run rows. */
+  "memory.purge-history": {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    generations: number[];
+    connectionIdentity: string;
+  };
   /**
    * `messageIds`: what the person sent while the run worked, which the run also answered.
    * `pending`: cleanup captured before submission. `unconfirmed` keeps checking through the

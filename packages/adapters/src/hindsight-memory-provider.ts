@@ -55,6 +55,7 @@ const EXTRA_BANK_COOLDOWN_MS = 5 * 60_000;
 const EXTRA_BANK_RECALL_TIMEOUT_MS = HINDSIGHT_RECALL_TIMEOUT_MS * 0.8;
 /** Purge deletes a conversation's per-turn documents a listed page at a time, at most this many pages. */
 const MAX_PURGE_PAGES = 1_000;
+const PURGE_BATCH_SIZE = 10;
 const RECALL_BUDGETS = ["low", "mid", "high"];
 const DEFAULT_RECALL_BUDGET = "mid";
 /** With skipUnrelated, the server drops results its reranker scores below this. */
@@ -477,7 +478,15 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     for (const [index, bank] of banks.entries()) {
       const answer = found[index];
       if (!answer) continue;
-      if (!answer.ok) continue;
+      if (!answer.ok) {
+        if (index < written.length && !context.signal.aborted) {
+          getLogger().warn("Hindsight recall failed for a Space memory bank", {
+            bank,
+            error: answer.error,
+          });
+        }
+        continue;
+      }
       const external = !written.includes(bank);
       for (const memory of answer.value) {
         results.push({
@@ -667,9 +676,14 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
         if (!ids.ok) return ids;
         if (!ids.value.length) return { ok: true, value: undefined };
         if (page === MAX_PURGE_PAGES) break;
-        for (const id of ids.value) {
-          const removed = await deleteHindsightDocument(connection.value, bank, id, signal);
-          if (!removed.ok) return removed;
+        for (let offset = 0; offset < ids.value.length; offset += PURGE_BATCH_SIZE) {
+          const removed = await Promise.all(
+            ids.value
+              .slice(offset, offset + PURGE_BATCH_SIZE)
+              .map((id) => deleteHindsightDocument(connection.value, bank, id, signal)),
+          );
+          const failed = removed.find((result) => !result.ok);
+          if (failed) return failed;
         }
       }
       return { ok: false, error: "Hindsight still lists documents of this conversation." };

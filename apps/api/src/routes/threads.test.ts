@@ -52,6 +52,7 @@ describe("purgeClearedThreadMemory", () => {
   const purgeHistory = vi.fn();
   const depsWith = (provider: object) =>
     ({
+      jobs: { enqueue: vi.fn(async () => undefined) },
       prisma: { run: { findMany } },
       memoryProviders: { resolve: vi.fn().mockResolvedValue({ provider }) },
     }) as unknown as RouterDeps;
@@ -134,5 +135,24 @@ describe("purgeClearedThreadMemory", () => {
       "bot-1",
       "bot-2",
     ]);
+  });
+
+  it("queues failed purges with the original connection and cleared generations", async () => {
+    const deps = depsWith({ ...byThread, connectionIdentity: "connection-1" });
+    purgeHistory.mockResolvedValueOnce({ ok: false, error: "cleanup deadline" });
+    await purgeClearedThreadMemory(deps, actor, group, 3);
+    expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        name: "memory.purge-history",
+        maxAttempts: 12,
+        payload: {
+          ...actor,
+          botId: "bot-1",
+          threadId: "thread-1",
+          generations: [2, 3],
+          connectionIdentity: "connection-1",
+        },
+      }),
+    );
   });
 });

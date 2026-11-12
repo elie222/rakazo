@@ -47,6 +47,28 @@ vi.mock("./messaging-delivery.js", () => ({
 const owner = { spaceId: "space-1", userId: "user-1" };
 const owned = () => ({ findUnique: vi.fn(async () => owner) });
 
+it("runs post-clear memory purge as its captured tenant after source rows are deleted", async () => {
+  const purgeHistory = vi.fn(async () => {
+    expect(currentDbContext()).toEqual({ kind: "tenant", ...owner });
+    return { ok: true };
+  });
+  const handlers = createBackgroundJobHandlers({
+    memoryProviders: {
+      resolve: vi.fn(async () => ({
+        provider: { connectionIdentity: "connection-1", purgeHistory },
+      })),
+    },
+  } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+  await handlers["memory.purge-history"]({
+    ...owner,
+    botId: "bot-1",
+    threadId: "deleted-thread",
+    generations: [2, 3],
+    connectionIdentity: "connection-1",
+  });
+  expect(purgeHistory).toHaveBeenCalledOnce();
+});
+
 describe("createBackgroundJobHandlers", () => {
   it("delivers directly when shutdown rejects a completed run's mirror job", async () => {
     const enqueueError = new Error("Background job publisher is closing");

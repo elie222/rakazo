@@ -4,6 +4,7 @@ import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   historyCompactJobKey,
+  memoryPurgeHistoryJob,
   memoryRetainTurnJob,
   messagingDeliverJob,
   parseBackgroundJob,
@@ -23,6 +24,7 @@ function handlers(): BackgroundJobHandlers {
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
+    "memory.purge-history": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
@@ -34,6 +36,24 @@ function handlers(): BackgroundJobHandlers {
 }
 
 describe("background job contracts", () => {
+  it("validates and dispatches captured memory cleanup with native retry limits", async () => {
+    const payload = {
+      spaceId: "space-1",
+      userId: "user-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      generations: [2, 3],
+      connectionIdentity: "connection-1",
+    };
+    const job = memoryPurgeHistoryJob(payload);
+    expect(job).toMatchObject({ name: "memory.purge-history", payload, maxAttempts: 12 });
+    const target = handlers();
+    await dispatchBackgroundJob(target, job.name, job.payload);
+    expect(target["memory.purge-history"]).toHaveBeenCalledWith(payload);
+    expect(() =>
+      parseBackgroundJob("memory.purge-history", { ...payload, connectionIdentity: undefined }),
+    ).toThrow();
+  });
   it("validates and dispatches messaging.deliver", async () => {
     const target = handlers();
     await dispatchBackgroundJob(target, "messaging.deliver", { runId: "run-1" });

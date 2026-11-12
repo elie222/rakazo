@@ -33,6 +33,7 @@ import {
   retainRunConversation,
   settleRetainedConversation,
 } from "./conversation-memory.js";
+import { retryConversationMemoryPurge } from "./conversation-memory-cleanup.js";
 import type { createRunExecutor } from "./executor.js";
 import type { ExpoPushProvider } from "./expo-push.js";
 import { compactHistory } from "./history-compaction.js";
@@ -273,6 +274,10 @@ export function createBackgroundJobHandlers(deps: {
         payload.userId,
       );
     }),
+    "memory.purge-history": asOwner(
+      async (payload: BackgroundJobPayloads["memory.purge-history"]) => payload,
+      async (payload) => retryConversationMemoryPurge(deps, payload),
+    ),
     "memory.retain-turn": asOwner(
       async (payload: BackgroundJobPayloads["memory.retain-turn"]) =>
         // Source was captured from the run before submission; group deletion may remove that row.

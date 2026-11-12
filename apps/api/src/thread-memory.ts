@@ -4,7 +4,7 @@ import type { RouterDeps } from "./router.js";
 import { computerContext } from "./routes/shared.js";
 
 export function purgeClearedThreadMemory(
-  deps: Pick<RouterDeps, "prisma" | "memoryProviders">,
+  deps: Pick<RouterDeps, "prisma" | "memoryProviders" | "jobs">,
   actor: Actor,
   target: Parameters<typeof purgeClearedConversationMemory>[2],
   historyCompactionGeneration: number,

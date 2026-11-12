@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AdapterContext, SemanticMemoryConversationRequest } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HINDSIGHT_CLOUD_BASE_URL } from "./hindsight-client.js";
 import {
@@ -368,6 +369,8 @@ describe("Hindsight recall", () => {
   });
 
   it("never cools down the Space's shared bank after a failed recall", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     const fake = hindsightFake({ recall: { [OWN_BANK]: [], [TEAM_BANK]: "down" } });
     const memory = provider(fake.fetch);
     const timeout = vi.spyOn(AbortSignal, "timeout");
@@ -381,8 +384,14 @@ describe("Hindsight recall", () => {
         TEAM_BANK,
       ]);
       expect(timeout.mock.calls).toEqual([[15_000], [15_000], [15_000], [15_000]]);
+      expect(
+        sink.events.filter(
+          (event) => event.message === "Hindsight recall failed for a Space memory bank",
+        ),
+      ).toHaveLength(2);
     } finally {
       timeout.mockRestore();
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
   });
 
@@ -1016,13 +1025,30 @@ describe("Hindsight conversations", () => {
     const fake = hindsightFake({
       turnDocuments: { bank: OWN_BANK, session: SESSION, count: 250 },
     });
+    let active = 0;
+    let peak = 0;
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const perTurn =
+        init?.method === "DELETE" && String(input).includes("/documents/rakazo-turn-");
+      if (perTurn) {
+        active++;
+        peak = Math.max(peak, active);
+        await Promise.resolve();
+      }
+      try {
+        return await fake.fetch(input, init);
+      } finally {
+        if (perTurn) active--;
+      }
+    };
     await expect(
-      provider(fake.fetch).purgeHistory(
+      provider(fetch).purgeHistory(
         { botId: "bot-1", threadId: "thread-1", generations: [3] },
         context,
       ),
     ).resolves.toEqual({ ok: true, value: undefined });
     expect([...(fake.documents.get(OWN_BANK) ?? [])]).toEqual([]);
+    expect(peak).toBe(10);
   });
 });
 

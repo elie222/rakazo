@@ -1,4 +1,5 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, BackgroundJobPayloads, JobPublisher } from "@rakazo/adapter-kit";
+import { memoryPurgeHistoryJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
@@ -6,11 +7,15 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 /** Clear removes conversation-derived memory (summaries and learned turns) of the cleared chat's
  * generation, and again of the one before it. clearThread returns the generation from before its
  * increment, so the new chat's turns use the next one and are never purged here. Durable memories
- * remain in their Space-private containers. Best effort throughout: the conversation rows are
- * already deleted, so failing the clear here would help nothing — a failed purge only leaves
- * stale memory recallable. */
+ * remain in their Space-private containers. Failed purges retry through the existing queue when
+ * a stable connection identity is available. This remains best effort: the rows are already
+ * deleted, and a crash or queue outage before retry publication can leave stale memory. */
 export async function purgeClearedConversationMemory(
-  deps: { prisma: PrismaClient; memoryProviders: MemoryProviderResolver },
+  deps: {
+    prisma: PrismaClient;
+    memoryProviders: MemoryProviderResolver;
+    jobs: Pick<JobPublisher, "enqueue">;
+  },
   context: AdapterContext,
   target:
     | { kind: "bot"; botId: string; threadId: string }
@@ -46,24 +51,58 @@ export async function purgeClearedConversationMemory(
   }
   await Promise.all(
     botIds.map(async (botId) => {
+      const request = {
+        botId,
+        threadId: target.threadId,
+        generations: [Math.max(0, historyCompactionGeneration - 1), historyCompactionGeneration],
+      };
       try {
-        const purged = await configuredMemory.provider.purgeHistory(
-          {
-            botId,
-            threadId: target.threadId,
-            generations: [
-              Math.max(0, historyCompactionGeneration - 1),
-              historyCompactionGeneration,
-            ],
-          },
-          { ...context, botId, operationId: `thread-clear:${target.threadId}` },
-        );
-        if (!purged.ok) {
-          getLogger().error("semantic memory purge after thread clear failed", purged.error);
-        }
+        const purged = await configuredMemory.provider.purgeHistory(request, {
+          ...context,
+          botId,
+          operationId: `thread-clear:${target.threadId}`,
+        });
+        if (!purged.ok) throw new Error(purged.error);
       } catch (error) {
         getLogger().error("semantic memory purge after thread clear failed", error);
+        // Providers without a stable connection identity cannot safely retry after replacement.
+        const connectionIdentity = configuredMemory.provider.connectionIdentity;
+        if (!connectionIdentity) return;
+        await deps.jobs
+          .enqueue(
+            memoryPurgeHistoryJob({
+              ...request,
+              spaceId: context.spaceId,
+              userId: context.userId,
+              connectionIdentity,
+            }),
+          )
+          .catch((enqueueError) =>
+            getLogger().error("semantic memory purge retry could not be queued", enqueueError),
+          );
       }
     }),
   );
+}
+
+/** The queue retries failures; a revoked or replaced connection must never receive the old purge. */
+export async function retryConversationMemoryPurge(
+  deps: { memoryProviders: MemoryProviderResolver },
+  payload: BackgroundJobPayloads["memory.purge-history"],
+): Promise<void> {
+  const configured = await deps.memoryProviders.resolve(payload.spaceId);
+  if (!configured || configured.provider.connectionIdentity !== payload.connectionIdentity) return;
+  const operationId = `memory.purge-history:${payload.threadId}:${payload.botId}`;
+  const purged = await configured.provider.purgeHistory(
+    { botId: payload.botId, threadId: payload.threadId, generations: payload.generations },
+    {
+      spaceId: payload.spaceId,
+      userId: payload.userId,
+      botId: payload.botId,
+      operationId,
+      traceId: operationId,
+      signal: new AbortController().signal,
+    },
+  );
+  if (!purged.ok) throw new Error(purged.error);
 }

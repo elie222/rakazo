@@ -581,6 +581,10 @@ describe("destroyBot", () => {
     "dissolves groups and purges only their learned conversations (deleteMemories=%s)",
     async (deleteMemories) => {
       const preservePersonal = vi.fn();
+      const directThread = vi.fn(async () => ({
+        id: "direct-thread",
+        historyCompactionGeneration: 7,
+      }));
       const purgeHistory = vi.fn<SemanticMemoryProvider["purgeHistory"]>(async () => ({
         ok: deleteMemories,
         value: undefined,
@@ -633,6 +637,7 @@ describe("destroyBot", () => {
           externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
           message: { findMany: vi.fn(async () => []) },
           $queryRaw: queryRaw,
+          thread: { findUnique: directThread },
           chatGroup: {
             findMany: vi.fn().mockResolvedValue([
               {
@@ -786,7 +791,11 @@ describe("destroyBot", () => {
         { botId: "bot-1", threadId: "thread-3", generations: [4, 5] },
         { botId: "bot-2", threadId: "thread-3", generations: [4, 5] },
         { botId: "bot-3", threadId: "thread-3", generations: [4, 5] },
+        ...(deleteMemories
+          ? [{ botId: "bot-1", threadId: "direct-thread", generations: [6, 7] }]
+          : []),
       ]);
+      expect(directThread).toHaveBeenCalledTimes(deleteMemories ? 1 : 0);
       expect(purgeHistory.mock.invocationCallOrder[0]!).toBeGreaterThan(
         deleteGroups.mock.invocationCallOrder[0]!,
       );

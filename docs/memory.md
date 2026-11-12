@@ -40,9 +40,14 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   Shared scope, bots also share one memory for the Space, including learned direct-chat turns.
   Bots learn from their conversations (their
   own chats, group chats, and messages between bots) unless you turn off **Learn from
-  conversations**. Cleanup requests share a ten-second deadline. Learning and chat-clear cleanup are
-  best effort: provider outages or writes still pending after the polling window can leave gaps or
-  stale memories. If a submission response is uncertain, cleanup checks continue through the bounded window; unchanged conversations require only a local generation check, without resolving provider credentials. A later refusal does not prove an earlier attempt stored nothing. Disconnecting or changing
+  conversations**. Each cleanup attempt has a ten-second deadline and deletes per-turn documents
+  in bounded parallel batches. Failed cleanup is retried up to twelve times through the existing
+  queue, using the captured connection identity. Cleanup remains best effort if publication fails
+  or the process stops before the retry is queued; outages or writes pending beyond the polling
+  window can leave gaps or stale memories. If a submission response is uncertain, cleanup checks
+  continue through the bounded window. Unchanged conversations require only a local generation
+  check without resolving credentials; a later refusal cannot prove an earlier attempt stored
+  nothing. Disconnecting or changing
   the connection stops cleanup on the old service; it does not delete data there. Bots can't forget a
   single memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks only through explicit recall, never automatic context, and never write to them. Names beginning with

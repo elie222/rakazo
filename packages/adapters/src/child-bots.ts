@@ -445,6 +445,14 @@ export async function destroyBot(
       if (locked.length === 0) return null;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
       const { deleteMemories } = options;
+      // The thread cascades with the bot; retain its namespace only when deletion was requested.
+      const directMemory =
+        deleteMemories && deps.memoryProviders
+          ? await tx.thread.findUnique({
+              where: { botId: bot.id },
+              select: { id: true, historyCompactionGeneration: true },
+            })
+          : null;
       const botArtifacts = await tx.artifact.findMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
         select: { storageKey: true },
@@ -497,6 +505,7 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        directMemory,
         groupMemory: groupCleanup.memory,
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
@@ -528,7 +537,7 @@ export async function destroyBot(
     }),
   );
   if (deps.memoryProviders) {
-    const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders };
+    const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders, jobs: deps.jobs };
     await Promise.all(
       deletion.groupMemory.map((group) =>
         purgeClearedConversationMemory(
@@ -543,6 +552,14 @@ export async function destroyBot(
         ).catch((error) => getLogger().error("dissolved group memory cleanup", error)),
       ),
     );
+    if (deletion.directMemory) {
+      await purgeClearedConversationMemory(
+        memory,
+        context,
+        { kind: "bot", botId: bot.id, threadId: deletion.directMemory.id },
+        deletion.directMemory.historyCompactionGeneration,
+      ).catch((error) => getLogger().error("deleted bot conversation memory cleanup", error));
+    }
   }
   if (dedicated) {
     await recordComputerRunEnd(deps.prisma, { id: dedicated.id }, "deleted");

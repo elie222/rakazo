@@ -27,6 +27,14 @@ const payloadSchemas = {
     threadId: z.string().min(1),
     userId: z.string().min(1).optional(),
   }),
+  "memory.purge-history": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    botId: z.string().min(1),
+    threadId: z.string().min(1),
+    generations: z.array(z.number().int().min(0)).min(1),
+    connectionIdentity: z.string().min(1),
+  }),
   "memory.retain-turn": z.object({
     runId: z.string().min(1),
     messageIds: z.array(z.string().min(1)).optional(),
@@ -213,6 +221,17 @@ export function historyCompactJob(threadId: string, userId?: string): Background
     payload: userId ? { threadId, userId } : { threadId },
     replaceKey: historyCompactJobKey(threadId),
     maxAttempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+  };
+}
+
+export function memoryPurgeHistoryJob(
+  payload: BackgroundJobPayloads["memory.purge-history"],
+): BackgroundJob {
+  return {
+    name: "memory.purge-history",
+    payload,
+    replaceKey: `memory.purge-history:${JSON.stringify([payload.spaceId, payload.botId, payload.threadId, payload.generations, payload.connectionIdentity])}`,
+    maxAttempts: 12,
   };
 }
 
