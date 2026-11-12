@@ -47,6 +47,8 @@ export class InstaboxEmulator implements InstaboxApi {
   allowedSpecs = ["4/8192", "8/16384", "16/32768"];
   /** A resize whose restart fails: the computer starts again at its old size. */
   resizeFails = false;
+  /** Thrown by the next resize request before any change, as an API or transport failure is. */
+  resizeError: Error | undefined;
   private sequence = 0;
 
   async create(
@@ -127,10 +129,15 @@ export class InstaboxEmulator implements InstaboxApi {
       resize: async (spec) => {
         this.request(`resize ${id} ${spec.vcpus}/${spec.memMiB}`);
         const computer = this.require(id);
+        if (this.resizeError) throw this.resizeError;
         this.offered(spec);
         computer.state = "running";
+        // The SDK's error for a failed operation: no HTTP status, the operation named.
         if (this.resizeFails)
-          throw new InstaboxError("no host has room for that size", { code: "no_capacity" });
+          throw new InstaboxError("no host has room for that size", {
+            code: "no_capacity",
+            operationId: "op_resize",
+          });
         computer.spec = { ...spec };
       },
       commands: { run: async (command, options) => this.run(id, command, options) },

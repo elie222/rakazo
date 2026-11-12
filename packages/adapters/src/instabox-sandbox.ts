@@ -184,12 +184,10 @@ export function instaboxSdk(
       try {
         await machine.resize(want);
       } catch (error) {
-        const translated = translate(error, id);
-        if (isSandboxGoneError(translated) || translated instanceof SandboxRateLimitError)
-          throw translated;
-        // instabox starts a computer that could not take the new size again at its old one.
-        if (translated instanceof SandboxSizeUnavailableError) throw translated;
-        throw new SandboxSizeUnavailableError("not_offered", { cause: error });
+        // instabox starts a computer whose resize operation failed again at its old size.
+        if (isFailedOperation(error))
+          throw new SandboxSizeUnavailableError("not_offered", { cause: error });
+        throw translate(error, id);
       }
     },
     connect: async (id) => {
@@ -508,6 +506,15 @@ function translate(error: unknown, id?: string): unknown {
   if (id && status === 404 && !isInsideComputerNotFound(error))
     return sandboxNotFoundError(`instabox sandbox ${id} not found`, { cause: error });
   return error;
+}
+
+/** The SDK's error for an operation that ran and failed: no HTTP status, the operation named. */
+function isFailedOperation(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { status, operationId } = error as { status?: unknown; operationId?: unknown };
+  return (
+    status === 0 && typeof operationId === "string" && errorCode(error) !== "operation_timeout"
+  );
 }
 
 function specOf(size: ComputerSize): InstaboxSpec {

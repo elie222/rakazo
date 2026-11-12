@@ -1,3 +1,4 @@
+import { InstaboxError } from "@insforge/instabox-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { INSTABOX_COMPUTER_TEMPLATE } from "./instabox-sandbox.js";
 import { emulatedInstabox, InstaboxEmulator } from "./instabox-sandbox.test-support.js";
@@ -285,5 +286,14 @@ describe("instabox computer sizes", () => {
     expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 4, memMiB: 8192 });
     // The lifecycle then starts it at the size it has.
     await expect(provider.provision(reconnect, ctx)).resolves.toMatchObject({ fresh: false });
+  });
+
+  it("surfaces a resize failure that is not about the size instead of falling back", async () => {
+    const { emulator, provider, computer } = await started();
+    await provider.stop(computer, ctx);
+    const outage = new InstaboxError("upstream unavailable", { status: 503, code: "unavailable" });
+    emulator.resizeError = outage;
+    const reconnect = { ...request, providerRef: computer.id, providerKind: "instabox" as const };
+    await expect(provider.provision({ ...reconnect, size: "large" }, ctx)).rejects.toBe(outage);
   });
 });
