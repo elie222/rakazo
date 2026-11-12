@@ -247,7 +247,13 @@ async function offerDockerMove(userStackDir: string): Promise<StackChoice> {
     cancelId: 1,
   });
   const choice = response === 0 ? "native" : "docker";
-  await writeStackChoice(userStackDir, choice);
+  try {
+    await writeStackChoice(userStackDir, choice);
+  } catch (error) {
+    // A move that cannot be remembered would be offered again mid-way; stay on Docker for now.
+    reportDesktopError(error, "desktop.startup");
+    return "docker";
+  }
   return choice;
 }
 /** A public health response is not enough: another checkout may own the same fixed port. */
