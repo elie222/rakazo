@@ -21,6 +21,7 @@ import re
 import sys
 import subprocess
 from pathlib import Path
+from urllib.parse import urlencode
 
 START = "<!-- rakazo-pr-screenshots:start -->"
 END = "<!-- rakazo-pr-screenshots:end -->"
@@ -93,8 +94,19 @@ def api(path: str, *, paginate: bool = False):
     if paginate:
         command += ["--paginate", "--slurp"]
     return json.loads(subprocess.run(
-        command, check=True, capture_output=True, text=True, timeout=30,
+        command, check=True, stdout=subprocess.PIPE, text=True, timeout=30,
     ).stdout)
+
+
+def pull_requests(repo: str, owner: str, branch: str, sha: str) -> list[int]:
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("Expected a commit SHA")
+    query = urlencode({"state": "open", "head": f"{owner}:{branch}", "per_page": 100})
+    pages = api(f"repos/{repo}/pulls?{query}", paginate=True)
+    return sorted({
+        pr["number"] for page in pages for pr in page
+        if pr["state"] == "open" and pr["head"]["sha"] == sha
+    })
 
 
 SOURCE_WORKFLOWS = {
@@ -245,6 +257,9 @@ def splice(body: str, new_section: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) == 6 and argv[1] == "pulls":
+        print(json.dumps(pull_requests(*argv[2:]), separators=(",", ":")))
+        return 0
     if len(argv) == 3 and argv[1] == "marker":
         print(commit_marker(argv[2]))
         return 0

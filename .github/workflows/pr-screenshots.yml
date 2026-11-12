@@ -335,5 +335,5 @@ jobs:
         with:
           name: pr-screenshot-reviewed-${{ needs.screenshots.outputs.pr }}-${{ inputs.head_sha }}
           path: ${{ runner.temp }}/pr-screenshots-out/complete.txt
-          retention-days: 3
+          retention-days: 90
           overwrite: true

@@ -205,6 +205,11 @@ jobs:
     outputs:
       pulls: ${{ steps.pr.outputs.pulls }}
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
       - name: Find current pull requests
         id: pr
         env:
@@ -213,8 +218,8 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          pulls=$(gh api -X GET --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 | \
-            jq -c --arg sha "$HEAD_SHA" '[.[][] | select(.head.sha == $sha) | .number]')
+          set -euo pipefail
+          pulls=$(python3 .github/scripts/pr-screenshots.py pulls "$GITHUB_REPOSITORY" "$HEAD_OWNER" "$HEAD_BRANCH" "$HEAD_SHA")
           echo "pulls=$pulls" >> "$GITHUB_OUTPUT"
       # Even a skipped or failed publication is terminal: the agent can capture missing views.
       - run: |
@@ -224,12 +229,12 @@ jobs:
         with:
           name: pr-screenshot-e2e-${{ github.event.workflow_run.head_sha }}
           path: ${{ runner.temp }}/screenshot-ready/ready.txt
-          retention-days: 3
+          retention-days: 90
           overwrite: true
 
   screenshots:
     needs: screenshot-source
-    if: always() && needs.screenshot-source.result == 'success' && needs.screenshot-source.outputs.pulls != '[]'
+    if: always() && needs.screenshot-source.result == 'success' && needs.screenshot-source.outputs.pulls != '[]' && needs.screenshot-source.outputs.pulls != ''
     strategy:
       fail-fast: false
       matrix:

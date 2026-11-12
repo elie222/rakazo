@@ -58,7 +58,8 @@ the current commit's published E2E gallery before capturing missing views. Image
 alone do not prove coverage; that decision stays with the model.
 
 Preview deployment and E2E publication each call the shared screenshot workflow
-after uploading a short-lived completion marker. The first caller exits if the
+after uploading a completion marker retained for 90 days (longer than the
+maximum workflow lifetime). The first caller exits if the
 other source is still running; the second starts the agent. No runner polls or
 sleeps. Readiness uses exact commit SHAs and verifies the marker's source workflow,
 so PR code cannot forge completion by uploading an artifact with the same name.
@@ -74,8 +75,8 @@ so publishing does not remove images used to establish coverage.
 
 Publication skips description updates when the resulting content is unchanged.
 
-Each caller fans out across the current pull requests found through the source
-owner and branch, including forks. The queued agent rechecks the PR head before
+Each caller uses the same checked discovery helper and fans out across the
+current pull requests found through the source owner and branch, including forks. The queued agent rechecks the PR head before
 preparing a browser or restoring a login. Retention deduplicates image URLs and
 rejects merged sets beyond the publication limit. The gallery, publisher and
 Python reader share the commit-marker template in the testkit.

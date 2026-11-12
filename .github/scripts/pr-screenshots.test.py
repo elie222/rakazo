@@ -233,6 +233,26 @@ class EfficiencyTest(unittest.TestCase):
         self.assertLessEqual(shots.json_size(shots.prompt("Do it.", pr, "x" * 200_000)), shots.MAX_PROMPT_JSON)
 
 
+class PullRequestDiscoveryTest(unittest.TestCase):
+    sha = "a" * 40
+
+    def test_all_current_fork_pull_requests_are_selected_across_pages(self):
+        pages = [[{"number": 2, "state": "open", "head": {"sha": self.sha}}], [
+            {"number": 1, "state": "open", "head": {"sha": self.sha}},
+            {"number": 3, "state": "closed", "head": {"sha": self.sha}},
+            {"number": 4, "state": "open", "head": {"sha": "b" * 40}},
+        ]]
+        with mock.patch.object(shots, "api", return_value=pages) as api:
+            self.assertEqual(shots.pull_requests("example/repo", "contributor", "feature/test", self.sha), [1, 2])
+            path = api.call_args.args[0]
+            self.assertIn("head=contributor%3Afeature%2Ftest", path)
+            self.assertTrue(api.call_args.kwargs["paginate"])
+
+    def test_api_failure_is_not_an_empty_successful_matrix(self):
+        with mock.patch.object(shots, "api", side_effect=shots.subprocess.CalledProcessError(1, "gh")), self.assertRaises(shots.subprocess.CalledProcessError):
+            shots.pull_requests("example/repo", "contributor", "branch", self.sha)
+
+
 class SourcesReadyTest(unittest.TestCase):
     sha = "a" * 40
     repo = "example/repo"
