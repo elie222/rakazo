@@ -124,7 +124,7 @@ msgstr "{0} KB"
 #. placeholder {0}: usd(creditsUsd)
 #: apps/web/src/components/PlanUsage.tsx
 msgid "{0} left"
-msgstr ""
+msgstr "Noch {0}"
 
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
@@ -149,7 +149,7 @@ msgstr "{0}, pausiert, bis du sie einschaltest"
 #. placeholder {0}: Math.round(used)
 #: apps/web/src/components/PlanUsage.tsx
 msgid "{0}% used"
-msgstr ""
+msgstr "{0} % verbraucht"
 
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -173,7 +173,7 @@ msgstr "{amount} insgesamt"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{amount} left"
-msgstr ""
+msgstr "Noch {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
@@ -689,7 +689,7 @@ msgstr "{toolCount, plural, one {# Tool} other {# Tools}}"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{used}% used"
-msgstr ""
+msgstr "{used} % verbraucht"
 
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
@@ -4443,7 +4443,7 @@ msgstr "Gelöscht"
 
 #: apps/web/src/pages/shell/transcript-member-name.ts
 msgid "Deleted bot"
-msgstr ""
+msgstr "Gelöschter Bot"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -5417,7 +5417,7 @@ msgstr "Gruppen-Updates"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
-msgstr ""
+msgstr "Gruppen, in denen weniger als zwei Bots bleiben, werden ebenfalls gelöscht, einschließlich ihrer Nachrichten, Dateien und Seiten."
 
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -8402,7 +8402,7 @@ msgstr "Zurücksetzen"
 #. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Resets {0}"
-msgstr ""
+msgstr "Wird am {0} zurückgesetzt"
 
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
@@ -8411,7 +8411,7 @@ msgstr "Wird am {date} zurückgesetzt."
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/PlanUsage.tsx
 msgid "Resets in {reset}"
-msgstr ""
+msgstr "Wird in {reset} zurückgesetzt"
 
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -9039,7 +9039,7 @@ msgstr "Server-URL"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/PlanUsage.tsx
 msgid "Session"
-msgstr ""
+msgstr "Sitzung"
 
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
@@ -9936,11 +9936,11 @@ msgstr "Zeitüberschreitung der Verbindung."
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
-msgstr ""
+msgstr "Die Gruppe {names} wird ebenfalls gelöscht, einschließlich ihrer Nachrichten, Dateien und Seiten."
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "The groups {names} will be deleted too, including their messages, files, and pages."
-msgstr ""
+msgstr "Die Gruppen {names} werden ebenfalls gelöscht, einschließlich ihrer Nachrichten, Dateien und Seiten."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10927,7 +10927,7 @@ msgstr "Quelle ansehen"
 
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "View usage"
-msgstr ""
+msgstr "Nutzung anzeigen"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx

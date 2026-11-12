@@ -124,7 +124,7 @@ msgstr "{0} KB"
 #. placeholder {0}: usd(creditsUsd)
 #: apps/web/src/components/PlanUsage.tsx
 msgid "{0} left"
-msgstr ""
+msgstr "剩余 {0}"
 
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/ArtifactFileCard.tsx
@@ -149,7 +149,7 @@ msgstr "{0}，开启前保持暂停"
 #. placeholder {0}: Math.round(used)
 #: apps/web/src/components/PlanUsage.tsx
 msgid "{0}% used"
-msgstr ""
+msgstr "已用 {0}%"
 
 #: apps/web/src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -173,7 +173,7 @@ msgstr "总计 {amount}"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{amount} left"
-msgstr ""
+msgstr "剩余 {amount}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
@@ -689,7 +689,7 @@ msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{used}% used"
-msgstr ""
+msgstr "已用 {used}%"
 
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
@@ -4443,7 +4443,7 @@ msgstr "已删除"
 
 #: apps/web/src/pages/shell/transcript-member-name.ts
 msgid "Deleted bot"
-msgstr ""
+msgstr "已删除的 Bot"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -5417,7 +5417,7 @@ msgstr "合并更新"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Groups left with fewer than two bots are deleted too, including their messages, files, and pages."
-msgstr ""
+msgstr "Bot 少于两个的群组也会被删除，包括其中的消息、文件和页面。"
 
 #: apps/mobile/components/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -8402,7 +8402,7 @@ msgstr "重置"
 #. placeholder {0}: formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Resets {0}"
-msgstr ""
+msgstr "{0} 重置"
 
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
@@ -8411,7 +8411,7 @@ msgstr "将于 {date} 重置。"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/PlanUsage.tsx
 msgid "Resets in {reset}"
-msgstr ""
+msgstr "{reset}后重置"
 
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -9039,7 +9039,7 @@ msgstr "服务器 URL"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/PlanUsage.tsx
 msgid "Session"
-msgstr ""
+msgstr "会话"
 
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "Set"
@@ -9936,11 +9936,11 @@ msgstr "连接超时。"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
-msgstr ""
+msgstr "群组 {names} 也会被删除，包括其中的消息、文件和页面。"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "The groups {names} will be deleted too, including their messages, files, and pages."
-msgstr ""
+msgstr "群组 {names} 也会被删除，包括其中的消息、文件和页面。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -10927,7 +10927,7 @@ msgstr "查看源代码"
 
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "View usage"
-msgstr ""
+msgstr "查看用量"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
