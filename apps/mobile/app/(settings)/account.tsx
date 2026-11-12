@@ -268,6 +268,7 @@ export default function Account() {
             accessibilityRole="button"
             chevron="right"
             detail={me?.email && account.label !== me.email ? me.email : undefined}
+            disabled={signingOut}
             prominent
             title={account.label}
             onPress={() => router.push("/profile")}
