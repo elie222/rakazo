@@ -105,10 +105,22 @@ export default function General() {
     });
   }
 
+  // Read on every visit, so a failed read retries when the page is shown again.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc("me")
+        .then((next) => {
+          if (active) setMe(next);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
   useEffect(() => {
-    void rpc("me")
-      .then(setMe)
-      .catch(() => undefined);
     if (Platform.OS === "android") {
       void getLiveNotificationSettings()
         .then(setNotifications)

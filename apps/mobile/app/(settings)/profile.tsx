@@ -95,10 +95,22 @@ export default function Profile() {
   }, [t]);
   const trustedSites = useTrustedLinkSites();
 
+  // Read on every visit, so a failed read retries when the page is shown again.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc("me")
+        .then((next) => {
+          if (active) setMe(next);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
   useEffect(() => {
-    void rpc("me")
-      .then(setMe)
-      .catch(() => undefined);
     void fetchAccountSecurity()
       .then(setSecurity)
       .catch(() => undefined);
