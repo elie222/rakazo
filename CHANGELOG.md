@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Optional self-host agent loop flags (documented in `docs/agent-loop.md`): continue runs while scratchpad open work remains, non-blocking question/secret cards when other work is left, configurable silent tool-continuation cap and wording, and context strategy / compaction pinning for open work.
+
 ## [0.11.0] - 2026-11-12
 
 ### Security
