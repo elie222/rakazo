@@ -9,6 +9,15 @@ import { ConnectorRegistry } from "./connector-registry.js";
 const USER = "user-1";
 /** What one read may hold, in bytes, unless a test is about that. */
 const maxBytes = 1024 * 1024;
+/** A mail connection and a call's context, for a reader over a stubbed provider. */
+const CONNECTION = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
+const stubContext = () => ({
+  operationId: "x",
+  traceId: "x",
+  spaceId: "s",
+  userId: USER,
+  signal: AbortSignal.timeout(1000),
+});
 
 function rawMail(from: string, subject: string, date: Date, text = "Your code is 482913\r\n") {
   return [
@@ -64,7 +73,7 @@ describe("composioMailSource", () => {
     await expect(reader.mailbox(context)).resolves.toBe("me@example.test");
   });
 
-  it("returns the site's newest mail in the window as it was received, newest first", async () => {
+  it("lists the site's newest mail in the window, and reads each as received", async () => {
     const { client, reader, context } = setup();
     // Mail dates are whole seconds.
     const now = Math.floor(Date.now() / 1000) * 1000;
@@ -78,30 +87,35 @@ describe("composioMailSource", () => {
       fromDomain: "example.com",
       after: new Date(now - 86_400_000),
       limit: 5,
-      maxBytes,
     });
 
-    expect(messages.map((message) => new TextDecoder().decode(message.raw))).toEqual([
-      second,
-      first,
-    ]);
-    expect(messages.map((message) => message.receivedAt?.getTime())).toEqual([
-      now - 30_000,
-      now - 60_000,
+    // What the provider tells of each without its content: who sent it, how large, and when.
+    expect(messages).toEqual([
+      {
+        id: expect.any(String),
+        from: "no-reply@example.com",
+        size: Buffer.byteLength(second),
+        receivedAt: new Date(now - 30_000),
+      },
+      {
+        id: expect.any(String),
+        from: "no-reply@example.com",
+        size: Buffer.byteLength(first),
+        receivedAt: new Date(now - 60_000),
+      },
     ]);
     expect(new Set(messages.map((message) => message.id)).size).toBe(2);
+    const read = await Promise.all(
+      messages.map((message) => reader.read(context, message.id, maxBytes)),
+    );
+    expect(read.map((raw) => new TextDecoder().decode(raw))).toEqual([second, first]);
   });
 
-  it("reads at most the limit a page, and names the next page while there is more", async () => {
+  it("lists at most the limit a page, and names the next page while there is more", async () => {
     const { client, reader, context } = setup();
     for (let i = 0; i < 7; i++)
       client.receiveMail(USER, rawMail("a@example.com", `Code ${i}`, new Date(Date.now() - i)));
-    const query = {
-      fromDomain: "example.com",
-      after: new Date(Date.now() - 3_600_000),
-      limit: 5,
-      maxBytes,
-    };
+    const query = { fromDomain: "example.com", after: new Date(Date.now() - 3_600_000), limit: 5 };
     const first = await reader.recent(context, query);
     expect(first.messages).toHaveLength(5);
     expect(first.next).toBeDefined();
@@ -118,101 +132,150 @@ describe("composioMailSource", () => {
     client.receiveMail(USER, rawMail("a@example.com", "Code", new Date()));
     const before = JSON.stringify(client.mailboxFor(USER));
     await reader.mailbox(context);
-    const all = { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes };
-    await reader.recent(context, all);
+    const all = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    for (const message of (await reader.recent(context, all)).messages)
+      await reader.read(context, message.id, maxBytes);
     expect(CONNECTED_MAIL_READ_TOOLS).toEqual([
       "GMAIL_GET_PROFILE",
       "GMAIL_FETCH_EMAILS",
       "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
     ]);
     const tools = client.executions.map((execution) => execution.tool);
-    expect(tools.length).toBeGreaterThan(2);
+    expect(tools.length).toBeGreaterThan(3);
     for (const tool of tools) expect(CONNECTED_MAIL_READ_TOOLS).toContain(tool);
     for (const execution of client.executions)
       expect(execution.args).not.toHaveProperty("include_spam_trash");
     expect(JSON.stringify(client.mailboxFor(USER))).toBe(before);
   });
 
-  it("asks for the domain's mail since the window's exact instant, by id, raw", async () => {
+  it("asks for the domain's mail since the window's exact instant, by id", async () => {
     const { client, reader, context } = setup();
     client.receiveMail(USER, rawMail("a@example.com", "Code", new Date()));
-    await reader.recent(context, {
+    const { messages } = await reader.recent(context, {
       fromDomain: "example.com",
       after: new Date("2026-03-05T23:30:00.900Z"),
       limit: 5,
-      maxBytes: 4096,
     });
-    const [tooLarge, list, read] = client.executions;
-    // First whether any of it is larger than the read may hold, then the listing itself.
-    expect(tooLarge?.args).toEqual({
-      query: "from:example.com after:1772753400 larger:4096",
-      max_results: 1,
-      ids_only: true,
-    });
+    await reader.read(context, messages[0]!.id, maxBytes);
+    const [list, told, read] = client.executions;
     expect(list?.args).toEqual({
       query: "from:example.com after:1772753400",
       max_results: 5,
       ids_only: true,
     });
-    expect(read?.args).toEqual({ message_id: expect.any(String), format: "raw" });
+    // First what the provider tells of a listed message, and its content only when it is read.
+    expect(told?.args).toEqual({ message_id: messages[0]!.id, format: "metadata" });
+    expect(read?.args).toEqual({ message_id: messages[0]!.id, format: "raw" });
   });
 
-  // BOUNDS: a message too large to read is never fetched. The provider is asked first whether
-  // the search holds one, and what it returns is held to the limit before it is decoded. Either
-  // way the read fails: the message may be the newest from the site.
-  it.each<[name: string, sizes: number[], reads: number | "fails"]>([
-    ["every message within the limit", [600, 600], 2],
-    ["one message larger than the limit", [600, 5000], "fails"],
-    ["messages that pass the limit together", [1800, 1800, 1800], "fails"],
-  ])("with %s, reads the page: %s", async (_name, sizes, reads) => {
+  it("fetches the content of no message to list it, however large or whoever sent it", async () => {
+    // The provider matches senders loosely: a large message from another sender is listed
+    // beside the site's own, and neither is fetched until one is read.
     const { client, reader, context } = setup();
-    for (const [index, size] of sizes.entries()) {
-      const text = "x".repeat(size - 200);
-      client.receiveMail(USER, rawMail("a@example.com", `Code ${index}`, new Date(), text));
-    }
-    const query = { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes: 4096 };
-    const read = reader.recent(context, query);
-    if (reads === "fails") await expect(read).rejects.toThrow(/too large|larger than/);
-    else expect((await read).messages).toHaveLength(reads);
-    const fetched = client.executions.filter(
-      (execution) => execution.tool === "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+    const large = "x".repeat(200_000);
+    const elsewhere = "big@example.com.elsewhere.test";
+    client.receiveMail(USER, rawMail("a@example.com", "Code", new Date(Date.now() - 2000)));
+    client.receiveMail(USER, rawMail(elsewhere, "Big", new Date(Date.now() - 1000), large));
+    const query = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    const { messages } = await reader.recent(context, query);
+    expect(messages.map(({ from, size }) => [from, (size ?? 0) > 200_000])).toEqual([
+      [elsewhere, true],
+      ["a@example.com", false],
+    ]);
+    const formats = client.executions.flatMap(({ args }) => (args.format ? [args.format] : []));
+    expect(formats).toEqual(["metadata", "metadata"]);
+    expect(JSON.stringify(client.executions.map((execution) => execution.result))).not.toContain(
+      large.slice(0, 64),
     );
-    // No message is fetched once the provider says one is too large.
-    expect(fetched).toHaveLength(sizes.some((size) => size > 4096) ? 0 : Math.min(sizes.length, 3));
   });
 
-  it("holds what the provider returns to the limit, whatever size it reported", async () => {
-    // The provider said nothing was larger; the message it then returns is.
-    const raw = Buffer.from(`From: a@example.com\r\n\r\n${"x".repeat(5000)}`).toString("base64");
+  // What a listing tells of a message is whatever the provider's metadata holds, however it
+  // wraps it; what it does not hold is left out, for the caller to treat as not known.
+  const headers = (...from: string[]) => ({
+    payload: {
+      headers: [
+        { name: "To", value: "me@example.test" },
+        ...from.map((value) => ({ name: "From", value })),
+      ],
+    },
+  });
+  it.each<[shape: string, data: unknown, listing: Record<string, unknown>]>([
+    ["nothing", {}, {}],
+    ["a sender", { sender: "A@Example.com" }, { from: "a@example.com" }],
+    ["a named sender", { sender: "Sign-in <a@example.com>" }, { from: "a@example.com" }],
+    ["a From header", headers("Sign-in <a@example.com>"), { from: "a@example.com" }],
+    [
+      "a From header in any case",
+      { payload: { headers: [{ name: "FROM", value: "a@b.test" }] } },
+      { from: "a@b.test" },
+    ],
+    // Anything a mail parser could read as another sender is left out, never guessed at.
+    ["a quoted name holding another address", { sender: '"a@example.com" <b@other.test>' }, {}],
+    ["two From headers", headers("a@example.com", "b@other.test"), {}],
+    ["two senders", { sender: "a@example.com, b@other.test" }, {}],
+    ["two senders in brackets", headers("<a@example.com>, <b@other.test>"), {}],
+    ["a sender with a comment", { sender: "a@example.com (b at other.test)" }, {}],
+    ["a sender whose domain is no plain host name", { sender: "a@example.com." }, {}],
+    ["a sender that is no address", { sender: "Sign-in team" }, {}],
+    ["its headers, none of them From", { payload: { headers: [] }, sender: "a@example.com" }, {}],
+    ["a size", { sizeEstimate: 2048 }, { size: 2048 }],
+    ["a size as text", { sizeEstimate: "2048" }, { size: 2048 }],
+    ["a size that is no number", { sizeEstimate: "large" }, {}],
+    ["a time", { internalDate: "1772753400000" }, { receivedAt: new Date(1772753400000) }],
+    ["a time that is no number", { internalDate: "yesterday" }, {}],
+    [
+      "all of it, wrapped once more",
+      { message: { sender: "a@example.com", sizeEstimate: 9, internalDate: 5 } },
+      { from: "a@example.com", size: 9, receivedAt: new Date(5) },
+    ],
+  ])("lists a message whose metadata holds %s", async (_shape, data, listing) => {
     const stub: Pick<ConnectorProvider, "execute"> = {
       async *execute(call) {
-        const listing = call.tool === "GMAIL_FETCH_EMAILS";
-        const probe = listing && String((call.args as { query: string }).query).includes("larger:");
-        const messages = probe ? [] : [{ messageId: "m1" }];
+        const listed = call.tool === "GMAIL_FETCH_EMAILS";
         yield {
           type: "result",
-          data: { data: listing ? { messages } : { raw, internalDate: "1" } },
+          data: { data: listed ? { messages: [{ messageId: "m1" }] } : data },
         };
       },
     };
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
-    const context = {
-      operationId: "x",
-      traceId: "x",
-      spaceId: "s",
-      userId: USER,
-      signal: AbortSignal.timeout(1000),
+    const query = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    const page = await composioMailSource(stub).readerFor(CONNECTION)!.recent(stubContext(), query);
+    expect(page).toEqual({ messages: [{ id: "m1", ...listing }] });
+  });
+
+  // BOUNDS: a message is held to what its read may hold by its encoded length, before any of it
+  // is decoded, whatever size its listing gave.
+  it.each<[name: string, bytes: number, read: boolean]>([
+    ["within what the read may hold", 4096, true],
+    ["one byte past what the read may hold", 4097, false],
+    ["far past what the read may hold", 400_000, false],
+  ])("reads a message %s: %s", async (_name, bytes, read) => {
+    const raw = Buffer.alloc(bytes, "x").toString("base64url");
+    const stub: Pick<ConnectorProvider, "execute"> = {
+      async *execute() {
+        yield { type: "result", data: { data: { raw, internalDate: "1" } } };
+      },
     };
     const from = Buffer.from;
     const decoded = vi.spyOn(Buffer, "from");
-    const read = composioMailSource(stub)
-      .readerFor(connection)!
-      .recent(context, { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes: 4096 });
-    await expect(read).rejects.toThrow("larger than the read may hold");
+    const reading = composioMailSource(stub).readerFor(CONNECTION)!.read(stubContext(), "m1", 4096);
+    if (read) expect((await reading).byteLength).toBe(bytes);
+    else await expect(reading).rejects.toThrow("larger than the read may hold");
     const decodings = (decoded.mock.calls as unknown[][]).filter(([, as]) => as === "base64");
-    expect(decodings).toEqual([]);
+    expect(decodings).toHaveLength(read ? 1 : 0);
     decoded.mockRestore();
     expect(Buffer.from).toBe(from);
+  });
+
+  it("fails to read a message that comes back without its raw form", async () => {
+    const stub: Pick<ConnectorProvider, "execute"> = {
+      async *execute() {
+        yield { type: "result", data: { data: { messageId: "m1", internalDate: "1" } } };
+      },
+    };
+    await expect(
+      composioMailSource(stub).readerFor(CONNECTION)!.read(stubContext(), "m1", maxBytes),
+    ).rejects.toThrow("cannot be read in its raw form");
   });
 
   it("finds mail from early in the UTC day in a mailbox whose clock is behind UTC", async () => {
@@ -228,7 +291,6 @@ describe("composioMailSource", () => {
       fromDomain: "example.com",
       after: runStart,
       limit: 5,
-      maxBytes,
     });
     expect(found).toHaveLength(1);
   });
@@ -238,10 +300,9 @@ describe("composioMailSource", () => {
     const execute = vi.spyOn(registry, "execute");
     client.receiveMail(USER, rawMail("a@example.com", "One", new Date()));
     client.receiveMail(USER, rawMail("a@example.com", "Two", new Date()));
-    const all = { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes };
-    await reader.recent(context, all);
+    await reader.recent(context, { fromDomain: "example.com", after: new Date(0), limit: 5 });
     const ids = execute.mock.calls.map(([call]) => call.executionId);
-    expect(ids).toHaveLength(4);
+    expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -255,26 +316,21 @@ describe("composioMailSource", () => {
     vi.spyOn(registry, "execute").mockImplementation((call, callContext) => {
       tools.push(call.tool);
       const events = execute(call, callContext);
-      // The look times out while the first message is read; the provider still answers.
+      // The look times out while the first message is asked about; the provider still answers.
       if (call.tool === "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID") look.abort(new Error("timed out"));
       return events;
     });
     await expect(
       reader.recent(
         { ...context, signal: look.signal },
-        { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes },
+        { fromDomain: "example.com", after: new Date(0), limit: 5 },
       ),
     ).rejects.toThrow("timed out");
-    expect(tools).toEqual([
-      "GMAIL_FETCH_EMAILS",
-      "GMAIL_FETCH_EMAILS",
-      "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
-    ]);
+    expect(tools).toEqual(["GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"]);
   });
 
-  // The rule: a listing that says there is no mail gives none; one in any other shape, or any
-  // message in it that cannot be read, fails the read, so the card opens rather than another
-  // message answering for what was not read.
+  // The rule: a listing that says there is no mail gives none; one in any other shape fails,
+  // so the card opens rather than another message answering for what was not listed.
   it.each<[state: string, data: unknown, outcome: "none" | "fails"]>([
     ["a listing without messages", {}, "none"],
     ["a listing with no messages", { messages: [] }, "none"],
@@ -283,83 +339,29 @@ describe("composioMailSource", () => {
     ["a listing that is a bare list", [{ messageId: "m1" }], "fails"],
     ["a listing whose messages are not a list", { messages: "none" }, "fails"],
     ["a listing with a message without an id", { messages: [{ id: 1 }] }, "fails"],
-    [
-      "a listed message that comes back without its raw form",
-      { messages: [{ messageId: "m1" }] },
-      "fails",
-    ],
   ])("on %s, %s", async (_state, data, outcome) => {
     const stub: Pick<ConnectorProvider, "execute"> = {
-      async *execute(call) {
-        // The provider says no message is too large; the listing itself is what is tested.
-        const args = call.args as { query?: string };
-        yield { type: "result", data: { data: args.query?.includes("larger:") ? {} : data } };
+      async *execute() {
+        yield { type: "result", data: { data } };
       },
     };
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
-    const context = {
-      operationId: "x",
-      traceId: "x",
-      spaceId: "s",
-      userId: USER,
-      signal: AbortSignal.timeout(1000),
-    };
-    const query = { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes };
-    const read = composioMailSource(stub).readerFor(connection)!.recent(context, query);
+    const query = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    const read = composioMailSource(stub).readerFor(CONNECTION)!.recent(stubContext(), query);
     if (outcome === "none") await expect(read).resolves.toEqual({ messages: [] });
     else await expect(read).rejects.toThrow(/cannot be read|has no id/);
   });
 
-  it("fails when it cannot learn whether a message is too large", async () => {
-    const stub: Pick<ConnectorProvider, "execute"> = {
-      async *execute(call) {
-        const args = call.args as { query?: string };
-        yield { type: "result", data: { data: args.query?.includes("larger:") ? "text" : {} } };
-      },
-    };
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
-    const context = {
-      operationId: "x",
-      traceId: "x",
-      spaceId: "s",
-      userId: USER,
-      signal: AbortSignal.timeout(1000),
-    };
-    const query = { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes };
-    await expect(
-      composioMailSource(stub).readerFor(connection)!.recent(context, query),
-    ).rejects.toThrow("cannot be read");
-  });
-
-  it("fails on a listing longer than asked for, rather than leave some unread", async () => {
+  it("fails on a listing longer than asked for, rather than leave some unlisted", async () => {
     const ids = ["m1", "m2", "m3", "m4", "m5", "m6"];
-    const mail = "From: a@example.com\r\n\r\nYour code is 482913\r\n";
-    const raw = Buffer.from(mail).toString("base64");
     const stub: Pick<ConnectorProvider, "execute"> = {
       async *execute(call) {
-        const args = call.args as { query?: string };
-        const listed = args.query?.includes("larger:") ? [] : ids;
-        yield {
-          type: "result",
-          data: {
-            data:
-              call.tool === "GMAIL_FETCH_EMAILS"
-                ? { messages: listed.map((messageId) => ({ messageId })) }
-                : { raw, internalDate: "1" },
-          },
-        };
+        const listed = call.tool === "GMAIL_FETCH_EMAILS";
+        const messages = ids.map((messageId) => ({ messageId }));
+        yield { type: "result", data: { data: listed ? { messages } : { internalDate: "1" } } };
       },
     };
-    const connection = { id: "c", connectorId: "composio", externalId: "GMAIL", displayName: "" };
-    const context = {
-      operationId: "x",
-      traceId: "x",
-      spaceId: "s",
-      userId: USER,
-      signal: AbortSignal.timeout(1000),
-    };
-    const query = { fromDomain: "example.com", after: new Date(0), limit: 5, maxBytes };
-    const read = composioMailSource(stub).readerFor(connection)!.recent(context, query);
+    const query = { fromDomain: "example.com", after: new Date(0), limit: 5 };
+    const read = composioMailSource(stub).readerFor(CONNECTION)!.recent(stubContext(), query);
     await expect(read).rejects.toThrow("more messages than");
   });
 

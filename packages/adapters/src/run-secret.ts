@@ -299,13 +299,15 @@ export class SecretRequestNotOpen extends Error {
 export async function holdEmailedCode(
   prisma: PrismaClient,
   secretStore: SecretStore,
-  input: Parameters<typeof takeEmailedCode>[1] & {
+  input: Omit<Parameters<typeof takeEmailedCode>[1], "requestId"> & {
     scope: RunScope;
     request: { id: string; from: "intended" | "executing"; result: Prisma.InputJsonValue };
     hide: (code: string) => void;
   },
 ) {
-  return takeEmailedCode(prisma, input, async (found, claim) => {
+  // The look is for that request: in whichever status the call holds it, it is the one asking.
+  const look = { ...input, requestId: input.request.id };
+  return takeEmailedCode(prisma, look, async (found, claim) => {
     const sealed = await sealRunCode(secretStore, input.scope, input.runId, {
       origin: input.origin,
       code: found.code,

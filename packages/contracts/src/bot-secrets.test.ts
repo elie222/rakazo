@@ -960,6 +960,7 @@ describe("one-time code contracts", () => {
 
     // An email that gives no code either names none, and says nothing of the site's other
     // emails, or is unclear: it names a code that cannot be taken, so theirs are in doubt.
+    const past = (text: string) => `${text}\n${"x".repeat(ONE_TIME_CODE_TEXT_LIMIT)}`;
     it.each<[name: string, text: string, unclear: boolean]>([
       ["names no code", "Welcome! Your account is ready.", false],
       ["names an order, not a code", "Order 48213977 confirmed.", false],
@@ -968,12 +969,31 @@ describe("one-time code contracts", () => {
       ["holds a code too short to take", "Your code: 4829", true],
       ["says a code expired", "Your previous code has expired.", true],
       ["says a code expired and gives another", "Your old code expired.\nYour code: 482913", true],
-      ["is longer than is read", `Hello.\n${"x".repeat(ONE_TIME_CODE_TEXT_LIMIT)}`, true],
+      // Only the first part of a long email is read: one that names a code there may go on to
+      // take it back, one that names none there is a newsletter, not a sign-in email.
+      ["names no code and is longer than is read", past("Our autumn sale starts today."), false],
+      ["gives a code and is longer than is read", past("Your code is 482913."), true],
+      ["says a code expired and is longer than is read", past("This code has expired."), true],
     ])("says an email that %s is unclear: %s", (_name, text, unclear) => {
       expect(readOneTimeCode({ subject: "Hello", text })).toEqual({ unclear });
-      expect(readOneTimeCode({ subject: text.split("\n")[0]!, text: "Hello" }).unclear).toBe(
-        unclear && text.length <= ONE_TIME_CODE_TEXT_LIMIT,
-      );
+    });
+
+    it("reads no more of a subject or a text than the length the inbox keeps", () => {
+      const sentence = "Your code is 482913.";
+      const filler = (length: number) => `\n${"x ".repeat(length / 2)}\n`;
+      // The code sentence starts inside what is read and ends outside it: not read as a code.
+      const late = `Hello.${filler(ONE_TIME_CODE_TEXT_LIMIT - 18)}${sentence}`;
+      expect(late.indexOf("482913")).toBe(ONE_TIME_CODE_TEXT_LIMIT + 3);
+      expect(readOneTimeCode({ subject: "Hello", text: late })).toEqual({ unclear: false });
+      expect(readOneTimeCode({ subject: late, text: "Hello" })).toEqual({ unclear: false });
+      // The same sentence wholly inside what is read is the email's code, until the email is
+      // longer than is read: then what follows it is not known.
+      const early = `${sentence}${filler(ONE_TIME_CODE_TEXT_LIMIT - 40)}`;
+      expect(early.length).toBeLessThanOrEqual(ONE_TIME_CODE_TEXT_LIMIT);
+      expect(readOneTimeCode({ subject: "Hello", text: early }).code).toBe("482913");
+      const longer = `${early}${"x".repeat(40)}`;
+      expect(longer.length).toBeGreaterThan(ONE_TIME_CODE_TEXT_LIMIT);
+      expect(readOneTimeCode({ subject: "Hello", text: longer })).toEqual({ unclear: true });
     });
 
     it("is clear about the one code an email gives", () => {
@@ -981,14 +1001,6 @@ describe("one-time code contracts", () => {
         code: "482913",
         unclear: false,
       });
-    });
-
-    it("reads no email past the length the inbox keeps, where the rest was cut", () => {
-      const code = "Your verification code is 482913.";
-      const rest = (length: number) => `\n${"x".repeat(length - code.length - 1)}`;
-      expect(read(`${code}${rest(ONE_TIME_CODE_TEXT_LIMIT)}`)).toBe("482913");
-      expect(read(`${code}${rest(ONE_TIME_CODE_TEXT_LIMIT + 1)}`)).toBeUndefined();
-      expect(read("Welcome back.", `${code}${rest(ONE_TIME_CODE_TEXT_LIMIT + 1)}`)).toBeUndefined();
     });
 
     // Every sentence that is not one of the templates gives nothing, whatever stands near the

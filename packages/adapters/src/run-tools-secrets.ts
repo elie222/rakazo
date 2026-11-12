@@ -36,7 +36,7 @@ import {
 } from "./bot-secrets.js";
 import {
   answerCodeCardsFromInbox,
-  emailedCodeWindowStart,
+  emailedCodeWindow,
   notePageForEmailedCode,
   runPageOrigin,
   runTookEmailedCode,
@@ -269,7 +269,8 @@ export const secretTools: ToolHandlers = {
         runId,
         userId: bot.userId,
         origin: codeOrigin,
-        after: emailedCodeWindowStart(new Date(), run.createdAt),
+        // The request's own time, so this look and a later one for its card read one window.
+        window: emailedCodeWindow(openRequest.createdAt, run.createdAt),
         botEmailDomain: deps.inboundEmailDomain,
         sources: codeSources,
         request: {

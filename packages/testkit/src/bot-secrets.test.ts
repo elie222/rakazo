@@ -764,6 +764,8 @@ describeIntegration("reusable credential lifecycle", () => {
 
     it("fills it from the owner's connected mail once allowed, once, never shown", async () => {
       const ownerCode = "20240601";
+      /** The mailbox's id for a large message that is not the site's. */
+      const unrelated = { id: "" };
       /** The site's mail arrives in the owner's own mailbox. */
       const receive = (from: string) =>
         connectedMail.receiveMail(
@@ -780,9 +782,20 @@ describeIntegration("reusable credential lifecycle", () => {
           name: "browser_act",
           args: { actions: [{ kind: "fill_code", ref: refNamed(results.at(-1)?.result, "Code") }] },
         }),
-        // Now allowed: the site's next mail in their mailbox answers the next request.
+        // Now allowed: the site's next mail in their mailbox answers the next request. Beside it
+        // lies a far larger message from another sender, whose address only holds the site's
+        // name: the mailbox's search matches it too, and it keeps no one from the site's code.
         () => {
           receive("no-reply@example.test");
+          unrelated.id = connectedMail.receiveMail(
+            run.seeded.me.userId,
+            signedEmail(
+              "news@example.test.elsewhere.test",
+              run.connectedMailbox().address,
+              "A long newsletter. ".repeat(200_000),
+            ),
+            new Date(),
+          );
           return requestCode;
         },
         () => ({
@@ -848,14 +861,25 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(new Set(tools)).toEqual(
           new Set(["GMAIL_GET_PROFILE", "GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"]),
         );
-        // First whether the site sent anything too large to read, then its newest few.
-        const searches = connectedMail.executions
-          .filter((execution) => execution.tool === "GMAIL_FETCH_EMAILS")
-          .map((execution) => execution.args);
-        expect(searches.slice(0, 2)).toMatchObject([
-          { query: expect.stringMatching(/^from:example\.test after:\d+ larger:\d+$/) },
-          { query: expect.stringMatching(/^from:example\.test after:\d+$/), max_results: 5 },
-        ]);
+        expect(
+          connectedMail.executions.find((execution) => execution.tool === "GMAIL_FETCH_EMAILS")
+            ?.args,
+        ).toMatchObject({
+          query: expect.stringMatching(/^from:example\.test after:\d+$/),
+          max_results: 5,
+        });
+        // Each message is asked about before any is fetched, and only the site's are fetched.
+        const formats = connectedMail.executions.flatMap(({ args }) =>
+          args.format ? [args.format] : [],
+        );
+        expect(formats[0]).toBe("metadata");
+        expect(new Set(formats)).toEqual(new Set(["metadata", "raw"]));
+        const fetched = connectedMail.executions.flatMap(({ args }) =>
+          args.format === "raw" ? [args.message_id] : [],
+        );
+        expect(unrelated.id).not.toBe("");
+        expect(fetched).not.toContain(unrelated.id);
+        expect(fetched.length).toBeGreaterThan(0);
         expect(
           mailbox.messages
             .filter((message) => message.sender === "no-reply@example.test")

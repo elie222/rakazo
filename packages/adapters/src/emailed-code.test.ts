@@ -1,13 +1,8 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { promises as dnsPromises } from "node:dns";
-import type {
-  ConnectedConnector,
-  ConnectedMailMessage,
-  ConnectedMailPage,
-  ConnectedMailReader,
-} from "@rakazo/adapter-kit";
+import type { ConnectedConnector, ConnectedMailListing } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { installAuditEventStore } from "@rakazo/db";
+import { CODE_REQUEST_LIMIT, installAuditEventStore } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { dkimSign } from "mailauth";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,8 +14,8 @@ import {
   EMAIL_READ_LIMIT,
   EMAIL_SEARCH_LIMIT,
   EMAILED_CODE_WINDOW_MS,
+  emailedCodeWindow,
   emailMayAnswer,
-  OPEN_CODE_REQUEST_LIMIT,
   takeEmailedCode,
 } from "./emailed-code.js";
 import { readInboundEmail } from "./inbound-email.js";
@@ -36,16 +31,41 @@ const ago = (ms: number) => new Date(Date.now() - ms);
 
 type Row = Record<string, unknown>;
 
+/**
+ * A message a connected mailbox holds: as received, with what its provider tells of it without
+ * handing it over. The provider tells the sender its From names and the message's size unless
+ * given; null is a provider that does not tell.
+ */
+type Held = {
+  id: string;
+  raw: Uint8Array;
+  receivedAt?: Date;
+  from?: string | null;
+  size?: number | null;
+  /** Its reader hands it over whatever limit the read was given. */
+  unchecked?: boolean;
+};
+/** One page of what a test's mailbox lists. */
+type HeldPage = { messages: Held[]; next?: string };
+type Recent = (
+  context: unknown,
+  query: { fromDomain: string; after: Date; limit: number; page?: string },
+) => Promise<HeldPage>;
+
 /** A bot whose owner's run waits on a code card, and the mail that just came in. */
 function inbox(
   options: {
     runs?: Row[];
     cards?: Record<string, Row>;
     emails?: Row[];
-    /** When another secret request of the bot's was answered. */
+    /** When another code request was answered. */
     answeredAt?: Date;
     /** The run that request was in: the bot's own run unless given. */
     answeredIn?: { botId: string; userId: string };
+    /** The page that request asked a code for: the card's unless given; null for no code. */
+    answeredFor?: string | null;
+    /** That request's id: another run's unless given. */
+    answeredRequest?: string;
     /** The connected mailbox's own address. */
     mailbox?: string;
     answered?: boolean | Error;
@@ -55,7 +75,7 @@ function inbox(
     effects?: Record<string, Row>;
     /** The owner's connections in the Space, and what each one's mailbox holds. */
     connections?: Row[];
-    connected?: Partial<ConnectedMailReader> | Error;
+    connected?: { recent?: Recent } | Error;
     /** Whether the bot may read the owner's connected mail for codes. */
     connectedMailCodes?: boolean;
     /** The owner turned that off after the attempt started. */
@@ -64,6 +84,8 @@ function inbox(
     requestedAt?: Record<string, Date>;
     /** The origin a run asked a code for, for a run whose request shows no card yet. */
     asking?: Record<string, string>;
+    /** The runs whose call holds its request while it works on it, instead of leaving it open. */
+    held?: string[];
   } = {},
 ) {
   const runs = options.runs ?? [waitingRun()];
@@ -79,7 +101,8 @@ function inbox(
       const card = cards[id]?.status === "answered" ? undefined : cards[id];
       const origin = options.asking?.[id] ?? (card?.oneTimeCode as Row | undefined)?.origin;
       const createdAt = options.requestedAt?.[id] ?? ago(60 * 1000);
-      return origin ? [{ run, request: { oneTimeCode: { origin } }, createdAt }] : [];
+      const status = options.held?.includes(id) ? "executing" : "intended";
+      return origin ? [{ run, request: { oneTimeCode: { origin } }, createdAt, status }] : [];
     });
   for (const run of runs) {
     const id = String(run.id);
@@ -89,12 +112,61 @@ function inbox(
     if (page)
       effects.set(`emailed-code:page:request-${id}`, { runId: id, request: { origin: page } });
   }
-  const answeredIn: Row = options.answeredIn ?? { botId: bot.id, userId: bot.userId };
-  const answeredRunMatches = ({ run }: { run?: Row }): boolean =>
-    !run ||
-    (Array.isArray(run.OR)
-      ? (run.OR as Row[]).some((one) => answeredRunMatches({ run: one }))
-      : Object.entries(run).every(([field, value]) => answeredIn[field] === value));
+  const answeredIn = options.answeredIn ?? { botId: bot.id, userId: bot.userId };
+  /** The code requests a question across Spaces reads: answered ones, or the open ones. */
+  const codeRequests = (where: {
+    id?: { not: string };
+    status: string | { in: string[] } | { not: string };
+    runId?: { not: string };
+    createdAt?: { gte: Date; lte: Date };
+    updatedAt?: { gte: Date };
+    request?: { string_contains: string };
+    run: {
+      status?: { in: string[] };
+      createdAt?: { lte: Date };
+      OR: [{ botId: string }, { userId: string }];
+    };
+  }) => {
+    const [{ botId }, { userId }] = where.run.OR;
+    const shares = (run: Row) => run.botId === botId || run.userId === userId;
+    const wanted = where.status;
+    const open = typeof wanted === "string" ? [wanted] : "in" in wanted ? wanted.in : undefined;
+    const requests =
+      open !== undefined
+        ? openRequests()
+            .filter(
+              ({ run, createdAt, status }) =>
+                open.includes(status) &&
+                run.id !== where.runId?.not &&
+                where.run.status?.in.includes(String(run.status)) &&
+                (run.createdAt as Date) <= where.run.createdAt!.lte &&
+                createdAt >= where.createdAt!.gte &&
+                createdAt <= where.createdAt!.lte &&
+                shares(run),
+            )
+            .map(({ request }) => ({ request, updatedAt: new Date() }))
+        : options.answeredAt &&
+            options.answeredAt >= where.updatedAt!.gte &&
+            shares(answeredIn) &&
+            (options.answeredRequest ?? "request-elsewhere") !== where.id?.not
+          ? [
+              {
+                request:
+                  options.answeredFor === null
+                    ? { label: "Password" }
+                    : { oneTimeCode: { origin: options.answeredFor ?? ORIGIN } },
+                updatedAt: options.answeredAt,
+              },
+            ]
+          : [];
+    // As the database narrows them: to requests whose page holds the site's name.
+    const { string_contains: name } = where.request ?? {};
+    return requests.filter(
+      ({ request }) =>
+        name === undefined ||
+        String((request as { oneTimeCode?: Row }).oneTimeCode?.origin ?? "").includes(name),
+    );
+  };
   const answerRunInput = vi.fn(
     async ({
       runId,
@@ -134,43 +206,22 @@ function inbox(
         cards[where.runId] ? [{ id: `card-${where.runId}`, blocks: [cards[where.runId]] }] : [],
     },
     externalEffect: {
-      findFirst: vi.fn(async ({ where }: { where: { runId?: string; status: unknown } }) =>
-        where.status === "intended"
-          ? cards[where.runId!]
-            ? {
-                id: `request-${where.runId}`,
-                createdAt: options.requestedAt?.[where.runId!] ?? ago(60 * 1000),
-              }
-            : null
-          : options.answeredAt && answeredRunMatches(where as { run?: Row })
-            ? { updatedAt: options.answeredAt }
-            : null,
+      findFirst: vi.fn(async ({ where }: { where: { runId: string } }) =>
+        cards[where.runId]
+          ? {
+              id: `request-${where.runId}`,
+              createdAt: options.requestedAt?.[where.runId] ?? ago(60 * 1000),
+            }
+          : null,
       ),
       findUnique: async ({ where }: { where: { idempotencyKey: string } }) =>
         effects.get(where.idempotencyKey) ?? null,
-      findMany: async ({ where, take }: { where: Row; take?: number }) => {
-        if (where.kind !== "request_secret")
-          return (where.idempotencyKey as { in: string[] }).in
-            .filter((key) => effects.has(key))
-            .map((idempotencyKey) => ({ idempotencyKey }));
-        // The open code requests of the bot's runs and of its owner's runs, in any Space.
-        const asked = where as {
-          status: string;
-          runId: { not: string };
-          run: { status: { in: string[] }; OR: [{ botId: string }, { userId: string }] };
-        };
-        const [{ botId }, { userId }] = asked.run.OR;
-        return openRequests()
-          .filter(
-            ({ run }) =>
-              asked.status === "intended" &&
-              run.id !== asked.runId.not &&
-              asked.run.status.in.includes(String(run.status)) &&
-              (run.botId === botId || run.userId === userId),
-          )
-          .slice(0, take)
-          .map(({ run, ...request }) => ({ ...request, run: { createdAt: run.createdAt } }));
-      },
+      findMany: async ({ where, take }: { where: Row; take?: number }) =>
+        where.kind === "request_secret"
+          ? codeRequests(where as Parameters<typeof codeRequests>[0]).slice(0, take)
+          : (where.idempotencyKey as { in: string[] }).in
+              .filter((key) => effects.has(key))
+              .map((idempotencyKey) => ({ idempotencyKey })),
       createMany: async ({ data }: { data: Row[] }) => {
         let count = 0;
         for (const row of data) {
@@ -203,7 +254,7 @@ function inbox(
         skip,
         take,
       }: {
-        where: { id?: { in: string[] }; receivedAt: { gte: Date; gt?: Date } };
+        where: { id?: { in: string[] }; receivedAt: { gte: Date; lte: Date } };
         cursor?: { id: string };
         skip?: number;
         take?: number;
@@ -213,7 +264,7 @@ function inbox(
           .filter(
             (email) =>
               (email.receivedAt as Date) >= where.receivedAt.gte &&
-              (!where.receivedAt.gt || (email.receivedAt as Date) > where.receivedAt.gt),
+              (email.receivedAt as Date) <= where.receivedAt.lte,
           )
           .sort((a, b) => (b.receivedAt as Date).getTime() - (a.receivedAt as Date).getTime());
         const start = cursor ? inWindow.findIndex((email) => email.id === cursor.id) : 0;
@@ -232,18 +283,45 @@ function inbox(
     },
   };
   const mailbox = vi.fn(async () => options.mailbox ?? "owner@example.net");
-  const recent = vi.fn(async (): Promise<ConnectedMailPage> => ({ messages: [] }));
-  const reader: ConnectedMailReader = {
-    mailbox,
-    recent,
-    ...(options.connected instanceof Error ? {} : options.connected),
-  };
-  const readerFor = vi.fn((connection: ConnectedConnector) =>
+  const held = new Map<string, Held>();
+  /** The ids of the messages whose content was fetched, in order. */
+  const reads: string[] = [];
+  const holds: Recent =
     options.connected instanceof Error
-      ? { mailbox, recent: async () => Promise.reject(options.connected) }
-      : connection.connectorId === "composio" && connection.externalId === "GMAIL"
-        ? reader
-        : undefined,
+      ? async () => Promise.reject(options.connected)
+      : (options.connected?.recent ?? (async () => ({ messages: [] })));
+  // The mailbox as its reader shows it: a listing tells of each message, and only a read of
+  // one hands its content over, refusing what is larger than it may hold.
+  const recent = vi.fn(async (context: unknown, query: Parameters<Recent>[1]) => {
+    const page = await holds(context, query);
+    const messages = page.messages.map((message): ConnectedMailListing => {
+      held.set(message.id, message);
+      const written = new TextDecoder().decode(message.raw.subarray(0, 2048));
+      const from =
+        message.from === undefined
+          ? /^From:.*?<?([^\s<>]+@[^\s<>]+)>?\s*$/im.exec(written)?.[1]?.toLowerCase()
+          : message.from;
+      const size = message.size === undefined ? message.raw.byteLength : message.size;
+      return {
+        id: message.id,
+        ...(from ? { from } : {}),
+        ...(size === null ? {} : { size }),
+        ...(message.receivedAt ? { receivedAt: message.receivedAt } : {}),
+      };
+    });
+    return { messages, ...(page.next ? { next: page.next } : {}) };
+  });
+  const read = vi.fn(async (_context: unknown, id: string, maxBytes: number) => {
+    reads.push(id);
+    const { raw, unchecked } = held.get(id)!;
+    if (raw.byteLength > maxBytes && !unchecked)
+      throw new Error("A listed message is larger than it may hold");
+    return raw;
+  });
+  const readerFor = vi.fn((connection: ConnectedConnector) =>
+    connection.connectorId === "composio" && connection.externalId === "GMAIL"
+      ? { mailbox, recent, read }
+      : undefined,
   );
   const deliver = (runId?: string) =>
     answerCodeCardsFromInbox(
@@ -265,9 +343,11 @@ function inbox(
         botId: bot.id,
         spaceId: "space-1",
         runId,
+        requestId: `request-${runId}`,
         userId: bot.userId,
         origin: ORIGIN,
-        after: ago(60 * 1000),
+        // The run started ten minutes ago, as waitingRun says, and asks now.
+        window: emailedCodeWindow(new Date(), ago(10 * 60 * 1000)),
         botEmailDomain: "bots.test",
         sources: {
           inbox: sources.inbox ?? true,
@@ -296,6 +376,7 @@ function inbox(
     effects,
     readerFor,
     recent,
+    reads,
   };
 }
 
@@ -338,7 +419,7 @@ async function connectedMail(
     /** The site's key the signature names: `s2`'s lookup fails for now. */
     selector?: string;
   } = {},
-): Promise<ConnectedMailMessage> {
+): Promise<Held> {
   const from = options.from ?? "no-reply@example.test";
   const domain = from.slice(from.indexOf("@") + 1);
   const raw = [
@@ -377,14 +458,13 @@ async function connectedMail(
 }
 
 /** The claim on a message a mailbox holds: on the message itself, by its sender's signature. */
-const claimOf = async (message: ConnectedMailMessage) =>
-  claimOn((await readInboundEmail(message.raw)).key);
+const claimOf = async (message: Held) => claimOn((await readInboundEmail(message.raw)).key);
 
 const BOT_ADDRESS = "helper@bots.test";
 const OWNER_MAILBOX = "owner@example.net";
 
 /** A message as delivery saves it to the bot's inbox, classified as the inbound route does. */
-async function savedToInbox(message: ConnectedMailMessage): Promise<Row> {
+async function savedToInbox(message: Held): Promise<Row> {
   const email = await readInboundEmail(message.raw);
   return codeEmail({
     id: `email-${message.id}`,
@@ -583,6 +663,19 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     const { deliver, answerRunInput } = inbox({ runs: [] });
     await deliver();
     expect(answerRunInput).not.toHaveBeenCalled();
+  });
+
+  it("leaves a card alone once five minutes have passed since it asked", async () => {
+    // Mail that comes this long after is not the request's: the card is the owner's from then.
+    const { deliver, answerRunInput, prisma } = inbox({
+      requestedAt: { "run-1": ago(EMAILED_CODE_WINDOW_MS + 1000) },
+    });
+    const read = vi.spyOn(prisma.botEmailMessage as { findMany: () => unknown }, "findMany");
+    expect(await deliver()).toBe(0);
+    expect(answerRunInput).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    const still = inbox({ requestedAt: { "run-1": ago(EMAILED_CODE_WINDOW_MS - 5 * 1000) } });
+    expect(await still.deliver()).toBe(1);
   });
 
   it("ignores mail from long before the card was asked for", async () => {
@@ -1056,13 +1149,16 @@ const ELIGIBILITY: [kind: string, gives: boolean, row: () => [Mail, World?]][] =
   ],
   ["mail sent to someone else", false, () => [{ to: "someone-else@example.net" }]],
   ["mail that came before the request's window", false, () => [{ receivedAt: ago(7 * 60 * 1000) }]],
+  // The owner may have typed an email's code into a card: one that came before a code request
+  // for the site was answered, in a run that shares the mail, is not used. Any other answer,
+  // by anyone else or for anything else, says nothing of it.
   [
-    "mail that came before the owner last answered a request",
+    "mail that came before a code request for the site was answered",
     false,
     () => [{ receivedAt: ago(40 * 1000) }, { answeredAt: ago(30 * 1000) }],
   ],
   [
-    "mail that came before the owner answered another bot's request",
+    "mail that came before the owner answered another bot's code request for the site",
     false,
     () => [
       { receivedAt: ago(40 * 1000) },
@@ -1070,9 +1166,38 @@ const ELIGIBILITY: [kind: string, gives: boolean, row: () => [Mail, World?]][] =
     ],
   ],
   [
-    "mail that came after the owner last answered a request",
+    "mail that came before someone else answered another bot's code request for the site",
+    true,
+    () => [
+      { receivedAt: ago(40 * 1000) },
+      { answeredAt: ago(30 * 1000), answeredIn: { botId: "bot-9", userId: "user-2" } },
+    ],
+  ],
+  [
+    "mail that came before a code request for another site was answered",
+    true,
+    () => [
+      { receivedAt: ago(40 * 1000) },
+      { answeredAt: ago(30 * 1000), answeredFor: "https://bank.test" },
+    ],
+  ],
+  [
+    "mail that came before a request for something other than a code was answered",
+    true,
+    () => [{ receivedAt: ago(40 * 1000) }, { answeredAt: ago(30 * 1000), answeredFor: null }],
+  ],
+  [
+    "mail that came after a code request for the site was answered",
     true,
     () => [{ receivedAt: ago(20 * 1000) }, { answeredAt: ago(30 * 1000) }],
+  ],
+  [
+    "mail that came before the request's own call took hold of the request",
+    true,
+    () => [
+      { receivedAt: ago(40 * 1000) },
+      { answeredAt: ago(30 * 1000), answeredRequest: "request-run-1" },
+    ],
   ],
   ["mail a run already took the code from", false, () => [{ claimed: true }]],
   ["mail holding two codes", false, () => [{ text: "Your code is 482913. Your code is 731905." }]],
@@ -1092,6 +1217,14 @@ const ELIGIBILITY: [kind: string, gives: boolean, row: () => [Mail, World?]][] =
 // their bots), for the same site, whose window the mail came in.
 const other = (overrides: Row = {}) =>
   waitingRun({ id: "run-2", threadId: "thread-2", ...overrides });
+/** That many runs of another of the owner's bots, each waiting on a code card for `origin`. */
+const manyOthers = (count: number, origin: string): World => {
+  const ids = Array.from({ length: count }, (_, index) => `other-${index}`);
+  return {
+    runs: ids.map((id) => other({ id, threadId: `thread-${id}`, botId: "bot-2" })),
+    cards: Object.fromEntries(ids.map((id) => [id, codeCard(origin)])),
+  };
+};
 const OTHER_REQUESTS: [others: string, fills: boolean, world: () => World][] = [
   ["no other request", true, () => ({})],
   [
@@ -1113,6 +1246,15 @@ const OTHER_REQUESTS: [others: string, fills: boolean, world: () => World][] = [
     "another run that asked for the site's code and shows no card yet",
     false,
     () => ({ runs: [other({ status: "running" })], asking: { "run-2": ORIGIN } }),
+  ],
+  [
+    "another run whose call holds its request for the site while it looks",
+    false,
+    () => ({
+      runs: [other({ status: "running" })],
+      asking: { "run-2": ORIGIN },
+      held: ["run-2"],
+    }),
   ],
   // A sign-in whose run has not asked for its code yet has left the server nothing to go on.
   [
@@ -1153,20 +1295,41 @@ const OTHER_REQUESTS: [others: string, fills: boolean, world: () => World][] = [
     true,
     () => ({ runs: [other({ createdAt: ago(5 * 1000) })], cards: { "run-2": codeCard() } }),
   ],
+  // A request blocks only mail it could take itself: one whose window is over, however long
+  // its card stays open, keeps no one from a code.
   [
-    "more open requests than are compared",
+    "another run whose card for the site has been open since long before the mail came",
+    true,
+    () => ({
+      runs: [other({ createdAt: ago(60 * 60 * 1000) })],
+      cards: { "run-2": codeCard() },
+      requestedAt: { "run-2": ago(20 * 60 * 1000) },
+    }),
+  ],
+  [
+    "another run that asked for the site's code just under five minutes before the mail came",
     false,
     () => ({
-      runs: Array.from({ length: OPEN_CODE_REQUEST_LIMIT + 1 }, (_, index) =>
-        other({ id: `other-${index}`, threadId: `thread-other-${index}`, botId: "bot-2" }),
-      ),
-      cards: Object.fromEntries(
-        Array.from({ length: OPEN_CODE_REQUEST_LIMIT + 1 }, (_, index) => [
-          `other-${index}`,
-          codeCard("https://bank.test"),
-        ]),
-      ),
+      runs: [other()],
+      cards: { "run-2": codeCard() },
+      requestedAt: { "run-2": ago(EMAILED_CODE_WINDOW_MS - 5 * 1000) },
     }),
+  ],
+  [
+    "any number of open code requests for other sites",
+    true,
+    () => manyOthers(CODE_REQUEST_LIMIT + 50, "https://bank.test"),
+  ],
+  // Requests on a site whose name only holds the site's are read and set aside, up to a limit.
+  [
+    "as many open code requests on look-alike sites as are read",
+    true,
+    () => manyOthers(CODE_REQUEST_LIMIT, "https://login.notexample.test"),
+  ],
+  [
+    "more open code requests on look-alike sites than are read",
+    false,
+    () => manyOthers(CODE_REQUEST_LIMIT + 1, "https://login.notexample.test"),
   ],
 ];
 
@@ -1194,7 +1357,13 @@ const WITH_OTHER_MAIL: [other: string, fills: boolean, mail: () => Mail][] = [
     () => ({ text: "Your old code expired.\r\nYour code: 731905" }),
   ],
   ["a newer email with a code too short to take", false, () => ({ code: "4829" })],
-  ["a newer email longer than is read", false, () => ({ text: LONG })],
+  // A long email that names no code where it is read is a newsletter: it says nothing.
+  ["a newer email longer than is read that names no code", true, () => ({ text: LONG })],
+  [
+    "a newer email longer than is read that gives the same code",
+    false,
+    () => ({ text: `Your code is ${CODE}.\r\n${LONG}` }),
+  ],
   [
     "an older email saying a code expired",
     false,
@@ -1258,12 +1427,11 @@ describe.each(PATHS)("which mail may answer a code request, on %s", (path) => {
 });
 
 describe("emailMayAnswer", () => {
-  const after = ago(5 * 60 * 1000);
+  const window = emailedCodeWindow(new Date(), ago(60 * 60 * 1000));
   const rule = {
     site: "example.test",
     botEmailDomain: "bots.test",
-    after,
-    answered: undefined,
+    ...window,
     mailbox: "owner@example.net",
   };
   const ok = {
@@ -1281,19 +1449,24 @@ describe("emailMayAnswer", () => {
     expect(
       emailMayAnswer({ ...ok, recipients: ["x@example.net", "owner@example.net"] }, rule),
     ).toBe(true);
-    const inbox = { site: "example.test", botEmailDomain: undefined, after, answered: undefined };
+    const inbox = { site: "example.test", botEmailDomain: undefined, ...window };
     expect(emailMayAnswer(ok, inbox)).toBe(true);
   });
 
-  it("refuses mail that came before the request's window, or before the last answer", () => {
-    expect(emailMayAnswer({ ...ok, receivedAt: after }, rule)).toBe(true);
-    expect(emailMayAnswer({ ...ok, receivedAt: new Date(after.getTime() - 1) }, rule)).toBe(false);
-    const answered = ago(20 * 1000);
-    expect(emailMayAnswer(ok, { ...rule, answered })).toBe(true);
-    expect(emailMayAnswer({ ...ok, receivedAt: answered }, { ...rule, answered })).toBe(false);
-    expect(emailMayAnswer({ ...ok, receivedAt: ago(30 * 1000) }, { ...rule, answered })).toBe(
-      false,
+  it("refuses mail that came outside the request's window, before it or after it", () => {
+    const { after, before } = window;
+    // Five minutes either side of the request, and never before its run started.
+    expect(before.getTime() - after.getTime()).toBe(2 * EMAILED_CODE_WINDOW_MS);
+    expect(emailedCodeWindow(new Date(), ago(1000)).after.getTime()).toBeGreaterThan(
+      after.getTime(),
     );
+    for (const [receivedAt, may] of [
+      [after, true],
+      [new Date(after.getTime() - 1), false],
+      [before, true],
+      [new Date(before.getTime() + 1), false],
+    ] as const)
+      expect(emailMayAnswer({ ...ok, receivedAt }, rule)).toBe(may);
   });
 
   it("refuses mail that is not signed by its From domain, or came through a list", () => {
@@ -1329,7 +1502,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     publishKeys();
     const message = await connectedMail();
     const CONNECTED_CLAIM = await claimOf(message);
-    const { deliver, answerRunInput, effects, recent } = inbox({
+    const { deliver, answerRunInput, effects } = inbox({
       emails: [],
       connectedMailCodes: true,
       connected: { recent: async () => ({ messages: [message] }) },
@@ -1340,12 +1513,12 @@ describe("a code the site emailed to the mail the owner connected", () => {
     );
     expect(effects.get(CONNECTED_CLAIM)).toMatchObject({ runId: "run-1", kind: "emailed_code" });
     expect(effects.get("emailed-code:run:run-1:example.test")).toMatchObject({ runId: "run-1" });
-    expect(recent).not.toHaveBeenCalled();
   });
 
   it("asks the reader for the site's newest mail in the window, on one connection", async () => {
     publishKeys();
-    const { deliver, readerFor, prisma } = inbox({
+    const message = await connectedMail();
+    const { deliver, readerFor, prisma, recent, reads } = inbox({
       emails: [],
       connectedMailCodes: true,
       connections: [
@@ -1353,14 +1526,10 @@ describe("a code the site emailed to the mail the owner connected", () => {
         mailConnection({ id: "connection-2", provider: "github", displayName: "Code" }),
         mailConnection({ id: "connection-3", status: "revoked" }),
       ],
+      connected: { recent: async () => ({ messages: [message] }) },
     });
-    const recent = vi.fn(async () => ({ messages: [await connectedMail()] }));
-    readerFor.mockImplementation((connection) =>
-      connection.id === "connection-1"
-        ? { mailbox: async () => "owner@example.net", recent }
-        : undefined,
-    );
     expect(await deliver("run-1")).toBe(1);
+    expect(reads).toEqual([message.id]);
     expect(prisma.connection.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: "user-1", spaceId: "space-1" } }),
     );
@@ -1382,12 +1551,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
     expect(context.connectedConnections.map((connection) => connection.id)).toEqual([
       "connection-1",
     ]);
-    expect(query).toEqual({
-      fromDomain: "example.test",
-      after: expect.any(Date),
-      limit: 5,
-      maxBytes: CONNECTED_MAIL_MAX_BYTES,
-    });
+    expect(query).toEqual({ fromDomain: "example.test", after: expect.any(Date), limit: 5 });
     // The window opens five minutes before the request, which the card fixture made a minute ago.
     const windowAge = Date.now() - query.after.getTime();
     expect(windowAge).toBeGreaterThanOrEqual(EMAILED_CODE_WINDOW_MS + 60_000 - 5_000);
@@ -1493,7 +1657,7 @@ describe("a code the site emailed to the mail the owner connected", () => {
   });
 
   // The rule for which message may answer a request: one that arrived in the window after the
-  // last answered secret request of the bot or of any run of the mailbox's owner in the Space,
+  // last answered code request for the site of the bot or of any run of the mailbox's owner,
   // passed its signature check, was not sent from the mailbox's own domain, and that no run took
   // a code from, in that mailbox through any connection. A message that cannot be judged (no
   // arrival time, a signature check that failed for now) fails the whole look, so the card opens
@@ -1613,25 +1777,19 @@ describe("a code the site emailed to the mail the owner connected", () => {
 
   it("skips a message received before another request was answered", async () => {
     publishKeys();
-    const answeredAt = ago(30 * 1000);
     const message = await connectedMail({ receivedAt: ago(45 * 1000) });
-    const recent = vi.fn(async (_context: unknown, _query: { after: Date }) => ({
-      messages: [message],
-    }));
-    const { deliver } = inbox({
+    const { deliver, reads } = inbox({
       emails: [],
       connectedMailCodes: true,
-      answeredAt,
-      connected: { recent },
+      answeredAt: ago(30 * 1000),
+      connected: { recent: async () => ({ messages: [message] }) },
     });
     expect(await deliver("run-1")).toBe(0);
-    // Mail that old is not asked for either: it would only use up what the look may read.
-    expect(recent.mock.calls.map(([, query]) => query.after)).toEqual([answeredAt]);
+    // Mail that old is not fetched either: it would only use up what the look may read.
+    expect(reads).toEqual([]);
   });
 
-  it.each<
-    [outcome: "success" | "failure", connected: () => Promise<Partial<ConnectedMailReader> | Error>]
-  >([
+  it.each<[outcome: "success" | "failure", connected: () => Promise<{ recent: Recent } | Error>]>([
     [
       "success",
       async () => {
@@ -1677,44 +1835,116 @@ describe("a code the site emailed to the mail the owner connected", () => {
     },
   );
 
-  // BOUNDS: a look reads at most CONNECTED_MAIL_MAX_BYTES of mail in all, tells each reader how
-  // much of that is left, and parses nothing past it. Mail left unread may be the newest from
-  // the site, so the look gives no code: never the code of what it did read.
-  const padding = (id: string, bytes: number): ConnectedMailMessage => ({
-    id,
-    raw: new Uint8Array(bytes),
-    receivedAt: ago(5 * 1000),
-  });
-  it.each<[name: string, sizes: number[], fills: boolean]>([
-    ["other mail well within its size limit", [1024, 1024], true],
-    ["other mail up to its size limit", [CONNECTED_MAIL_MAX_BYTES - 64 * 1024], true],
-    ["one message larger than its size limit", [CONNECTED_MAIL_MAX_BYTES + 1], false],
+  // BOUNDS: a look reads at most CONNECTED_MAIL_MAX_BYTES of mail in all, and only mail that
+  // may be the site's is read or counted: what the mailbox lists from another sender, before
+  // the request's window, or from before the last answer costs nothing, whatever its size. A
+  // message that may be the site's and is past what the look may still read is not fetched,
+  // and the look gives no code: it may be the newest from the site.
+  const MIB = 1024 * 1024;
+  const sized = (id: string, from: string | null, size: number | null, extra: Partial<Held> = {}) =>
+    ({ id, raw: new Uint8Array(64), receivedAt: ago(5 * 1000), from, size, ...extra }) as Held;
+  const SITE = "news@example.test";
+  const ELSEWHERE = "news@example.test.elsewhere.test";
+  it.each<[others: string, fills: boolean, mail: () => Held[], fetched?: string[]]>([
+    ["no other mail", true, () => []],
     [
-      "messages that pass its size limit together",
-      [CONNECTED_MAIL_MAX_BYTES / 2, CONNECTED_MAIL_MAX_BYTES / 2 + 1],
-      false,
+      "a huge message the provider matched from another sender",
+      true,
+      () => [sized("big", ELSEWHERE, 30 * MIB)],
     ],
-  ])("with %s in the mailbox, takes the site's code: %s", async (_name, sizes, fills) => {
+    [
+      "more mail from other senders than the look may read in all",
+      true,
+      () => Array.from({ length: 4 }, (_, index) => sized(`big-${index}`, ELSEWHERE, MIB)),
+    ],
+    [
+      "a huge message from the site that came before the request's window",
+      true,
+      () => [sized("old", SITE, 30 * MIB, { receivedAt: ago(7 * 60 * 1000) })],
+    ],
+    [
+      "other mail from the site within what the look may read",
+      true,
+      () => [sized("small", SITE, 1024)],
+      ["small", "m1"],
+    ],
+    [
+      "a message from the site larger than the look may read",
+      false,
+      () => [sized("big", SITE, 3 * MIB)],
+    ],
+    [
+      "mail from the site that passes what the look may read together",
+      false,
+      () => [
+        sized("half-1", SITE, MIB, { raw: new Uint8Array(MIB) }),
+        sized("half-2", SITE, MIB + 1, { raw: new Uint8Array(MIB + 1) }),
+      ],
+      ["half-1"],
+    ],
+    [
+      "a huge message whose sender the provider does not tell",
+      false,
+      () => [sized("unknown", null, 30 * MIB)],
+    ],
+    [
+      "a message from the site larger than its provider said",
+      false,
+      () => [sized("grown", SITE, 1024, { raw: new Uint8Array(CONNECTED_MAIL_MAX_BYTES + 1) })],
+      ["grown"],
+    ],
+    [
+      "a message from the site whose size the provider does not tell",
+      false,
+      () => [sized("unsized", SITE, null)],
+    ],
+    [
+      "a message from another sender whose size the provider does not tell",
+      true,
+      () => [sized("unsized", ELSEWHERE, null)],
+    ],
+  ])(
+    "beside %s in the mailbox, takes the site's code: %s",
+    async (_others, fills, mail, fetched) => {
+      publishKeys();
+      vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+      const code = await connectedMail();
+      const { deliver, effects, reads } = inbox({
+        emails: [],
+        connectedMailCodes: true,
+        // The other mail is the newer, as the provider lists it; the site's code comes after.
+        connected: {
+          recent: async (_context, query) =>
+            query.page ? { messages: [code] } : { messages: mail(), next: "1" },
+        },
+      });
+      expect(await deliver("run-1")).toBe(fills ? 1 : 0);
+      expect(effects.has(await claimOf(code))).toBe(fills);
+      // Only what may be the site's and fits is ever fetched.
+      expect(reads).toEqual(fetched ?? (fills ? ["m1"] : []));
+    },
+  );
+
+  it("gives no code once a reader handed over more than the look may read", async () => {
     publishKeys();
     vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
     const code = await connectedMail();
-    const pages = [sizes.map((bytes, index) => padding(`pad-${index}`, bytes)), [code]];
-    const recent = vi.fn(async (_context: unknown, query: { maxBytes: number; page?: string }) => {
-      const page = Number(query.page ?? 0);
-      return { messages: pages[page]!, ...(page === 0 ? { next: "1" } : {}) };
+    // A long welcome from the site, which names no code: its provider says it is small, and its
+    // reader hands it over whole. The look holds what comes back to its limit itself.
+    const line = "Thanks for joining us.\r\n";
+    const welcome = await connectedMail({
+      id: "past",
+      text: line.repeat(Math.ceil(CONNECTED_MAIL_MAX_BYTES / line.length)),
     });
-    const { deliver, effects } = inbox({
+    const past = { ...welcome, size: 1024, unchecked: true };
+    const { deliver, effects, reads } = inbox({
       emails: [],
       connectedMailCodes: true,
-      connected: { recent },
+      connected: { recent: async () => ({ messages: [code, past] }) },
     });
-    expect(await deliver("run-1")).toBe(fills ? 1 : 0);
-    expect(effects.has(await claimOf(code))).toBe(fills);
-    // Each read is told what the look may still hold, and the look stops once that is passed.
-    const read = sizes.reduce((sum, bytes) => sum + bytes, 0);
-    expect(recent.mock.calls.map(([, query]) => query.maxBytes)).toEqual(
-      [CONNECTED_MAIL_MAX_BYTES, CONNECTED_MAIL_MAX_BYTES - read].slice(0, fills ? 2 : 1),
-    );
+    expect(await deliver("run-1")).toBe(0);
+    expect(effects.has(await claimOf(code))).toBe(false);
+    expect(reads).toEqual(["m1", "past"]);
   });
 
   it("leaves the card, logging only the error's name, when the mail cannot be read", async () => {

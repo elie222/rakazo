@@ -159,6 +159,8 @@ function setup(
     },
   };
   prisma.$transaction = (run: (tx: unknown) => unknown) => run(prisma);
+  // The settings of the connection, which a read across Spaces saves and restores.
+  prisma.$queryRaw = async () => [{ bypass: "on", key: "", login: "app" }];
   const deps: EmailInboundDeps = {
     prisma: prisma as unknown as EmailInboundDeps["prisma"],
     events: { sendUserMessage, notify: vi.fn(async () => undefined), answerRunInput },

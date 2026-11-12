@@ -939,9 +939,9 @@ export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: Re
 export const ONE_TIME_CODE_UNIT_LIMIT = 200;
 
 /**
- * The longest subject or text read for a code, in characters: what the inbox keeps of a body. A
- * longer one gives none: the inbox cut it, and what was cut could say the code expired or name
- * another. It also bounds what reading one email can cost.
+ * How much of a subject and of a text is read for a code, in characters: what the inbox keeps of
+ * a body. It bounds what reading one email can cost. A longer email gives no code: what was not
+ * read could say the code expired or name another.
  */
 export const ONE_TIME_CODE_TEXT_LIMIT = 20_000;
 
@@ -1101,16 +1101,18 @@ function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
  * same one wherever it appears, and that one stands alone (oneTimeCodeStandsAlone), as a shorter
  * one could not be hidden. Without one it is `unclear` when it names a code all the same: it
  * writes several, or one too short to take, or has a sentence naming a code with a `stale` word
- * ("This code has expired", namesStaleCode), whether or not it also names a current one, or its
- * subject or text is longer than ONE_TIME_CODE_TEXT_LIMIT, so not all of it was read. An unclear
- * email leaves in doubt every code its sender wrote around then; one that names no code does not.
+ * ("This code has expired", namesStaleCode), whether or not it also names a current one, or it
+ * writes one and is longer than ONE_TIME_CODE_TEXT_LIMIT, of which only that much is read. An
+ * unclear email leaves in doubt every code its sender wrote around then; one that names no
+ * code, however long it is, does not.
  */
 export function readOneTimeCode(email: { subject: string; text: string }): {
   code?: string;
   unclear: boolean;
 } {
-  const parts = [email.subject, email.text];
-  if (parts.some((part) => part.length > ONE_TIME_CODE_TEXT_LIMIT)) return { unclear: true };
+  const whole = [email.subject, email.text];
+  const parts = whole.map((part) => part.slice(0, ONE_TIME_CODE_TEXT_LIMIT));
+  const cut = whole.some((part) => part.length > ONE_TIME_CODE_TEXT_LIMIT);
   if (parts.some((part) => sentences(part).some(namesStaleCode))) return { unclear: true };
   const codes = new Set<string>();
   const all = parts.flatMap(units);
@@ -1122,7 +1124,8 @@ export function readOneTimeCode(email: { subject: string; text: string }): {
     codes.add(code);
   }
   const [code] = codes;
-  if (codes.size === 1 && code && oneTimeCodeStandsAlone(code)) return { code, unclear: false };
+  if (codes.size === 1 && code && oneTimeCodeStandsAlone(code) && !cut)
+    return { code, unclear: false };
   return { unclear: codes.size > 0 };
 }
 

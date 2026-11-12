@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   ConnectedConnector,
-  ConnectedMailMessage,
+  ConnectedMailListing,
   ConnectedMailPage,
   ConnectedMailReader,
   ConnectedMailSource,
@@ -37,57 +37,52 @@ class ComposioMailReader implements ConnectedMailReader {
 
   async recent(
     context: AdapterContext,
-    query: { fromDomain: string; after: Date; limit: number; maxBytes: number; page?: string },
+    query: { fromDomain: string; after: Date; limit: number; page?: string },
   ): Promise<ConnectedMailPage> {
-    const search = `from:${query.fromDomain} after:${epochSeconds(query.after)}`;
-    // Asked before any message is fetched: one too large to read is never downloaded, and it may
-    // be the newest from the site, so the read fails rather than read the others in its place.
-    if (!query.page) {
-      const tooLarge = await this.call(context, "GMAIL_FETCH_EMAILS", {
-        query: `${search} larger:${query.maxBytes}`,
-        max_results: 1,
-        ids_only: true,
-      });
-      if (messageIds(tooLarge).length > 0) throw new Error("A matched message is too large");
-    }
     const listed = await this.call(context, "GMAIL_FETCH_EMAILS", {
-      query: search,
+      query: `from:${query.fromDomain} after:${epochSeconds(query.after)}`,
       max_results: query.limit,
       ids_only: true,
       ...(query.page ? { page_token: query.page } : {}),
     });
-    const messages: ConnectedMailMessage[] = [];
+    const messages: ConnectedMailListing[] = [];
     const ids = messageIds(listed);
     // The page past the limit would be left unread, and the next page starts after it.
     if (ids.length > query.limit) throw new Error("The mail listing has more messages than asked");
-    // What the page may still hold, in bytes.
-    let left = query.maxBytes;
     for (const id of ids) {
-      // Between raw reads too: once the look gave up or timed out, no further message is read.
+      // Between reads too: once the look gave up or timed out, no further message is asked for.
       context.signal.throwIfAborted();
-      const read = await this.call(context, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", {
+      // Its headers and size only: the search is loose, so who sent a message and how large it
+      // is are learned before any of its content is fetched.
+      const told = await this.call(context, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", {
         message_id: id,
-        format: "raw",
+        format: "metadata",
       });
-      const raw = stringAt(read, "raw");
-      // A listed message that cannot be read may hold the newest code: the whole read fails,
-      // so the card opens, rather than the other messages answering in its place.
-      if (!raw) throw new Error("A listed message cannot be read in its raw form");
-      // Held to the limit by its encoded length, before it is decoded: one that arrived since
-      // the provider was asked, or that it sized otherwise, is not decoded either.
-      left -= Buffer.byteLength(raw, "base64");
-      if (left < 0) throw new Error("The listed messages are larger than the read may hold");
-      const stamp = valueAt(read, "internalDate");
-      const received =
-        typeof stamp === "string" || typeof stamp === "number" ? Number(stamp) : Number.NaN;
+      const from = senderAddress(told);
+      const size = numberAt(told, "sizeEstimate");
+      const received = numberAt(told, "internalDate");
       messages.push({
         id,
-        raw: new Uint8Array(Buffer.from(raw, "base64")),
+        ...(from ? { from } : {}),
+        ...(Number.isFinite(size) ? { size } : {}),
         ...(Number.isFinite(received) ? { receivedAt: new Date(received) } : {}),
       });
     }
     const next = stringAt(listed, "nextPageToken");
     return next ? { messages, next } : { messages };
+  }
+
+  async read(context: AdapterContext, id: string, maxBytes: number): Promise<Uint8Array> {
+    const read = await this.call(context, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", {
+      message_id: id,
+      format: "raw",
+    });
+    const raw = stringAt(read, "raw");
+    if (!raw) throw new Error("A listed message cannot be read in its raw form");
+    // Held to the limit by its encoded length, before it is decoded, whatever size was reported.
+    if (Buffer.byteLength(raw, "base64") > maxBytes)
+      throw new Error("A listed message is larger than the read may hold");
+    return new Uint8Array(Buffer.from(raw, "base64"));
   }
 
   /** The tool's result data, or the error it ended with. */
@@ -162,6 +157,35 @@ function valueAt(value: unknown, key: string): unknown {
 function stringAt(value: unknown, key: string): string | undefined {
   const found = valueAt(value, key);
   return typeof found === "string" ? found : undefined;
+}
+
+/** The number under `key`, also when the provider writes it as text; NaN when it is neither. */
+function numberAt(value: unknown, key: string): number {
+  const found = valueAt(value, key);
+  return typeof found === "number" || (typeof found === "string" && found.trim() !== "")
+    ? Number(found)
+    : Number.NaN;
+}
+
+/**
+ * The one address a message's metadata names as its sender, lowercased: its From header where
+ * the provider hands the headers over, else the sender it reports. Nothing when neither is
+ * there, or when what is there is anything but one plain address, alone or after a name that
+ * holds no other: a caller that rules a message out by its sender must never be told one a
+ * mail parser could read otherwise, so it treats such a message as possibly anyone's.
+ */
+function senderAddress(told: unknown): string | undefined {
+  const headers = valueAt(valueAt(told, "payload"), "headers");
+  const from = Array.isArray(headers)
+    ? headers.flatMap((header) =>
+        stringAt(header, "name")?.toLowerCase() === "from" ? [stringAt(header, "value")] : [],
+      )
+    : [stringAt(told, "sender")];
+  const [written] = from;
+  if (from.length !== 1 || !written || written.split("@").length !== 2) return undefined;
+  // "Name <address>" or the address alone; anything else is not read as one sender.
+  const address = (written.match(/<([^<>]*)>\s*$/)?.[1] ?? written).trim().toLowerCase();
+  return /^[^\s@,;<>"()]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(address) ? address : undefined;
 }
 
 /**

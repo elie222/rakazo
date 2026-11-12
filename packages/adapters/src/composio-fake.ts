@@ -568,6 +568,12 @@ export class FakeComposioClient implements ComposioClient {
           const raw = Buffer.from(message.raw ?? plainRaw(message)).toString("base64url");
           return { data: { messageId: id, threadId, labelIds, internalDate, raw }, error: null };
         }
+        // Its headers and size, without what it says.
+        if (args.format === "metadata") {
+          const { snippet: _text, ...told } = summarizeMessage(message, false);
+          const sizeEstimate = Buffer.byteLength(message.raw ?? plainRaw(message));
+          return { data: { ...told, sizeEstimate }, error: null };
+        }
         return { data: fullMessage(message), error: null };
       }
       case "GMAIL_GET_PROFILE": {
@@ -770,13 +776,10 @@ function matchesQuery(message: MailMessage, query: string): boolean {
     .toLowerCase()
     .split(/\s+/)
     .every((token) => {
-      const labeled = token.match(/^(from|to|subject|label|after|larger):(.*)$/);
+      const labeled = token.match(/^(from|to|subject|label|after):(.*)$/);
       if (!labeled) return haystack.includes(token);
       const [, field, value] = labeled;
       if (!value) return true;
-      // larger:<bytes> matches a message bigger than that as it was received.
-      if (field === "larger")
-        return Buffer.byteLength(message.raw ?? plainRaw(message)) > Number(value);
       // after:<epoch seconds> is exact; after:YYYY/MM/DD is a day on the mailbox's own clock,
       // which this fake keeps eight hours behind UTC, as the provider resolves it.
       if (field === "after") {

@@ -698,11 +698,20 @@ export interface AutoReviewProvider {
   review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult>;
 }
 
-/** One message as the mailbox received it: the raw RFC 5322 bytes, which carry its signature. */
-export interface ConnectedMailMessage {
+/**
+ * One message a mailbox lists, as the provider tells of it without handing over its content:
+ * enough to decide whether to read it at all.
+ */
+export interface ConnectedMailListing {
   /** The provider's id for the message, stable across reads. */
   id: string;
-  raw: Uint8Array;
+  /**
+   * Its sender's address as the provider reports it, lowercased; absent when it does not say or
+   * names more than one. Not verified: it only tells which messages cannot be from a sender.
+   */
+  from?: string;
+  /** Its size in bytes as the provider reports it; absent when it does not say. */
+  size?: number;
   /** When the mailbox received it, as the provider records; absent when it does not say. */
   receivedAt?: Date;
 }
@@ -717,20 +726,23 @@ export interface ConnectedMailReader {
   /**
    * One page, newest first, of the messages received since `after` that the provider matches to
    * senders at `fromDomain`: the first page, or the one `page` names. The provider's match is
-   * loose (a name or another domain holding `fromDomain` matches), so the caller judges the
-   * sender itself and reads on through `next` until it has what it needs. The page's messages
-   * hold at most `maxBytes` in all. The read fails, rather than leave a message out, when the
-   * provider says one of the matched messages is larger than that, which it is asked before any
-   * is fetched, or when what it returns would pass it.
+   * loose (a name or another domain holding `fromDomain` matches), so the caller judges each
+   * listed sender itself, reads only the messages that may be the sender's, and reads on through
+   * `next` until it has what it needs. No message's content is fetched for a listing.
    */
   recent(
     context: AdapterContext,
-    query: { fromDomain: string; after: Date; limit: number; maxBytes: number; page?: string },
+    query: { fromDomain: string; after: Date; limit: number; page?: string },
   ): Promise<ConnectedMailPage>;
+  /**
+   * One listed message as the mailbox received it: the raw RFC 5322 bytes, which carry its
+   * signature. Fails, decoding nothing, when it is larger than `maxBytes`.
+   */
+  read(context: AdapterContext, id: string, maxBytes: number): Promise<Uint8Array>;
 }
 
 export interface ConnectedMailPage {
-  messages: ConnectedMailMessage[];
+  messages: ConnectedMailListing[];
   /** Names the page after this one when the window holds more; absent on the last. */
   next?: string;
 }

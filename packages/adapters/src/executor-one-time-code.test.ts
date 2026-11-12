@@ -1,6 +1,6 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { promises as dnsPromises } from "node:dns";
-import type { ComputerRef, ConnectedMailMessage } from "@rakazo/adapter-kit";
+import type { ComputerRef } from "@rakazo/adapter-kit";
 import { runCodeKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { dkimSign } from "mailauth";
@@ -164,18 +164,27 @@ function world(printed = "") {
   /** The bot's switches the owner sets. */
   const bot = { connectedMailCodes: false };
   /** The mail the owner connected: its messages from the site, and the reads made of it. */
-  const connectedInbox: ConnectedMailMessage[] = [];
+  const connectedInbox: Array<{ id: string; raw: Uint8Array; receivedAt: Date }> = [];
   const connectedReads: unknown[] = [];
   const matches = (row: Row, where: Row = {}) =>
-    Object.entries(where).every(([key, value]) =>
-      value && typeof value === "object" && "in" in value
-        ? (value.in as unknown[]).includes(row[key])
-        : value && typeof value === "object" && "startsWith" in value
-          ? String(row[key]).startsWith(String(value.startsWith))
-          : value && typeof value === "object" && "not" in value
-            ? row[key] !== value.not
-            : row[key] === value,
-    );
+    Object.entries(where).every(([key, value]) => {
+      if (!value || typeof value !== "object" || value instanceof Date) return row[key] === value;
+      const test = value as Row;
+      if ("in" in test) return (test.in as unknown[]).includes(row[key]);
+      if ("startsWith" in test) return String(row[key]).startsWith(String(test.startsWith));
+      if ("not" in test) return row[key] !== test.not;
+      // A request whose page holds some text, as the database matches inside its JSON.
+      if ("string_contains" in test)
+        return String(
+          (row[key] as { oneTimeCode?: Row } | undefined)?.oneTimeCode?.origin,
+        ).includes(String(test.string_contains));
+      const at = row[key] as Date | undefined;
+      return (
+        at !== undefined &&
+        (!("gte" in test) || at >= (test.gte as Date)) &&
+        (!("lte" in test) || at <= (test.lte as Date))
+      );
+    });
 
   async function attempt(
     steps: Array<{ name: string; args: Record<string, unknown> } | (() => void)>,
@@ -371,24 +380,8 @@ function world(printed = "") {
           // Whose run an effect is in is the test's doing: every row here is the owner's.
           findMany: async ({ where: { run: _owner, ...where } }: { where: Row }) =>
             effects.filter((row) => matches(row, where)),
-          findFirst: async ({
-            where,
-          }: {
-            where: Row & { status: string | { not: string }; updatedAt?: { gte: Date } };
-          }) => {
-            const { status, updatedAt, ...rest } = where;
-            if (typeof status === "string")
-              return effects.findLast((row) => matches(row, { ...rest, status })) ?? null;
-            // The inbox asks this: a secret request of this bot's answered since a time.
-            return (
-              effects.find(
-                (row) =>
-                  row.kind === rest.kind &&
-                  row.status !== status.not &&
-                  (row.updatedAt as Date) >= updatedAt!.gte,
-              ) ?? null
-            );
-          },
+          findFirst: async ({ where }: { where: Row }) =>
+            effects.findLast((row) => matches(row, where)) ?? null,
           createMany: async ({ data }: { data: Row[] }) => {
             let count = 0;
             for (const row of data) {
@@ -436,8 +429,16 @@ function world(printed = "") {
                   connectedReads.push(query);
                   if (connectedInbox.some((message) => message.id === "unreadable"))
                     throw new Error("The mailbox's grant was revoked: owner@example.net");
-                  return { messages: [...connectedInbox].reverse() };
+                  // Newest first, each as the provider tells of it without its content.
+                  const messages = [...connectedInbox].reverse().map(({ id, raw, receivedAt }) => {
+                    const written = new TextDecoder().decode(raw);
+                    const from = /^From:.*<([^<>]+)>\s*$/m.exec(written)?.[1];
+                    return { id, receivedAt, size: raw.byteLength, ...(from ? { from } : {}) };
+                  });
+                  return { messages };
                 },
+                read: async (_context: unknown, id: string) =>
+                  connectedInbox.find((message) => message.id === id)!.raw,
               }
             : undefined,
       },
@@ -1170,6 +1171,33 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(result).toMatchObject({ details: { secret: "paused" } });
   });
 
+  it("reads its request's own window, however late the look for its code starts", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const run = world();
+      // The page takes six minutes to say where it is, once the request is recorded.
+      let slow = false;
+      const { url } = run.page;
+      Object.defineProperty(run.page, "url", {
+        get: () => {
+          if (slow) vi.setSystemTime(Date.now() + 6 * 60 * 1000);
+          slow = false;
+          return url;
+        },
+      });
+      // Mail that came five and a half minutes after the request asked is not the request's.
+      run.receives({ ...CODE_EMAIL, receivedAt: new Date(Date.now() + 5.5 * 60 * 1000) });
+      const late = () => {
+        slow = true;
+      };
+      const [result] = await run.attempt([late, requestCode()]);
+      expect(result).toMatchObject({ details: { secret: "paused" } });
+      expect(run.secrets).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not look in the inbox for a newer email that is not from the site", async () => {
     const run = world();
     run.receives({ ...CODE_EMAIL, receivedAt: minutesAgo(2) });
@@ -1205,22 +1233,33 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.asked).toHaveLength(1);
   });
 
-  it("never takes a code from an email that came before another request was answered", async () => {
-    const run = world();
-    run.receives(CODE_EMAIL);
-    // Another of the bot's runs had its code request answered after the email came.
-    run.effects.push({
-      id: "effect-other",
-      runId: "run-0",
-      spaceId: scope.spaceId,
-      kind: "request_secret",
-      status: "completed",
-      updatedAt: new Date(),
-    });
-    const [result] = await run.attempt([requestCode()]);
-    expect(result).toMatchObject({ details: { secret: "paused" } });
-    expect(run.secrets).toEqual([]);
-  });
+  // The owner may have typed an email's code into a card for the site: mail that came before
+  // such an answer is not used. An answer to anything else says nothing of it.
+  it.each<[answered: string, request: Row, fills: boolean]>([
+    ["a code request for the site", { oneTimeCode: { origin: ORIGIN } }, false],
+    ["a code request for another page of the site", { oneTimeCode: { origin: OTHER } }, false],
+    ["a code request for another site", { oneTimeCode: { origin: "https://bank.test" } }, true],
+    ["a request for a login to save", { credential: { name: "shop" } }, true],
+  ])(
+    "after %s was answered, takes a code from mail that came before: %s",
+    async (_, asked, fills) => {
+      const run = world();
+      run.receives(CODE_EMAIL);
+      // Another of the bot's runs had that request answered after the email came.
+      run.effects.push({
+        id: "effect-other",
+        runId: "run-0",
+        spaceId: scope.spaceId,
+        kind: "request_secret",
+        status: "completed",
+        request: { label: "Code", purpose: "otp", ...asked },
+        updatedAt: new Date(),
+      });
+      const [result] = await run.attempt([requestCode()]);
+      expect(result).toMatchObject(fills ? { submitted: true } : { details: { secret: "paused" } });
+      expect(run.secrets).toHaveLength(fills ? 1 : 0);
+    },
+  );
 
   it("keeps an unused emailed code hidden, its email used, when the bot asks again", async () => {
     const run = world();
@@ -1421,7 +1460,7 @@ describe("request_secret for a code the site emailed to the mail the owner conne
     );
     // Only the site's newest mail in the window was asked for.
     expect(run.connectedReads).toEqual([
-      { fromDomain: "example.test", after: expect.any(Date), limit: 5, maxBytes: 2 * 1024 * 1024 },
+      { fromDomain: "example.test", after: expect.any(Date), limit: 5 },
     ]);
     expect(run.everythingWritten()).not.toContain(CODE);
   });
