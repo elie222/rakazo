@@ -985,17 +985,20 @@ export class PiOAuthLogins<T = unknown> {
         this.detachSession(session);
         return;
       }
-      const value = await session.persist({
-        credential,
-        provider: session.provider,
-        credentialId: session.credentialId,
-        modelId: session.modelId,
-        thinkingLevel: session.thinkingLevel,
-        makeDefault: session.makeDefault,
-        settingsScope: session.settingsScope,
-        label: session.label,
-        signal: session.abort.signal,
-      });
+      // The request that started the sign-in may be long gone; save as its member.
+      const value = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+        session.persist({
+          credential,
+          provider: session.provider,
+          credentialId: session.credentialId,
+          modelId: session.modelId,
+          thinkingLevel: session.thinkingLevel,
+          makeDefault: session.makeDefault,
+          settingsScope: session.settingsScope,
+          label: session.label,
+          signal: session.abort.signal,
+        }),
+      );
       session.result = value;
       session.state = "connected";
       await this.writeOutcome(session, {
