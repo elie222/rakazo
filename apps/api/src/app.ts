@@ -48,6 +48,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
+  createTailnetApprovals,
   createTailscaledNodeHost,
   createTicketChangeNotifier,
   drainRuns,
@@ -101,7 +102,6 @@ import {
   isLocalhostOrLoopbackIp,
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
-  tailnetDestinationKey,
 } from "@rakazo/contracts";
 import { encryptionKeyWarning } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
@@ -363,9 +363,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     tailnet,
     events,
     encryptionKey: env.encryptionKey,
-    // Replaced by the run's approvals; until then every destination needs one.
-    authorize: async (_run, destination) =>
-      `Ask to connect to ${tailnetDestinationKey(destination)} first.`,
+    authorize: createTailnetApprovals(prisma),
   });
   const boardEvents = createBoardEvents(realtime);
 

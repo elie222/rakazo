@@ -136,6 +136,30 @@ it("redacts known secrets in instruction approval details and editable metadata"
   expect(JSON.stringify(block)).not.toContain("fake-token");
 });
 
+describe("tailnet connection cards", () => {
+  it("names the destination and allows exactly it", () => {
+    expect(
+      buildApprovalAskBlock(
+        "effect-1",
+        "tailnet_connect",
+        { host: "nas.tail1234.ts.net", port: 22 },
+        [],
+      ),
+    ).toEqual({
+      kind: "ask",
+      approvalEffectId: "effect-1",
+      text: "Connect to nas.tail1234.ts.net:22 on your tailnet?",
+      site: "nas.tail1234.ts.net:22",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "always", label: "Always allow nas.tail1234.ts.net:22" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+  });
+});
+
 describe("bot management approval cards", () => {
   it.each([
     "create_group",

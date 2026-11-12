@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { hostSite, normalizedHttpUrl, registrableDomain, sitesInText, urlSite } from "./egress.js";
+import {
+  hostSite,
+  normalizedHttpUrl,
+  registrableDomain,
+  requestSite,
+  sitesInText,
+  urlSite,
+} from "./egress.js";
 
 describe("urlSite", () => {
   it.each([
@@ -141,5 +148,24 @@ describe("sitesInText", () => {
         "Read https://ada.li@example.org/path and https://example.com/?email=ada.li@example.net",
       ),
     ]).toEqual(["example.org", "example.com"]);
+  });
+});
+
+describe("requestSite", () => {
+  it("names a fetch by its site and a tailnet connection by host and port", () => {
+    expect(requestSite("web_fetch", { url: "https://docs.example.com/a?b=1" })).toBe("example.com");
+    expect(requestSite("tailnet_connect", { host: "NAS.tail1234.ts.net.", port: 22 })).toBe(
+      "nas.tail1234.ts.net:22",
+    );
+    expect(requestSite("tailnet_connect", { host: "fd7a:115c:a1e0:ab12::1", port: "443" })).toBe(
+      "[fd7a:115c:a1e0:ab12::1]:443",
+    );
+  });
+
+  it("names nothing a tool cannot reach", () => {
+    expect(requestSite("tailnet_connect", { host: "example.com", port: 22 })).toBeUndefined();
+    expect(requestSite("tailnet_connect", { host: "nas.tail1234.ts.net" })).toBeUndefined();
+    expect(requestSite("shell", { url: "https://example.com" })).toBeUndefined();
+    expect(requestSite("web_fetch", null)).toBeUndefined();
   });
 });

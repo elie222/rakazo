@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { TailnetTunnelDeps, TailnetTunnelRecord } from "./tailnet-tunnel.js";
 import {
+  createTailnetApprovals,
   createTailnetCommandAccess,
   openTailnetTunnelToken,
   sealTailnetTunnelToken,
@@ -244,5 +245,91 @@ describe("tailnet settings for shell commands", () => {
     expect(tailnetServerOrigin("http://127.0.0.1:5173")).toBeUndefined();
     expect(tailnetServerOrigin("http://localhost:5173")).toBeUndefined();
     expect(tailnetServerOrigin("not a url")).toBeUndefined();
+  });
+});
+
+describe("tailnet approvals at the gateway", () => {
+  const run = { ...RUN, runId: "run1" };
+  const NAS = { host: "nas.tail1234.ts.net", port: 22 };
+  function approvals(input: {
+    rules?: Array<{ effect: string; matchKind: string; matchValue: string }>;
+    approved?: Array<{ kind: string; request: unknown; runId: string; status: string }>;
+  }) {
+    const effects = input.approved ?? [];
+    return createTailnetApprovals({
+      spaceSettingOverride: { findUnique: async () => null },
+      userActionApprovalRule: { findMany: async () => input.rules ?? [] },
+      actionApprovalRule: { findMany: async () => [] },
+      externalEffect: {
+        findMany: async ({
+          where,
+        }: {
+          where: { runId: string; kind: string; status: { in: string[] } };
+        }) =>
+          effects.filter(
+            (effect) =>
+              effect.runId === where.runId &&
+              effect.kind === where.kind &&
+              where.status.in.includes(effect.status),
+          ),
+      },
+    } as never);
+  }
+
+  it("refuses a destination this run was not approved for", async () => {
+    expect(await approvals({})(run, NAS)).toBe(
+      "Ask to connect to nas.tail1234.ts.net:22 with tailnet_connect first.",
+    );
+  });
+
+  it("allows what this run's tailnet_connect approved, and only that", async () => {
+    const authorize = approvals({
+      approved: [
+        {
+          runId: "run1",
+          kind: "tailnet_connect",
+          status: "completed",
+          request: { host: "NAS.tail1234.ts.net", port: 22 },
+        },
+        {
+          runId: "run1",
+          kind: "tailnet_connect",
+          status: "denied",
+          request: { host: "db.tail1234.ts.net", port: 5432 },
+        },
+        {
+          runId: "other",
+          kind: "tailnet_connect",
+          status: "completed",
+          request: { host: "web.tail1234.ts.net", port: 80 },
+        },
+      ],
+    });
+    expect(await authorize(run, NAS)).toBe(true);
+    expect(await authorize(run, { host: "nas.tail1234.ts.net", port: 445 })).not.toBe(true);
+    expect(await authorize(run, { host: "db.tail1234.ts.net", port: 5432 })).not.toBe(true);
+    expect(await authorize(run, { host: "web.tail1234.ts.net", port: 80 })).not.toBe(true);
+  });
+
+  it("follows Always allow and Block rules for the destination", async () => {
+    expect(
+      await approvals({
+        rules: [
+          { effect: "always_allow", matchKind: "site", matchValue: "nas.tail1234.ts.net:22" },
+        ],
+      })(run, NAS),
+    ).toBe(true);
+    // A rule for the host alone, as a web fetch saves, allows no port on it.
+    expect(
+      await approvals({
+        rules: [{ effect: "always_allow", matchKind: "site", matchValue: "nas.tail1234.ts.net" }],
+      })(run, NAS),
+    ).not.toBe(true);
+    expect(
+      await approvals({
+        rules: [{ effect: "deny", matchKind: "site", matchValue: "nas.tail1234.ts.net:22" }],
+        approved: [{ runId: "run1", kind: "tailnet_connect", status: "completed", request: NAS }],
+      })(run, NAS),
+    ).toBe("Connecting to nas.tail1234.ts.net:22 is blocked in your approval settings.");
   });
 });

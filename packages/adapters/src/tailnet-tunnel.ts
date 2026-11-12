@@ -4,10 +4,20 @@ import type { Duplex } from "node:stream";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetDestination } from "@rakazo/contracts";
-import { isLoopbackHost, parseTailnetDestination, TAILNET_CONNECT_PATH } from "@rakazo/contracts";
+import {
+  isLoopbackHost,
+  parseTailnetDestination,
+  TAILNET_CONNECT_PATH,
+  tailnetDestinationKey,
+} from "@rakazo/contracts";
+import type { ActionApprovalRule } from "@rakazo/core";
+import { siteAlwaysAllowed, TAILNET_CONNECT_TOOL } from "@rakazo/core";
+import { requestSite } from "@rakazo/core/egress";
 import type { PrismaClient } from "@rakazo/db";
+import { listApprovalRules, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
+import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
 import type { TailnetRun } from "./tailnet-service.js";
 
 const TOKEN_PREFIX = "rtn1";
@@ -341,4 +351,39 @@ export function tailnetServerOrigin(webOrigin: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Whether a run may reach a tailnet destination now, decided as the tool gate decides it: a
+ * Block rule refuses it, an Always allow rule allows it, and otherwise the run must have had
+ * tailnet_connect for that exact destination approved.
+ */
+export function createTailnetApprovals(prisma: PrismaClient): TailnetTunnelDeps["authorize"] {
+  return (run, destination) =>
+    runAsTenant({ spaceId: run.spaceId, userId: run.userId }, async () => {
+      const site = tailnetDestinationKey(destination);
+      const rules = (await listApprovalRules(prisma, {
+        userId: run.userId,
+        spaceId: run.spaceId,
+      })) as ActionApprovalRule[];
+      const blocked = rules.some(
+        (rule) =>
+          rule.effect === "deny" &&
+          rule.matchKind === "site" &&
+          rule.matchValue.toLowerCase() === site,
+      );
+      if (blocked) return `Connecting to ${site} is blocked in your approval settings.`;
+      if (siteAlwaysAllowed(rules, site)) return true;
+      const approved = await prisma.externalEffect.findMany({
+        where: {
+          runId: run.runId,
+          kind: TAILNET_CONNECT_TOOL,
+          status: { in: PASSED_EFFECT_STATUSES },
+        },
+        select: { request: true },
+      });
+      return approved.some((effect) => requestSite(TAILNET_CONNECT_TOOL, effect.request) === site)
+        ? true
+        : `Ask to connect to ${site} with tailnet_connect first.`;
+    });
 }

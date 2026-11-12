@@ -488,6 +488,19 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "tailnet_connect",
+    description:
+      "Ask to reach a machine on the tailnet of the person you work for: host is a *.ts.net name or a 100.x address, port a TCP port. Once allowed, reach it from shell with rakazo-net: `rakazo-net run <command>` for HTTP(S) such as curl, `ssh -o ProxyCommand='rakazo-net nc %h %p' user@host`, or `rakazo-net forward <local port> <host>:<port>` for other clients. Only TCP works, not ping or UDP. Never install Tailscale on your computer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        host: { type: "string" },
+        port: { type: "integer", minimum: 1, maximum: 65535 },
+      },
+      required: ["host", "port"],
+    },
+  },
+  {
     name: "user_computer_observe",
     description:
       "Look at one app on the user's own computer without disturbing them: opens it in the background if needed and returns its window as numbered accessibility rows ([N]) and a screenshot. query narrows the rows. Use only when the task needs an app on their computer.",
