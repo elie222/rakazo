@@ -574,10 +574,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "connect_app",
     description:
-      "Show an inline card to connect an app in this chat when you need an unconnected app or the user asks to connect one. Then wait for the user instead of directing them elsewhere.",
+      "Show an inline card in this chat to connect an app you need or the user asks for; set another to add an account to a connected app. Then wait for the user instead of directing them elsewhere.",
     inputSchema: {
       type: "object",
-      properties: { app: { type: "string", minLength: 1, maxLength: 100 } },
+      properties: {
+        app: { type: "string", minLength: 1, maxLength: 100 },
+        another: { type: "boolean" },
+      },
       required: ["app"],
       additionalProperties: false,
     },

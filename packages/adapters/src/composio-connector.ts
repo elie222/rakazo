@@ -233,6 +233,75 @@ function accountIsPinned(
   );
 }
 
+/** Per toolkit with several pinned accounts, the one a call that names no account runs as. */
+export function defaultComposioAccounts(
+  connections: ConnectedConnector[],
+  connectedAccounts: Record<string, string[]>,
+): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  for (const [toolkit, ids] of Object.entries(connectedAccounts)) {
+    if (ids.length < 2) continue;
+    const account = connections.find(
+      (connection) =>
+        connection.isDefault &&
+        composioSlugKey(connection.externalId) === composioSlugKey(toolkit) &&
+        ids.includes(connection.providerRef?.trim() ?? ""),
+    );
+    if (account?.providerRef) defaults[toolkit] = account.providerRef.trim();
+  }
+  return defaults;
+}
+
+/** Names the default account on every toolkit call, nested or direct, that names none. */
+export function withDefaultAccount(
+  item: ComposioExecutionCall,
+  defaults: Record<string, string>,
+): ComposioExecutionCall {
+  const accountFor = (slug: unknown) =>
+    typeof slug === "string"
+      ? Object.entries(defaults).find(([toolkit]) =>
+          composioSlugKey(slug).startsWith(`${composioSlugKey(toolkit)}_`),
+        )?.[1]
+      : undefined;
+  if (item.tool === COMPOSIO_MULTI_EXECUTE_TOOL && Array.isArray(item.args.tools)) {
+    const tools = item.args.tools.map((entry: unknown) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      const record = entry as Record<string, unknown>;
+      if (typeof record.account === "string" && record.account.trim()) return entry;
+      const account = accountFor(record.tool_slug);
+      return account ? { ...record, account } : entry;
+    });
+    return { ...item, args: { ...item.args, tools } };
+  }
+  if (item.account) return item;
+  const account = accountFor(item.tool);
+  return account ? { ...item, account } : item;
+}
+
+/** Tells the model which account is which, since several accounts of one app need an explicit pick. */
+function accountsNote(
+  connections: ConnectedConnector[],
+  connectedAccounts: Record<string, string[]>,
+): string | undefined {
+  const lines = Object.entries(connectedAccounts)
+    .filter(([, ids]) => ids.length >= 2)
+    .map(([toolkit, ids]) => {
+      const accounts = ids.map((id) => {
+        const connection = connections.find(
+          (candidate) =>
+            candidate.providerRef?.trim() === id &&
+            composioSlugKey(candidate.externalId) === composioSlugKey(toolkit),
+        );
+        const label = connection ? `${JSON.stringify(connection.displayName)} ` : "";
+        return `${label}(account ${id}${connection?.isDefault ? ", default" : ""})`;
+      });
+      return `${toolkit} accounts: ${accounts.join(", ")}.`;
+    });
+  return lines.length > 0
+    ? `${lines.join("\n")}\nOmit account to use the default account unless the user asks for another.`
+    : undefined;
+}
+
 function dropboxFolderListCall(item: unknown): ComposioExecutionCall | undefined {
   if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
   const record = item as Record<string, unknown>;
@@ -591,17 +660,26 @@ export class ComposioConnector implements ComposioProvider {
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const connections = connectedComposioConnections(context);
     if (connections.length === 0) return [];
-    const { session } = await this.sessionForExecute(context.userId, connections);
+    const { session, connectedAccounts } = await this.sessionForExecute(
+      context.userId,
+      connections,
+    );
     if (!session) return [];
-    return asConnectorTools(await session.tools());
+    const note = accountsNote(connections, connectedAccounts);
+    return asConnectorTools(await session.tools()).map((tool) =>
+      note && tool.name === COMPOSIO_MULTI_EXECUTE_TOOL
+        ? { ...tool, description: `${tool.description}\n${note}` }
+        : tool,
+    );
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     const executed = [];
     try {
+      const connections = connectedComposioConnections(context);
       const { session, reconnect, connectedAccounts } = await this.sessionForExecute(
         context.userId,
-        connectedComposioConnections(context),
+        connections,
       );
       const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit));
       if (stale) {
@@ -618,7 +696,10 @@ export class ComposioConnector implements ComposioProvider {
         yield { type: "error", message: "No active Composio connection for this tool." };
         return;
       }
-      const planned = expandComposioMultiExecute(call.tool, call.args ?? {});
+      const defaults = defaultComposioAccounts(connections, connectedAccounts);
+      const planned = expandComposioMultiExecute(call.tool, call.args ?? {}).map((item) =>
+        withDefaultAccount(item, defaults),
+      );
       const unpinned = planned.find(
         (item) => item.account && !accountIsPinned(connectedAccounts, item.tool, item.account),
       );

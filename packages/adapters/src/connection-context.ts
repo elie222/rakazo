@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { defaultAccountIds } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { PluginConnectionRow } from "./composio-connector.js";
 import { planLiveConnectionSync } from "./composio-connector.js";
@@ -37,8 +38,12 @@ export function connectedContext(
     provider: string;
     displayName: string;
     providerRef: string | null;
+    status: string;
+    isDefault: boolean;
+    createdAt: Date;
   }>,
 ): Pick<AdapterContext, "connectedConnections" | "connectedProviders"> {
+  const defaults = defaultAccountIds(rows);
   return {
     connectedConnections: rows.map((row) => ({
       id: row.id,
@@ -46,6 +51,7 @@ export function connectedContext(
       externalId: row.provider,
       displayName: row.displayName,
       providerRef: row.providerRef ?? undefined,
+      ...(defaults.has(row.id) ? { isDefault: true } : {}),
     })),
     connectedProviders: rows
       .filter((row) => row.connectorId === "composio")

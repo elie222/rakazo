@@ -3780,6 +3780,7 @@ describe("connections.complete", () => {
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
           where.id === slowRow.id ? { ...slowRow } : { ...otherRow },
         ),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as PrismaClient;

@@ -188,6 +188,11 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await accountLabel.press("Enter");
   await renamed;
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
+  const workRow = detail.getByLabel("Account label").nth(1).locator("xpath=..");
+  await expect(detail.getByText("Default", { exact: true })).toHaveCount(1);
+  await workRow.getByRole("button", { name: "Make default", exact: true }).click();
+  await expect(workRow.getByText("Default", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Default", { exact: true })).toHaveCount(1);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
   await page

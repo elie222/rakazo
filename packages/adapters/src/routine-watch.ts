@@ -355,6 +355,8 @@ async function toolContext(
       providerRef: true,
       displayName: true,
       status: true,
+      isDefault: true,
+      createdAt: true,
     },
   });
   return { ...context(routine), ...connectedContext(selectRunConnections(rows, [])) };

@@ -55,8 +55,8 @@ function fixture(items = [entry]) {
     context,
     target,
     catalog,
-    call: (app: unknown = "Gmail", effect = "effect") =>
-      connectApp(deps, providers, context, target, app, effect),
+    call: (app: unknown = "Gmail", effect = "effect", another = false) =>
+      connectApp(deps, providers, context, target, app, effect, another),
   };
 }
 beforeEach(() => {
@@ -103,6 +103,13 @@ describe("connect_app execution", () => {
     const f = fixture([{ ...entry, connected: true }]);
     expect(await f.call()).toMatchObject({ status: "connected" });
     expect(stored).toHaveLength(0);
+  });
+  it("posts a pending card to add another account of a connected app", async () => {
+    const f = fixture([{ ...entry, connected: true }]);
+    expect(await f.call("Gmail", "effect", true)).toMatchObject({ status: "pending" });
+    expect(stored[0]?.blocks).toEqual([
+      expect.objectContaining({ kind: "app_connect", provider: "gmail", status: "pending" }),
+    ]);
   });
   it("dedupes replay even after the original card connects", async () => {
     const f = fixture();

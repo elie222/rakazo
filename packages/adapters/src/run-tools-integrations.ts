@@ -202,6 +202,7 @@ export const integrationTools: ToolHandlers = {
         run,
         args.app,
         applied?.effect.id ?? runScopedToolExecutionId(runId, executionId),
+        args.another === true,
       ),
     );
   },

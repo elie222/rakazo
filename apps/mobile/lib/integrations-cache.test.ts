@@ -84,6 +84,7 @@ const snapshot = {
       displayName: "Example",
       status: "connected" as const,
       capabilities: [],
+      isDefault: false,
       createdAt: "2026-01-01",
     },
   ],

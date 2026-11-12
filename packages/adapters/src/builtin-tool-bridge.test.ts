@@ -58,8 +58,9 @@ describe("built-in tool bridge", () => {
     // request_secret carries the card and contact kinds; update_bot carries instructions paging;
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
     // read_file takes a line range; ask_user carries the content being decided about;
-    // search_history lists earlier tool work by kind without a keyword.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_579);
+    // search_history lists earlier tool work by kind without a keyword; connect_app can add
+    // another account to a connected app.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_623);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
