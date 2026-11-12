@@ -64,7 +64,7 @@ sleeps. Readiness uses exact commit SHAs and verifies the marker's source workfl
 so PR code cannot forge completion by uploading an artifact with the same name.
 If E2E publication fails or is skipped, its completion still starts the agent,
 which captures from the preview. A failed preview deployment never starts it.
-Calls for the same commit are serialized through publishing and recheck a trusted
+Calls for the same PR and commit are serialized through publishing and recheck a trusted
 completion artifact. Successful assessments are cached even when E2E images cover
 the change and no new capture is needed, so simultaneous events cannot duplicate
 the model call. PR description markers never authorize skipping an assessment.
@@ -73,3 +73,9 @@ recorded. Retries retain current-commit agent images and append missing views,
 so publishing does not remove images used to establish coverage.
 
 Publication skips description updates when the resulting content is unchanged.
+
+Each caller fans out across the current pull requests found through the source
+owner and branch, including forks. The queued agent rechecks the PR head before
+preparing a browser or restoring a login. Retention deduplicates image URLs and
+rejects merged sets beyond the publication limit. The gallery, publisher and
+Python reader share the commit-marker template in the testkit.

@@ -201,7 +201,21 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
+    outputs:
+      pulls: ${{ steps.pr.outputs.pulls }}
     steps:
+      - name: Find current pull requests
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          pulls=$(gh api -X GET --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 | \
+            jq -c --arg sha "$HEAD_SHA" '[.[][] | select(.head.sha == $sha) | .number]')
+          echo "pulls=$pulls" >> "$GITHUB_OUTPUT"
       # Even a skipped or failed publication is terminal: the agent can capture missing views.
       - run: |
           mkdir -p "$RUNNER_TEMP/screenshot-ready"
@@ -215,7 +229,11 @@ jobs:
 
   screenshots:
     needs: screenshot-source
-    if: always() && needs.screenshot-source.result == 'success'
+    if: always() && needs.screenshot-source.result == 'success' && needs.screenshot-source.outputs.pulls != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJSON(needs.screenshot-source.outputs.pulls) }}
     uses: ./.github/workflows/pr-screenshots.yml
     permissions:
       actions: read
@@ -223,4 +241,5 @@ jobs:
       pull-requests: write
     with:
       head_sha: ${{ github.event.workflow_run.head_sha }}
+      pull_request: ${{ matrix.pr }}
     secrets: inherit

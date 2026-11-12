@@ -69,6 +69,13 @@ def obsolete(pr: dict, sha: str) -> bool:
     return pr.get("state") != "open" or pr.get("head", {}).get("sha") != sha
 
 
+def commit_marker(sha: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("Expected a commit SHA")
+    path = Path(__file__).resolve().parents[2] / "packages/testkit/src/screenshot-commit-marker.json"
+    return json.loads(path.read_text())["template"].replace("{sha}", sha)
+
+
 def evidence(pages: list, sha: str) -> str:
     """Only current-commit gallery comments from the trusted publisher are evidence."""
     return "\n\n".join(
@@ -77,7 +84,7 @@ def evidence(pages: list, sha: str) -> str:
         for comment in page
         if comment.get("user", {}).get("login") == "github-actions[bot]"
         and "<!-- rakazo-playwright-screenshots -->" in (comment.get("body") or "")
-        and f"<!-- screenshot-commit:{sha} -->" in comment["body"]
+        and commit_marker(sha) in comment["body"]
     )[:24_000]
 
 
@@ -189,16 +196,35 @@ def retain_section(body: str, new_section: str, sha: str) -> str:
     start = body.find(START)
     end = body.find(END, start + len(START)) if start != -1 else -1
     existing = body[start:end + len(END)] if start != -1 and end != -1 else ""
-    marker = f"<!-- screenshot-commit:{sha} -->"
+    marker = commit_marker(sha)
     if marker not in existing:
         return new_section
-    if not new_section:
-        return existing
-    additions = "\n".join(
-        line for line in new_section.splitlines()
-        if line not in (START, END, "## Screenshots", marker)
-    ).strip()
-    return existing[:-len(END)].rstrip() + "\n\n" + additions + "\n" + END
+    entries: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for text in (existing, new_section):
+        caption = ""
+        for block in text.split("\n\n"):
+            block = block.strip()
+            match = re.fullmatch(r"!\[[^\n]*\]\((https://[^\s]+)\)", block)
+            if match:
+                url = match[1]
+                if url not in seen:
+                    entries.append((caption, block))
+                    seen.add(url)
+                caption = ""
+            elif block and not any(line in (START, END, "## Screenshots", marker) for line in block.splitlines()):
+                caption = block
+    if len(entries) > MAX_SHOTS:
+        raise ValueError("Retained and new screenshots exceed the publication limit")
+    if not entries:
+        return ""
+    lines = [START, marker, "## Screenshots", ""]
+    for caption, image in entries:
+        if caption:
+            lines.extend([caption, ""])
+        lines.extend([image, ""])
+    lines.append(END)
+    return "\n".join(lines)
 
 
 def splice(body: str, new_section: str) -> str:
@@ -219,6 +245,9 @@ def splice(body: str, new_section: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "marker":
+        print(commit_marker(argv[2]))
+        return 0
     if len(argv) == 4 and argv[1] == "ready":
         if sources_ready(argv[2], argv[3]):
             print("ready")

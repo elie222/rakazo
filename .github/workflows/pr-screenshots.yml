@@ -8,13 +8,16 @@ on:
       head_sha:
         required: true
         type: string
+      pull_request:
+        required: true
+        type: number
 
 permissions: {}
 
 # Covers context, capture and publishing, so simultaneous completion events cannot
 # capture twice before the first run has updated the description.
 concurrency:
-  group: pr-screenshots-${{ inputs.head_sha }}
+  group: pr-screenshots-${{ inputs.pull_request }}-${{ inputs.head_sha }}
   queue: max
   cancel-in-progress: false
 
@@ -43,6 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_PREFIX: ${{ vars.FLY_PREVIEW_APP_PREFIX }}
           HEAD_SHA: ${{ inputs.head_sha }}
+          PR: ${{ inputs.pull_request }}
         run: |
           set -euo pipefail
           [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
@@ -51,9 +55,8 @@ jobs:
             echo "Screenshot sources are not both ready; their completion will trigger another run."
             exit 0
           fi
-          pr=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls?per_page=100" | \
-            jq -r --arg sha "$HEAD_SHA" '[.[][] | select(.state == "open" and .head.sha == $sha)] | first | .number // empty')
-          [[ -n $pr ]] || { echo "No current open pull request; skipping."; exit 0; }
+          pr=$PR
+          [[ $pr =~ ^[1-9][0-9]*$ ]] || { echo "Bad pull request number" >&2; exit 1; }
           dir="$RUNNER_TEMP/pr-screenshots"
           mkdir -p "$dir"
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$pr/files?per_page=100" --jq '.[].filename' > "$dir/files.txt"
@@ -104,7 +107,7 @@ jobs:
     timeout-minutes: 30
     # Only Codex uses the shared login; other agents get a run-specific group.
     concurrency:
-      group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}', github.run_id, github.run_attempt) }}
+      group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}-{2}', github.run_id, github.run_attempt, inputs.pull_request) }}
       queue: max
       cancel-in-progress: false
     env:
@@ -119,9 +122,19 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - name: Recheck the queued commit
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pull_request }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') == "open $HEAD_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Prepare an isolated browser
         id: browser
-        if: needs.screenshot-context.outputs.pr
+        if: steps.current.outputs.current == 'true'
         env:
           PREVIEW_URL: ${{ needs.screenshot-context.outputs.preview_url }}
           PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
@@ -149,7 +162,7 @@ jobs:
               "--output-dir", "/srv/pr-screenshots", "--allowed-origins", $origin]}}}' \
             > "$RUNNER_TEMP/pr-screenshots-mcp.json"
       - id: claude
-        if: needs.screenshot-context.outputs.pr && env.SCREENSHOT_AGENT == 'claude'
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'claude'
         uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -165,11 +178,11 @@ jobs:
             --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
             --json-schema '${{ steps.browser.outputs.schema }}'
       - name: Install Codex
-        if: needs.screenshot-context.outputs.pr && env.SCREENSHOT_AGENT == 'codex'
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
         run: npm install --global @openai/codex@0.164.0
       - name: Restore subscription login
         id: auth
-        if: needs.screenshot-context.outputs.pr && env.SCREENSHOT_AGENT == 'codex'
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
         env:
           CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
@@ -233,7 +246,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.claude.outputs.structured_output != '' || steps.codex.outputs.result != ''
         with:
-          name: pr-screenshots
+          name: pr-screenshots-${{ inputs.pull_request }}
           path: ${{ runner.temp }}/shots
           if-no-files-found: ignore
           retention-days: 3
@@ -257,7 +270,7 @@ jobs:
         # An empty list uploads nothing; any other result must bring its files.
         if: contains(needs.screenshots.outputs.result, '"file"')
         with:
-          name: pr-screenshots
+          name: pr-screenshots-${{ inputs.pull_request }}
           path: ${{ runner.temp }}/shots
       - name: Update the description
         id: publish
@@ -289,7 +302,8 @@ jobs:
           python3 .github/scripts/pr-screenshots.py prepare "$RESULT" "$shots" \
             "${PLAYWRIGHT_PUBLIC_BASE_URL%/}/$key" "$out"
           if [[ -s $out/section.md ]]; then
-            sed -i "1a<!-- screenshot-commit:$HEAD_SHA -->" "$out/section.md"
+            marker=$(python3 .github/scripts/pr-screenshots.py marker "$HEAD_SHA")
+            sed -i "1a$marker" "$out/section.md"
           fi
           while IFS= read -r name; do
             aws s3 cp "$shots/$name" "s3://$S3_BUCKET/playwright/$key/$name" \

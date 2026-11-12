@@ -1,4 +1,5 @@
 import type { PlaywrightScreenshot } from "./playwright-report-dashboard.js";
+import commitMarker from "./screenshot-commit-marker.json" with { type: "json" };
 
 export const PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER = "<!-- rakazo-playwright-screenshots -->";
 export const PLAYWRIGHT_PR_FEATURE_FRAME_LIMIT = 8;
@@ -98,7 +99,7 @@ export function buildPlaywrightPrScreenshotComment(input: {
 
   return [
     PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER,
-    `<!-- screenshot-commit:${input.sha} -->`,
+    commitMarker.template.replace("{sha}", input.sha),
     "### Playwright screenshots",
     "",
     featureSection,

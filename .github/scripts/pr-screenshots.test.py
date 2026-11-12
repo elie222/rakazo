@@ -160,6 +160,17 @@ class RetainTest(unittest.TestCase):
         self.assertEqual(merged.count("## Screenshots"), 1)
         self.assertEqual(merged.count(f"<!-- screenshot-commit:{self.sha} -->"), 1)
 
+    def test_duplicate_urls_are_not_appended(self):
+        existing = self.section("first.png")
+        merged = shots.retain_section(existing, self.section("first.png"), self.sha)
+        self.assertEqual(merged, existing)
+
+    def test_merged_capture_limit_fails_instead_of_caching_missing_views(self):
+        existing = shots.section([(f"s{i}.png", "View") for i in range(shots.MAX_SHOTS)], BASE)
+        existing = existing.replace(shots.START, f"{shots.START}\n{shots.commit_marker(self.sha)}")
+        with self.assertRaisesRegex(ValueError, "publication limit"):
+            shots.retain_section(existing, self.section("one-more.png"), self.sha)
+
     def test_stale_sections_are_replaced_or_removed(self):
         old = self.section("stale.png", "b" * 40)
         current = self.section("current.png")
