@@ -106,6 +106,8 @@ export async function sandboxAllowancePlan(
       : null;
   const reset = nextAnniversary ?? periodEnd ?? nextMonth;
   const resetsAt =
+    limitCents <= 0 ||
+    (!tier && !live) ||
     billing?.status === "trialing" ||
     reset <= now ||
     (live && periodEnd != null && periodEnd <= now) ||

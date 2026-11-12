@@ -127,6 +127,43 @@ describe("computer allowance", () => {
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(0);
   });
 
+  it.each([
+    [null, null],
+    ["active", 0],
+    ["canceled", 5000],
+    ["unpaid", 5000],
+  ])(
+    "does not promise a credit allowance reset with status %s and amount %s",
+    async (status, amount) => {
+      const { deps } = allowanceDeps({
+        billing: true,
+        mode: "credits",
+        creditAmountCents: amount,
+        subscription: status ? { status } : undefined,
+      });
+      expect(
+        (await sandboxAllowance(deps, "organization", new Date("2026-03-17T08:30:00Z")))?.resetsAt,
+      ).toBeNull();
+    },
+  );
+
+  it("reports the reset for a live monthly credit plan", async () => {
+    const resetsAt = new Date("2026-04-20T14:00:00Z");
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "credits",
+      creditAmountCents: 5000,
+      subscription: {
+        status: "active",
+        currentPeriodStartsAt: new Date("2026-03-20T14:00:00Z"),
+        currentPeriodEndsAt: resetsAt,
+      },
+    });
+    expect(
+      (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+    ).toEqual(resetsAt);
+  });
+
   it("gives granted credit without a monthly plan a fifth of it, once, since the first grant", async () => {
     const since = new Date("2026-01-15T00:00:00.000Z");
     const { deps, prisma } = allowanceDeps({
