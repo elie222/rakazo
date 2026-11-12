@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AskActions } from "../components/AskActions";
 import { messageRowLayout } from "./message-row-layout";
 import type { MobileMessage } from "./mobile-types";
 import { answerThreadMessage } from "./thread-answer";
@@ -663,7 +664,6 @@ it.each([
 );
 
 it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
-  const { AskActions } = await import("../components/AskActions");
   const actions = [
     { id: "choice-1", label: "Plan a trip" },
     { id: "choice-2", label: "Write something" },
@@ -704,7 +704,6 @@ it.each([undefined, "pending", "answered"] as const)(
 );
 
 it("keeps pending approvals primary without adding a selection state", async () => {
-  const { AskActions } = await import("../components/AskActions");
   await act(async () =>
     root.render(
       <AskActions
@@ -728,7 +727,6 @@ it("keeps pending approvals primary without adding a selection state", async () 
 });
 
 it("only marks question options selected after an answer exists", async () => {
-  const { AskActions } = await import("../components/AskActions");
   const actions = [
     { id: "first", label: "First" },
     { id: "second", label: "Second" },
