@@ -1148,6 +1148,9 @@ export const appContract = {
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   mcp: {
+    apps: {
+      connect: oc.input(z.object({ appId: Id })).output(z.object({ serverId: Id })),
+    },
     servers: {
       list: oc.output(z.array(McpServerSchema)),
       create: oc.input(McpServerConfigInput).output(McpServerSchema),

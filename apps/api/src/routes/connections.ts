@@ -10,6 +10,7 @@ import {
   connectionContext,
   revokeConnection,
 } from "../connection-flows.js";
+import { deploymentAppCatalog } from "../deployment-apps.js";
 import { connectionCreatedEvent } from "../security-audit.js";
 import type { RouterContext } from "./context.js";
 
@@ -134,7 +135,22 @@ export function connectionsRoutes(ctx: RouterContext) {
             }
           }),
         );
-        return catalogs.flat();
+        const bundled =
+          !input.connectorId || input.connectorId === "deployment"
+            ? await deploymentAppCatalog(ctx, context.actor)
+            : [];
+        const query = input.query?.toLowerCase() ?? "";
+        return [
+          ...bundled.filter(
+            (item) =>
+              item.name.toLowerCase().includes(query) &&
+              (!item.needsSetup ||
+                !catalogs
+                  .flat()
+                  .some((other) => other.name.toLowerCase() === item.name.toLowerCase())),
+          ),
+          ...catalogs.flat(),
+        ];
       }),
       list: authed.connections.list.handler(async ({ context }) => {
         const rows = await deps.prisma.connection.findMany({

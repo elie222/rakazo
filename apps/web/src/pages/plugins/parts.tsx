@@ -154,6 +154,12 @@ function CatalogActions({ item, context }: { item: ConnectionCatalogItem; contex
   const key = catalogItemKey(item);
   const connected = connections.itemConnected(item);
   const connecting = connections.pending === key;
+  if (item.needsSetup)
+    return (
+      <span className="text-body-sm text-muted-foreground">
+        <Trans>Server setup required</Trans>
+      </span>
+    );
   if (connected) {
     return (
       <Button
@@ -181,7 +187,13 @@ function CatalogActions({ item, context }: { item: ConnectionCatalogItem; contex
         void connections.connect(item);
       }}
     >
-      {connecting ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
+      {connecting ? (
+        <Trans>Adding…</Trans>
+      ) : item.mcpAppId ? (
+        <Trans>Connect</Trans>
+      ) : (
+        <Trans>Add</Trans>
+      )}
     </Button>
   );
 }

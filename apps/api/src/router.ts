@@ -153,6 +153,7 @@ export interface RouterDeps {
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
     computerSettingsEnabled?: boolean;
+    deploymentApps?: string;
     mcpStdioEnabled?: boolean;
     mcpStdioAllowedCommands?: string[];
   };

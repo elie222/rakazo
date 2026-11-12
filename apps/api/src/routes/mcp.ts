@@ -22,6 +22,7 @@ import {
   serverAvailability,
   serverSecretSpace,
 } from "../availability.js";
+import { connectDeploymentApp } from "../deployment-apps.js";
 import {
   queueMcpConnectedRun,
   resolveMcpApprovalCards,
@@ -56,6 +57,11 @@ export function mcpRoutes(ctx: RouterContext) {
   } = ctx;
   return {
     mcp: {
+      apps: {
+        connect: authed.mcp.apps.connect.handler(({ context, input }) =>
+          connectDeploymentApp(ctx, context.actor, input.appId),
+        ),
+      },
       servers: {
         list: authed.mcp.servers.list.handler(async ({ context }) => {
           const rows = await deps.prisma.mcpServer.findMany({

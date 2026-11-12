@@ -241,6 +241,7 @@ x-app-environment: &app-environment # Runtime
   # Tools and integrations
   WEB_PROVIDER:
   KEENABLE_API_KEY:
+  DEPLOYMENT_APPS:
   COMPOSIO_API_KEY:
   PIPEDREAM_CLIENT_ID:
   PIPEDREAM_CLIENT_SECRET:

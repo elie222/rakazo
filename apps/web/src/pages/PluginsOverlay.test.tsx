@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { PluginsOverlay } from "./PluginsOverlay";
 
 const api = vi.hoisted(() => ({
@@ -13,7 +14,11 @@ const api = vi.hoisted(() => ({
     tools: vi.fn(),
   },
   capabilities: { list: vi.fn(), catalogSearch: vi.fn(), sourcePresets: vi.fn() },
-  mcp: { servers: { list: vi.fn() }, assignments: { list: vi.fn() } },
+  mcp: {
+    apps: { connect: vi.fn() },
+    servers: { list: vi.fn() },
+    assignments: { list: vi.fn(), approve: vi.fn() },
+  },
   marketplace: { catalog: vi.fn() },
 }));
 
@@ -142,6 +147,9 @@ beforeEach(() => {
           }
         : { enabled: false, results: [] },
     );
+  api.mcp.apps.connect.mockReset().mockResolvedValue({ serverId: "server-1" });
+  api.mcp.assignments.approve.mockReset().mockResolvedValue({});
+  vi.mocked(connectMcpOauth).mockReset().mockResolvedValue("connected");
   api.mcp.servers.list.mockReset().mockResolvedValue([]);
   api.mcp.assignments.list.mockReset().mockResolvedValue([]);
   api.marketplace.catalog.mockReset().mockResolvedValue({ entries: [], unavailableRegistries: [] });
@@ -207,4 +215,37 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(host.textContent).toContain("Add MCP server");
   expect(searchBox().value).toBe("canva");
   expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
+});
+
+it("connects an operator-provided app through personal OAuth and assigns only the active bot", async () => {
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: false,
+      noAuth: false,
+      mcpAppId: "files",
+    },
+  ]);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} activeBotId="bot-1" />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "Files");
+  const add = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Connect",
+  )!;
+  await act(async () => add.click());
+  await vi.waitFor(() => expect(connectMcpOauth).toHaveBeenCalledWith("server-1"));
+  expect(api.mcp.apps.connect).toHaveBeenCalledWith({ appId: "files" });
+  expect(api.mcp.assignments.approve).toHaveBeenCalledWith({
+    botId: "bot-1",
+    serverId: "server-1",
+  });
 });

@@ -11,7 +11,8 @@
     "./host-screen": "./src/host-screen.ts",
     "./model-json": "./src/model-json.ts",
     "./wuying-screen-policy": "./src/wuying-screen-policy.ts",
-    "./user-device-client": "./src/user-device-client.ts"
+    "./user-device-client": "./src/user-device-client.ts",
+    "./google-drive-mcp": "./src/google-drive-mcp.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",

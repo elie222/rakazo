@@ -676,6 +676,32 @@ export default function Integrations() {
   }
 
   function openDetail(item: ConnectionCatalogItem) {
+    if (item.mcpAppId) {
+      const isCurrent = captureConnectionScope();
+      Alert.alert(item.name, undefined, [
+        { text: t`Cancel`, style: "cancel" },
+        { text: t`Connect`, onPress: () => isCurrent() && void connect(item) },
+        ...(item.mcpServerId
+          ? [
+              {
+                text: t`Disconnect`,
+                style: "destructive" as const,
+                onPress: () => {
+                  if (!isCurrent()) return;
+                  void rpc("mcp/servers/remove", { id: item.mcpServerId! })
+                    .then(async () => {
+                      if (isCurrent()) await refresh();
+                    })
+                    .catch((error) => {
+                      if (isCurrent()) setCatalogError(errorText(error, t`Could not disconnect`));
+                    });
+                },
+              },
+            ]
+          : []),
+      ]);
+      return;
+    }
     setCatalogError(null);
     setToolsOpen(true);
     setDetailKey({ connectorId: item.connectorId, slug: item.slug });
@@ -715,6 +741,18 @@ export default function Integrations() {
     setPending(key);
     setCatalogError(null);
     try {
+      if (item.mcpAppId) {
+        const { serverId } = await rpc("mcp/apps/connect", { appId: item.mcpAppId });
+        if (!isCurrent() || controller.signal.aborted) return;
+        const botId = lastBotId || (await loadLastBotId());
+        if (!isCurrent() || controller.signal.aborted) return;
+        if (botId) await rpc("mcp/assignments/approve", { botId, serverId });
+        if (!isCurrent() || controller.signal.aborted) return;
+        setOauthServerId(serverId);
+        await authorizeMcp(serverId);
+        if (isCurrent()) await refresh();
+        return;
+      }
       const result = await connectCatalogItem(item, connections, {
         begin: (input) => rpc("connections/begin", input),
         complete: (input) => rpc("connections/complete", input),
@@ -918,6 +956,7 @@ export default function Integrations() {
     const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
+    if (item.needsSetup) return <Text style={styles.secondary}>{t`Server setup required`}</Text>;
     if (connected) {
       return (
         <NativeActionButton
@@ -935,7 +974,7 @@ export default function Integrations() {
         accessibilityLabel={t`Add ${ph({ name: label })}`}
         disabled={connecting}
         fill={false}
-        label={connecting ? t`Working…` : t`Add`}
+        label={connecting ? t`Working…` : item.mcpAppId ? t`Connect` : t`Add`}
         onPress={() => void connect(item)}
         prominence="secondary"
       />

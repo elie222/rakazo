@@ -2089,6 +2089,7 @@ model Secret {
 }
 
 model McpServer {
+  deploymentAppId String?
   id            String            @id @default(cuid())
   spaceId       String
   space         Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -2130,6 +2131,7 @@ model McpServer {
   allBots       Boolean           @default(false)
 
   @@unique([spaceId, userId, slug])
+  @@unique([userId, deploymentAppId])
   @@index([spaceId, userId])
   @@index([installId])
   @@map("mcp_servers")

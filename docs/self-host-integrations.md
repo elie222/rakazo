@@ -129,6 +129,53 @@ alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CL
 `PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
 API and worker.
 
+### Direct Drive connection
+
+The server image also includes an optional Drive MCP adapter that calls the Drive API directly.
+It does not require a managed connector account. It searches file names, reads files (exporting
+native documents, spreadsheets and presentations), and creates UTF-8 text files. File content
+is limited to 2 MiB per call; spreadsheet exports return the first sheet as CSV. It does not
+delete files, change sharing, or edit existing files.
+
+On the API and worker, enable `MCP_STDIO_ENABLED=true` and add
+`/app/infra/compose/drive-mcp` to `MCP_STDIO_ALLOWED_COMMANDS`. Keep other required commands in
+the list. This launcher accepts no arguments; there is no need to allow a general shell or
+JavaScript interpreter. The bundled app can be connected by each signed-in user. Web, desktop
+and mobile bots use the same backend connection.
+
+In a Google Cloud project, enable the Drive API and configure the OAuth consent screen. Create
+a **Web application** OAuth client with `<your web origin>/mcp/oauth/callback` as an authorized
+redirect URI. If the app is in testing, add the connecting account as a test user. Follow the
+[Google OAuth setup guide](https://developers.google.com/identity/protocols/oauth2/web-server)
+and [Drive scope guidance](https://developers.google.com/workspace/drive/api/guides/api-specific-auth).
+
+Set `DEPLOYMENT_APPS` on the API and worker to a JSON object containing the registered
+client (supply real values through your deployment's secret manager, not a tracked file):
+
+```json
+{"drive":{"clientId":"example-client","clientSecret":"example-secret"}}
+```
+
+Users then open **Connect apps**, choose **Google Drive**, and approve Google's consent screen.
+No administrator role, client secret, or command entry is required from each user. Each user
+gets their own encrypted OAuth grant. When a bot is active, the app is assigned only to that
+bot; existing MCP server controls manage later assignments and disconnects. Web and desktop use
+a login popup; mobile opens the same registered web callback in the browser.
+
+The bundled adapter requests `drive.readonly` to read existing files and `drive.file` to create
+files. Folder permissions still apply. Rakazo refreshes grants and restarts the process before
+its short-lived access token expires. External apps in testing normally receive refresh tokens
+that expire after seven days. Public apps requesting the restricted `drive.readonly` scope need
+Google's verification; server-side storage or transmission of restricted data can also require
+a security assessment. Each independent deployment registers its own OAuth client.
+After rotating the operator client, remove and reconnect existing app connections to replace
+their stored client. Removing deployment configuration prevents new connections; revoke existing
+grants separately if withdrawing access. Never reuse a login session token.
+
+Verify with a file-name search and a read of a known test file through the bot. An upload creates
+a new file and is marked as a write for Rakazo's approval policy. It is not retried by this
+adapter: if an upload's result is uncertain, search for the file before trying again.
+
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
 base URL; Rakazo appends `api/search`.

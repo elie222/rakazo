@@ -856,6 +856,9 @@ export const ConnectionSchema = z.object({
 export type Connection = z.infer<typeof ConnectionSchema>;
 
 export const ConnectionCatalogItemSchema = z.object({
+  mcpAppId: z.string().optional(),
+  mcpServerId: z.string().optional(),
+  needsSetup: z.boolean().optional(),
   connectorId: z.string(),
   slug: z.string(),
   name: z.string(),
