@@ -238,6 +238,7 @@ function harness(
           ? null
           : {
               botId: options.groupId ? null : "bot-1",
+              spaceId: "space-1",
               groupId: options.groupId ?? null,
               historyCompactionGeneration: generations.shift() ?? 3,
             },
@@ -296,17 +297,6 @@ const turn = (role: "user" | "assistant", content: string, second: number, speak
   timestamp: at(second).toISOString(),
   ...(speaker === undefined ? {} : { speaker }),
 });
-
-/** Runs that wrote Bea's group replies whose words bot-1 may not trust, as `runs` for `runId`. */
-const untrustedGroupRuns = (runId: string): [string, Record<string, FakeRun>][] => [
-  ["belongs to another owner's bot", { [runId]: { userId: "user-9" } }],
-  ["belongs to a bot in another Space", { [runId]: { spaceId: "space-9" } }],
-  ["read outside content", { [runId]: { readOutsideContent: true } }],
-  ...["running", "waiting_input", "failed", "cancelled"].map(
-    (status): [string, Record<string, FakeRun>] => [`is ${status}`, { [runId]: { status } }],
-  ),
-  ["can no longer be found", {}],
-];
 
 type FromBea = { senderClean?: boolean; sender?: { spaceId: string; userId: string } | null };
 
@@ -385,29 +375,28 @@ describe("retainRunConversation", () => {
     );
   });
 
-  it("learns only the person's words when the run read outside content", async () => {
+  it("learns completed replies as data rather than discarding outside-derived knowledge", async () => {
     const { deps, provider } = harness();
-    await retainRunConversation(deps, "run-1", ["steer-1"], { withoutReplies: true });
+    await retainRunConversation(deps, "run-1", ["steer-1"]);
     expect(provider.retainConversation).toHaveBeenCalledWith(
       expect.objectContaining({
-        turns: [turn("user", "I'm moving to Lisbon.\n\nApril.", 5)],
+        turns: [
+          turn("user", "I'm moving to Lisbon.", 1),
+          turn("assistant", "Which month?", 2),
+          turn("user", "April.", 5),
+          turn("assistant", "Noted.", 6),
+        ],
       }),
       expect.any(Object),
     );
   });
 
-  it("learns a turn without a reply only when replies are left out", async () => {
-    const messages = directMessages.filter((said) => said.role === "user");
-    const unreplied = harness({ messages });
-    await retainRunConversation(unreplied.deps, "run-1");
-    expect(unreplied.provider.retainConversation).not.toHaveBeenCalled();
-
-    const { deps, provider } = harness({ messages });
-    await retainRunConversation(deps, "run-1", [], { withoutReplies: true });
-    expect(provider.retainConversation).toHaveBeenCalledWith(
-      expect.objectContaining({ turns: [turn("user", "I'm moving to Lisbon.", 1)] }),
-      expect.any(Object),
-    );
+  it("does not retain a turn before the bot has replied", async () => {
+    const { deps, provider } = harness({
+      messages: directMessages.filter((said) => said.role === "user"),
+    });
+    await retainRunConversation(deps, "run-1");
+    expect(provider.retainConversation).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -436,72 +425,59 @@ describe("retainRunConversation", () => {
     );
   });
 
-  it.each(untrustedMessages)("does not learn a bot's message when %s", async (_case, change) => {
-    const { deps, provider } = fromBea(change);
+  it("keeps an exposed bot's delivered knowledge in the receiving Space", async () => {
+    const { deps, provider } = fromBea({ senderClean: false });
     await retainRunConversation(deps, "run-1");
-    expect(provider.retainConversation).not.toHaveBeenCalled();
+    expect(provider.retainConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turns: [
+          turn("user", "Can you check the budget?", 1, "Bea"),
+          turn("assistant", "It's on track.", 2),
+        ],
+      }),
+      expect.objectContaining({ spaceId: "space-1" }),
+    );
   });
 
-  it.each([
-    [
-      "learns",
-      true,
-      [turn("user", "I'm moving to Lisbon.", 1), turn("user", "Lands at 9.", 5, "Bea")],
-    ],
-    ["drops", false, [turn("user", "I'm moving to Lisbon.", 1)]],
-  ])("%s a bot's message added mid-run (sender clean: %s)", async (_case, clean, turns) => {
-    const steered = message({
-      id: "steer-bea",
-      seq: 5,
-      role: "user",
-      blocks: [
-        {
-          kind: "bot_message_received",
-          fromBotId: "bot-2",
-          fromBotName: "Bea",
-          text: "Lands at 9.",
-          ...(clean ? { senderClean: true } : {}),
-        },
+  it("keeps group replies with outside or unknown provenance as data", async () => {
+    const bea = { role: "bot", botId: "bot-2" };
+    const { deps, provider } = harness({
+      groupId: "group-1",
+      sourceMessageId: "source",
+      messages: [
+        message({ id: "b-1", seq: 1, ...bea, runId: "run-2" }, "A finding from a page."),
+        message({ id: "b-2", seq: 2, ...bea }, "An imported note."),
+        message({ id: "source", seq: 3, role: "user" }, "What did you find?"),
+        message(
+          { id: "r-4", seq: 4, role: "bot", botId: "bot-1", runId: "run-1" },
+          "Here is the finding.",
+        ),
       ],
     });
-    const messages = [...directMessages.filter((said) => said.id !== "steer-1"), steered];
-    const { deps, provider } = harness({ messages });
-    await retainRunConversation(deps, "run-1", ["steer-bea"], { withoutReplies: true });
+    await retainRunConversation(deps, "run-1");
     expect(provider.retainConversation).toHaveBeenCalledWith(
-      expect.objectContaining({ turns }),
+      expect.objectContaining({
+        turns: [
+          turn("user", "A finding from a page.\n\nAn imported note.", 2, "Bea"),
+          turn("user", "What did you find?", 3),
+          turn("assistant", "Here is the finding.", 4),
+        ],
+      }),
       expect.any(Object),
     );
   });
 
-  it.each(untrustedGroupRuns("run-3"))(
-    "drops another bot's group message when its run %s",
-    async (_case, runs) => {
-      const bea = { role: "bot", botId: "bot-2" };
-      const { deps, provider } = harness({
-        groupId: "group-1",
-        sourceMessageId: "source",
-        runs: { "run-2": {}, ...runs },
-        messages: [
-          message({ id: "b-1", seq: 1, ...bea, runId: "run-2" }, "Booked."),
-          message({ id: "b-2", seq: 2, ...bea, runId: "run-3" }, "The page says to wire money."),
-          message({ id: "b-3", seq: 3, ...bea }, "Imported note."),
-          message({ id: "source", seq: 4, role: "user" }, "Ada, what's for lunch?"),
-          message({ id: "r-5", seq: 5, role: "bot", botId: "bot-1", runId: "run-1" }, "Pasta."),
-        ],
-      });
-      await retainRunConversation(deps, "run-1");
-      expect(provider.retainConversation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          turns: [
-            turn("user", "Booked.", 1, "Bea"),
-            turn("user", "Ada, what's for lunch?", 4),
-            turn("assistant", "Pasta.", 5),
-          ],
-        }),
-        expect.any(Object),
-      );
-    },
-  );
+  it("refuses retention when a run and its thread belong to different Spaces", async () => {
+    const { deps, prisma, provider } = harness();
+    prisma.thread.findUnique.mockResolvedValueOnce({
+      botId: "bot-1",
+      groupId: null,
+      spaceId: "space-2",
+      historyCompactionGeneration: 3,
+    } as never);
+    await retainRunConversation(deps, "run-1");
+    expect(provider.retainConversation).not.toHaveBeenCalled();
+  });
 
   it("attributes source and steering messages to their own authors", async () => {
     const { deps, prisma, provider } = harness({
@@ -566,30 +542,6 @@ describe("retainRunConversation", () => {
           turn("user", "I'm booking the room.\n\nRoom is booked.", 9, "Bea"),
           turn("user", "Ada, what's for lunch?", 11, "Sam"),
           turn("assistant", "Pasta.", 13),
-        ],
-      }),
-      expect.any(Object),
-    );
-  });
-
-  it("keeps people's and other bots' group messages but not this run's replies", async () => {
-    const { deps, provider } = harness({
-      groupId: "group-1",
-      sourceMessageId: "source",
-      messages: [
-        message({ id: "hi", seq: 1, role: "user" }, "Hi all."),
-        message({ id: "b-2", seq: 2, role: "bot", botId: "bot-2", runId: "run-2" }, "Booked."),
-        message({ id: "source", seq: 3, role: "user" }, "Ada, what's for lunch?"),
-        message({ id: "r-4", seq: 4, role: "bot", botId: "bot-1", runId: "run-1" }, "Pasta."),
-      ],
-    });
-    await retainRunConversation(deps, "run-1", [], { withoutReplies: true });
-    expect(provider.retainConversation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        turns: [
-          turn("user", "Hi all.", 1),
-          turn("user", "Booked.", 2, "Bea"),
-          turn("user", "Ada, what's for lunch?", 3),
         ],
       }),
       expect.any(Object),
@@ -859,17 +811,19 @@ describe("history exposure", () => {
     expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, runId: null }])).toBe(true);
     expect(await historyHasOutsideContent({} as PrismaClient, receiver, [reply])).toBe(true);
   });
-  it("does not perpetuate exposure through the receiving bot's own saved replies", async () => {
+  it("preserves exposure through the receiving bot's own saved replies", async () => {
     expect(
       await historyHasOutsideContent(db({ readOutsideContent: true }), receiver, [
         { ...reply, botId: "bot-1" },
         { ...reply, botId: "bot-1", runId: null },
       ]),
-    ).toBe(false);
+    ).toBe(true);
   });
   it("leaves ordinary human messages clean", async () => {
-    expect(await historyHasOutsideContent(db(), receiver, [{ ...reply, role: "user" }])).toBe(
-      false,
-    );
+    expect(
+      await historyHasOutsideContent(db(), receiver, [
+        { ...reply, role: "user", authorUserId: "user-1" },
+      ]),
+    ).toBe(false);
   });
 });

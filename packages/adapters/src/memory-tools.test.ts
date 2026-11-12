@@ -138,13 +138,13 @@ describe("recall_memory", () => {
     });
   });
 
-  it("leaves the run untainted for the bot's own memories", async () => {
+  it("does not promote the bot's own recalled knowledge to a clean source", async () => {
     const { tainted, readOutside, updateMany } = await recallWith([
       { memory: "Prefers dark mode.", score: 0.9 },
     ]);
-    expect(tainted).toBe(false);
-    expect(readOutside).toBe(false);
-    expect(updateMany).not.toHaveBeenCalled();
+    expect(tainted).toBe(true);
+    expect(readOutside).toBe(true);
+    expect(updateMany).toHaveBeenCalled();
   });
 });
 

@@ -274,15 +274,9 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "memory.retain-turn": asOwner(run, async (payload) => {
       const memory = { prisma: deps.prisma, memoryProviders: deps.memoryProviders };
-      const options = { withoutReplies: payload.withoutReplies };
       let next: { token?: string; generation: number; checks: number };
       if (!payload.pending) {
-        const { pending } = await retainRunConversation(
-          memory,
-          payload.runId,
-          payload.messageIds,
-          options,
-        );
+        const { pending } = await retainRunConversation(memory, payload.runId, payload.messageIds);
         if (!pending) return;
         next = { ...pending, checks: 0 };
       } else {
@@ -312,7 +306,6 @@ export function createBackgroundJobHandlers(deps: {
       // Not settled yet: check again later instead of holding a worker.
       await deps.jobs.enqueue(
         memoryRetainTurnJob(payload.runId, payload.messageIds, {
-          ...options,
           pending: next,
           availableAt: new Date(
             Date.now() +

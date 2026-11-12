@@ -116,9 +116,9 @@ function receiverOwns(bot: { spaceId: string; userId: string }, receiver: WordsR
 }
 
 /**
- * Of the runs that wrote other bots' group replies, the ones whose words the receiver may treat
- * as its own trusted memory: the run's bot is in the receiver's Space and has its owner, and the
- * run completed without taking in outside content. A group reply is written when its run
+ * Runs whose context can attest a clean source: same Space and owner, completed, and without
+ * derived context. This is provenance classification only, never permission to access a thread
+ * or a reason to drop knowledge from learning. A group reply is written when its run
  * finalizes, and the flag is final only then, so a running, waiting, failed or cancelled run is
  * not trusted, and neither is a run that can't be found.
  */
@@ -129,7 +129,7 @@ export async function trustedBotRuns(
 ): Promise<Set<string>> {
   if (!runIds.length) return new Set();
   const runs = await prisma.run.findMany({
-    where: { id: { in: [...new Set(runIds)] } },
+    where: { id: { in: [...new Set(runIds)] }, spaceId: receiver.spaceId },
     select: {
       id: true,
       status: true,
@@ -148,14 +148,15 @@ export async function trustedBotRuns(
 }
 
 /**
- * Check new sources in history, not the receiver's own saved replies. Propagating a run's flag
- * through its own replies would permanently flag every subsequent turn after one outside read.
+ * Provenance follows every reply, including the receiver's own. This classifies knowledge for
+ * later delivery; it does not decide whether the knowledge may be learned or authorize actions.
  */
 export async function historyHasOutsideContent(
   prisma: PrismaClient,
-  receiver: WordsReceiver & { botId: string },
+  receiver: WordsReceiver,
   messages: readonly {
     role: string;
+    authorUserId?: string | null;
     botId?: string | null;
     runId: string | null;
     blocks: unknown;
@@ -166,9 +167,7 @@ export async function historyHasOutsideContent(
       const block = receivedBotMessage(message.blocks);
       return block ? [block] : [];
     });
-    const replies = messages.filter(
-      (message) => message.role === "bot" && message.botId !== receiver.botId,
-    );
+    const replies = messages.filter((message) => message.role === "bot");
     const [trustedReplies, trustedReceived] = await Promise.all([
       trustedBotRuns(
         prisma,
@@ -180,8 +179,17 @@ export async function historyHasOutsideContent(
     return (
       received.some((block) => !trustedReceived.has(block)) ||
       replies.some((reply) => !reply.runId || !trustedReplies.has(reply.runId)) ||
+      messages.some(
+        (message) =>
+          message.role === "user" &&
+          !receivedBotMessage(message.blocks) &&
+          message.authorUserId !== receiver.userId,
+      ) ||
       messages.some((message) =>
-        (message.blocks as MessageBlock[]).some((block) => block.kind === "channel_message"),
+        (message.blocks as MessageBlock[]).some(
+          (block) =>
+            block.kind === "channel_message" || block.kind === "file" || block.kind === "image",
+        ),
       )
     );
   } catch {
@@ -190,8 +198,8 @@ export async function historyHasOutsideContent(
 }
 
 /**
- * Of these messages other bots sent the receiver, the ones it may treat as its own trusted
- * memory: the sending bot is in the receiver's Space and has its owner, and the sending run had
+ * Messages with source-clean context: the sending bot is in the receiver's Space and has its
+ * owner, and the sending run had
  * taken in no outside content when it sent the message (`senderClean`). A message can only repeat
  * what its run read before sending it, so that snapshot is exact. A message without the marker,
  * including any sent before it existed, is not trusted.
@@ -204,7 +212,11 @@ async function trustedReceivedMessages(
   const clean = received.filter((block) => block.senderClean === true);
   if (!clean.length) return new Set();
   const senders = await prisma.bot.findMany({
-    where: { id: { in: [...new Set(clean.map((block) => block.fromBotId))] } },
+    where: {
+      id: { in: [...new Set(clean.map((block) => block.fromBotId))] },
+      spaceId: receiver.spaceId,
+      userId: receiver.userId,
+    },
     select: { id: true, spaceId: true, userId: true },
   });
   const owned = new Set(
@@ -290,10 +302,9 @@ export type RetainTurnResult = { pending?: { token?: string; generation: number 
  * Sends one finished turn of a bot's conversation to the Space's memory provider. In the bot's
  * direct thread: the message that started the run, what was added while it worked, and the
  * replies. In a group chat: everything the room said since the bot last replied, and the replies.
- * `withoutReplies` leaves this run's replies out: the run took in outside content, and its replies
- * could carry that text into trusted memory. People's and other bots' words are still learned,
- * except other bots' words this bot may not trust (see trustedReceivedMessages and
- * trustedBotRuns).
+ * These turns are derived knowledge, never instruction authority. Exposure does not suppress
+ * learning: people's and bots' words remain usable, and semantic recall always carries derived
+ * provenance back into the consuming run.
  *
  * `pending` means the provider is still storing the turn, or a clear landed meanwhile and its
  * purge failed: poll `settleRetainedConversation` with it so the clear is purged once it settles.
@@ -302,7 +313,6 @@ export async function retainRunConversation(
   deps: RetainDeps,
   runId: string,
   answeredMessageIds: readonly string[] = [],
-  options: { withoutReplies?: boolean } = {},
 ): Promise<RetainTurnResult> {
   const done: RetainTurnResult = {};
   const run = await deps.prisma.run.findUnique({
@@ -319,9 +329,10 @@ export async function retainRunConversation(
   if (!run?.sourceMessageId) return done;
   const thread = await deps.prisma.thread.findUnique({
     where: { id: run.threadId },
-    select: { botId: true, groupId: true, historyCompactionGeneration: true },
+    select: { botId: true, groupId: true, spaceId: true, historyCompactionGeneration: true },
   });
-  if (!thread || (thread.botId !== run.botId && !thread.groupId)) return done;
+  if (!thread || thread.spaceId !== run.spaceId || (thread.botId !== run.botId && !thread.groupId))
+    return done;
   const inGroup = Boolean(thread.groupId);
   const configured = await deps.memoryProviders.resolve(run.spaceId);
   const provider = configured?.provider;
@@ -354,13 +365,6 @@ export async function retainRunConversation(
   ]);
   // A cleared thread no longer has the message the turn answered.
   if (!source || !bot) return done;
-  const receiver: WordsReceiver = { spaceId: run.spaceId, userId: bot.userId };
-  // Another bot's untrusted words (see trustedReceivedMessages) would come back later as this
-  // bot's own trusted memory. In a group chat the window below drops just that message.
-  const received = receivedBotMessage(source.blocks);
-  if (received && !inGroup && !(await receivedBotMessageTrusted(deps.prisma, receiver, received))) {
-    return done;
-  }
   const author = await loadMessageAuthor(deps.prisma, source.authorUserId ?? run.userId);
   // Interim progress beats are status narration, and a partial reply was cut off by an error.
   const kept = replies.filter(
@@ -373,31 +377,15 @@ export async function retainRunConversation(
     // The window ends at this run's last reply, so a run that never replied has no turn.
     const lastReply = kept.at(-1);
     if (!lastReply) return done;
-    const room = await groupWindow(deps.prisma, run, receiver, source.seq, lastReply.seq);
-    said.push(
-      ...capGroupWindow(
-        options.withoutReplies ? room.filter((message) => message.role !== "assistant") : room,
-      ),
-    );
+    const room = await groupWindow(deps.prisma, run, source.seq, lastReply.seq);
+    said.push(...capGroupWindow(room));
   } else {
-    // Steering messages can be other bots' words too.
-    const steeredReceived = steered.flatMap((message) => {
-      const block = receivedBotMessage(message.blocks);
-      return block ? [block] : [];
-    });
-    const trustedSteered = await trustedReceivedMessages(deps.prisma, receiver, steeredReceived);
     said.push(
       { ...source, role: "user" },
       ...steered
-        .filter((message) => {
-          if (message.id === source.id) return false;
-          const block = receivedBotMessage(message.blocks);
-          return !block || trustedSteered.has(block);
-        })
+        .filter((message) => message.id !== source.id)
         .map((message) => ({ ...message, role: "user" as const })),
-      ...(options.withoutReplies
-        ? []
-        : kept.map((reply) => ({ ...reply, role: "assistant" as const }))),
+      ...kept.map((reply) => ({ ...reply, role: "assistant" as const })),
     );
   }
   // Keep different people's words separate instead of attributing the whole turn to its starter.
@@ -441,7 +429,7 @@ export async function retainRunConversation(
   }
   if (
     !turns.some((turn) => turn.role === "user") ||
-    (!options.withoutReplies && !turns.some((turn) => turn.role === "assistant"))
+    !turns.some((turn) => turn.role === "assistant")
   ) {
     return done;
   }
@@ -578,8 +566,7 @@ async function purgeIfCleared(
  */
 async function groupWindow(
   prisma: PrismaClient,
-  run: { id: string; botId: string; threadId: string },
-  receiver: WordsReceiver,
+  run: { id: string; botId: string; threadId: string; spaceId: string },
   sourceSeq: number,
   lastReplySeq: number,
 ): Promise<SaidMessage[]> {
@@ -621,33 +608,7 @@ async function groupWindow(
         // This bot's words from another run belong to that run's turn.
         (message.botId !== run.botId || message.runId === run.id)),
   );
-  // Another bot's words are learned only when this bot may trust them: its group replies by
-  // their runs (see trustedBotRuns), messages it sent this bot by their marker.
-  const received = said.flatMap((message) => {
-    const block = message.role === "user" ? receivedBotMessage(message.blocks) : undefined;
-    return block ? [block] : [];
-  });
-  const [trustedRuns, trustedReceived] = await Promise.all([
-    trustedBotRuns(
-      prisma,
-      receiver,
-      said.flatMap((message) =>
-        message.role === "bot" && message.botId !== run.botId && message.runId
-          ? [message.runId]
-          : [],
-      ),
-    ),
-    trustedReceivedMessages(prisma, receiver, received),
-  ]);
-  const messages = said.filter((message) => {
-    if (message.role === "bot") {
-      return (
-        message.botId === run.botId || Boolean(message.runId && trustedRuns.has(message.runId))
-      );
-    }
-    const block = receivedBotMessage(message.blocks);
-    return !block || trustedReceived.has(block);
-  });
+  const messages = said;
   const otherBotIds = [
     ...new Set(
       messages.flatMap((message) =>
@@ -659,7 +620,7 @@ async function groupWindow(
   ];
   const otherBots = otherBotIds.length
     ? await prisma.bot.findMany({
-        where: { id: { in: otherBotIds } },
+        where: { id: { in: otherBotIds }, spaceId: run.spaceId },
         select: { id: true, name: true },
       })
     : [];

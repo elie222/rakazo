@@ -48,10 +48,30 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
   Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
-A bot's own saved replies and local summaries remain its historical context; they do not make every
-later turn an outside-content run. Exposure tracking checks fresh sources and messages from other
-bots, not the complete ancestry of saved knowledge. Recalled memory is untrusted historical data,
-not instructions. Spaces remain separate authorization boundaries.
+### Knowledge provenance (version 1)
+
+Learning and instruction authority are separate. A bot may learn from people, other bots and
+outside-derived replies in a conversation it can access. That knowledge stays in the receiving
+Space's private or deliberately shared memory. Learning does not grant access to another Space.
+
+The backend tracks provenance conservatively:
+
+- A run that used outside content keeps that provenance on its run record. Its own later replies
+  do not erase the flag when loaded into another turn's history.
+- A bot message snapshots the sender's context provenance before delivery. Missing provenance is
+  treated as unknown, never as a clean source.
+- Local summaries, native memory, scratchpad and ticket context cannot attest their full ancestry;
+  consuming them preserves derived provenance for later deliveries.
+- Semantic recall and reflection always return derived knowledge. A provider's missing source
+  hint, a matching bot name or an owned bank never promotes recalled material into instructions.
+- Unknown historical runs default to derived provenance. Fresh outside tool results and recovered
+  results retain the same classification.
+
+This provenance is separate from current action authorization. Keeping prior knowledge does not
+silently disable the owner's normal workflow or suppress learning. New outside input still goes
+through the existing action protections; remembering and relaying knowledge cannot authorize a
+new action or bypass the receiving Space's access checks. The source flag is not a factual-quality
+judgment: no wording checks or model claims can change its classification.
 
 Once connected, **Default scope** decides what bots share in the provider:
 

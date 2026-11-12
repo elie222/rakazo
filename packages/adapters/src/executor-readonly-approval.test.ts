@@ -602,7 +602,7 @@ function fixture({
       read: async (request: { scope: string; path?: string }) => {
         const documents =
           request.scope === "user" &&
-          request.path === "MEMORY.md" &&
+          (request.path === undefined || request.path === "MEMORY.md") &&
           sharedMemoryState.content !== undefined
             ? [
                 {
@@ -1867,7 +1867,7 @@ describe("own instructions through update_bot", () => {
   });
 
   it("keeps an existing compacted chat with its own historical reply usable", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
     f.prisma.thread.findUniqueOrThrow.mockResolvedValue({
       id: "thread-1",
       botId: "bot-1",
@@ -1887,14 +1887,12 @@ describe("own instructions through update_bot", () => {
         blocks: [{ kind: "text", text: "An earlier reply" }],
       },
     ] as never);
-    f.setCalls([]);
+    f.setCalls([{ args: { instructions: "Updated by the current owner" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { readOutsideContent: true } }),
     );
-    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { readOutsideContent: false } }),
-    );
+    expect(f.instructionState.instructions).toBe("Updated by the current owner");
   });
 
   it("records exposure when an executing outside-tool effect is recovered at the gate", async () => {
@@ -1912,6 +1910,35 @@ describe("own instructions through update_bot", () => {
     f.setCalls([{ args, executionId: "call-1" }]);
     await f.run();
     expect(f.execute).not.toHaveBeenCalled();
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
+    );
+  });
+
+  it("preserves unknown provenance from native memory without blocking current owner actions", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      skipApprovals: true,
+      existingSharedMemory: "A previously saved finding",
+    });
+    f.setCalls([{ args: { instructions: "Updated by the current owner" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
+    );
+    expect(f.instructionState.instructions).toBe("Updated by the current owner");
+  });
+
+  it("tracks a bot-authored source passed as the current task instead of history", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      trigger: "follow_up",
+      sourceRole: "bot",
+    });
+    f.setCalls([]);
+    await f.run();
     expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { readOutsideContent: true } }),
     );
@@ -2922,7 +2949,7 @@ describe("outbound destinations", () => {
   });
 
   it.each([true, false])(
-    "starts the run tainted only when recalled memory came from another app: %s",
+    "keeps recalled knowledge derived with or without adapter source hints: %s",
     async (external) => {
       reviewMock.mockReset();
       reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
@@ -2945,8 +2972,8 @@ describe("outbound destinations", () => {
       await f.run();
       expect(recall).toHaveBeenCalledOnce();
       // A tainted run asks before a read on a connector it has not used yet.
-      expect(reviewMock).toHaveBeenCalledTimes(external ? 1 : 0);
-      expect(f.execute).toHaveBeenCalledTimes(external ? 0 : 1);
+      expect(reviewMock).toHaveBeenCalledTimes(1);
+      expect(f.execute).toHaveBeenCalledTimes(0);
     },
   );
 

@@ -96,18 +96,17 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
         where: { id: { in: ids }, thread: { spaceId: run.spaceId } },
         select: {
           role: true,
-          botId: true,
+          authorUserId: true,
           runId: true,
           blocks: true,
-          thread: { select: { botId: true } },
         },
       });
       outside =
         rows.length !== ids.length ||
         (await historyHasOutsideContent(
           deps.prisma,
-          { spaceId: run.spaceId, userId: ctx.bot.userId, botId: ctx.bot.id },
-          rows.map((row) => ({ ...row, botId: row.botId ?? row.thread?.botId })),
+          { spaceId: run.spaceId, userId: ctx.bot.userId },
+          rows,
         ));
     } catch {
       outside = true;
@@ -221,13 +220,8 @@ export const memoryTools: ToolHandlers = {
       },
       context,
     );
-    // Memory another app wrote is outside text, not this product's own saved state.
-    if (
-      response.ok &&
-      response.value.length > 0 &&
-      (response.value.some((result) => result.external) ||
-        (ctx.memory.scope === "shared" && ctx.memory.sharedSpace))
-    ) {
+    // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
+    if (response.ok && response.value.length > 0) {
       await markReadOutsideContent(ctx);
     }
     return response;

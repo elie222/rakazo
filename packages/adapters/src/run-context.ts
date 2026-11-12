@@ -188,9 +188,9 @@ export interface RunState {
    */
   tainted: boolean;
   /**
-   * This run read outside content, or outside text started it: a webhook or email, someone
-   * other than the owner, or a bot message whose words are not trusted. Unlike `tainted`, a
-   * routine is not counted. Its replies are not learned, nor its words by other bots.
+   * Content provenance, distinct from current action authorization (`tainted`). Derived
+   * history, summaries and stored knowledge keep this true across runs and bot deliveries.
+   * It never suppresses learning: remembered and shared knowledge remains derived data.
    */
   readOutsideContent: boolean;
   /**
@@ -303,8 +303,6 @@ export interface RunContext {
   tools: RunTools;
   trust: RunTrust;
   memory: {
-    /** Shared recall can include words from other Space members. */
-    sharedSpace?: boolean;
     semantic: SemanticMemoryProvider | null;
     scope: ReturnType<typeof effectiveMemoryScope> | null;
   };

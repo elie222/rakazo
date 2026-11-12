@@ -1,4 +1,7 @@
+import type { MessageBlock } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { historyHasOutsideContent, receivedBotMessageTrusted } from "./conversation-memory.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
@@ -347,4 +350,63 @@ describe("marking whether the sender was clean", () => {
       { senderClean: clean },
     );
   });
+});
+
+it("keeps outside provenance through an own reply, a later turn and a bot delivery", async () => {
+  mocks.messageBot.mockClear();
+  const { ctx } = context("computer-team");
+  const prisma = {
+    run: {
+      findMany: vi.fn(async () => [
+        {
+          id: "past-run",
+          status: "completed",
+          readOutsideContent: true,
+          bot: { spaceId: "space-1", userId: "user-1" },
+        },
+      ]),
+    },
+    bot: {
+      findMany: vi.fn(async () => [{ id: "bot-coder", spaceId: "space-1", userId: "user-1" }]),
+    },
+    attempt: { count: vi.fn(async () => 1) },
+  };
+  const derived = await historyHasOutsideContent(
+    prisma as unknown as PrismaClient,
+    { spaceId: "space-1", userId: "user-1" },
+    [
+      {
+        role: "bot",
+        botId: "bot-coder",
+        runId: "past-run",
+        blocks: [{ kind: "text", text: "An outside-derived finding" }],
+      },
+    ],
+  );
+  Object.assign(ctx, {
+    deps: { ...ctx.deps, prisma },
+    state: { readOutsideContent: derived },
+    trust: { receivedOutsideMessage: async () => false },
+  });
+  await messagingTools.message_bot!(
+    ctx,
+    callWith("message_bot", { files: [], message: "The earlier finding" }),
+  );
+  const source = mocks.messageBot.mock.calls[0]?.[4] as { senderClean: boolean };
+  expect(source.senderClean).toBe(false);
+  const delivered: Extract<MessageBlock, { kind: "bot_message_received" }> = {
+    kind: "bot_message_received",
+    fromBotId: "bot-coder",
+    fromBotName: "Coder",
+    text: "The earlier finding",
+    intent: "fyi",
+    ...(source.senderClean ? { senderClean: true } : {}),
+  };
+  expect(
+    await receivedBotMessageTrusted(
+      prisma as unknown as PrismaClient,
+      { spaceId: "space-1", userId: "user-1" },
+      delivered,
+    ),
+  ).toBe(false);
 });

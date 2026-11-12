@@ -783,7 +783,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .map((message) => ({
             id: message.id,
             role: message.role,
-            botId: message.botId ?? thread.botId,
+            authorUserId: message.authorUserId,
             runId: message.runId,
             blocks: message.blocks as MessageBlock[],
           }));
@@ -890,11 +890,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           if (recalled.ok && recalled.value.length > 0) {
             recallSucceeded = true;
             recalledMemory = formatRecalledMemory(recalled.value);
-            // Memory another app wrote is outside text, not this product's own saved state.
-            recalledExternalMemory =
-              recalledMemory !== "" &&
-              (recalled.value.some((result) => result.external) ||
-                (memoryScope === "shared" && (thread.space?._count.memberships ?? 0) > 1));
+            // Provider extraction and recall return derived knowledge, even when the original
+            // conversation was this bot's own. Storage cannot promote it to owner authority.
+            recalledExternalMemory = recalledMemory !== "";
           } else if (!recalled.ok) {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
@@ -1216,7 +1214,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { clientNonce: true, role: true, blocks: true, threadId: true },
+                select: {
+                  id: true,
+                  clientNonce: true,
+                  role: true,
+                  runId: true,
+                  authorUserId: true,
+                  blocks: true,
+                  threadId: true,
+                },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
@@ -1424,11 +1430,25 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Outside text started the run: a webhook or email, someone other than the owner, or a
         // bot message whose words this bot may not trust. A routine runs the owner's own prompt.
         const historyIds = new Set(history.map((message) => message.id));
-        const outsideHistory = await historyHasOutsideContent(
-          deps.prisma,
-          { spaceId: run.spaceId, userId: bot.userId, botId: bot.id },
-          historyMessages.filter((message) => historyIds.has(message.id)),
-        );
+        const provenanceMessages = historyMessages.filter((message) => historyIds.has(message.id));
+        // The source can be passed as the current task instead of history. It must not escape
+        // source tracking simply because its role was re-encoded as a task prompt.
+        if (sourceMessage && !historyIds.has(sourceMessage.id)) {
+          provenanceMessages.push({
+            id: sourceMessage.id,
+            role: sourceMessage.role,
+            authorUserId: sourceMessage.authorUserId ?? run.userId,
+            runId: sourceMessage.runId,
+            blocks: sourceMessage.blocks as MessageBlock[],
+          });
+        }
+        const outsideHistory =
+          Boolean(compactedHistory.summary) ||
+          (await historyHasOutsideContent(
+            deps.prisma,
+            { spaceId: run.spaceId, userId: bot.userId },
+            provenanceMessages,
+          ));
         const startedByOutsideText =
           run.trigger === "webhook" ||
           run.trigger === "spawn" ||
@@ -1461,11 +1481,24 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           toolCallStreak: { key: undefined, count: 0 },
           overLimitActionCalls: 0,
           toolResults: new Map(),
-          tainted: initiallyTainted || outsideHistory,
+          // Existing knowledge does not grant authority or change current action permissions.
+          // Its provenance still follows every outgoing message and retained reply below.
+          tainted: initiallyTainted,
           // A resumed attempt restores earlier tool results, which may hold outside content.
           readOutsideContent:
             startedByOutsideText ||
             outsideHistory ||
+            Boolean(
+              memoryContext || scratchpadContext || ticketContext || currentTurnImages?.length,
+            ) ||
+            Boolean(
+              (sourceMessage?.blocks as MessageBlock[] | null | undefined)?.some(
+                (block) =>
+                  block.kind === "file" ||
+                  block.kind === "image" ||
+                  block.kind === "channel_message",
+              ),
+            ) ||
             recalledExternalMemory ||
             Boolean(turnCheckpoint) ||
             Boolean(checkpointLoadError),
@@ -1554,7 +1587,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           memory: {
             semantic: semanticMemory,
             scope: memoryScope,
-            sharedSpace: (thread.space?._count.memberships ?? 0) > 1,
           },
           scripted,
           script,

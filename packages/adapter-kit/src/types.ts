@@ -432,7 +432,7 @@ export interface SemanticMemoryResult {
   provenance?: string;
   /** Provider entity/namespace the fact was recalled from, when scoped. */
   entity?: string;
-  /** Written by another app, not by this product's bots: untrusted outside content. */
+  /** Additional outside-source attribution. All semantic recall is derived data, even without this marker. */
   external?: true;
 }
 
@@ -482,9 +482,9 @@ export interface SemanticMemoryConversationTurn {
 }
 
 /**
- * The new messages of one finished turn; earlier turns of the conversation were sent before. When
- * the run took in outside content, its replies are left out and the turns are people's (and other
- * bots') words only.
+ * The new messages of one finished turn; earlier turns were sent before. They are data for
+ * learning, including replies influenced by outside sources. Recalling the resulting knowledge
+ * must preserve derived provenance rather than granting it instruction authority.
  */
 export interface SemanticMemoryConversationRequest {
   botId: string;
@@ -878,7 +878,6 @@ export interface BackgroundJobPayloads {
   "history.compact": { threadId: string; userId?: string };
   /**
    * `messageIds`: what the person sent while the run worked, which the run also answered.
-   * `withoutReplies`: the run took in outside content, so its replies are not learned.
    * `pending`: the turn was submitted and the provider is still storing it. Later checks poll the
    * provider's token instead of submitting again, and purge `generation` once it settles if the
    * chat was cleared meanwhile. Without a token the turn is stored and only a failed purge of a
@@ -887,7 +886,6 @@ export interface BackgroundJobPayloads {
   "memory.retain-turn": {
     runId: string;
     messageIds?: string[];
-    withoutReplies?: true;
     pending?: { token?: string; generation: number; checks: number };
   };
   "messaging.deliver": { runId?: string };

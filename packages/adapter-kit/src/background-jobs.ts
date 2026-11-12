@@ -30,7 +30,6 @@ const payloadSchemas = {
   "memory.retain-turn": z.object({
     runId: z.string().min(1),
     messageIds: z.array(z.string().min(1)).optional(),
-    withoutReplies: z.literal(true).optional(),
     pending: z
       .object({
         token: z.string().min(1).optional(),
@@ -214,7 +213,6 @@ export function memoryRetainTurnJob(
   runId: string,
   messageIds: string[] = [],
   options: {
-    withoutReplies?: boolean;
     pending?: BackgroundJobPayloads["memory.retain-turn"]["pending"];
     availableAt?: Date;
   } = {},
@@ -224,7 +222,6 @@ export function memoryRetainTurnJob(
     payload: {
       runId,
       ...(messageIds.length ? { messageIds } : {}),
-      ...(options.withoutReplies ? { withoutReplies: true as const } : {}),
       ...(options.pending ? { pending: options.pending } : {}),
     },
     replaceKey: `memory.retain-turn:${runId}`,

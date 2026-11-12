@@ -773,8 +773,8 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
 
 /**
  * Whether this run took in outside content (see hasTakenInOutsideContent), recorded on the run
- * row so bots learning from its replies leave them out. Completion explicitly records clean
- * runs too: historical runs and runs handled by an older release default to untrusted. The flag
+ * row so later contexts and deliveries retain its provenance. Learning still keeps the replies
+ * as derived data. Historical runs and older releases default to unknown provenance. The flag
  * is final once the run completes, so a failed write fails the run; its retry is a
  * later attempt, which counts as outside content.
  */
@@ -964,8 +964,7 @@ export async function completeRun(ctx: RunContext) {
   // Finalizing deletes the claims of what the person sent while the run worked.
   const answeredMessageIds = retainsTurn ? await answeredSteeringMessageIds(deps, runId) : [];
   // Read before finalizing deletes the claims of what arrived mid-turn.
-  const readOutsideContent = await runReadOutsideContent(ctx);
-  const withoutReplies = retainsTurn && readOutsideContent;
+  await runReadOutsideContent(ctx);
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -1024,7 +1023,7 @@ export async function completeRun(ctx: RunContext) {
   }
   if (retainsTurn) {
     await deps.jobs
-      .enqueue(memoryRetainTurnJob(run.id, answeredMessageIds, { withoutReplies }))
+      .enqueue(memoryRetainTurnJob(run.id, answeredMessageIds))
       .catch((error) => getLogger().error("memory.retain-turn enqueue failed", error));
   }
   // Last, and never fatal: the run is already finalized, so a failure here must not reach

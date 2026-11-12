@@ -105,15 +105,10 @@ describe("background job contracts", () => {
 });
 
 describe("memoryRetainTurnJob", () => {
-  it("names withoutReplies only when the run read outside content", () => {
-    expect(memoryRetainTurnJob("run-1").payload).toEqual({ runId: "run-1" });
-    expect(memoryRetainTurnJob("run-1", ["m-1"], { withoutReplies: false }).payload).toEqual({
-      runId: "run-1",
-      messageIds: ["m-1"],
-    });
-    expect(memoryRetainTurnJob("run-1", [], { withoutReplies: true })).toEqual({
+  it("retains the whole completed turn under a stable job key", () => {
+    expect(memoryRetainTurnJob("run-1", ["m-1"])).toEqual({
       name: "memory.retain-turn",
-      payload: { runId: "run-1", withoutReplies: true },
+      payload: { runId: "run-1", messageIds: ["m-1"] },
       replaceKey: "memory.retain-turn:run-1",
       maxAttempts: 4,
     });
@@ -131,16 +126,10 @@ describe("memoryRetainTurnJob", () => {
     });
   });
 
-  it("parses withoutReplies and older payloads without it", () => {
-    expect(
-      parseBackgroundJob("memory.retain-turn", { runId: "run-1", withoutReplies: true }).payload,
-    ).toEqual({ runId: "run-1", withoutReplies: true });
+  it("parses retention and pending-operation payloads", () => {
     expect(parseBackgroundJob("memory.retain-turn", { runId: "run-1" }).payload).toEqual({
       runId: "run-1",
     });
-    expect(() =>
-      parseBackgroundJob("memory.retain-turn", { runId: "run-1", withoutReplies: false }),
-    ).toThrow();
     const pending = { token: "op-1", generation: 3, checks: 0 };
     expect(parseBackgroundJob("memory.retain-turn", { runId: "run-1", pending }).payload).toEqual({
       runId: "run-1",

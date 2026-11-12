@@ -75,25 +75,22 @@ it("keeps a bot message untrusted when returned by read_history", async () => {
   );
 });
 
-it.each([false, true])(
-  "marks multi-member shared recall as outside content: %s",
-  async (sharedSpace) => {
-    const response = { ok: true, value: [{ memory: "A shared preference", score: 1 }] };
-    const ctx = {
-      runId: "run-1",
-      bot: { id: "bot-1" },
-      thread: { historyCompactedUpToSeq: null },
-      context: {},
-      state: { readOutsideContent: false },
-      memory: { scope: "shared", sharedSpace, semantic: { recall: vi.fn(async () => response) } },
-      deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
-    };
-    expect(
-      await memoryTools.recall_memory!(ctx as never, { args: { query: "preference" } } as never),
-    ).toEqual(response);
-    expect(ctx.state.readOutsideContent).toBe(sharedSpace);
-  },
-);
+it.each(["isolated", "shared"])("keeps recalled knowledge derived in %s scope", async (scope) => {
+  const response = { ok: true, value: [{ memory: "A shared preference", score: 1 }] };
+  const ctx = {
+    runId: "run-1",
+    bot: { id: "bot-1" },
+    thread: { historyCompactedUpToSeq: null },
+    context: {},
+    state: { readOutsideContent: false },
+    memory: { scope, semantic: { recall: vi.fn(async () => response) } },
+    deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
+  };
+  expect(
+    await memoryTools.recall_memory!(ctx as never, { args: { query: "preference" } } as never),
+  ).toEqual(response);
+  expect(ctx.state.readOutsideContent).toBe(true);
+});
 
 it.each(["Provider-generated context", ""])(
   "records reflection exposure only for a nonempty answer: %j",

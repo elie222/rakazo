@@ -364,14 +364,13 @@ describe("memory.retain-turn", () => {
     });
     const { jobs, handle } = retainTurn();
     const before = Date.now();
-    await handle({ runId: "run-1", messageIds: ["m-1"], withoutReplies: true });
+    await handle({ runId: "run-1", messageIds: ["m-1"] });
     expect(jobs.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "memory.retain-turn",
         payload: {
           runId: "run-1",
           messageIds: ["m-1"],
-          withoutReplies: true,
           pending: { token: "op-1", generation: 3, checks: 0 },
         },
         replaceKey: "memory.retain-turn:run-1",

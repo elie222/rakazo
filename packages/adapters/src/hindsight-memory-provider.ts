@@ -478,9 +478,8 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
           memory: memory.text,
           score: memory.score,
           ...(memory.updatedAt ? { updatedAt: memory.updatedAt } : {}),
-          ...(external
-            ? { provenance: "another app via hindsight", external: true as const }
-            : { provenance: "hindsight" }),
+          external: true,
+          ...(external ? { provenance: "another app via hindsight" } : { provenance: "hindsight" }),
         });
       }
     }
