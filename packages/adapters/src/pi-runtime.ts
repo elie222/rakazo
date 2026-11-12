@@ -461,6 +461,10 @@ export class PiAgentRuntime implements AgentRuntime {
         let checkpointRecoveryLocked = false;
         const maxInRunCheckpoints = 3;
         const checkpointSummaryPending = () => checkpointPhase === "summarizing";
+        const resetCheckpointBaselineForTarget = () => {
+          checkpointBaselineTokens = undefined;
+          checkpointNeedsBaseline = checkpointCount > 0;
+        };
         const claimRunSteering = async (): Promise<Message[]> => {
           // A terminating tool result already ended the run, so claiming here would delete a
           // message that no provider request can answer. Leave it queued for the next run.
@@ -559,6 +563,7 @@ export class PiAgentRuntime implements AgentRuntime {
             host.model = target.model;
             agent.state.model = target.model;
             contextPolicy = contextPolicyFor(target);
+            resetCheckpointBaselineForTarget();
           },
           // A throwaway policy, so judging a backup leaves the active policy's sent transcript
           // alone. Cache use is recorded only on usage, which a throwaway never sees. The opening
@@ -571,6 +576,7 @@ export class PiAgentRuntime implements AgentRuntime {
             await request.onModelChange?.(target.config.provider, target.config.id);
             activeStreamTarget = target;
             contextPolicy = contextPolicyFor(target);
+            resetCheckpointBaselineForTarget();
             host.activeModel = target;
             // A backup keeps its own effort.
             const nextThinkingLevel = thinkingLevelFor(
@@ -605,6 +611,7 @@ export class PiAgentRuntime implements AgentRuntime {
           host.model = target.model;
           host.apiKey = target.credentials?.accessToken ?? target.apiKey;
           contextPolicy = contextPolicyFor(target);
+          resetCheckpointBaselineForTarget();
           if (agent) {
             agent.state.model = target.model;
             agent.state.thinkingLevel = thinkingLevelFor(target.model, target.config.thinkingLevel);
@@ -778,18 +785,23 @@ export class PiAgentRuntime implements AgentRuntime {
             }
             const contextWindow =
               activeStreamTarget.config.contextWindow ?? activeStreamTarget.model.contextWindow;
-            const checkpointGrowthTokens = Math.max(8_192, Math.floor(contextWindow * 0.1));
+            const checkpointGrowthTokens = Math.min(
+              8_192,
+              Math.max(1_024, Math.floor(contextWindow * 0.1)),
+            );
             if (
               checkpointPhase === "idle" &&
               !checkpointDisabled &&
               checkpointCount < maxInRunCheckpoints &&
               !host.pausePending &&
+              !terminatedReply &&
+              !host.toolCallBudget.exceeded &&
               shouldCreateInRunCheckpoint({
                 decision: checkpointDecision,
                 model: activeStreamTarget.model,
                 configuredContextWindow: activeStreamTarget.config.contextWindow,
                 toolCalls,
-                operationKind: request.usageOperationKind,
+                disabled: request.inRunCheckpoint === "off",
                 minimumInputTokens:
                   checkpointBaselineTokens === undefined
                     ? undefined
@@ -1345,7 +1357,9 @@ export class PiAgentRuntime implements AgentRuntime {
           checkpointSummaryPending() &&
           checkpointSource &&
           !host.pausePending &&
-          !signal.aborted
+          !signal.aborted &&
+          !terminatedReply &&
+          !host.toolCallBudget.exceeded
         ) {
           const recovery = inRunCheckpointRecoveryPrompt();
           const recovered = recoveredCheckpointContext(agent.state.messages);
@@ -1368,6 +1382,12 @@ export class PiAgentRuntime implements AgentRuntime {
           } finally {
             signal.removeEventListener("abort", onAbort);
           }
+        }
+        if (checkpointSummaryPending() && (terminatedReply || host.toolCallBudget.exceeded)) {
+          agent.state.tools = tools;
+          checkpointSource = undefined;
+          checkpointText = "";
+          checkpointPhase = "idle";
         }
         // A continuation that failed or stopped early still hands over what it wrote.
         releaseJoin();

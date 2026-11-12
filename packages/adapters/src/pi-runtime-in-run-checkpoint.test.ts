@@ -1,6 +1,7 @@
 import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type * as RakazoCore from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -9,7 +10,7 @@ const providerState = vi.hoisted(() => ({
 }));
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/core")>()),
+  ...(await importOriginal<typeof RakazoCore>()),
   abortableDelay: async () => undefined,
 }));
 
@@ -26,6 +27,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { terminatingToolResult } from "./approval-effect.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 
@@ -413,6 +415,66 @@ describe("long tool-loop replay", () => {
     expect(JSON.stringify(events)).not.toContain("forbidden-checkpoint-call");
   });
 
+  it("does not replace a terminating tool reply with checkpoint recovery", async () => {
+    const contexts: Context[] = [];
+    providerState.stream.mockImplementation((_model: unknown, context: Context) => {
+      contexts.push(structuredClone(context));
+      return response(
+        assistant(
+          [
+            {
+              type: "toolCall",
+              id: "terminating-call",
+              name: "computer_act",
+              arguments: {},
+            },
+          ],
+          12_000,
+        ),
+      );
+    });
+
+    const events: AgentRuntimeEvent[] = [];
+    for await (const event of new PiAgentRuntime().run(
+      {
+        botId: "bot",
+        threadId: "thread",
+        runId: "terminating-checkpoint-run",
+        prompt: "Survey listings in the browser",
+        instructions: "Use the computer and keep verified notes.",
+        history: [],
+        tools: [
+          {
+            name: "computer_act",
+            description: "Perform one browser action",
+            inputSchema: { type: "object", properties: {} },
+            readOnly: false,
+          },
+        ],
+        model: { provider: model.provider, id: model.id, apiKey: "fixture-key" },
+        executeTool: vi.fn(async () =>
+          terminatingToolResult("The safe final reply.", { refused: "fixture" }),
+        ),
+      } as unknown as AgentRunRequest,
+      {
+        operationId: "operation",
+        traceId: "trace",
+        spaceId: "space",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(contexts).toHaveLength(1);
+    expect(JSON.stringify(contexts)).not.toContain("Create a compact progress checkpoint");
+    expect(JSON.stringify(contexts)).not.toContain("checkpoint could not be created");
+    expect(events.filter((event) => event.type === "text")).toEqual([
+      { type: "text", text: "The safe final reply." },
+    ]);
+  });
+
   it("waits for meaningful context growth before another checkpoint", async () => {
     const contexts: Context[] = [];
     let workStep = 0;
@@ -501,14 +563,21 @@ describe("long tool-loop replay", () => {
 
   it("hands a compact checkpoint to a smaller fallback model", async () => {
     let workStep = 0;
+    let checkpointCount = 0;
     const fallbackContexts: Context[] = [];
     providerState.stream.mockImplementation(
       (target: Model<"openai-completions">, context: Context) => {
         const wire = JSON.stringify(context.messages);
         if (wire.includes("Create a compact progress checkpoint")) {
+          checkpointCount += 1;
           return response(
             assistant(
-              [{ type: "text", text: "Verified steps 0-20. Next: continue the survey." }],
+              [
+                {
+                  type: "text",
+                  text: `Checkpoint ${checkpointCount}. Next: continue the survey.`,
+                },
+              ],
               12_000,
             ),
           );
@@ -516,6 +585,48 @@ describe("long tool-loop replay", () => {
         if (wire.includes("<progress_checkpoint>")) {
           if (target.id === fallbackModel.id) {
             fallbackContexts.push(structuredClone(context));
+            if (checkpointCount === 1 && !wire.includes("fallback-step-1")) {
+              return response(
+                assistant(
+                  [
+                    {
+                      type: "toolCall",
+                      id: "fallback-step-1",
+                      name: "computer_act",
+                      arguments: { step: 1 },
+                    },
+                  ],
+                  1_000,
+                ),
+              );
+            }
+            if (checkpointCount === 1 && !wire.includes("fallback-step-2")) {
+              return response(
+                assistant(
+                  [
+                    {
+                      type: "toolCall",
+                      id: "fallback-step-2",
+                      name: "computer_act",
+                      arguments: { step: 2 },
+                    },
+                  ],
+                  9_500,
+                ),
+              );
+            }
+            if (checkpointCount === 1 && !wire.includes("fallback-step-3")) {
+              return response(
+                assistant([
+                  {
+                    type: "toolCall",
+                    id: "fallback-step-3",
+                    name: "computer_act",
+                    arguments: { step: 3 },
+                  },
+                ]),
+              );
+            }
             return response({
               ...assistant([{ type: "text", text: "Fallback continued from the checkpoint." }]),
               provider: fallbackModel.provider,
@@ -568,7 +679,7 @@ describe("long tool-loop replay", () => {
         ],
         executeTool: vi.fn(async () => ({
           ok: true,
-          evidence: `Synthetic page evidence ${"detail ".repeat(1_200)}`,
+          evidence: `Synthetic page evidence ${"detail ".repeat(6_000)}`,
         })),
       } as unknown as AgentRunRequest,
       {
@@ -582,7 +693,8 @@ describe("long tool-loop replay", () => {
       events.push(event);
     }
 
-    expect(fallbackContexts).toHaveLength(1);
+    expect(checkpointCount).toBe(2);
+    expect(fallbackContexts.length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(fallbackContexts[0]!.messages)).toContain("<progress_checkpoint>");
     expect(JSON.stringify(fallbackContexts[0]!.messages)).not.toContain("Synthetic page evidence");
     expect(events.filter((event) => event.type === "text")).toEqual([

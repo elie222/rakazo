@@ -30,11 +30,11 @@ export function shouldCreateInRunCheckpoint(options: {
   model: Model<Api>;
   configuredContextWindow?: number;
   toolCalls: number;
-  operationKind?: string;
+  disabled?: boolean;
   fraction?: number;
   minimumInputTokens?: number;
 }): boolean {
-  if (options.operationKind === "compaction" || options.toolCalls === 0) return false;
+  if (options.disabled || options.toolCalls === 0) return false;
   const estimated = options.decision?.estimatedInputTokens;
   if (!estimated || estimated <= 0) return false;
   const window = options.configuredContextWindow ?? options.model.contextWindow;

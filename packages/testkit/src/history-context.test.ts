@@ -151,7 +151,7 @@ describe("structured results through real Pi context selection", () => {
           // This fixture isolates the existing context selectors. In-run compaction has its own
           // long-loop replay coverage and would add an intentional model request to these exact
           // 13-step emulator scripts.
-          usageOperationKind: "compaction",
+          inRunCheckpoint: "off",
           history: Array.from({ length: 100 }, (_, index) => ({
             id: `old-${index}`,
             role: "user" as const,

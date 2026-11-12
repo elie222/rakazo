@@ -65,7 +65,7 @@ describe("in-run checkpoint pressure", () => {
         decision,
         model,
         toolCalls: 100,
-        operationKind: "compaction",
+        disabled: true,
         fraction: 0.6,
       }),
     ).toBe(false);
