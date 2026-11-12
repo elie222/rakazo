@@ -1013,6 +1013,39 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       }
     });
 
+    it("keeps status and cancellation usable after revocation without a deployment provider", async () => {
+      const { h, actor, deps, launch, poll } = await connected();
+      const server = await connectServer(actor, { allBots: true });
+      const id = await launch();
+      await poll(id);
+      await runAsSystem("test fixture", () =>
+        prisma.mcpServer.update({
+          where: { id: server.id },
+          data: { allBots: false },
+        }),
+      );
+      const cleanupDeps = { ...deps, cloudAgent: null };
+      expect(
+        await runAsSystem("agent run", () =>
+          cloudAgentForActor(cleanupDeps, { ...actor, botIds: [h.bot.id] }),
+        ),
+      ).toBeNull();
+      const cleanupTool = (name: string, args: Record<string, unknown>) =>
+        runAsSystem("agent run", () =>
+          executeCloudAgentTool(cleanupDeps, h.context, h.run, `cloud_agent_${name}`, args),
+        );
+      expect(await cleanupTool("status", { id })).toMatchObject({ id, status: "running" });
+      for (const name of ["launch", "reply"]) {
+        expect(await cleanupTool(name, { id, prompt: "Task" })).toEqual({
+          error: "Cloud agents are not configured for this space.",
+        });
+      }
+      expect(await cleanupTool("cancel", { id })).toMatchObject({ id, cancellationPending: true });
+      await poll(id);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "cancelled", nextPollAt: null });
+    });
+
     it.each([
       ["launch", "remove"],
       ["launch", "restrict"],

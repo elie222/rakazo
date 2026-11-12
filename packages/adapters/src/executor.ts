@@ -56,6 +56,7 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
+import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { cloudAgentForActor } from "./cloud-agent-service.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { diskNoteInstruction, recordComputerDisk } from "./computer-disk.js";
@@ -1264,6 +1265,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           } else userComputer = "offline";
         }
         const cloudAgent = await cloudAgentPromise;
+        // Revocation blocks new instructions, but existing owned agents still need cleanup.
+        const cloudAgentCleanupEnabled = Boolean(
+          !cloudAgent &&
+            deps.userCloudAgents &&
+            (await deps.prisma.cloudAgent
+              .findFirst({
+                where: {
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX },
+                },
+                select: { id: true },
+              })
+              .catch(() => null)),
+        );
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -1281,6 +1297,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
             cloudAgentEnabled: Boolean(cloudAgent),
+            cloudAgentCleanupEnabled,
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
             voiceCall,

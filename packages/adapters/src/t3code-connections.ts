@@ -12,6 +12,7 @@ import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
 import { credentialDigest } from "./credential-digest.js";
 import type { McpOAuthBroker } from "./mcp-oauth.js";
 import { TOKEN_REFRESH_SKEW_MS } from "./mcp-oauth.js";
+import { mcpToolAllowed } from "./mcp-tool-permissions.js";
 import { listRemoteMcpTools } from "./remote-mcp.js";
 import type { T3CodeCloudAgentOptions } from "./t3code-cloud-agent.js";
 import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
@@ -202,12 +203,7 @@ export class T3CodeConnections implements UserCloudAgents {
           const assignment = server.assignments.find((item) => item.botId === botId);
           // An explicit assignment overrides allBots, just as the MCP connector does.
           if (!assignment) return server.allBots;
-          const allowed = assignment.allowedTools;
-          return (
-            assignment.allowAllTools ||
-            (Array.isArray(allowed) &&
-              Object.keys(PROTOCOL).every((tool) => allowed.includes(tool)))
-          );
+          return Object.keys(PROTOCOL).every((tool) => mcpToolAllowed(assignment, tool));
         }),
     );
   }
