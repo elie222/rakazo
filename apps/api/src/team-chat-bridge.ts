@@ -887,17 +887,20 @@ export class TeamChatBridge {
   }
 
   private async deliverDelegatedReplies(target: TargetBot): Promise<void> {
+    // Start from the conversation's threads: the bot's runs elsewhere are never marked mirrored,
+    // so filtering its runs by conversation rescans all of them on every pass.
+    const threads = await this.deps.prisma.thread.findMany({
+      where: { externalConversation: this.conversationScope() },
+      select: { id: true },
+    });
+    if (threads.length === 0) return;
     const runs = await this.deps.prisma.run.findMany({
       where: {
+        threadId: { in: threads.map((thread) => thread.id) },
         botId: target.id,
         trigger: "bot_message",
         status: { in: ["completed", "failed"] },
         teamChatMirroredAt: null,
-        thread: {
-          externalConversation: {
-            ...this.conversationScope(),
-          },
-        },
       },
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       take: BATCH_SIZE,
