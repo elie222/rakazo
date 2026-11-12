@@ -54,7 +54,7 @@ it("keeps a bot message untrusted when returned by read_history", async () => {
     bot: { userId: "user-1" },
     source: {},
     secrets: [],
-    state: { readOutsideContent: false },
+    state: { readOutsideContent: false, tainted: false },
     computer: { copyEarlierFiles: vi.fn() },
     deps: { prisma: { message: { findMany }, run: { updateMany } } },
   };
@@ -68,6 +68,10 @@ it("keeps a bot message untrusted when returned by read_history", async () => {
   );
   expect(result).toEqual(response);
   expect(ctx.state.readOutsideContent).toBe(true);
+  expect(ctx.state.tainted).toBe(false);
+  expect(updateMany).toHaveBeenCalledWith(
+    expect.objectContaining({ data: { readOutsideContent: true } }),
+  );
   expect(findMany).toHaveBeenCalledWith(
     expect.objectContaining({
       where: { id: { in: [messageId] }, thread: { spaceId: "space-1" } },
@@ -82,7 +86,7 @@ it.each(["isolated", "shared"])("keeps recalled knowledge derived in %s scope", 
     bot: { id: "bot-1" },
     thread: { historyCompactedUpToSeq: null },
     context: {},
-    state: { readOutsideContent: false },
+    state: { readOutsideContent: false, tainted: false },
     memory: { scope, semantic: { recall: vi.fn(async () => response) } },
     deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
   };
@@ -90,6 +94,7 @@ it.each(["isolated", "shared"])("keeps recalled knowledge derived in %s scope", 
     await memoryTools.recall_memory!(ctx as never, { args: { query: "preference" } } as never),
   ).toEqual(response);
   expect(ctx.state.readOutsideContent).toBe(true);
+  expect(ctx.state.tainted).toBe(true);
 });
 
 it.each(["Provider-generated context", ""])(
@@ -99,12 +104,13 @@ it.each(["Provider-generated context", ""])(
       runId: "run-1",
       bot: { id: "bot-1" },
       context: {},
-      state: { readOutsideContent: false },
+      state: { readOutsideContent: false, tainted: false },
       memory: { semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) } },
       deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
     };
     await memoryTools.reflect_memory!(ctx as never, { args: { query: "Question" } } as never);
     expect(ctx.state.readOutsideContent).toBe(Boolean(text));
+    expect(ctx.state.tainted).toBe(Boolean(text));
   },
 );
 
@@ -127,7 +133,7 @@ it.each([
       bot: { id: "bot-1", userId: "user-1" },
       source: {},
       secrets: [],
-      state: { readOutsideContent: false },
+      state: { readOutsideContent: false, tainted: false },
       computer: { copyEarlierFiles: vi.fn() },
       deps: {
         prisma: {
@@ -149,5 +155,6 @@ it.each([
       } as never,
     );
     expect(ctx.state.readOutsideContent).toBe(exposed);
+    expect(ctx.state.tainted).toBe(false);
   },
 );

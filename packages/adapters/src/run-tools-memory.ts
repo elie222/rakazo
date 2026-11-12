@@ -11,7 +11,7 @@ import { historyHasOutsideContent, trustedBotRuns } from "./conversation-memory.
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
-import { markReadOutsideContent } from "./run-context.js";
+import { markDerivedProvenance, markReadOutsideContent } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { argsError } from "./tool-args.js";
 
@@ -112,7 +112,7 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
       outside = true;
     }
   }
-  if (outside) await markReadOutsideContent(ctx);
+  if (outside) await markDerivedProvenance(ctx);
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {

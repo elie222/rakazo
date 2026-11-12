@@ -77,8 +77,8 @@ The backend tracks provenance conservatively:
   results retain the same classification.
 
 This provenance is separate from current action authorization. Keeping prior knowledge does not
-silently disable the owner's normal workflow or suppress learning. Automatic recall preserves
-source provenance without changing current owner permissions. Explicit recall and new outside
+silently disable the owner's normal workflow or suppress learning. Automatic recall and history
+lookups preserve source provenance without changing current owner permissions. Explicit recall and new outside
 input still go through the existing action protections; remembering and relaying knowledge cannot
 authorize a new action or bypass the receiving Space's access checks. The source flag is not a factual-quality
 judgment: no wording checks or model claims can change its classification.

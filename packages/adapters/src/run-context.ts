@@ -450,6 +450,11 @@ export async function persistReadOutsideContentMidRun(
 /** The run read outside content: taint it and record it once, before the result returns. */
 export async function markReadOutsideContent(ctx: RunContext) {
   ctx.state.tainted = true;
+  await markDerivedProvenance(ctx);
+}
+
+/** Existing knowledge keeps its ancestry without changing current action authorization. */
+export async function markDerivedProvenance(ctx: RunContext) {
   if (ctx.state.readOutsideContent) return;
   ctx.state.readOutsideContent = true;
   await persistReadOutsideContentMidRun(ctx.deps.prisma, ctx.runId);
