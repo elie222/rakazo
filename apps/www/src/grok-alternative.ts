@@ -87,7 +87,7 @@ export const GROK_MODELS_FIGURE: GrokFigure = {
   width: 1280,
   height: 900,
   alt: "Rakazo model settings with Anthropic selected, Claude Sonnet 5.5 in the model menu, and a button to sign in with Claude Pro/Max. The provider list also shows OpenAI Codex and xAI.",
-  caption: "Sign in with Claude Pro/Max, ChatGPT Plus/Pro, or SuperGrok. An API key works too.",
+  caption: "Use ChatGPT sign-in or an API key. For Claude models, connect an Anthropic API key.",
 };
 
 export type GrokCardImage = {

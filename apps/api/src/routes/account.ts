@@ -46,8 +46,8 @@ import type { BillingService } from "../billing.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
 import {
+  accountVoiceCatalog,
   disconnectVoiceCredential,
-  listVoiceCatalog,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   persistVoiceCredential,
@@ -56,11 +56,15 @@ import {
   toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
+  voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
+  withVoiceConnection,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
-import { HEARTBEAT, meDto, withHeartbeats } from "./shared.js";
+import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
+
+const ROSTER_CHANGED = Symbol("roster changed");
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
@@ -331,14 +335,24 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        const { followChatAlerts } = deps.events;
+        const { followChatAlerts, followRosterChanges } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
-        const alerts = withHeartbeats(context, (signal) =>
-          followChatAlerts(userId, spaceId, signal),
+        const rosterChanges = async function* (
+          signal: AbortSignal,
+        ): AsyncGenerator<typeof ROSTER_CHANGED> {
+          if (!followRosterChanges) return;
+          // Chat alerts keep flowing if roster signals fail; the client falls back to polling.
+          try {
+            for await (const _ of followRosterChanges(userId, signal)) yield ROSTER_CHANGED;
+          } catch {}
+        };
+        const frames = withHeartbeats(context, (signal) =>
+          mergeStreams(followChatAlerts(userId, spaceId, signal), rosterChanges(signal)),
         );
-        for await (const next of alerts) {
+        for await (const next of frames) {
           if (next === HEARTBEAT) yield { type: "heartbeat" as const };
+          else if (next === ROSTER_CHANGED) yield { type: "roster" as const };
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
       }),
@@ -426,10 +440,34 @@ export function accountRoutes(ctx: RouterContext) {
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
+      followWorkActivity: authed.notifications.followWorkActivity.handler(
+        async ({ context, input }) => {
+          // The card ends with the session that registered it.
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          const following = await deps.workActivities?.register(
+            context.actor.userId,
+            context.sessionId,
+            input.token,
+          );
+          return { following: following ?? false };
+        },
+      ),
+      registerWorkActivityStarts: authed.notifications.registerWorkActivityStarts.handler(
+        async ({ context, input }) => {
+          // The phone stops getting cards with the session that registered it.
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          await deps.workActivities?.registerStarts(
+            context.actor.userId,
+            context.sessionId,
+            input.token,
+          );
+          return { ok: true as const };
+        },
+      ),
     },
     voice: {
-      catalog: authed.voice.catalog.handler(async () =>
-        listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint }),
+      catalog: authed.voice.catalog.handler(async ({ context }) =>
+        accountVoiceCatalog(deps, context.actor),
       ),
       status: authed.voice.status.handler(async ({ context, input }) => {
         const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
@@ -453,6 +491,7 @@ export function accountRoutes(ctx: RouterContext) {
               voiceId: preference?.voiceId ?? "",
               speechModel: preference?.speechModel ?? "",
               server: await voiceCredentialServer(deps, context.actor, row),
+              hasKey: await voiceCredentialHasKey(deps, context.actor, row),
             });
           }),
         );
@@ -503,13 +542,20 @@ export function accountRoutes(ctx: RouterContext) {
       voices: authed.voice.voices.handler(async ({ context, input }) => {
         // A named provider lists its voices even before the copy has a default voice.
         const row = input.provider
-          ? await loadVoiceCredential(deps, context.actor, input.provider, input.scope)
-          : await loadDefaultVoiceCredential(deps, context.actor, input.scope);
+          ? await loadVoiceCredential(
+              deps,
+              context.actor,
+              input.provider,
+              input.scope,
+              context.signal,
+            )
+          : await loadDefaultVoiceCredential(deps, context.actor, input.scope, context.signal);
         if (!row) return [];
-        return (await voiceProviderFor(deps, row.cred.provider)).listVoices(
-          row.apiKey,
-          voiceContext(context.actor, context.signal),
-          { language: input.language },
+        const provider = await voiceProviderFor(deps, row.cred.provider);
+        return withVoiceConnection(row.cred.provider, row.linked, () =>
+          provider.listVoices(row.apiKey, voiceContext(context.actor, context.signal), {
+            language: input.language,
+          }),
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>

@@ -96,6 +96,8 @@ export const BotSchema = z.object({
   sectionId: Id.nullable(),
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
+  /** Hidden from the viewer's chat list until then; past, the chat has just woken. */
+  snoozedUntil: z.string().nullable().optional(),
   parentBotId: Id.nullable(),
   memoryScope: MemoryScopeSchema.nullable(),
   threadId: Id,
@@ -213,6 +215,8 @@ export const GroupSchema = z.object({
   threadId: Id,
   preview: z.string(),
   unread: z.boolean(),
+  /** Hidden from the viewer's chat list until then; past, the chat has just woken. */
+  snoozedUntil: z.string().nullable().optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
 });
@@ -273,6 +277,7 @@ export const SpaceBotSchema = BotSchema.pick({
   pinned: true,
   sectionId: true,
   unread: true,
+  snoozedUntil: true,
   parentBotId: true,
   preview: true,
   status: true,
@@ -291,6 +296,7 @@ export const SpaceGroupSchema = GroupSchema.pick({
   members: true,
   preview: true,
   unread: true,
+  snoozedUntil: true,
   updatedAt: true,
 });
 export type SpaceGroup = z.infer<typeof SpaceGroupSchema>;
@@ -1170,6 +1176,35 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
+/** One rolling allowance of a model subscription the member signed in with. */
+export const PlanLimitWindowSchema = z.object({
+  period: z.enum(["session", "week", "month"]),
+  usedPercent: z.number().min(0).max(100),
+  resetsAt: z.string().nullable(),
+});
+export type PlanLimitWindow = z.infer<typeof PlanLimitWindowSchema>;
+/** A subscription connection's allowances, as its provider last reported them. */
+export const PlanLimitsSchema = z.object({
+  credentialId: z.string(),
+  /** The subscription's name. */
+  name: z.string(),
+  /** The connection's own name, which tells two sign-ins to one subscription apart. */
+  label: z.string(),
+  windows: z.array(PlanLimitWindowSchema).min(1),
+});
+export type PlanLimits = z.infer<typeof PlanLimitsSchema>;
+
+/**
+ * How used the subscription with the most room is. Each one is only as open as its fullest
+ * allowance, so a nearly spent session on one plan does not read as the member being out.
+ */
+export function planUsagePercent(plans: readonly PlanLimits[]): number | null {
+  if (!plans.length) return null;
+  return Math.min(
+    ...plans.map((plan) => Math.max(...plan.windows.map((window) => window.usedPercent))),
+  );
+}
+
 export const MessagingLinkedIdentitySchema = z.object({
   id: Id,
   provider: z.string(),
@@ -1291,6 +1326,11 @@ export const VoiceCatalogEntrySchema = z.object({
   keyless: z.boolean().optional(),
   /** The connection takes an optional speech model id that overrides the provider default. */
   speechModel: z.boolean().optional(),
+  /**
+   * The account's model connection to this provider can authenticate voice, so the key is
+   * optional. Set only for an account that has one.
+   */
+  modelConnection: z.boolean().optional(),
   /** The provider can list its voices for one language, so the picker may offer a filter. */
   languages: z.boolean().optional(),
 });
@@ -1306,6 +1346,7 @@ export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
 export const VoiceCredentialSchema = z.object({
   id: Id,
   provider: z.string(),
+  /** False when the connection authenticates with the account's model connection instead. */
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   voiceId: z.string(),

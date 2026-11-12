@@ -102,7 +102,14 @@ const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOAT_TTL_SECONDS = 2 * 60 * 60;
 const BOAT_DELETE_TIMEOUT_MS = 60_000;
 const BOAT_GONE_CHECK_TIMEOUT_MS = 10_000;
-/** Under Boat's 600-second wait, so archiving stays one request instead of status polls. */
+/**
+ * Without these, a call Boat never answers waits out Node's five-minute header timeout. Resumes
+ * usually answer within seconds; a slow one that is cut off keeps going, and the next resume
+ * waits on it.
+ */
+const BOAT_GET_TIMEOUT_MS = 60_000;
+const BOAT_RESUME_TIMEOUT_MS = 2 * 60_000;
+/** Archiving runs detached: Node's fetch drops a response with no headers after 300 seconds. */
 const BOAT_ARCHIVE_TIMEOUT_MS = 9 * 60_000;
 /** A whole workspace downloads as one archive, so it gets longer than a single file. */
 const BOAT_ARCHIVE_TRANSFER_TIMEOUT_MS = 30 * 60_000;
@@ -652,6 +659,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         undefined,
         BOAT_ARCHIVE_TIMEOUT_MS,
         context.signal,
+        true,
       );
       if (!result.timedOut && result.exitCode === BOAT_ARCHIVE_TOO_MANY_FILES) {
         throw new WorkspaceTooLargeError("files");
@@ -1213,11 +1221,12 @@ export class BoatSandboxProvider implements SandboxProvider {
     cwd: string | undefined,
     timeoutMs: number,
     signal?: AbortSignal,
+    background = false,
   ): Promise<BoatCommandResult> {
     const marker = `/tmp/rakazo-command-${randomUUID()}.completed-124`;
     const wrapped = timeoutCommand(command, timeoutMs, marker);
     const timeoutSeconds = Math.ceil(timeoutMs / 1_000);
-    const detached = timeoutSeconds + 5 > BOAT_API_COMMAND_TIMEOUT_SECONDS;
+    const detached = background || timeoutSeconds + 5 > BOAT_API_COMMAND_TIMEOUT_SECONDS;
     try {
       const response = await this.whenRunnable(id, signal, () =>
         this.client.command(
@@ -1253,7 +1262,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       return { ...result, timedOut: true };
     } catch (error) {
-      if (signal?.aborted || isAbortError(error)) {
+      // A detached command outlives a follow that failed, so it is stopped too.
+      if (detached || signal?.aborted || isAbortError(error)) {
         await this.terminateCommand(id, marker).catch(() => undefined);
       }
       throw error;
@@ -1432,7 +1442,21 @@ function systemDamaged(stderr: string): boolean {
 function commandStatus(result: BoatCommandResult): string {
   if (result.timedOut) return "timed out";
   if (result.exitCode === BOAT_LISTING_UNREADABLE) return "an entry could not be read";
-  return `exit ${result.exitCode}`;
+  const reasons = errorReasons(result.stderr);
+  return reasons ? `exit ${result.exitCode}: ${reasons}` : `exit ${result.exitCode}`;
+}
+
+/**
+ * The system errors find and tar ended with, such as `No space left on device`, without the
+ * workspace paths they name.
+ */
+function errorReasons(stderr: string): string {
+  const reasons = new Set<string>();
+  for (const line of stderr.split("\n")) {
+    const reason = line.slice(line.lastIndexOf(": ") + 2).trim();
+    if (line.includes(": ") && /^[A-Za-z][A-Za-z /]{0,79}$/.test(reason)) reasons.add(reason);
+  }
+  return [...reasons].slice(0, 3).join("; ");
 }
 
 /** Each step of bringing back a sandbox that stopped answering; none is a failure by itself. */
@@ -1460,13 +1484,15 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
   const boatCall = <Args extends unknown[], Result>(
     call: (...args: Args) => Promise<Result>,
     idempotent = false,
-  ) => wrapBoatCall(call, apiKey, idempotent, gate);
-  const get = boatCall(api.get.bind(api), true);
+    timeoutMs?: number,
+  ) => wrapBoatCall(call, apiKey, idempotent, gate, timeoutMs);
+  const get = boatCall(api.get.bind(api), true, BOAT_GET_TIMEOUT_MS);
   const sandboxCall = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
     call: (...args: Args) => Promise<Result>,
     idempotent = false,
+    timeoutMs?: number,
   ) => {
-    const wrapped = boatCall(call, idempotent);
+    const wrapped = boatCall(call, idempotent, timeoutMs);
     return async (...args: Args): Promise<Result> => {
       try {
         return await wrapped(...args);
@@ -1524,11 +1550,11 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
     create: startCall("create", boatCall(api.create.bind(api))),
     createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api), true),
     createUploadUrl: sandboxCall(api.createUploadUrl.bind(api), true),
-    get: sandboxCall(api.get.bind(api), true),
+    get: sandboxCall(api.get.bind(api), true, BOAT_GET_TIMEOUT_MS),
     getSavedSnapshot: boatCall(api.getSavedSnapshot.bind(api), true),
     hostPort: sandboxCall(api.hostPort.bind(api), true),
     recover: startCall("recover", sandboxCall(api.recover.bind(api))),
-    resume: startCall("resume", sandboxCall(api.resume.bind(api), true)),
+    resume: startCall("resume", sandboxCall(api.resume.bind(api), true, BOAT_RESUME_TIMEOUT_MS)),
     saveSavedSnapshot: boatCall(api.saveSavedSnapshot.bind(api)),
     stop: sandboxCall(api.stop.bind(api)),
     update: sandboxCall(api.update.bind(api), true),
@@ -1731,6 +1757,7 @@ function boatListingWalk(
     `  if ! printf '%s\\n' "$errors" | grep -qv ${tolerated}; then status=0;`,
     `  elif printf '%s\\n' "$errors" | grep -q 'Permission denied$'; then status=${BOAT_LISTING_UNREADABLE}; fi`,
     "fi",
+    'if [ "$status" -ne 0 ]; then printf \'%s\\n\' "$errors" >&2; fi',
     'exit "$status"',
   ].join("\n");
 }
@@ -1813,6 +1840,7 @@ export function archiveBoatWorkspaceCommand(
     'if [ "$status" -eq 1 ]; then status=0;',
     `elif [ "$status" -eq 2 ] && ! grep -qv ${tolerated} "$archive.errors"; then status=0;`,
     `elif grep -q 'Permission denied$' "$archive.errors"; then status=${BOAT_LISTING_UNREADABLE}; fi`,
+    'if [ "$status" -ne 0 ]; then cat "$archive.errors" >&2; fi',
     cleanup,
     'exit "$status"',
   ].join("\n");

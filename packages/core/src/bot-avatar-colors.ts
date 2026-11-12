@@ -1,82 +1,13 @@
-import { parseBotAvatarValue } from "@rakazo/contracts";
-
-export interface BotColorDef {
-  id: string;
-  name: string;
-  /** The bot's one color: its avatar, name and bubble all start from it. */
-  hex: string;
-  /** Deeper value this color was stored as before; existing bots still resolve through it. */
-  previousHex?: string;
-}
-
-export const BOT_COLOR_LIST: BotColorDef[] = [
-  { id: "white", name: "Staff White", hex: "#FFFFFF" },
-  {
-    id: "violet",
-    name: "Executive Violet",
-    hex: "#A97EFE",
-    previousHex: "#8B5CF6",
-  },
-  {
-    id: "green",
-    name: "Emerald",
-    hex: "#00C972",
-    previousHex: "#10B981",
-  },
-  {
-    id: "orange",
-    name: "Forge Orange",
-    hex: "#FF781C",
-    previousHex: "#F97316",
-  },
-  {
-    id: "cyan",
-    name: "Cyber Cyan",
-    hex: "#1CC3B0",
-    previousHex: "#06B6D4",
-  },
-  {
-    id: "blue",
-    name: "Cobalt Blue",
-    hex: "#2A92FE",
-    previousHex: "#3B82F6",
-  },
-  {
-    id: "yellow",
-    name: "Amber Gold",
-    hex: "#FFAF38",
-    previousHex: "#EAB308",
-  },
-  {
-    id: "brown",
-    name: "Caramel Bronze",
-    hex: "#A27952",
-    previousHex: "#8D6E63",
-  },
-  {
-    id: "red",
-    name: "Crimson Red",
-    hex: "#FF3E51",
-    previousHex: "#EF4444",
-  },
-  {
-    id: "magenta",
-    name: "Neon Pink",
-    hex: "#FF5EB1",
-    previousHex: "#EC4899",
-  },
-  {
-    id: "gray",
-    name: "Slate Silver",
-    hex: "#94A3B8",
-    previousHex: "#64748B",
-  },
-];
-
-export const BOT_AVATAR_COLORS = BOT_COLOR_LIST.map((c) => c.hex);
+import type { BotColorDef } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, parseBotAvatarValue } from "@rakazo/contracts";
 
 /** Shared identity color for Avatar Studio reset/fallback (Executive Violet). */
 export const DEFAULT_BOT_AVATAR_COLOR = BOT_COLOR_LIST.find((color) => color.id === "violet")!.hex;
+
+/** The bots the invite artwork draws, in order; white would vanish on a light page. */
+export const INVITE_AVATAR_COLORS: readonly string[] = (
+  ["violet", "green", "orange", "cyan", "blue"] as const
+).map((id) => BOT_COLOR_LIST.find((color) => color.id === id)!.hex);
 
 export function shippedHash(value: string): number {
   let hash = 2166136261;
@@ -117,14 +48,14 @@ export function resolvePersonaColorDef(
   return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
 }
 
-/** WCAG AA contrast for body text. */
-const BUBBLE_TEXT_CONTRAST = 4.5;
+/** Enough for white text while keeping the bubble close to the avatar's color. */
+const BUBBLE_TEXT_CONTRAST = 3;
 const LIGHT_TEXT = "#FFFFFF";
 
 /**
- * Your messages in a bot's chat wear that bot's color under white text, deepened just enough for
- * AA contrast. The color darkens in OKLCH so it keeps its hue and saturation instead of turning
- * muddy. Photo and white avatars keep the neutral bubble.
+ * Your messages in a bot's chat wear that bot's color under white text, deepened only as far as
+ * 3:1 contrast so the bubble still matches the avatar. The color darkens in OKLCH so it keeps its
+ * hue and saturation instead of turning muddy. Photo and white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
   avatarValue: string,

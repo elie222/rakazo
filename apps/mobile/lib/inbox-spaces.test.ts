@@ -12,6 +12,7 @@ import {
   removeInboxSpace,
   retryInboxSpaceFallback,
   selectInboxSpace,
+  snoozedHeadingKey,
   spaceInboxItems,
 } from "./inbox-spaces";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
@@ -103,6 +104,44 @@ describe("spaceInboxItems", () => {
     } finally {
       activateUiLocale("en");
     }
+  });
+  it("moves snoozed chats under a folded Snoozed heading until they wake", () => {
+    const now = Date.parse("2026-11-07T12:00:00.000Z");
+    const input = space({
+      isDefault: true,
+      bots: [
+        { ...bot, id: "awake" },
+        { ...bot, id: "asleep", pinned: true, snoozedUntil: "2026-11-08T09:00:00.000Z" },
+        { ...bot, id: "woke", snoozedUntil: "2026-11-07T09:00:00.000Z" },
+        // A bot waiting on an answer stays snoozed.
+        {
+          ...bot,
+          id: "asking",
+          status: "waiting_input",
+          snoozedUntil: "2026-11-08T09:00:00.000Z",
+        },
+      ],
+    });
+    const key = snoozedHeadingKey(input.id);
+    const ids = (items: ReturnType<typeof spaceInboxItems>) =>
+      items.map((item) =>
+        item.type === "bot" ? item.bot.id : item.type === "heading" ? `#${item.title}` : "?",
+      );
+    expect(ids(spaceInboxItems([input], new Set(), undefined, now))).toEqual([
+      "awake",
+      "woke",
+      "#Snoozed",
+    ]);
+    expect(spaceInboxItems([input], new Set(), undefined, now).at(-1)).toMatchObject({
+      key,
+      collapsed: true,
+      count: 2,
+    });
+    expect(ids(spaceInboxItems([input], new Set([key]), undefined, now)).slice(-3)).toEqual([
+      "#Snoozed",
+      "asleep",
+      "asking",
+    ]);
   });
   it("keeps an empty space visible and selectable by its own id", () => {
     const empty = space();
@@ -538,4 +577,13 @@ describe("inbox attention pills", () => {
       inboxSignal({ type: "bot", bot: { ...waiting, archivedAt: bot.updatedAt } }).attention,
     ).toBe(0);
   });
+});
+
+it("keeps a snoozed chat out of the off-screen unread pills", () => {
+  const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  expect(inboxSignal({ type: "bot", bot: { ...bot, unread: true, snoozedUntil: later } })).toEqual({
+    unread: 0,
+    attention: 0,
+  });
+  expect(inboxSignal({ type: "bot", bot: { ...bot, unread: true } }).unread).toBe(1);
 });

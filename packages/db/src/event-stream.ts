@@ -81,8 +81,30 @@ export async function* followThreadEvents(
   }
 }
 
-function threadTopic(threadId: string): string {
-  return `thread:${threadId}`;
+const THREAD_TOPIC = "thread:";
+
+export function threadTopic(threadId: string): string {
+  return `${THREAD_TOPIC}${threadId}`;
+}
+
+/** The same fanout, also telling `onThread` about each thread change this process publishes. */
+export function observeThreadChanges(
+  realtime: RealtimeFanout,
+  onThread: (threadId: string) => void,
+): RealtimeFanout {
+  return {
+    describe: () => realtime.describe(),
+    publish: async (topic, payload) => {
+      // The change is committed whether or not other processes heard about it.
+      try {
+        await realtime.publish(topic, payload);
+      } finally {
+        if (topic.startsWith(THREAD_TOPIC)) onThread(topic.slice(THREAD_TOPIC.length));
+      }
+    },
+    subscribe: (topic, onMessage) => realtime.subscribe(topic, onMessage),
+    close: () => realtime.close(),
+  };
 }
 
 export function mapProductEvent(event: {
@@ -135,7 +157,7 @@ export async function* followIncomingCallSignals(
   }
 }
 
-class ChangeLatch {
+export class ChangeLatch {
   generation = 0;
   private wake: (() => void) | undefined;
 

@@ -7,6 +7,7 @@ import {
   defaultVaultItemTitle,
   forgetBotSecret,
   forgetPageShareSecrets,
+  groupsRemovedByDeletingBot,
   hasActiveComputerControl,
   isSecretAlreadySaved,
   listVaultItems,
@@ -52,6 +53,7 @@ import type { AgentImportServices } from "../agent-import.js";
 import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
 import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
+import { loadBotForRemoval } from "../bot-removal.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
 import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
@@ -633,6 +635,10 @@ export function botsRoutes(ctx: RouterContext) {
         await removeBot(context.actor, input.botId, { deleteMemories: input.deleteMemories });
         return { ok: true as const };
       }),
+      removePreview: authed.bots.removePreview.handler(async ({ context, input }) => {
+        const bot = await loadBotForRemoval(deps.prisma, repos, context.actor, input.botId);
+        return groupsRemovedByDeletingBot(deps.prisma, bot.id);
+      }),
       emailAddress: authed.bots.emailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         // The address and its inbox are the owner's: other members of the Space never see it.
@@ -690,6 +696,41 @@ export function botsRoutes(ctx: RouterContext) {
           path: `/api/v1/bots/${bot.id}/webhook`,
           webhookConfigured: true as const,
         };
+      }),
+      revealWebhookSecret: authed.bots.revealWebhookSecret.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        // Only the creator can issue the secret, so only the creator can read it back. Checked
+        // first, so another member is never asked to confirm their identity for nothing.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+        await requireIdentityConfirmation(deps.auth, context);
+        const stored = bot.webhookSecretId
+          ? await deps.prisma.secret.findFirst({
+              where: {
+                id: bot.webhookSecretId,
+                userId: context.actor.userId,
+                spaceId: context.actor.spaceId,
+                kind: "webhook",
+              },
+              select: { id: true, ciphertext: true },
+            })
+          : null;
+        if (!stored) throw new ORPCError("NOT_FOUND", { message: "Webhook key not found" });
+        const secret = await deps.secrets.load(stored.ciphertext, stored.id);
+        // A rotation can commit while this decrypts; never hand back a key it has revoked.
+        const current = await deps.prisma.bot.findUnique({
+          where: { id: bot.id },
+          select: { webhookSecretId: true },
+        });
+        if (current?.webhookSecretId !== stored.id) {
+          throw new ORPCError("CONFLICT", { message: "The webhook key just changed" });
+        }
+        await recordSecurityEvent({
+          type: "credential.revealed",
+          userId: context.actor.userId,
+          spaceId: context.actor.spaceId,
+          metadata: { procedure: "bots.revealWebhookSecret", kind: "webhook", botId: bot.id },
+        });
+        return { secret };
       }),
     },
     groups: {

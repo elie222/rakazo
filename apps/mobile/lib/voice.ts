@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
   ensureAiDataConsent,
@@ -8,7 +9,7 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
   withAbort,
 } from "@rakazo/core";
-import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
@@ -18,7 +19,6 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
-import { t } from "./i18n";
 import { fetchServer } from "./server-headers";
 import { subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
@@ -127,14 +127,85 @@ subscribeConfirmedSpaceSwitch(() => {
   announcedSpeaker = undefined;
 });
 
-let playsInBackground = false;
+const READ_ALOUD_AUDIO = {
+  playsInSilentMode: true,
+  interruptionMode: "mixWithOthers",
+  shouldPlayInBackground: false,
+} as const;
 
-/**
- * A call keeps its replies playing while the screen is off; the microphone
- * foreground service is what keeps the app alive then.
- */
-export function setVoiceBackgroundPlayback(enabled: boolean): void {
-  playsInBackground = enabled;
+const CALL_AUDIO = {
+  playsInSilentMode: true,
+  interruptionMode: "mixWithOthers",
+  allowsRecording: true,
+  shouldPlayInBackground: true,
+} as const;
+
+const DICTATION_AUDIO = { playsInSilentMode: true, allowsRecording: true } as const;
+
+let audioDisabled = false;
+let onCall = false;
+let dictating = false;
+let audioModeChange: Promise<void> = Promise.resolve();
+
+function changeAudioMode(change: () => Promise<void>): Promise<void> {
+  const next = audioModeChange.then(change);
+  audioModeChange = next.catch(() => undefined);
+  return next;
+}
+
+async function activateAudio(): Promise<void> {
+  if (!audioDisabled) return;
+  await setIsAudioActiveAsync(true);
+  audioDisabled = false;
+}
+
+async function releaseAudio(): Promise<void> {
+  // This API also disables future players until explicitly enabled again.
+  audioDisabled = true;
+  await setIsAudioActiveAsync(false);
+}
+
+export function activateVoiceAudio(): Promise<void> {
+  return changeAudioMode(activateAudio);
+}
+
+export function callAudioActive(): boolean {
+  return onCall;
+}
+
+export function setCallAudio(active: boolean): Promise<void> {
+  onCall = active;
+  return changeAudioMode(async () => {
+    if (onCall !== active) return;
+    if (active) {
+      await activateAudio();
+      await setAudioModeAsync(CALL_AUDIO);
+      return;
+    }
+    if (dictating) {
+      await activateAudio();
+      await setAudioModeAsync(DICTATION_AUDIO);
+      return;
+    }
+    await setAudioModeAsync(READ_ALOUD_AUDIO);
+    if (Platform.OS === "ios" && !onCall && playback.status === "idle") {
+      await releaseAudio();
+    }
+  });
+}
+
+export function setDictationAudio(active: boolean): Promise<void> {
+  dictating = active;
+  return changeAudioMode(async () => {
+    if (onCall || dictating !== active) return;
+    if (active) {
+      await activateAudio();
+      await setAudioModeAsync(DICTATION_AUDIO);
+      return;
+    }
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+    if (Platform.OS === "ios" && playback.status === "idle") await releaseAudio();
+  });
 }
 
 // Queued playback runs speakText one call at a time, so a single Stop always reaches whatever is
@@ -418,10 +489,10 @@ async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
   try {
     Speech = await import("expo-speech");
   } catch (error) {
-    throw error instanceof Error ? error : new Error(t("Could not play that clip."));
+    throw error instanceof Error ? error : new Error(t`Could not play that clip.`);
   }
   if (typeof Speech.speak !== "function" || typeof Speech.stop !== "function") {
-    throw new Error(t("Could not play that clip."));
+    throw new Error(t`Could not play that clip.`);
   }
   return Speech as typeof ExpoSpeech;
 }
@@ -444,22 +515,30 @@ export async function speakUtterance(
   opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
 ): Promise<Uint8Array> {
   const requestContext = opts.requestContext ?? (await captureApiRequestContext());
+  await ensureVoiceConsent(requestContext, opts.scope);
+  return renderUtterance(text, opts, requestContext);
+}
+
+/** Asks before audio or text goes to the voice provider; throws AiConsentBlocked on a refusal. */
+export async function ensureVoiceConsent(
+  requestContext: ApiRequestContext,
+  scope?: SettingsScope,
+): Promise<void> {
   await ensureAiDataConsent({
     uses: ["voice"],
     status: () =>
       rpc(
         "aiConsent/status",
-        { uses: ["voice"], ...(opts.scope ? { settingsScope: opts.scope } : {}) },
+        { uses: ["voice"], ...(scope ? { settingsScope: scope } : {}) },
         { requestContext },
       ),
     prompt: promptAiConsent,
     allow: (input) =>
-      rpc("aiConsent/allow", opts.scope ? { ...input, settingsScope: opts.scope } : input, {
+      rpc("aiConsent/allow", scope ? { ...input, settingsScope: scope } : input, {
         requestContext,
       }),
     coalesceKey: aiConsentCoalesceKey(requestContext),
   });
-  return renderUtterance(text, opts, requestContext);
 }
 
 async function renderUtterance(
@@ -492,14 +571,12 @@ async function renderUtterance(
       deadline.signal,
       "Voice request aborted.",
     ).catch((error: unknown) => {
-      throw deadline.signal.aborted
-        ? error
-        : new Error(errorText(error, t("Could not speak that.")));
+      throw deadline.signal.aborted ? error : new Error(errorText(error, t`Could not speak that.`));
     });
     if (!res.ok) {
       const body = await readVoiceError(res, deadline.signal);
       throw new Error(
-        voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not speak that.")),
+        voiceAccountErrorText(body) ?? errorText(body.error ?? "", t`Could not speak that.`),
       );
     }
     return await readVoiceAudio(res, deadline.signal);
@@ -598,7 +675,7 @@ async function playWithHtmlAudio(
         else resolve();
       };
       audio.onended = () => finish();
-      audio.onerror = () => finish(new Error(t("Could not play that clip.")));
+      audio.onerror = () => finish(new Error(t`Could not play that clip.`));
       session?.setPlayer({
         pause: () => audio.pause(),
         resume: () => void audio.play().catch(() => undefined),
@@ -616,10 +693,10 @@ async function playWithHtmlAudio(
         void audio
           .play()
           .catch((error: unknown) =>
-            finish(error instanceof Error ? error : new Error(t("Could not play that clip."))),
+            finish(error instanceof Error ? error : new Error(t`Could not play that clip.`)),
           );
       } catch (error) {
-        finish(error instanceof Error ? error : new Error(t("Could not play that clip.")));
+        finish(error instanceof Error ? error : new Error(t`Could not play that clip.`));
       }
     });
   } finally {
@@ -629,18 +706,17 @@ async function playWithHtmlAudio(
 
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
-  await setAudioModeAsync({
-    playsInSilentMode: true,
-    interruptionMode: "mixWithOthers",
-    shouldPlayInBackground: playsInBackground,
+  await changeAudioMode(async () => {
+    await activateAudio();
+    if (!onCall) await setAudioModeAsync(READ_ALOUD_AUDIO);
   });
   const file = new File(
     Paths.cache,
     `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,
   );
   file.create({ overwrite: true });
-  file.write(bytesToBase64(bytes), { encoding: "base64" });
-  const player = createAudioPlayer({ uri: file.uri });
+  file.writeSync(bytesToBase64(bytes), { encoding: "base64" });
+  const player = createAudioPlayer({ uri: file.uri }, { keepAudioSessionActive: onCall });
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -655,7 +731,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
         else resolve();
       };
       const armStartupWatchdog = () => {
-        timer = setTimeout(() => finish(new Error(t("Could not play that clip."))), 15_000);
+        timer = setTimeout(() => finish(new Error(t`Could not play that clip.`)), 15_000);
       };
       const sub = player.addListener("playbackStatusUpdate", (status) => {
         if (status.error) {
@@ -663,7 +739,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
           return;
         }
         if (status.playbackState === "failed") {
-          finish(new Error(t("Could not play that clip.")));
+          finish(new Error(t`Could not play that clip.`));
           return;
         }
         if (status.didJustFinish) {
@@ -673,7 +749,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
         if (status.playing && status.duration > 0 && !session?.isPaused) {
           clearTimeout(timer);
           timer = setTimeout(
-            () => finish(new Error(t("Could not play that clip."))),
+            () => finish(new Error(t`Could not play that clip.`)),
             Math.min(120_000, Math.ceil(status.duration * 1000) + 8_000),
           );
         }
@@ -704,7 +780,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
       try {
         player.play();
       } catch (error) {
-        finish(error instanceof Error ? error : new Error(t("Could not play that clip.")));
+        finish(error instanceof Error ? error : new Error(t`Could not play that clip.`));
       }
     });
   } finally {

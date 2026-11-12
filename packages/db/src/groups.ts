@@ -15,7 +15,7 @@ import {
   previewFromBlocks,
   primaryActiveRun,
 } from "./thread-listing.js";
-import { readStateFor, unreadFor } from "./thread-reads.js";
+import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type GroupRecord = {
@@ -30,7 +30,7 @@ type GroupRecord = {
   updatedAt: Date;
   thread: {
     id: string;
-    reads: Array<{ unread: boolean }>;
+    reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
     messages: Array<{ blocks: unknown }>;
   } | null;
   members: Array<{
@@ -49,7 +49,7 @@ type SpaceGroupRecord = Pick<
   "id" | "spaceId" | "name" | "pinned" | "sectionId" | "updatedAt" | "members"
 > & {
   thread: {
-    reads: Array<{ unread: boolean }>;
+    reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
     messages: Array<{ blocks: unknown }>;
   } | null;
 };
@@ -78,6 +78,7 @@ function mapGroup(group: GroupRecord): Group {
     threadId: group.thread.id,
     preview,
     unread: unreadFor(group.thread),
+    snoozedUntil: snoozedUntilFor(group.thread),
     updatedAt: group.updatedAt.toISOString(),
     createdAt: group.createdAt.toISOString(),
   };
@@ -94,6 +95,7 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
     members: mapGroupMembers(group.members),
     preview: previewFromBlocks(group.thread.messages[0]?.blocks),
     unread: unreadFor(group.thread),
+    snoozedUntil: snoozedUntilFor(group.thread),
     updatedAt: group.updatedAt.toISOString(),
   };
 }
@@ -646,21 +648,28 @@ export function createGroupRepos(prisma: PrismaClient) {
     async removeGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
         await lockSpaceGroup(tx, actor, groupId);
+        // Wait out the thread's writers before taking the group row exclusively: their
+        // foreign-key share on the group would otherwise wait on this transaction.
+        const thread = await tx.thread.findUnique({ where: { groupId }, select: { id: true } });
+        if (thread) {
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+        }
+        // Exclusive from here, so no upload can reference the group after the snapshot below.
+        await lockSpaceGroup(tx, actor, groupId, { forDelete: true });
         const group = await tx.chatGroup.findUnique({
           where: { id: groupId },
           select: {
             artifacts: { select: { storageKey: true } },
             members: { orderBy: groupMemberOrder, take: 1, select: { botId: true } },
-            thread: { select: { id: true } },
           },
         });
         const contextBotId = group?.members[0]?.botId;
         if (!contextBotId) throw new IsolationError();
         // The thread's runs cascade away with the group, but their computer leases don't:
         // cancel them first so the route can stop their work and release the leases.
-        const activeRuns = group.thread
+        const activeRuns = thread
           ? await tx.run.findMany({
-              where: { threadId: group.thread.id, status: { in: activeRunStatuses } },
+              where: { threadId: thread.id, status: { in: activeRunStatuses } },
               select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
@@ -684,19 +693,35 @@ export function createGroupRepos(prisma: PrismaClient) {
   };
 }
 
-/** Lock a group in the actor's space; every member of the space may change it. */
+/**
+ * Locks a group in the actor's space; every member of the space may change it.
+ * Serializes writers of one group. Callers lock the group before its thread, while a
+ * thread writer that writes the thread row twice (message, then event counter) takes a
+ * foreign-key share on the group row under its thread lock. FOR NO KEY UPDATE lets that
+ * share through so the two orders cannot deadlock. Deleting the group locks its thread
+ * next and only then upgrades to FOR UPDATE, which keeps new rows from referencing it.
+ */
 export async function lockSpaceGroup(
   prisma: Pick<Prisma.TransactionClient, "$queryRaw">,
   actor: Pick<Actor, "spaceId">,
   groupId: string,
+  options: { forDelete?: boolean } = {},
 ) {
-  const locked = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id
-    FROM chat_groups
-    WHERE id = ${groupId}
-      AND "spaceId" = ${actor.spaceId}
-    FOR UPDATE
-  `;
+  const locked = options.forDelete
+    ? await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM chat_groups
+        WHERE id = ${groupId}
+          AND "spaceId" = ${actor.spaceId}
+        FOR UPDATE
+      `
+    : await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM chat_groups
+        WHERE id = ${groupId}
+          AND "spaceId" = ${actor.spaceId}
+        FOR NO KEY UPDATE
+      `;
   if (locked.length !== 1) throw new IsolationError();
 }
 

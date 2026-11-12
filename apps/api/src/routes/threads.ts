@@ -40,6 +40,7 @@ import { reactToThreadMessage } from "../thread-reactions.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
+  setThreadSnooze,
   setThreadUnreadState,
 } from "../thread-read-state.js";
 import { threadSnapshot } from "../thread-snapshot.js";
@@ -118,7 +119,7 @@ export function threadsRoutes(ctx: RouterContext) {
     const noModel =
       setup.needsModel &&
       !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
-    if (noModel && (target.kind !== "bot" || !isStopMessage(input))) {
+    if (noModel && !isStopMessage(input)) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
@@ -665,6 +666,11 @@ export function threadsRoutes(ctx: RouterContext) {
         } else {
           await setThreadUnreadState(deps.prisma, context.actor, target, true);
         }
+        return { ok: true as const };
+      }),
+      snooze: authed.threads.snooze.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setThreadSnooze(deps.prisma, context.actor, target, input.until);
         return { ok: true as const };
       }),
     },

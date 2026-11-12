@@ -138,3 +138,26 @@ test("a covered run error is not remembered until it is presented", async ({ pag
   await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
   await expect(error).toBeHidden();
 });
+
+test("an operator usage cap explains the pause without offering a billing upgrade", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `usage-cap-${Date.now()}@rakazo.test`, "password12", "Usage Limit");
+  await completeOnboarding(page);
+  // Use the normal failure fixture and replace only the server's error message.
+  await page.route("**/rpc/threads/get", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json?: { run?: { error?: string | null } } };
+    if (body.json?.run?.error)
+      body.json.run.error = "Usage limit reached. Contact support to continue.";
+    await route.fulfill({ response, json: body });
+  });
+  await page.getByPlaceholder(/^Message /).fill("fail this run");
+  await page.getByRole("button", { name: "Send" }).click();
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText("Usage limit reached. Contact support to continue.", {
+    timeout: 30_000,
+  });
+  await expect(error.getByTestId("composer-error-action")).toBeHidden();
+  await captureScreenshot(page, testInfo, "model-credit-usage-cap");
+});

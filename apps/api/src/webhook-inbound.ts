@@ -326,6 +326,7 @@ export async function deliverWebhookEvent(
     botId: target.bot.id,
     userId: target.bot.userId,
     blocks: [
+      { kind: "delivery" },
       { kind: "text", text: promptText },
       ...(input.artifacts ?? []).map(messageBlockForArtifact),
     ],

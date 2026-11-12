@@ -3,7 +3,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
-import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
+import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
@@ -16,6 +16,7 @@ import {
   configuredEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
+  createApnsActivityProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createCloudAgentConnection,
@@ -56,6 +57,8 @@ import {
   shutdownPiTelemetry,
   UserDevices,
   userDeviceForwardSecret,
+  WorkActivities,
+  withHostComputerScreen,
   withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -69,6 +72,7 @@ import {
   installSecurityEventStore,
   isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
+  observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   rowSecurityWarning,
@@ -77,12 +81,13 @@ import {
 } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
+import { watchEventLoopStalls } from "@rakazo/logging/event-loop";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
 const logger = await createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
-  const stopStallWatch = watchEventLoopStalls();
+  const stopStallWatch = watchEventLoopStalls("worker.event_loop_stalled");
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
@@ -102,10 +107,16 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
-  const realtime = new PostgresRealtimeFanout({
-    connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
-    publisher: pool,
-  });
+  // Set once push delivery is configured below; thread changes before then have no cards.
+  let workActivities: WorkActivities | undefined;
+  // Every thread change this process commits also updates its users' live status cards.
+  const realtime = observeThreadChanges(
+    new PostgresRealtimeFanout({
+      connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
+      publisher: pool,
+    }),
+    (threadId) => workActivities?.threadChanged(threadId),
+  );
   const secrets = await createWorkerSecretStore(process.env, realtime);
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
@@ -129,8 +140,9 @@ async function main() {
       ? new ScriptedAgentRuntime()
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(env.dataDir) });
   const sandboxProvider = resolveSandboxProvider(process.env);
+  const sandboxOptions = sandboxProviderOptionsFromEnv(process.env);
   const sandbox = await createRunSandbox(sandboxProvider, {
-    ...sandboxProviderOptionsFromEnv(process.env),
+    ...sandboxOptions,
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
     dataDir: env.dataDir,
@@ -189,6 +201,8 @@ async function main() {
     accessToken: process.env.EXPO_ACCESS_TOKEN,
     voip: await createApnsVoipProvider(apnsVoipConfig(process.env)),
   });
+  const activityPush = await createApnsActivityProvider(apnsVoipConfig(process.env));
+  if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
   const email = configuredEmailProvider({
     provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
     apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
@@ -217,13 +231,20 @@ async function main() {
     messaging,
     cloudAgent,
     // Device sockets live in an API process; the worker forwards to whichever one holds it.
-    userDevices:
+    userDevices: withHostComputerScreen(
       process.env.USER_DEVICES_ENABLED === "false"
         ? undefined
         : new UserDevices({
             prisma,
             forwardSecret: userDeviceForwardSecret(env.encryptionKey),
           }),
+      {
+        prisma,
+        sandboxKind: sandboxProvider,
+        url: sandboxOptions.hostComputerUrl,
+        token: sandboxOptions.hostComputerToken,
+      },
+    ),
     paymentWallet,
     shutdownSignal: shutdown.signal,
   });

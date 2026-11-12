@@ -1,5 +1,6 @@
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { attachmentComputerPath } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -611,6 +612,94 @@ describe("storeInboundAttachment", () => {
     });
     expect(stored).toMatchObject({ id: "artifact-9", mimeType: "audio/ogg" });
     expect(stored.bytes).toBe(bytes);
+  });
+
+  it("stores a WhatsApp voice note whose MIME type carries parameters", async () => {
+    // WhatsApp Cloud API reports voice notes as "audio/ogg; codecs=opus"
+    // with a parameter-less file name, so the type must be normalized
+    // before it is matched against the allowlist.
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const row = {
+      id: "artifact-11",
+      botId: "bot-1",
+      groupId: null,
+      runId: null,
+      name: "voice",
+      description: null,
+      mimeType: "audio/ogg",
+      size: bytes.byteLength,
+      version: 1,
+      createdAt: new Date(0),
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      artifact: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue(row),
+      },
+    };
+    const deps = {
+      prisma: {
+        artifact: { findFirst: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
+      } as unknown as PrismaClient,
+      artifacts: { put: vi.fn().mockResolvedValue({ id: "store-2" }) } as unknown as ArtifactStore,
+    };
+    const stored = await storeInboundAttachment(deps, actor, {
+      botId: "bot-1",
+      attachment: { name: "voice", mimeType: "audio/ogg; codecs=opus", fetch: async () => bytes },
+      clientNonce: "nonce-3",
+    });
+    expect(stored).toMatchObject({ id: "artifact-11", mimeType: "audio/ogg" });
+    expect(attachmentComputerPath(stored.id, stored.mimeType)).toBe(`attachments/${stored.id}.ogg`);
+    expect(stored.bytes).toBe(bytes);
+  });
+
+  it("stores a standalone file apart from a same-name file's versions", async () => {
+    const existing = { id: "owner-report", rootArtifactId: null, version: 2 };
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...data,
+      id: "artifact-10",
+      runId: null,
+      description: null,
+      createdAt: new Date(0),
+    }));
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      artifact: {
+        // The nonce replay check finds nothing; the version lookup finds the owner's file.
+        findFirst: vi.fn(async ({ where }: { where: { clientNonce?: string } }) =>
+          where.clientNonce ? null : existing,
+        ),
+        create,
+      },
+    };
+    const deps = {
+      prisma: {
+        artifact: { findFirst: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
+      } as unknown as PrismaClient,
+      artifacts: { put: vi.fn().mockResolvedValue({ id: "store-2" }) } as unknown as ArtifactStore,
+    };
+    const store = (standalone: boolean) =>
+      storeInboundAttachment(deps, actor, {
+        botId: "bot-1",
+        attachment: {
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          fetch: async () => new Uint8Array([1]),
+        },
+        clientNonce: "nonce-3",
+        standalone,
+      });
+
+    await store(true);
+    await store(false);
+
+    expect(create.mock.calls.map(([{ data }]) => [data.rootArtifactId, data.version])).toEqual([
+      [null, 1],
+      ["owner-report", 3],
+    ]);
   });
 });
 

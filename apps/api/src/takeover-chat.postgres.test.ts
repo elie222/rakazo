@@ -40,9 +40,7 @@ import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
-    ? describe.sequential
-    : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -247,6 +245,17 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       );
       return response!;
     };
+    const release = async (reason: "done" | "skipped", as: Actor = actor, runId = run.id) => {
+      const { response } = await handler.handle(
+        new Request("http://127.0.0.1/rpc/computer/release", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: bot.id, reason, runId } }),
+        }),
+        { prefix: "/rpc", context: { actor: as } },
+      );
+      return response!;
+    };
     return {
       actor,
       bot,
@@ -260,6 +269,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       enqueue,
       queuedStates,
       send,
+      release,
       takeover,
       control,
       leaseId,
@@ -581,6 +591,99 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     });
     expect(requests).toHaveLength(1);
     expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+  });
+
+  it("lets the person the run waits on skip an unopened takeover from the chat card", async () => {
+    const fixture = await setup("unopened");
+    expect((await fixture.release("skipped")).status).toBe(200);
+    expect(await fixture.control()).toMatchObject({ controlHolder: "bot", controlRunId: null });
+    expect(
+      await system.event.findMany({
+        where: { runId: fixture.run.id, type: "computer.takeover.released" },
+      }),
+    ).toMatchObject([{ payload: { holder: "bot", reason: "skipped", leaseId: null } }]);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "queued",
+      checkpoint: "takeover-skipped",
+    });
+  });
+
+  it("shows the screen preview to the Space and to no one outside it", async () => {
+    const fixture = await setup("unopened");
+    const outsider = await setup("unopened");
+    const preview = async (actor: Actor, runId?: string) => {
+      const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+        new Request("http://127.0.0.1/rpc/computer/preview", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: fixture.bot.id, runId } }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+      return response!;
+    };
+    const own = await preview(fixture.actor);
+    expect(own.status).toBe(200);
+    const { json } = await own.json();
+    expect(json.image).toMatch(/^data:image\/(png|jpeg);base64,/);
+    const other = await preview(outsider.actor);
+    expect(other.status).not.toBe(200);
+    expect(JSON.stringify(await other.json())).not.toContain("data:image");
+    // A card whose run no longer waits shows no screen.
+    const stale = await preview(fixture.actor, randomUUID());
+    expect((await stale.json()).json).toEqual({ image: null });
+    const current = await preview(fixture.actor, fixture.run.id);
+    expect((await current.json()).json.image).toMatch(/^data:image/);
+  });
+
+  it("does not let an older card answer the takeover a newer run is waiting on", async () => {
+    const fixture = await setup("unopened");
+    const before = await fixture.control();
+    const response = await fixture.release("skipped", fixture.actor, randomUUID());
+    expect(response.status).toBe(409);
+    expect(await fixture.control()).toEqual(before);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "waiting_takeover",
+    });
+  });
+
+  it("does not let another member answer a takeover that waits on someone else", async () => {
+    const fixture = await setup("unopened");
+    const otherId = randomUUID();
+    await system.user.create({
+      data: { id: otherId, name: "Other", email: `${otherId}@example.test`, emailVerified: true },
+    });
+    organizations.push(otherId);
+    await system.member.create({
+      data: {
+        id: otherId,
+        organizationId: fixture.actor.spaceId,
+        userId: otherId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: otherId,
+        spaceId: fixture.actor.spaceId,
+        organizationId: fixture.actor.spaceId,
+        userId: otherId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const before = await fixture.control();
+    const response = await fixture.release("done", {
+      ...fixture.actor,
+      userId: otherId,
+      email: `${otherId}@example.test`,
+    });
+    expect(response.status).toBe(409);
+    expect(await fixture.control()).toEqual(before);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "waiting_takeover",
+    });
   });
 
   it.each(["none", "other-run", "other-bot", "idle"])(

@@ -10,7 +10,7 @@ import { createRouter } from "./router.js";
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 
-describe.skipIf(!enabled).sequential("MCP server agents (PostgreSQL)", () => {
+describe.skipIf(!enabled)("MCP server agents (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
   let actor: Actor;

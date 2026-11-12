@@ -32,9 +32,41 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "request_purchase",
 ]);
 
+/**
+ * Built-ins that only look, or only speak to the owner: free even when outside text started the
+ * run. Anything else, new tools included, is gated there (see outsideRunToolRequiresApproval).
+ */
+const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
+  "ask_user",
+  "attach_file",
+  "browser_snapshot",
+  "cloud_agent_status",
+  "computer_observe",
+  "list_files",
+  "list_fleet",
+  "list_secrets",
+  "message_user",
+  "purchase_status",
+  "read_email",
+  "read_file",
+  "read_history",
+  "recall_memory",
+  "request_takeover",
+  "run_subagent",
+  "schedule_list",
+  "scratchpad_list",
+  "search_history",
+  "service_search",
+  "skill_read",
+  "task_catalog",
+  "web_fetch",
+  "web_search",
+]);
+
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
+  "service_call",
   "archive_bot",
   "secret_request",
   "forget_secret",
@@ -60,27 +92,6 @@ const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "create_space",
   "set_child_instructions",
   "set_child_bot_model",
-]);
-
-const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
-  "browser_snapshot",
-  "cloud_agent_status",
-  "computer_observe",
-  "list_files",
-  "list_fleet",
-  "list_secrets",
-  "purchase_status",
-  "read_email",
-  "read_file",
-  "recall_memory",
-  "request_takeover",
-  "run_subagent",
-  "task_catalog",
-  "schedule_list",
-  "scratchpad_list",
-  "skill_read",
-  "web_fetch",
-  "web_search",
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
@@ -170,6 +181,15 @@ export function toolRequiresApproval(
 }
 
 /**
+ * A run a webhook or an email started carries text someone else may have written, so a built-in
+ * that changes something is gated there even if the owner's own runs never ask for it. It is gated
+ * like any other consequential action: Always allow, the approval model or Never ask can pass it.
+ */
+export function outsideRunToolRequiresApproval(trigger: string, toolName: string): boolean {
+  return trigger === "webhook" && !OUTSIDE_RUN_SAFE_BUILTIN_TOOLS.has(toolName);
+}
+
+/**
  * Whether this call repeats one of `denied`, the requests a person denied for this tool earlier in
  * the run. A Composio multi-execute repeats only when it shares an inner tool slug. Telling the
  * model not to retry did not stop it.
@@ -207,19 +227,6 @@ export function toolRequiresExplicitApproval(toolName: string): boolean {
 export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): boolean {
   if (trigger === "follow_up") return followUpFromUser;
   return trigger === "user" || trigger === "call_end";
-}
-
-/** External webhook runs may inspect state unattended, but side effects always need the owner. */
-export function unattendedTriggerToolRequiresApproval(
-  trigger: string,
-  toolName: string,
-  viaConnector: boolean,
-  readOnly?: boolean,
-): boolean {
-  if (trigger !== "webhook") return false;
-  return viaConnector
-    ? connectorToolRequiresApproval(toolName, readOnly)
-    : !UNATTENDED_SAFE_BUILTIN_TOOLS.has(toolName);
 }
 
 /**

@@ -14,6 +14,7 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -29,6 +30,7 @@ import {
   CodexCatalogCache,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
+  createApnsActivityProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createCloudAgentConnection,
@@ -70,6 +72,8 @@ import {
   userDeviceForwardSecret,
   userDeviceInternalAddress,
   verifyModelServesAgents,
+  WorkActivities,
+  withHostComputerScreen,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
@@ -98,6 +102,7 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   requireMembership,
@@ -280,14 +285,19 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   if (rowSecurity) logger.warn(rowSecurity);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
-  const realtime =
+  // Set once push delivery is configured below; thread changes before then have no cards.
+  let workActivities: WorkActivities | undefined;
+  // Every thread change this process commits also updates its users' live status cards.
+  const realtime = observeThreadChanges(
     realtimeOverride ??
-    (created.pool
-      ? new PostgresRealtimeFanout({
-          connectionString: env.realtimeDatabaseUrl,
-          publisher: created.pool,
-        })
-      : new InMemoryRealtimeFanout());
+      (created.pool
+        ? new PostgresRealtimeFanout({
+            connectionString: env.realtimeDatabaseUrl,
+            publisher: created.pool,
+          })
+        : new InMemoryRealtimeFanout()),
+    (threadId) => workActivities?.threadChanged(threadId),
+  );
   const secrets = createSecretStore(env.encryptionKey, process.env, realtime);
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
@@ -357,10 +367,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     ticketBoardEnabled,
   });
+  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...sandboxProviderOptionsFromEnv(),
+      ...hostComputer,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
       e2bApiKey: env.e2bApiKey,
@@ -409,8 +420,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  const onEmailError = (error: unknown) =>
-    getLogger().error("transactional email delivery failed", error);
+  const emailErrorLogger = (message: string) => (error: unknown) => {
+    if (error instanceof EmailRecipientRejectedError) {
+      getLogger().warn(message, { "error.message": error.message });
+    } else getLogger().error(message, error);
+  };
+  const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
   const billingProvider: BillingProvider | undefined =
     billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
@@ -460,6 +475,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       accessToken: env.expoAccessToken,
       voip: await createApnsVoipProvider(env.apnsVoip),
     });
+  const activityPush = await createApnsActivityProvider(env.apnsVoip);
+  if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
   const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
   const userDeviceHub = env.userDevicesEnabled
     ? new UserDeviceHub({ prisma, address: userDeviceInternalAddress(env.apiHost, env.port) })
@@ -507,13 +524,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
                 email,
                 origin: env.authUrl,
                 secret: env.authSecret,
-                onError: (error) => getLogger().error("welcome email delivery failed", error),
+                onError: emailErrorLogger("welcome email delivery failed"),
               },
               userId,
               headers,
             )
         : undefined,
-    extraOrigins: MOBILE_AUTH_ORIGINS,
+    extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
       // Billing cancels inside, after the account's spaces are claimed and before anything is
@@ -537,12 +554,19 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await pushTokens
         .remove(userId)
         .catch((error) => getLogger().error("push token removal failed", error));
+      // Before the rows go with the account, so its phones' cards end too.
+      await workActivities
+        ?.endUser(userId)
+        .catch((error) => getLogger().error("live status card removal failed", error));
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
       await pushTokens
         .endSession(session.userId, session.id)
         .catch((error) => getLogger().error("push token removal failed", error));
+      await workActivities
+        ?.endSession(session.userId, session.id)
+        .catch((error) => getLogger().error("live status card removal failed", error));
       await endUserDeviceSession(deviceSessions, session).catch((error) =>
         getLogger().error("user device revocation failed", error),
       );
@@ -551,6 +575,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await pushTokens
         .endSession(session.userId, previous.id, session.id)
         .catch((error) => getLogger().error("push token session update failed", error));
+      await workActivities
+        ?.endSession(session.userId, previous.id, session.id)
+        .catch((error) => getLogger().error("live status card session update failed", error));
       await endUserDeviceSession(deviceSessions, previous, session).catch((error) =>
         getLogger().error("user device session update failed", error),
       );
@@ -602,7 +629,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     email,
     messaging,
     cloudAgent,
-    userDevices: userDevicesOverride ?? userDevices,
+    userDevices:
+      userDevicesOverride ??
+      withHostComputerScreen(userDevices, {
+        prisma,
+        sandboxKind: env.sandboxProvider,
+        url: hostComputer.hostComputerUrl,
+        token: hostComputer.hostComputerToken,
+      }),
     paymentWallet,
     shutdownSignal: shutdown.signal,
     now,
@@ -690,6 +724,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     notifications,
     pushTokens,
+    workActivities,
     events,
     ticketChanges,
     boardEvents,
@@ -1114,16 +1149,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
 
 export function isTrustedOrigin(
   origin: string,
-  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">,
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
 ) {
   if (!origin) return true;
   if (origin.startsWith("rakazo://")) return true;
   return new Set(trustedRequestOrigins(env)).has(origin);
 }
 
-export function trustedRequestOrigins(env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">) {
+export function trustedRequestOrigins(
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
+) {
   return buildTrustedOrigins({
     origins: [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS],
+    // Exactly as configured, like Better Auth's extraOrigins: no loopback twins.
+    extraOrigins: env.extraAuthOrigins,
     requestOrigins: true,
   });
 }

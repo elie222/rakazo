@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
-import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
+import type {
+  DesktopLocalStackState,
+  DesktopReachability,
+  DesktopSetup,
+  RakazoDesktopDevice,
+} from "@rakazo/contracts";
 import type { BrowserWindow, Session } from "electron";
 import {
   app,
@@ -43,7 +49,17 @@ import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
-import { runDocker } from "./docker-cli.js";
+import { launchDockerApp, resolveDockerBinary, runDocker } from "./docker-cli.js";
+import type { StackChoice } from "./docker-move.js";
+import {
+  chooseStack,
+  dockerRunning,
+  moveAccepted,
+  moveDockerStack,
+  readStackChoice,
+  stackExists,
+  writeStackChoice,
+} from "./docker-move.js";
 import { prepareHostComputer } from "./host-computer.js";
 import {
   createDesktopHostScreen,
@@ -54,6 +70,7 @@ import { createLocaleHandler, errorDetail, startDesktopLocale, t, withDetail } f
 import { verifyDownloadedLinuxUpdate } from "./linux-update-signature.js";
 import { createLocalComputerChoice, saveLocalComputerHost } from "./local-settings.js";
 import {
+  defaultSleep,
   LocalStackController,
   readStackToken,
   readStackWebUrl,
@@ -61,6 +78,7 @@ import {
   stackDir,
   stackResourceDir,
 } from "./local-stack.js";
+import { nativeStackEligible, readServerBundle } from "./mac-runtime.js";
 import {
   configureDesktopMonitoring,
   desktopReportsErrors,
@@ -69,6 +87,7 @@ import {
   refreshDesktopMonitoringUser,
   reportDesktopError,
 } from "./monitoring.js";
+import { NativeStackController } from "./native-stack.js";
 import { associatedPasskeyRpIds } from "./passkeys.js";
 import { revealSecondInstanceWindow, secondInstanceWindow } from "./second-instance.js";
 import { installServerHeaders } from "./server-request-headers.js";
@@ -204,6 +223,40 @@ async function probeServer(
   } catch (error) {
     return { ok: false, url, error: probeFailureMessage(error) };
   }
+}
+/**
+ * Asked once, and only of someone running This computer on Docker while Docker answers: a
+ * declined offer is remembered; an accepted one moves the data when the stack next starts.
+ */
+async function offerDockerMove(userStackDir: string): Promise<StackChoice> {
+  if (
+    desktop.currentSetup?.mode !== "new" ||
+    !(await dockerRunning({
+      stackDir: userStackDir,
+      platform: process.platform,
+      env: process.env,
+      exists: existsSync,
+      run: runDocker,
+    }))
+  )
+    return "docker";
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    message: t("Run Rakazo without Docker?"),
+    detail: t("Your bots and data move over. Docker is stopped, not removed."),
+    buttons: [t("Move"), t("Keep Docker")],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  const choice = response === 0 ? "native" : "docker";
+  try {
+    await writeStackChoice(userStackDir, choice);
+  } catch (error) {
+    // A move that cannot be remembered would be offered again mid-way; stay on Docker for now.
+    reportDesktopError(error, "desktop.startup");
+    return "docker";
+  }
+  return choice;
 }
 /** A public health response is not enough: another checkout may own the same fixed port. */
 async function probeManagedStack(
@@ -509,11 +562,6 @@ app.whenReady().then(async () => {
       ? (update) => verifyDownloadedLinuxUpdate(update, (url, signal) => net.fetch(url, { signal }))
       : undefined,
   );
-  try {
-    desktop.hostComputer = await prepareHostComputer(userDataDir);
-  } catch {
-    /* Local access fails closed; Docker remains available. */
-  }
   const screenDriver = screenDriverRelease(process.platform);
   hostScreen =
     screenDriver &&
@@ -543,6 +591,11 @@ app.whenReady().then(async () => {
         return { png: fitted.toPNG(), ...fitted.getSize() };
       },
     });
+  try {
+    desktop.hostComputer = await prepareHostComputer(userDataDir, hostScreen);
+  } catch {
+    /* Local access fails closed; Docker remains available. */
+  }
   desktop.userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -570,42 +623,105 @@ app.whenReady().then(async () => {
         ...events,
       }),
   });
+  desktop.currentSetup = await readSetup(userDataDir);
+  const userStackDir = stackDir(userDataDir);
+  const resourceDir = stackResourceDir({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  });
+  const localWebUrl =
+    process.env.RAKAZO_LOCAL_WEB_URL?.trim() ||
+    (await readStackWebUrl(userStackDir, LOCAL_WEB_URL));
+  const imageTag = resolveImageTag({
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    override: process.env.RAKAZO_IMAGE_TAG,
+  });
+  const probe = (url: string, signal: AbortSignal, token: string) =>
+    probeManagedStack(url, token, signal);
+  const randomHex = (bytes: number) => randomBytes(bytes).toString("hex");
   // Must exist before the stack controller: its lifecycle transitions refresh the stop item.
   const stopStackMenu = new StackStopMenuAvailability(() => installApplicationMenu());
-  desktop.localStack = new LocalStackController({
-    hostComputer: desktop.hostComputer?.connection,
+  const onState = (state: DesktopLocalStackState) => {
+    if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
+      desktop.setupWindow.webContents.send("desktop.setup.stack.changed", state);
+    }
+    // A stack can start or stop without a server switch; its phase transitions refresh
+    // the stop item.
+    stopStackMenu.stackChanged(state.phase);
+  };
+  const serverBundle = nativeStackEligible({
+    platform: process.platform,
+    arch: process.arch,
+    release: os.release(),
+  })
+    ? await readServerBundle({
+        resourcesPath: process.resourcesPath,
+        packaged: app.isPackaged,
+        override: process.env.RAKAZO_SERVER_BUNDLE,
+      })
+    : null;
+  const stacks = stackExists(userStackDir, existsSync);
+  // Installed but not running keeps the Docker path; no Docker at all leaves nothing to keep.
+  const dockerInstalled = resolveDockerBinary(process.platform, process.env, existsSync) !== null;
+  let choice = chooseStack({
+    eligible: serverBundle !== null,
+    ...stacks,
+    dockerInstalled,
+    choice: await readStackChoice(userStackDir),
+  });
+  if (choice === "ask") choice = await offerDockerMove(userStackDir);
+  const moving = moveAccepted({
+    ...stacks,
+    dockerInstalled,
+    choice: await readStackChoice(userStackDir),
+  });
+  const moveDeps = {
+    stackDir: userStackDir,
     platform: process.platform,
     env: process.env,
     exists: existsSync,
     run: runDocker,
-    stackDir: stackDir(userDataDir),
-    resourceDir: stackResourceDir({
-      packaged: app.isPackaged,
-      resourcesPath: process.resourcesPath,
-      appPath: app.getAppPath(),
-    }),
-    localWebUrl:
-      process.env.RAKAZO_LOCAL_WEB_URL?.trim() ||
-      (await readStackWebUrl(stackDir(userDataDir), LOCAL_WEB_URL)),
-    imageTag: resolveImageTag({
-      version: app.getVersion(),
-      packaged: app.isPackaged,
-      override: process.env.RAKAZO_IMAGE_TAG,
-    }),
-    probe: (url, signal, token) => probeManagedStack(url, token, signal),
-    randomHex: (bytes) => randomBytes(bytes).toString("hex"),
-    onState: (state) => {
-      if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-        desktop.setupWindow.webContents.send("desktop.setup.stack.changed", state);
-      }
-      // A stack can start or stop without a server switch; its phase transitions refresh
-      // the stop item.
-      stopStackMenu.stackChanged(state.phase);
-    },
-    // A confirmed reuse changes no phase; the menu must hear about it separately.
-    onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
-  });
-  desktop.currentSetup = await readSetup(userDataDir);
+    sleep: defaultSleep,
+  };
+  desktop.localStack =
+    choice === "native" && serverBundle !== null
+      ? new NativeStackController({
+          hostComputer: desktop.hostComputer?.connection,
+          stackDir: userStackDir,
+          resourceDir,
+          localWebUrl,
+          imageTag,
+          serverBundle,
+          nodeBinary: process.execPath,
+          env: process.env,
+          uid: process.getuid?.() ?? 0,
+          run: runDocker,
+          fetch: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+          exists: existsSync,
+          probe,
+          randomHex,
+          onState,
+          importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
+        })
+      : new LocalStackController({
+          hostComputer: desktop.hostComputer?.connection,
+          platform: process.platform,
+          env: process.env,
+          exists: existsSync,
+          run: runDocker,
+          launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
+          stackDir: userStackDir,
+          resourceDir,
+          localWebUrl,
+          imageTag,
+          probe,
+          randomHex,
+          onState,
+          // A confirmed reuse changes no phase; the menu must hear about it separately.
+          onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
+        });
   const target = resolveStartupTarget({
     envUrl: process.env.RAKAZO_WEB_URL,
     saved: desktop.currentSetup,
@@ -859,8 +975,10 @@ app.whenReady().then(async () => {
     // A saved external server: the app-managed stack may still be running from before the
     // switch — possibly on an older release, which must not be reused but still needs the
     // off-switch. Probe only: with no stack files this returns before any request, and
-    // nothing starts or stops.
-    if (target.source === "saved") void desktop.localStack.rediscoverManagedStack();
+    // nothing starts or stops. Server processes the app runs itself stop with it, so only a
+    // container stack can outlive a launch.
+    if (target.source === "saved" && desktop.localStack instanceof LocalStackController)
+      void desktop.localStack.rediscoverManagedStack();
     const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
     if (reachability.ok) {
       if (await appOpener.open(target.url)) {
@@ -893,8 +1011,14 @@ app.on("window-all-closed", () => {
 app.on("quit", (_event, exitCode) => {
   if (exitCode === 0) desktop.desktopUpdater?.installOnQuit();
 });
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   desktop.quitting = true;
+  // Server processes this app runs itself stop with it; quit again once they have.
+  if (desktop.localStack instanceof NativeStackController && desktop.localStack.hasProcesses()) {
+    event.preventDefault();
+    void desktop.localStack.stop().finally(() => app.quit());
+    return;
+  }
   clearTimeout(desktop.warmWindowTimer);
   // Containers keep running; only an in-flight pull/up is cut short.
   desktop.hostComputer?.activate(false);

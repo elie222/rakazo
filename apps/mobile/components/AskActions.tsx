@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { useState } from "react";
 import type { ViewProps } from "react-native";
@@ -5,7 +6,6 @@ import { Alert, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { AskAction } from "../lib/ask-action-label";
 import { askActionLabel } from "../lib/ask-action-label";
-import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -29,7 +29,7 @@ export function AskActions({
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = mobileTokens();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -39,7 +39,7 @@ export function AskActions({
     instructions !== undefined
       ? actions.flatMap((action) =>
           action.id === "allow"
-            ? [action, { id: "edit", label: t(editing ? "Cancel" : "Edit") }]
+            ? [action, { id: "edit", label: editing ? t`Cancel` : t`Edit` }]
             : [action],
         )
       : actions;
@@ -50,7 +50,7 @@ export function AskActions({
     try {
       await onAnswer(answer);
     } catch (error) {
-      Alert.alert(t("Could not submit answer"), errorText(error, t("Please try again.")));
+      Alert.alert(t`Could not submit answer`, errorText(error, t`Please try again.`));
     } finally {
       setPendingAction(null);
     }
@@ -60,7 +60,7 @@ export function AskActions({
     <View style={{ marginTop: 12, gap: 6 }}>
       {editing ? (
         <TextInput
-          accessibilityLabel={t("Instructions")}
+          accessibilityLabel={t`Instructions`}
           multiline
           maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
           value={draft}
@@ -88,7 +88,9 @@ export function AskActions({
                 label={
                   action.id === "edit"
                     ? action.label
-                    : t(action.id === "allow" ? "Apply" : "Dismiss")
+                    : action.id === "allow"
+                      ? t`Apply`
+                      : t`Dismiss`
                 }
                 prominence={emphasized ? "primary" : "secondary"}
                 fill={false}
@@ -110,9 +112,10 @@ export function AskActions({
               key={action.id}
               accessibilityActions={accessibilityActions}
               onAccessibilityAction={onAccessibilityAction}
-              label={askActionLabel(action, { approval, site }, t)}
+              label={askActionLabel(action, { approval, site })}
               prominence={emphasized ? "primary" : "secondary"}
               fill={!approval}
+              align={approval ? "center" : "start"}
               disabled={disabled || submitting}
               busy={pendingAction === action.id}
               onPress={() => void submit(action.id)}

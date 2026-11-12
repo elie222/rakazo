@@ -1,8 +1,10 @@
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
+import { chatSnoozed } from "@rakazo/core";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import type { createSpaceRpc } from "../../lib/rpc";
 import type { ShellDialogsState } from "./shell-dialogs";
 import type { useChatRead } from "./use-chat-read";
+import type { SnoozeChat } from "./use-chat-snooze";
 
 const BotContextMenu = lazyOverlay(() =>
   import("../BotContextMenu").then((module) => module.BotContextMenu),
@@ -20,6 +22,7 @@ export function ChatContextMenu({
   onClose,
   refreshBots,
   read,
+  snooze,
   dialogs,
   openChatSettings,
   navigate,
@@ -32,6 +35,7 @@ export function ChatContextMenu({
   onClose: () => void;
   refreshBots: (includeArchived?: boolean) => Promise<void>;
   read: Pick<ChatRead, "markBotRead" | "markBotUnread" | "toggleGroupUnread">;
+  snooze: SnoozeChat;
   dialogs: ShellDialogsState;
   openChatSettings: (kind: "bot" | "group", id: string) => void;
   navigate: (path: string) => void;
@@ -65,6 +69,11 @@ export function ChatContextMenu({
         } else {
           read.toggleGroupUnread(group!.id, unread);
         }
+      }}
+      snoozed={chatSnoozed({ snoozedUntil: chat.snoozedUntil }, Date.now())}
+      onSnooze={(until) => {
+        onClose();
+        snooze({ kind: target.kind, ...chat }, until);
       }}
       onMoveToSection={(sectionId) => {
         onClose();

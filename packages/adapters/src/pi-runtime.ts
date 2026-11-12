@@ -494,6 +494,13 @@ export class PiAgentRuntime implements AgentRuntime {
             agent.state.model = target.model;
             contextPolicy = contextPolicyFor(target);
           },
+          // A throwaway policy, so judging a backup leaves the active policy's sent transcript
+          // alone. Cache use is recorded only on usage, which a throwaway never sees. The opening
+          // turn is added as on each call, so the backup is judged on what it would be sent.
+          prepareForTarget: (target, ctx) => ({
+            ...ctx,
+            ...withLeadingUser(contextPolicyFor(target).prepareContext(ctx, target.model)),
+          }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
             activeStreamTarget = target;
@@ -1168,7 +1175,10 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message);
+          throw modelFailure(error, message, {
+            provider: activeStreamTarget.config.provider,
+            primaryProvider: fallbackState.request.model.provider,
+          });
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.

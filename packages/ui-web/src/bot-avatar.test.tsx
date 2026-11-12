@@ -2,7 +2,7 @@ import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
-  BOT_AVATAR_COLORS,
+  BOT_COLORS,
   BotAvatar,
   BotShapePreview,
   DEFAULT_BOT_AVATAR_COLOR,
@@ -69,7 +69,7 @@ describe("BotAvatar", () => {
   it("resolves explicit colors and shapes", () => {
     expect(resolvePersonaColorDef("bot", "#10B981").hex).toBe("#00C972");
     expect(resolvePersonaColorDef("bot", "#fff").hex).toBe("#fff");
-    expect(BOT_AVATAR_COLORS.length).toBeGreaterThan(0);
+    expect(BOT_COLORS.length).toBeGreaterThan(0);
   });
 
   it("falls back to the identity palette for invalid custom hex", () => {

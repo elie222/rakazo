@@ -20,8 +20,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   sandboxAllowance: vi.fn(async () => null),
 }));
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("own-key plan", () => {
   const stamp = `${process.pid}-${Date.now()}`;
   const userId = `byok-owner-${stamp}`,
@@ -276,6 +275,7 @@ dbTests("own-key plan", () => {
     vi.mocked(sandboxAllowance).mockResolvedValue({
       limitMicros: 40_000_000,
       usedMicros: 25_000_000,
+      resetsAt: null,
     });
     await expect(metered.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
     await expect(metered.changeTier(actor, "standard")).rejects.toMatchObject({
@@ -284,6 +284,7 @@ dbTests("own-key plan", () => {
     vi.mocked(sandboxAllowance).mockResolvedValue({
       limitMicros: 40_000_000,
       usedMicros: 15_000_000,
+      resetsAt: null,
     });
     await metered.changeTier(actor, "pro");
     await expect(metered.status(actor)).resolves.toMatchObject({ byokTier: "pro" });

@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import type { AppEmulator } from "../apps/app-emulator.js";
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
+import { SESSION_EVAL_CASES } from "./history-session.js";
 import type { JudgeInput } from "./judge.js";
+import type { ComputerScript } from "./scripted-shell.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 import type { EvalServices, ServiceCall } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
@@ -43,6 +47,8 @@ export type Evidence = {
   seededAttachments?: Record<string, { path: string; content: string | null }>;
   records: EvalServices["records"];
   notes: EvalServices["notes"];
+  /** The case's connected services by kind, with every call and write they recorded. */
+  apps?: Record<string, AppEmulator>;
   calls: ServiceCall[];
   routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
   /** Routines the bot created during the trial, including ones it later cancelled. */
@@ -94,6 +100,11 @@ export type EvalCase = {
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
+  /**
+   * Services the bot reaches as MCP servers the user added, built fresh for each trial on the
+   * trial's clock and served over streamable HTTP on loopback.
+   */
+  apps?: (now: Date) => AppEmulator[];
   routine?: { prompt: string };
   /**
    * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
@@ -103,6 +114,8 @@ export type EvalCase = {
   peer?: { name: string; description: string; instructions: string; ownComputer?: true };
   /** Files written onto a computer before the first step: the subject's home, or the peer's. */
   computerFiles?: Array<{ path: string; content: string | Uint8Array; owner?: "peer" }>;
+  /** What the eval computer answers when the bot checks it, instead of refusing every command. */
+  computer?: ComputerScript;
   /**
    * Run the case in a group thread with these other member bots, named as history authors. With
    * `roles`, every member (the subject as "Assistant" too) gets that description, any
@@ -115,6 +128,16 @@ export type EvalCase = {
   };
   grade: (evidence: Evidence) => Criterion[];
   judge?: (evidence: Evidence) => JudgeInput;
+  /**
+   * Behaviour recorded on every trial without deciding it: a boolean is read directly, and a
+   * judge input is graded by meaning, its pass meaning the behaviour is present.
+   */
+  observe?: (evidence: Evidence) => Record<string, boolean | JudgeInput>;
+  /**
+   * No outcome needs a command to run, so a failure after the bot chose to run one (which the
+   * offline sandbox refuses) is the bot's, not the harness's.
+   */
+  shellUnneeded?: true;
 };
 /** A case that wakes a routine, seeded or authored, needs its pushes and completion observed. */
 export const wakesRoutines = (scenario: EvalCase) =>
@@ -711,4 +734,17 @@ for (const size of [100, 1000, 10000] as const) {
       ),
     ],
   });
+}
+
+HISTORY_EVAL_CASES.push(...SESSION_EVAL_CASES);
+
+/** Entries of a cases file: a JSON array, or one JSON object per line. */
+export function readCasesFile(file: string): unknown[] {
+  const text = readFileSync(file, "utf8").trim();
+  return text.startsWith("[")
+    ? (JSON.parse(text) as unknown[])
+    : text
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line) as unknown);
 }

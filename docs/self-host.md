@@ -55,6 +55,10 @@ there. Vite preview same-origin-proxies `/api` and `/rpc`, so do not expose `:31
 `RAKAZO_HOST` to its hostname (for example, `app.example.com`). Cookies and CORS follow those
 origins.
 
+To also reach the web app by other hostnames (a LAN IP or a tailnet name, for example), list
+them comma-separated in `RAKAZO_ALLOWED_HOSTS`. Vite preview rejects any other `Host` header, and
+the computer screen then stays blank.
+
 ```Caddyfile
 app.example.com {
 	reverse_proxy 127.0.0.1:5173

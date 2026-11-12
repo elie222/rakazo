@@ -67,6 +67,8 @@ export const RATES = {
   e2b: perSecond(0.000014, 0.0000045),
   daytona: { vcpuHour: 0.0504, gbHour: 0.0162 },
   novita: perSecond(0.0000098, 0.0000032),
+  // InstaBox publishes hourly rates and meters by the second.
+  instabox: { vcpuHour: 0.004, gbHour: 0.00225 },
   // Modal bills per physical core, which is 2 vCPU, at 3x list price for sandboxes.
   modal: perSecond(0.00003942 / 2, 0.00000667),
   northflank: { vcpuHour: 0.01667, gbHour: 0.00833 },
@@ -153,6 +155,33 @@ export function boatMonthly(hourPrice: number, hours: number): number {
   return Math.max(BOAT.minimum, hourPrice * hours);
 }
 
+/**
+ * Rakazo runs every InstaBox computer at the plan's default size. The Pro fee comes back each
+ * month as usage credit, so it works like a monthly minimum.
+ */
+export const INSTABOX = {
+  size: { vcpus: 4, gb: 8 },
+  proFee: 20,
+} as const;
+
+export function instaboxProMonthly(hours: number, size: ComputerShape = INSTABOX.size): number {
+  return Math.max(INSTABOX.proFee, monthly(RATES.instabox, hours, size));
+}
+
+/** The shape Rakazo gives every InstaBox computer, such as "4 vCPU / 8 GB". */
+export function instaboxShape(size: ComputerShape = INSTABOX.size): string {
+  return `${size.vcpus} vCPU / ${size.gb} GB`;
+}
+
+export function instaboxHour(size: ComputerShape = INSTABOX.size): number {
+  return hourly(RATES.instabox, size);
+}
+
+/** Hours of that computer the Pro fee's usage credit covers, rounded to the nearest 10. */
+export function instaboxCreditHours(size: ComputerShape = INSTABOX.size): number {
+  return Math.round(INSTABOX.proFee / instaboxHour(size) / 10) * 10;
+}
+
 /** Vercel bills CPU only while busy, and provisioned memory the whole time. */
 export const VERCEL = { activeCpuHour: 0.128, gbHour: 0.0212 };
 
@@ -230,6 +259,7 @@ export const PRICING = {
   e2b: { label: "E2B pricing", href: "https://e2b.dev/pricing" },
   daytona: { label: "Daytona pricing", href: "https://www.daytona.io/pricing" },
   novita: { label: "Novita sandbox pricing", href: "https://docs.novita.ai/guides/sandbox-pricing" },
+  instabox: { label: "InstaBox pricing", href: "https://instabox.sh/pricing" },
   railway: { label: "Railway sandboxes, pricing and limits", href: "https://docs.railway.com/sandboxes" },
   wuying: {
     label: "Alibaba Cloud, Elastic Desktop Service billing",

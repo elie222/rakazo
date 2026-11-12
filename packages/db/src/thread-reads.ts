@@ -1,21 +1,27 @@
 import type { Prisma, PrismaClient } from "./client.js";
-import { runAsSystemInTransaction } from "./row-security.js";
+import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 /**
- * Each member of a Space has their own read state for each chat there (`thread_reads`). A chat
- * with no row for someone reads as caught up for them.
+ * Each member of a Space has their own state for each chat there (`thread_reads`): how far they
+ * have read, and any snooze. A chat with no row for someone is caught up and not snoozed.
  */
 
 type Reader = { threadId: string; spaceId: string; userId: string };
 
-/** Selects one person's read state on a thread, for `unreadFor`. */
+/** Selects one person's read state on a thread, for `unreadFor` and `snoozedUntilFor`. */
 export function readStateFor(userId: string) {
-  return { where: { userId }, select: { unread: true } } as const;
+  return { where: { userId }, select: { unread: true, snoozedUntil: true } } as const;
 }
 
 export function unreadFor(thread: { reads: Array<{ unread: boolean }> }): boolean {
   return thread.reads[0]?.unread ?? false;
+}
+
+export function snoozedUntilFor(thread: {
+  reads: Array<{ snoozedUntil: Date | null }>;
+}): string | null {
+  return thread.reads[0]?.snoozedUntil?.toISOString() ?? null;
 }
 
 /**
@@ -39,10 +45,15 @@ export async function markThreadUnreadForMembers(
   );
 }
 
-/** A cleared chat has nothing left to read, for anyone. */
+/** A cleared chat has nothing left to read, for anyone. Snoozes stay. */
 export async function clearThreadReads(tx: Prisma.TransactionClient, threadId: string) {
-  await runAsSystemInTransaction(tx, "clear every member's read state for a cleared chat", () =>
-    tx.threadRead.deleteMany({ where: { threadId } }),
+  await runAsSystemInTransaction(
+    tx,
+    "clear every member's read state for a cleared chat",
+    async () => {
+      await tx.threadRead.deleteMany({ where: { threadId, snoozedUntil: null } });
+      await tx.threadRead.updateMany({ where: { threadId }, data: { unread: false } });
+    },
   );
 }
 
@@ -60,14 +71,21 @@ export function markThreadReadFor(prisma: PrismaClient, reader: Reader): Promise
       if (!thread) return null;
       const latestSeq = thread.nextMessageSeq - 1;
       // Held until commit, so a Mark as Unread from another tab lands before or after, not lost.
-      const [read] = await tx.$queryRaw<Array<{ unread: boolean; lastReadSeq: number }>>`
-        SELECT unread, "lastReadSeq" FROM thread_reads
+      const [read] = await tx.$queryRaw<
+        Array<{ unread: boolean; lastReadSeq: number; woke: boolean }>
+      >`
+        SELECT unread, "lastReadSeq", "snoozedUntil" <= now() AS woke FROM thread_reads
         WHERE "threadId" = ${threadId} AND "userId" = ${userId}
         FOR UPDATE`;
-      if (!read || (!read.unread && read.lastReadSeq >= latestSeq)) return null;
+      if (!read || (!read.unread && !read.woke && read.lastReadSeq >= latestSeq)) return null;
       await tx.threadRead.update({
         where: { threadId_userId: { threadId, userId } },
-        data: { unread: false, lastReadSeq: latestSeq },
+        // Opening a chat that woke from a snooze ends the snooze.
+        data: {
+          unread: false,
+          lastReadSeq: latestSeq,
+          ...(read.woke ? { snoozedUntil: null } : {}),
+        },
       });
       // A chat only gets a divider when its unread dot was on, so replies seen live never do.
       return read.unread && read.lastReadSeq < latestSeq ? read.lastReadSeq : null;
@@ -133,4 +151,43 @@ export async function setThreadUnreadFor(prisma: PrismaClient, reader: Reader, u
       });
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
+}
+
+/** Snoozes the chat for one person until `until`, or wakes it with null. */
+export async function setThreadSnoozeFor(prisma: PrismaClient, reader: Reader, until: Date | null) {
+  if (!until) {
+    await prisma.threadRead.updateMany({
+      where: { threadId: reader.threadId, userId: reader.userId },
+      data: { snoozedUntil: null },
+    });
+    return;
+  }
+  await withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const thread = await lockThread(tx, reader);
+      if (!thread) return;
+      await tx.threadRead.upsert({
+        where: { threadId_userId: { threadId: reader.threadId, userId: reader.userId } },
+        // Someone with no read state had read it all.
+        create: { ...reader, lastReadSeq: thread.nextMessageSeq - 1, snoozedUntil: until },
+        update: { snoozedUntil: until },
+      });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
+}
+
+/** Who among `userIds` has the chat snoozed right now, so its news can wait for them. */
+export async function membersSnoozing(
+  prisma: PrismaClient,
+  threadId: string,
+  userIds: readonly string[],
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = await runAsSystem("find which members have a chat snoozed", () =>
+    prisma.threadRead.findMany({
+      where: { threadId, userId: { in: [...userIds] }, snoozedUntil: { gt: new Date() } },
+      select: { userId: true },
+    }),
+  );
+  return new Set(rows.map((row) => row.userId));
 }

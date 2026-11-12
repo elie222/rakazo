@@ -22,6 +22,7 @@ import type {
   MemoryProviderResolver,
   MessagingInstallations,
   PiOAuthLogins,
+  PlanLimitsReader,
   PluginRepoFetcher,
   PluginTextReader,
   ProviderCatalogCache,
@@ -29,6 +30,7 @@ import type {
   RemoteConnectorDependencies,
   TicketChangeNotifier,
   verifyModelServesAgents,
+  WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type { NavLink } from "@rakazo/contracts";
@@ -65,6 +67,8 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
   pushTokens: PushTokenStore;
+  /** Absent when the deployment cannot update a phone's live status card. */
+  workActivities?: Pick<WorkActivities, "register" | "registerStarts">;
   /** Stops a call's ring on the owner's other devices once it is settled. */
   notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
@@ -86,6 +90,8 @@ export interface RouterDeps {
   /** Live Codex catalog seam; defaults to the shared per-process cache. */
   codexCatalog?: CodexLiveCatalog;
   providerCatalog?: ProviderCatalogCache;
+  /** Subscription allowance readings; defaults to the shared per-process cache. */
+  planLimits?: PlanLimitsReader;
   /** HTTP transport for model connection checks and catalog probes. */
   modelConnectionFetch?: typeof fetch;
   /** One real request proving a newly keyed model can serve agents; absent skips it. */

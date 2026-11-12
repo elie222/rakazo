@@ -1,6 +1,13 @@
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
-import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  Model,
+  MutableModels,
+  Provider,
+  ProviderStreams,
+} from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -17,9 +24,10 @@ import {
   MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
 } from "@rakazo/contracts";
+import type { Dispatcher } from "undici";
 import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
-import type { ResolveHostname } from "./network-address.js";
+import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup } from "./network-address.js";
 import type { OpenAiCompatibleUrlPolicy } from "./openai-compatible-url.js";
 import {
@@ -27,12 +35,19 @@ import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
   isPrivateOpenAiCompatibleHostname,
+  loopbackOnHost,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
-import { MODEL_CONNECT_TIMEOUT_MS, modelConnectTimeoutMs } from "./pi-runtime-limits.js";
+import {
+  MODEL_CONNECT_TIMEOUT_MS,
+  MODEL_STREAM_AGENT_TIMEOUTS,
+  modelConnectTimeoutMs,
+} from "./pi-runtime-limits.js";
+import { splitLeadingThinkBlock } from "./pi-think-tags.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
+import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
@@ -154,17 +169,28 @@ function openAiCompatibleProvider(
         : openAICompletionsApi();
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
   // dispatcher-matched default; never the bare global.
+  const streamPolicy = { ...policy, modelStream: true };
+  // Only chat completions carries thoughts inside the answer text; the other protocols have
+  // their own reasoning blocks.
+  const answerOnly = (model: Model<Api>, stream: AssistantMessageEventStream) =>
+    model.api === "openai-completions" ? splitLeadingThinkBlock(stream) : stream;
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api(model.api).stream(model, context, {
-        ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
-      }),
+      answerOnly(
+        model,
+        api(model.api).stream(model, context, {
+          ...options,
+          fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
+        }),
+      ),
     streamSimple: (model, context, options) =>
-      api(model.api).streamSimple(model, context, {
-        ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
-      }),
+      answerOnly(
+        model,
+        api(model.api).streamSimple(model, context, {
+          ...options,
+          fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
+        }),
+      ),
   };
   return createProvider({
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -189,12 +215,19 @@ export function createOpenAiCompatibleLookup(
   resolve: ResolveHostname = resolveHostname,
   opts?: { allowPrivate?: boolean },
 ): LookupFunction {
+  return createAddressCheckedLookup(resolve, openAiCompatibleAddressCheck(url, opts));
+}
+
+function openAiCompatibleAddressCheck(
+  url: URL,
+  opts?: { allowPrivate?: boolean },
+): (addresses: ResolvedAddress[]) => void {
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   const privateHostname = isPrivateOpenAiCompatibleHostname(hostname);
   if (privateHostname && opts?.allowPrivate !== true) {
     throw new Error(PRIVATE_MODEL_ENDPOINT_MESSAGE);
   }
-  return createAddressCheckedLookup(resolve, (addresses) => {
+  return (addresses) => {
     if (addresses.length === 0) throw new Error("Model server did not resolve to an address");
     if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
       throw new Error("Model server hostname resolved to a blocked metadata address");
@@ -215,7 +248,7 @@ export function createOpenAiCompatibleLookup(
     if (addresses.some((entry) => isNonPublicAddress(entry.address))) {
       throw new Error("Public model server hostname resolved to a private address");
     }
-  });
+  };
 }
 
 function isAuthHeader(name: string, value: string | null | undefined): boolean {
@@ -238,11 +271,18 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
-  opts?: OpenAiCompatibleUrlPolicy & { headers?: Record<string, string> },
+  opts?: OpenAiCompatibleUrlPolicy & {
+    headers?: Record<string, string>;
+    /** Model streams leave both waits to the runtime's own timeouts. */
+    modelStream?: boolean;
+  },
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
-    const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts);
+    const url = assertAllowedOpenAiCompatibleRequestUrl(
+      loopbackOnHost(assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts)).href,
+      opts,
+    );
     const customHeaders = opts?.headers === undefined ? undefined : parseModelHeaders(opts.headers);
     if (requestCarriesAuthorization(input, init) || Object.keys(customHeaders ?? {}).length > 0) {
       assertHttpsForKeyedOpenAiCompatibleUrl(
@@ -252,14 +292,24 @@ export function createOpenAiCompatibleFetch(
       );
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
-    const dispatcher = new Agent({
-      connect: {
-        timeout: modelConnectTimeoutMs(),
-        ...(ipVersion(hostname) === 0
-          ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
-          : {}),
-      },
-    });
+    const responseTimeouts = opts?.modelStream ? MODEL_STREAM_AGENT_TIMEOUTS : undefined;
+    // Local model servers stay on the direct route; public endpoints honor HTTP(S)_PROXY.
+    const dispatcher: Dispatcher = isPrivateOpenAiCompatibleHostname(hostname)
+      ? new Agent({
+          ...responseTimeouts,
+          connect: {
+            timeout: modelConnectTimeoutMs(),
+            ...(ipVersion(hostname) === 0
+              ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
+              : {}),
+          },
+        })
+      : createCheckedProxyDispatcher(
+          resolve,
+          openAiCompatibleAddressCheck(url, opts),
+          modelConnectTimeoutMs(),
+          responseTimeouts,
+        );
     // Node's fetch rejects this package Agent. Use its matching fetch;
     // a caller-supplied fetch stays in charge.
     const transport = fetchPairedWithDispatcher(baseFetch);
@@ -276,7 +326,7 @@ export function createOpenAiCompatibleFetch(
         headers,
         redirect: "error",
         dispatcher,
-      } as RequestInit & { dispatcher: Agent });
+      } as RequestInit & { dispatcher: Dispatcher });
       return await closeDispatcherWithResponse(response, dispatcher);
     } catch (error) {
       await dispatcher.destroy().catch(() => undefined);
@@ -304,7 +354,7 @@ async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Pro
 
 async function closeDispatcherWithResponse(
   response: Response,
-  dispatcher: Agent,
+  dispatcher: Dispatcher,
 ): Promise<Response> {
   if (!response.body) {
     await dispatcher.close();
@@ -547,6 +597,20 @@ export async function verifyOpenAiCompatibleApiKey(
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
 
+const CONNECTION_REFUSED_MESSAGE = "Could not reach the model server. Check that it's running.";
+
+/** undici keeps the refusal in `cause`, or in each address's error of a happy-eyeballs AggregateError. */
+function connectionRefused(error: unknown, depth = 0): boolean {
+  if (depth > 4 || !(error instanceof Error)) return false;
+  if ((error as { code?: unknown }).code === "ECONNREFUSED") return true;
+  if (
+    error instanceof AggregateError &&
+    error.errors.some((inner) => connectionRefused(inner, depth + 1))
+  )
+    return true;
+  return connectionRefused(error.cause, depth + 1);
+}
+
 export async function probeOpenAiCompatibleModels(
   input: {
     baseUrl: string;
@@ -611,6 +675,9 @@ export async function probeOpenAiCompatibleModels(
       // Caller-cancelled probes keep the original AbortError; the 5s probe budget gets a hint.
       if (signal?.aborted) throw error;
       throw new Error(`Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+    }
+    if (error instanceof TypeError && connectionRefused(error)) {
+      throw new Error(CONNECTION_REFUSED_MESSAGE);
     }
     throw error;
   } finally {

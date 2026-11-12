@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Serve the page-browser commands on the Chromium showing on this computer's DISPLAY.
 
 agent-browser (pinned in the image) attaches to that Chromium over CDP and browses. This wrapper
@@ -352,10 +352,18 @@ class AgentBrowser:
         info = os.lstat(self.home)
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
             raise RuntimeError("The page browser's own folder is not this user's")
-        # Its own configuration, never one from the bot's home or working folder.
+        # Its own configuration, never one from the bot's home or working folder. Replaced whole, never
+        # rewritten in place: a call for another screen may be starting agent-browser on it right now.
         self.config = os.path.join(self.home, "config.json")
-        with open(self.config, "w", encoding="utf-8") as config:
-            config.write("{}")
+        fd, staged = tempfile.mkstemp(dir=self.home, prefix=".config-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as config:
+                config.write("{}")
+            os.replace(staged, self.config)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(staged)
+            raise
         self.session = f"display-{port}"
         # When set, every command answers by then or is given up.
         self.deadline: float | None = None
@@ -1839,13 +1847,23 @@ PURCHASE_HELPERS = r"""
   const CARD_NAMING = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/i;
   // A gift card, voucher or coupon number is not the card that pays.
   const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה/i;
+  const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|מספר[\s_-]*כרטיס/i;
+  const CARD_COMPANION = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)/i;
+  const namingOf = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
+    ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
   function cardLike(el) {
     if (!(el instanceof HTMLInputElement) || !["text", "tel", "number", "password"].includes(el.type) || !visible(el)) return false;
     const tokens = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
     if (CARD_TOKENS.some((token) => tokens.includes(token))) return true;
-    const naming = [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
-      ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
-    return CARD_NAMING.test(naming) && !NOT_A_CARD.test(naming);
+    const naming = namingOf(el);
+    if (NOT_A_CARD.test(naming)) return false;
+    if (CARD_NAMING.test(naming)) return true;
+    // A card number counts beside a security code or a month/year expiry, which an ID or membership card
+    // form does not ask for.
+    if (!CARD_NUMBER.test(naming)) return false;
+    const around = el.form ? [...el.form.elements] : [...el.getRootNode().querySelectorAll("input")];
+    return around.some((other) => other !== el && other instanceof HTMLInputElement && visible(other)
+      && CARD_COMPANION.test(namingOf(other)));
   }
   // Inputs of the page and of its open shadow trees, where some checkouts draw their card fields.
   function deepInputs(root = document, found = []) {

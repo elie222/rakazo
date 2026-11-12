@@ -43,6 +43,7 @@ import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
 import { createMcpServers } from "../mcp-servers.js";
 import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
+import { rosterChangeFor } from "../roster-procedures.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineAnnouncer } from "../routines.js";
 import { procedureSecurityEvent } from "../security-audit.js";
@@ -421,6 +422,8 @@ export function createRouterContext(deps: RouterDeps) {
     const result = await next();
     const event = procedureSecurityEvent(path, input, context.actor);
     if (event) await recordSecurityEvent(event);
+    const rosterChange = rosterChangeFor(path, context.actor, input, result.output);
+    if (rosterChange) void deps.events?.publishRosterChange?.(rosterChange);
     return result;
   });
 

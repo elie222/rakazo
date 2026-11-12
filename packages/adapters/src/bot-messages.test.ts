@@ -257,13 +257,17 @@ describe("messaging another bot", () => {
     expect(sent).toEqual({ ok: false, error: "message is required" });
   });
 
-  it("rejects an oversized message instead of silently truncating it", async () => {
+  it("rejects an oversized message and points to files instead of splitting it", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
       bot_id: "bot-target",
       message: "x".repeat(8_001),
     });
-    expect(sent).toEqual({ ok: false, error: "message exceeds the 8000 character limit" });
+    expect(sent).toEqual({
+      ok: false,
+      error:
+        "message exceeds the 8000 character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.",
+    });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 

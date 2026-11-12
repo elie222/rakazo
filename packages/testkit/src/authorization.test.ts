@@ -294,6 +294,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
       ["bots/importSetupState"],
       ["bots/templates"],
@@ -302,6 +303,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/restoreInstructions"],
       ["bots/setComputer"],
       ["bots/rotateWebhookSecret"],
+      ["bots/revealWebhookSecret", { botId: "missing-bot" }],
       ["bots/emailAddress", { botId: "missing-bot" }],
       ["bots/emailAddresses"],
       ["bots/claimEmailAddress", { botId: "missing-bot", name: "intruder" }],
@@ -343,6 +345,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["threads/markRead", { botId: "missing-bot" }],
       ["threads/markUnread", { botId: "missing-bot" }],
+      ["threads/snooze", { botId: "missing-bot", until: null }],
       ["threads/head"],
       ["threads/react"],
       ["threads/endCall"],
@@ -358,6 +361,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/files", { botId: "missing-bot", path: "/" }],
       ["computer/readFile", { botId: "missing-bot", path: "MEMORY.md" }],
       ["computer/screenUrl", { botId: "missing-bot" }],
+      ["computer/preview", { botId: "missing-bot" }],
       ["computer/heartbeat", { botId: "missing-bot" }],
       ["computer/recover"],
       ["computer/reset"],
@@ -448,6 +452,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pages/remove"],
       ["usage/list"],
       ["usage/summary"],
+      ["usage/limits"],
       ["export/bot", { botId: "missing-bot" }],
       ["export/accountToken"],
       ["notifications/subscribe"],
@@ -463,6 +468,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["notifications/unregisterPush"],
+      ["notifications/followWorkActivity", { token: "ab".repeat(32) }],
+      ["notifications/registerWorkActivityStarts", { token: "ab".repeat(32) }],
       ["search/query", { q: "anything" }],
       ["voice/catalog"],
       ["voice/status"],
@@ -717,6 +724,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["threads/markRead", { botId: ownerBot.id }],
       ["threads/markUnread", { botId: ownerBot.id }],
+      ["threads/snooze", { botId: ownerBot.id, until: null }],
       ["computer/status", { botId: ownerBot.id }],
       ["computer/boot", { botId: ownerBot.id }],
       ["computer/stop", { botId: ownerBot.id }],
@@ -726,6 +734,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/files", { botId: ownerBot.id, path: "/" }],
       ["computer/readFile", { botId: ownerBot.id, path: "PRIVATE.md" }],
       ["computer/screenUrl", { botId: ownerBot.id }],
+      ["computer/preview", { botId: ownerBot.id }],
       ["computer/heartbeat", { botId: ownerBot.id }],
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
@@ -768,6 +777,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/followUp", { groupId: ownerGroup.id, text: "intruder follow-up" }],
       ["threads/markRead", { groupId: ownerGroup.id }],
       ["threads/markUnread", { groupId: ownerGroup.id }],
+      ["threads/snooze", { groupId: ownerGroup.id, until: null }],
     ];
     await Promise.all(
       groupCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
@@ -870,6 +880,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).toMatchObject({ content: "owner-only-memory" });
 
     // Destructive bot removal is checked last so an authorization regression is unmistakable.
+    await expectDenied(app, intruder, "bots/removePreview", { botId: ownerBot.id });
     await expectDenied(app, intruder, "bots/remove", {
       botId: ownerBot.id,
       deleteMemories: true,
