@@ -885,14 +885,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const semanticMemoryEnabled = Boolean(semanticMemory) && !nonOwnerChatRun;
         let recalledMemory = "";
         let recallSucceeded = false;
-        let recalledExternalMemory = false;
         if (recalled) {
           if (recalled.ok && recalled.value.length > 0) {
             recallSucceeded = true;
-            recalledMemory = formatRecalledMemory(recalled.value);
             // Provider extraction and recall return derived knowledge, even when the original
             // conversation was this bot's own. Storage cannot promote it to owner authority.
-            recalledExternalMemory = recalledMemory !== "";
+            recalledMemory = formatRecalledMemory(recalled.value);
           } else if (!recalled.ok) {
             getLogger().error("semantic memory recall failed", recalled.error);
           }
@@ -1354,10 +1352,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
         const initiallyTainted =
-          !ownerStartedRun ||
-          Boolean(turnCheckpoint) ||
-          Boolean(checkpointLoadError) ||
-          recalledExternalMemory;
+          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either.
         const tools =
@@ -1499,7 +1494,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   block.kind === "channel_message",
               ),
             ) ||
-            recalledExternalMemory ||
+            Boolean(recalledMemory) ||
             Boolean(turnCheckpoint) ||
             Boolean(checkpointLoadError),
           ownerSettingsRefused: false,

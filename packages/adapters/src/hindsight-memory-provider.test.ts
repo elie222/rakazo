@@ -855,6 +855,38 @@ describe("Hindsight conversations", () => {
     expect([...(fake.documents.get(TEAM_BANK) ?? [])]).toEqual(["rakazo-thread-1-2-bot-2"]);
   });
 
+  it("shares one cleanup deadline across deletes and later document listings", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal);
+    let markListingsStarted!: () => void;
+    const listingsStarted = new Promise<void>((resolve) => {
+      markListingsStarted = resolve;
+    });
+    let listings = 0;
+    const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Response.json({});
+      if (++listings === 2) markListingsStarted();
+      const signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    try {
+      const purging = provider(fetch).purgeHistory(
+        { botId: "bot-1", threadId: "thread-1", generations: [3] },
+        context,
+      );
+      await listingsStarted;
+      deadline.abort();
+      expect((await purging).ok).toBe(false);
+      expect(fetch.mock.calls).toHaveLength(4);
+      expect(fetch.mock.calls.every(([, init]) => init?.signal?.aborted)).toBe(true);
+      expect(timeout).toHaveBeenNthCalledWith(1, 10_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("keeps deleting a conversation's per-turn documents page after page", async () => {
     const fake = hindsightFake({
       turnDocuments: { bank: OWN_BANK, session: SESSION, count: 250 },

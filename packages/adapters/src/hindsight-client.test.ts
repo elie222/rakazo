@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
+  deleteHindsightDocument,
   HINDSIGHT_CLOUD_BASE_URL,
   hindsightBankExists,
   listHindsightDocumentIdsByTag,
@@ -58,6 +59,14 @@ describe("Hindsight client", () => {
     await hindsightBankExists({ ...config, fetch }, "other-app");
     await recallHindsight({ ...config, fetch }, "other-app", { query: "tea" });
     expect(timeout.mock.calls).toEqual([[120_000], [15_000]]);
+  });
+
+  it("uses short deadlines for document cleanup instead of the reflection timeout", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetch = vi.fn(async () => Response.json({ items: [] }));
+    await deleteHindsightDocument({ ...config, fetch }, "bank", "document");
+    await listHindsightDocumentIdsByTag({ ...config, fetch }, "bank", "session:thread");
+    expect(timeout.mock.calls).toEqual([[10_000], [10_000]]);
   });
 
   it("reads a bank nothing was retained to as empty", async () => {

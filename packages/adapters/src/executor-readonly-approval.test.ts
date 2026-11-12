@@ -2270,6 +2270,31 @@ describe("own settings through update_bot", () => {
     expect(f.results).toEqual([{ ok: true, readAloud: false }]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
+  it("keeps automatic recall derived without blocking the owner's settings change", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      memoryProvider: {
+        describe: () => ({ capabilities: { recall: true, save: true, recallEachRun: true } }),
+        recall: vi.fn(async () => ({
+          ok: true as const,
+          value: [{ memory: "The dog is named Pixel.", score: 0.9 }],
+        })),
+      },
+    });
+    f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { autoSpeak: true } }),
+    );
+    expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: true } }),
+    );
+    expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { readOutsideContent: false } }),
+    );
+  });
   it("keeps the model once outside content entered the run", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.claimedOutsideSteering(true);
@@ -3034,7 +3059,7 @@ describe("outbound destinations", () => {
   });
 
   it.each([true, false])(
-    "keeps recalled knowledge derived with or without adapter source hints: %s",
+    "keeps automatic recall in provenance without changing owner read permissions: %s",
     async (external) => {
       reviewMock.mockReset();
       reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
@@ -3056,9 +3081,11 @@ describe("outbound destinations", () => {
       f.setCalls([{ args: { id: "item-1" }, executionId: "call-1" }]);
       await f.run();
       expect(recall).toHaveBeenCalledOnce();
-      // A tainted run asks before a read on a connector it has not used yet.
-      expect(reviewMock).toHaveBeenCalledTimes(1);
-      expect(f.execute).toHaveBeenCalledTimes(0);
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { readOutsideContent: true } }),
+      );
     },
   );
 

@@ -16,6 +16,7 @@ import type { HindsightConnectionConfig } from "./hindsight-client.js";
 import {
   deleteHindsightDocument,
   HINDSIGHT_CLOUD_BASE_URL,
+  HINDSIGHT_PURGE_TIMEOUT_MS,
   HINDSIGHT_RECALL_TIMEOUT_MS,
   hindsightBankExists,
   hindsightOperationStatus,
@@ -628,16 +629,15 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     request: SemanticMemoryPurgeHistoryRequest,
     context: AdapterContext,
   ): Promise<SemanticMemoryResponse> {
+    const signal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(HINDSIGHT_PURGE_TIMEOUT_MS),
+    ]);
     const connection = await this.connectionForRequest();
     if (!connection.ok) return connection;
     const banks = [ownBank(context.spaceId, request.botId), teamBank(context.spaceId)];
     const purge = async (bank: string, session: string): Promise<SemanticMemoryResponse> => {
-      const deleted = await deleteHindsightDocument(
-        connection.value,
-        bank,
-        session,
-        context.signal,
-      );
+      const deleted = await deleteHindsightDocument(connection.value, bank, session, signal);
       if (!deleted.ok) return deleted;
       // One listing more than pages deleted: the last one only checks that none remain.
       for (let page = 0; page <= MAX_PURGE_PAGES; page++) {
@@ -645,13 +645,13 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
           connection.value,
           bank,
           `session:${session}`,
-          context.signal,
+          signal,
         );
         if (!ids.ok) return ids;
         if (!ids.value.length) return { ok: true, value: undefined };
         if (page === MAX_PURGE_PAGES) break;
         for (const id of ids.value) {
-          const removed = await deleteHindsightDocument(connection.value, bank, id, context.signal);
+          const removed = await deleteHindsightDocument(connection.value, bank, id, signal);
           if (!removed.ok) return removed;
         }
       }

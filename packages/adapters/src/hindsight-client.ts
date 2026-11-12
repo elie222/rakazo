@@ -8,6 +8,8 @@ export const HINDSIGHT_CLOUD_BASE_URL = "https://api.hindsight.vectorize.io";
 const HINDSIGHT_TIMEOUT_MS = 120_000;
 /** Recall runs synchronously before every reply, so a slow server must not stall runs for long. */
 export const HINDSIGHT_RECALL_TIMEOUT_MS = 15_000;
+/** Clear awaits cleanup; its entire purge must not inherit reflection's LLM-sized timeout. */
+export const HINDSIGHT_PURGE_TIMEOUT_MS = 10_000;
 const MAX_HINDSIGHT_RESPONSE_BYTES = 1024 * 1024;
 
 export interface HindsightConnectionConfig extends LocalServiceConnection {
@@ -237,7 +239,7 @@ export async function deleteHindsightDocument(
       config,
       `${bankPath(bank)}/documents/${encodeURIComponent(documentId)}`,
       undefined,
-      { method: "DELETE", signal, allowNotFound: true },
+      { method: "DELETE", signal, timeoutMs: HINDSIGHT_PURGE_TIMEOUT_MS, allowNotFound: true },
     ),
   );
 }
@@ -253,6 +255,7 @@ export async function listHindsightDocumentIdsByTag(
   const result = await hindsightRequest(config, `${bankPath(bank)}/documents?${query}`, undefined, {
     method: "GET",
     signal,
+    timeoutMs: HINDSIGHT_PURGE_TIMEOUT_MS,
     readJson: true,
     allowNotFound: true,
   });

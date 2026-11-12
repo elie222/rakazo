@@ -39,7 +39,8 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 - **Hindsight**: its cloud service, or your own server. Each bot keeps its own memory; with the
   Shared scope, bots also share one memory for the Space. Bots learn from their conversations (their
   own chats, group chats, and messages between bots) unless you turn off **Learn from
-  conversations**. Learning and chat-clear cleanup are best effort: provider outages or writes
+  conversations**. Cleanup requests share a ten-second deadline. Learning and chat-clear cleanup are
+  best effort: provider outages or writes
   still pending after the polling window can leave gaps or stale memories. Bots can't forget a single
   memory here. To let bots read memories another app keeps in the same Hindsight, list its banks
   under **Recall from banks**; bots read those banks but never write to them. Names beginning with
@@ -76,9 +77,10 @@ The backend tracks provenance conservatively:
   results retain the same classification.
 
 This provenance is separate from current action authorization. Keeping prior knowledge does not
-silently disable the owner's normal workflow or suppress learning. New outside input still goes
-through the existing action protections; remembering and relaying knowledge cannot authorize a
-new action or bypass the receiving Space's access checks. The source flag is not a factual-quality
+silently disable the owner's normal workflow or suppress learning. Automatic recall preserves
+source provenance without changing current owner permissions. Explicit recall and new outside
+input still go through the existing action protections; remembering and relaying knowledge cannot
+authorize a new action or bypass the receiving Space's access checks. The source flag is not a factual-quality
 judgment: no wording checks or model claims can change its classification.
 
 ## Open work
