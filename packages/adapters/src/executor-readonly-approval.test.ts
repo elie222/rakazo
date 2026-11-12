@@ -1855,7 +1855,12 @@ describe("own instructions through update_bot", () => {
     f.setCalls([]);
     await f.run();
     if (read) expect(f.prisma.run.updateMany).toHaveBeenCalledWith(flagged);
-    else expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
+    else {
+      expect(f.prisma.run.updateMany).not.toHaveBeenCalledWith(flagged);
+      expect(f.prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { readOutsideContent: false } }),
+      );
+    }
   });
   it.each([
     ["a clean run of the owner's bot", true, false],

@@ -195,6 +195,9 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await memory.getByLabel("Provider").selectOption("honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Workspace", { exact: true })).not.toBeVisible();
+  await captureScreenshot(page, testInfo, "memory-honcho-simple");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("User peer", { exact: true })).toHaveCount(0);
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
@@ -244,6 +247,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await scrollToTop();
   await expect(memory.getByLabel("Organization API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-cloud");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
   await expect(memory.getByLabel("Instance API key", { exact: true })).toBeVisible();
@@ -252,18 +256,24 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await memory.getByLabel("Provider").selectOption("hindsight");
   await scrollToTop();
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Recall from banks", { exact: true })).not.toBeVisible();
+  await expect(memory.getByRole("button", { name: "Self-hosted", exact: true })).not.toBeVisible();
+  await memory.getByLabel("API key", { exact: true }).fill("hindsight-test-key");
+  await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "memory-hindsight-simple");
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   const learn = memory.getByRole("switch", { name: "Learn from conversations" });
   await expect(learn).toBeChecked();
   await memory.getByLabel("Recall from banks", { exact: true }).fill("other-app");
   await learn.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-hindsight-cloud");
+  await memory.getByLabel("API key", { exact: true }).fill("");
   await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
   await memory.getByLabel("Base URL", { exact: true }).fill("http://hindsight.example.test:8888");
   const connect = memory.getByRole("button", { name: "Connect", exact: true });
   await expect(connect).toBeEnabled();
   await connect.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await captureScreenshot(page, testInfo, "memory-hindsight-local");
-  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByRole("switch", { name: "Recall automatically" })).toBeChecked();
   await expect(memory.getByRole("button", { name: "Medium", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -299,6 +309,7 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await memory.getByLabel("Provider").selectOption("honcho");
   await scrollToTop();
+  await memory.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",

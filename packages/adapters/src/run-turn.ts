@@ -773,14 +773,22 @@ async function groupSilenceStillAllowed(ctx: RunContext) {
 
 /**
  * Whether this run took in outside content (see hasTakenInOutsideContent), recorded on the run
- * row so bots learning from its replies leave them out. The row is written again here because an
- * earlier write may have failed; it only changes a false row. The flag is final once the run
- * completes, so a failed write fails the run rather than finalizing it as clean; its retry is a
+ * row so bots learning from its replies leave them out. Completion explicitly records clean
+ * runs too: historical runs and runs handled by an older release default to untrusted. The flag
+ * is final once the run completes, so a failed write fails the run; its retry is a
  * later attempt, which counts as outside content.
  */
 async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
   ctx.state.readOutsideContent = await hasTakenInOutsideContent(ctx);
-  if (!ctx.state.readOutsideContent) return false;
+  if (!ctx.state.readOutsideContent) {
+    // Old releases never tracked exposure. Only this executor can attest a clean run;
+    // until then the database default keeps historical and rolling-deploy runs untrusted.
+    await ctx.deps.prisma.run.updateMany({
+      where: { id: ctx.runId },
+      data: { readOutsideContent: false },
+    });
+    return false;
+  }
   await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
   return true;
 }

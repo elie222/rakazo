@@ -1,5 +1,5 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { HindsightSettingsForm } from "./HindsightSettingsForm";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
 import { SerenitySettingsForm } from "./SerenitySettingsForm";
@@ -12,6 +12,7 @@ export interface MemoryProviderConnectionDraft {
 
 export interface MemoryProviderSettingsFormProps {
   busy: boolean;
+  advancedSettings: ReactNode;
   onConnect: (draft: MemoryProviderConnectionDraft) => Promise<boolean>;
 }
 

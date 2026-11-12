@@ -1250,9 +1250,9 @@ model Run {
   clientNonce          String?
   sourceMessageId      String?
   sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
-  /// Set once the run takes in outside content (web pages, connector data, outside messages);
-  /// words it sends to other bots are then not learned as their trusted memory.
-  readOutsideContent   Boolean           @default(false)
+  /// Untrusted until the executor records a clean completion; historical runs stay untrusted.
+  /// Runs that read outside content are never learned as another bot's trusted memory.
+  readOutsideContent   Boolean           @default(true)
   routineId            String?
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
   // The failed routine run this run retries. Unique, so a run is retried at most once.

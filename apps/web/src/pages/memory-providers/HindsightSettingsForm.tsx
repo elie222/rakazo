@@ -1,20 +1,10 @@
 import { Trans } from "@lingui/react/macro";
-import {
-  Button,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-  Field,
-  FieldLabel,
-  Input,
-  Label,
-  Switch,
-  Toggle,
-} from "@rakazo/ui-web";
+import { Button, Field, FieldLabel, Input, Label, Switch, Toggle } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import type { ConnectionMode } from "./ConnectionModeFields";
 import { ConnectionModeFields } from "./ConnectionModeFields";
+import { MemoryProviderAdvanced } from "./MemoryProviderAdvanced";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
 type RecallBudget = "low" | "mid" | "high";
@@ -78,7 +68,11 @@ function SwitchRow({
   );
 }
 
-export function HindsightSettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
+export function HindsightSettingsForm({
+  busy,
+  onConnect,
+  advancedSettings,
+}: MemoryProviderSettingsFormProps) {
   const apiKeyId = useId();
   const recallBanksId = useId();
   const [mode, setMode] = useState<ConnectionMode>("cloud");
@@ -129,14 +123,6 @@ export function HindsightSettingsForm({ busy, onConnect }: MemoryProviderSetting
 
   return (
     <>
-      <ConnectionModeFields
-        busy={busy}
-        mode={mode}
-        onModeChange={setMode}
-        baseUrl={baseUrl}
-        onBaseUrlChange={setBaseUrl}
-      />
-
       <Field className="mt-4">
         <FieldLabel htmlFor={apiKeyId}>
           <Trans>API key</Trans>
@@ -152,79 +138,82 @@ export function HindsightSettingsForm({ busy, onConnect }: MemoryProviderSetting
         />
       </Field>
 
-      <Field className="mt-4">
-        <FieldLabel htmlFor={recallBanksId}>
-          <Trans>Recall from banks</Trans>
-        </FieldLabel>
-        <Input
-          id={recallBanksId}
-          value={recallBanks}
-          disabled={busy}
-          onChange={(event) => setRecallBanks(event.target.value)}
-          maxLength={2048}
-          autoComplete="off"
+      <MemoryProviderAdvanced>
+        {advancedSettings}
+        <ConnectionModeFields
+          busy={busy}
+          mode={mode}
+          onModeChange={setMode}
+          baseUrl={baseUrl}
+          onBaseUrlChange={setBaseUrl}
         />
-      </Field>
+        <Field className="mt-4">
+          <FieldLabel htmlFor={recallBanksId}>
+            <Trans>Recall from banks</Trans>
+          </FieldLabel>
+          <Input
+            id={recallBanksId}
+            value={recallBanks}
+            disabled={busy}
+            onChange={(event) => setRecallBanks(event.target.value)}
+            maxLength={2048}
+            autoComplete="off"
+          />
+        </Field>
 
-      <SwitchRow
-        label={<Trans>Learn from conversations</Trans>}
-        checked={learn}
-        busy={busy}
-        onChange={setLearn}
-      />
+        <SwitchRow
+          label={<Trans>Learn from conversations</Trans>}
+          checked={learn}
+          busy={busy}
+          onChange={setLearn}
+        />
 
-      <Collapsible className="mt-4">
-        <CollapsibleTrigger className="text-body-sm text-muted-foreground">
-          <Trans>Advanced</Trans>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SwitchRow
-            label={<Trans>Recall automatically</Trans>}
-            checked={autoRecall}
-            busy={busy}
-            onChange={setAutoRecall}
-          />
-          <Segmented
-            label={<Trans>Recall depth</Trans>}
-            busy={busy}
-            value={recallBudget}
-            onChange={setRecallBudget}
-            options={[
-              { value: "low", label: <Trans>Low</Trans> },
-              { value: "mid", label: <Trans>Medium</Trans> },
-              { value: "high", label: <Trans>High</Trans> },
-            ]}
-          />
-          <Segmented
-            label={<Trans>What to recall</Trans>}
-            busy={busy}
-            value={withFacts ? "facts" : "summaries"}
-            onChange={(value) => setWithFacts(value === "facts")}
-            options={[
-              { value: "summaries", label: <Trans>Summaries</Trans> },
-              { value: "facts", label: <Trans>Summaries and facts</Trans> },
-            ]}
-          />
-          <SwitchRow
-            label={<Trans>Skip unrelated memories</Trans>}
-            checked={skipUnrelated}
-            busy={busy}
-            onChange={setSkipUnrelated}
-          />
-          {customized ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mt-3"
-              disabled={busy}
-              onClick={restoreDefaults}
-            >
-              <Trans>Use defaults</Trans>
-            </Button>
-          ) : null}
-        </CollapsibleContent>
-      </Collapsible>
+        <SwitchRow
+          label={<Trans>Recall automatically</Trans>}
+          checked={autoRecall}
+          busy={busy}
+          onChange={setAutoRecall}
+        />
+        <Segmented
+          label={<Trans>Recall depth</Trans>}
+          busy={busy}
+          value={recallBudget}
+          onChange={setRecallBudget}
+          options={[
+            { value: "low", label: <Trans>Low</Trans> },
+            { value: "mid", label: <Trans>Medium</Trans> },
+            { value: "high", label: <Trans>High</Trans> },
+          ]}
+        />
+        <Segmented
+          label={<Trans>What to recall</Trans>}
+          busy={busy}
+          value={withFacts ? "facts" : "summaries"}
+          onChange={(value) => setWithFacts(value === "facts")}
+          options={[
+            { value: "summaries", label: <Trans>Summaries</Trans> },
+            { value: "facts", label: <Trans>Summaries and facts</Trans> },
+          ]}
+        />
+        <SwitchRow
+          label={<Trans>Skip unrelated memories</Trans>}
+          checked={skipUnrelated}
+          busy={busy}
+          onChange={setSkipUnrelated}
+        />
+        {customized ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-3"
+            disabled={busy}
+            onClick={restoreDefaults}
+          >
+            <Trans>Use defaults</Trans>
+          </Button>
+        ) : null}
+      </MemoryProviderAdvanced>
 
       <Button
         type="button"
