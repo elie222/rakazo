@@ -43,5 +43,9 @@ export function configuredBotEmailProvider(config: {
 }): TransactionalEmailProvider | undefined {
   if (!config.smtpUrl) return undefined;
   if (!config.domain) throw new Error("BOT_EMAIL_SMTP_URL requires INBOUND_EMAIL_DOMAIN");
-  return new SmtpEmailProvider({ url: config.smtpUrl, from: `bot@${config.domain}` });
+  try {
+    return new SmtpEmailProvider({ url: config.smtpUrl, from: `bot@${config.domain}` });
+  } catch (cause) {
+    throw new Error("BOT_EMAIL_SMTP_URL could not be configured", { cause });
+  }
 }

@@ -87,6 +87,7 @@ From `.env.images.example` (images installer). Leave blank if unused:
 | `COMPOSIO_API_KEY`                                             | Composio managed catalog                                                       |
 | `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY`             | Remote computers when `SANDBOX_PROVIDER` is not `docker`                       |
 | `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | Optional account email via Resend API or SMTP                                  |
+| `BOT_EMAIL_SMTP_URL`                                          | Separate TLS SMTP connection for bot sending; see [bot email](./self-host-inbound-email.md#sending) |
 | `EXPO_ACCESS_TOKEN`                                            | Mobile push when the Expo project enables enhanced push security               |
 | Messaging tokens (Slack, Telegram, …)                          | Only if you enable those surfaces                                              |
 
