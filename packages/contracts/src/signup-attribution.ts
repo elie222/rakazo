@@ -22,7 +22,7 @@ export const SignupAttribution = z
     referringDomain: z
       .string()
       .max(253)
-      .regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/)
+      .regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/)
       .optional(),
   })
   .strict();

@@ -23,6 +23,21 @@ function browser(href: string, referrer = "") {
 }
 
 describe("signup acquisition", () => {
+  it.each([
+    ["https://example.xn--p1ai/", "example.xn--p1ai"],
+    ["https://例子.中国/", "xn--fsqu00a.xn--fiqs8s"],
+  ])("preserves internationalized referring domains from %s", (referrer, referringDomain) => {
+    const page = browser("https://example.com/", referrer);
+    rememberSignupAttribution(page);
+    expect(signupAttributionFromHeaders(new Headers({ cookie: page.document.cookie }))).toEqual({
+      referringDomain,
+    });
+  });
+  it("does not record an IP address as a referring domain", () => {
+    const page = browser("https://example.com/", "https://192.0.2.1/");
+    rememberSignupAttribution(page);
+    expect(page.writes).toHaveLength(0);
+  });
   it("retains campaign names with URL-encoded spaces through server parsing", () => {
     const page = browser(
       "https://example.com/?utm_campaign=Spring+Sale&utm_content=Black%20Friday",
