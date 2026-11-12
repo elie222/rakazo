@@ -74,6 +74,7 @@ export * from "./createos-sandbox.js";
 export * from "./current-time.js";
 export * from "./cursor-cloud-agent.js";
 export * from "./decision-models.js";
+export * from "./deployment-apps.js";
 export * from "./deployment-model.js";
 export * from "./desktop-sandbox.js";
 export * from "./destination-emulator.js";

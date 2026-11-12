@@ -786,6 +786,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
       desktopHostChoiceEnabled: Boolean(env.desktopStackToken),
       computerSettingsEnabled: env.computerSettingsEnabled,
+      deploymentApps: env.deploymentApps,
       mcpStdioEnabled: env.mcpStdioEnabled,
       mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
     },

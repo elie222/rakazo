@@ -55,7 +55,7 @@ export function mentionConnectorsFrom(
   connections: readonly Pick<Connection, "id" | "displayName" | "provider" | "status">[],
   catalog: readonly Pick<
     ConnectionCatalogItem,
-    "connectorId" | "slug" | "name" | "connected" | "noAuth"
+    "connectorId" | "slug" | "name" | "connected" | "noAuth" | "mcpAppId" | "needsSetup"
   >[],
 ): MentionPickerConnector[] {
   const connected = connections.filter((row) => row.status === "connected");
@@ -66,7 +66,8 @@ export function mentionConnectorsFrom(
     connectionId: row.id,
   }));
   for (const item of catalog) {
-    if (item.connected || item.noAuth) continue;
+    // Bundled MCP apps connect through Integrations, not the managed mention flow.
+    if (item.connected || item.noAuth || item.mcpAppId || item.needsSetup) continue;
     const covered = connected.some(
       (row) =>
         row.provider.toLowerCase() === item.slug.toLowerCase() ||

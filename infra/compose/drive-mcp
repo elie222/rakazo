@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+if [ "$#" -ne 0 ]; then
+  echo 'This connector takes no command arguments.' >&2
+  exit 1
+fi
+exec node /app/apps/api/dist/cli/drive-mcp.js

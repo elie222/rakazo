@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { PluginsOverlay } from "./PluginsOverlay";
 
 const api = vi.hoisted(() => ({
@@ -12,8 +13,18 @@ const api = vi.hoisted(() => ({
     list: vi.fn(),
     tools: vi.fn(),
   },
-  capabilities: { list: vi.fn(), catalogSearch: vi.fn(), sourcePresets: vi.fn() },
-  mcp: { servers: { list: vi.fn() }, assignments: { list: vi.fn() } },
+  capabilities: {
+    list: vi.fn(),
+    catalogSearch: vi.fn(),
+    sourcePresets: vi.fn(),
+    pluginPreview: vi.fn(),
+    install: vi.fn(),
+  },
+  mcp: {
+    apps: { connect: vi.fn() },
+    servers: { list: vi.fn() },
+    assignments: { list: vi.fn(), approve: vi.fn() },
+  },
   marketplace: { catalog: vi.fn() },
 }));
 
@@ -142,6 +153,9 @@ beforeEach(() => {
           }
         : { enabled: false, results: [] },
     );
+  api.mcp.apps.connect.mockReset().mockResolvedValue({ serverId: "server-1" });
+  api.mcp.assignments.approve.mockReset().mockResolvedValue({});
+  vi.mocked(connectMcpOauth).mockReset().mockResolvedValue("connected");
   api.mcp.servers.list.mockReset().mockResolvedValue([]);
   api.mcp.assignments.list.mockReset().mockResolvedValue([]);
   api.marketplace.catalog.mockReset().mockResolvedValue({ entries: [], unavailableRegistries: [] });
@@ -207,4 +221,147 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(host.textContent).toContain("Add MCP server");
   expect(searchBox().value).toBe("canva");
   expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
+});
+
+it("connects an operator-provided app through personal OAuth and assigns only the active bot", async () => {
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: false,
+      noAuth: false,
+      mcpAppId: "files",
+    },
+  ]);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} activeBotId="bot-1" />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "Files");
+  const add = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Connect",
+  )!;
+  expect(add.getAttribute("aria-label")).toBe("Connect Files");
+  await act(async () => add.click());
+  await vi.waitFor(() => expect(connectMcpOauth).toHaveBeenCalledWith("server-1"));
+  expect(api.mcp.apps.connect).toHaveBeenCalledWith({ appId: "files", botId: "bot-1" });
+  expect(api.mcp.assignments.approve).not.toHaveBeenCalled();
+});
+
+it("keeps management available for a connected app after operator setup is removed", async () => {
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: true,
+      noAuth: false,
+      mcpAppId: "files",
+      mcpServerId: "server-1",
+      needsSetup: true,
+    },
+  ]);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "Files");
+  expect(host.textContent).not.toContain("Server setup required");
+  expect(
+    Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Added"),
+  ).toBe(true);
+});
+
+it("opens a bundled app's matching plugin skills while keeping its connection separate", async () => {
+  const source = "https://github.com/example/files";
+  api.connections.catalog.mockResolvedValue([
+    {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: false,
+      noAuth: false,
+      mcpAppId: "files",
+    },
+  ]);
+  api.marketplace.catalog.mockResolvedValue({
+    entries: [
+      {
+        id: "files",
+        name: "files",
+        displayName: "Files",
+        description: "",
+        keywords: [],
+        category: "productivity",
+        logo: null,
+        homepage: null,
+        domains: [],
+        registry: "Example",
+        source,
+        installedSource: source,
+        hasConnector: true,
+        skillCount: 1,
+      },
+    ],
+    unavailableRegistries: [],
+  });
+  api.capabilities.pluginPreview.mockResolvedValue({
+    format: "agent-plugins",
+    name: "files",
+    version: null,
+    description: "",
+    author: null,
+    homepage: null,
+    repository: null,
+    license: null,
+    keywords: [],
+    resolvedSha: "a".repeat(40),
+    pinnedSource: source,
+    digest: `sha256:${"b".repeat(64)}`,
+    skills: [{ name: "file-notes", description: "Write notes" }],
+    mcpServers: [
+      {
+        name: "files-mcp",
+        transport: "streamable_http",
+        endpoint: "https://files.example.test/mcp",
+        staticHeaderKeys: [],
+      },
+    ],
+    skipped: [],
+  });
+  const openMcp = vi.fn();
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} onOpenMcp={openMcp} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "Files");
+  const title = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.endsWith("Files"),
+  )!;
+  await act(async () => title.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("file-notes"));
+  expect(openMcp).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("files-mcp");
+  expect(
+    Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Connect"),
+  ).toBe(false);
+  expect(
+    Array.from(host.querySelectorAll("button")).some((button) => button.textContent === "Add"),
+  ).toBe(true);
 });

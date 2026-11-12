@@ -477,6 +477,7 @@ services:
       API_HOST: "0.0.0.0"
       API_PORT:
       BETTER_AUTH_SECRET:
+      DEPLOYMENT_APPS:
       BETTER_AUTH_URL:
       WEB_ORIGIN:
       RAKAZO_EXTRA_AUTH_ORIGINS:

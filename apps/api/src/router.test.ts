@@ -48,6 +48,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import { providerScopeKey } from "./connection-flows.js";
+import * as bundledApps from "./deployment-apps.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -10408,4 +10409,84 @@ describe("quarantined computer stop", () => {
       }
     },
   );
+});
+
+describe("bundled catalog visibility", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function fixture() {
+    const app = {
+      connectorId: "deployment",
+      slug: "files",
+      name: "Files",
+      logo: null,
+      connected: false,
+      noAuth: false,
+      needsSetup: true,
+      mcpAppId: "files",
+    };
+    const catalog = vi.spyOn(bundledApps, "deploymentAppCatalog").mockResolvedValue([app]);
+    const provider = {
+      describe: () => ({ id: "managed" }),
+      catalog: async () => [
+        { ...app, connectorId: "managed", mcpAppId: undefined, needsSetup: undefined },
+      ],
+    };
+    const client = createRouterClient(
+      createRouter({
+        prisma: {},
+        connectors: { managed: () => undefined, managedProviders: () => [provider] },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps),
+      {
+        context: {
+          actor: {
+            spaceId: "space-a",
+            userId: "user-a",
+            email: "user@example.test",
+            isDeploymentOwner: false,
+          },
+        } as never,
+      },
+    );
+    return { app, catalog, client };
+  }
+
+  it("keeps existing bundled registrations when a managed catalog has the same app", async () => {
+    const { app, catalog, client } = fixture();
+    expect(await client.connections.catalog({})).toHaveLength(1);
+    catalog.mockResolvedValue([{ ...app, mcpServerId: "server-a", connected: true }]);
+    expect(await client.connections.catalog({})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ connectorId: "deployment", mcpServerId: "server-a" }),
+      ]),
+    );
+  });
+
+  it("keeps managed apps available when bundled status lookup fails", async () => {
+    const { catalog, client } = fixture();
+    catalog.mockRejectedValue(new Error("Secret store unavailable"));
+    expect(await client.connections.catalog({})).toEqual([
+      expect.objectContaining({ connectorId: "managed", name: "Files" }),
+    ]);
+  });
+
+  it("matches the bundled connector identifier and keeps empty-query entries", async () => {
+    const { client } = fixture();
+    expect(
+      await client.connections.catalog({ connectorId: "deployment", query: " DEPLOYMENT " }),
+    ).toHaveLength(1);
+    expect(
+      await client.connections.catalog({ connectorId: "deployment", query: " " }),
+    ).toHaveLength(1);
+    expect(
+      await client.connections.catalog({ connectorId: "deployment", query: "missing" }),
+    ).toEqual([]);
+  });
 });

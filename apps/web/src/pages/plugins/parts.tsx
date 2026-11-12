@@ -6,7 +6,7 @@ import type {
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { mcpServerConnection } from "@rakazo/contracts";
-import { catalogItemKey } from "@rakazo/core";
+import { catalogItemKey, catalogItemState } from "@rakazo/core";
 import { Button, SectionHeading } from "@rakazo/ui-web";
 import { Check, ChevronLeft, CircleAlert, TriangleAlert } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
@@ -150,11 +150,19 @@ export function CatalogTile({
 }
 
 function CatalogActions({ item, context }: { item: ConnectionCatalogItem; context: TileContext }) {
+  const { t } = useLingui();
+  const name = item.name;
   const { connections, onOpenDetail } = context;
   const key = catalogItemKey(item);
-  const connected = connections.itemConnected(item);
+  const state = catalogItemState(item, connections.itemConnected(item));
   const connecting = connections.pending === key;
-  if (connected) {
+  if (state === "setup-required")
+    return (
+      <span className="text-body-sm text-muted-foreground">
+        <Trans>Server setup required</Trans>
+      </span>
+    );
+  if (state === "connected") {
     return (
       <Button
         type="button"
@@ -176,12 +184,19 @@ function CatalogActions({ item, context }: { item: ConnectionCatalogItem; contex
       variant="secondary"
       size="sm"
       disabled={connecting}
+      aria-label={item.mcpAppId ? t`Connect ${name}` : undefined}
       onClick={(event) => {
         event.stopPropagation();
         void connections.connect(item);
       }}
     >
-      {connecting ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
+      {connecting ? (
+        <Trans>Adding…</Trans>
+      ) : item.mcpAppId ? (
+        <Trans>Connect</Trans>
+      ) : (
+        <Trans>Add</Trans>
+      )}
     </Button>
   );
 }

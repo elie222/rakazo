@@ -120,3 +120,11 @@ it("counts only the parts an install added", () => {
   expect(pluginSkillCount(install())).toBe(1);
   expect(hasPluginConnector(install())).toBe(true);
 });
+
+it("opens a bundled app's matching skills without its managed connector", () => {
+  const plugin = entry({ name: "vercel", displayName: "Vercel", skillCount: 3 });
+  const params = managedPluginParams(plugin, { ...app, mcpAppId: "files" });
+  expect(params.skillsOnly).toBe("1");
+  expect(params.managedConnectorId).toBeUndefined();
+  expect(params.managedSlug).toBeUndefined();
+});

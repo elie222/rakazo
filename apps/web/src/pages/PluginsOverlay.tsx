@@ -143,7 +143,7 @@ export function PluginsOverlay({
   const pluginServers = (install: CapabilityInstall | undefined) =>
     install ? mcpServers.filter((server) => server.installId === install.id) : [];
   const standaloneServers = mcpServers.filter((server) => !server.installId);
-  const connectedItems = catalog.filter((item) => itemConnected(item));
+  const connectedItems = catalog.filter((item) => !item.mcpAppId && itemConnected(item));
   // Skills live in their own dialog, so only installs with a connector count as apps here.
   const connectorInstalls = pluginInstalls.filter((install) =>
     installedPluginParts(install.config).includes("connector"),
@@ -201,7 +201,7 @@ export function PluginsOverlay({
 
   function managedLink(selection: PluginSelection): ManagedAppLink | undefined {
     const item = appForPlugin(selection);
-    if (!item) return undefined;
+    if (!item || item.mcpAppId) return undefined;
     return {
       name: item.name,
       logo: item.logo,
@@ -216,6 +216,10 @@ export function PluginsOverlay({
   }
 
   function openDetail(item: ConnectionCatalogItem) {
+    if (item.mcpAppId) {
+      onOpenMcp?.();
+      return;
+    }
     setCatalogError(null);
     setDetailKey({ connectorId: item.connectorId, slug: item.slug });
   }
@@ -501,6 +505,7 @@ export function PluginsOverlay({
               servers={mcpServers}
               assigned={assigned}
               activeBotId={activeBotId}
+              skillsOnly={Boolean(appForPlugin(plugin)?.mcpAppId)}
               managed={managedLink(plugin)}
               onBack={() => setPlugin(null)}
               onChanged={refresh}
