@@ -1465,11 +1465,14 @@ export const appContract = {
     accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
-    /** Run alerts for the signed-in user's chats in this space, live while connected. */
+    /**
+     * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
+     * says `spaces.list` may have changed.
+     */
     subscribe: oc.output(
       eventIterator(
         z.object({
-          type: z.enum(["alert", "heartbeat"]),
+          type: z.enum(["alert", "roster", "heartbeat"]),
           alert: ChatAlertSchema.optional(),
         }),
       ),

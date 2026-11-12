@@ -80,9 +80,10 @@ import {
 import type { OrganizeTarget } from "../lib/organize-target";
 import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
-import { INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
+import { INBOX_POLL_INTERVAL_MS, INBOX_SIGNALLED_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
+import { useRosterSignals } from "../lib/roster-signals";
 import { loadSavedInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
@@ -269,7 +270,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   // The embedded pane is visible beside the chat, so it keeps polling even when
   // the chat route owns focus.
-  useForegroundPoll(loadBots, INBOX_POLL_INTERVAL_MS, hasSession && (embedded || isFocused));
+  const inboxShown = hasSession && (embedded || isFocused);
+  const rosterSignalsLive = useRosterSignals(loadBots, inboxShown);
+  useForegroundPoll(
+    loadBots,
+    rosterSignalsLive ? INBOX_SIGNALLED_POLL_INTERVAL_MS : INBOX_POLL_INTERVAL_MS,
+    inboxShown,
+  );
   useEffect(() => onInboxChanged(() => void refreshBots().catch(() => undefined)), [refreshBots]);
 
   const archivedCount = useArchivedCount(me?.spaceId, hasSession);

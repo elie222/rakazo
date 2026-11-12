@@ -27,7 +27,11 @@ type ChatAlertOptions = {
   meId: string | undefined;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
   groupsRef?: RefObject<readonly SnoozableChat[]>;
+  /** The server's roster signals: one when the stream opens, then one per change. */
+  roster?: RosterSignals;
 };
+
+export type RosterSignals = { changed: () => void; lost: () => void };
 
 /** A question still arrives while a chat is snoozed; an ordinary reply waits. */
 function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
@@ -75,13 +79,15 @@ function openChatOnClick(
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef }: ChatAlertOptions,
+  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef, roster }: ChatAlertOptions,
 ) {
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
   useEffect(() => prepareNotificationIcons(bots), [bots]);
   const openChatRef = useRef(openChat);
   openChatRef.current = openChat;
+  const rosterRef = useRef(roster);
+  rosterRef.current = roster;
   const shown = useRef(new Set<Notification>());
   useEffect(() => {
     let active = true;
@@ -123,12 +129,14 @@ export function useBrowserNotifications(
           });
           for await (const frame of stream) {
             if (!active) return;
-            if (frame.alert) show(frame.alert);
+            if (frame.type === "roster") rosterRef.current?.changed();
+            else if (frame.alert) show(frame.alert);
           }
         } catch (cause) {
           failure = cause;
         } finally {
           controller.abort();
+          rosterRef.current?.lost();
         }
         if (!active || (failure !== undefined && !isRetryableError(failure))) return;
         await new Promise<void>((resolve) => {

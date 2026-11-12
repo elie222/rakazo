@@ -57,6 +57,8 @@ const PULL_TIMEOUT_MS = 30 * 60_000;
 const UP_TIMEOUT_MS = (COMPOSE_WAIT_TIMEOUT_S + 60) * 1_000;
 const LOGS_TIMEOUT_MS = 15_000;
 const STOP_TIMEOUT_MS = 90_000;
+/** After this long, a Docker app setup opened has likely quit or is waiting on the person. */
+const DOCKER_APP_START_GRACE_MS = 90_000;
 const MAX_STACK_TOKEN_BYTES = 1024;
 
 /** The compose project lives under the app's user data, next to the `.env` it generates. */
@@ -280,7 +282,7 @@ export function reduceStackState(
 
 const dockerGroupHint = () =>
   t(
-    "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.",
+    "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), then sign out and back in.",
   );
 export const startInterrupted = () => t("The start was interrupted. Retry to continue.");
 
@@ -333,6 +335,9 @@ export interface LocalStackDeps {
   env: NodeJS.ProcessEnv;
   exists: (file: string) => boolean;
   run: RunDocker;
+  /** Starts the app that owns `binary` (Docker Desktop, OrbStack); resolves to its name, or null. */
+  launchDockerApp?: (binary: string) => Promise<string | null>;
+  now?: () => number;
   stackDir: string;
   resourceDir: string;
   localWebUrl: string;
@@ -382,6 +387,8 @@ export class LocalStackController implements StackController {
   private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
   private ticket = 0;
+  /** Set once setup has tried to start the Docker app, so a re-check never reopens it on top of the person's work. */
+  private dockerAppLaunch: { app: string | null; at: number } | undefined;
   /** Starts ticketed at or below this were superseded by a later stop and must not run. */
   private voidBefore = 0;
 
@@ -509,7 +516,10 @@ export class LocalStackController implements StackController {
     if (binary === null) {
       this.push({
         type: "docker-missing",
-        message: t("Docker is not installed on this computer."),
+        message:
+          this.deps.platform === "linux"
+            ? t("Rakazo needs Docker to run on this computer.")
+            : t("Rakazo needs Docker Desktop to run on this computer."),
       });
       return;
     }
@@ -523,8 +533,9 @@ export class LocalStackController implements StackController {
       return this.push({ type: "failed", message: startInterrupted() });
     if (version.code !== 0) {
       if (failureKind(version) === "compose-missing") {
+        // Docker itself is installed, so the Docker download would not help.
         this.push({
-          type: "docker-missing",
+          type: "failed",
           message: t(
             "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.",
           ),
@@ -550,15 +561,30 @@ export class LocalStackController implements StackController {
     if (interrupted(signal, info))
       return this.push({ type: "failed", message: startInterrupted() });
     if (info.code !== 0) {
+      if (failureKind(info) === "socket-permission") {
+        this.push({ type: "docker-not-running", message: dockerGroupHint() });
+        return;
+      }
+      const now = this.deps.now ?? Date.now;
+      if (this.dockerAppLaunch === undefined) {
+        // A daemon chosen by DOCKER_HOST or another context is not the app behind this CLI.
+        const app = usesLocalDaemon(this.deps.env)
+          ? ((await this.deps.launchDockerApp?.(binary)) ?? null)
+          : null;
+        this.dockerAppLaunch = { app, at: now() };
+      }
+      const { app, at } = this.dockerAppLaunch;
       this.push({
         type: "docker-not-running",
         message:
-          failureKind(info) === "socket-permission"
-            ? dockerGroupHint()
-            : t("Docker is installed but not running. Start Docker, then check again."),
+          app !== null && now() - at < DOCKER_APP_START_GRACE_MS
+            ? t("Starting {app}…", { app })
+            : notRunningMessage(this.deps.platform),
       });
       return;
     }
+    // Docker answered; if it is quit later, the next start may open it again.
+    this.dockerAppLaunch = undefined;
 
     this.push({ type: "prepare" });
     await copyFile(
@@ -716,4 +742,20 @@ export class LocalStackController implements StackController {
       signal,
     );
   }
+}
+
+/** Contexts Docker Desktop and OrbStack create for their own local daemon. */
+const LOCAL_DOCKER_CONTEXTS = new Set(["default", "desktop-linux", "orbstack"]);
+
+function usesLocalDaemon(env: NodeJS.ProcessEnv): boolean {
+  if (env.DOCKER_HOST?.trim()) return false;
+  const context = env.DOCKER_CONTEXT?.trim();
+  return !context || LOCAL_DOCKER_CONTEXTS.has(context);
+}
+
+/** Linux runs Docker Engine as a service, which is started rather than opened. */
+function notRunningMessage(platform: string): string {
+  return platform === "linux"
+    ? t("Docker is installed but not running. Start the Docker service to continue.")
+    : t("Docker is installed but not running. Open it to continue.");
 }

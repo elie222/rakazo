@@ -59,6 +59,8 @@
     "flow": "flows/settings.yaml",
     "screens": [
       "account",
+      "general",
+      "profile",
       "change-password",
       "models",
       "integrations",
