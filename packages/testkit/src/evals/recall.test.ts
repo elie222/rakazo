@@ -328,6 +328,17 @@ describe("recall outcome grading", () => {
     expect(
       scriptedShell(computer, "grep -l -i firefox ~/.config/chromium/Default/Preferences")?.stdout,
     ).not.toContain("Preferences");
+    // A search by the extension's title finds nothing; by its id, its folder.
+    expect(scriptedShell(computer, 'find ~ -maxdepth 8 -iname "*midnight*lizard*"')?.stdout).toBe(
+      "",
+    );
+    expect(
+      scriptedShell(computer, "find ~ -maxdepth 6 -type d -name 'pbnhgcfkmdlhnoeajihcmpgkglmbjblb'")
+        ?.stdout,
+    ).toContain("Extensions/pbnhgcfkmdlhnoeajihcmpgkglmbjblb");
+    expect(scriptedShell(computer, "ls -la ../../shared 2>/dev/null; pwd")?.stdout).toBe(
+      "/home/rakazo",
+    );
     // A probe for several browsers still finds the Chromium the computer has.
     expect(
       scriptedShell(
