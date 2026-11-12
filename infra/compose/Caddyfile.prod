@@ -23,6 +23,19 @@
 	lb_try_interval 250ms
 }
 
+# Every running API container, looked up again each second, so requests spread across all of them
+# and a stopped one drops out instead of Caddy reusing connections to whichever answered first.
+(api) {
+	reverse_proxy {
+		dynamic a api 3100 {
+			refresh 1s
+		}
+		lb_policy least_conn
+		import deploy_retry
+		header_up X-Forwarded-For {client_ip}
+	}
+}
+
 {$RAKAZO_HOST:app.example.com} {
 	import access_log
 	encode zstd gzip
@@ -42,24 +55,9 @@
 		Referrer-Policy no-referrer
 	}
 
-	handle /health {
-		reverse_proxy api:3100 {
-			import deploy_retry
-		}
-	}
-
-	handle /api/* {
-		reverse_proxy api:3100 {
-			import deploy_retry
-			header_up X-Forwarded-For {client_ip}
-		}
-	}
-
-	handle /rpc/* {
-		reverse_proxy api:3100 {
-			import deploy_retry
-			header_up X-Forwarded-For {client_ip}
-		}
+	@api path /health /api/* /rpc/*
+	handle @api {
+		import api
 	}
 
 	handle {

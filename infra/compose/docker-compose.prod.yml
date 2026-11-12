@@ -471,6 +471,8 @@ services:
     # Chat runs execute in the API that receives them, so it gets the worker's headroom.
     pids_limit: 512
     mem_limit: ${RAKAZO_API_MEMORY_LIMIT:-2g}
+    deploy:
+      replicas: ${RAKAZO_API_REPLICAS:-1}
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
@@ -582,6 +584,8 @@ services:
       - ALL
     pids_limit: 512
     mem_limit: ${RAKAZO_WORKER_MEMORY_LIMIT:-2g}
+    deploy:
+      replicas: ${RAKAZO_WORKER_REPLICAS:-1}
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
