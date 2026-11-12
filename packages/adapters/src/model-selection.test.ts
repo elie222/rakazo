@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
 import { serializeModelSecret } from "./model-secret.js";
 import {
+  catalogModelFunding,
   connectionServesModel,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
@@ -260,8 +261,16 @@ describe("space catalog auth", () => {
       expect(auth.byProvider.openrouter).toBe("api_key");
       if (mode === "credits") {
         expect(auth.managedProvider).toBe("openrouter");
-        expect(auth.secretIdByProvider?.openrouter).toBeUndefined();
-        expect(load).not.toHaveBeenCalled();
+        expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
+        expect(load).toHaveBeenCalledOnce();
+        expect(catalogModelFunding(auth, "openrouter", "fixture-unpriced")).toBe("connection");
+        expect(
+          catalogModelFunding(
+            { ...auth, secretIdByProvider: {}, secretIdByModel: {} },
+            "openrouter",
+            "fixture-unpriced",
+          ),
+        ).toBe("unavailable");
       } else {
         expect(auth.managedProvider).toBeUndefined();
         expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");

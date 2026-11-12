@@ -18,6 +18,7 @@ function setup(
   options: {
     actor?: Actor;
     credits?: boolean;
+    personal?: boolean;
     existing?: Array<Record<string, unknown>>;
     /** An openai-compatible connection with this stored list and own model. */
     compatible?: { enabledModelIds: string[]; defaultModel: string };
@@ -109,14 +110,16 @@ function setup(
     spaceSettingOverride,
     userModelCredential: {
       findMany: vi.fn(async ({ where }: { where: { userId: string; provider?: string } }) =>
-        !options.credits &&
+        (!options.credits || options.personal) &&
         where.userId === owner.userId &&
         (!where.provider || where.provider === credential.provider)
           ? [credential]
           : [],
       ),
       findFirst: vi.fn(async ({ where }: { where: { id?: string; userId: string } }) =>
-        !options.credits && where.userId === owner.userId && where.id === credential.id
+        (!options.credits || options.personal) &&
+        where.userId === owner.userId &&
+        (where.id === credential.id || (options.personal && !where.id))
           ? { ...credential, userPreferences: [] }
           : null,
       ),
@@ -209,6 +212,46 @@ const availableModel = listPiCatalog().find(
 )!;
 
 describe("model catalog offered to pickers", () => {
+  it.each([false, true])(
+    "filters credit models and validates saved choices with personal=%s",
+    async (personal) => {
+      vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+      vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
+      try {
+        const { call } = setup({ credits: true, personal });
+        const catalog = await call("models/list", null);
+        expect(catalog.response.status).toBe(200);
+        const entries = (await catalog.response.json()).json as Array<{
+          provider: string;
+          id: string;
+          managed?: boolean;
+        }>;
+        expect(
+          entries.some((entry) => entry.provider === "openrouter" && entry.id === "auto"),
+        ).toBe(personal);
+        expect(entries).toContainEqual(
+          expect.objectContaining({
+            provider: availableModel.provider,
+            id: availableModel.id,
+            managed: true,
+          }),
+        );
+        if (personal)
+          expect(
+            entries.find((entry) => entry.provider === "openrouter" && entry.id === "auto")
+              ?.managed,
+          ).not.toBe(true);
+        const primary = { provider: "openrouter", modelId: "auto" };
+        const save = await call("models/setRole", { role: "main", primary });
+        expect(save.response.status).toBe(personal ? 200 : 400);
+        const backups = await call("models/setBackups", [primary]);
+        expect(backups.response.status).toBe(personal ? 200 : 400);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   it("leaves out models agents cannot run but keeps one the account saved", async () => {
     const { call, prisma } = setup();
     const saved = "openai/gpt-5.5-pro:batch";

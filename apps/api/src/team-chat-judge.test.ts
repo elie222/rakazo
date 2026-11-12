@@ -1,3 +1,4 @@
+import { listPiCatalog } from "@rakazo/adapters";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
@@ -364,15 +365,20 @@ describe("team chat engagement judge", () => {
     { provider: "openrouter", key: "fixture-deployment-key", personal: true },
     { provider: "amazon-bedrock", key: undefined, personal: true },
     { provider: "amazon-bedrock", key: undefined, personal: false },
+    { provider: "openrouter", key: "fixture-personal-key", personal: true, unpriced: true },
+    { provider: "openrouter", key: undefined, personal: false, unpriced: true },
   ])(
-    "meters $provider host credentials with personal=$personal",
-    async ({ provider, key, personal }) => {
+    "selects funding for $provider with personal=$personal and unpriced=$unpriced",
+    async ({ provider, key, personal, unpriced = false }) => {
+      const modelId = unpriced
+        ? "auto"
+        : listPiCatalog().find((entry) => entry.provider === provider)!.id;
       vi.stubEnv("PI_DEFAULT_PROVIDER", provider);
-      vi.stubEnv("PI_DEFAULT_MODEL", "fixture-model");
+      vi.stubEnv("PI_DEFAULT_MODEL", modelId);
       vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
       vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
       try {
-        const load = vi.fn();
+        const load = vi.fn().mockResolvedValue("fixture-personal-key");
         const run = vi.fn(async function* (_request: unknown) {
           yield { type: "done", text: '{"act":false}' };
         });
@@ -384,9 +390,14 @@ describe("team chat engagement judge", () => {
                 personal
                   ? {
                       credential: { id: "personal", provider, secretId: "personal-secret" },
-                      modelId: "fixture-model",
+                      modelId,
+                      isDefault: true,
                     }
                   : null,
+            },
+            userModelCredential: { findFirst: async () => null },
+            secret: {
+              findFirst: async () => ({ id: "personal-secret", ciphertext: "fixture-ciphertext" }),
             },
             space: {
               findFirst: async () => ({ organization: { modelCredits: { mode: "credits" } } }),
@@ -399,7 +410,7 @@ describe("team chat engagement judge", () => {
           runtime: { run } as never,
           secrets: { load } as never,
           deploymentProvider: provider,
-          deploymentModel: "fixture-model",
+          deploymentModel: modelId,
           deploymentModelKey: key,
         });
         await judge.decide({
@@ -415,13 +426,19 @@ describe("team chat engagement judge", () => {
           rules: "",
           messages: [],
         });
+        if (unpriced && !personal) {
+          expect(run).not.toHaveBeenCalled();
+          return;
+        }
         expect(run).toHaveBeenCalledOnce();
-        expect(run.mock.calls[0]?.[0]).toMatchObject({
-          model: { callObserver: expect.any(Object) },
-        });
+        if (unpriced) expect(run.mock.calls[0]?.[0]).not.toHaveProperty("model.callObserver");
+        else
+          expect(run.mock.calls[0]?.[0]).toMatchObject({
+            model: { callObserver: expect.any(Object) },
+          });
         if (key) expect(run.mock.calls[0]?.[0]).toHaveProperty("model.apiKey", key);
         else expect(run.mock.calls[0]?.[0]).not.toHaveProperty("model.apiKey");
-        expect(load).not.toHaveBeenCalled();
+        expect(load).toHaveBeenCalledTimes(unpriced ? 1 : 0);
       } finally {
         vi.unstubAllEnvs();
       }

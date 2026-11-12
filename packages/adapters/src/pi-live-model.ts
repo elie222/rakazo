@@ -62,6 +62,7 @@ export function liveModelSibling(
     ...sibling,
     id,
     name: id,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     reasoning: sameFamily && sibling.reasoning,
     input: sameFamily ? [...sibling.input] : ["text"],
     // An unrelated sibling's window says nothing about this model's.

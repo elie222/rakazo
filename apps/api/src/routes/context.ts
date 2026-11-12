@@ -4,6 +4,7 @@ import {
   applyProviderLiveCatalog,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
+  catalogModelFunding,
   codexLiveCatalogsForSpace,
   connectedModelSeesImages,
   connectionServesModel,
@@ -11,16 +12,19 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasHostedModelCredits,
   hiddenCatalogModel,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
+  modelFunding,
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
   savedCatalogSelections,
   scriptedCatalogEntry,
+  UNPRICED_MODEL_MESSAGE,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
 import type {
@@ -179,19 +183,21 @@ export function createRouterContext(deps: RouterDeps) {
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
-    return offeredCatalog(merged, selected).map((entry) =>
-      entry.provider === auth.managedProvider
-        ? {
-            ...entry,
-            managed: true,
-            billing:
-              auth.secretIdByModel[entry.provider]?.[entry.id] ||
-              auth.secretIdByProvider[entry.provider]
-                ? entry.billing
-                : "Uses Rakazo credits",
-          }
-        : entry,
-    );
+    return offeredCatalog(merged, selected)
+      .filter(
+        (entry) =>
+          entry.provider !== auth.managedProvider ||
+          catalogModelFunding(auth, entry.provider, entry.id) !== "unavailable",
+      )
+      .map((entry) =>
+        catalogModelFunding(auth, entry.provider, entry.id) === "credits"
+          ? {
+              ...entry,
+              managed: true,
+              billing: "Uses Rakazo credits",
+            }
+          : entry,
+      );
   };
 
   // Shown where a member chose no model, so the list names what actually runs.
@@ -289,32 +295,59 @@ export function createRouterContext(deps: RouterDeps) {
       const provider = canonicalPiProviderId(connection.provider);
       byProvider.set(provider, [...(byProvider.get(provider) ?? []), connection]);
     }
+    const hostedProvider =
+      deps.billing?.modelCreditsEnabled &&
+      (await hasHostedModelCredits(deps.prisma, actor, deps.env.defaultProvider))
+        ? deps.env.defaultProvider
+        : undefined;
     return Promise.all(
-      catalog.map(async (entry) => {
-        const owners = byProvider.get(canonicalPiProviderId(entry.provider)) ?? [];
-        // Funded models run on the deployment's key, whichever connection is chosen, and
-        // decision models run through the provider's decisions API on any of its keys.
-        if (
-          owners.length < 2 ||
-          entry.placeholder ||
-          entry.protocol === "decisions" ||
-          ("managed" in entry && entry.managed)
-        )
-          return entry;
-        const serving: string[] = [];
-        for (const owner of owners)
-          if (
-            await connectionServesModel(
-              requestServingDeps,
-              actor.userId,
-              owner,
+      catalog
+        .filter(
+          (entry) =>
+            entry.provider !== hostedProvider ||
+            modelFunding(
               entry.provider,
               entry.id,
-            )
+              true,
+              Boolean(byProvider.get(entry.provider)?.length),
+            ) !== "unavailable",
+        )
+        .map(async (entry) => {
+          const owners = byProvider.get(canonicalPiProviderId(entry.provider)) ?? [];
+          if (entry.protocol === "decisions")
+            entry = {
+              ...entry,
+              managed:
+                modelFunding(
+                  entry.provider,
+                  entry.id,
+                  entry.provider === hostedProvider,
+                  owners.length > 0,
+                ) === "credits",
+            };
+          // Funded models run on the deployment's key, whichever connection is chosen, and
+          // decision models run through the provider's decisions API on any of its keys.
+          if (
+            owners.length < 2 ||
+            entry.placeholder ||
+            entry.protocol === "decisions" ||
+            ("managed" in entry && entry.managed)
           )
-            serving.push(owner.id);
-        return serving.length === owners.length ? entry : { ...entry, credentialIds: serving };
-      }),
+            return entry;
+          const serving: string[] = [];
+          for (const owner of owners)
+            if (
+              await connectionServesModel(
+                requestServingDeps,
+                actor.userId,
+                owner,
+                entry.provider,
+                entry.id,
+              )
+            )
+              serving.push(owner.id);
+          return serving.length === owners.length ? entry : { ...entry, credentialIds: serving };
+        }),
     );
   };
   const servingDeps = { prisma: deps.prisma, secretStore: deps.secrets, codexCatalog };
@@ -341,6 +374,14 @@ export function createRouterContext(deps: RouterDeps) {
         choice.modelId,
         resolution,
       );
+      const hosted =
+        Boolean(deps.billing?.modelCreditsEnabled) &&
+        (await hasHostedModelCredits(deps.prisma, actor, choice.provider));
+      if (
+        hosted &&
+        modelFunding(choice.provider, choice.modelId, true, Boolean(credential)) === "unavailable"
+      )
+        throw new ORPCError("BAD_REQUEST", { message: UNPRICED_MODEL_MESSAGE });
       // Computer mode runs only on the member's own connections.
       if (
         !credential &&
