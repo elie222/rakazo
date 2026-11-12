@@ -643,6 +643,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
       ? overLimitStopText(humanName, overLimit)
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
+  const answeredMessageIds = await conversationRetentionMessages(ctx);
   // A completed run's flag is final; other bots trust its words by it.
   await runReadOutsideContent(ctx);
   const stopped = await deps.events.finalizeRun({
@@ -658,6 +659,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
   });
   if (!stopped) return;
+  await enqueueConversationRetention(ctx, answeredMessageIds);
   const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
   logLoopGuardStop(
     {
@@ -796,6 +798,31 @@ async function runReadOutsideContent(ctx: RunContext): Promise<boolean> {
   }
   await persistReadOutsideContent(ctx.deps.prisma, ctx.runId);
   return true;
+}
+
+/** Finalization deletes steering claims, so collect them before either completion path. */
+async function conversationRetentionMessages(ctx: RunContext): Promise<string[] | undefined> {
+  const { run, thread } = ctx;
+  if (
+    !retainsConversationTurn({
+      trigger: run.trigger,
+      sourceMessageId: run.sourceMessageId,
+      runBotId: run.botId,
+      threadBotId: thread.botId,
+      threadGroupId: thread.groupId,
+      nonOwnerChatRun: ctx.source.messagingChannelRun,
+      provider: ctx.memory.semantic,
+    })
+  )
+    return undefined;
+  return answeredSteeringMessageIds(ctx.deps, ctx.runId);
+}
+
+async function enqueueConversationRetention(ctx: RunContext, messageIds: string[] | undefined) {
+  if (!messageIds) return;
+  await ctx.deps.jobs
+    .enqueue(memoryRetainTurnJob(ctx.runId, messageIds))
+    .catch((error) => getLogger().error("memory.retain-turn enqueue failed", error));
 }
 
 /** The turn ended: apply a scripted runtime's files and memory, then finalize the reply. */
@@ -952,17 +979,7 @@ export async function completeRun(ctx: RunContext) {
     ctx.source.peerMessage?.repliesToRequest === true,
   );
   await ctx.settleRunningHelpers();
-  const retainsTurn = retainsConversationTurn({
-    trigger: run.trigger,
-    sourceMessageId: run.sourceMessageId,
-    runBotId: run.botId,
-    threadBotId: thread.botId,
-    threadGroupId: thread.groupId,
-    nonOwnerChatRun: ctx.source.messagingChannelRun,
-    provider: ctx.memory.semantic,
-  });
-  // Finalizing deletes the claims of what the person sent while the run worked.
-  const answeredMessageIds = retainsTurn ? await answeredSteeringMessageIds(deps, runId) : [];
+  const answeredMessageIds = await conversationRetentionMessages(ctx);
   // Read before finalizing deletes the claims of what arrived mid-turn.
   await runReadOutsideContent(ctx);
   const completed = await deps.events.finalizeRun({
@@ -1021,11 +1038,7 @@ export async function completeRun(ctx: RunContext) {
       runId: run.id,
     });
   }
-  if (retainsTurn) {
-    await deps.jobs
-      .enqueue(memoryRetainTurnJob(run.id, answeredMessageIds))
-      .catch((error) => getLogger().error("memory.retain-turn enqueue failed", error));
-  }
+  await enqueueConversationRetention(ctx, answeredMessageIds);
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
   // the failure path, where a second finalizeRun would match no rows and silently
   // skip the completion notification.
