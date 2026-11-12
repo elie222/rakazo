@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { threadRunWorking } from "./thread-working";
+import { threadRunWorking } from "./run-state.js";
 
 describe("threadRunWorking", () => {
   it("follows the status the chat shows", () => {

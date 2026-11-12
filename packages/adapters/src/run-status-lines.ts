@@ -10,7 +10,7 @@ export type LiveStatusLines = {
   step(technical: string): void;
   /** Something else now owns the working line: the model's own status, or its reply text. */
   supersede(): void;
-  /** The turn ended: nothing more is shown and pending writes are dropped. */
+  /** The turn ended: nothing more is shown and pending writes are cancelled. */
   close(): void;
 };
 
@@ -19,8 +19,6 @@ export type StatusLineTarget = {
   writer: Promise<StatusLineWriter | undefined>;
   /** The person's message the run answers. */
   request: string;
-  /** The opening statuses, asked for as the run started. */
-  opening: Promise<string[]>;
   /** Shows one status as the working line. */
   show(text: string): Promise<unknown>;
   /** Whether the bot's own note holds the working line right now. */
@@ -30,33 +28,35 @@ export type StatusLineTarget = {
 /**
  * Runs the member's status model alongside the run: a few opening statuses rotate as soon as
  * they are ready, while the run sets up and the main model thinks, and each step it starts
- * without a status of its own gets one. A status shows only while nothing newer took over.
+ * without a status of its own gets one. A status shows only while nothing newer took over, and
+ * statuses are shown one at a time, in order.
  */
 export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const abort = new AbortController();
   let generation = 0;
   let closed = false;
-  let rotation: ReturnType<typeof setTimeout> | undefined;
   let hasWriter = false;
-  void target.writer.then(
-    (writer) => {
-      hasWriter = Boolean(writer);
-    },
-    () => {},
-  );
+  let rotation: ReturnType<typeof setTimeout> | undefined;
+  // Each status waits for the one before it, so a slow write never lands after a newer one.
+  let showing: Promise<unknown> = Promise.resolve();
   const stopRotation = () => {
     if (rotation) clearTimeout(rotation);
     rotation = undefined;
   };
-  const show = async (text: string, mine: number) => {
-    if (closed || mine !== generation || target.held()) return;
-    await target.show(text).catch(() => {});
+  const show = (text: string, mine: number) => {
+    showing = showing.then(async () => {
+      if (closed || mine !== generation || target.held()) return;
+      await target.show(text).catch(() => {});
+    });
+    return showing;
   };
 
   const opening = ++generation;
-  void target.opening
-    .catch(() => [])
-    .then(async (lines) => {
+  void target.writer
+    .then(async (writer) => {
+      hasWriter = Boolean(writer);
+      if (!writer || closed) return;
+      const lines = await writer.opening(target.request, abort.signal);
       let index = 0;
       const next = async () => {
         if (closed || opening !== generation || index >= lines.length) return;
@@ -67,7 +67,8 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
         }
       };
       await next();
-    });
+    })
+    .catch(() => {});
 
   return {
     active: () => hasWriter && !closed,

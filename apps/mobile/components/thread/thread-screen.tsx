@@ -15,6 +15,7 @@ import {
   newestPageCards,
   otherAuthor,
   displayName as safeDisplayName,
+  threadRunWorking,
   workingRoutineName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
@@ -63,7 +64,6 @@ import { useThreadSync } from "../../lib/thread-sync";
 import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
-import { threadRunWorking } from "../../lib/thread-working";
 import { FailedSendBubble } from "../failed-send-bubble";
 import { NewestPageCards } from "../pages/page-card";
 import { RunErrorSheet } from "../run-error-sheet";
@@ -279,15 +279,21 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
   // The bot's last status stays up between steps, until the next one or the end of the run.
-  const lastActivityLine = useRef<string | undefined>(undefined);
-  lastActivityLine.current = heldActivityLine(
-    lastActivityLine.current,
-    liveActivityLine(snap?.messages ?? []),
-    [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some((run) =>
-      isRunWorking(run.status),
+  // It belongs to its chat: opening another chat starts without it.
+  const lastActivityLine = useRef<{ threadKey?: string; line?: string }>({});
+  const previousActivityLine =
+    lastActivityLine.current.threadKey === threadKey ? lastActivityLine.current.line : undefined;
+  lastActivityLine.current = {
+    threadKey,
+    line: heldActivityLine(
+      previousActivityLine,
+      liveActivityLine(snap?.messages ?? []),
+      [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some((run) =>
+        isRunWorking(run.status),
+      ),
     ),
-  );
-  const activityLine = lastActivityLine.current;
+  };
+  const activityLine = lastActivityLine.current.line;
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>

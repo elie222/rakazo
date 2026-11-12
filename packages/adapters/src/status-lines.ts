@@ -96,10 +96,12 @@ export async function createStatusLineWriter(
       });
     const writeWith = async (
       choice: ModelRoleChoice,
-      prompt: string,
+      buildPrompt: () => string,
       signal: AbortSignal,
     ): Promise<string> => {
       const key = await keyFor(choice);
+      // Built only now, so it is redacted against the credentials just resolved too.
+      const prompt = buildPrompt();
       const timeout = AbortSignal.timeout(STATUS_LINE_TIMEOUT_MS);
       const startedAt = Date.now();
       let text = "";
@@ -175,29 +177,34 @@ export async function createStatusLineWriter(
       );
       return "";
     };
-    /** The first model that writes something; a cancelled turn stops trying. */
-    const write = async (prompt: string, signal: AbortSignal) => {
+    /**
+     * The statuses from the first model whose answer has any; a cancelled turn stops trying.
+     */
+    const write = async (buildPrompt: () => string, signal: AbortSignal) => {
       for (const choice of choices) {
-        if (signal.aborted) return "";
-        const text = await writeWith(choice, prompt, signal).catch(quietly(choice));
-        if (text.trim()) return text;
+        if (signal.aborted) return [];
+        const text = await writeWith(choice, buildPrompt, signal).catch(quietly(choice));
+        const lines = statusLinesFrom(text, secrets);
+        if (lines.length) return lines;
       }
-      return "";
+      return [];
     };
     return {
       async opening(request, signal) {
-        const text = await write(
-          `${requestPrompt(request, secrets)}\n\nWrite three different statuses for the first moments of working on this request, one per line, from first to last.`,
+        const lines = await write(
+          () =>
+            `${requestPrompt(request, secrets)}\n\nWrite three different statuses for the first moments of working on this request, one per line, from first to last.`,
           signal,
         );
-        return statusLinesFrom(text, secrets).slice(0, 3);
+        return lines.slice(0, 3);
       },
       async step(request, step, signal) {
-        const text = await write(
-          `${requestPrompt(request, secrets)}\n\n<step>\n${clip(redactSecrets(step, secrets), MAX_STEP_CHARS)}\n</step>\n\nWrite one status for this step.`,
+        const lines = await write(
+          () =>
+            `${requestPrompt(request, secrets)}\n\n<step>\n${clip(redactSecrets(step, secrets), MAX_STEP_CHARS)}\n</step>\n\nWrite one status for this step.`,
           signal,
         );
-        return statusLinesFrom(text, secrets)[0];
+        return lines[0];
       },
     };
   } catch (error) {

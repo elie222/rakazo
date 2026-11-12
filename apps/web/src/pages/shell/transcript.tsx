@@ -72,6 +72,7 @@ export const Transcript = memo(function Transcript({
   scrollRequest,
   onScrollRequestHandled,
   followRequest,
+  unsentRequests = 0,
   artifactTarget,
   transcript,
   meId,
@@ -115,6 +116,8 @@ export const Transcript = memo(function Transcript({
   onScrollRequestHandled: () => void;
   /** Changes when you send: the view moves to the end and follows the reply. */
   followRequest: number;
+  /** Sends from this tab that produced no message: their entrance is dropped. */
+  unsentRequests?: number;
   artifactTarget: ArtifactTarget;
   transcript: FoldedTranscript<ThreadMessage>;
   meId?: string;
@@ -457,6 +460,14 @@ export const Transcript = memo(function Transcript({
     pendingSends.current.push(Date.now());
     snapToEnd();
   }, [followRequest, snapToEnd]);
+
+  const droppedRequests = useRef(unsentRequests);
+  useLayoutEffect(() => {
+    const dropped = unsentRequests - droppedRequests.current;
+    droppedRequests.current = unsentRequests;
+    // The newest sends are the ones that produced nothing.
+    if (dropped > 0) pendingSends.current.splice(-dropped, dropped);
+  }, [unsentRequests]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;

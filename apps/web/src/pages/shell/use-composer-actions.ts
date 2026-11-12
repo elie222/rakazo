@@ -94,6 +94,8 @@ export function useComposerActions({
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sentCount, setSentCount] = useState(0);
+  // Sends that produced no message of yours: a routine-only submission or a failed send.
+  const [unsentCount, setUnsentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
     return () => setComposerUnsavedWork({ sending: false, attachments: false });
@@ -387,6 +389,7 @@ export function useComposerActions({
       let accepted = false;
       try {
         if (!plan.shouldSend) {
+          setUnsentCount((count) => count + 1);
           if (plan.shouldRunRoutines) {
             await rpc.threads.sendWithRoutines({
               ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
@@ -505,6 +508,7 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
+        if (!accepted) setUnsentCount((count) => count + 1);
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
         const confirmation = isConfirmation && draftEdits.current === editsAtSend;
@@ -621,6 +625,7 @@ export function useComposerActions({
     clearReply,
     sending,
     sentCount,
+    unsentCount,
     sendMessage,
     stopRun,
     answerMessage,

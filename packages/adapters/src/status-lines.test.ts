@@ -27,7 +27,7 @@ describe("startStatusLines", () => {
     vi.useRealTimers();
   });
 
-  function target(writer: StatusLineWriter, opening?: Promise<string[]>) {
+  function target(writer: StatusLineWriter | undefined, show?: (text: string) => Promise<void>) {
     const shown: string[] = [];
     let held = false;
     return {
@@ -38,9 +38,9 @@ describe("startStatusLines", () => {
       target: {
         writer: Promise.resolve(writer),
         request: "How much is the plan?",
-        opening: opening ?? writer.opening("How much is the plan?", new AbortController().signal),
         held: () => held,
         show: async (text: string) => {
+          await show?.(text);
           shown.push(text);
         },
       },
@@ -48,11 +48,10 @@ describe("startStatusLines", () => {
   }
 
   it("rotates the opening statuses until a step takes over", async () => {
-    const writer: StatusLineWriter = {
+    const t = target({
       opening: async () => ["Reading your question", "Looking up prices", "Comparing plans"],
       step: async () => "Opening the pricing page",
-    };
-    const t = target(writer);
+    });
     const live = startStatusLines(t.target);
     await vi.advanceTimersByTimeAsync(0);
     expect(t.shown).toEqual(["Reading your question"]);
@@ -68,13 +67,31 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("shows statuses one at a time, so a slow write never lands after a newer one", async () => {
+    let release: () => void = () => {};
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    const steps = ["Listing files", "Reading the ledger"];
+    const t = target({ opening: async () => [], step: async () => steps.shift() }, (text) =>
+      text === "Listing files" ? slow : Promise.resolve(),
+    );
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    await vi.advanceTimersByTimeAsync(0);
+    live.step("Reading ledger.json");
+    await vi.advanceTimersByTimeAsync(0);
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    // The first step's write finishes first; the newer step then shows over it.
+    expect(t.shown).toEqual(["Listing files", "Reading the ledger"]);
+    live.close();
+  });
+
   it("drops a status that arrives after something newer took the line", async () => {
     let finish: (line: string) => void = () => {};
-    const writer: StatusLineWriter = {
+    const t = target({
       opening: async () => [],
       step: () => new Promise((resolve) => (finish = resolve)),
-    };
-    const t = target(writer);
+    });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
     await vi.advanceTimersByTimeAsync(0);
@@ -85,18 +102,40 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("cancels the opening request when the run ends", async () => {
+    let openingSignal: AbortSignal | undefined;
+    const t = target({
+      opening: (_request, signal) => {
+        openingSignal = signal;
+        return new Promise(() => {});
+      },
+      step: async () => undefined,
+    });
+    const live = startStatusLines(t.target);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(openingSignal?.aborted).toBe(false);
+    live.close();
+    expect(openingSignal?.aborted).toBe(true);
+    expect(t.shown).toEqual([]);
+  });
+
+  it("leaves the line to the bot's own note", async () => {
+    const t = target({
+      opening: async () => ["Reading your question"],
+      step: async () => undefined,
+    });
+    t.hold();
+    startStatusLines(t.target);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.shown).toEqual([]);
+  });
+
   it("is active only once a status model is known, and until the run ends", async () => {
     let resolveWriter: (writer: StatusLineWriter | undefined) => void = () => {};
     const writer = new Promise<StatusLineWriter | undefined>(
       (resolve) => (resolveWriter = resolve),
     );
-    const live = startStatusLines({
-      writer,
-      request: "How much is the plan?",
-      opening: Promise.resolve([]),
-      held: () => false,
-      show: async () => {},
-    });
+    const live = startStatusLines({ writer, request: "", held: () => false, show: async () => {} });
     expect(live.active()).toBe(false);
     resolveWriter({ opening: async () => [], step: async () => undefined });
     await vi.advanceTimersByTimeAsync(0);
@@ -106,37 +145,8 @@ describe("startStatusLines", () => {
   });
 
   it("stays inactive without a status model", async () => {
-    const live = startStatusLines({
-      writer: Promise.resolve(undefined),
-      request: "",
-      opening: Promise.resolve([]),
-      held: () => false,
-      show: async () => {},
-    });
+    const live = startStatusLines(target(undefined).target);
     await vi.advanceTimersByTimeAsync(0);
     expect(live.active()).toBe(false);
-  });
-
-  it("leaves the line to the bot's own note", async () => {
-    const writer: StatusLineWriter = {
-      opening: async () => ["Reading your question"],
-      step: async () => undefined,
-    };
-    const t = target(writer);
-    t.hold();
-    startStatusLines(t.target);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(t.shown).toEqual([]);
-  });
-
-  it("shows nothing once the run ended", async () => {
-    let finish: (lines: string[]) => void = () => {};
-    const opening = new Promise<string[]>((resolve) => (finish = resolve));
-    const writer: StatusLineWriter = { opening: () => opening, step: async () => undefined };
-    const t = target(writer, opening);
-    startStatusLines(t.target).close();
-    finish(["Reading your question"]);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(t.shown).toEqual([]);
   });
 });

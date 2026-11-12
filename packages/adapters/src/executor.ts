@@ -799,11 +799,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // A status model, when the member chose one, writes the working line's statuses. It
         // starts now, so its opening statuses are ready while the rest of the run sets up.
         const statusRequestText = turnBlocks ? messageBlocksText(turnBlocks).trim() : "";
+        // A group member a message named nobody may stay silent, so it shows nothing early.
         const statusLinesWanted =
           openingAcknowledgementEnabled() &&
           runPromotesMidTurnNarration(run.trigger) &&
           isConversationalRun(run.trigger) &&
-          !runAllowsSilentEmpty(run.trigger);
+          !runAllowsSilentEmpty(run.trigger) &&
+          !(Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional);
         // Set up in the background: the run never waits on the status model. Its statuses
         // show as soon as they are ready, not once the run has finished setting up.
         const statusLinesSetup = statusLinesWanted
@@ -824,9 +826,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ? startStatusLines({
               writer: statusLinesSetup,
               request: statusRequestText,
-              opening: statusLinesSetup.then(
-                (writer) => writer?.opening(statusRequestText, context.signal) ?? [],
-              ),
               held: () => statusHeld(),
               show: (text) =>
                 deps.events.append({
