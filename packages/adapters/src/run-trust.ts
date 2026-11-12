@@ -115,13 +115,15 @@ export function createRunTrustLoaders(
   let ownerWordsPromise: Promise<string> | undefined;
   const loadOwnerWords = () => {
     ownerWordsPromise ??= (async () => {
-      if (ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user") {
-        return ((sourceMessage.blocks ?? []) as MessageBlock[])
-          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-          .join("\n");
-      }
-      if (run.trigger === "messaging" && !messagingChannelRun && ownerChatMessageBlocks) {
-        return ((ownerChatMessageBlocks ?? []) as MessageBlock[])
+      // The executor passes chat-app blocks only for the owner's own message.
+      const ownerBlocks =
+        ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user"
+          ? sourceMessage.blocks
+          : run.trigger === "messaging"
+            ? ownerChatMessageBlocks
+            : undefined;
+      if (ownerBlocks) {
+        return (ownerBlocks as MessageBlock[])
           .flatMap((block) => (block.kind === "text" ? [block.text] : []))
           .join("\n");
       }
