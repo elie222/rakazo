@@ -49,8 +49,8 @@ subagents disabled, a read-only filesystem, and an explicit deny on its login
 folder. Browser tools run as a separate user with a clean environment. Neither
 agent receives the GitHub secret-write token.
 
-Runs skip the LLM for non-web changes, obsolete commits, and commits already
-illustrated by this agent. Otherwise the agent inspects existing PR images and
+Runs skip the LLM for non-web changes, obsolete commits, and commits with a
+trusted completed-assessment artifact. Otherwise the agent inspects existing PR images and
 the current commit's published E2E gallery before capturing missing views. Images
 alone do not prove coverage; that decision stays with the model.
 
@@ -61,7 +61,9 @@ sleeps. Readiness uses exact commit SHAs and verifies the marker's source workfl
 so PR code cannot forge completion by uploading an artifact with the same name.
 If E2E publication fails or is skipped, its completion still starts the agent,
 which captures from the preview. A failed preview deployment never starts it.
-Calls for the same commit are serialized through publishing and recheck a hidden
-completion marker. Successful assessments are cached even when E2E images cover
+Calls for the same commit are serialized through publishing and recheck a trusted
+completion artifact. Successful assessments are cached even when E2E images cover
 the change and no new capture is needed, so simultaneous events cannot duplicate
-the model call.
+the model call. PR description markers never authorize skipping an assessment.
+Every requested image must pass publication validation before completion can be
+recorded.

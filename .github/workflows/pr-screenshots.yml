@@ -64,8 +64,13 @@ jobs:
           fi
           [[ $SCREENSHOT_AGENT == codex || $SCREENSHOT_AGENT == claude ]] || { echo "Unknown PR_SCREENSHOT_AGENT" >&2; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" > "$dir/current.json"
-          if python3 .github/scripts/pr-screenshots.py covered "$dir/current.json" "$HEAD_SHA"; then
-            echo "This commit already has screenshots, or is no longer current; skipping."
+          if python3 .github/scripts/pr-screenshots.py obsolete "$dir/current.json" "$HEAD_SHA"; then
+            echo "This commit is no longer current; skipping."
+            exit 0
+          fi
+          assessed=$(python3 .github/scripts/pr-screenshots.py assessed "$GITHUB_REPOSITORY" "$pr" "$HEAD_SHA")
+          if [[ $assessed == complete ]]; then
+            echo "This commit already has a completed screenshot assessment; skipping."
             exit 0
           fi
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues/$pr/comments?per_page=100" > "$dir/comments.json"
@@ -113,12 +118,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Prepare an isolated browser
+        id: browser
         if: needs.screenshot-context.outputs.pr
         env:
           PREVIEW_URL: ${{ needs.screenshot-context.outputs.preview_url }}
           PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
         run: |
           set -euo pipefail
+          python3 .github/scripts/pr-screenshots.py contract >> "$GITHUB_OUTPUT"
           node=$(command -v node)
           npm=$(command -v npm)
           sudo useradd --create-home --shell /usr/sbin/nologin pr-screenshots
@@ -152,9 +159,9 @@ jobs:
             --model ${{ vars.PR_SCREENSHOT_MODEL || 'claude-sonnet-5-5' }}
             --max-turns 60
             --mcp-config ${{ runner.temp }}/pr-screenshots-mcp.json
-            --allowedTools mcp__playwright__browser_navigate,mcp__playwright__browser_navigate_back,mcp__playwright__browser_snapshot,mcp__playwright__browser_click,mcp__playwright__browser_type,mcp__playwright__browser_fill_form,mcp__playwright__browser_press_key,mcp__playwright__browser_select_option,mcp__playwright__browser_hover,mcp__playwright__browser_wait_for,mcp__playwright__browser_resize,mcp__playwright__browser_handle_dialog,mcp__playwright__browser_take_screenshot
+            --allowedTools ${{ steps.browser.outputs.tools }}
             --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
-            --json-schema '{"type":"object","additionalProperties":false,"required":["screenshots","complete"],"properties":{"complete":{"type":"boolean"},"screenshots":{"type":"array","maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["file","caption"],"properties":{"file":{"type":"string"},"caption":{"type":"string"}}}}}}'
+            --json-schema '${{ steps.browser.outputs.schema }}'
       - name: Install Codex
         if: needs.screenshot-context.outputs.pr && env.SCREENSHOT_AGENT == 'codex'
         run: npm install --global @openai/codex@0.164.0
@@ -238,6 +245,7 @@ jobs:
           name: pr-screenshots
           path: ${{ runner.temp }}/shots
       - name: Update the description
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ needs.screenshots.outputs.pr }}
@@ -280,18 +288,19 @@ jobs:
             fi
           fi
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$out/body.md"
-          # Cache successful assessments even when existing E2E images already cover the change.
-          # Missing or rejected captures must remain retryable.
-          if [[ ! -s $out/uploads.txt ]] && ! jq -e '.screenshots == []' <<< "$RESULT" > /dev/null; then
-            echo "No valid images were collected for the requested screenshots." >&2
-            exit 1
-          fi
-          reviewed=()
-          if jq -e '.complete == true' <<< "$RESULT" > /dev/null; then
-            reviewed+=("$HEAD_SHA")
-          fi
-          python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" "${reviewed[@]}" > "$out/new.md"
+          python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
           if [[ -s $out/section.md ]]; then
             gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=screenshots" --silent
           fi
+          if jq -e '.complete == true' <<< "$RESULT" > /dev/null; then
+            printf 'complete\n' > "$out/complete.txt"
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.publish.outputs.complete == 'true'
+        with:
+          name: pr-screenshot-reviewed-${{ needs.screenshots.outputs.pr }}-${{ inputs.head_sha }}
+          path: ${{ runner.temp }}/pr-screenshots-out/complete.txt
+          retention-days: 3
+          overwrite: true

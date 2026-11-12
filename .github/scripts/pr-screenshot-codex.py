@@ -4,19 +4,9 @@ import json
 import sys
 from pathlib import Path
 
-TOOLS = [
-    "browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click",
-    "browser_type", "browser_fill_form", "browser_press_key", "browser_select_option",
-    "browser_hover", "browser_wait_for", "browser_resize", "browser_handle_dialog",
-    "browser_take_screenshot",
-]
-SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["screenshots", "complete"],
-    "properties": {"complete": {"type": "boolean"}, "screenshots": {"type": "array", "maxItems": 4, "items": {
-        "type": "object", "additionalProperties": False, "required": ["file", "caption"],
-        "properties": {"file": {"type": "string"}, "caption": {"type": "string"}},
-    }}},
-}
+CONTRACT = json.loads(Path(__file__).with_name("pr-screenshot-contract.json").read_text())
+TOOLS = CONTRACT["tools"]
+SCHEMA = CONTRACT["schema"]
 
 
 def configure(mcp_path: Path, home: Path):

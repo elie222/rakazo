@@ -22,7 +22,6 @@ from pathlib import Path
 
 START = "<!-- rakazo-pr-screenshots:start -->"
 END = "<!-- rakazo-pr-screenshots:end -->"
-REVIEWED = "<!-- rakazo-screenshot-reviewed:"
 MAX_SHOTS = 4
 MAX_CAPTION = 200
 MAX_BYTES = 5 * 1024 * 1024
@@ -63,18 +62,9 @@ def prompt(instructions: str, pr: dict, diff: str) -> str:
     return head + fit(diff, MAX_PROMPT_JSON - json_size(head + tail)) + tail
 
 
-def covered(pr: dict, sha: str) -> bool:
-    """Skip obsolete runs and repeat captures for a commit we already illustrated."""
-    if pr.get("state") != "open" or pr.get("head", {}).get("sha") != sha:
-        return True
-    body = pr.get("body") or ""
-    if f"{REVIEWED}{sha} -->" in body:
-        return True
-    start, end = body.find(START), body.find(END)
-    if start == -1 or end < start:
-        return False
-    section_body = body[start:end]
-    return f"<!-- screenshot-commit:{sha} -->" in section_body and "![" in section_body
+def obsolete(pr: dict, sha: str) -> bool:
+    """Author-editable description content never proves a completed assessment."""
+    return pr.get("state") != "open" or pr.get("head", {}).get("sha") != sha
 
 
 def evidence(pages: list, sha: str) -> str:
@@ -98,39 +88,46 @@ def api(path: str, *, paginate: bool = False):
     ).stdout)
 
 
-def sources_ready(repo: str, sha: str) -> bool:
-    """Inspect completion metadata only; never download or execute artifact contents.
+SOURCE_WORKFLOWS = {
+    "preview": ".github/workflows/preview-deploy.yml",
+    "e2e": ".github/workflows/publish-playwright-report.yml",
+}
 
-    PR jobs can upload arbitrary artifact names, so a name alone is not trusted.
-    Each signal must come from the default-branch workflow_run composition root.
-    The parent run can still be active because it calls this reusable workflow.
+
+def trusted_artifact(repo: str, name: str, workflows: list[str]) -> bool:
+    """Check immutable artifact provenance; never download artifact contents.
+
+    A PR can upload the same name, but cannot change its source run metadata.
+    Parent runs may still be active while calling this reusable workflow.
     """
+    pages = api(f"repos/{repo}/actions/artifacts?name={name}&per_page=100", paginate=True)
+    for page in pages:
+        for artifact in page["artifacts"]:
+            if artifact["name"] != name or artifact["expired"]:
+                continue
+            run = api(f"repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
+            if (
+                run["event"] == "workflow_run"
+                and run["path"].split("@", 1)[0] in workflows
+                and run["head_repository"]["full_name"] == repo
+            ):
+                return True
+    return False
+
+
+def sources_ready(repo: str, sha: str) -> bool:
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected a commit SHA")
-    for source, workflow in (
-        ("preview", ".github/workflows/preview-deploy.yml"),
-        ("e2e", ".github/workflows/publish-playwright-report.yml"),
-    ):
-        name = f"pr-screenshot-{source}-{sha}"
-        pages = api(f"repos/{repo}/actions/artifacts?name={name}&per_page=100", paginate=True)
-        trusted = False
-        for page in pages:
-            for artifact in page["artifacts"]:
-                if artifact["name"] != name or artifact["expired"]:
-                    continue
-                run = api(f"repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
-                if (
-                    run["event"] == "workflow_run"
-                    and run["path"].split("@", 1)[0] == workflow
-                    and run["head_repository"]["full_name"] == repo
-                ):
-                    trusted = True
-                    break
-            if trusted:
-                break
-        if not trusted:
-            return False
-    return True
+    return all(
+        trusted_artifact(repo, f"pr-screenshot-{source}-{sha}", [workflow])
+        for source, workflow in SOURCE_WORKFLOWS.items()
+    )
+
+
+def assessed(repo: str, pr: str, sha: str) -> bool:
+    if not re.fullmatch(r"[0-9a-f]{40}", sha) or not re.fullmatch(r"[1-9][0-9]*", pr):
+        raise ValueError("Expected a pull request number and commit SHA")
+    return trusted_artifact(repo, f"pr-screenshot-reviewed-{pr}-{sha}", list(SOURCE_WORKFLOWS.values()))
 
 
 def clean_caption(value: object) -> str:
@@ -183,11 +180,7 @@ def section(selected: list[tuple[str, str]], base_url: str) -> str:
     return "\n".join(lines)
 
 
-def splice(body: str, new_section: str, sha: str | None = None) -> str:
-    if sha is not None:
-        if not re.fullmatch(r"[0-9a-f]{40}", sha):
-            raise ValueError("Expected a commit SHA")
-        body = re.sub(r"<!-- rakazo-screenshot-reviewed:[0-9a-f]{40} -->\n?", "", body)
+def splice(body: str, new_section: str) -> str:
     start = body.find(START)
     end = body.find(END, start + len(START)) if start != -1 else -1
     if start != -1 and end != -1:
@@ -197,8 +190,6 @@ def splice(body: str, new_section: str, sha: str | None = None) -> str:
         # A start marker without an end would pair with the next section's end later.
         before, after = body.replace(START, "").rstrip(), ""
     parts = [part for part in (before, new_section, after) if part]
-    if sha is not None:
-        parts.append(f"{REVIEWED}{sha} -->")
     return "\n\n".join(parts).rstrip() + "\n"
 
 
@@ -207,8 +198,17 @@ def main(argv: list[str]) -> int:
         if sources_ready(argv[2], argv[3]):
             print("ready")
         return 0
-    if len(argv) == 4 and argv[1] == "covered":
-        return 0 if covered(json.loads(Path(argv[2]).read_text()), argv[3]) else 1
+    if len(argv) == 2 and argv[1] == "contract":
+        contract = json.loads(Path(__file__).with_name("pr-screenshot-contract.json").read_text())
+        print("tools=" + ",".join(f"mcp__playwright__{tool}" for tool in contract["tools"]))
+        print("schema=" + json.dumps(contract["schema"], separators=(",", ":")))
+        return 0
+    if len(argv) == 5 and argv[1] == "assessed":
+        if assessed(argv[2], argv[3], argv[4]):
+            print("complete")
+        return 0
+    if len(argv) == 4 and argv[1] == "obsolete":
+        return 0 if obsolete(json.loads(Path(argv[2]).read_text()), argv[3]) else 1
     if len(argv) == 4 and argv[1] == "evidence":
         sys.stdout.write(evidence(json.loads(Path(argv[2]).read_text()), argv[3]))
         return 0
@@ -224,16 +224,21 @@ def main(argv: list[str]) -> int:
         try:
             result = json.loads(result_json)
         except json.JSONDecodeError:
-            result = None
+            return 2
+        if not isinstance(result, dict) or not isinstance(result.get("screenshots"), list) or type(result.get("complete")) is not bool:
+            return 2
         selected = select(result, Path(shots_dir))
+        if len(selected) != len(result["screenshots"]):
+            sys.stderr.write("Every selected screenshot must pass publication validation.\n")
+            return 2
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         (out / "uploads.txt").write_text("".join(f"{name}\n" for name, _ in selected))
         (out / "section.md").write_text(section(selected, base_url))
         return 0
-    if len(argv) in (4, 5) and argv[1] == "splice":
+    if len(argv) == 4 and argv[1] == "splice":
         body = Path(argv[2]).read_text()
-        sys.stdout.write(splice(body, Path(argv[3]).read_text().strip(), argv[4] if len(argv) == 5 else None))
+        sys.stdout.write(splice(body, Path(argv[3]).read_text().strip()))
         return 0
     sys.stderr.write(__doc__ or "")
     return 2
