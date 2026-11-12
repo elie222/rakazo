@@ -67,20 +67,23 @@ export async function updateMemoryProviderConfig(
     // may run without a key).
     credentials = { ...input.credentials };
   } else {
-    // A stored key that can no longer be read (a rotated secret store, a legacy record) must not
-    // block an owner who typed a replacement: then only what was entered is used.
-    credentials = await loadMemoryProviderCredentials(
-      deps.secrets,
-      existing.provider,
-      existing.secret,
-    ).catch((error: unknown) => {
+    const entered = Object.fromEntries(
+      Object.entries(input.credentials).filter(([, value]) => Boolean(value)),
+    );
+    try {
+      credentials = {
+        ...(await loadMemoryProviderCredentials(deps.secrets, existing.provider, existing.secret)),
+        ...entered,
+      };
+    } catch (error) {
+      // A stored key that can't be read (a rotated secret store, a legacy record, an outage) must
+      // not block an owner who typed a replacement. With nothing typed, the failure is surfaced
+      // instead of looking like a missing key.
+      if (Object.keys(entered).length === 0) throw error;
       getLogger().warn("Stored memory provider credentials could not be read", {
         "error.message": error instanceof Error ? error.message : String(error),
       });
-      return {};
-    });
-    for (const [key, value] of Object.entries(input.credentials)) {
-      if (value) credentials[key] = value;
+      credentials = entered;
     }
   }
   return saveMemoryProviderConnection(

@@ -754,4 +754,14 @@ describe("updateMemoryProviderConfig", () => {
     );
     expect(upsert).toHaveBeenCalled();
   });
+
+  it("surfaces a secret-store failure when no key was typed", async () => {
+    const { deps, prepareConnection, upsert } = updateDeps();
+    vi.mocked(deps.secrets.load).mockRejectedValueOnce(new Error("secret store unavailable"));
+    await expect(
+      updateMemoryProviderConfig(deps, actor, { settings, credentials: { apiKey: "" } }),
+    ).rejects.toThrow("secret store unavailable");
+    expect(prepareConnection).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
 });
