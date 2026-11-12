@@ -58,7 +58,6 @@ import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
 import {
-  hasTakenInOutsideContent,
   isRunTainted,
   nextMutatingEffectOccurrence,
   pauseForApproval,
@@ -277,10 +276,9 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  // Restored and replayed results, earlier attempts and outside text claimed mid-turn all count.
-  const memoryWriteGated = await memoryWriteNeedsApproval(name, () =>
-    hasTakenInOutsideContent(ctx),
-  );
+  // Current action authorization, not the persistent provenance bit: saved notes, summaries and
+  // recall alone never add a prompt, while fresh outside input or a run the owner didn't start do.
+  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
   const { purchase, cardUse } = request;
   // Typing a saved card is approved like a purchase: every time, by a person.
   const paying = Boolean(purchase) || Boolean(cardUse);
