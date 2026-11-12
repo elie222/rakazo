@@ -19,7 +19,7 @@ import type * as RunNotificationsModule from "./run-notifications.js";
 import { notifyRun } from "./run-notifications.js";
 import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
-import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
+import { userProgressClientNonce } from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -789,49 +789,86 @@ describe("notes that can't be posted as messages", () => {
     expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
   });
 
-  it("tells the bot whether a message_user update it can't post can be retried", async () => {
-    const update = async ({
+  const updateTurn = async (
+    updates: string[],
+    {
       startedAt,
-      earlier = [],
       steerAt = -1,
-    }: {
-      startedAt?: Date;
-      earlier?: string[];
-      steerAt?: number;
-    } = {}) => {
-      let result: unknown;
-      const { messages } = await runTurn("", false, undefined, [], "fyi", {
-        startedAt,
-        runtime: async function* (request) {
-          for (const [index, message] of [...earlier, "On it, checking now."].entries()) {
-            const executionId = `call-${index}`;
-            if (index === steerAt) yield { type: "steered", fromRunUser: true };
-            yield { type: "tool", name: "message_user", args: { message }, executionId };
-            result = await request.executeTool!("message_user", { message }, executionId);
-          }
-          yield { type: "text", text: "Done." };
-          yield { type: "done", text: "" };
-        },
-      });
-      return { result, sent: sentTexts(messages) };
-    };
-    const notYet = {
-      ok: true,
-      note: `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
-    };
-    const stop = {
-      ok: true,
-      note: "This update was not posted. The chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply.",
-    };
-    expect(await update()).toEqual({ result: notYet, sent: [] });
+      final = "Done.",
+    }: { startedAt?: Date; steerAt?: number; final?: string } = {},
+  ) => {
+    const results: unknown[] = [];
+    const { messages, append, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      startedAt,
+      runtime: async function* (request) {
+        for (const [index, message] of updates.entries()) {
+          const executionId = `call-${index}`;
+          if (index === steerAt) yield { type: "steered", fromRunUser: true };
+          yield { type: "tool", name: "message_user", args: { message }, executionId };
+          results.push(await request.executeTool!("message_user", { message }, executionId));
+        }
+        if (final) yield { type: "text", text: final };
+        yield { type: "done", text: "" };
+      },
+    });
+    const statuses = progress(append)
+      .filter((event) => (event.payload as { reset?: boolean }).reset)
+      .map((event) => (event.payload as { text: string }).text);
+    return { results, sent: sentTexts(messages), statuses, reply: finalText(finalizeRun) };
+  };
 
+  it("shows a message_user update it can't post as the working line, with nothing to retry", async () => {
+    expect(await updateTurn(["On it, checking now."])).toEqual({
+      results: [{ ok: true }],
+      sent: [],
+      statuses: ["On it, checking now."],
+      reply: "Done.",
+    });
     const earlier = ["One.", "Two.", "Three."];
     const longTurn = new Date(Date.now() - 120_000);
-    expect(await update({ startedAt: longTurn, earlier })).toEqual({ result: stop, sent: earlier });
-    // The person's message restarts the budget, so after the answer the turn is fresh again.
+    expect(await updateTurn([...earlier, "Four."], { startedAt: longTurn })).toEqual({
+      results: Array(4).fill({ ok: true }),
+      sent: earlier,
+      statuses: ["Four."],
+      reply: "Done.",
+    });
+    // The person's message restarts the budget: the answer is posted, the next update waits.
     expect(
-      await update({ startedAt: longTurn, earlier: [...earlier, "Yes, still on it."], steerAt: 3 }),
-    ).toEqual({ result: notYet, sent: [...earlier, "Yes, still on it."] });
+      await updateTurn([...earlier, "Yes, still on it.", "Nearly there."], {
+        startedAt: longTurn,
+        steerAt: 3,
+      }),
+    ).toMatchObject({ sent: [...earlier, "Yes, still on it."], statuses: ["Nearly there."] });
+  });
+
+  it("replies with an update it couldn't post when the bot writes nothing after it", async () => {
+    expect(await updateTurn(["The total is 4."], { final: "" })).toMatchObject({
+      sent: [],
+      reply: "The total is 4.",
+    });
+  });
+
+  it("does not post the same update twice in a row", async () => {
+    const longTurn = new Date(Date.now() - 120_000);
+    expect(
+      await updateTurn(["Checking.", "Checking.", "Checking.", "Done checking."], {
+        startedAt: longTurn,
+      }),
+    ).toMatchObject({
+      results: Array(4).fill({ ok: true }),
+      sent: ["Checking.", "Done checking."],
+    });
+  });
+
+  it("still says when an update was cut off, whether it was posted or shown as the working line", async () => {
+    const long = `Checking ${"every invoice ".repeat(60)}`.trim();
+    const cutOff = { ok: true, truncated: true, note: expect.stringContaining("cut off") };
+    const fresh = await updateTurn([long]);
+    expect(fresh.results).toEqual([cutOff]);
+    expect(fresh.sent).toEqual([]);
+    const posted = await updateTurn([long], { startedAt: new Date(Date.now() - 120_000) });
+    expect(posted.results).toEqual([cutOff]);
+    expect(posted.sent).toHaveLength(1);
   });
 
   it("posts one heads-up at once once a fresh turn calls a browser or desktop tool", async () => {
@@ -957,6 +994,19 @@ describe("messages mode", () => {
     });
     expect(sentTexts(messages)).toEqual(updates);
     expect(finalText(finalizeRun)).toBe("Here is the answer.");
+  });
+
+  it("does not post the same update twice in a row", async () => {
+    const updates = ["Starting.", "Starting.", "Found it.", "Starting."];
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        for (const [index, message] of updates.entries())
+          await request.executeTool!("message_user", { message }, `call-${index + 1}`);
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["Starting.", "Found it.", "Starting."]);
   });
 
   it("shows the latest text as the reply when nothing follows the last step", async () => {

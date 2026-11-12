@@ -127,7 +127,7 @@ export function canPostLongTaskHeadsUp(ctx: RunContext) {
   );
 }
 
-export function progressSinceBudgetStart(reply: ReplyState) {
+function progressSinceBudgetStart(reply: ReplyState) {
   return reply.midTurnProgressCount - reply.progressBudgetStart;
 }
 
