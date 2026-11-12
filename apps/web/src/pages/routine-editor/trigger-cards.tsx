@@ -3,7 +3,6 @@ import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   Button,
-  Disclosure,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -30,6 +29,7 @@ import {
 import type { ReactNode } from "react";
 import { useId } from "react";
 import { BotEmailAddressField } from "../../components/BotEmailAddressField";
+import { InfoTooltip } from "../../components/InfoTooltip";
 import { authClient } from "../../lib/auth";
 import { useCopyText } from "../../lib/copy-text";
 import type { RoutineWatchDraft } from "../../lib/routine-draft";
@@ -73,7 +73,7 @@ export function WatchTriggerCard({
       </div>
       <div className="mt-3 space-y-3">
         <NativeSelect
-          size="sm"
+          className="w-full"
           aria-label={t`What to watch`}
           value={watch.kind}
           onChange={(event) =>
@@ -161,43 +161,39 @@ export function WatchTriggerCard({
           />
           <Trans>minutes</Trans>
         </label>
-        <Disclosure
-          defaultOpen={Boolean(watch.track.trim() || watch.loud)}
-          summary={<Trans>Options</Trans>}
-          summaryClassName="text-body-sm text-muted-foreground"
-          contentClassName="pt-3"
-        >
-          <div className="space-y-3">
-            {watch.kind !== "files" ? (
-              <label
-                htmlFor={`${id}-track`}
-                className="block space-y-1.5 text-body text-muted-foreground"
-              >
-                <span>
-                  <Trans>Fields to compare</Trans>
-                </span>
-                <Input
-                  id={`${id}-track`}
-                  placeholder="id, modifiedTime"
-                  value={watch.track}
-                  onChange={(e) => onChange({ ...watch, track: e.target.value })}
-                  className="font-mono text-body-sm"
-                />
-              </label>
-            ) : null}
-            <label
-              htmlFor={`${id}-loud`}
-              className="flex items-center gap-2 text-body text-muted-foreground"
-            >
-              <Switch
-                id={`${id}-loud`}
-                checked={watch.loud}
-                onCheckedChange={(loud) => onChange({ ...watch, loud })}
-              />
-              <Trans>Post "No changes" in chat</Trans>
-            </label>
-          </div>
-        </Disclosure>
+        {watch.kind !== "files" ? (
+          <label
+            htmlFor={`${id}-track`}
+            className="block space-y-1.5 text-body text-muted-foreground"
+          >
+            <span>
+              <Trans>Fields to compare (optional)</Trans>
+            </span>
+            <Input
+              id={`${id}-track`}
+              placeholder="id, modifiedTime"
+              value={watch.track}
+              onChange={(e) => onChange({ ...watch, track: e.target.value })}
+              className="font-mono text-body-sm"
+            />
+          </label>
+        ) : null}
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={`${id}-loud`}
+            className="flex items-center gap-2 text-body text-muted-foreground"
+          >
+            <Switch
+              id={`${id}-loud`}
+              checked={watch.loud}
+              onCheckedChange={(loud) => onChange({ ...watch, loud })}
+            />
+            <Trans>Report unchanged checks</Trans>
+          </label>
+          <InfoTooltip label={t`Report unchanged checks`}>
+            {t`Post a chat message when a check finds no changes. The routine won't run.`}
+          </InfoTooltip>
+        </div>
         {status ? (
           <p
             data-testid="routine-watch-status"

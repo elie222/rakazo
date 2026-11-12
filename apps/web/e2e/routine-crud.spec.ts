@@ -446,14 +446,17 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
   await card
     .getByRole("textbox", { name: "Command", exact: true })
     .fill("curl -s https://example.com/status.json");
-  await card.getByRole("button", { name: "Options", exact: true }).click();
-  await card.getByRole("textbox", { name: "Fields to compare" }).fill("status, updatedAt");
+  await card
+    .getByRole("textbox", { name: "Fields to compare (optional)" })
+    .fill("status, updatedAt");
   await captureScreenshot(page, testInfo, "routine-watch-07-command");
 
   await kind.selectOption("tool");
   await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("brain_changed");
   await card.getByRole("textbox", { name: "Tool arguments (JSON)" }).fill('{"path":"reports/"}');
-  await card.getByRole("textbox", { name: "Fields to compare" }).fill("id, modifiedTime");
+  await card
+    .getByRole("textbox", { name: "Fields to compare (optional)" })
+    .fill("id, modifiedTime");
   await captureScreenshot(page, testInfo, "routine-watch-08-tool");
 
   await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("");
@@ -511,13 +514,25 @@ test("an HTTPS change trigger saves and reopens", async ({ page }, testInfo) => 
   await card.getByRole("combobox", { name: "What to watch" }).selectOption("http");
   await card.getByRole("textbox", { name: "HTTPS URL" }).fill("https://example.com/status");
   await card.getByRole("spinbutton", { name: "Check every" }).fill("5");
-  const fields = card.getByRole("textbox", { name: "Fields to compare" });
-  await expect(fields).toBeHidden();
+  const fields = card.getByRole("textbox", { name: "Fields to compare (optional)" });
+  await expect(fields).toBeVisible();
+  const selectorBox = await card.getByRole("combobox", { name: "What to watch" }).boundingBox();
+  const urlBox = await card.getByRole("textbox", { name: "HTTPS URL" }).boundingBox();
+  expect(selectorBox?.width).toBe(urlBox?.width);
+  expect(selectorBox?.height).toBe(urlBox?.height);
   await captureScreenshot(page, testInfo, "routine-http-watch");
-  await card.getByRole("button", { name: "Options", exact: true }).click();
   await fields.fill("id, modifiedTime");
-  await card.getByRole("switch", { name: 'Post "No changes" in chat' }).click();
-  await captureScreenshot(page, testInfo, "routine-http-watch-options");
+  await card.getByRole("switch", { name: "Report unchanged checks" }).click();
+  const help = card.getByRole("button", { name: "About Report unchanged checks" });
+  await help.hover();
+  const explanation = page
+    .getByText("Post a chat message when a check finds no changes. The routine won't run.", {
+      exact: true,
+    })
+    .last();
+  await expect(explanation).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-http-watch-help");
+  await page.keyboard.press("Escape");
   expect(await saveAndReturn(page, "routines/create")).toMatchObject({
     active: false,
     crons: [],
@@ -538,5 +553,5 @@ test("an HTTPS change trigger saves and reopens", async ({ page }, testInfo) => 
   );
   await expect(fields).toBeVisible();
   await expect(fields).toHaveValue("id, modifiedTime");
-  await expect(card.getByRole("switch", { name: 'Post "No changes" in chat' })).toBeChecked();
+  await expect(card.getByRole("switch", { name: "Report unchanged checks" })).toBeChecked();
 });
