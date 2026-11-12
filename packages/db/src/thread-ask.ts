@@ -636,8 +636,10 @@ export async function eligibleWaitingTextAnswer(
     beforeMessageSeq?: number;
     /** A user message accepted by the composer in the same transaction. */
     answerMessageId?: string;
-    /** Explicit reply or reaction target; untargeted composer sends require the latest question. */
+    /** Strict reaction target, which must identify this run's pending question. */
     messageId?: string;
+    /** A composer quote; matching questions bypass recency, other quotes use the usual latest-message check. */
+    replyToMessageId?: string;
   },
 ): Promise<string | null> {
   const answer = input.answer.trim();
@@ -647,7 +649,7 @@ export async function eligibleWaitingTextAnswer(
   if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
   if (input.messageId !== undefined) {
     if (input.messageId !== found.messageId) return null;
-  } else {
+  } else if (input.replyToMessageId !== found.messageId) {
     // Reactions are projected beneath their target, not new transcript messages.
     let beforeSeq = input.beforeMessageSeq;
     while (true) {

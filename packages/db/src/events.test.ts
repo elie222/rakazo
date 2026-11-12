@@ -2387,7 +2387,7 @@ describe("answerRunInput", () => {
 });
 
 describe("answerWaitingRunWithTextInTransaction", () => {
-  it.each(["latest", "older", "reaction", "reply"])(
+  it.each(["latest", "older", "reaction", "reply", "unrelated-reply"])(
     "composer answers only the latest question unless an older question is explicitly targeted (case=%s)",
     async (scenario) => {
       const latest = scenario !== "older" && scenario !== "reply";
@@ -2440,7 +2440,11 @@ describe("answerWaitingRunWithTextInTransaction", () => {
       };
       const result = await answerWaitingRunWithTextInTransaction(tx as never, {
         ...answerInput,
-        ...(scenario === "reply" ? { messageId: "message-1" } : {}),
+        ...(scenario === "reply"
+          ? { replyToMessageId: "message-1" }
+          : scenario === "unrelated-reply"
+            ? { replyToMessageId: "unrelated-message" }
+            : {}),
       });
       if (latest || scenario === "reply") {
         expect(result).toMatchObject({ threadId: "thread-1" });

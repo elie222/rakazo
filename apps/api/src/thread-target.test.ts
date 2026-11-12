@@ -1652,9 +1652,10 @@ function groupTarget() {
 }
 
 describe("sendThreadMessage", () => {
-  it.each([false, true])(
+  it.each(["latest", "reply", "unrelated-reply"] as const)(
     "answers a waiting question through the composer (explicit older reply: %s)",
-    async (olderReply) => {
+    async (scenario) => {
+      const olderReply = scenario === "reply";
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
@@ -1738,7 +1739,9 @@ describe("sendThreadMessage", () => {
           {
             text: "Paris",
             clientNonce: "nonce-ask",
-            ...(olderReply ? { replyToMessageId: "ask-1" } : {}),
+            ...(scenario === "latest"
+              ? {}
+              : { replyToMessageId: olderReply ? "ask-1" : "unrelated-message" }),
           },
         ),
       ).resolves.toMatchObject({
@@ -1795,7 +1798,7 @@ describe("sendThreadMessage", () => {
     },
   );
 
-  it("resumes the latest question and retires the older question when several private runs wait", async () => {
+  async function verifyMultiplePrivateQuestionReplies(explicitReply: boolean) {
     const waitingAsk = {
       id: "ask-1",
       blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
@@ -1829,7 +1832,17 @@ describe("sendThreadMessage", () => {
           .mockImplementation(async ({ where }: { where: { runId: string } }) => [
             where.runId === "run-waiting-1" ? waitingAsk : { ...waitingAsk, id: "ask-older" },
           ]),
-        findFirst: vi.fn().mockResolvedValue(waitingAsk),
+        findFirst: vi.fn(async ({ where }: { where: { id?: string } }) =>
+          explicitReply && where.id === "ask-older"
+            ? {
+                ...waitingAsk,
+                id: "ask-older",
+                role: "bot",
+                botId: "bot-1",
+                runId: "run-waiting-2",
+              }
+            : waitingAsk,
+        ),
         update: vi.fn(),
       },
       run: {
@@ -1850,7 +1863,7 @@ describe("sendThreadMessage", () => {
         findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
-          status: where.id === "run-waiting-2" ? "cancelled" : "queued",
+          status: where.id === "run-waiting-2" && !explicitReply ? "cancelled" : "queued",
         })),
       },
       attempt: { updateMany: vi.fn() },
@@ -1885,14 +1898,43 @@ describe("sendThreadMessage", () => {
         {
           text: "Paris",
           clientNonce: "nonce-ask-multi",
+          ...(explicitReply ? { replyToMessageId: "ask-older" } : {}),
         },
       ),
     ).resolves.toMatchObject({
-      runId: "run-waiting-1",
-      taskId: "task-1",
+      runId: explicitReply ? "run-waiting-2" : "run-waiting-1",
+      taskId: explicitReply ? "task-2" : "task-1",
       seq: 1,
-      runIds: ["run-waiting-1"],
+      runIds: [explicitReply ? "run-waiting-2" : "run-waiting-1"],
     });
+    if (explicitReply) {
+      expect(tx.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: "run-waiting-2" }),
+          data: { status: "queued" },
+        }),
+      );
+      expect(tx.message.update).toHaveBeenCalledWith({
+        where: { id: "ask-older" },
+        data: {
+          blocks: [
+            expect.objectContaining({
+              status: "answered",
+              answer: "Paris",
+              answerMessageId: "msg-1",
+            }),
+          ],
+        },
+      });
+      expect(tx.message.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "ask-1" } }),
+      );
+      expect(tx.secret.deleteMany).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: "run-waiting-2" } }),
+      );
+      return;
+    }
     expect(tx.run.updateMany).toHaveBeenCalledTimes(2);
     expect(tx.run.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: "run-waiting-2", status: "waiting_input" }),
@@ -1927,7 +1969,12 @@ describe("sendThreadMessage", () => {
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-waiting-1" } }),
     );
-  });
+  }
+
+  it.each([false, true])(
+    "handles multiple private questions (explicit older reply: %s)",
+    verifyMultiplePrivateQuestionReplies,
+  );
 
   it("replays every answered waiting run from a free-text send receipt", async () => {
     const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -2022,7 +2069,7 @@ describe("sendThreadMessage", () => {
     );
   });
 
-  it("resumes the latest question and retires the older question when several group runs wait", async () => {
+  async function verifyMultipleGroupQuestionReplies(explicitReply: boolean) {
     const waitingAsk = {
       id: "ask-1",
       blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
@@ -2056,7 +2103,17 @@ describe("sendThreadMessage", () => {
           .mockImplementation(async ({ where }: { where: { runId: string } }) => [
             where.runId === "run-waiting-1" ? waitingAsk : { ...waitingAsk, id: "ask-older" },
           ]),
-        findFirst: vi.fn().mockResolvedValue(waitingAsk),
+        findFirst: vi.fn(async ({ where }: { where: { id?: string } }) =>
+          explicitReply && where.id === "ask-older"
+            ? {
+                ...waitingAsk,
+                id: "ask-older",
+                role: "bot",
+                botId: "bot-a",
+                runId: "run-waiting-2",
+              }
+            : waitingAsk,
+        ),
         update: vi.fn(),
       },
       run: {
@@ -2079,7 +2136,7 @@ describe("sendThreadMessage", () => {
         findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
-          status: where.id === "run-waiting-2" ? "cancelled" : "queued",
+          status: where.id === "run-waiting-2" && !explicitReply ? "cancelled" : "queued",
         })),
         create: vi.fn(),
       },
@@ -2128,14 +2185,43 @@ describe("sendThreadMessage", () => {
           text: "Paris",
           mentions: ["bot-a"],
           clientNonce: "nonce-ask-group-multi",
+          ...(explicitReply ? { replyToMessageId: "ask-older" } : {}),
         },
       ),
     ).resolves.toMatchObject({
-      runId: "run-waiting-1",
-      taskId: "task-1",
+      runId: explicitReply ? "run-waiting-2" : "run-waiting-1",
+      taskId: explicitReply ? "task-2" : "task-1",
       seq: 1,
-      runIds: ["run-waiting-1"],
+      runIds: [explicitReply ? "run-waiting-2" : "run-waiting-1"],
     });
+    if (explicitReply) {
+      expect(tx.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: "run-waiting-2" }),
+          data: { status: "queued" },
+        }),
+      );
+      expect(tx.message.update).toHaveBeenCalledWith({
+        where: { id: "ask-older" },
+        data: {
+          blocks: [
+            expect.objectContaining({
+              status: "answered",
+              answer: "Paris",
+              answerMessageId: "msg-1",
+            }),
+          ],
+        },
+      });
+      expect(tx.message.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "ask-1" } }),
+      );
+      expect(tx.secret.deleteMany).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: "run-waiting-2" } }),
+      );
+      return;
+    }
     expect(tx.run.updateMany).toHaveBeenCalledTimes(3);
     // The person answered the member's question, so its reply is required.
     expect(tx.run.updateMany).toHaveBeenCalledWith({
@@ -2162,7 +2248,12 @@ describe("sendThreadMessage", () => {
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-waiting-1" } }),
     );
-  });
+  }
+
+  it.each([false, true])(
+    "handles multiple group questions (explicit older reply: %s)",
+    verifyMultipleGroupQuestionReplies,
+  );
 
   it.each(["bot", "group"] as const)(
     "%s sends preserve approvals and retire older questions before starting new work",
@@ -3723,6 +3814,7 @@ describe("sendThreadMessage", () => {
         role: true,
         botId: true,
         authorUserId: true,
+        runId: true,
       },
     });
     expect(tx.message.create).toHaveBeenCalledWith({
