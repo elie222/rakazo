@@ -554,11 +554,11 @@ function toAgentTool(
                   : [];
                 if (
                   options.length < 2 ||
-                  options.length > 4 ||
+                  options.length > 6 ||
                   options.some((option) => option.length === 0 || option.length > 80) ||
                   new Set(options).size !== options.length
                 ) {
-                  throw new Error("ask_user requires two to four unique, non-empty options");
+                  throw new Error("ask_user requires two to six unique, non-empty options");
                 }
                 host.pausePending = true;
                 host.queue.push({

@@ -149,7 +149,35 @@ describe("Pi choice asks", () => {
 
     await expect(async () => {
       for await (const event of runtime.run(runRequest, runContext)) events.push(event);
-    }).rejects.toThrow("ask_user requires two to four unique, non-empty options");
+    }).rejects.toThrow("ask_user requires two to six unique, non-empty options");
+    expect(events.some((event) => event.type === "ask")).toBe(false);
+  });
+
+  it("accepts six options, one per tappable action", async () => {
+    fakeAgentState.options = ["Berlin", "Seoul", "Toronto", "Paris", "Osaka", "Cairo"];
+    const runtime = new PiAgentRuntime();
+    const events: AgentRuntimeEvent[] = [];
+
+    for await (const event of runtime.run(runRequest, runContext)) events.push(event);
+
+    expect(events).toContainEqual({
+      type: "ask",
+      text: "Which city should I use?",
+      actions: fakeAgentState.options.map((label, index) => ({
+        id: `choice-${index + 1}`,
+        label,
+      })),
+    });
+  });
+
+  it("rejects seven options before emitting an ask", async () => {
+    fakeAgentState.options = ["Berlin", "Seoul", "Toronto", "Paris", "Osaka", "Cairo", "Lima"];
+    const runtime = new PiAgentRuntime();
+    const events: AgentRuntimeEvent[] = [];
+
+    await expect(async () => {
+      for await (const event of runtime.run(runRequest, runContext)) events.push(event);
+    }).rejects.toThrow("ask_user requires two to six unique, non-empty options");
     expect(events.some((event) => event.type === "ask")).toBe(false);
   });
 });

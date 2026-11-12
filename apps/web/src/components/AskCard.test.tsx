@@ -380,6 +380,52 @@ it("keeps an accepted question choice answered until the block updates", async (
   expect(button("AParis")!.hasAttribute("aria-pressed")).toBe(false);
 });
 
+it("sends a typed answer from an option card through the answer callback", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  await render(block, undefined, onAnswer);
+
+  await act(async () => button("Type your answer")!.click());
+  await type("Answer", "Reykjavik instead");
+  await act(async () => button("Send answer")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith("Reykjavik instead");
+  // The card keeps its options, dimmed, like a typed chat reply does.
+  expect(button("AParis")!.disabled).toBe(true);
+  expect(button("Type your answer")).toBeUndefined();
+});
+
+it("keeps typing out of approval cards and answered option cards", async () => {
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Send it?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(button("Type your answer")).toBeUndefined();
+
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "paris",
+    actions: [{ id: "paris", label: "Paris" }],
+  });
+  expect(button("Type your answer")).toBeUndefined();
+});
+
 it("dims a closed question's options without a status line", async () => {
   await act(async () =>
     root.render(

@@ -127,6 +127,47 @@ export type AskCardProps = {
   rpc?: RpcClient;
 };
 
+/** The card's own input for an answer none of its buttons carries. */
+function TypedAnswerForm({
+  value,
+  onChange,
+  submitting,
+  onSubmit,
+  onCancel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  submitting: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const { t } = useLingui();
+  return (
+    <form
+      className="mt-3.5 flex flex-col gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <Input
+        aria-label={t`Answer`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={t`Type your answer`}
+      />
+      <div className="flex gap-2">
+        <Button type="submit" disabled={!value.trim() || submitting}>
+          {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
+        </Button>
+        <Button variant="outline" disabled={submitting} onClick={onCancel}>
+          <Trans>Cancel</Trans>
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /** A question, approval or protected-input request from the bot. */
 export function AskCard(props: AskCardProps) {
   return isSecretAskBlock(props.block) ? (
@@ -283,19 +324,44 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
         </form>
       ) : optionQuestion ? (
         // Options stay in place once answered: the chosen one is marked, the rest dim.
-        <div className="mt-2.5 space-y-0.5">
-          {askActions?.map((action, index) => (
-            <OptionRow
-              key={action.id}
-              letter={optionLetter(index)}
-              selected={chosenOption?.id === action.id}
-              disabled={answered || !canAnswer || submitting}
-              onClick={() => void submitAnswer(action.id)}
-            >
-              {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
-            </OptionRow>
-          ))}
-        </div>
+        <>
+          <div className="mt-2.5 space-y-0.5">
+            {askActions?.map((action, index) => (
+              <OptionRow
+                key={action.id}
+                letter={optionLetter(index)}
+                selected={chosenOption?.id === action.id}
+                disabled={answered || !canAnswer || submitting}
+                onClick={() => void submitAnswer(action.id)}
+              >
+                {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
+              </OptionRow>
+            ))}
+          </div>
+          {canAnswer && !answered ? (
+            editing ? (
+              <TypedAnswerForm
+                value={answer}
+                onChange={setAnswer}
+                submitting={submitting}
+                onSubmit={() => void submitAnswer(answer)}
+                onCancel={() => {
+                  setAnswer("");
+                  setEditing(false);
+                }}
+              />
+            ) : (
+              <Button
+                variant="link"
+                className="mt-1.5 self-start"
+                disabled={submitting}
+                onClick={() => setEditing(true)}
+              >
+                <Trans>Type your answer</Trans>
+              </Button>
+            )
+          ) : null}
+        </>
       ) : typedAnswer ? (
         <blockquote
           data-testid="ask-answer"
@@ -357,35 +423,16 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
           ))}
         </div>
       ) : editing ? (
-        <form
-          className="mt-3.5 flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitAnswer(answer);
+        <TypedAnswerForm
+          value={answer}
+          onChange={setAnswer}
+          submitting={submitting}
+          onSubmit={() => void submitAnswer(answer)}
+          onCancel={() => {
+            setAnswer("");
+            setEditing(false);
           }}
-        >
-          <Input
-            aria-label={t`Answer`}
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder={t`Type your answer`}
-          />
-          <div className="flex gap-2">
-            <Button type="submit" disabled={!answer.trim() || submitting}>
-              {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={submitting}
-              onClick={() => {
-                setAnswer("");
-                setEditing(false);
-              }}
-            >
-              <Trans>Cancel</Trans>
-            </Button>
-          </div>
-        </form>
+        />
       ) : (
         <div className="mt-3.5 flex gap-2">
           <Button disabled={submitting} onClick={() => void submitAnswer("approved")}>
