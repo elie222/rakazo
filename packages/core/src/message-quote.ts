@@ -7,6 +7,7 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { blocksToAgentHistoryText } from "./attachments.js";
 import { replyAttachment } from "./message-replies.js";
+import { isDeliveryMessage } from "./message-visibility.js";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
 /** Past this much source text in one message, quote derivation refuses to run. */
@@ -91,6 +92,8 @@ export function deriveMessageQuote(
   quoteHint: string,
   format: "markdown" | "plain-text",
 ): string | undefined {
+  // A delivery's text is the bot's hidden prompt, never quoted.
+  if (isDeliveryMessage(blocks)) return undefined;
   const hint = normalizeWithOffsets(truncateReplyQuote(quoteHint.trim())).text;
   if (!hint) return undefined;
 
@@ -200,6 +203,8 @@ export function messageReplyPreview(
   botId?: string,
   author?: ReplyPreview["author"],
 ): ReplyPreview {
+  // A delivery's prompt and files stay hidden, even from a reply to it.
+  if (isDeliveryMessage(blocks)) return { role, botId, ...(author ? { author } : {}), text: "" };
   const attachment = replyAttachment(blocks);
   const caption = messageReplyExcerpt(
     blocks.filter((block) => block.kind !== "image" && block.kind !== "file"),
