@@ -9,6 +9,7 @@ import {
   encodeRunCode,
   encodeRunLogin,
   findSiteLogin,
+  LOGIN_CODE_CHANGED,
   LOGIN_CODE_TRIES,
   loadLoginPasswordRedactions,
   loadRunCodeRedactions,
@@ -1281,6 +1282,34 @@ describe("browser_act fill_code with a saved login's authenticator key", () => {
     expect(await fill()).toContain('"ok":true');
     expect(ctx.secrets).toContain(totpCode(authenticatorKey(otp)!, end - 1));
     vi.setSystemTime(end);
+    expect(await fill()).toContain('"ok":true');
+    expect(ctx.secrets).toContain(totpCode(authenticatorKey(otp)!, end));
+  });
+
+  it("types no code the authenticator moved on from while the call was being prepared", async () => {
+    const { tool, fill, ctx, secretStore, browser } = await codeFill();
+    const end = (Math.floor(now / 30_000) + 1) * 30_000;
+    const snapshot = (await browser.snapshot(computer, {}, context)) as {
+      elements: Array<{ ref: string; name: string }>;
+    };
+    const ref = (name: string) => snapshot.elements.find((element) => element.name === name)!.ref;
+    // The code is made as its step is read; reading the password step after it takes the time
+    // to the authenticator's next code.
+    const load = secretStore.load.bind(secretStore);
+    let loads = 0;
+    vi.spyOn(secretStore, "load").mockImplementation(async (...args) => {
+      if (++loads === 2) vi.setSystemTime(end);
+      return load(...args);
+    });
+    const result = await tool("browser_act", {
+      actions: [
+        { kind: "fill_code", ref: ref("Code"), secret: "site_login" },
+        { kind: "fill_secret", field: "Password", ref: ref("Password"), secret: "site_login" },
+      ],
+    });
+    expect(result).toContain(LOGIN_CODE_CHANGED);
+    expect(result).not.toContain('"ok":true');
+    // Nothing was typed: the next call types the new code.
     expect(await fill()).toContain('"ok":true');
     expect(ctx.secrets).toContain(totpCode(authenticatorKey(otp)!, end));
   });

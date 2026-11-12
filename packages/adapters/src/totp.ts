@@ -9,6 +9,11 @@ function base32Bytes(secret: string): Buffer {
   return Buffer.from(bits.match(/.{8}/g)?.map((byte) => Number.parseInt(byte, 2)) ?? []);
 }
 
+/** When the code this key shows at `now` gives way to its next one. */
+export function totpCodeEnd(key: AuthenticatorKey, now: number): number {
+  return (Math.floor(now / 1000 / key.period) + 1) * key.period * 1000;
+}
+
 /** The RFC 6238 code an authenticator app shows for this key at `now`. */
 export function totpCode(key: AuthenticatorKey, now: number): string {
   const counter = Buffer.alloc(8);

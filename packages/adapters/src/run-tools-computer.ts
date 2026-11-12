@@ -7,6 +7,7 @@ import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
 import {
+  LOGIN_CODE_CHANGED,
   loginCodeClaim,
   resolveCodeFill,
   resolveLoginFill,
@@ -333,7 +334,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                   };
                 addRunSecrets(ctx, resolved.redactions);
                 loginFills.push({ ...resolved, index });
-                const { used } = resolved;
+                const { used, codeEnds } = resolved;
                 // Counted and taken just before the page is asked, as one step.
                 const code = loginCodeClaim({
                   prisma: deps.prisma,
@@ -347,7 +348,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                 return {
                   text: resolved.text,
                   origin: resolved.origin,
-                  claim: code.claim,
+                  // The rest of the call was resolved since the code was made. One the
+                  // authenticator has moved on from is neither typed nor counted.
+                  claim: async () =>
+                    codeEnds !== undefined && Date.now() >= codeEnds
+                      ? LOGIN_CODE_CHANGED
+                      : code.claim(),
                   restore: code.restore,
                   typed: () => recordVaultUse(ctx, name, used, resolved.origin),
                 };

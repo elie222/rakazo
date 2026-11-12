@@ -68,7 +68,7 @@ import {
 import { generateSecretValue } from "./secret-generator.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { isPermanentDecryptFailure } from "./secrets.js";
-import { totpCode } from "./totp.js";
+import { totpCode, totpCodeEnd } from "./totp.js";
 import type { VaultLoginUse } from "./vault-card-use.js";
 import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
@@ -1826,6 +1826,8 @@ export async function resolveLoginFill(input: {
       used?: VaultItemUse;
       /** For a saved login's code: the login and the stored value the code came from, for loginCodeClaim. */
       login?: { id: string; ciphertext: string };
+      /** For a code: until when it is the authenticator's current one, in epoch milliseconds. */
+      codeEnds?: number;
     }
   | { error: string }
 > {
@@ -1906,7 +1908,8 @@ export async function resolveLoginFill(input: {
   if (input.code && !key)
     return { error: "This login has no authenticator key. Use request_secret with oneTimeCode." };
   if (input.code && row?.codesStoppedAt) return { error: LOGIN_CODES_USED_UP };
-  const code = key && totpCode(key, Date.now());
+  const now = Date.now();
+  const code = key && totpCode(key, now);
   const field = code ? { value: code, hidden: true } : findLoginField(fields, input.field);
   if (!field) {
     return {
@@ -1926,6 +1929,7 @@ export async function resolveLoginFill(input: {
     // Only a saved login is a vault item; this run's own login was never saved.
     ...(row && { used: { id: row.id, name: row.name, spaceId: row.spaceId, kind: "login" } }),
     ...(row && input.code && { login: { id: row.id, ciphertext: row.ciphertext } }),
+    ...(key && { codeEnds: totpCodeEnd(key, now) }),
   };
 }
 
@@ -2011,6 +2015,8 @@ export async function resolveCodeFill(input: {
   };
 }
 
+export const LOGIN_CODE_CHANGED =
+  "The authenticator moved on to its next code before this one could be typed, so nothing was typed. Call browser_act again.";
 export const CODE_ALREADY_TYPED =
   "This code was already typed in this run. Wait for the authenticator's next code, then call fill_code again.";
 
