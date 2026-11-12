@@ -472,6 +472,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/sign-in/social") {
+          await addOAuthServerContext({
+            signupAttribution: signupAttributionFromHeaders(ctx.headers),
+          });
+        }
         if (
           ctx.path === "/sign-in/social" &&
           ctx.body?.provider === "oidc" &&
@@ -810,7 +815,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             if (isMessagingEmail(user.email)) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });
             }
-            const attribution = signupAttributionFromHeaders(ctx?.headers);
+            const callbackAttribution = SignupAttribution.safeParse(
+              ctx && isOidcCallback(ctx)
+                ? (await getOAuthState())?.serverContext?.signupAttribution
+                : undefined,
+            );
+            const attribution = callbackAttribution.success
+              ? callbackAttribution.data
+              : signupAttributionFromHeaders(ctx?.headers);
             return {
               data: {
                 ...user,

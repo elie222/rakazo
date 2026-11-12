@@ -1,4 +1,4 @@
-import { rememberSignupAttribution } from "@rakazo/core";
+import { rememberSignupAttribution } from "@rakazo/core/signup-attribution";
 
 rememberSignupAttribution(window);
 

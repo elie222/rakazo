@@ -1,5 +1,6 @@
 import "./zod-config";
 import "./monitoring-bootstrap";
+import { rememberSignupAttribution } from "@rakazo/core/signup-attribution";
 import { BotAvatarActivityProvider, Toaster, TooltipProvider } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect, useLayoutEffect, useRef } from "react";
@@ -10,6 +11,7 @@ import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { clientUpdates } from "./lib/client-update";
+import { desktopBridge } from "./lib/desktop";
 import { webLogoAvatarActivity } from "./lib/logo-avatar-activity";
 import { reportCaughtReactError } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
@@ -51,6 +53,14 @@ function ClientUpdateOnNavigate() {
   return null;
 }
 
+function SignupAttributionOnNavigate() {
+  const { pathname, search } = useLocation();
+  useLayoutEffect(() => {
+    rememberSignupAttribution(window, desktopBridge() ? "desktop" : "web");
+  }, [pathname, search]);
+  return null;
+}
+
 function AppearanceSync() {
   useEffect(() => watchSystemAppearance(), []);
   return null;
@@ -67,6 +77,7 @@ createRoot(document.getElementById("root")!, { onCaughtError: reportCaughtReactE
           the stale location, so deep links (?m=) and thread switches never
           land while the URL already moved. */}
       <BrowserRouter useTransitions={false}>
+        <SignupAttributionOnNavigate />
         <ClientUpdateOnNavigate />
         <QueryClientProvider client={queryClient}>
           <DesktopUpdatesProvider>

@@ -1,10 +1,7 @@
 import { SIGNUP_ATTRIBUTION_COOKIE, SIGNUP_SURFACE_HEADER } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  rememberSignupAttribution,
-  signupAttributionFromCookie,
-  signupAttributionFromHeaders,
-} from "./signup-attribution.js";
+import { rememberSignupAttribution } from "./browser-signup-attribution.js";
+import { signupAttributionFromCookie, signupAttributionFromHeaders } from "./signup-attribution.js";
 
 function browser(href: string, referrer = "") {
   let cookie = "";
@@ -26,6 +23,19 @@ function browser(href: string, referrer = "") {
 }
 
 describe("signup acquisition", () => {
+  it("keeps shared-hosting tenants separate for cookies and referrers", () => {
+    const page = browser(
+      "https://app.example.github.io/?utm_source=community",
+      "https://other.github.io/",
+    );
+    rememberSignupAttribution(page, "web");
+    expect(page.writes[0]).toContain("; Domain=example.github.io");
+    expect(signupAttributionFromCookie(page.document.cookie)).toEqual({
+      surface: "web",
+      utmSource: "community",
+      referringDomain: "other.github.io",
+    });
+  });
   it("carries the first campaign from marketing to signup without storing raw URLs", () => {
     const page = browser(
       "https://example.com/?utm_source=newsletter&utm_campaign=launch&click_id=private",
