@@ -51,6 +51,20 @@ describe("desktop clipboard handler", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["http://192.168.1.2:3000", false],
+    ["http://app.local:3000", false],
+    ["http://localhost:3000", true],
+    ["http://127.0.0.1:3000", true],
+    ["https://app.example.com", true],
+  ])("requires a secure origin for %s", (url, allowed) => {
+    const { event, target, write, handle } = setup();
+    target.url = url;
+    Object.assign(event.senderFrame!, { url: `${url}/app/bot` });
+    expect(handle(event, "text")).toBe(allowed);
+    expect(write).toHaveBeenCalledTimes(allowed ? 1 : 0);
+  });
+
   it("reports native write errors as failures", () => {
     const { event, target } = setup();
     expect(
