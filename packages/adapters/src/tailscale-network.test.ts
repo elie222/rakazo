@@ -139,6 +139,29 @@ describe("TailscaleNetwork", () => {
     expect(after.code).toBe("unavailable");
   });
 
+  describe("on a tailnet without custom posture attributes", () => {
+    it.each<[string, { scopes?: string[] }, boolean]>([
+      ["a client with only the auth_keys scope", { scopes: ["auth_keys"] }, true],
+      ["a free plan", {}, false],
+    ])("joins bots without attributes for %s", async (_name, options, customAttributes) => {
+      const { emulator, network } = setup(options);
+      emulator.customAttributes = customAttributes;
+      await network.verify(context());
+      await network.join(NODE, context());
+      expect(emulator.devices.get(NODE.nodeId)).toMatchObject({
+        tags: ["tag:rakazo"],
+        attributes: {},
+        ephemeral: true,
+      });
+      // The client is remembered: the next bot asks once, without attributes.
+      const before = emulator.requests.filter((request) => request.method === "POST").length;
+      await network.join({ ...NODE, nodeId: "user1:bot2" }, context());
+      expect(emulator.requests.filter((request) => request.method === "POST").length).toBe(
+        before + 1,
+      );
+    });
+  });
+
   describe("verify", () => {
     it("passes for a correctly scoped client and leaves no key behind", async () => {
       const { emulator, network } = setup();
@@ -156,7 +179,6 @@ describe("TailscaleNetwork", () => {
 
     it.each([
       [{ scopes: ["devices:core"] }, "missing scope"],
-      [{ scopes: ["auth_keys"] }, "devices:posture_attributes"],
       [{ tag: "tag:other" }, "not permitted"],
     ])("explains a client that can't mint bot keys (%o)", async (options, detail) => {
       const { network } = setup(options);

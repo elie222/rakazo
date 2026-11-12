@@ -23,10 +23,13 @@ You need to be an Owner or Admin of the tailnet. This is done once.
    ]
    ```
 
-   A tagged device gets no access of its own, so a bot reaches only what this grants.
-2. In the Tailscale admin console, create an OAuth client under **Settings → Trust credentials**
-   with write access to auth keys and device posture attributes (`auth_keys` and
-   `devices:posture_attributes`), and the tag from step 1.
+   A tagged device gets no access of its own, so a bot reaches only what this grants. Tailscale's
+   default policy allows every device to reach every other, tagged ones included; replace that rule
+   with one for `autogroup:member`, which keeps your own devices' access and excludes tagged ones.
+2. In the Tailscale admin console, open **Trust credentials** and create an OAuth client with write
+   access to auth keys (`auth_keys`) and the tag from step 1. On a Premium or Enterprise plan, also
+   give it write access to device posture attributes (`devices:posture_attributes`) to label each
+   bot's device; see [Devices in your tailnet](#devices-in-your-tailnet).
 3. Copy its client ID and secret.
 
 ## Connect Tailscale
@@ -65,9 +68,10 @@ Each bot appears as its own device, named after the bot, such as `rakazo-home-la
 with your tag. Devices are ephemeral: a bot's device joins when the bot first connects, and leaves
 after ten idle minutes, when you turn the bot's access off, or when you disconnect Tailscale.
 
-Every device carries three posture attributes you can use in grants with `srcPosture`:
-`custom:rakazoSpace`, `custom:rakazoBot` and `custom:rakazoUser`. Custom posture attributes need a
-Tailscale plan that supports them.
+On a Premium or Enterprise plan, when the OAuth client may write device posture attributes, every
+device also carries `custom:rakazoSpace`, `custom:rakazoBot` and `custom:rakazoUser`, which grants
+can match with `srcPosture` to limit one bot or one person's bots. On other plans the tag alone
+applies to every bot.
 
 ## Disconnect
 
