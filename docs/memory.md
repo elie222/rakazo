@@ -48,6 +48,14 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
   Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
 
+Once connected, **Default scope** decides what bots share in the provider:
+
+- **Isolated**: each bot recalls only what it saved. This is the default.
+- **Shared**: bots in the space recall from one pool.
+
+Each bot's settings also gain a **Memory scope** under **Advanced**, so one bot can differ from the
+default.
+
 ### Knowledge provenance (version 1)
 
 Learning and instruction authority are separate. A bot may learn from people, other bots and
@@ -72,14 +80,6 @@ silently disable the owner's normal workflow or suppress learning. New outside i
 through the existing action protections; remembering and relaying knowledge cannot authorize a
 new action or bypass the receiving Space's access checks. The source flag is not a factual-quality
 judgment: no wording checks or model claims can change its classification.
-
-Once connected, **Default scope** decides what bots share in the provider:
-
-- **Isolated**: each bot recalls only what it saved. This is the default.
-- **Shared**: bots in the space recall from one pool.
-
-Each bot's settings also gain a **Memory scope** under **Advanced**, so one bot can differ from the
-default.
 
 ## Open work
 

@@ -420,8 +420,8 @@ export async function hasTakenInOutsideContent(ctx: RunContext): Promise<boolean
 }
 
 /**
- * Record on the run row that it took in outside content, so other bots do not learn the
- * words it sends them as trusted memory. Throws when the write fails: at completion the run
+ * Record outside-source provenance on the run row so later replies and deliveries retain it.
+ * Learning may keep the words as derived knowledge. Throws when the write fails: the run
  * must not finalize as clean.
  */
 export async function persistReadOutsideContent(
