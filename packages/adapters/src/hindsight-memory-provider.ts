@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   DurableMemoryScope,
@@ -264,9 +264,15 @@ export async function prepareHindsightConnection(
 export function createHindsightProvider(
   settings: Record<string, string>,
   credentials: Record<string, string>,
+  connectionVersion?: string,
 ): SemanticMemoryProvider {
   const { connection, options } = parseHindsightConnection(settings, credentials);
-  return new HindsightMemoryProvider(connection, options, settings.mode === "local");
+  return new HindsightMemoryProvider(
+    connection,
+    options,
+    settings.mode === "local",
+    connectionVersion,
+  );
 }
 
 /** Every bot keeps its own bank. */
@@ -379,7 +385,8 @@ async function operationDone(
 }
 
 export class HindsightMemoryProvider implements SemanticMemoryProvider {
-  readonly connectionIdentity: string;
+  readonly connectionIdentity?: string;
+  private readonly stateKey: string;
   private readonly localHost?: LocalServiceHost;
   readonly retainConversation?: (
     request: SemanticMemoryConversationRequest,
@@ -390,10 +397,16 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     private readonly connection: HindsightConnectionConfig,
     private readonly options: HindsightOptions,
     local: boolean,
+    connectionVersion?: string,
   ) {
-    this.connectionIdentity = createHash("sha256")
-      .update(JSON.stringify([connection.baseUrl, connection.apiKey]))
-      .digest("hex");
+    // Bind stored metadata to the effective endpoint, never to credential plaintext.
+    this.connectionIdentity = connectionVersion
+      ? createHash("sha256")
+          .update(JSON.stringify([connectionVersion, connection.baseUrl]))
+          .digest("hex")
+      : undefined;
+    // Standalone adapters have instance-local hints; persisted cleanup requires a stored identity.
+    this.stateKey = this.connectionIdentity ?? randomUUID();
     if (local) {
       this.localHost = new LocalServiceHost(connection.baseUrl, connection.resolveHostname);
     }
@@ -461,7 +474,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       types: this.options.recallFacts ? ["observation", "world", "experience"] : ["observation"],
       ...(this.options.skipUnrelated ? { min_scores: { reranker: MIN_RERANKER_SCORE } } : {}),
     };
-    const stateKey = this.connectionIdentity;
+    const stateKey = this.stateKey;
     const found = await Promise.all(
       banks.map(async (bank, index) => {
         // Own and shared Space memory use the full budget and are never cooled down.
@@ -592,7 +605,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     // A bank keeping no document text stores each turn in its own document.
     const separate = { ...item, document_id: `rakazo-turn-${request.runId}` };
     const write = async (bank: string): Promise<StoredTurn> => {
-      const key = bankKey(this.connectionIdentity, bank);
+      const key = bankKey(this.stateKey, bank);
       const store = async (stored: object, kind: string): Promise<StoredTurn> => {
         // One id per run and bank: a repeated call returns the original operation.
         const operationId = operationUuid(`${kind}:${request.runId}:${bank}`);

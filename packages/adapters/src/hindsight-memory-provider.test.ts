@@ -182,6 +182,7 @@ function provider(
     recallFacts?: boolean;
     skipUnrelated?: boolean;
     apiKey?: string;
+    connectionIdentity?: string;
   } = {},
 ) {
   return new HindsightMemoryProvider(
@@ -195,18 +196,28 @@ function provider(
       skipUnrelated: options.skipUnrelated ?? false,
     },
     false,
+    options.connectionIdentity ?? "test-connection",
   );
 }
 
 beforeEach(() => resetHindsightBankState());
 afterEach(() => vi.useRealTimers());
 
-it("binds pending work to credentials without exposing them in its connection identity", () => {
+it("uses a supplied connection version rather than deriving identity from the API key", () => {
   const fetch = vi.fn();
   const original = provider(fetch).connectionIdentity;
   expect(original).toBe(provider(vi.fn()).connectionIdentity);
-  expect(original).not.toBe(provider(fetch, { apiKey: "hsk-rotated-test-key" }).connectionIdentity);
+  expect(original).toBe(provider(fetch, { apiKey: "hsk-rotated-test-key" }).connectionIdentity);
+  expect(original).not.toBe(
+    provider(fetch, { connectionIdentity: "replacement-connection" }).connectionIdentity,
+  );
   expect(original).not.toContain("hsk-test-key");
+  const local = createHindsightProvider(
+    { mode: "local", baseUrl: "http://127.0.0.1:8888" },
+    { apiKey: "hsk-test-key" },
+    "test-connection",
+  );
+  expect(local.connectionIdentity).not.toBe(original);
 });
 
 const writes = (requests: RecordedRequest[]) =>
