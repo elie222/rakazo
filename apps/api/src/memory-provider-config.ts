@@ -60,9 +60,15 @@ export async function updateMemoryProviderConfig(
   const movesCredentials =
     memoryProviderCredentialTarget(existing.provider, input.settings) !==
     memoryProviderCredentialTarget(existing.provider, toStringRecord(existing.settings));
+  // What is stored now, when it can be read. It is only compared below, never sent anywhere when
+  // the connection moves.
+  const stored = await loadMemoryProviderCredentials(
+    deps.secrets,
+    existing.provider,
+    existing.secret,
+  ).catch((error: unknown) => error);
+  const storedCredentials = stored instanceof Error ? null : (stored as Record<string, string>);
   let credentials: Record<string, string>;
-  // Nothing new to store: the saved secret record stays, so the connection keeps its identity.
-  let keepsSecret = false;
   if (movesCredentials) {
     // The stored secret never follows the provider somewhere else: only what was entered is
     // used, and the provider's own validation decides whether that is enough (a self-hosted server
@@ -72,19 +78,15 @@ export async function updateMemoryProviderConfig(
     const entered = Object.fromEntries(
       Object.entries(input.credentials).filter(([, value]) => Boolean(value)),
     );
-    try {
-      credentials = {
-        ...(await loadMemoryProviderCredentials(deps.secrets, existing.provider, existing.secret)),
-        ...entered,
-      };
-      keepsSecret = Object.keys(entered).length === 0;
-    } catch (error) {
+    if (storedCredentials) {
+      credentials = { ...storedCredentials, ...entered };
+    } else {
       // A stored key that can't be read (a rotated secret store, a legacy record, an outage) must
       // not block an owner who typed a replacement. With nothing typed, the failure is surfaced
       // instead of looking like a missing key.
-      if (Object.keys(entered).length === 0) throw error;
+      if (Object.keys(entered).length === 0) throw stored;
       getLogger().warn("Stored memory provider credentials could not be read", {
-        "error.message": error instanceof Error ? error.message : String(error),
+        "error.message": stored instanceof Error ? stored.message : String(stored),
       });
       credentials = entered;
     }
@@ -93,15 +95,22 @@ export async function updateMemoryProviderConfig(
     deps,
     actor,
     { provider: existing.provider, settings: input.settings, credentials },
-    { replacesSecretId: existing.secretId, keepsSecret },
+    { replacesSecretId: existing.secretId, storedCredentials },
   );
+}
+
+function sameCredentials(a: Record<string, string>, b: Record<string, string>) {
+  const canonical = (value: Record<string, string>) =>
+    JSON.stringify(Object.entries(value).sort(([x], [y]) => x.localeCompare(y)));
+  return canonical(a) === canonical(b);
 }
 
 /**
  * Connects a provider, or with `replacesSecretId` updates that exact connection: the update is
  * refused when the connection was disconnected or replaced meanwhile, and keeps its default scope.
- * With `keepsSecret` the stored credentials were unchanged, so the same secret record is kept and
- * work bound to this connection (pending memory cleanup) continues across the edit.
+ * When the credentials to save equal `storedCredentials`, the same secret record is kept, so work
+ * bound to this connection (pending memory cleanup) continues across the edit, including an edit
+ * that only changes which outside banks are read.
  */
 async function saveMemoryProviderConnection(
   deps: MemoryProviderConfigDeps,
@@ -113,7 +122,7 @@ async function saveMemoryProviderConnection(
   },
   target:
     | { defaultMemoryScope: "isolated" | "shared" }
-    | { replacesSecretId: string; keepsSecret: boolean },
+    | { replacesSecretId: string; storedCredentials: Record<string, string> | null },
 ) {
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
@@ -155,7 +164,11 @@ async function saveMemoryProviderConnection(
     });
   }
   const keptSecretId =
-    "replacesSecretId" in target && target.keepsSecret ? target.replacesSecretId : null;
+    "replacesSecretId" in target &&
+    target.storedCredentials &&
+    sameCredentials(prepared.credentials, target.storedCredentials)
+      ? target.replacesSecretId
+      : null;
   const stored = keptSecretId
     ? null
     : await deps.secrets.put(JSON.stringify(prepared.credentials), {

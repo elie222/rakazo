@@ -617,7 +617,7 @@ describe("updateMemoryProviderConfig", () => {
     await expect(
       updateMemoryProviderConfig(deps, actor, { settings, credentials: {} }),
     ).rejects.toThrow();
-    expect(deps.secrets.load).not.toHaveBeenCalled();
+    // The stored key is only compared, never sent to the moved target.
   });
 
   it("surfaces a failed probe exactly as connect does, without saving", async () => {
@@ -666,7 +666,7 @@ describe("updateMemoryProviderConfig", () => {
       settings: { mode: "local", baseUrl: "http://127.0.0.1:6767" },
       credentials: { apiKey: "" },
     });
-    expect(deps.secrets.load).not.toHaveBeenCalled();
+    // The stored key is only compared, never sent to the moved target.
     // Only what was entered reaches the provider's own validation, which decides whether a missing
     // key is acceptable (a keyless self-hosted server is).
     expect(prepareConnection).toHaveBeenCalledWith(
@@ -681,7 +681,7 @@ describe("updateMemoryProviderConfig", () => {
       settings: nextSettings,
       credentials: { apiKey: "sm_new_key_12345" },
     });
-    expect(deps.secrets.load).not.toHaveBeenCalled();
+    // The stored key is only compared, never sent to the moved target.
     expect(prepareConnection).toHaveBeenCalledWith(
       expect.objectContaining({
         settings: nextSettings,
@@ -702,7 +702,7 @@ describe("updateMemoryProviderConfig", () => {
       settings: { mode: "cloud", reasoningLevel: "low", workspaceId: "other-team" },
       credentials: { apiKey: "" },
     });
-    expect(deps.secrets.load).not.toHaveBeenCalled();
+    // The stored key is only compared, never sent to the moved target.
     expect(prepareConnection).toHaveBeenCalledWith(
       expect.objectContaining({ credentials: { apiKey: "" } }),
     );
@@ -716,9 +716,24 @@ describe("updateMemoryProviderConfig", () => {
       settings: { mode: "cloud", recallBanks: "notes, journal" },
       credentials: { apiKey: "" },
     });
-    expect(deps.secrets.load).not.toHaveBeenCalled();
+    // The stored key is only compared, never sent to the moved target.
     expect(prepareConnection).toHaveBeenCalledWith(
       expect.objectContaining({ credentials: { apiKey: "" } }),
+    );
+  });
+
+  it("keeps the connection identity when only the outside banks change and the key is re-entered", async () => {
+    const { deps, upsert } = updateDeps({
+      existing: { ...connected, provider: "hindsight", settings: { recallBanks: "notes" } },
+    });
+    await updateMemoryProviderConfig(deps, actor, {
+      settings: { mode: "cloud", recallBanks: "notes, journal" },
+      credentials: { apiKey: "sm_stored_key_12345" },
+    });
+    // Same credentials: the secret record stays, so pending memory cleanup isn't orphaned.
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ secretId: "secret-old" }) }),
     );
   });
 
