@@ -36,7 +36,7 @@ test("bundled apps disclose missing setup and open account authorization without
   await page.reload();
   await page.getByPlaceholder("Search apps").fill(app.name);
   const row = page.getByText(app.name, { exact: true }).locator("xpath=ancestor::*[.//button][1]");
-  await expect(row.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Connect Files", exact: true })).toBeVisible();
   await expect(page.getByLabel("Client secret", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "deployment-app-connect");
   await page.route("**/rpc/mcp/apps/connect", (route) =>
@@ -53,7 +53,7 @@ test("bundled apps disclose missing setup and open account authorization without
     }),
   );
   const popupPromise = page.waitForEvent("popup");
-  await row.getByRole("button", { name: "Connect", exact: true }).click();
+  await row.getByRole("button", { name: "Connect Files", exact: true }).click();
   const popup = await popupPromise;
   await expect(popup).toHaveURL(/mcp\/oauth\/callback/);
   await popup.close();
@@ -90,7 +90,9 @@ test("bundled app titles keep matching plugin skills reachable", async ({ page }
   );
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await page.getByPlaceholder("Search apps").fill("Planning Notes");
-  await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Connect Planning Notes", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: /Planning Notes$/ }).click();
   await expect(page.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
   await expect(page.getByText("planning-notes", { exact: true })).toBeVisible();

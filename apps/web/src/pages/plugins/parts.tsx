@@ -150,6 +150,8 @@ export function CatalogTile({
 }
 
 function CatalogActions({ item, context }: { item: ConnectionCatalogItem; context: TileContext }) {
+  const { t } = useLingui();
+  const name = item.name;
   const { connections, onOpenDetail } = context;
   const key = catalogItemKey(item);
   const state = catalogItemState(item, connections.itemConnected(item));
@@ -182,6 +184,7 @@ function CatalogActions({ item, context }: { item: ConnectionCatalogItem; contex
       variant="secondary"
       size="sm"
       disabled={connecting}
+      aria-label={item.mcpAppId ? t`Connect ${name}` : undefined}
       onClick={(event) => {
         event.stopPropagation();
         void connections.connect(item);

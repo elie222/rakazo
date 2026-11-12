@@ -108,6 +108,13 @@ export function connectionsRoutes(ctx: RouterContext) {
               (provider): provider is NonNullable<typeof provider> => Boolean(provider),
             )
           : deps.connectors.managedProviders();
+        const bundledPromise =
+          !input.connectorId || input.connectorId === "deployment"
+            ? deploymentAppCatalog(ctx, context.actor).catch(() => {
+                getLogger().warn("Bundled app catalog is unavailable");
+                return [];
+              })
+            : Promise.resolve([]);
         const catalogs = await Promise.all(
           providers.map(async (provider): Promise<ConnectorCatalogItem[]> => {
             try {
@@ -136,13 +143,7 @@ export function connectionsRoutes(ctx: RouterContext) {
             }
           }),
         );
-        const bundled =
-          !input.connectorId || input.connectorId === "deployment"
-            ? await deploymentAppCatalog(ctx, context.actor).catch(() => {
-                getLogger().warn("Bundled app catalog is unavailable");
-                return [];
-              })
-            : [];
+        const bundled = await bundledPromise;
         const query = input.query?.trim() ?? "";
         const matches = query ? filterConnectionCatalogItems(bundled, query) : bundled;
         const managed = catalogs.flat();

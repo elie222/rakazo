@@ -247,6 +247,7 @@ it("connects an operator-provided app through personal OAuth and assigns only th
   const add = Array.from(host.querySelectorAll("button")).find(
     (button) => button.textContent === "Connect",
   )!;
+  expect(add.getAttribute("aria-label")).toBe("Connect Files");
   await act(async () => add.click());
   await vi.waitFor(() => expect(connectMcpOauth).toHaveBeenCalledWith("server-1"));
   expect(api.mcp.apps.connect).toHaveBeenCalledWith({ appId: "files", botId: "bot-1" });
