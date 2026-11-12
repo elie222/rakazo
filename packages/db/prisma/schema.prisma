@@ -28,6 +28,14 @@ model User {
   name                        String
   email                       String
   emailVerified               Boolean                      @default(false)
+  /// Validated first-touch campaign labels and the client that created the account. Deleted with it.
+  signupSurface                String?
+  signupUtmSource              String?
+  signupUtmMedium              String?
+  signupUtmCampaign            String?
+  signupUtmContent             String?
+  signupUtmTerm                String?
+  signupReferringDomain        String?
   image                       String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt

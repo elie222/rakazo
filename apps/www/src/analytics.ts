@@ -1,3 +1,7 @@
+import { rememberSignupAttribution } from "@rakazo/core";
+
+rememberSignupAttribution(window);
+
 const posthogKey = import.meta.env.PUBLIC_POSTHOG_KEY?.trim();
 
 if (posthogKey) {

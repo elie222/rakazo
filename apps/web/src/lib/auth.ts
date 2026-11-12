@@ -1,8 +1,14 @@
 import { passkeyClient } from "@better-auth/passkey/client";
+import { SIGNUP_SURFACE_HEADER } from "@rakazo/contracts";
+import { rememberSignupAttribution } from "@rakazo/core";
 import type { OrganizationClientOptions } from "better-auth/client/plugins";
 import { emailOTPClient, organizationClient } from "better-auth/client/plugins";
 import type { ReactAuthClient } from "better-auth/react";
 import { createAuthClient } from "better-auth/react";
+import { desktopBridge } from "./desktop";
+
+const signupSurface = desktopBridge() ? "desktop" : "web";
+if (typeof window !== "undefined") rememberSignupAttribution(window, signupSurface);
 
 export const authClient: ReactAuthClient<{
   // An uninstantiated generic resolves to `any`, which would erase every plugin's actions.
@@ -12,5 +18,6 @@ export const authClient: ReactAuthClient<{
     ReturnType<typeof passkeyClient>,
   ];
 }> = createAuthClient({
+  fetchOptions: { headers: { [SIGNUP_SURFACE_HEADER]: signupSurface } },
   plugins: [organizationClient(), emailOTPClient(), passkeyClient()],
 });
