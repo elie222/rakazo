@@ -1026,6 +1026,7 @@ export function computerSupportsTerminal(kind: string): boolean {
     kind === "boat" ||
     kind === "kubernetes" ||
     kind === "incus" ||
+    kind === "local-vm" ||
     kind === "fake"
   );
 }

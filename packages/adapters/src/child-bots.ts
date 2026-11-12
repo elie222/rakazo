@@ -745,6 +745,7 @@ const REMOTE_TEAM_SANDBOX_KINDS = new Set([
   "createos",
   "kubernetes",
   "incus",
+  "local-vm",
 ]);
 
 /**
