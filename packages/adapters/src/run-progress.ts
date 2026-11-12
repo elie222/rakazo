@@ -266,6 +266,8 @@ export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean) 
     !runAllowsSilentEmpty(ctx.run.trigger) &&
     !ctx.groupReplyOptional &&
     reply.midTurnProgressCount === 0 &&
+    // Only text written right before the run's first step, not a reply cut short by a message.
+    firstStep !== undefined &&
     reply.toolCalls.every((call) => call.executionId === firstStep)
   );
 }
