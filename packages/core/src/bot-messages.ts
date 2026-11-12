@@ -60,7 +60,7 @@ export function botMessageAllowsSilence(
   return intent === "fyi" && !repliesToRequest;
 }
 
-/** Resolve a target by id first, then by exact name, then case-insensitively. */
+/** Resolve by id first, then an unambiguous exact name, then case-insensitively. */
 export function resolveBotAddress<T extends BotAddress>(
   bots: readonly T[],
   input: { botId?: string; name?: string },
@@ -69,8 +69,8 @@ export function resolveBotAddress<T extends BotAddress>(
   if (botId) return bots.find((bot) => bot.id === botId);
   const name = input.name?.trim();
   if (!name) return undefined;
-  const exact = bots.find((bot) => bot.name === name);
-  if (exact) return exact;
+  const exact = bots.filter((bot) => bot.name === name);
+  if (exact.length > 0) return exact.length === 1 ? exact[0] : undefined;
   const lower = name.toLowerCase();
   const matches = bots.filter((bot) => bot.name.toLowerCase() === lower);
   return matches.length === 1 ? matches[0] : undefined;
