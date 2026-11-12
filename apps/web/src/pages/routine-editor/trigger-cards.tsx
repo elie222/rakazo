@@ -3,6 +3,7 @@ import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   Button,
+  Disclosure,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -130,15 +131,6 @@ export function WatchTriggerCard({
             />
           </>
         ) : null}
-        {watch.kind !== "files" ? (
-          <Input
-            aria-label={t`Fields that mark a change`}
-            placeholder={t`Fields to compare, e.g. id, modifiedTime (optional)`}
-            value={watch.track}
-            onChange={(e) => onChange({ ...watch, track: e.target.value })}
-            className="font-mono text-body-sm"
-          />
-        ) : null}
         <label
           htmlFor={`${id}-every`}
           className="flex items-center gap-2 text-body text-muted-foreground"
@@ -169,17 +161,43 @@ export function WatchTriggerCard({
           />
           <Trans>minutes</Trans>
         </label>
-        <label
-          htmlFor={`${id}-loud`}
-          className="flex items-center gap-2 text-body text-muted-foreground"
+        <Disclosure
+          defaultOpen={Boolean(watch.track.trim() || watch.loud)}
+          summary={<Trans>Options</Trans>}
+          summaryClassName="text-body-sm text-muted-foreground"
+          contentClassName="pt-3"
         >
-          <Switch
-            id={`${id}-loud`}
-            checked={watch.loud}
-            onCheckedChange={(loud) => onChange({ ...watch, loud })}
-          />
-          <Trans>Post "No changes" in chat</Trans>
-        </label>
+          <div className="space-y-3">
+            {watch.kind !== "files" ? (
+              <label
+                htmlFor={`${id}-track`}
+                className="block space-y-1.5 text-body text-muted-foreground"
+              >
+                <span>
+                  <Trans>Fields to compare</Trans>
+                </span>
+                <Input
+                  id={`${id}-track`}
+                  placeholder="id, modifiedTime"
+                  value={watch.track}
+                  onChange={(e) => onChange({ ...watch, track: e.target.value })}
+                  className="font-mono text-body-sm"
+                />
+              </label>
+            ) : null}
+            <label
+              htmlFor={`${id}-loud`}
+              className="flex items-center gap-2 text-body text-muted-foreground"
+            >
+              <Switch
+                id={`${id}-loud`}
+                checked={watch.loud}
+                onCheckedChange={(loud) => onChange({ ...watch, loud })}
+              />
+              <Trans>Post "No changes" in chat</Trans>
+            </label>
+          </div>
+        </Disclosure>
         {status ? (
           <p
             data-testid="routine-watch-status"
