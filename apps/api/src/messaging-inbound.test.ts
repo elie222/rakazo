@@ -274,16 +274,13 @@ function createDeps(
       ),
     },
     messagingOutbound: {
+      // Rows not out yet: anything but sent, or sent with no handle yet (claimed).
       count: vi.fn(
-        async ({
-          where,
-        }: {
-          where: { sourceMessageId: { in: string[] }; status: { not: string } };
-        }) =>
+        async ({ where }: { where: { sourceMessageId: { in: string[] } } }) =>
           outboundRows.filter(
             (row) =>
               where.sourceMessageId.in.includes(row.sourceMessageId as string) &&
-              (row.status ?? "pending") !== where.status.not,
+              ((row.status ?? "pending") !== "sent" || row.providerHandle == null),
           ).length,
       ),
       findFirst: vi.fn(
@@ -1290,7 +1287,10 @@ describe("inbound receipt", () => {
     deps.runs.get("run-1")!.messagingMirroredAt = new Date("2026-01-01T00:00:00Z");
     await expect(handled()).resolves.toBe(false);
 
+    // Claimed: marked sent before its handle is known.
     deps.outboundRows[0]!.status = "sent";
+    await expect(handled()).resolves.toBe(false);
+    deps.outboundRows[0]!.providerHandle = "handle-1";
     await expect(handled()).resolves.toBe(true);
   });
 
@@ -1518,7 +1518,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
-  it.each(["pending", "sending", "retry"])(
+  it.each(["pending", "retry"])(
     "answers the delivered question, not a request still %s",
     async (status) => {
       const deps = createDeps({
@@ -1534,7 +1534,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     },
   );
 
-  it.each(["pending", "sending", "retry"])(
+  it.each(["pending", "retry"])(
     "treats YES as a reply once the bot has answered, even while that answer is %s",
     async (status) => {
       const deps = createDeps({

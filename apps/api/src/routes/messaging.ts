@@ -335,7 +335,10 @@ export function messagingRoutes(ctx: RouterContext) {
               await tx.messagingOutbound.deleteMany({
                 where: {
                   idempotencyKey: `connect:${connection.requesterBotId}:${connection.targetBotId}`,
-                  status: { in: ["pending", "sending", "retry"] },
+                  OR: [
+                    { status: { in: ["pending", "retry"] } },
+                    { status: "sent", providerHandle: null },
+                  ],
                 },
               });
             }),

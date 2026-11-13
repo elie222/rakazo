@@ -181,7 +181,8 @@ export class TeamChatBridge {
             `external-message:${externalMessageId}:failure`,
           ],
         },
-        status: { not: "sent" },
+        // Not out yet: waiting, or claimed (sent with no handle yet).
+        OR: [{ status: { not: "sent" } }, { providerHandle: null }],
       },
     });
     return unsent === 0;

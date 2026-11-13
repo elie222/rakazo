@@ -115,7 +115,11 @@ describe("createBackgroundJobHandlers", () => {
   it("sends an ended run's reply from its backup job", async () => {
     const { handlers, delivery } = chatHandlers();
     await handlers["messaging.reply"]({ runId: "run-1" });
-    expect(delivery.deliverRun).toHaveBeenCalledExactlyOnceWith("run-1");
+    await handlers["messaging.reply"]({ runId: "run-2", previousRelease: true });
+    expect(delivery.deliverRun.mock.calls).toEqual([
+      ["run-1", { previousRelease: undefined }],
+      ["run-2", { previousRelease: true }],
+    ]);
   });
 
   it("drains the previous release's delivery jobs through the new path", async () => {

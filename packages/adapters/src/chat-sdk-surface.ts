@@ -265,12 +265,17 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return this.dispatchWebhook(mounted, request);
   }
 
+  /**
+   * No Chat SDK adapter's post takes an abort signal, so a post that has started runs to its end
+   * (Slack and Sendblue clients bound it themselves). The signal stops a post that has not.
+   */
   async sendToThread(
     request: MessagingSendRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<MessagingSendResult> {
     const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
+    context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
     // block; Photon's iMessage adapter renders it as native styled text. Keep

@@ -228,6 +228,7 @@ function messagingDeps(
         where: {
           idempotencyKey?: string | { in: string[] };
           status?: string | { in: string[] };
+          OR?: Array<{ status?: string | { in: string[] }; providerHandle?: null }>;
         };
       }) => {
         const matches = (value: unknown, condition: string | { in: string[] } | undefined) =>
@@ -235,11 +236,18 @@ function messagingDeps(
           (typeof condition === "string"
             ? value === condition
             : condition.in.includes(value as string));
+        const clause = (
+          row: Record<string, unknown>,
+          part: { status?: string | { in: string[] }; providerHandle?: null },
+        ) =>
+          matches(row.status ?? "pending", part.status) &&
+          (!("providerHandle" in part) || row.providerHandle == null);
         let count = 0;
         for (let i = outboundRows.length - 1; i >= 0; i -= 1) {
           const row = outboundRows[i]!;
           if (!matches(row.idempotencyKey, where.idempotencyKey)) continue;
           if (!matches(row.status ?? "pending", where.status)) continue;
+          if (where.OR && !where.OR.some((part) => clause(row, part))) continue;
           outboundRows.splice(i, 1);
           count += 1;
         }
@@ -686,7 +694,7 @@ describe("messaging.connections", () => {
     expect(prisma.messagingOutbound.deleteMany).toHaveBeenCalledWith({
       where: {
         idempotencyKey: "connect:bot-1:bot-9",
-        status: { in: ["pending", "sending", "retry"] },
+        OR: [{ status: { in: ["pending", "retry"] } }, { status: "sent", providerHandle: null }],
       },
     });
     expect(outboundRows).toEqual([
@@ -710,7 +718,7 @@ describe("messaging.connections", () => {
     outboundRows.push({
       idempotencyKey: "connect:bot-1:bot-9",
       kind: "dm",
-      status: "sending",
+      status: "sent",
       providerHandle: null,
       body: "claimed by a sender",
     });

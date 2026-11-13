@@ -56,7 +56,10 @@ const payloadSchemas = {
       .optional(),
   }),
   "messaging.send": z.object({ outboundId: z.string().min(1) }),
-  "messaging.reply": z.object({ runId: z.string().min(1) }),
+  "messaging.reply": z.object({
+    runId: z.string().min(1),
+    previousRelease: z.boolean().optional(),
+  }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
   "messaging.credential-cleanup": z.object({

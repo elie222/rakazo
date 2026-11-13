@@ -1,7 +1,8 @@
 -- Replies the previous release left for its recovery scan: chat runs that ended in the last day
 -- without their reply recorded, and delegated replies to a team-chat thread not yet relayed. The
 -- run-end trigger (20261214120000_run_reply_delivery_job) only covers runs that end from now on.
--- Each run's reply job records and sends its reply once; a job already queued is kept.
+-- Each run's reply job records and sends its reply once; a job already queued is kept. The jobs
+-- wait until the previous release has stopped, and skip a reply its recovery delivered meanwhile.
 -- Fresh installations create Graphile's schema after application migrations, and have no runs.
 DO $$ BEGIN
   IF to_regnamespace('graphile_worker') IS NULL THEN
@@ -9,7 +10,8 @@ DO $$ BEGIN
   END IF;
   PERFORM graphile_worker.add_job(
     'messaging.reply',
-    json_build_object('runId', r.id),
+    json_build_object('runId', r.id, 'previousRelease', true),
+    run_at => now() + interval '10 minutes',
     job_key => 'messaging.reply:' || r.id,
     job_key_mode => 'unsafe_dedupe'
   )
@@ -24,7 +26,8 @@ DO $$ BEGIN
   ) THEN
     PERFORM graphile_worker.add_job(
       'messaging.reply',
-      json_build_object('runId', r.id),
+      json_build_object('runId', r.id, 'previousRelease', true),
+      run_at => now() + interval '10 minutes',
       job_key => 'messaging.reply:' || r.id,
       job_key_mode => 'unsafe_dedupe'
     )

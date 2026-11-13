@@ -158,9 +158,13 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     const rows = await system.messagingOutbound.findMany({
       where: { threadId },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { body: true, status: true },
+      select: { body: true, status: true, providerHandle: true },
     });
-    return rows.map((row) => `${row.body}:${row.status}`);
+    // A claimed row is marked sent before its handle is known, as the previous release marks its own.
+    return rows.map(
+      (row) =>
+        `${row.body}:${row.status === "sent" && row.providerHandle === null ? "in-flight" : row.status}`,
+    );
   }
 
   it("records a message and its backup job in one transaction", async () => {
@@ -221,7 +225,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
   it("resends a claim whose sender died once the claim is stale, but not a fresh one", async () => {
     const target = lane();
     const [id] = await record(target, ["claimed"]);
-    await system.messagingOutbound.update({ where: { id: id! }, data: { status: "sending" } });
+    await system.messagingOutbound.update({ where: { id: id! }, data: { status: "sent" } });
     const { messaging, sent } = surface();
     const backup = delivery(messaging);
 
@@ -324,7 +328,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     });
     const first = delivery(slow.messaging).send([target]);
     await vi.waitFor(async () =>
-      expect(await statuses(target.threadId)).toEqual(["a:sending", "b:pending", "c:pending"]),
+      expect(await statuses(target.threadId)).toEqual(["a:in-flight", "b:pending", "c:pending"]),
     );
     // The second process finds the head in flight and leaves the conversation to it.
     await delivery(fast.messaging).send([target]);
@@ -399,7 +403,8 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     expect(sent).toContain("queued by the old release");
     expect(sent).not.toContain("claimed by the old release");
     expect(await statuses(target.threadId)).toEqual([
-      "claimed by the old release:sent",
+      // A stale claim of the previous release: done for this conversation, never sent again.
+      "claimed by the old release:in-flight",
       "queued by the old release:sent",
     ]);
   });
@@ -503,7 +508,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     // Its send may still be running, so the next message waits.
     expect({ sent, status: await statuses(target.threadId) }).toEqual({
       sent: [],
-      status: ["claimed by the old drain:sent", "next:pending"],
+      status: ["claimed by the old drain:in-flight", "next:pending"],
     });
 
     // Once the old drain saved its handle, the conversation moves on.
@@ -513,6 +518,35 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     });
     await delivery(messaging).send([target]);
     expect(sent).toEqual(["next"]);
+  });
+
+  it("marks its own sends in flight the way the previous release recognises them", async () => {
+    const target = lane();
+    const [first, second] = await record(target, ["in flight", "behind it"]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = surface(async () => {
+      await gate;
+      return { handle: "h-1" };
+    });
+    const sending = delivery(slow.messaging).send([target]);
+    await vi.waitFor(async () =>
+      expect(await statuses(target.threadId)).toEqual(["in flight:in-flight", "behind it:pending"]),
+    );
+    // The previous release's blocker check for the row behind it.
+    const { rows } = await owner.query(
+      `SELECT id FROM messaging_outbound
+       WHERE "identityId" IS NULL AND "threadId" = $1
+         AND ((status = 'pending' AND id <> $2 AND "createdAt" < (SELECT "createdAt" FROM messaging_outbound WHERE id = $2))
+           OR (status = 'sent' AND "providerHandle" IS NULL AND "updatedAt" > now() - interval '2 minutes'))`,
+      [target.threadId, second],
+    );
+    expect(rows.map((row) => row.id)).toEqual([first]);
+    release();
+    await sending;
+    expect(await statuses(target.threadId)).toEqual(["in flight:sent", "behind it:sent"]);
   });
 
   it("queues reply jobs for chat runs the previous release left to its recovery scan", async () => {
@@ -552,11 +586,19 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
         `ALTER TABLE runs ADD COLUMN IF NOT EXISTS "teamChatMirroredAt" TIMESTAMP(3)`,
       );
       await client.query(migration);
-      const { rows } = await client.query<{ key: string }>(
-        `SELECT key FROM graphile_worker._private_jobs WHERE key = ANY($1::text[])`,
+      const { rows } = await client.query<{ key: string; payload: unknown; due: boolean }>(
+        `SELECT key, payload, run_at > now() + interval '9 minutes' AS due
+         FROM graphile_worker._private_jobs WHERE key = ANY($1::text[])`,
         [[left.id, delivered.id, old.id].map(messagingReplyJobKey)],
       );
-      expect(rows.map((row) => row.key)).toEqual([messagingReplyJobKey(left.id)]);
+      // Due once the previous release has stopped, and told to skip what it delivered meanwhile.
+      expect(rows).toEqual([
+        {
+          key: messagingReplyJobKey(left.id),
+          payload: { runId: left.id, previousRelease: true },
+          due: true,
+        },
+      ]);
     } finally {
       await client.query("ROLLBACK");
       client.release();

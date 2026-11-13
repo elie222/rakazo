@@ -238,7 +238,8 @@ async function handleDirectEvent(
       const unsent = await deps.prisma.messagingOutbound.count({
         where: {
           sourceMessageId: { in: replies.map((reply) => reply.id) },
-          status: { not: "sent" },
+          // Not out yet: waiting, or claimed (sent with no handle yet).
+          OR: [{ status: { not: "sent" } }, { providerHandle: null }],
         },
       });
       return unsent === 0;
@@ -568,7 +569,7 @@ async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow
     where: {
       identityId: identity.id,
       kind: "dm",
-      status: { in: ["pending", "sending", "retry", "sent"] },
+      status: { in: ["pending", "retry", "sent"] },
     },
     orderBy: { createdAt: "desc" },
     select: { idempotencyKey: true, createdAt: true, status: true },

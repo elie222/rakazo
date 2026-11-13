@@ -57,10 +57,11 @@ export const MESSAGING_DM_OUTBOUND_CAP = 140;
 export const MESSAGING_SEND_TIMEOUT_MS = 60_000;
 
 /**
- * When a claimed send counts as dead and its backup job may send the message again. Strictly
- * longer than the timeout: until just before it the sender keeps waiting for a provider call it
- * cannot abort, and keeps retrying the bookkeeping of one that went out, so only a crash or a
- * call hung this long can lead to a second post.
+ * When a claimed send counts as dead and its backup job may send the message again: strictly
+ * longer than the timeout, and the same window the previous release gives its own claims. The
+ * sender waits for a provider call it cannot abort until just before it, and records a call that
+ * lands later still against its own claim, so only a crash, or a call that lands after its
+ * backup job took over, can lead to a second post.
  */
 export const MESSAGING_SEND_STALE_MS = 2 * MESSAGING_SEND_TIMEOUT_MS;
 const STALE_MARGIN_MS = 10_000;
@@ -68,8 +69,12 @@ const STALE_MARGIN_MS = 10_000;
 /** When a recorded message's backup job is due: once its send's claim would be stale. */
 export const MESSAGING_SEND_BACKUP_MS = MESSAGING_SEND_STALE_MS + 30_000;
 
-/** How long the previous release treated a row it claimed (sent, no handle yet) as in flight. */
-const PREVIOUS_RELEASE_IN_FLIGHT_MS = 2 * 60_000;
+/**
+ * A claimed row: marked sent before its handle is known, as the previous release marks its own,
+ * so either release sees the other's sends in flight. A finished send always gets a handle (an
+ * empty one when the provider gives none).
+ */
+const IN_FLIGHT = { status: "sent", providerHandle: null } as const;
 
 /** How soon a message held behind the sendblue cap checks again, should no reply arrive. */
 const DM_CAP_RECHECK_MS = 15 * 60_000;
@@ -78,8 +83,8 @@ const DM_CAP_RECHECK_MS = 15 * 60_000;
 const STALLED_OUTBOUND_MS = 5 * 60_000;
 const SWEEP_BATCH = 100;
 
-/** Statuses of a message that has not reached the provider yet. */
-const UNSENT = ["pending", "sending", "retry"];
+/** Statuses of a message waiting for a send. */
+const WAITING = ["pending", "retry"];
 const TERMINAL_RUN = ["completed", "failed", "cancelled"];
 
 /**
@@ -104,6 +109,7 @@ type LaneRow = {
   threadId: string | null;
   body: string;
   status: string;
+  providerHandle: string | null;
   sourceMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -117,6 +123,7 @@ const LANE_ROW = {
   threadId: true,
   body: true,
   status: true,
+  providerHandle: true,
   sourceMessageId: true,
   createdAt: true,
   updatedAt: true,
@@ -243,10 +250,15 @@ export class MessagingDelivery {
         where: { id: outboundId },
         select: LANE_ROW,
       });
-      if (!row || !UNSENT.includes(row.status)) return;
+      if (!row) return;
+      const inFlight = row.status === "sent" && row.providerHandle === null;
+      if (!WAITING.includes(row.status) && !inFlight) return;
       const lane = laneOf(row);
       if (!lane) {
-        await this.finish(row, { kind: "failed" });
+        await this.deps.prisma.messagingOutbound.updateMany({
+          where: { id: row.id, status: { in: WAITING } },
+          data: { status: "failed" },
+        });
         return;
       }
       await this.drainLane(lane, { rowId: row.id, attempt });
@@ -257,8 +269,12 @@ export class MessagingDelivery {
    * Records and sends what a run said where its turn came from: a 1:1 chat or group, the
    * team-chat thread that started it, or the thread a delegation chain started in. `progress`
    * sends a running 1:1 run's interim messages; everything else waits for the run to pause or end.
+   * `previousRelease` skips what the previous release's recovery delivered in the meantime.
    */
-  async deliverRun(runId: string, options: { progress?: boolean } = {}): Promise<void> {
+  async deliverRun(
+    runId: string,
+    options: { progress?: boolean; previousRelease?: boolean } = {},
+  ): Promise<void> {
     await runAsSystem("deliver what a run said", async () => {
       const run = await this.deps.prisma.run.findUnique({
         where: { id: runId },
@@ -282,6 +298,7 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "messaging") {
+        if (options.previousRelease && run.messagingMirroredAt) return;
         const channelBlock = ((run.sourceMessage?.blocks ?? []) as MessageBlock[]).find(
           (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
             block.kind === "channel_message",
@@ -304,7 +321,8 @@ export class MessagingDelivery {
         if (direct) lanes.push(direct);
         if (
           (run.status === "completed" || run.status === "failed") &&
-          run.thread.externalConversation?.botId === run.botId
+          run.thread.externalConversation?.botId === run.botId &&
+          !(options.previousRelease && (await this.relayedByPreviousRelease(runId)))
         ) {
           const delegated = await this.recordDelegatedReply(run);
           if (delegated) lanes.push(delegated);
@@ -317,8 +335,9 @@ export class MessagingDelivery {
             data: { messagingMirroredAt: new Date() },
           });
         }
-        // Recorded: the rows carry their own backups now.
-        if (terminal) await this.deps.jobs.cancel(messagingReplyJobKey(runId));
+        // Recorded: the rows carry their own backups now. Only chat runs get a reply job.
+        if (terminal && (run.trigger === "messaging" || run.trigger === "bot_message"))
+          await this.deps.jobs.cancel(messagingReplyJobKey(runId));
       }
       await this.send(lanes);
     });
@@ -331,7 +350,7 @@ export class MessagingDelivery {
   async drainAll(): Promise<void> {
     const rows = await runAsSystem("find conversations with unsent chat messages", () =>
       this.deps.prisma.messagingOutbound.findMany({
-        where: { status: { in: UNSENT } },
+        where: { status: { in: WAITING } },
         distinct: ["identityId", "threadId"],
         select: { identityId: true, threadId: true },
       }),
@@ -340,16 +359,18 @@ export class MessagingDelivery {
   }
 
   /**
-   * Safety sweep, one page per call: a message unsent long after its last change whose backup
+   * Safety sweep, one page per call: a message waiting long after its last change whose backup
    * job is gone, or held by a worker that died, gets a fresh one. A job still waiting out a retry
-   * or a busy conversation is left alone. Rows recorded by the previous release have no job.
+   * or a busy conversation is left alone. Rows recorded by the previous release have no job. A
+   * send in flight is left to its own job: the previous release's stale claims look the same and
+   * must never be sent again.
    */
   async sweepStalled(now = new Date()): Promise<void> {
     const before = new Date(now.getTime() - STALLED_OUTBOUND_MS);
     const cursor = this.sweepCursor;
     const stalled = await this.deps.prisma.messagingOutbound.findMany({
       where: {
-        status: { in: UNSENT },
+        status: { in: WAITING },
         updatedAt: { lt: before },
         ...(cursor
           ? {
@@ -391,11 +412,15 @@ export class MessagingDelivery {
         if (job) await this.deps.jobs.enqueue(messagingSendJob(job.rowId, claim.retryAt));
         return;
       }
-      const row = claim.row;
+      const { row, claimedAt } = claim;
       // The claim's last moment: past it, the backup job may send the row again.
-      const deadline = Date.now() + MESSAGING_SEND_STALE_MS - STALE_MARGIN_MS;
-      const outcome = await this.sendRow(row, deadline);
+      const deadline = claimedAt.getTime() + MESSAGING_SEND_STALE_MS - STALE_MARGIN_MS;
       const own = job?.rowId === row.id;
+      const outcome = await this.sendRow(row, deadline, (late) =>
+        // A call that lands after the deadline is still recorded against its own claim, and the
+        // conversation carries on, so the backup job sends nothing more.
+        this.settleLate(row, claimedAt, late, lane),
+      );
       if (outcome.kind === "unsettled") {
         getLogger().warn("messaging send still running past its time; its backup job takes over");
         if (own)
@@ -406,7 +431,7 @@ export class MessagingDelivery {
       }
       if (outcome.kind === "held") {
         await this.deps.prisma.messagingOutbound.updateMany({
-          where: { id: row.id, status: "sending" },
+          where: { id: row.id, ...IN_FLIGHT, updatedAt: claimedAt },
           data: { status: "pending" },
         });
         if (own) {
@@ -421,120 +446,126 @@ export class MessagingDelivery {
         const attempt = own ? job?.attempt : undefined;
         const last = attempt !== undefined && attempt.number >= attempt.max;
         if (!failure?.permanent && !last) {
-          await this.retryLater(row, failure?.retryAfterMs ?? null, own, outcome.error);
+          await this.retryLater(row, claimedAt, failure?.retryAfterMs ?? null, own, outcome.error);
           return;
         }
         getLogger().warn("messaging outbound failed", {
           reason: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
         });
-        await this.settle(row, { kind: "failed" }, deadline, outcome.attachmentName);
+        await this.settle(row, claimedAt, { kind: "failed" }, outcome.attachmentName);
         continue;
       }
-      await this.settle(row, outcome, deadline);
+      await this.settle(row, claimedAt, outcome);
     }
   }
 
   /**
-   * Records how a claimed send ended, retrying the write until the claim's deadline: a message
-   * that went out must not be left claimed for its backup job to send again.
+   * Records how a claimed send ended, retrying the write while the claim is still this sender's:
+   * a message that went out must not be left claimed for its backup job to send again. Returns
+   * false when the claim was lost, to a backup job that took over a stale one.
    */
   private async settle(
     row: LaneRow,
+    claimedAt: Date,
     outcome: { kind: "sent"; handle: string | null } | { kind: "failed" },
-    deadline: number,
     attachmentName: string | null = null,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const giveUpAt = claimedAt.getTime() + MESSAGING_SEND_STALE_MS + 60_000;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await this.finish(row, outcome, attachmentName);
-        return;
+        return await this.finish(row, claimedAt, outcome, attachmentName);
       } catch (error) {
         const wait = databaseCapacityBackoffMs(attempt);
-        if (Date.now() + wait >= deadline) throw error;
+        if (Date.now() + wait >= giveUpAt) throw error;
         await sleep(wait);
       }
     }
   }
 
+  /** A send that outlived its deadline and then went out: record it, and carry on. */
+  private async settleLate(row: LaneRow, claimedAt: Date, late: SendOutcome, lane: OutboundLane) {
+    if (late.kind !== "sent") return;
+    try {
+      if (await this.settle(row, claimedAt, late)) await this.send([lane]);
+    } catch (error) {
+      this.reportFailure("messaging late send bookkeeping error", error);
+    }
+  }
+
   /**
-   * Claims the conversation's first unsent row for this process, under the conversation's lock.
-   * Anyone may take a pending head. A head waiting on a retry belongs to its backup job, and so
-   * does a send that outlived its timeout; a fresh send belongs to whoever started it.
+   * Claims the conversation's first waiting row for this process, under the conversation's lock.
+   * Any send in flight holds the conversation, this release's or the previous one's. Anyone may
+   * take a pending head; a head waiting on a retry belongs to its backup job, and so does a send
+   * whose claim went stale.
    */
   private async claimHead(
     lane: OutboundLane,
     ownRowId: string | undefined,
   ): Promise<
-    { kind: "empty" } | { kind: "blocked"; retryAt: Date } | { kind: "claimed"; row: LaneRow }
+    | { kind: "empty" }
+    | { kind: "blocked"; retryAt: Date }
+    | { kind: "claimed"; row: LaneRow; claimedAt: Date }
   > {
     return this.deps.prisma.$transaction(async (tx) => {
       await lockLane(tx, lane);
       const now = Date.now();
-      // The previous release claims a row by marking it sent before its handle is known. While
-      // such a send may still be running, nothing behind it may overtake it.
-      const previousClaim = await tx.messagingOutbound.findFirst({
-        where: {
-          ...laneWhere(lane),
-          status: "sent",
-          providerHandle: null,
-          updatedAt: { gt: new Date(now - PREVIOUS_RELEASE_IN_FLIGHT_MS) },
-        },
+      const staleBefore = new Date(now - MESSAGING_SEND_STALE_MS);
+      const inFlight = await tx.messagingOutbound.findFirst({
+        where: { ...laneWhere(lane), ...IN_FLIGHT, updatedAt: { gt: staleBefore } },
         orderBy: { updatedAt: "desc" },
         select: { updatedAt: true },
       });
-      if (previousClaim)
+      if (inFlight)
         return {
           kind: "blocked" as const,
-          retryAt: new Date(previousClaim.updatedAt.getTime() + PREVIOUS_RELEASE_IN_FLIGHT_MS),
+          retryAt: new Date(inFlight.updatedAt.getTime() + MESSAGING_SEND_STALE_MS + 5_000),
         };
       const head = await tx.messagingOutbound.findFirst({
-        where: { ...laneWhere(lane), status: { in: UNSENT } },
+        where: {
+          ...laneWhere(lane),
+          OR: [{ status: { in: WAITING } }, ...(ownRowId ? [{ id: ownRowId, ...IN_FLIGHT }] : [])],
+        },
         orderBy: SEND_ORDER,
         select: LANE_ROW,
       });
       if (!head) return { kind: "empty" as const };
-      const staleAt = head.updatedAt.getTime() + MESSAGING_SEND_STALE_MS;
       const mine = head.id === ownRowId;
-      const claimable =
-        head.status === "pending" ||
-        (mine && head.status === "retry") ||
-        (mine && head.status === "sending" && staleAt <= now);
-      if (!claimable) {
-        return {
-          kind: "blocked" as const,
-          retryAt: new Date(
-            head.status === "sending"
-              ? Math.max(staleAt, now) + 5_000
-              : now + MESSAGING_SEND_BACKUP_MS,
-          ),
-        };
-      }
-      // Compare-and-set on the status read here, under the lock the previous release takes too,
-      // so its drain and this one can never both claim the row.
+      if (head.status !== "pending" && !mine)
+        return { kind: "blocked" as const, retryAt: new Date(now + MESSAGING_SEND_BACKUP_MS) };
+      // Compare-and-set on what was read here, under the lock the previous release takes too, so
+      // its drain and this one can never both claim the row. The claim's time identifies it.
+      const claimedAt = new Date(now);
       const claimed = await tx.messagingOutbound.updateMany({
-        where: { id: head.id, status: head.status, updatedAt: head.updatedAt },
-        data: { status: "sending" },
+        where: {
+          id: head.id,
+          status: head.status,
+          providerHandle: null,
+          updatedAt: head.updatedAt,
+        },
+        data: { status: "sent", updatedAt: claimedAt },
       });
       if (claimed.count !== 1) return { kind: "blocked" as const, retryAt: new Date(now + 5_000) };
-      return { kind: "claimed" as const, row: head };
+      return { kind: "claimed" as const, row: head, claimedAt };
     });
   }
 
-  /** Settles a row that went out, or that will never go out, and removes its backup job. */
+  /**
+   * Settles a row that went out, or that will never go out, and removes its backup job, if the
+   * claim is still this sender's. Returns false when another sender took it over.
+   */
   private async finish(
     row: LaneRow,
+    claimedAt: Date,
     outcome: { kind: "sent"; handle: string | null } | { kind: "failed" },
     attachmentName: string | null = null,
-  ): Promise<void> {
-    await this.deps.prisma.$transaction(async (tx) => {
-      await tx.messagingOutbound.updateMany({
-        where: { id: row.id, status: { in: UNSENT } },
+  ): Promise<boolean> {
+    return this.deps.prisma.$transaction(async (tx) => {
+      const settled = await tx.messagingOutbound.updateMany({
+        where: { id: row.id, ...IN_FLIGHT, updatedAt: claimedAt },
         data:
-          // An empty handle, never null: a sent row without one is the previous release's claim.
-          outcome.kind === "sent"
-            ? { status: "sent", providerHandle: outcome.handle ?? "" }
-            : { status: "failed" },
+          outcome.kind === "sent" ? { providerHandle: outcome.handle ?? "" } : { status: "failed" },
       });
+      if (settled.count !== 1) return false;
       await this.deps.jobs.cancelIn(tx, messagingSendJobKey(row.id));
       if (outcome.kind === "failed" && attachmentName) {
         // The reply's text went out on its own rows; say the file did not follow instead of
@@ -562,6 +593,7 @@ export class MessagingDelivery {
           );
         }
       }
+      return true;
     });
   }
 
@@ -572,23 +604,26 @@ export class MessagingDelivery {
    */
   private async retryLater(
     row: LaneRow,
+    claimedAt: Date,
     retryAfterMs: number | null,
     own: boolean,
     error: unknown,
   ): Promise<void> {
+    const claim = { id: row.id, ...IN_FLIGHT, updatedAt: claimedAt };
     if (own) {
       await this.deps.prisma.messagingOutbound.updateMany({
-        where: { id: row.id, status: "sending" },
+        where: claim,
         data: { status: "retry" },
       });
       if (retryAfterMs) throw new RetryJobLaterError(retryAfterMs, { cause: error });
       throw error;
     }
     await this.deps.prisma.$transaction(async (tx) => {
-      await tx.messagingOutbound.updateMany({
-        where: { id: row.id, status: "sending" },
+      const released = await tx.messagingOutbound.updateMany({
+        where: claim,
         data: { status: "retry" },
       });
+      if (released.count !== 1) return;
       await this.deps.jobs.enqueueIn(
         tx,
         messagingSendJob(row.id, new Date(Date.now() + (retryAfterMs ?? 0))),
@@ -596,13 +631,16 @@ export class MessagingDelivery {
     });
   }
 
-  /** Sends one claimed row, within the send timeout. */
   /**
    * Sends one claimed row. The provider gets the send timeout as its abort signal; a call that
-   * cannot be aborted is waited for until the claim's deadline rather than abandoned, so the
-   * backup job never sends beside a call that may still land.
+   * cannot be aborted is waited for until the claim's deadline, and handed to `late` if it
+   * settles after that, rather than abandoned.
    */
-  private async sendRow(row: LaneRow, deadline: number): Promise<SendOutcome> {
+  private async sendRow(
+    row: LaneRow,
+    deadline: number,
+    late: (outcome: SendOutcome) => Promise<void>,
+  ): Promise<SendOutcome> {
     let attachmentName: string | null = null;
     const context: AdapterContext = {
       operationId: `messaging.send:${row.id}`,
@@ -668,7 +706,7 @@ export class MessagingDelivery {
       if (isDatabaseUnavailable(error)) throw error;
       return { kind: "error", error, attachmentName };
     });
-    return settleBy(work, deadline);
+    return settleBy(work, deadline, late);
   }
 
   /** Group posts, the group intro, and team-chat replies go straight to their provider thread. */
@@ -1140,6 +1178,17 @@ export class MessagingDelivery {
     return lane;
   }
 
+  /**
+   * Whether the previous release already posted this delegated reply. Its marker column goes in a
+   * deferred migration, so the read works with or without it.
+   */
+  private async relayedByPreviousRelease(runId: string): Promise<boolean> {
+    const [row] = await this.deps.prisma.$queryRaw<Array<{ relayed: boolean }>>`
+      SELECT (to_jsonb(r) ->> 'teamChatMirroredAt') IS NOT NULL AS relayed
+      FROM runs AS r WHERE r.id = ${runId}`;
+    return row?.relayed ?? false;
+  }
+
   private async findExternalOrigin(sourceMessageId: string | null) {
     const { prisma } = this.deps;
     let current: string | null = sourceMessageId;
@@ -1197,16 +1246,30 @@ function laneOf(row: { identityId: string | null; threadId: string | null }): Ou
   return null;
 }
 
-/** The send's outcome, or `unsettled` when it is still running at the deadline. */
-async function settleBy(work: Promise<SendOutcome>, deadline: number): Promise<SendOutcome> {
-  // A call that settles after the deadline belongs to the backup job now.
-  work.catch(() => undefined);
+/**
+ * The send's outcome, or `unsettled` when it is still running at the deadline; the outcome of a
+ * call that settles after that goes to `late`.
+ */
+async function settleBy(
+  work: Promise<SendOutcome>,
+  deadline: number,
+  late: (outcome: SendOutcome) => Promise<void>,
+): Promise<SendOutcome> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<SendOutcome>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: "unsettled" }), Math.max(0, deadline - Date.now()));
+  let timedOut = false;
+  const expired = new Promise<SendOutcome>((resolve) => {
+    timer = setTimeout(
+      () => {
+        timedOut = true;
+        resolve({ kind: "unsettled" });
+      },
+      Math.max(0, deadline - Date.now()),
+    );
   });
+  // A late failure is the backup job's to retry once the claim is stale.
+  work.then((outcome) => (timedOut ? late(outcome) : undefined)).catch(() => undefined);
   try {
-    return await Promise.race([work, late]);
+    return await Promise.race([work, expired]);
   } finally {
     clearTimeout(timer);
   }

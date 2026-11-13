@@ -122,7 +122,11 @@ function setup(
   const threadMessages = new Map<string, ThreadMessage>();
   const runs = new Map<string, { id: string; status: string }>();
   const artifacts: Array<Record<string, unknown>> = [];
-  const outbound: Array<{ idempotencyKey: string; status: string }> = [];
+  const outbound: Array<{
+    idempotencyKey: string;
+    status: string;
+    providerHandle?: string | null;
+  }> = [];
   const jobs = new Map<string, BackgroundJob>();
   const state = { botMissing: false };
 
@@ -883,9 +887,14 @@ describe("TeamChatBridge receipts", () => {
 
     await expect(handled()).resolves.toBe(false);
     chat.change(id, { status: "delivered" });
-    chat.outbound.push({ idempotencyKey: `external-message:${id}`, status: "sending" });
+    // Claimed: marked sent before its handle is known.
+    chat.outbound.push({
+      idempotencyKey: `external-message:${id}`,
+      status: "sent",
+      providerHandle: null,
+    });
     await expect(handled()).resolves.toBe(false);
-    chat.outbound[0]!.status = "sent";
+    chat.outbound[0]!.providerHandle = "1700.2";
     await expect(handled()).resolves.toBe(true);
     chat.outbound.push({ idempotencyKey: `external-message:${id}:failure`, status: "retry" });
     await expect(handled()).resolves.toBe(false);

@@ -16,6 +16,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
+import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
 import type { MessagingDeliveryDeps, OutboundLane, OutboundRow } from "./messaging-delivery.js";
@@ -140,6 +141,8 @@ function createWorld() {
       status: string;
       sourceMessageId: string | null;
       messagingMirroredAt: Date | null;
+      /** The previous release's marker for a delegated reply it posted itself. */
+      teamChatMirroredAt?: Date | null;
     }>,
     messages: [] as MessageRecord[],
     externalMessages: [] as Array<{
@@ -431,11 +434,11 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: Where }) => {
         const row = world.outbound.find((candidate) => candidate.id === where.id);
         if (!row) throw new Error("Record to update not found.");
-        applyData(row, { ...data, updatedAt: new Date() });
+        applyData(row, { updatedAt: new Date(), ...data });
         return { ...row };
       }),
       updateMany: vi.fn(async ({ where, data }: { where: Where; data: Where }) =>
-        updateAll(world.outbound, where, { ...data, updatedAt: new Date() }),
+        updateAll(world.outbound, where, { updatedAt: new Date(), ...data }),
       ),
       deleteMany: vi.fn(async ({ where }: { where: Where }) => {
         const kept = world.outbound.filter((row) => !matches(row, where));
@@ -446,6 +449,10 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
     },
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join("?");
+      if (sql.includes("teamChatMirroredAt")) {
+        const run = world.runs.find((candidate) => candidate.id === values[0]);
+        return run ? [{ relayed: Boolean(run.teamChatMirroredAt) }] : [];
+      }
       if (sql.includes("FROM bots")) {
         return [...new Set(values as string[])].sort().flatMap((id) => {
           const bot = world.bots.get(id);
@@ -670,7 +677,11 @@ function linkProvider(world: World, identity: Partial<IdentityRecord>) {
 }
 
 const inSendOrder = (t: Setup) => [...t.world.outbound].sort(bySendOrder);
-const statuses = (t: Setup) => inSendOrder(t).map((row) => row.status);
+/** A claimed row is marked sent before its handle is known; anything else by its status. */
+const statuses = (t: Setup) =>
+  inSendOrder(t).map((row) =>
+    row.status === "sent" && row.providerHandle === null ? "in-flight" : row.status,
+  );
 const requests = (t: Setup) => t.sendToThread.mock.calls.map(([request]) => request);
 const bodies = (t: Setup) =>
   requests(t).map((request) =>
@@ -1678,7 +1689,7 @@ describe("a claimed send and its backup job", () => {
     const sending = t.delivery.send([threadLane("t-a")]);
     await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS);
     await sending;
-    expect(statuses(t)).toEqual(["sending"]);
+    expect(statuses(t)).toEqual(["in-flight"]);
 
     // Too early: the claim is not stale yet, so the job looks again later.
     t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS + 1_000);
@@ -1700,7 +1711,8 @@ describe("a claimed send and its backup job", () => {
     const updateMany = t.prisma.messagingOutbound.updateMany.getMockImplementation()!;
     let failures = 2;
     t.prisma.messagingOutbound.updateMany.mockImplementation(async (args) => {
-      if ((args.data as { status?: string }).status === "sent" && failures-- > 0)
+      // Saving the handle, after the claim.
+      if ("providerHandle" in (args.data as object) && failures-- > 0)
         throw new Error("Connection terminated unexpectedly");
       return updateMany(args);
     });
@@ -1713,6 +1725,61 @@ describe("a claimed send and its backup job", () => {
       status: statuses(t),
       backup: backupJob(t, id!),
     }).toEqual({ sends: 1, status: ["sent"], backup: undefined });
+  });
+
+  it("records a send that lands after its deadline against its own claim, so nothing is resent", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id, next] = await t.record(threadLane("t-a"), [
+      post("t-a", "very slow"),
+      post("t-a", "after it"),
+    ]);
+    t.sendToThread.mockImplementationOnce(async () => {
+      // Past the claim's deadline, before it goes stale.
+      await new Promise((resolve) => setTimeout(resolve, MESSAGING_SEND_STALE_MS - 5_000));
+      return { handle: "late" };
+    });
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS - 9_000);
+    await sending;
+    expect(statuses(t)).toEqual(["in-flight", "pending"]);
+
+    // It lands: recorded, its job removed, and the conversation carries on.
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.waitFor(() => expect(statuses(t)).toEqual(["sent", "sent"]));
+    await t.delivery.sendJob(id!, attempt(1));
+    expect({
+      bodies: bodies(t),
+      handle: t.world.outbound[0]!.providerHandle,
+      jobs: [backupJob(t, id!), backupJob(t, next!)],
+    }).toEqual({ bodies: ["very slow", "after it"], handle: "late", jobs: [undefined, undefined] });
+  });
+
+  it("leaves a late send's result alone once its backup job has taken the claim over", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "raced")]);
+    let land!: () => void;
+    t.sendToThread.mockImplementationOnce(
+      () =>
+        new Promise<MessagingSendResult>((resolve) => {
+          land = () => resolve({ handle: "first" });
+        }),
+    );
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS);
+    await sending;
+    // The claim went stale; the backup job takes it over and sends.
+    t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1);
+    await t.delivery.sendJob(id!, attempt(1));
+    land();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    // The backup job's handle stands; the late "first" result changes nothing.
+    expect({ handle: t.world.outbound[0]!.providerHandle, sends: bodies(t) }).toEqual({
+      handle: "handle-1",
+      sends: ["raced", "raced"],
+    });
   });
 
   it("claims by compare-and-set, so a message another release claimed meanwhile is not sent", async () => {
@@ -1850,7 +1917,7 @@ describe("when a send fails", () => {
     await t.delivery.send([threadLane("t-a")]);
 
     // The failure's transaction rolled back: the claim stands, and so does the backup job.
-    expect(statuses(t)).toEqual(["sending"]);
+    expect(statuses(t)).toEqual(["in-flight"]);
     expect(backupJob(t, id!)!.availableAt!.getTime()).toBeGreaterThan(Date.now());
 
     // When it fires, the claim is stale and the job takes over the abandoned send.
@@ -1972,8 +2039,7 @@ describe("conversation order", () => {
   });
 
   it.each([
-    ["in flight in another process", "sending", null, false],
-    ["claimed by the previous release, which marks it sent before its handle", "sent", null, false],
+    ["in flight in this release or the previous one (sent, no handle yet)", "sent", null, false],
     ["sent", "sent", "wamid.1", true],
     ["failed for good", "failed", null, true],
   ])("a later part whose first part is %s is sent: %s", async (_label, status, handle, sent) => {
@@ -2035,7 +2101,7 @@ describe("conversation order", () => {
 
     const sending = t.delivery.send([threadLane("t-slow"), threadLane("t-fast")]);
     // The fast conversation is out before the slow one answers.
-    await vi.waitFor(() => expect(statuses(t)).toEqual(["sending", "sent"]));
+    await vi.waitFor(() => expect(statuses(t)).toEqual(["in-flight", "sent"]));
     slow.open();
     await sending;
 
@@ -2054,7 +2120,7 @@ describe("conversation order", () => {
     const sending = t.delivery.send([threadLane("t-a")]);
     await vi.waitFor(() => expect(t.sendToThread).toHaveBeenCalledOnce());
     // Claimed before it went out, so another sender leaves the conversation to this one.
-    expect(statuses(t)).toEqual(["sending", "pending"]);
+    expect(statuses(t)).toEqual(["in-flight", "pending"]);
     await t.delivery.send([threadLane("t-a")]);
     expect(t.sendToThread).toHaveBeenCalledOnce();
 
@@ -2075,13 +2141,13 @@ describe("conversation order", () => {
 
   it("leaves a conversation alone while another process sends its first message", async () => {
     const t = setup();
-    seedRow(t.world, { id: "a-1", status: "sending" });
+    seedRow(t.world, { id: "a-1", status: "sent", providerHandle: null });
     seedRow(t.world, { id: "a-2", createdAt: new Date(1_001) });
     await t.delivery.send([threadLane("t-a")]);
 
     // Overtaking would reorder the conversation, so the later message waits too.
     expect(t.sendToThread).not.toHaveBeenCalled();
-    expect(statuses(t)).toEqual(["sending", "pending"]);
+    expect(statuses(t)).toEqual(["in-flight", "pending"]);
   });
 
   it("sends a reply recorded while the conversation's previous send was running", async () => {
@@ -2097,6 +2163,77 @@ describe("conversation order", () => {
 
     expect(bodies(t)).toEqual(["a-1", "a-2"]);
     expect(statuses(t)).toEqual(["sent", "sent"]);
+  });
+});
+
+describe("the previous release's catch-up reply jobs", () => {
+  it("skips a 1:1 reply the previous release mirrored in the meantime", async () => {
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    addRun(t.world, { replies: [text("m-1", "already out")] });
+    t.world.runs[0]!.messagingMirroredAt = new Date();
+    await t.delivery.deliverRun("run-1", { previousRelease: true });
+
+    expect({ rows: t.world.outbound, sends: bodies(t) }).toEqual({ rows: [], sends: [] });
+  });
+
+  it("skips a delegated reply the previous release posted, and sends one it did not", async () => {
+    for (const relayed of [true, false]) {
+      const t = setup();
+      addRun(t.world, {
+        id: "run-a",
+        threadId: "thread-slack",
+        replies: [text("a-msg", "Asking around.")],
+      });
+      t.world.externalMessages.push({
+        id: "em-1",
+        runId: "run-a",
+        kind: "direct",
+        status: "delivered",
+        replyThreadId: null,
+        externalConversation: { conversationId: "slack:C1" },
+      });
+      addRun(t.world, {
+        id: "run-b",
+        threadId: "thread-slack",
+        trigger: "bot_message",
+        replyTo: "a-msg",
+        replies: [text("b-msg", "Found it.")],
+      });
+      t.world.runs[1]!.teamChatMirroredAt = relayed ? new Date() : null;
+      await t.delivery.deliverRun("run-b", { previousRelease: true });
+
+      expect(t.world.outbound.filter((row) => row.kind === "team")).toHaveLength(relayed ? 0 : 1);
+    }
+  });
+});
+
+describe("the Chat SDK surface and the send's abort signal", () => {
+  it("does not start a post once the send's time is up", async () => {
+    const postMessage = vi.fn(async () => ({ id: "m-1", threadId: "slack:C1", raw: {} }));
+    const messaging = new ChatSdkMessagingSurface([
+      {
+        provider: "slack",
+        capabilities: { direct: true, groups: true, receipt: null },
+        adapter: {
+          name: "slack",
+          userName: "bot",
+          initialize: async () => undefined,
+          handleWebhook: async () => new Response("ok"),
+          postMessage,
+          encodeThreadId: (data: { id: string }) => `slack:${data.id}`,
+          decodeThreadId: (threadId: string) => ({ id: threadId.slice("slack:".length) }),
+        } as unknown as Adapter,
+      },
+    ]);
+    const signal = AbortSignal.abort(new Error("send timed out"));
+    await expect(
+      messaging.sendToThread(
+        { threadId: "slack:C1", body: "too late" },
+        { operationId: "op", traceId: "op", spaceId: "", userId: "", signal },
+      ),
+    ).rejects.toThrow("send timed out");
+    expect(postMessage).not.toHaveBeenCalled();
   });
 });
 
