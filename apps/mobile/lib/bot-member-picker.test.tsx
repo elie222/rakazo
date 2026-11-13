@@ -346,6 +346,9 @@ it("shows refreshed members while collapsed and adopts an unedited server rename
     "Writer",
     "Runner",
   ]);
+  await act(async () => switches()[2]!.click());
+  expect(switches()).toHaveLength(3);
+  await act(async () => switches()[2]!.click());
   await click("Save");
   expect(rpc).not.toHaveBeenCalledWith("groups/update", expect.anything());
 });

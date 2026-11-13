@@ -107,7 +107,7 @@ export function BotMemberPicker({
                 disabled={disabled || (!checked && selected.length >= GROUP_MEMBER_MAX)}
                 onValueChange={(next) => {
                   if (next && selected.length >= GROUP_MEMBER_MAX) return;
-                  if (next) setEverPicked((current) => new Set(current).add(bot.id));
+                  setEverPicked((current) => new Set(current).add(bot.id));
                   onChange(next ? [...selected, bot.id] : selected.filter((id) => id !== bot.id));
                 }}
                 value={checked}
