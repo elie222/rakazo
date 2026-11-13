@@ -395,11 +395,12 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     return next;
   }
 
-  function touches(spec: ModelSpec, data: unknown): boolean {
+  function touches(spec: ModelSpec, data: unknown, options: { indexedOnly?: boolean } = {}) {
     const rows = Array.isArray(data) ? data : [data];
-    return rows.some(
-      (row) => isRecord(row) && Object.keys(spec.fields).some((field) => writable(row[field])),
-    );
+    const fields = Object.entries(spec.fields)
+      .filter(([, field]) => !options.indexedOnly || !field.hidden)
+      .map(([name]) => name);
+    return rows.some((row) => isRecord(row) && fields.some((field) => writable(row[field])));
   }
 
   function assertNoNestedEncryptedWrites(model: string, data: unknown) {
@@ -459,7 +460,7 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     if (
       spec.searchTokens &&
       ["update", "updateMany", "updateManyAndReturn"].includes(operation) &&
-      touches(spec, args.data)
+      touches(spec, args.data, { indexedOnly: true })
     )
       return { ...args, data: { ...(args.data as RecordValue), searchTokens: { set: [] } } };
     return args;

@@ -227,10 +227,13 @@ describe("tool step outcomes", () => {
         reply("computer_observe", { arguments: "{}", image: { artifactId: "a" } }),
       ),
     ).toBe(true);
-    // The bot's own state, or a call with nothing kept, adds no outside text.
+    // A saved page read back holds what an earlier run copied in, so any kept result counts.
     expect(
-      historyReplaysOutsideContent(reply("schedule_list", { arguments: "{}", result: "[]" })),
-    ).toBe(false);
+      historyReplaysOutsideContent(
+        reply("save_page", { arguments: '{"pageId":"p1"}', result: "<page source>" }),
+      ),
+    ).toBe(true);
+    // A call with nothing kept adds no outside text.
     expect(historyReplaysOutsideContent(reply("web_fetch", { arguments: "{}" }))).toBe(false);
     expect(historyReplaysOutsideContent([{ role: "user", content: "Hi" }])).toBe(false);
   });

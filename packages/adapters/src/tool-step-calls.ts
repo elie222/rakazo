@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
-import { redactSecrets, toolResultTaintsRun } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "./auto-review.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
@@ -122,20 +122,17 @@ export function keepToolStepResult(
 }
 
 /**
- * Whether replayed history hands the model a kept result (or screenshot) from a tool that reads
- * outside content. Such text could carry injected instructions, so the run starts as one that has
- * read outside content, as if the call had just run.
+ * Whether replayed history hands the model any kept result or screenshot. Such text could carry
+ * injected instructions, even from a tool that reads the bot's own state (a saved page holds what
+ * an earlier run copied in), so the run starts as one that has read outside content.
  */
 export function historyReplaysOutsideContent(history: AgentRunRequest["history"]): boolean {
   return history.some((entry) =>
     entry.segments?.some(
       (segment) =>
         "steps" in segment &&
-        segment.steps.some(
-          (step) =>
-            step.tool !== undefined &&
-            toolResultTaintsRun(step.tool) &&
-            step.calls?.some((call) => call.result !== undefined || call.image !== undefined),
+        segment.steps.some((step) =>
+          step.calls?.some((call) => call.result !== undefined || call.image !== undefined),
         ),
     ),
   );

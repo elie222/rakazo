@@ -327,6 +327,42 @@ describePostgres("content encryption (PostgreSQL)", () => {
       expect(excerpt.messages[0]!.text).toBe("legacy note about pelicans");
     }));
 
+  it("migrates tool history written with encryption off, and writes it back for a rollback", () =>
+    runAsSystem("test fixture", async () => {
+      const id = `enc-tools-plain-${suffix}`;
+      const history = JSON.stringify({
+        steps: [{ tool: "shell", calls: [{ arguments: "{}", result: "HERON-LEDGER 77" }] }],
+      });
+      // As a release with encryption off stores it.
+      await raw.query(
+        `INSERT INTO messages (id, "threadId", seq, role, blocks, "toolHistory") VALUES ($1, $2, 9100, 'bot', '[]'::jsonb, $3)`,
+        [id, threadId, history],
+      );
+      const status = await contentEncryptionStatus(prisma);
+      expect(
+        status.tables.find((t) => t.table === "messages.toolHistory")!.plaintext,
+      ).toBeGreaterThan(0);
+      const stored = async () =>
+        (
+          await raw.query<{ toolHistory: string }>(
+            `SELECT "toolHistory" FROM messages WHERE id = $1`,
+            [id],
+          )
+        ).rows[0]!.toolHistory;
+      await migrateContent(prisma, { mode: "encrypt" });
+      expect(await stored()).not.toContain("HERON");
+      expect(await stored()).toMatch(/^rkz1:/);
+      const read = await prisma.message.findUnique({
+        where: { id },
+        select: { toolHistory: true },
+      });
+      expect(read?.toolHistory).toBe(history);
+      await migrateContent(prisma, { mode: "decrypt" });
+      expect(await stored()).toBe(history);
+      await migrateContent(prisma, { mode: "encrypt" });
+      await prisma.message.delete({ where: { id }, select: { id: true } });
+    }));
+
   it("encrypts memory, revisions, event payloads and thread summaries", () =>
     runAsSystem("test fixture", async () => {
       const doc = await prisma.memoryDocument.create({
