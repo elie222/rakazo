@@ -1784,10 +1784,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         try {
           if (checkpointLoadError) throw checkpointLoadError;
           // Recorded only once setup is done, so a setup failure is not charged to the prompt.
-          await deps.prisma.run.updateMany({
-            where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-            data: { promptVersion: promptVersion() },
-          });
+          // A label for comparing releases: failing to record it never fails the run.
+          await Promise.resolve()
+            .then(() =>
+              deps.prisma.run.updateMany({
+                where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+                data: { promptVersion: promptVersion() },
+              }),
+            )
+            .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,

@@ -44,7 +44,8 @@ SELECT
       AND NOT coalesce(b.replied, false))::int),
     1
   ) AS tools_no_reply_pct,
-  -- Approval and question cards the run showed the user.
+  -- Approval and question cards, plus the cards recording a bot's own settings change:
+  -- encrypted blocks keep only kind and status, which cannot tell them apart.
   round(100.0 * avg((coalesce(b.asks, 0) > 0)::int), 1) AS asked_pct,
   round(avg(coalesce(b.asks, 0)), 2) AS asks_per_run
 FROM recent r
