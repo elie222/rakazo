@@ -310,6 +310,14 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
     );
   }
   const result = [...merged.values()];
+  for (const bot of result) {
+    const names = new Set<string>();
+    for (const routine of bot.routines) {
+      const name = routine.name.toLowerCase();
+      if (name && names.has(name)) throw new GrokBotExportError("not_export");
+      if (name) names.add(name);
+    }
+  }
   if (
     result.some((bot) =>
       [bot.skills, bot.apps, bot.routines, bot.memories, bot.userFacts].some(

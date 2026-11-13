@@ -358,3 +358,11 @@ it("keeps contractions when repairing curly single quote delimiters", () => {
     )[0]?.instructions,
   ).toBe("don’t forget");
 });
+
+it("refuses conflicting fragments of a named routine instead of creating duplicate schedules", () => {
+  const bots = ["First part", "Second part"].map((instruction) => ({
+    name: "Example",
+    routines: [{ name: "Daily", instruction, cron: "0 8 * * *" }],
+  }));
+  expect(() => readGrokBotExportJson(JSON.stringify({ bots }))).toThrow(GrokBotExportError);
+});
