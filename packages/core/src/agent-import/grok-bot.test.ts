@@ -576,3 +576,23 @@ it("does not offer nested bot-shaped metadata as another export", () => {
     "Actual",
   ]);
 });
+
+it("does not count nested list entries as separate export documents", () => {
+  const source = JSON.stringify({
+    bots: [
+      {
+        name: "Example",
+        skills: Array.from({ length: 60 }, (_, index) => ({
+          name: `skill-${index}`,
+          instructions: "Do it",
+        })),
+        routines: Array.from({ length: 60 }, (_, index) => ({
+          name: `routine-${index}`,
+          instruction: "Do it",
+          cron: "0 8 * * *",
+        })),
+      },
+    ],
+  });
+  expect(parseGrokBotExport(`\`\`\`json\n${source}\n\`\`\``)[0]?.skills).toHaveLength(60);
+});

@@ -190,7 +190,9 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
     else if (char === "{") {
       EXPORT_START.lastIndex = index + 1;
       const candidate = EXPORT_START.test(source);
-      if (candidate && ++candidates > 100) throw new GrokBotExportError("too_large");
+      if (candidate && openExports === 0 && ++candidates > 100)
+        throw new GrokBotExportError("too_large");
+      if (starts.length >= 128) throw new GrokBotExportError("too_large");
       if (candidate) openExports += 1;
       starts.push({ index, export: candidate, foundAt: found.length });
     } else if (char === "}") {
