@@ -111,6 +111,11 @@ import {
 } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
 import {
+  keepToolStepResult,
+  keptToolArguments,
+  saveLatestStepScreenshot,
+} from "./tool-step-calls.js";
+import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
   clampUserProgressMessage,
@@ -494,7 +499,6 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     leaseOwner: workerId,
     leaseFence: fence,
     reason: safeReason,
-    computerId: ctx.computer.stored.id,
   });
   if (!paused) return;
   if (typeof paused === "object") {
@@ -524,10 +528,21 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
   const callSteps = stepNames.length > 0 ? stepNames : [event.name];
   reply.pendingToolNames.push(...callSteps);
+  // A call that shows as its own step keeps what it was called with, for later turns to replay.
+  const ownStep = callSteps.length === 1 && callSteps[0] === event.name;
+  const early = reply.earlyCompletions?.get(event.executionId);
+  reply.earlyCompletions?.delete(event.executionId);
+  if (ownStep) {
+    reply.toolStepCalls.set(event.executionId, {
+      arguments: keptToolArguments(event.args, ctx.secrets),
+    });
+    if (early) keepToolStepResult(reply, early, ctx.secrets);
+  }
   reply.toolCalls.push(
     ...callSteps.map((name) => ({
       label: humanizeToolName(name),
       executionId: event.executionId,
+      ...(ownStep ? { tool: event.name } : {}),
     })),
   );
   // Text before ask_user stays pending: the run pauses next, and the question needs it.
@@ -597,6 +612,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     );
     const outcome = toolCompletionOutcome(completion);
     if (outcome) reply.toolOutcomes.set(event.executionId, outcome);
+    keepToolStepResult(reply, completion, ctx.secrets);
     await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
     return isToolPauseResult(result);
   } catch (error) {
@@ -625,6 +641,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
   ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
   // Calls that had not finished when the loop was stopped never ran to the end.
   reply.messageSegments = withReplyToolOutcomes(reply, "stopped");
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -877,6 +894,7 @@ export async function completeRun(ctx: RunContext) {
     reply.currentTextSegment = reply.assembled;
   }
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
   reply.messageSegments = withReplyToolOutcomes(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.

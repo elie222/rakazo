@@ -23,7 +23,6 @@ function fixture(
   const tx = {
     run: { findMany, updateMany },
     computerExecutionLease: { findMany: vi.fn(async () => []) },
-    computer: { findMany: vi.fn(async () => []) },
   } as unknown as Prisma.TransactionClient;
   return { tx, findMany, updateMany, updatedAt };
 }
@@ -87,15 +86,10 @@ describe("pending routine timer coalescing", () => {
       }),
     );
   });
-  it.each(["computerExecutionLease", "computer"] as const)(
-    "preserves a run holding %s ownership",
-    async (kind) => {
-      const { tx, updateMany } = fixture();
-      vi.mocked(tx[kind].findMany).mockResolvedValue([
-        { runId: "run-1", controlRunId: "run-1" },
-      ] as never);
-      expect(await findPendingRoutineTick(tx, config)).toBeNull();
-      expect(updateMany).not.toHaveBeenCalled();
-    },
-  );
+  it("preserves a run holding the computer", async () => {
+    const { tx, updateMany } = fixture();
+    vi.mocked(tx.computerExecutionLease.findMany).mockResolvedValue([{ runId: "run-1" }] as never);
+    expect(await findPendingRoutineTick(tx, config)).toBeNull();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
 });

@@ -576,6 +576,7 @@ export function closeUnterminatedFence(markdown: string): string {
 
     const marker = match[1][0] as "`" | "~";
     if (!openFence) {
+      if (marker === "`" && (match[2] ?? "").includes("`")) continue;
       openFence = { marker, length: match[1].length };
       continue;
     }
