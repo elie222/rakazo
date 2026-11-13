@@ -1201,6 +1201,7 @@ msgstr "क्या जोड़ा जाएगा"
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1384,6 +1385,14 @@ msgstr "राशि"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "इस प्रोवाइडर के लिए API कुंजी संग्रहीत है, सब्सक्रिप्शन साइन-इन नहीं।"
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "चैट में संदर्भ सहेजने और याद करने के लिए एक बाहरी मेमोरी सेवा।"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "एक HTTPS एंडपॉइंट"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "इंपोर्ट की गई एक API कुंजी जाँची नहीं जा सकी। दोबारा कोशिश करें।"
@@ -1412,7 +1421,6 @@ msgstr "कोई दूसरा असिस्टेंट"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "उत्तर"
 
@@ -1467,6 +1475,7 @@ msgstr "लिंक वाला कोई भी"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2679,6 +2688,7 @@ msgstr "पुष्टि करें कि यह URL इस ब्राउ
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2792,6 +2802,7 @@ msgstr "कनेक्ट हो गया।"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2885,14 +2896,14 @@ msgstr "{name} के साथ जारी रखें"
 msgid "Control"
 msgstr "Control"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "संदर्भ सहेजने और याद करने के लिए बातचीत के सारांश, मेमोरी, खोजें और बॉट व स्पेस ID भेजे जाते हैं।"
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "बातचीत"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "संदर्भ सहेजने और याद करने के लिए बातचीत, नाम, मेमोरी, खोजें और बॉट व कार्यस्थान की ID भेजी जाती हैं।"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3870,11 +3881,6 @@ msgstr "साइन-इन शुरू नहीं हो सका"
 msgid "Could not start teaching"
 msgstr "सिखाना शुरू नहीं हो सका"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "कंप्यूटर रोका नहीं जा सका"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "जवाब सबमिट नहीं हो सका"
@@ -4748,10 +4754,6 @@ msgstr "संपादित करें"
 msgid "Edit avatar"
 msgstr "अवतार संपादित करें"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "पहले संपादित करें"
-
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
@@ -4876,6 +4878,10 @@ msgstr "राशि दर्ज करें"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "परीक्षण से पहले API कुंजी दर्ज करें।"
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "HTTPS URL दर्ज करें"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5107,12 +5113,8 @@ msgid "Failure handling"
 msgstr "विफलता प्रबंधन"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "बदलाव दर्शाने वाले फ़ील्ड"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "तुलना के लिए फ़ील्ड, जैसे id, modifiedTime (वैकल्पिक)"
+msgid "Fields to compare (optional)"
+msgstr "तुलना के लिए फ़ील्ड (वैकल्पिक)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5532,6 +5534,7 @@ msgstr "ट्रांसक्रिप्ट छिपाएँ"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5600,6 +5603,10 @@ msgstr "आप Rakazo का उपयोग कैसे करेंगे?"
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5935,6 +5942,10 @@ msgstr "पिछली जाँच {0}: कोई बदलाव नहीं
 msgid "Later"
 msgstr "बाद में"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "बातचीत से सीखें"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5963,10 +5974,6 @@ msgstr "बाएँ"
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "बॉट्स को यह कंप्यूटर उपयोग करने दें"
-
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "बॉट्स को MEMORY.md के साथ-साथ अर्थ के आधार पर तथ्य सहेजने और याद करने देता है।"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6148,6 +6155,7 @@ msgstr "लगता है कि इसमें कोई कुंजी ह
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6277,6 +6285,7 @@ msgid "MCP servers"
 msgstr "MCP सर्वर"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6570,11 +6579,6 @@ msgstr "और"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "और ऐप्स"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "कंप्यूटर की और कार्रवाइयाँ"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7748,8 +7752,8 @@ msgid "Plugins"
 msgstr "प्लगइन"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "चैट में “कोई बदलाव नहीं” पोस्ट करें"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "जब जाँच में कोई बदलाव न मिले, तो चैट में संदेश पोस्ट करें। रूटीन नहीं चलेगा।"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7933,6 +7937,18 @@ msgstr "रीज़निंग प्रयास"
 msgid "Recall and write"
 msgstr "याद करें और लिखें"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "अपने-आप याद करें"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr "याद करने की गहराई"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "इन बैंक से याद करें"
+
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "इस पीयर से याद करें; Rakazo के अपने पीयर में सहेजें।"
@@ -7990,14 +8006,12 @@ msgstr "रिकॉर्डिंग शुरू हो गई। जार�
 msgid "Recording: {0}"
 msgstr "रिकॉर्डिंग: {0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "कंप्यूटर रिकवर करें"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "कंप्यूटर पुनर्प्राप्त करें?"
@@ -8030,17 +8044,11 @@ msgstr "रिकवरी विफल रही"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "पिछला ऑपरेशन रुकने तक रिकवरी उपलब्ध नहीं है।"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "रिकवरी आखिरी सहेजे गए कार्यक्षेत्र को बहाल करती है। बिना सहेजा गया काम खो सकता है।"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "काम न कर रहे कंप्यूटर को फिर से बनाएँ।"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8343,6 +8351,10 @@ msgstr "जवाब रद्द किया गया"
 msgid "Replying to {0}"
 msgstr "{0} को जवाब दे रहे हैं"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "बिना बदलाव वाली जाँचों की रिपोर्ट करें"
+
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Request a new code"
@@ -8413,6 +8425,7 @@ msgstr "{date} को रीसेट होगा।"
 msgid "Resets in {reset}"
 msgstr "{reset} में रीसेट"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "रीसेट हो रहा है…"
@@ -8447,11 +8460,6 @@ msgstr "बहाल करें"
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "{name} बहाल करें"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "अंतिम सहेजे गए कार्यक्षेत्र को पुनर्स्थापित करें।"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -8722,11 +8730,6 @@ msgstr "मेरा सहेजें"
 msgid "Save section name"
 msgstr "सेक्शन का नाम सहेजें"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "कार्यक्षेत्र सहेजें और नवीनतम सॉफ़्टवेयर इंस्टॉल करें।"
-
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
@@ -8961,7 +8964,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "10 मिनट के भीतर {linkApp} से <1>{linkAddress}</1> पर <0>{linkCode}</0> भेजें।"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "उत्तर भेजें"
 
@@ -8974,10 +8976,6 @@ msgstr "फ़ाइल के रूप में भेजें"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "हटाने का कोड भेजें"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "इसे भेजें"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -9374,6 +9372,10 @@ msgstr "छोड़ें"
 msgid "Skip or deploy key"
 msgstr "छोड़ें या डिप्लॉय कुंजी दें"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "असंबंधित मेमोरी छोड़ें"
+
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
@@ -9633,11 +9635,6 @@ msgstr "चरण"
 msgid "Stop"
 msgstr "रोकें"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "कंप्यूटर रोकें"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "बोलकर लिखना बंद करें"
@@ -9659,10 +9656,6 @@ msgstr "रोका गया"
 #: apps/web/src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "रोक दिया गया।"
-
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "रोका जा रहा है…"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
@@ -9715,6 +9708,14 @@ msgstr "अपने AI के साथ सदस्यता लें"
 #: apps/web/src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "सब्सक्रिप्शन आवश्यक"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr "सारांश"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "सारांश और तथ्य"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10542,7 +10543,6 @@ msgid "Type without recording"
 msgstr "रिकॉर्ड किए बिना टाइप करें"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "अपना उत्तर लिखें"
 
@@ -10690,6 +10690,7 @@ msgstr "{name} का कंप्यूटर अपडेट हो रहा 
 msgid "Updating Team Computer"
 msgstr "टीम कंप्यूटर अपडेट हो रहा है"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "अपडेट हो रहा है…"
@@ -10925,10 +10926,6 @@ msgstr "सभी देखें"
 msgid "View source"
 msgstr "सोर्स देखें"
 
-#: apps/web/src/components/SidebarFooter.tsx
-msgid "View usage"
-msgstr "उपयोग देखें"
-
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11063,6 +11060,10 @@ msgstr "हर बार चलने पर इस रूटीन को क�
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "यह बॉट किस लिए है"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr "क्या याद करें"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11297,6 +11298,11 @@ msgstr "आज आपके कार्ड से {price} लिए जाए�
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "आपके कार्ड से आज आनुपातिक अंतर लिया जाएगा।"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "आपके कार्ड से शुल्क नहीं लिया गया"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

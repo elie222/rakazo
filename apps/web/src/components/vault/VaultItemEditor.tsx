@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { CardSecretValue, ContactFields, LoginFieldInput, VaultKind } from "@rakazo/contracts";
+import type {
+  CardSecretValue,
+  ContactFields,
+  LoginFieldInput,
+  VaultKind,
+  VaultPolicy,
+} from "@rakazo/contracts";
 import {
   BotSecretName,
   CardSecretValue as CardSecretValueSchema,
@@ -9,10 +15,10 @@ import {
   commandVariableProblem,
   encodeCardSecret,
   encodeContactSecret,
-  encodeLoginSecret,
-  LoginSecretValue,
   parseCardExpiry,
+  VAULT_ALSO_ON_LIMIT,
 } from "@rakazo/contracts";
+import { vaultLoginSave } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -27,8 +33,10 @@ import {
 } from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
+import type { AgentAccess } from "../integrations/agent-access";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
+import { VaultItemAccess } from "./VaultItemAccess";
 import { VaultPageHeader } from "./VaultPageHeader";
 
 /** What the editor hands back: a destination and the value to save, in the shape vault.put takes. */
@@ -42,6 +50,10 @@ export type VaultEditorResult = {
   remember?: false;
   title?: string;
   note?: string;
+  policy?: VaultPolicy;
+  allBots?: boolean;
+  botIds?: string[];
+  alsoOn?: string[];
 };
 
 /** What the form starts with: a saved item being edited, or what a chat card asks for. */
@@ -52,12 +64,18 @@ export type VaultEditorInitial = {
   origin?: string;
   auth?: VaultAuth;
   loginFields?: LoginFieldInput[];
+  otp?: string;
   /** What a chat card's login fields are called on screen. */
   loginLabels?: readonly string[];
   /** The site of the saved login a chat card's answer moves to this one, shown before saving. */
   replacedSite?: string;
   card?: CardSecretValue;
   contact?: ContactFields;
+  policy?: VaultPolicy;
+  /** Left out by a server that can't limit an item to chosen bots. */
+  access?: AgentAccess;
+  botsNote?: string;
+  alsoOn?: string[];
 };
 
 /** A saved contact a card can bill to. */
@@ -203,7 +221,20 @@ function EditorForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [noteShown, setNoteShown] = useState(Boolean(initial?.note));
+  const [policy, setPolicy] = useState(initial?.policy ?? "allow");
+  const [access, setAccess] = useState(initial?.access);
+  // Bots offered only once known take the saved choice then; withdrawn, nothing is sent.
+  const [offered, setOffered] = useState(initial?.access);
+  if (offered !== initial?.access) {
+    setOffered(initial?.access);
+    setAccess(initial?.access);
+  }
   const [origin, setOrigin] = useState(initial?.origin ?? "");
+  const savedAlsoOn = initial?.alsoOn?.join(", ") ?? "";
+  const [alsoOn, setAlsoOn] = useState(savedAlsoOn);
+  const [otp, setOtp] = useState(initial?.otp ?? "");
+  const [otpShown, setOtpShown] = useState(Boolean(initial?.otp));
+  const [alsoOnShown, setAlsoOnShown] = useState(Boolean(savedAlsoOn));
   const defaultLogin = (): LoginFieldInput[] =>
     initial?.loginFields?.map((field) => ({ ...field, value: asking ? "" : field.value })) ?? [
       { label: t`Username`, value: "", hidden: false },
@@ -247,6 +278,7 @@ function EditorForm({
 
   function clearProtected() {
     setLogin((fields) => fields.map((field) => ({ ...field, value: "" })));
+    setOtp("");
     setCardNumber("");
     setCvc("");
     setValue("");
@@ -271,10 +303,21 @@ function EditorForm({
   const commandVariable = exported ? `$${exported}` : null;
   // An edit keeps the saved value of a key or variable when its field is left empty.
   const valueReady = value.length > 0 || editing;
+  // The same rules as the mobile editor's.
+  const loginSave = vaultLoginSave({
+    fields: login,
+    otp,
+    savedOtp: initial?.otp ?? "",
+    alsoOn,
+    savedAlsoOn,
+    asking,
+  });
+  const { keyUnreadable, sites: otherSites } = loginSave;
+  const limit = VAULT_ALSO_ON_LIMIT;
 
   const ready =
     kind === "login"
-      ? origin.trim().length > 0 && LoginSecretValue.safeParse({ fields: login }).success
+      ? origin.trim().length > 0 && loginSave.save !== undefined
       : kind === "card"
         ? card.success
         : kind === "contact"
@@ -295,14 +338,17 @@ function EditorForm({
       : {
           ...(titleChanged ? { title: title.trim() } : {}),
           ...(noteShown || editing ? { note: note.trim() } : {}),
+          ...(policy !== (initial?.policy ?? "allow") ? { policy } : {}),
+          ...(access && access !== initial?.access ? access : {}),
         };
     const name = initial?.name;
     if (kind === "login") {
       return {
         destination: { name, origin: origin.trim(), auth: { type: "login" } },
-        value: encodeLoginSecret({ fields: login }),
+        value: loginSave.save?.value,
         fields: login,
         ...(asking && !remember ? { remember: false as const } : {}),
+        ...(loginSave.save?.alsoOn ? { alsoOn: loginSave.save.alsoOn } : {}),
         ...labels,
       };
     }
@@ -343,6 +389,7 @@ function EditorForm({
   async function submit() {
     if (busy || !ready) return;
     const saving = result();
+    const typedKey = otp;
     clearProtected();
     setError(null);
     setBusy(true);
@@ -351,6 +398,8 @@ function EditorForm({
       await onSave(saving);
       onDone();
     } catch (err) {
+      // Kept, so saving again after fixing the password doesn't remove the key.
+      setOtp(typedKey);
       setError(failureText(err));
     } finally {
       busyRef.current = false;
@@ -457,6 +506,59 @@ function EditorForm({
             disabled={busy}
             onChange={setLogin}
           />
+          {asking ? null : (
+            <>
+              {otpShown
+                ? text("otp", t`Authenticator key`, otp, setOtp, {
+                    type: "password",
+                    autoComplete: "new-password",
+                  })
+                : null}
+              {keyUnreadable ? (
+                <p className="-mt-2 text-label text-destructive">
+                  <Trans>This authenticator key can't be read.</Trans>
+                </p>
+              ) : null}
+              {alsoOnShown
+                ? text("also-on", t`Also on`, alsoOn, setAlsoOn, {
+                    placeholder: "https://login.example.com",
+                  })
+                : null}
+              {otherSites === "invalid" ? (
+                <p className="-mt-2 text-label text-destructive">
+                  <Trans>Enter each site as an HTTPS address a login can be saved for.</Trans>
+                </p>
+              ) : otherSites === "too_many" ? (
+                <p className="-mt-2 text-label text-destructive">{t`Up to ${limit} sites.`}</p>
+              ) : null}
+              {otpShown && alsoOnShown ? null : (
+                <div className="flex gap-4">
+                  {otpShown ? null : (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="px-0 text-muted-foreground"
+                      onClick={() => setOtpShown(true)}
+                    >
+                      <Trans>Add an authenticator key</Trans>
+                    </Button>
+                  )}
+                  {alsoOnShown ? null : (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="px-0 text-muted-foreground"
+                      onClick={() => setAlsoOnShown(true)}
+                    >
+                      <Trans>Add other sites</Trans>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </>
       ) : null}
       {kind === "card" ? (
@@ -606,6 +708,17 @@ function EditorForm({
           {protectedValue(t`Value`, editing ? "••••••••" : undefined)}
         </>
       ) : null}
+      {asking ? null : (
+        <VaultItemAccess
+          kind={kind}
+          policy={policy}
+          access={access}
+          note={initial?.botsNote}
+          disabled={busy}
+          onChange={setPolicy}
+          onAccessChange={setAccess}
+        />
+      )}
       {asking ? null : noteShown ? (
         text("note", t`When to use`, note, setNote, { maxLength: 200 })
       ) : (
