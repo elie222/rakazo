@@ -1660,7 +1660,7 @@ model AgentImport {
   userId        String
   botId         String
   bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  /// openclaw | hermes | document
+  /// openclaw | hermes | document | grok_bot
   source        String
   created       Json
   /// Idempotency: a retry with the same key and digest returns the same bot.
@@ -2235,6 +2235,9 @@ model MessagingIdentity {
   verifiedAt           DateTime?
   lastInboundAt        DateTime?
   outboundSinceInbound Int       @default(0)
+  /// Provider handle of the reply that last released messages held behind the outbound cap.
+  /// A redelivery of that reply answers no request: it was sent before they went out.
+  capReleaseHandle     String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

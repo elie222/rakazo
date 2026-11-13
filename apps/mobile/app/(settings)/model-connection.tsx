@@ -123,15 +123,19 @@ export default function ModelConnection() {
     setSavedNotice(null);
   }
 
+  const loadGeneration = useRef(0);
+
   const load = useCallback(
     async (preferred: ModelSelection = {}) => {
       if (!request) throw new Error(t`Could not load model settings`);
+      const generation = ++loadGeneration.current;
       setError(null);
       const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
         rpc("me"),
         rpc("models/list"),
         rpc("models/credentials"),
       ]);
+      if (generation !== loadGeneration.current) return nextMe;
       const nextProvider = request.provider;
       const nextCredential = nextCredentials.find((entry) => entry.id === credentialIdRef.current);
       const nextModel = connectionFormModelId({
@@ -166,6 +170,11 @@ export default function ModelConnection() {
     [request, rpc, t],
   );
 
+  function adoptSavedCredential(saved: MobileModelCredential) {
+    ++loadGeneration.current;
+    setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
+  }
+
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const credential = credentials.find((entry) => entry.id === credentialId);
@@ -188,6 +197,7 @@ export default function ModelConnection() {
     scope: target.scope,
     credentialIdRef,
     setCredentialId,
+    onSaved: adoptSavedCredential,
     modelId,
     load,
     finishConnecting,
@@ -209,14 +219,25 @@ export default function ModelConnection() {
 
   useFocusEffect(
     useCallback(() => {
-      void load()
-        .catch((err: unknown) =>
-          publishFeedback("connection", {
-            error: errorText(err, t`Could not load model settings`),
-          }),
-        )
-        .finally(() => setLoading(false));
-      return cancelInFlightWork;
+      let active = true;
+      const pendingLoad = load();
+      const generation = loadGeneration.current;
+      const isCurrent = () => active && generation === loadGeneration.current;
+      void pendingLoad
+        .catch((err: unknown) => {
+          if (isCurrent()) {
+            publishFeedback("connection", {
+              error: errorText(err, t`Could not load model settings`),
+            });
+          }
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        });
+      return () => {
+        active = false;
+        cancelInFlightWork();
+      };
     }, [cancelInFlightWork, load]),
   );
 
@@ -372,12 +393,25 @@ export default function ModelConnection() {
       const saved = await rpc("models/connect", connect.input, {
         timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
       });
+      adoptSavedCredential(saved);
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
+      setHeaderRows(null);
       setApiKey("");
-      if (!savingWithoutKey && (await finishConnecting(activeModelId, saved.id))) return;
-      await load({ modelId });
-      publishFeedback("connection", { notice: t`Saved.` });
+      let refreshGeneration = loadGeneration.current;
+      try {
+        if (!savingWithoutKey && (await finishConnecting(activeModelId, saved.id))) return;
+        const refresh = load({ modelId });
+        refreshGeneration = loadGeneration.current;
+        await refresh;
+        if (refreshGeneration !== loadGeneration.current) return;
+        publishFeedback("connection", { notice: t`Saved.` });
+      } catch (err) {
+        if (refreshGeneration !== loadGeneration.current) return;
+        publishFeedback("connection", {
+          error: errorText(err, t`Could not load model settings`),
+        });
+      }
     } catch (err) {
       publishFeedback("connection", {
         error: errorText(err, t`Could not connect this provider`),
