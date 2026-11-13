@@ -1,8 +1,10 @@
-/** A heard line longer than this is a real turn, however much it overlaps the reply. */
+/** Above this length, require matched words to cluster in a compact span rather than across turns. */
 const MAX_ECHO_WORDS = 12;
 /** Fewer matched words than this is coincidence, not the speaker leaking into the mic. */
 const MIN_ECHO_WORDS = 3;
 const ECHO_MATCH_RATIO = 0.6;
+/** Compactness multiplier for matching echoed transcripts longer than MAX_ECHO_WORDS. */
+const LONG_ECHO_SPAN_FACTOR = 2;
 
 const CONTRACTIONS: Record<string, string> = {
   m: "am",
@@ -41,11 +43,14 @@ export function isEchoOfSpeech(
 ): boolean {
   const heardWords = words(heard);
   const spokenWords = words(spoken);
-  if (heardWords.length > MAX_ECHO_WORDS || !spokenWords.length) return false;
+  if (!heardWords.length || !spokenWords.length) return false;
   if (heardWords.length === 2) {
     return spokenWords.some(
       (word, i) => word === heardWords[0] && spokenWords[i + 1] === heardWords[1],
     );
+  }
+  if (heardWords.length > MAX_ECHO_WORDS) {
+    return hasCompactInOrderMatch(heardWords, spokenWords, threshold);
   }
   let cursor = 0;
   let matched = 0;
@@ -57,6 +62,45 @@ export function isEchoOfSpeech(
   }
   if (matched < MIN_ECHO_WORDS) return false;
   return matched / heardWords.length >= threshold;
+}
+
+/**
+ * Matches longer transcripts (> MAX_ECHO_WORDS) only when enough heard words appear in order
+ * inside a single compact span of `spokenWords`, preventing scattered stopword matches across
+ * unrelated past replies from filtering out real long turns.
+ */
+function hasCompactInOrderMatch(
+  heardWords: readonly string[],
+  spokenWords: readonly string[],
+  threshold: number,
+): boolean {
+  const required = Math.max(MIN_ECHO_WORDS, Math.ceil(heardWords.length * threshold));
+  if (spokenWords.length < required) return false;
+  const maxSpan = heardWords.length * LONG_ECHO_SPAN_FACTOR;
+  const maxStartOffset = heardWords.length - required;
+  for (let startH = 0; startH <= maxStartOffset; startH += 1) {
+    const anchor = heardWords[startH];
+    if (!anchor) continue;
+    for (
+      let startS = spokenWords.indexOf(anchor);
+      startS !== -1;
+      startS = spokenWords.indexOf(anchor, startS + 1)
+    ) {
+      let matched = 1;
+      let cursor = startS + 1;
+      for (let h = startH + 1; h < heardWords.length; h += 1) {
+        if (matched + (heardWords.length - h) < required) break;
+        const word = heardWords[h];
+        if (!word) continue;
+        const at = spokenWords.indexOf(word, cursor);
+        if (at === -1 || at - startS >= maxSpan) continue;
+        matched += 1;
+        cursor = at + 1;
+        if (matched >= required) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** How long a spoken line can still come back through the microphone. */
@@ -75,7 +119,9 @@ export class SpokenMemory {
   remember(text: string, now = Date.now()): void {
     const trimmed = text.trim();
     if (!trimmed) return;
-    this.entries.push({ text: trimmed, at: now });
+    const last = this.entries.at(-1);
+    if (last?.text === trimmed) last.at = now;
+    else this.entries.push({ text: trimmed, at: now });
     this.prune(now);
   }
 

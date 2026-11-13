@@ -11,6 +11,7 @@ vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
+  ECHO_GUARD_MS,
   ExpectedTurnFailure,
   endCall,
   endCallBeforeSessionEnd,
@@ -1845,6 +1846,158 @@ describe("mobile call session on a timer", () => {
     fake.speeches[1]?.resolve();
     await tick();
     expect(getSnapshot()).toBeNull();
+  });
+
+  describe("Android echo guard and playback mic isolation", () => {
+    beforeEach(() => {
+      device.os = "android";
+    });
+    afterEach(() => {
+      device.os = "ios";
+    });
+
+    it("closes on-device dictation during playback and waits ECHO_GUARD_MS before reopening", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      expect(fake.signals).toHaveLength(1);
+      expect(fake.signals[0]?.aborted).toBe(false);
+
+      fake.hear("status please");
+      await tick();
+      fake.replyWith(
+        "message-1",
+        "I checked the staging deploy logs and all integration tests are green today.",
+      );
+      await tick();
+      expect(getSnapshot()?.phase).toBe("speaking");
+      // Playback did not open a new dictation session while speaking on Android.
+      expect(fake.signals).toHaveLength(1);
+      expect(fake.signals[0]?.aborted).toBe(true);
+
+      // Late interim or final events during Android playback must not barge in or reopen the mic.
+      fake.interim("unrelated noisy room chatter over speaker");
+      await tick(INTERIM_BARGE_IN_MS);
+      expect(fake.stopSpeaking).not.toHaveBeenCalled();
+      fake.hear("I checked the staging deploy logs and all integration tests are green");
+      await tick();
+      expect(fake.send).toHaveBeenCalledTimes(1);
+      expect(fake.signals).toHaveLength(1);
+
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS - 1);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.signals).toHaveLength(1);
+
+      await tick(1);
+      expect(getSnapshot()?.phase).toBe("listening");
+      expect(fake.signals).toHaveLength(2);
+      expect(fake.signals[1]?.aborted).toBe(false);
+    });
+
+    it("waits ECHO_GUARD_MS after playback before opening recording fallback on Android", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await tick();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.say("hello");
+      await tick();
+      fake.replyWith("message-1", "Hello there.");
+      await tick();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS - 1);
+      expect(fake.recordings).toHaveLength(1);
+      expect(getSnapshot()?.phase).toBe("speaking");
+
+      await tick(1);
+      expect(fake.recordings).toHaveLength(2);
+      expect(getSnapshot()?.phase).toBe("listening");
+    });
+
+    it("drops a long reply echo even when playback lasted longer than 15 seconds", async () => {
+      const longReply =
+        "Here is the full deployment summary for your production cluster across every region today";
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("give me the summary");
+      await tick();
+
+      fake.replyWith("message-1", longReply);
+      await tick(20_000);
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()?.phase).toBe("listening");
+
+      // A delayed echo arriving right after the guard still matches the refreshed memory.
+      fake.hear(longReply);
+      await tick();
+      expect(fake.send).toHaveBeenCalledTimes(1);
+      expect(getSnapshot()?.phase).toBe("listening");
+    });
+
+    it("handles mute and unmute cleanly across the Android echo guard window", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("hello");
+      await tick();
+      fake.replyWith("message-1", "Hi there.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(200);
+      toggleMute();
+      await tick(ECHO_GUARD_MS);
+      // Guard transitions to listening while keeping the mic closed because muted is true.
+      expect(getSnapshot()).toMatchObject({ phase: "listening", muted: true });
+      expect(fake.signals).toHaveLength(1);
+
+      toggleMute();
+      await tick();
+      expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
+      expect(fake.signals).toHaveLength(2);
+    });
+
+    it("cancels the pending Android echo guard on hang-up and on a follow-up reply", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("hello");
+      await tick();
+      fake.replyWith("message-1", "First part.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(200);
+      // A second reply supersedes the pending guard immediately.
+      fake.replyWith("message-2", "Second part.");
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.signals).toHaveLength(1);
+
+      fake.speeches[1]?.resolve();
+      await tick(200);
+      endCall();
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()).toBeNull();
+      expect(fake.signals).toHaveLength(1);
+    });
+
+    it("hangs up immediately after a farewell on Android without waiting out the echo guard", async () => {
+      const fake = fakes({ onDevice: true });
+      const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.endedCall(id, "Goodbye.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(0);
+      expect(getSnapshot()).toBeNull();
+    });
   });
 
   it("retries the first snapshot load instead of losing the feed", async () => {
