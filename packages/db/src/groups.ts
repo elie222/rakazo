@@ -40,7 +40,7 @@ type GroupRecord = {
       color: string;
       avatarSet?: string;
       runs: Array<{ status: string }>;
-    };
+    } | null;
   }>;
 };
 
@@ -54,13 +54,18 @@ type SpaceGroupRecord = Pick<
   } | null;
 };
 
+// Prisma loads a member's bot in a second query, so a bot deleted between the two reads comes back null.
+function presentMembers<T extends { bot: object | null }>(members: T[]) {
+  return members.filter((member): member is T & { bot: NonNullable<T["bot"]> } => !!member.bot);
+}
+
 function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
-  return members.map((member) => ({
-    botId: member.bot.id,
-    name: member.bot.name,
-    color: member.bot.color,
-    avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
-    status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
+  return presentMembers(members).map(({ bot }) => ({
+    botId: bot.id,
+    name: bot.name,
+    color: bot.color,
+    avatarSet: resolveBotAvatarSet(bot.avatarSet),
+    status: primaryActiveRun(bot.runs)?.status ?? "idle",
   }));
 }
 
@@ -100,8 +105,8 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
   };
 }
 
-function hasMinimumActiveMembers(members: readonly unknown[]) {
-  return members.length >= GROUP_MEMBER_MIN;
+function hasMinimumActiveMembers(members: Array<{ bot: object | null }>) {
+  return presentMembers(members).length >= GROUP_MEMBER_MIN;
 }
 
 async function assertSpaceBots(
@@ -361,7 +366,7 @@ export function createGroupRepos(prisma: PrismaClient) {
       .filter(
         (group) =>
           group.archivedAt !== null ||
-          !hasMinimumActiveMembers(group.members.filter((member) => !member.bot.archivedAt)),
+          !hasMinimumActiveMembers(group.members.filter((member) => !member.bot?.archivedAt)),
       )
       .map((group) => mapGroup(group as GroupRecord));
   }
@@ -411,7 +416,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         include: groupTargetInclude,
       });
       if (!group || !hasMinimumActiveMembers(group.members)) throw new IsolationError();
-      return group;
+      return { ...group, members: presentMembers(group.members) };
     },
 
     async createGroup(actor: Actor, input: { name: string; botIds: string[] }): Promise<Group> {

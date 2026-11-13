@@ -765,7 +765,7 @@ export function botsRoutes(ctx: RouterContext) {
         try {
           return await groupRepos.createGroup(context.actor, {
             name: duplicateBotName(source.name),
-            botIds: source.members.map((member) => member.bot.id),
+            botIds: source.members.flatMap((member) => (member.bot ? [member.bot.id] : [])),
           });
         } catch (error) {
           throw mapSpaceLifecycleError(error);
