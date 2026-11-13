@@ -54,6 +54,7 @@ export class InstaboxEmulator implements InstaboxApi {
   pageBrowser: ((request: unknown) => { exitCode: number; stdout: string }) | undefined;
   /** Thrown by the next file write, as a transfer failure is. */
   writeError: Error | undefined;
+  onWrite: (path: string, data: Uint8Array, signal?: AbortSignal) => void = () => {};
   private sequence = 0;
 
   async create(
@@ -154,13 +155,14 @@ export class InstaboxEmulator implements InstaboxApi {
             throw new InstaboxError(`${path} not found`, { status: 404, code: "not_found" });
           return new Uint8Array(file.content);
         },
-        write: async (path, data) => {
+        write: async (path, data, options) => {
           this.request(`write ${path}`);
           const computer = this.awake(id);
           const failure = this.writeError;
           this.writeError = undefined;
-          if (failure) throw failure;
           computer.files.set(path, { content: new Uint8Array(data), mode: 0o644 });
+          this.onWrite(path, data, options.signal);
+          if (failure) throw failure;
         },
       },
       ports: {
@@ -229,7 +231,11 @@ export class InstaboxEmulator implements InstaboxApi {
     return { ...result, timedOut: false };
   }
 
-  private shell(computer: EmulatedComputer, command: string, envs: Record<string, string>) {
+  private shell(
+    computer: EmulatedComputer,
+    command: string,
+    envs: Record<string, string>,
+  ): { exitCode: number; stdout: string; stderr: string } {
     const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "" });
     if (this.fails(command)) return { exitCode: 1, stdout: "", stderr: "permission denied\n" };
     // A page request: stdin from a private file the command removes before the helper starts.
@@ -245,11 +251,18 @@ export class InstaboxEmulator implements InstaboxApi {
         stderr: "",
       };
     }
+    const removal = command.match(/^rm -f -- '([^']+)'/);
+    if (removal) {
+      computer.files.delete(removal[1]!);
+      return ok();
+    }
     const desktop = computer.respond(command);
     if (desktop) return desktop;
     if (command.includes("ln -s")) return ok();
     const parsed = parse(command, (name) => envs[name] ?? "");
     const argv = parsed.filter((token): token is string => typeof token === "string");
+    if (argv[0] === "bash" && argv[1] === "-c" && argv[2]?.startsWith("rm -f -- "))
+      return this.shell(computer, argv[2], envs);
     if (argv[0] === "mkdir") return ok();
     if (argv[0] === "chmod") {
       for (const path of argv.slice(3)) {

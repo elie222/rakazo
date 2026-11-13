@@ -369,23 +369,26 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   private async installPageBrowser(computer: ComputerRef, context: AdapterContext): Promise<void> {
     // The installer carries the helper's files, more than one command may hold, so it runs from a file.
     const script = `/tmp/rakazo-page-browser-${randomUUID()}.sh`;
-    const installed = await this.use(computer, (desktop) =>
-      desktop.files.write(
-        [{ path: script, data: toArrayBuffer(Buffer.from(installPageBrowserCommand())) }],
-        { signal: context.signal },
-      ),
-    )
-      .then(() =>
-        this.runSetupCommand(
-          computer,
-          `status=0; bash ${shellQuote(script)} || status=$?; rm -f -- ${shellQuote(script)}; exit "$status"`,
-          context.signal,
+    let installed = false;
+    try {
+      await this.use(computer, (desktop) =>
+        desktop.files.write(
+          [{ path: script, data: toArrayBuffer(Buffer.from(installPageBrowserCommand())) }],
+          { signal: context.signal },
         ),
-      )
-      .then(
-        (result) => result.exitCode === 0,
-        () => false,
       );
+      const result = await this.runSetupCommand(
+        computer,
+        `status=0; bash ${shellQuote(script)} || status=$?; rm -f -- ${shellQuote(script)}; exit "$status"`,
+        context.signal,
+      );
+      installed = result.exitCode === 0;
+    } catch {
+      context.signal.throwIfAborted();
+    } finally {
+      await this.runSetupCommand(computer, `rm -f -- ${shellQuote(script)}`).catch(() => {});
+    }
+    context.signal.throwIfAborted();
     if (!installed)
       getLogger().warn("sandbox.page_browser", {
         provider: this.config.id,
@@ -415,7 +418,9 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       context.signal.throwIfAborted();
       try {
         await this.use(computer, (desktop) =>
-          desktop.files.write([{ path: file, data: toArrayBuffer(Buffer.from(input)) }], {}),
+          desktop.files.write([{ path: file, data: toArrayBuffer(Buffer.from(input)) }], {
+            signal: context.signal,
+          }),
         );
       } catch {
         throw new Error("Could not transfer browser input");
@@ -437,14 +442,17 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       context.signal.throwIfAborted();
       return { code: result.exitCode, stdout: result.stdout };
     } finally {
-      const cleaned = await this.run(
-        computer,
-        `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
-        { timeoutMs: 10_000 },
-      ).then(
-        (result) => result.exitCode === 0,
-        () => false,
-      );
+      let cleaned = false;
+      for (let attempt = 0; attempt < 2 && !cleaned; attempt++) {
+        cleaned = await this.run(
+          computer,
+          `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
+          { timeoutMs: 10_000 },
+        ).then(
+          (result) => result.exitCode === 0,
+          () => false,
+        );
+      }
       if (!cleaned)
         getLogger().warn("sandbox.page_browser", {
           provider: this.config.id,
