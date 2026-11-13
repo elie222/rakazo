@@ -31,6 +31,7 @@ Write one JSON document in exactly this shape. Save it as grok-bot-export-<your 
   "version": 1,
   "bots": [
     {
+      "export_id": "a unique identifier for this Bot; repeat it in every split part",
       "name": "your name",
       "title": "your job title, or empty",
       "description": "one line about what you do, or empty",
@@ -61,7 +62,7 @@ Rules:
 - If you cannot read something, leave it out and tell me what you left out. Never guess or fill it in from memory.
 - Never include passwords, API keys, tokens, webhook secrets, cookies or card numbers.
 - Output valid JSON only, with no comments.
-- If it is too long for one message or file, split it into several documents of this same shape with the same bot name, each holding a part the others do not.
+- Export one Bot at a time. If it is too long for one message or file, split it into several documents with the same bot name. Keep every skill and routine complete in one part; never split an individual skill or routine.
 `;
 
 export type GrokBotExportErrorCode = "not_export" | "cut_off" | "too_large" | "newer_version";
@@ -88,6 +89,7 @@ export type GrokBotRoutine = {
 };
 export type GrokBotApp = { name: string; mcpUrl: string; transport: string; headerNames: string[] };
 export type GrokBot = {
+  exportId?: string;
   name: string;
   title: string;
   description: string;
@@ -127,7 +129,6 @@ function oneLine(value: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-/** Failed brace matches before a reply stops being searched: each one scans to its end. */
 const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routines", "apps"];
 /** The start of an export document; one left unclosed means the reply was cut off. */
 const EXPORT_START = /^\{\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/;
@@ -228,10 +229,14 @@ function readApp(app: unknown): GrokBotApp[] {
 
 function readBot(bot: Json): GrokBot {
   return {
+    exportId: first(bot.export_id) || undefined,
     name: oneLine(first(bot.name)),
     title: oneLine(first(bot.title)),
     description: first(bot.description),
-    instructions: first(bot.instructions, bot.soul, bot.systemPrompt),
+    instructions:
+      [bot.instructions, bot.soul, bot.systemPrompt].find(
+        (value): value is string => typeof value === "string" && Boolean(value.trim()),
+      ) ?? "",
     memories: strings(bot.memories),
     userFacts: strings([...list(bot.user_facts), ...list(bot.userFacts)]),
     skills: list(bot.skills).flatMap((skill): GrokBotSkill[] => {
@@ -273,7 +278,7 @@ function readBot(bot: Json): GrokBot {
 }
 
 /**
- * One Bot per name: lists join, dropping exact repeats, instructions join their distinct
+ * Split parts join only by explicit export identity: lists join, dropping exact repeats, instructions join their distinct
  * parts, and other fields keep the last non-empty value, so a split or repeated export brings
  * each thing once.
  */
@@ -281,14 +286,15 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   const union = <T>(mine: T[], theirs: T[]) => [
     ...new Map([...mine, ...theirs].map((item) => [JSON.stringify(item), item])).values(),
   ];
-  const merged = new Map<string, GrokBot>();
+  const merged = new Map<string | symbol, GrokBot>();
   for (const bot of bots) {
-    const key = bot.name.toLowerCase();
+    const key = bot.exportId || Symbol();
     const into = merged.get(key);
     merged.set(
       key,
       into
         ? {
+            exportId: into.exportId,
             name: into.name,
             title: bot.title || into.title,
             description: bot.description || into.description,
@@ -307,33 +313,6 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
     );
   }
   const result = [...merged.values()];
-  for (const bot of result) {
-    const routines = new Map<string, GrokBotRoutine>();
-    for (const routine of bot.routines) {
-      const key = JSON.stringify([
-        routine.name.toLowerCase(),
-        routine.trigger,
-        routine.cron,
-        routine.when,
-        routine.timeZone,
-        routine.details,
-      ]);
-      const previous = routines.get(key);
-      routines.set(
-        key,
-        previous
-          ? {
-              ...routine,
-              instruction: [
-                ...new Set([previous.instruction, routine.instruction].filter(Boolean)),
-              ].join("\n\n"),
-              skills: [...new Set([...previous.skills, ...routine.skills])],
-            }
-          : routine,
-      );
-    }
-    bot.routines = [...routines.values()];
-  }
   if (
     result.some((bot) =>
       [bot.skills, bot.apps, bot.routines, bot.memories, bot.userFacts].some(
@@ -369,7 +348,8 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
     )
   )
     throw new GrokBotExportError("too_large");
-  const bots = mergeBots(raw.map(readBot).filter((bot) => bot.name));
+  const parsed = raw.map(readBot).filter((bot) => bot.name);
+  const bots = documents.length === 1 ? parsed : mergeBots(parsed);
   if (bots.length === 0) throw new GrokBotExportError("not_export");
   return bots;
 }
@@ -408,6 +388,7 @@ export function grokBotExportJson(bot: GrokBot): string {
     version: 1,
     bots: [
       {
+        export_id: bot.exportId,
         name: bot.name,
         title: bot.title,
         description: bot.description,
@@ -564,7 +545,7 @@ export function parseGrokBot(bot: GrokBot): AgentImportParse {
       : []),
   ];
   const skills = grokSkills(bot);
-  const instructions = bot.instructions.trim();
+  const instructions = bot.instructions;
   return {
     suggestedName: bot.name.slice(0, BOT_NAME_MAX_LENGTH),
     suggestedDescription: (bot.description || bot.title).slice(0, BOT_DESCRIPTION_MAX_LENGTH),

@@ -76,29 +76,35 @@ describe("reading a Grok Bot's reply", () => {
     expect(bot!.routines).toHaveLength(2);
   });
 
-  it("joins a split export by Bot name and counts a repeated part once", () => {
+  it("joins a split export by explicit identity and counts a repeated part once", () => {
     const [monday, triage] = bramble.routines;
     const first = exportOf({
+      export_id: "bramble",
       name: "Bramble",
       instructions: "Rule one.",
       memories: ["A"],
       routines: [monday],
     });
     const second = exportOf({
+      export_id: "bramble",
       name: "bramble",
       instructions: "Rule two.",
       memories: ["B"],
       routines: [monday, triage],
     });
-    const again = exportOf({ name: "Bramble", instructions: "Rule two." });
+    const again = exportOf({ export_id: "bramble", name: "Bramble", instructions: "Rule two." });
     const bots = parseGrokBotExport(`Part 1:\n${first}\n\nPart 2:\n${second}\n\n${again}`);
     expect(bots).toHaveLength(1);
     expect(bots[0]!.name).toBe("Bramble");
     expect(bots[0]!.instructions).toBe("Rule one.\n\nRule two.");
     // A later, fuller part replaces the earlier one it contains.
-    const fuller = exportOf({ name: "Bramble", instructions: "Rule one.\n\nRule two." });
+    const fuller = exportOf({
+      export_id: "bramble",
+      name: "Bramble",
+      instructions: "Rule one.\n\nRule two.",
+    });
     const [whole] = parseGrokBotExport(
-      `${exportOf({ name: "Bramble", instructions: "Rule two." })}\n${fuller}`,
+      `${exportOf({ export_id: "bramble", name: "Bramble", instructions: "Rule two." })}\n${fuller}`,
     );
     expect(whole!.instructions).toBe("Rule one.\n\nRule two.");
     expect(bots[0]!.memories).toEqual(["A", "B"]);
@@ -360,29 +366,24 @@ it("keeps contractions when repairing curly single quote delimiters", () => {
   ).toBe("don’t forget");
 });
 
-it("combines instructions for fragments of the same scheduled routine", () => {
-  const bots = ["First part", "Second part"].map((instruction) => ({
-    name: "Example",
-    routines: [{ name: "Daily", instruction, cron: "0 8 * * *" }],
+it("keeps same-named bots and routines distinct", () => {
+  const routines = ["First", "Second"].map((instruction) => ({
+    name: "Daily",
+    instruction,
+    cron: "0 8 * * *",
   }));
-  expect(
-    readGrokBotExportJson(JSON.stringify({ bots }))[0]?.routines.map(
-      (routine) => routine.instruction,
-    ),
-  ).toEqual(["First part\n\nSecond part"]);
-});
-
-it("keeps later instructions when the first split part has none", () => {
-  const [bot] = readGrokBotExportJson(
+  const bots = readGrokBotExportJson(
     JSON.stringify({
       bots: [
-        { name: "Example", memories: ["Remember"] },
-        { name: "Example", instructions: "Follow these rules" },
+        { name: "Example", routines },
+        { name: "Example", instructions: "Other" },
       ],
     }),
   );
-  expect(bot?.instructions).toBe("Follow these rules");
+  expect(bots).toHaveLength(2);
+  expect(bots[0]?.routines.map((routine) => routine.instruction)).toEqual(["First", "Second"]);
 });
+
 it("preserves an opening instructions heading in exported rules", () => {
   expect(
     combineImportedInstructions([
@@ -396,11 +397,12 @@ it("preserves an opening instructions heading in exported rules", () => {
 });
 
 it("repairs each split document even when an earlier part already parses", () => {
-  const first = JSON.stringify({ bots: [{ name: "Example", instructions: "First" }] });
-  const second = JSON.stringify({ bots: [{ name: "Example", instructions: "Second" }] }).replace(
-    /"/g,
-    "“",
-  );
+  const first = JSON.stringify({
+    bots: [{ export_id: "example", name: "Example", instructions: "First" }],
+  });
+  const second = JSON.stringify({
+    bots: [{ export_id: "example", name: "Example", instructions: "Second" }],
+  }).replace(/"/g, "“");
   expect(parseGrokBotExport(`${first}\n${second}`)[0]?.instructions).toBe("First\n\nSecond");
 });
 
