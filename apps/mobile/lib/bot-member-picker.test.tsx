@@ -391,3 +391,16 @@ it("does not refresh an open group from another selected Space", async () => {
   expect(rpc).not.toHaveBeenCalled();
   expect(switches()).toHaveLength(2);
 });
+
+it("preserves a local deselection across remote removal and readdition", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  await act(async () => switches()[1]!.click());
+  let members = group.members.slice(0, 1);
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "groups/list" ? [{ ...group, members }] : procedure === "bots/list" ? bots : [],
+  );
+  await act(async () => notifyArchivedChatsChanged());
+  members = group.members;
+  await act(async () => notifyArchivedChatsChanged());
+  expect(switches()[1]!.checked).toBe(false);
+});

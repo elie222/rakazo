@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
@@ -23,6 +23,7 @@ export default function GroupSettingsScreen() {
   const [group, setGroup] = useState<MobileGroup | null>(null);
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
+  const deselected = useRef(new Set<string>());
   const [selected, setSelected] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export default function GroupSettingsScreen() {
 
   useEffect(() => {
     if (!groupId) return;
+    deselected.current.clear();
     const spaceId = selectedSpaceId();
     let generation = 0;
     let baseline: MobileGroup | null = null;
@@ -60,7 +62,8 @@ export default function GroupSettingsScreen() {
                   ...nextGroup.members
                     .filter(
                       (member) =>
-                        !previousMembers.has(member.botId) || previous.includes(member.botId),
+                        !deselected.current.has(member.botId) &&
+                        (!previousMembers.has(member.botId) || previous.includes(member.botId)),
                     )
                     .map((member) => member.botId),
                   ...previous.filter((id) => !previousMembers.has(id) && ids.has(id)),
@@ -148,7 +151,13 @@ export default function GroupSettingsScreen() {
             key={group.id}
             bots={bots}
             selected={selected}
-            onChange={setSelected}
+            onChange={(next) => {
+              for (const id of selected) {
+                if (!next.includes(id)) deselected.current.add(id);
+              }
+              for (const id of next) deselected.current.delete(id);
+              setSelected(next);
+            }}
             onOpenBot={(bot) =>
               router.push({ pathname: "/bot-profile", params: { botId: bot.id, name: bot.name } })
             }
