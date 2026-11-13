@@ -36,19 +36,18 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await expect(google).toBeVisible();
   await expect(apple).toBeVisible();
   await expect(emailChoice).toBeVisible();
-  await expect(page.getByText("or", { exact: true })).toBeVisible();
+
   await expect(page.getByRole("link", { name: "Sign up" })).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
   const googleBox = await google.boundingBox();
   const appleBox = await apple.boundingBox();
   const emailBox = await emailChoice.boundingBox();
-  expect(googleBox && appleBox && Math.abs(googleBox.y - appleBox.y) < 4).toBeTruthy();
-  expect(googleBox && appleBox && googleBox.x < appleBox.x).toBeTruthy();
+  expect(googleBox && appleBox && appleBox.y >= googleBox.y + googleBox.height).toBeTruthy();
   expect(googleBox && appleBox && Math.abs(googleBox.width - appleBox.width) < 2).toBeTruthy();
   expect(googleBox && googleBox.height >= 44 && googleBox.height <= 52).toBeTruthy();
   expect(emailBox && googleBox && emailBox.y > googleBox.y).toBeTruthy();
-  expect(emailBox && googleBox && emailBox.width < googleBox.width * 0.85).toBeTruthy();
-  expect(emailBox && googleBox && emailBox.height < googleBox.height).toBeTruthy();
+  expect(emailBox && googleBox && Math.abs(emailBox.width - googleBox.width) < 2).toBeTruthy();
+  expect(emailBox && googleBox && Math.abs(emailBox.height - googleBox.height) < 2).toBeTruthy();
 
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -102,7 +101,7 @@ test("one provider spans the chooser row", async ({ page }, testInfo) => {
   const card = page.locator("form");
   const cardBox = await card.boundingBox();
   expect(googleBox && cardBox && googleBox.width > cardBox.width * 0.7).toBeTruthy();
-  expect(emailBox && googleBox && emailBox.width < googleBox.width * 0.85).toBeTruthy();
+  expect(emailBox && googleBox && Math.abs(emailBox.width - googleBox.width) < 2).toBeTruthy();
   await captureScreenshot(page, testInfo, "sign-in-one-provider");
 });
 
@@ -188,4 +187,66 @@ test("linked social accounts use a supported deletion confirmation method", asyn
     settings.getByRole("button", { name: "Continue with Apple", exact: true }),
   ).toHaveCount(0);
   await captureScreenshot(page, testInfo, "social-account-deletion-confirmation");
+});
+
+test("provider errors stay centered below a contained stack", async ({ page }, testInfo) => {
+  await mockSignedOut(page, both);
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        ...passwordOnly,
+        providers: [{ id: "oidc", name: "Company" }, ...both],
+      },
+    }),
+  );
+  await page.goto("/sign-in?error=account_not_linked");
+  const form = page.locator("form");
+  const choices = form.getByRole("button", { name: /^Continue with (Google|Apple|email)$/ });
+  await expect(choices).toHaveCount(3);
+  const formBox = (await form.boundingBox())!;
+  let previousBottom = 0;
+  for (const choice of await choices.all()) {
+    const box = (await choice.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(formBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(formBox.x + formBox.width);
+    expect(box.y).toBeGreaterThanOrEqual(previousBottom);
+    previousBottom = box.y + box.height;
+  }
+  const sso = form.getByRole("button", { name: "Continue with Company", exact: true });
+  await expect(sso).toBeVisible();
+  const ssoBox = (await sso.boundingBox())!;
+  expect(ssoBox.y).toBeGreaterThanOrEqual(previousBottom);
+  expect(ssoBox.width).toBeLessThan(formBox.width * 0.7);
+  const error = page.getByRole("alert");
+  await expect(error).toBeVisible();
+  const errorBox = (await error.boundingBox())!;
+  expect(errorBox.y).toBeGreaterThanOrEqual(ssoBox.y + ssoBox.height);
+  expect(Math.abs(errorBox.x + errorBox.width / 2 - formBox.x - formBox.width / 2)).toBeLessThan(2);
+  await expect(error).toHaveCSS("text-align", "center");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await captureScreenshot(page, testInfo, "sign-in-provider-error");
+});
+
+test("long organization names stay inside the sign-in card", async ({ page }) => {
+  await mockSignedOut(page, both);
+  const name = "Example organization with a deliberately long sign-in connection name".repeat(3);
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        ...passwordOnly,
+        providers: [{ id: "oidc", name }, ...both],
+      },
+    }),
+  );
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/sign-in");
+    const company = page.getByRole("button", { name: `Continue with ${name}`, exact: true });
+    await expect(company).toBeVisible();
+    const box = (await company.boundingBox())!;
+    const formBox = (await page.locator("form").boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(formBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(formBox.x + formBox.width);
+    await expect(company.locator("span")).toHaveCSS("text-overflow", "ellipsis");
+  }
 });
