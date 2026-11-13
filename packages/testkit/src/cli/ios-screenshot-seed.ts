@@ -131,6 +131,12 @@ export async function seedIosScreenshotFixture(input: {
       botIds: [researcher.id, writer.id, support.id],
     });
   }
+  if (!groups.some((item) => item.name === "Review pair")) {
+    await rpc<GroupRow>(input.apiUrl, populated.headers, "groups/create", {
+      name: "Review pair",
+      botIds: [researcher.id, writer.id],
+    });
+  }
   const routines = await rpc<RoutineRow[]>(input.apiUrl, populated.headers, "routines/list", {
     botId: researcher.id,
   });
