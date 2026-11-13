@@ -25,11 +25,13 @@ import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { isInlineImageBlock } from "../lib/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { useChatOnScreen } from "../lib/page-card-detail";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 /** View-only bot-to-bot exchange, opened from a Messaged / Message from chip in a bot's chat. */
 export default function PeerChat() {
+  useChatOnScreen();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const { t } = useLingui();

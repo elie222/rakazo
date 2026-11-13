@@ -16,6 +16,7 @@ const { rpc, back, scrollToEnd, scrollProps } = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("./page-card-detail", () => ({ useChatOnScreen: vi.fn() }));
 vi.mock("../components/pages/page-card", async () => {
   const { createContext, useContext } = await import("react");
   const NewestPageCards = createContext(new Map<string, string>());
