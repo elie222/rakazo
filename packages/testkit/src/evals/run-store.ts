@@ -107,7 +107,8 @@ export class RunStore {
    */
   save(report: StoredReport, options: { label?: string } = {}): RunIndexEntry {
     const json = JSON.stringify(report);
-    const legacy = !report.fingerprint?.run;
+    // The fingerprint names a folder, so anything but a hash (an old or edited report) is legacy.
+    const legacy = !/^[0-9a-f]{64}$/.test(report.fingerprint?.run ?? "");
     const fingerprint = legacy
       ? `legacy-${createHash("sha256").update(json).digest("hex").slice(0, 32)}`
       : report.fingerprint!.run!;

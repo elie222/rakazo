@@ -152,7 +152,7 @@ const report = (
     ? {}
     : {
         fingerprint: {
-          run: `run-${options.fingerprint ?? "f1"}`,
+          run: (options.fingerprint ?? "f1").padStart(64, "0"),
           cases: { [caseKey("lease", "current")]: options.fingerprint ?? "f1" },
         },
       }),
@@ -179,15 +179,15 @@ describe("run store", () => {
     const s = store();
     const first = s.save(report([trial(1), trial(2, { status: "failed", category: "agent" })]));
     expect(first).toMatchObject({
-      fingerprint: "run-f1",
-      path: path.join("run-f1", "report.json.gz"),
+      fingerprint: "f1".padStart(64, "0"),
+      path: path.join("f1".padStart(64, "0"), "report.json.gz"),
       trials: { planned: 2, attempted: 2, passed: 1, run: 2, reused: 0, regraded: 0 },
       costUsd: { new: 0.03, trials: 0.02 },
       cases: { "lease/current": "f1" },
     });
     const again = s.save(report([trial(1)], { startedAt: "2026-11-14T00:00:00.000Z" }));
     expect(again.path).not.toBe(first.path);
-    expect(readdirSync(path.join(dir, "run-f1"))).toHaveLength(2);
+    expect(readdirSync(path.join(dir, "f1".padStart(64, "0")))).toHaveLength(2);
     expect(s.entries()).toHaveLength(2);
     expect(s.read(first).trials).toHaveLength(2);
   });
@@ -208,6 +208,13 @@ describe("run store", () => {
     const legacy = s.save(report([trial(1)], { fingerprint: null }), { label: "clean-v7/main" });
     expect(legacy).toMatchObject({ legacy: true, label: "clean-v7/main" });
     expect(() => s.save(report([trial(1)], { fingerprint: null }))).toThrow("already");
+    // A fingerprint that is not a hash never becomes a path.
+    const edited = report([trial(1)]);
+    edited.fingerprint = { run: "../../outside", cases: { "lease/current": "f1" } };
+    expect(s.save(edited)).toMatchObject({
+      legacy: true,
+      fingerprint: expect.stringMatching(/^legacy-/),
+    });
     expect(plan(s)).toEqual({ kind: "run" });
     s.save(
       report([
