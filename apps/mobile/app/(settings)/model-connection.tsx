@@ -186,6 +186,11 @@ export default function ModelConnection() {
     [request, rpc, t],
   );
 
+  function adoptSavedCredential(saved: MobileModelCredential) {
+    ++loadGeneration.current;
+    setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
+  }
+
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const credential = credentials.find((entry) => entry.id === credentialId);
@@ -208,10 +213,7 @@ export default function ModelConnection() {
     scope: target.scope,
     credentialIdRef,
     setCredentialId,
-    onSaved: (saved) => {
-      ++loadGeneration.current;
-      setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
-    },
+    onSaved: adoptSavedCredential,
     modelId,
     load,
     finishConnecting,
@@ -446,11 +448,9 @@ export default function ModelConnection() {
       const saved = await rpc("models/connect", connect.input, {
         timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
       });
-      ++loadGeneration.current;
+      adoptSavedCredential(saved);
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
-      // The mutation has saved this connection even if the follow-up reads fail.
-      setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
       setHeaderRows(null);
       if (!limitsOnly) setApiKey("");
       let refreshGeneration = loadGeneration.current;
