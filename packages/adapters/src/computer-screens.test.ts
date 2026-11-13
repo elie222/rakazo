@@ -115,6 +115,23 @@ describe("Team Computer parallel screens", () => {
     expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
   });
 
+  it.each([
+    [
+      "cannot allocate another screen (limit 4): private detail",
+      "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+    ],
+    [
+      "cannot allocate another screen: private detail",
+      "All Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+    ],
+  ])("formats a team screen limit without exposing provider details", async (detail, message) => {
+    await expect(
+      withComputerScreenAvailability(async () => {
+        throw new Error(detail);
+      }),
+    ).resolves.toEqual({ error: message });
+  });
+
   it("lets Team bots use independent Boat screens concurrently", async () => {
     const boat = fakeBoatProvider();
     expect(boat.describe().capabilities.multiScreen).toBe(true);
