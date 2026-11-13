@@ -38,7 +38,7 @@ export function promptVersionParts() {
   return {
     historyFormat: HISTORY_FORMAT_VERSION,
     context: CONTEXT_POLICY_SETTINGS,
-    tools: builtinAgentTools.map((tool) => [tool.name, tool.description]),
+    tools: builtinAgentTools.map((tool) => [tool.name, tool.description, tool.inputSchema]),
     computerUse: COMPUTER_USE_INSTRUCTION,
     computers: toolSets.flatMap((disabled) =>
       [true, false].flatMap((heldForTakeover) =>
@@ -112,5 +112,14 @@ export function promptVersionOf(parts: unknown): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 12);
 }
 
-/** Stored on each run, so outcomes can be compared between prompt and replay versions. */
-export const PROMPT_VERSION = promptVersionOf(promptVersionParts());
+let cached: string | undefined;
+
+/**
+ * Stored on each run, so outcomes can be compared between prompt and replay versions. Computed on
+ * first use rather than at import: some tool descriptions read settings the entry point loads
+ * after its imports run, and reading them early would fix the wrong text in place.
+ */
+export function promptVersion(): string {
+  cached ??= promptVersionOf(promptVersionParts());
+  return cached;
+}

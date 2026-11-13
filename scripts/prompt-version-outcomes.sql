@@ -17,9 +17,12 @@ blocks AS (
   SELECT
     m."runId",
     bool_or(b ->> 'kind' = 'steps') AS used_tools,
-    -- A mid-turn progress note is not the run's reply.
-    bool_or(b ->> 'kind' = 'text' AND coalesce(m."clientNonce", '') NOT LIKE 'user-progress:%')
-      AS replied,
+    -- Any visible block (text, card, file, ...) is a reply; tool steps, status
+    -- blocks and mid-turn progress notes are not.
+    bool_or(
+      b ->> 'kind' NOT IN ('steps', 'progress', 'meta', 'delivery')
+      AND coalesce(m."clientNonce", '') NOT LIKE 'user-progress:%'
+    ) AS replied,
     count(*) FILTER (WHERE b ->> 'kind' = 'ask') AS asks
   FROM messages m
   JOIN recent r ON r.id = m."runId"
@@ -35,7 +38,7 @@ SELECT
   count(*) AS runs,
   round(100.0 * avg((r.status = 'failed')::int), 1) AS failed_pct,
   round(100.0 * avg((r.status = 'cancelled')::int), 1) AS cancelled_pct,
-  -- Finished after tool work without a single text block in its replies.
+  -- Finished after tool work without anything visible to the user.
   round(
     100.0 * avg((r.status = 'completed' AND coalesce(b.used_tools, false)
       AND NOT coalesce(b.replied, false))::int),
