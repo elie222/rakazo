@@ -10,6 +10,7 @@ import {
 import JSON5 from "json5";
 import { buildSkillMd, parseSkillMd } from "../agent-skill.js";
 import { nextCronDateAcrossStrict } from "../cron.js";
+import { looksLikeCredential } from "./credentials.js";
 import type { AgentImportParse } from "./shared.js";
 import { freeName, memoryItem, renameSkillMd, skillItem } from "./shared.js";
 
@@ -487,7 +488,9 @@ const FRONTMATTER = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 function grokSkills(bot: GrokBot) {
   const used = new Set<string>();
   return bot.skills.map((skill, index) => {
-    const path = `skills/${skill.name || index + 1}`;
+    const unsafeName = looksLikeCredential(skill.name);
+    const path = `skills/${unsafeName ? index + 1 : skill.name || index + 1}`;
+    if (unsafeName) return { source: skill, path, item: null };
     const body = skill.instructions.replace(FRONTMATTER, "").trim();
     const parsed = FRONTMATTER.test(skill.instructions) ? parseSkillMd(skill.instructions) : null;
     const front = parsed && !("error" in parsed) ? parsed : null;
