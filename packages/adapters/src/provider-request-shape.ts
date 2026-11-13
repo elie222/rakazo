@@ -162,7 +162,7 @@ export function summarizeProviderRequest(payload: unknown): ProviderRequestShape
 
 /**
  * Stream options that report each response: the request's shape when it was rejected with a
- * 4xx, and undefined when it was not, so only the latest attempt's rejection is kept.
+ * 4xx, and undefined when it succeeded, so rejections the run recovered from are dropped.
  */
 export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
   options: O,
@@ -192,7 +192,7 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
           ...(requestId ? { requestId } : {}),
           body: summarizeProviderRequest(payload),
         });
-      } else onRejected(undefined);
+      } else if (response.status < 400) onRejected(undefined);
       return onResponse?.(response, model);
     },
   };

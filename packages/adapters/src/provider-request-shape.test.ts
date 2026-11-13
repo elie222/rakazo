@@ -189,9 +189,15 @@ describe("withRejectedRequestCapture", () => {
     for (const secret of SECRETS) expect(serialized).not.toContain(secret);
   });
 
-  it("clears the rejection when a later response is not a 4xx", async () => {
-    expect(await send(200)).toBeUndefined();
-    expect(await send(500)).toBeUndefined();
+  it("reports a success, so recovered rejections drop, but not a server error", async () => {
+    const reported: unknown[] = [];
+    const options = withRejectedRequestCapture({} as SimpleStreamOptions, (value) =>
+      reported.push(value),
+    );
+    await options.onResponse?.({ status: 500, headers: {} }, model);
+    expect(reported).toEqual([]);
+    await options.onResponse?.({ status: 200, headers: {} }, model);
+    expect(reported).toEqual([undefined]);
   });
 });
 

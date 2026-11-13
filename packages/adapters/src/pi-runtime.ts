@@ -484,8 +484,10 @@ export class PiAgentRuntime implements AgentRuntime {
                       prepareContext,
                       onProviderError: (message) => providerFailures.add(message.content),
                       onRejectedRequest: (rejection) => {
-                        if (rejection && rejectedRequests.length < MAX_REJECTED_REQUESTS)
-                          rejectedRequests.push(rejection);
+                        // A later success means the run recovered from earlier rejections.
+                        if (!rejection) rejectedRequests.length = 0;
+                        else if (rejectedRequests.push(rejection) > MAX_REJECTED_REQUESTS)
+                          rejectedRequests.shift();
                       },
                     },
                   ),
