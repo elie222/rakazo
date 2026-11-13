@@ -75,7 +75,7 @@ describe("summarizeProviderRequest", () => {
         "reasoning.summary": "auto",
         api_key: "string",
       },
-      tools: { count: 2, names: ["search", "web_search"] },
+      tools: { count: 2, maxNameLength: 6, invalidNames: 0 },
       messages: {
         count: 5,
         items: [
@@ -105,7 +105,7 @@ describe("summarizeProviderRequest", () => {
         tools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
       }),
     ).toMatchObject({
-      tools: { count: 1, names: ["lookup"] },
+      tools: { count: 1, maxNameLength: 6, invalidNames: 0 },
       messages: { count: 4, items: ["system:text", "user:text x2", "tool:text"] },
     });
     expect(
@@ -120,7 +120,7 @@ describe("summarizeProviderRequest", () => {
         generationConfig: { maxOutputTokens: 100, thinkingConfig: { thinkingBudget: 512 } },
       }),
     ).toMatchObject({
-      tools: { count: 2, names: ["x", "y"] },
+      tools: { count: 2, maxNameLength: 1, invalidNames: 0 },
       messages: { items: ["model:functionCall"] },
       params: {
         "generationConfig.maxOutputTokens": 100,
@@ -136,6 +136,19 @@ describe("summarizeProviderRequest", () => {
       user: "USER-ID-secret",
     });
     expect(shape?.params).toEqual({ model: "string", service_tier: "flex", user: "string" });
+  });
+});
+
+describe("tool names", () => {
+  it("records only their shape, never the names", () => {
+    const shape = summarizeProviderRequest({
+      tools: [
+        { type: "function", name: "acme-private-server_search" },
+        { type: "function", name: "has spaces.and.dots" },
+      ],
+    });
+    expect(shape?.tools).toEqual({ count: 2, maxNameLength: 26, invalidNames: 1 });
+    expect(JSON.stringify(shape)).not.toContain("acme");
   });
 });
 

@@ -17,7 +17,7 @@ export interface ProviderRequestShape {
   bytes?: number;
   keys: string[];
   params: Record<string, string | number | boolean | string[]>;
-  tools?: { count: number; names: string[] };
+  tools?: { count: number; maxNameLength: number; invalidNames: number };
   messages?: { count: number; items: string[] };
 }
 
@@ -39,8 +39,6 @@ const ENUM_SETTINGS = new Set([
   "model",
   "tool_choice",
   "tool_choice.type",
-  "tool_choice.name",
-  "tool_choice.function.name",
   "service_tier",
   "truncation",
   "reasoning_effort",
@@ -56,7 +54,8 @@ const ENUM_SETTINGS = new Set([
 const ROLES = new Set(["system", "developer", "user", "assistant", "tool", "function", "model"]);
 const TOKEN = /^[a-z][\w.:-]{0,63}$/i;
 const MAX_ITEMS = 120;
-const MAX_TOOL_NAMES = 200;
+/** The tool name rule the major model APIs share; a name outside it is a likely 400. */
+const VALID_TOOL_NAME = /^[\w-]{1,64}$/;
 const REQUEST_ID_HEADERS = ["x-request-id", "request-id", "x-amzn-requestid", "cf-ray"];
 const REQUEST_ID = /^[\w.:-]{1,128}$/;
 
@@ -91,12 +90,14 @@ function describeSetting(
   } else if (value !== undefined) params[path] = value === null ? "null" : "object";
 }
 
-function toolName(tool: unknown): string[] {
+/** Names stay out: an MCP tool's name carries its server's user-chosen slug. */
+function toolNames(tool: unknown): string[] {
   const item = record(tool);
-  if (!item) return ["?"];
+  if (!item) return [""];
   const declarations = item.functionDeclarations ?? item.function_declarations;
-  if (Array.isArray(declarations)) return declarations.flatMap(toolName);
-  return [token(item.name) ?? token(record(item.function)?.name) ?? token(item.type) ?? "?"];
+  if (Array.isArray(declarations)) return declarations.flatMap(toolNames);
+  const name = item.name ?? record(item.function)?.name;
+  return [typeof name === "string" ? name : ""];
 }
 
 function partTypes(content: unknown): string {
@@ -145,8 +146,13 @@ export function summarizeProviderRequest(payload: unknown): ProviderRequestShape
     shape.bytes = Buffer.byteLength(JSON.stringify(body));
   } catch {}
   if (Array.isArray(body.tools)) {
-    const names = body.tools.flatMap(toolName);
-    shape.tools = { count: names.length, names: names.slice(0, MAX_TOOL_NAMES) };
+    const tools = body.tools.flatMap(toolNames);
+    const names = tools.filter(Boolean);
+    shape.tools = {
+      count: tools.length,
+      maxNameLength: Math.max(0, ...names.map((name) => name.length)),
+      invalidNames: names.filter((name) => !VALID_TOOL_NAME.test(name)).length,
+    };
   }
   const messages = [body.messages, body.input, body.contents].find(Array.isArray);
   if (messages)
