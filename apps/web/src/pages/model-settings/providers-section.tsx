@@ -7,6 +7,7 @@ import {
   CommandGroup,
   CommandItem,
   CommandList,
+  cn,
   Input,
   ListSearchInput,
   Popover,
@@ -59,18 +60,12 @@ export function ProvidersSection({
           .sort((left, right) => nameOf(left).localeCompare(nameOf(right)))
           .map((credential) => (
             <li key={credential.id} data-testid={`model-provider-${credential.id}`}>
-              <button
-                type="button"
+              <SettingsListRow
                 disabled={disabled}
                 onClick={() => onOpen(credential)}
-                className="flex min-h-[52px] w-full items-center gap-2.5 py-2 ps-3 pe-3 text-start outline-none first:rounded-t-xl hover:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+                label={nameOf(credential)}
+                labelTestId="provider-row-name"
               >
-                <span
-                  data-testid="provider-row-name"
-                  className="min-w-0 flex-1 truncate text-body-lg text-foreground"
-                >
-                  {nameOf(credential)}
-                </span>
                 {credential.reconnectRequired ? (
                   <span className="shrink-0 text-body-sm text-warning">
                     <Trans>Sign in again</Trans>
@@ -78,11 +73,7 @@ export function ProvidersSection({
                 ) : (
                   detail?.(credential)
                 )}
-                <ChevronRight
-                  className="size-4 shrink-0 text-muted-foreground rtl:rotate-180"
-                  aria-hidden
-                />
-              </button>
+              </SettingsListRow>
             </li>
           ))}
         <li>
@@ -229,5 +220,43 @@ function AddProvider({
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** One row of a settings list that opens its own page. */
+export function SettingsListRow({
+  label,
+  labelTestId,
+  disabled,
+  onClick,
+  className,
+  children,
+}: {
+  label: ReactNode;
+  labelTestId?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex min-h-[52px] w-full items-center gap-2.5 py-2 ps-3 pe-3 text-start outline-none first:rounded-t-xl hover:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50",
+        className,
+      )}
+    >
+      <span
+        data-testid={labelTestId}
+        className="min-w-0 flex-1 truncate text-body-lg text-foreground"
+      >
+        {label}
+      </span>
+      {children}
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" aria-hidden />
+    </button>
   );
 }
