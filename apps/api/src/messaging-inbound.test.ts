@@ -1593,6 +1593,46 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
+  it.each([
+    ["released by an earlier attempt at the same reply", 10_000, false],
+    ["delivered before the previous reply", 40_000, true],
+  ])("answers a request %s only if it was seen first", async (_case, sentAgoMs, approves) => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "sendblue",
+        address: "+15551111111",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        outboundSinceInbound: 0,
+        lastInboundAt: new Date(Date.now() - 30_000),
+      },
+    });
+    Object.assign(deps.prisma.agentConnection, {
+      findFirst: vi.fn(async () => ({
+        id: "ac-1",
+        requesterBotId: "bot-6",
+        targetBotId: "bot-1",
+        status: "pending",
+      })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    });
+    sentPrompt(deps, "connect:bot-6:bot-1", 60_000);
+    deps.outboundRows.at(-1)!.updatedAt = new Date(Date.now() - sentAgoMs);
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "YES" });
+
+    if (approves) {
+      expect(deps.prisma.agentConnection.updateMany).toHaveBeenCalled();
+    } else {
+      expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+      expect(deps.sendUserMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ blocks: [{ kind: "text", text: "YES" }] }),
+      );
+    }
+  });
+
   it("still answers a delivered request when the reply also releases held replies", async () => {
     const deps = createDeps({
       identity: {
