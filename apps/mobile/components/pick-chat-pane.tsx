@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNavigation } from "expo-router";
-import { useLayoutEffect } from "react";
+import { useContext, useLayoutEffect } from "react";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { useThemedStyles } from "../lib/native";
 import { createHomeStyles } from "./home-styles";
 
@@ -10,6 +11,7 @@ import { createHomeStyles } from "./home-styles";
 export function PickChatPane() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const rootOwnsBottom = useContext(CallKeyboardContext);
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useLingui();
   useLayoutEffect(() => {
@@ -23,7 +25,7 @@ export function PickChatPane() {
         styles.centered,
         {
           paddingTop: insets.top,
-          paddingBottom: insets.bottom,
+          paddingBottom: rootOwnsBottom ? 0 : insets.bottom,
           paddingLeft: insets.left,
           paddingRight: insets.right,
         },

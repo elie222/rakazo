@@ -12,7 +12,7 @@ import { canDeleteOrganization } from "@rakazo/core";
 import { botColors, botEyeColor, typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -47,6 +47,7 @@ import {
   setPaywallShown,
   subscribedPlan,
 } from "../lib/billing";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { endCallBeforeSessionEnd } from "../lib/call-session";
 import { translucentColor } from "../lib/color";
 import { dateLocaleForUi } from "../lib/i18n";
@@ -81,6 +82,7 @@ export default function Paywall() {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
+  const rootOwnsBottom = useContext(CallKeyboardContext);
   const router = useRouter();
   const dismissible = useLocalSearchParams<{ dismissible?: string }>().dismissible === "1";
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -278,7 +280,10 @@ export default function Paywall() {
         style={[
           styles.screen,
           styles.center,
-          { backgroundColor: tokens.background, paddingBottom: insets.bottom + 16 },
+          {
+            backgroundColor: tokens.background,
+            paddingBottom: (rootOwnsBottom ? 0 : insets.bottom) + 16,
+          },
         ]}
       >
         <View style={styles.done}>
@@ -519,7 +524,7 @@ export default function Paywall() {
           {
             backgroundColor: tokens.background,
             borderTopColor: tokens.border,
-            paddingBottom: insets.bottom + 8,
+            paddingBottom: (rootOwnsBottom ? 0 : insets.bottom) + 8,
           },
         ]}
       >
