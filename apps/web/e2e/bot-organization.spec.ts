@@ -308,7 +308,7 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await page.reload();
 
   const sidebar = page.locator("aside").first();
-  const group = sidebar.getByRole("button", { name: /^Group menu/ });
+  const group = sidebar.getByRole("button", { name: /^Group menu(?! copy)/ });
   await group.click({ button: "right" });
   for (const action of [
     "Pin",

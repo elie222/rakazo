@@ -1,6 +1,7 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
 import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { SignupAttribution } from "@rakazo/contracts";
 import {
   displayName,
   emailAllowed,
@@ -8,6 +9,7 @@ import {
   MAX_PASSWORD_LENGTH,
   MESSAGING_EMAIL_SUFFIX,
   MIN_PASSWORD_LENGTH,
+  signupAttributionFromHeaders,
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
@@ -283,6 +285,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   // Better Auth's own token key, so every stored token shares one cipher and key.
   let authContext: Promise<{ secretConfig: TokenKey }> | undefined;
   const tokenKey = async () => (await authContext!).secretConfig;
+  const attributionField = {
+    type: "string",
+    required: false,
+    input: false,
+    returned: false,
+  } as const;
   const auth = betterAuth({
     appName: "Rakazo",
     logger: env.logger,
@@ -393,7 +401,16 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     },
     user: {
       // Set by the directory; read with every session so a deactivated account is refused.
-      additionalFields: DEACTIVATED_AT_FIELD,
+      additionalFields: {
+        ...DEACTIVATED_AT_FIELD,
+        signupSurface: attributionField,
+        signupUtmSource: attributionField,
+        signupUtmMedium: attributionField,
+        signupUtmCampaign: attributionField,
+        signupUtmContent: attributionField,
+        signupUtmTerm: attributionField,
+        signupReferringDomain: attributionField,
+      },
       validateUserInfo: async ({ user, source }, ctx) => {
         if (source.method !== "oauth") return;
         const providerId = source.oauth?.providerId;
@@ -554,6 +571,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         const socialLinking = trustedSocialLinking(
           ctx.path === "/callback/:id" || ctx.body?.idToken ? providerId : undefined,
         );
+        if (ctx.path === "/sign-in/social") {
+          await addOAuthServerContext({
+            signupAttribution: signupAttributionFromHeaders(ctx.headers),
+          });
+        }
         if (
           ctx.path === "/sign-in/social" &&
           ctx.body?.provider === "oidc" &&
@@ -873,9 +895,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       user: {
         create: {
           after: async (user, ctx) => {
+            const attribution = SignupAttribution.safeParse({
+              surface: user.signupSurface ?? undefined,
+              utmSource: user.signupUtmSource ?? undefined,
+              utmMedium: user.signupUtmMedium ?? undefined,
+              utmCampaign: user.signupUtmCampaign ?? undefined,
+              utmContent: user.signupUtmContent ?? undefined,
+              utmTerm: user.signupUtmTerm ?? undefined,
+              referringDomain: user.signupReferringDomain ?? undefined,
+            });
             env.analytics?.capture(
               user.id,
-              { name: "account_created" },
+              { name: "account_created", ...(attribution.success ? attribution.data : {}) },
               { id: user.id, at: user.createdAt },
             );
             await recordSecurityEvent({
@@ -884,13 +915,28 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               metadata: { via: ctx?.path ?? null },
             });
           },
-          before: async (user) => {
+          before: async (user, ctx = null) => {
             if (isMessagingEmail(user.email)) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });
             }
+            const callbackAttribution = SignupAttribution.safeParse(
+              ctx && isOidcCallback(ctx)
+                ? (await getOAuthState())?.serverContext?.signupAttribution
+                : undefined,
+            );
+            const attribution = callbackAttribution.success
+              ? callbackAttribution.data
+              : signupAttributionFromHeaders(ctx?.headers);
             return {
               data: {
                 ...user,
+                signupSurface: attribution.surface,
+                signupUtmSource: attribution.utmSource,
+                signupUtmMedium: attribution.utmMedium,
+                signupUtmCampaign: attribution.utmCampaign,
+                signupUtmContent: attribution.utmContent,
+                signupUtmTerm: attribution.utmTerm,
+                signupReferringDomain: attribution.referringDomain,
                 ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
               },
             };

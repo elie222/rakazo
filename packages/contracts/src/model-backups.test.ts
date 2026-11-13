@@ -292,6 +292,46 @@ describe("connected backup model choices", () => {
     expect(connectionDisplayName({ ...base, label: "openai-codex" }, "ChatGPT")).toBe("ChatGPT");
   });
 
+  it.each([
+    "Hosted service",
+    "Hosted service Work",
+    "hosted SERVICE Work",
+    "  Hosted service Work  ",
+  ])("does not repeat the endpoint name in %s", (label) => {
+    expect(
+      connectionDisplayName(
+        { provider: "openai-compatible", endpointName: "Hosted service", label },
+        "OpenAI-compatible",
+      ),
+    ).toBe(label.trim());
+  });
+
+  it("adds the endpoint name to a label that omits it", () => {
+    expect(
+      connectionDisplayName(
+        { provider: "openai-compatible", endpointName: "Hosted service", label: "Work" },
+        "OpenAI-compatible",
+      ),
+    ).toBe("Hosted service (Work)");
+  });
+
+  it("keeps compatible provider prefixes when there is no endpoint name", () => {
+    expect(
+      connectionDisplayName(
+        { provider: "openai-compatible", label: "OpenAI-compatible Work" },
+        "OpenAI-compatible",
+      ),
+    ).toBe("OpenAI-compatible Work");
+  });
+
+  it("does not duplicate the endpoint name in compatible backup options", () => {
+    expect(
+      connectedBackupOptions(catalog, [
+        { ...credentials[1]!, endpointName: "Hosted service", label: "Hosted service Work" },
+      ]).map((option) => option.connectionName),
+    ).toEqual(["Hosted service Work"]);
+  });
+
   it("moves a backup one place without changing the source list", () => {
     expect(moveBackupChoice(choices, 1, -1)).toEqual([choices[1], choices[0]]);
     expect(choices).toEqual([

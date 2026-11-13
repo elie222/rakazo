@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { captureScreenshot } from "./helpers";
 
@@ -14,7 +15,7 @@ const both = [
   { id: "apple", name: "Apple", native: true },
 ];
 
-async function mockSignedOut(page: import("@playwright/test").Page, providers: typeof both | []) {
+async function mockSignedOut(page: Page, providers: typeof both | []) {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/sign-in/social", (route) =>
     route.fulfill({ status: 404, json: { message: "not called" } }),

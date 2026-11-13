@@ -19,7 +19,6 @@ import {
   groupBotsForSidebar,
   isActive,
   isRunWorking,
-  memberName,
   newClientId,
   otherAuthor,
   workingRoutineName,
@@ -62,6 +61,7 @@ import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from
 import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
@@ -89,6 +89,7 @@ import { SidebarRoster } from "./shell/sidebar-roster";
 import { SnoozedChats } from "./shell/snoozed-chats";
 import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { Transcript } from "./shell/transcript";
+import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/transcript-member-name";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { useChatRead } from "./shell/use-chat-read";
 import { useChatSnooze } from "./shell/use-chat-snooze";
@@ -158,6 +159,7 @@ function SpaceShell() {
   const {
     groups,
     setGroups,
+    groupsRef,
     bots,
     setBots,
     botsRef,
@@ -427,7 +429,7 @@ function SpaceShell() {
     return true;
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
-  useSpaceBootstrap({
+  const rosterSignals = useSpaceBootstrap({
     rpc,
     roster,
     thread,
@@ -455,6 +457,8 @@ function SpaceShell() {
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
       },
       meId: userId,
+      groupsRef,
+      roster: rosterSignals,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
@@ -641,8 +645,14 @@ function SpaceShell() {
     };
   });
   const resolveTranscriptMemberName = useCallback(
-    (botId: string | undefined) => memberName(transcriptMembers, botId),
-    [transcriptMembers],
+    (botId: string | undefined) =>
+      groupTranscriptMemberName({
+        botId,
+        members: transcriptMembers,
+        bots,
+        archivedBots,
+      }),
+    [archivedBots, bots, transcriptMembers],
   );
   const { composerMentionTargets, footerLogos, setFooterLogos } = useComposerMentions({
     rpc,
@@ -1128,6 +1138,7 @@ function SpaceShell() {
               callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
+              onReleaseComputer={computerControls.onReleaseComputer}
               onOpenImportSetup={openImportSetup}
               rpc={rpc}
             />
@@ -1231,7 +1242,6 @@ function SpaceShell() {
         discardChatAttachments={composer.discardThreadAttachments}
         computer={computer}
         computerOpen={computerOpen}
-        booting={booting}
         computerPanel={
           active ? (
             <ComputerPanel
@@ -1402,9 +1412,6 @@ function SpaceShell() {
           onTakeControl={() => void openComputer(computerBot.id, true)}
           onStart={() => void openComputer(computerBot.id)}
           onRefreshTeaching={refreshActiveTeaching}
-          onRefreshComputer={async () => {
-            await computerControls.refreshComputerFor(computerBot.id);
-          }}
           onClose={() => setComputerOpen(false)}
         />
       ) : null}
@@ -1412,9 +1419,13 @@ function SpaceShell() {
   );
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
-  return initialBotsLoaded || initialLoadFailed ? (
-    <PagesProvider value={pages}>{shell}</PagesProvider>
-  ) : (
-    <PageLoading />
+  return (
+    <SpaceRpcProvider spaceId={shellSpaceId}>
+      {initialBotsLoaded || initialLoadFailed ? (
+        <PagesProvider value={pages}>{shell}</PagesProvider>
+      ) : (
+        <PageLoading />
+      )}
+    </SpaceRpcProvider>
   );
 }

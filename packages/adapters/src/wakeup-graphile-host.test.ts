@@ -47,6 +47,8 @@ function handlers(): BackgroundJobHandlers {
     "skill.teaching-expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.retain-turn": vi.fn(async () => undefined),
+    "memory.purge-history": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
@@ -157,7 +159,7 @@ describe("GraphileJobPublisher.enqueue", () => {
 
   type KeyedJob = { attempts: number; maxAttempts: number; runAt: Date; lockedAt?: Date };
 
-  // graphile-worker 0.17.3 add_job: unsafe_dedupe on conflict bumps revision only.
+  // graphile-worker add_job: unsafe_dedupe on conflict bumps revision only.
   // replace sets attempts = 0 and run_at = excluded.run_at, or detaches a locked
   // job and inserts a new one.
   function graphileJobs(jobs: Map<string, KeyedJob>) {

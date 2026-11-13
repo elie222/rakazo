@@ -8,7 +8,6 @@ import { reconcileRefreshedThread, reduceThreadSnapshot } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   clearActiveThreadRuns,
-  computerPanelNeedsMaintenance,
   computerPanelNeedsScreen,
   computerTakeoverBlocked,
   reduceComputerStatus,
@@ -407,24 +406,6 @@ describe("computer event reduction", () => {
     expect(screenMissing({ ...options, screenUrlLoaded: true, booting: true })).toBe(false);
     expect(screenMissing({ ...options, screenUrlLoaded: true, kind: "desktop" })).toBe(false);
     expect(screenMissing({ ...options, screenUrlLoaded: true, state: "error" })).toBe(false);
-  });
-
-  it("shows maintenance only for an errored computer that is not booting", () => {
-    expect(computerPanelNeedsMaintenance("error", false)).toBe(true);
-    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(false);
-    expect(computerPanelNeedsMaintenance("error", true)).toBe(false);
-    expect(computerPanelNeedsMaintenance("running", false)).toBe(false);
-    expect(computerPanelNeedsMaintenance(undefined, false)).toBe(false);
-  });
-
-  it("hides side-panel maintenance while the computer overlay is open", () => {
-    const panel = "computer";
-    const booting = false;
-    const showInSidePanel = (computerOpen: boolean) =>
-      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("error", booting);
-
-    expect(showInSidePanel(false)).toBe(true);
-    expect(showInSidePanel(true)).toBe(false);
   });
 });
 

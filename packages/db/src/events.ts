@@ -44,6 +44,8 @@ import {
   RunHistoryWriteError,
 } from "./messages.js";
 import { isRecordNotFound } from "./prisma-errors.js";
+import type { RosterChange } from "./roster-changes.js";
+import { followRosterChanges, loadRosterScope, publishRosterChange } from "./roster-changes.js";
 import { createRowId } from "./row-id.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
@@ -102,6 +104,8 @@ export interface ThreadEvents {
     spaceId: string,
     signal?: AbortSignal,
   ): AsyncGenerator<ChatAlert>;
+  publishRosterChange?(change: RosterChange): Promise<void>;
+  followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -211,6 +215,11 @@ export function createThreadEvents(
       await realtime?.publish(`incoming-calls:${userId}`, "");
     },
     followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
+    publishRosterChange: (change) => publishRosterChange(realtime, change),
+    ...(realtime && {
+      followRosterChanges: (userId, signal) =>
+        followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
+    }),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),

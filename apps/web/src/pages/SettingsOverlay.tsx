@@ -12,6 +12,7 @@ import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import { PlanUsage } from "../components/PlanUsage";
 import { SETTINGS_CONTENT_WIDTH, SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { VaultSettings } from "../components/VaultSettings";
 import { canChooseOwnComputer } from "../lib/computer-sandbox";
@@ -135,7 +136,7 @@ export function SettingsOverlay({
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
-  const spaceId = section === "space" ? (space?.id ?? null) : null;
+  const spaceId = section === "space" ? (space?.id ?? null) : undefined;
   const releaseComputerRecovery = useCallback(() => {
     window.clearTimeout(recoveryHoldTimer.current);
     recoveryHoldTimer.current = undefined;
@@ -438,7 +439,10 @@ export function SettingsOverlay({
                     <PaymentWalletSettingsPanel provider={paymentWalletProvider} />
                   ) : null}
                   {section === "usage" ? (
-                    <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                    <>
+                      <PlanUsage />
+                      <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                    </>
                   ) : null}
                   {section === "computer" && showComputer ? (
                     <ComputerSettingsPanel

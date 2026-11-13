@@ -34,7 +34,6 @@ vi.mock("./api", () => ({
     throw new Error(`Unexpected ${method}`);
   },
 }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("../components/load-failure", () => ({
   LoadFailure: ({ message }: { message: string }) => <p role="alert">{message}</p>,
 }));

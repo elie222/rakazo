@@ -128,13 +128,14 @@ export interface AppEnv {
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
+  botEmailSmtpUrl?: string;
   emailProvider?: string;
   welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
   emailFrom: string | undefined;
   emailReplyTo?: string;
   /** Mail to bots' addresses, posted by a relay; off unless the domain and secret are both set. */
-  inboundEmail?: { domain: string; secret: string; relayArcDomain?: string };
+  inboundEmail?: { domain: string; secret: string };
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
@@ -144,6 +145,9 @@ export interface AppEnv {
   slackClientSecret?: string;
   slackBotToken: string | undefined;
   slackSigningSecret: string | undefined;
+  teamsAppId?: string;
+  teamsAppPassword?: string;
+  teamsAppTenantId?: string;
   whatsappAccessToken: string | undefined;
   whatsappPhoneNumberId: string | undefined;
   whatsappAppSecret: string | undefined;
@@ -327,6 +331,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
+    botEmailSmtpUrl: optional(source.BOT_EMAIL_SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
@@ -341,6 +346,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     slackBotToken: optional(source.SLACK_BOT_TOKEN),
     slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
+    teamsAppId: optional(source.TEAMS_APP_ID),
+    teamsAppPassword: optional(source.TEAMS_APP_PASSWORD),
+    teamsAppTenantId: optional(source.TEAMS_APP_TENANT_ID),
     whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
     whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
     whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),
@@ -458,8 +466,7 @@ function inboundEmailFromEnv(source: NodeJS.ProcessEnv): AppEnv["inboundEmail"] 
     throw new Error("INBOUND_EMAIL_DOMAIN must be a domain name such as bots.example.com");
   }
   if (secret.length < 32) throw new Error("INBOUND_EMAIL_SECRET must be at least 32 characters");
-  const relayArcDomain = optional(source.INBOUND_EMAIL_RELAY_ARC_DOMAIN)?.toLowerCase();
-  return { domain, secret, ...(relayArcDomain ? { relayArcDomain } : {}) };
+  return { domain, secret };
 }
 
 function applePrivateKey(source: NodeJS.ProcessEnv): string | undefined {

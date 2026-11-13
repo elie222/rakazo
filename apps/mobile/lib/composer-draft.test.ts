@@ -67,7 +67,7 @@ vi.mock("expo-file-system", () => {
     override delete() {
       files.delete(this.uri);
     }
-    write(text: string) {
+    writeSync(text: string) {
       files.set(this.uri, text);
     }
     moveSync(destination: File, options?: { overwrite?: boolean }) {

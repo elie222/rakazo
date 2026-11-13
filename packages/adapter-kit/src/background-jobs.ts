@@ -27,6 +27,33 @@ const payloadSchemas = {
     threadId: z.string().min(1),
     userId: z.string().min(1).optional(),
   }),
+  "memory.purge-history": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    botId: z.string().min(1),
+    threadId: z.string().min(1),
+    generations: z.array(z.number().int().min(0)).min(1),
+    connectionIdentity: z.string().min(1),
+  }),
+  "memory.retain-turn": z.object({
+    runId: z.string().min(1),
+    messageIds: z.array(z.string().min(1)).optional(),
+    pending: z
+      .object({
+        token: z.string().min(1).optional(),
+        unconfirmed: z.literal(true).optional(),
+        generation: z.number().int().min(0),
+        checks: z.number().int().min(0),
+        connectionIdentity: z.string().min(1),
+        source: z.object({
+          spaceId: z.string().min(1),
+          userId: z.string().min(1),
+          botId: z.string().min(1),
+          threadId: z.string().min(1),
+        }),
+      })
+      .optional(),
+  }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
   "messaging.credential-cleanup": z.object({
@@ -194,6 +221,46 @@ export function historyCompactJob(threadId: string, userId?: string): Background
     payload: userId ? { threadId, userId } : { threadId },
     replaceKey: historyCompactJobKey(threadId),
     maxAttempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+  };
+}
+
+export function memoryPurgeHistoryJob(
+  payload: BackgroundJobPayloads["memory.purge-history"],
+): BackgroundJob {
+  return {
+    name: "memory.purge-history",
+    payload,
+    replaceKey: `memory.purge-history:${JSON.stringify([payload.spaceId, payload.botId, payload.threadId, payload.generations, payload.connectionIdentity])}`,
+    maxAttempts: 12,
+  };
+}
+
+export function memoryRetainTurnRecoveryJobKey(runId: string): string {
+  return `memory.retain-turn:${runId}:recover`;
+}
+
+/** Retries reuse the run's operation id, so the memory service never stores a turn twice. */
+export function memoryRetainTurnJob(
+  runId: string,
+  messageIds: string[] = [],
+  options: {
+    pending?: BackgroundJobPayloads["memory.retain-turn"]["pending"];
+    availableAt?: Date;
+  } = {},
+): BackgroundJob {
+  return {
+    name: "memory.retain-turn",
+    payload: {
+      runId,
+      ...(messageIds.length ? { messageIds } : {}),
+      ...(options.pending ? { pending: options.pending } : {}),
+    },
+    // A slow recovery check must not overwrite a subsequently confirmed operation token.
+    replaceKey: options.pending?.unconfirmed
+      ? memoryRetainTurnRecoveryJobKey(runId)
+      : `memory.retain-turn:${runId}${options.pending ? ":settle" : ""}`,
+    ...(options.availableAt ? { availableAt: options.availableAt } : {}),
+    maxAttempts: 4,
   };
 }
 

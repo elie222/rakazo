@@ -13,9 +13,19 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CursorCloudAgentEmulator } from "./cloud-agent-emulator.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
-import { executeCloudAgentTool, reconcileCloudAgents } from "./cloud-agent-service.js";
+import {
+  cloudAgentForActor,
+  executeCloudAgentTool,
+  reconcileCloudAgents,
+} from "./cloud-agent-service.js";
 import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import type { OAuthMaterial } from "./mcp-oauth.js";
+import { McpOAuthBroker } from "./mcp-oauth.js";
+import { withSecretPersistence } from "./secret-persistence.js";
+import { EncryptedSecretStore } from "./secrets.js";
+import { T3CodeConnections } from "./t3code-connections.js";
+import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -26,7 +36,7 @@ function deferred() {
 }
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulator)", () => {
   let prisma: PrismaClient;
@@ -764,5 +774,339 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     await h.poll(id);
     expect(await h.state(id)).toMatchObject({ followup: null, status: "running" });
     expect(replies()).toBe(2);
+  });
+
+  describe("on a T3 Code environment the user connected", () => {
+    const secrets = new EncryptedSecretStore("test-only-encryption-key");
+
+    /** An MCP server connected over OAuth, as Rakazo stores it after T3 Code's approval. */
+    async function connectServer(
+      owner: { spaceId: string; userId: string },
+      overrides: {
+        scope?: string;
+        token?: string | null;
+        enabled?: boolean;
+        secret?: boolean;
+        allBots?: boolean;
+      } = {},
+    ) {
+      const slug = `t3-${randomUUID()}`;
+      const endpoint = `https://${slug}.example.test/mcp`;
+      const material: OAuthMaterial = {
+        oauth: {
+          ...(overrides.token === null
+            ? {}
+            : {
+                tokens: {
+                  access_token: overrides.token ?? T3_TOKEN,
+                  token_type: "Bearer",
+                  expires_in: 30 * 24 * 3600,
+                  scope: overrides.scope ?? "orchestration:read orchestration:operate",
+                },
+                obtainedAt: Date.now(),
+              }),
+          clientInformation: { client_id: "client-1" },
+          discoveryState: {
+            authorizationServerUrl: new URL(endpoint).origin,
+            resourceMetadata: { resource: endpoint, resource_name: "T3 Code" },
+          },
+        },
+      };
+      return runAsSystem("test fixture", async () => {
+        const stored = await secrets.put(JSON.stringify(material), {
+          operationId: "test",
+          traceId: "test",
+          ...owner,
+          signal: new AbortController().signal,
+        });
+        await prisma.secret.create({
+          data: { id: stored.id, ...owner, kind: "mcp", ciphertext: stored.ciphertext },
+        });
+        return prisma.mcpServer.create({
+          data: {
+            ...owner,
+            slug,
+            name: slug,
+            transport: "streamable_http",
+            endpoint,
+            enabled: overrides.enabled ?? true,
+            allBots: overrides.allBots ?? false,
+            secretId: overrides.secret === false ? null : stored.id,
+          },
+        });
+      });
+    }
+
+    async function connected() {
+      const h = await setup();
+      const actor = { spaceId: h.id, userId: h.id };
+      const t3 = new T3McpEmulator();
+      const broker = new McpOAuthBroker(withSecretPersistence(prisma, secrets), secrets);
+      const deps = {
+        ...h.deps,
+        userCloudAgents: new T3CodeConnections(prisma, broker, {
+          fetch: t3.fetch,
+          resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+        }),
+      };
+      const forActor = () => runAsSystem("agent run", () => cloudAgentForActor(deps, actor));
+      // What a run does: its tools act on the connection resolved for its user.
+      const tool = async (name: string, args: Record<string, unknown>) =>
+        runAsSystem("agent run tool call", async () =>
+          executeCloudAgentTool(
+            {
+              ...deps,
+              cloudAgent: await cloudAgentForActor(deps, { ...actor, botIds: [h.bot.id] }),
+              deployment: h.connection,
+            },
+            { ...h.context, operationId: randomUUID() },
+            h.run,
+            `cloud_agent_${name}`,
+            args,
+          ),
+        );
+      const launch = async (args: Record<string, unknown> = {}) => {
+        const result = await tool("launch", { prompt: "Add README", ...args });
+        if (!("id" in result)) throw new Error("Launch failed");
+        return result.id;
+      };
+      const poll = (agentId: string) =>
+        runAsSystem("cloud agent poll job", () => pollCloudAgent(deps, { agentId }));
+      return { h, actor, t3, deps, forActor, tool, launch, poll };
+    }
+
+    it("returns a retried launch's agent after new agents moved to the deployment's provider", async () => {
+      const { h, actor, deps, forActor } = await connected();
+      const server = await connectServer(actor);
+      const operationId = randomUUID();
+      const launch = (cloudAgent: CloudAgentConnection) =>
+        runAsSystem("agent run tool call", () =>
+          executeCloudAgentTool(
+            { ...deps, cloudAgent, deployment: h.connection },
+            { ...h.context, operationId },
+            h.run,
+            "cloud_agent_launch",
+            { prompt: "Add README" },
+          ),
+        );
+      const first = await launch((await forActor())!);
+      expect(
+        await prisma.cloudAgent.findFirst({ where: { operationKey: operationId } }),
+      ).toMatchObject({
+        providerKey: `mcp:${server.id}`,
+      });
+      // The run retries the call after the T3 Code grant lapsed: new agents use the deployment's.
+      expect(await launch(h.connection)).toMatchObject({ id: (first as { id: string }).id });
+    });
+
+    it("offers only the actor's connected T3 Code server in this Space, else the deployment's", async () => {
+      const { h, actor, forActor } = await connected();
+      const other = await setup();
+      const otherSpace = await runAsSystem("test fixture", () =>
+        prisma.space.create({
+          data: { id: randomUUID(), organizationId: h.id, name: "Other", isDefault: false },
+        }),
+      );
+      await connectServer(actor, { scope: "read write" });
+      await connectServer(actor, { enabled: false });
+      await connectServer(actor, { secret: false });
+      await connectServer(actor, { token: null });
+      await connectServer({ spaceId: h.id, userId: other.id });
+      await connectServer({ spaceId: otherSpace.id, userId: h.id });
+      // Cursor's deployment connection is unchanged while the user has no T3 Code connection.
+      expect((await forActor())!.key).toBe(h.connection.key);
+      const server = await connectServer(actor);
+      expect(await forActor()).toMatchObject({
+        key: `mcp:${server.id}`,
+        baseUrl: server.endpoint,
+        spaceId: h.id,
+      });
+    });
+
+    it("offers a server only to the agents it is assigned to", async () => {
+      const { h, actor, deps } = await connected();
+      const forBot = (botId: string) =>
+        runAsSystem("agent run", () => cloudAgentForActor(deps, { ...actor, botIds: [botId] }));
+      const other = await runAsSystem("test fixture", () =>
+        prisma.bot.create({
+          data: { spaceId: h.id, userId: h.id, name: "Other", color: "test-color" },
+        }),
+      );
+      const server = await connectServer(actor);
+      await runAsSystem("test fixture", () =>
+        prisma.botMcpServer.create({
+          data: { spaceId: h.id, userId: h.id, botId: other.id, serverId: server.id },
+        }),
+      );
+      expect((await forBot(h.bot.id))!.key).toBe(h.connection.key);
+      expect((await forBot(other.id))!.key).toBe(`mcp:${server.id}`);
+      const shared = await connectServer(actor, { allBots: true });
+      expect((await forBot(h.bot.id))!.key).toBe(`mcp:${shared.id}`);
+    });
+
+    it("keeps the deployment's agents reachable once the user connects T3 Code", async () => {
+      const { h, actor, tool, forActor } = await connected();
+      const cursor = await h.tool("launch", { prompt: "Fix tests" });
+      if (!("id" in cursor)) throw new Error("Launch failed");
+      await connectServer(actor);
+      expect((await forActor())!.key).not.toBe(h.connection.key);
+      expect(await tool("status", { id: cursor.id })).toMatchObject({ id: cursor.id });
+      await h.poll(cursor.id);
+      await tool("cancel", { id: cursor.id });
+      await h.poll(cursor.id);
+      expect(await h.state(cursor.id)).toMatchObject({
+        providerKey: h.connection.key,
+        status: "cancelled",
+      });
+    });
+
+    it("launches, follows, reconciles and cancels an agent through the connection", async () => {
+      const { h, actor, t3, deps, tool, launch, poll } = await connected();
+      const server = await connectServer(actor, { allBots: true });
+      const id = await launch();
+      expect(await h.state(id)).toMatchObject({ providerKey: `mcp:${server.id}` });
+      h.enqueue.mockClear();
+      await runAsSystem("job reconciler", () => reconcileCloudAgents(deps));
+      expect(h.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "cloud_agent.poll", payload: { agentId: id } }),
+      );
+      h.enqueue.mockClear();
+      await runAsSystem("job reconciler", () => reconcileCloudAgents(h.deps));
+      expect(h.enqueue).not.toHaveBeenCalled();
+      await poll(id);
+      const { remoteId } = await h.state(id);
+      expect(t3.threads.has(remoteId!)).toBe(true);
+      // The deployment's tools still reach the user's agents on their own environment.
+      expect(await h.tool("status", { id })).toMatchObject({ id, status: "running" });
+      await tool("cancel", { id });
+      await poll(id);
+      // T3 Code ends the run once its agent stops, so the next poll observes it.
+      expect(await h.state(id)).toMatchObject({ status: "running", cancelRequested: true });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "cancelled", nextPollAt: null });
+      expect(t3.calls.map((call) => call.tool)).toContain("t3_thread_interrupt");
+    });
+
+    it("ends a follow-up T3 Code holds instead of polling it forever", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const { h, actor, t3, tool, launch, poll } = await connected();
+        await connectServer(actor, { allBots: true });
+        const id = await launch({ repository: "https://github.com/example/demo" });
+        await poll(id);
+        // Stopped while T3 Code set up its worktree, the thread holds what is sent next.
+        await tool("cancel", { id });
+        await poll(id);
+        await poll(id);
+        expect(await h.state(id)).toMatchObject({ status: "cancelled" });
+        await tool("reply", { id, prompt: "Try again" });
+        await poll(id);
+        await poll(id);
+        expect(await h.state(id)).toMatchObject({ status: "running" });
+        vi.setSystemTime(Date.now() + 61_000);
+        await poll(id);
+        expect(await h.state(id)).toMatchObject({ status: "failed", nextPollAt: null });
+        expect(t3.calls.at(-1)).toMatchObject({ tool: "t3_queue", args: { action: "cancel" } });
+        expect(await h.wakes()).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps status and cancellation usable after revocation without a deployment provider", async () => {
+      const { h, actor, deps, launch, poll } = await connected();
+      const server = await connectServer(actor, { allBots: true });
+      const id = await launch();
+      await poll(id);
+      await runAsSystem("test fixture", () =>
+        prisma.mcpServer.update({
+          where: { id: server.id },
+          data: { allBots: false },
+        }),
+      );
+      const cleanupDeps = { ...deps, cloudAgent: null };
+      expect(
+        await runAsSystem("agent run", () =>
+          cloudAgentForActor(cleanupDeps, { ...actor, botIds: [h.bot.id] }),
+        ),
+      ).toBeNull();
+      const cleanupTool = (name: string, args: Record<string, unknown>) =>
+        runAsSystem("agent run", () =>
+          executeCloudAgentTool(cleanupDeps, h.context, h.run, `cloud_agent_${name}`, args),
+        );
+      expect(await cleanupTool("status", { id })).toMatchObject({ id, status: "running" });
+      for (const name of ["launch", "reply"]) {
+        expect(await cleanupTool(name, { id, prompt: "Task" })).toEqual({
+          error: "Cloud agents are not configured for this space.",
+        });
+      }
+      expect(await cleanupTool("cancel", { id })).toMatchObject({ id, cancellationPending: true });
+      await poll(id);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "cancelled", nextPollAt: null });
+    });
+
+    it.each([
+      ["launch", "remove"],
+      ["launch", "restrict"],
+      ["reply", "remove"],
+      ["reply", "restrict"],
+    ])("rejects a queued %s after permissions change by %s", async (operation, revoke) => {
+      const { h, actor, t3, tool, launch, poll } = await connected();
+      const server = await connectServer(actor);
+      const assignment = await runAsSystem("test fixture", () =>
+        prisma.botMcpServer.create({
+          data: { ...actor, botId: h.bot.id, serverId: server.id, allowAllTools: true },
+        }),
+      );
+      const id = await launch();
+      if (operation === "reply") {
+        await poll(id);
+        t3.complete((await h.state(id)).remoteId!);
+        await poll(id);
+        expect(await tool("reply", { id, prompt: "Continue" })).toMatchObject({ id });
+      }
+      await runAsSystem("test fixture", async () => {
+        if (revoke === "remove") await prisma.botMcpServer.delete({ where: { id: assignment.id } });
+        else
+          await prisma.botMcpServer.update({
+            where: { id: assignment.id },
+            data: { allowAllTools: false, allowedTools: ["t3_thread_read"] },
+          });
+      });
+      const calls = t3.calls.length;
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "expired", nextPollAt: null });
+      expect(t3.calls).toHaveLength(calls);
+      expect(await tool("reply", { id, prompt: "Restart" })).toEqual({
+        error: "Unknown cloud agent.",
+      });
+      expect(await tool("status", { id })).toMatchObject({ id, status: "expired" });
+    });
+
+    it("ends the card as expired once T3 Code refuses the token or the server is removed", async () => {
+      const { h, actor, t3, launch, poll, forActor } = await connected();
+      await connectServer(actor, { allBots: true });
+      const id = await launch();
+      await poll(id);
+      t3.token = "revoked";
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "expired", nextPollAt: null });
+      expect(await h.wakes()).toHaveLength(1);
+      // The token is dropped, so MCP servers list it as needing a reconnect.
+      expect((await forActor())!.key).toBe(h.connection.key);
+      t3.token = T3_TOKEN;
+      const removed = await connectServer(actor, { allBots: true });
+      const next = await launch();
+      expect(await h.state(next)).toMatchObject({ providerKey: `mcp:${removed.id}` });
+      await runAsSystem("test fixture", () =>
+        prisma.mcpServer.delete({ where: { id: removed.id } }),
+      );
+      const calls = t3.calls.length;
+      await poll(next);
+      expect(await h.state(next)).toMatchObject({ status: "expired", nextPollAt: null });
+      expect(t3.calls).toHaveLength(calls);
+      expect(await h.wakes()).toHaveLength(2);
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule } from "@rakazo/contracts";
 import {
   APPROVAL_RULE_EFFECTS,
@@ -15,7 +16,6 @@ import { LoadFailure } from "../../components/load-failure";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import { queryClient, rpcQuery } from "../../lib/query";
@@ -35,7 +35,7 @@ export default function ApprovalRules() {
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
-  const { t } = useI18n();
+  const { t } = useLingui();
   const navigation = useNavigation();
   const router = useRouter();
   const colorScheme = useResolvedAppearance();
@@ -52,7 +52,7 @@ export default function ApprovalRules() {
   // so a failed one never leaves stale dimming.
   const mode = modeQuery.isFetching || modeQuery.isError ? null : (modeQuery.data?.mode ?? null);
   const loadError = rulesQuery.error
-    ? errorText(rulesQuery.error, t("Something went wrong. Try again."))
+    ? errorText(rulesQuery.error, t`Something went wrong. Try again.`)
     : null;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export default function ApprovalRules() {
       setRules((current) => current);
       await change();
     } catch (err) {
-      setError(errorText(err, t("Could not save that preference")));
+      setError(errorText(err, t`Could not save that preference`));
     } finally {
       setPending(false);
     }
@@ -133,14 +133,14 @@ export default function ApprovalRules() {
       iosAtLeast(26)
         ? {
             unstable_headerRightItems: () => [
-              { type: "button" as const, label: t("Add rule"), onPress: open },
+              { type: "button" as const, label: t`Add rule`, onPress: open },
             ],
           }
         : {
             headerRight: () => (
               <NativeActionButton
                 fill={false}
-                label={t("Add rule")}
+                label={t`Add rule`}
                 onPress={open}
                 prominence="secondary"
               />
@@ -150,9 +150,9 @@ export default function ApprovalRules() {
   }, [canAdd, navigation, router, t, target]);
 
   const groupTitles: Record<ActionApprovalRule["effect"], string> = {
-    always_allow: t("Always allow"),
-    require_approval: t("Always ask"),
-    deny: t("Blocked"),
+    always_allow: t`Always allow`,
+    require_approval: t`Always ask`,
+    deny: t`Blocked`,
   };
   const groups = APPROVAL_RULE_EFFECTS.map((effect) => ({ effect, title: groupTitles[effect] }));
 
@@ -198,7 +198,7 @@ export default function ApprovalRules() {
                           title: group.title,
                           state: rule.effect === group.effect ? ("on" as const) : ("off" as const),
                         })),
-                      { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+                      { id: "remove", title: t`Remove`, attributes: { destructive: true } },
                     ]}
                     colorScheme={colorScheme}
                     onPressAction={(event) => {

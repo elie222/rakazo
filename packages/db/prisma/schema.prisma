@@ -28,6 +28,14 @@ model User {
   name                        String
   email                       String
   emailVerified               Boolean                      @default(false)
+  /// Validated first-touch campaign labels and the client that created the account. Deleted with it.
+  signupSurface                String?
+  signupUtmSource              String?
+  signupUtmMedium              String?
+  signupUtmCampaign            String?
+  signupUtmContent             String?
+  signupUtmTerm                String?
+  signupReferringDomain        String?
   image                       String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
@@ -51,6 +59,14 @@ model User {
   byokTrialCheckoutExpiresAt      DateTime?
   /// Set while the account may not sign in or run work; its content stays. Cleared to reactivate.
   deactivatedAt               DateTime?
+  /// Operator-set recorded hosted model usage ceiling, including pending reservations.
+  modelCreditCapMicros        BigInt?
+  /// Operator-controlled bot email allowance per rolling 24 hours. Zero pauses sending.
+  botEmailDailyLimit          Int                          @default(10)
+  /// Allows replies to authenticated incoming senders; never arbitrary outbound recipients.
+  botEmailRepliesEnabled      Boolean                      @default(false)
+  /// Operator-approved recipients for requested reports or other expected workflow mail.
+  botEmailAllowedRecipients   String[]                     @default([])
   sessions                    Session[]
   accounts                    Account[]
   scimSubject                 ScimSubject?
@@ -86,6 +102,7 @@ model User {
   pushToken                   PushToken?
   callPushDevices             CallPushDevice[]
   workActivityTokens          WorkActivityToken[]
+  workActivityStartTokens     WorkActivityStartToken[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -177,6 +194,23 @@ model WorkActivityToken {
   @@index([userId])
   @@index([sessionId])
   @@map("work_activity_tokens")
+}
+
+/// A phone the server may start a live status card on when the user's bots get to work elsewhere.
+model WorkActivityStartToken {
+  tokenDigest String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the phone; it starts no cards once that session ends. No FK, as for push tokens.
+  sessionId String
+  ciphertext String
+  /// The last card started on this phone, so each stretch of work starts at most one.
+  startedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("work_activity_start_tokens")
 }
 
 model EmailSend {
@@ -1159,6 +1193,7 @@ model Message {
   @@index([replyToMessageId])
   @@index([runId, seq])
   @@index([searchTokens], type: Gin)
+  // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
 }
 
@@ -1559,6 +1594,9 @@ model BotEmailSend {
   /// No relation: a deleted bot's sends still count toward its owner's limit.
   botId  String
   sentAt DateTime @default(now())
+  /// Envelope recipients reserved before delivery, including failed attempts. Legacy writers
+  /// omit the count and are conservatively charged the maximum envelope size.
+  recipientCount Int @default(10)
 
   @@index([userId, sentAt])
   @@map("bot_email_sends")
@@ -2130,18 +2168,25 @@ model McpOAuthSession {
   @@map("mcp_oauth_sessions")
 }
 
-/// A subscription sign-in waiting for its pasted code, so whichever API process
-/// receives the code can finish it. The ciphertext holds the PKCE verifier.
+/// A pending subscription sign-in and its outcome, so any API process can report,
+/// finish or cancel it. A pasted-code sign-in's ciphertext holds its PKCE verifier.
 model ModelOAuthSession {
-  id         String   @id
-  spaceId    String
-  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId     String
-  provider   String
+  id             String    @id
+  spaceId        String
+  space          Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  provider       String
   /// The connection it signs in to; a newer sign-in for the same one replaces it.
-  scope      String
-  ciphertext String
-  createdAt  DateTime @default(now())
+  scope          String
+  ciphertext     String?
+  /// pending, saving, connected or failed.
+  status         String    @default("pending")
+  error          String?
+  /// The saved connection, once connected.
+  result         Json?
+  /// The process waiting on the provider renews this; a lapsed lease means it is gone.
+  leaseExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
 
   @@index([userId, provider])
   @@index([scope])

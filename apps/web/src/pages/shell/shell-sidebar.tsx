@@ -14,6 +14,7 @@ import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
+import { PlanUsageRows, useUsageHint } from "../../components/PlanUsage";
 import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
@@ -354,6 +355,7 @@ function ShellSidebarFooter({
     new Date(billing.byokFreeUntil) > new Date()
       ? billing.byokFreeUntil
       : null;
+  const usage = useUsageHint();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const referral = billing?.referral;
@@ -422,6 +424,12 @@ function ShellSidebarFooter({
         onSettings={() => {
           setMenuOpen(false);
           openSettings("general");
+        }}
+        usage={usage}
+        usageDetails={<PlanUsageRows />}
+        onUsage={() => {
+          setMenuOpen(false);
+          openSettings("usage");
         }}
         onInvite={
           referral

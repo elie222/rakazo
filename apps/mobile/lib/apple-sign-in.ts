@@ -1,5 +1,5 @@
+import { t } from "@lingui/core/macro";
 import { signInWithIdentityToken } from "./api-auth";
-import { t } from "./i18n";
 import { continueWithSso } from "./sso";
 
 /** Native sign-in for a provider that asked for it. Anything else uses the browser. */
@@ -22,7 +22,7 @@ export async function continueWithApple(): Promise<boolean> {
         apple.AppleAuthenticationScope.EMAIL,
       ],
     });
-    if (!credential.identityToken) throw new Error(t("Could not continue"));
+    if (!credential.identityToken) throw new Error(t`Could not continue`);
     const given = credential.fullName?.givenName ?? undefined;
     const family = credential.fullName?.familyName ?? undefined;
     await signInWithIdentityToken(

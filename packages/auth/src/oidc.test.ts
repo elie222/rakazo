@@ -197,14 +197,20 @@ async function start(
   callbackURL = `${origin}/app`,
   reauthenticate = false,
   additionalData: Record<string, unknown> = {},
+  headers: Record<string, string> = {},
 ) {
-  const response = await request(link ? "/link-social" : "/sign-in/social", {
-    provider: "oidc",
-    callbackURL,
-    errorCallbackURL: `${origin}/sign-in`,
-    disableRedirect: true,
-    additionalData: { ...additionalData, ...(reauthenticate ? { reauthenticate: true } : {}) },
-  });
+  const response = await request(
+    link ? "/link-social" : "/sign-in/social",
+    {
+      provider: "oidc",
+      callbackURL,
+      errorCallbackURL: `${origin}/sign-in`,
+      disableRedirect: true,
+      additionalData: { ...additionalData, ...(reauthenticate ? { reauthenticate: true } : {}) },
+    },
+    undefined,
+    headers,
+  );
   expect(response.status, await response.clone().text()).toBe(200);
   const url = new URL(((await response.json()) as { url: string }).url);
   const code = `code-${++sequence}`;
@@ -303,7 +309,79 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("refuses implicit Google linking even when a third-party mailbox claim is verified", async () => {
+  setup({
+    social: {
+      providers: [
+        {
+          id: "google",
+          name: "Google",
+          clientId: "offline-client",
+          clientSecret: "offline-secret",
+        },
+      ],
+    },
+  });
+  expect(
+    (
+      await request("/sign-up/email", {
+        email: "mailbox@example.test",
+        password: "test-password-123",
+        name: "Local",
+      })
+    ).status,
+  ).toBe(200);
+  rows("user")[0]!.emailVerified = true;
+  cookies = "";
+  state.db.session = [];
+  const context = await auth.$context;
+  const provider = context.socialProviders.find((item) => item.id === "google")!;
+  // Keep the real sign-in/link policy; replace only the provider network boundary.
+  provider.idToken = { verify: async () => true };
+  provider.getUserInfo = async () => ({
+    user: {
+      email: "mailbox@example.test",
+      emailVerified: true,
+      name: "Former owner",
+    },
+    data: { sub: "former-mailbox-owner", email: "mailbox@example.test", email_verified: true },
+  });
+  const response = await request("/sign-in/social", {
+    provider: "google",
+    idToken: { token: "offline-token" },
+    callbackURL: `${origin}/app`,
+  });
+  expect(response.status).toBe(401);
+  expect(await response.json()).toMatchObject({ code: "OAUTH_LINK_ERROR" });
+  expect(rows("user")).toHaveLength(1);
+  expect(rows("account")).toHaveLength(1);
+  expect(rows("account")[0]?.providerId).toBe("credential");
+  expect(rows("session")).toHaveLength(0);
+});
+
 describe("OIDC callbacks", () => {
+  it.each(["ios", "android"])(
+    "keeps the originating %s platform through the browser callback",
+    async (surface) => {
+      setup();
+      const callback = await start(
+        undefined,
+        false,
+        "rakazo://sign-in",
+        false,
+        {
+          serverContext: { signupAttribution: { surface: "desktop" } },
+        },
+        { "x-rakazo-signup-surface": surface },
+      );
+      // The callback's browser has an unrelated web attribution cookie and no native header.
+      cookies += `; rakazo_signup_attribution=${encodeURIComponent(JSON.stringify({ surface: "web", utmSource: "unrelated" }))}`;
+      const returned = await request(callback);
+      expect(new URL(returned.headers.get("location")!).protocol).toBe("rakazo:");
+      expect(rows("user")[0]).toMatchObject({ signupSurface: surface });
+      expect(rows("user")[0]?.signupUtmSource).toBeUndefined();
+    },
+  );
   it.each([true, false, undefined])(
     "preserves email_verified=%s through the real callback",
     async (verified) => {

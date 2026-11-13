@@ -1,7 +1,8 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
@@ -24,7 +25,7 @@ export function BotMemberPicker({
   disabled?: boolean;
   initiallyExpanded?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [query, setQuery] = useState("");
@@ -39,10 +40,10 @@ export function BotMemberPicker({
     <View style={{ marginTop: 20 }}>
       <View style={styles.header}>
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
-          {t("Members ({count})", { count: selected.length })}
+          {t`Members (${ph({ count: selected.length })})`}
         </Text>
         <NativeActionButton
-          label={expanded ? t("Show selected") : t("Show all")}
+          label={expanded ? t`Show selected` : t`Show all`}
           prominence="quiet"
           onPress={() => setExpanded((value) => !value)}
         />
@@ -52,9 +53,9 @@ export function BotMemberPicker({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder={t("Filter bots")}
+            placeholder={t`Filter bots`}
             placeholderTextColor={tokens.faintForeground}
-            accessibilityLabel={t("Filter bots")}
+            accessibilityLabel={t`Filter bots`}
             style={{
               marginTop: 8,
               backgroundColor: native.fill,
@@ -65,7 +66,7 @@ export function BotMemberPicker({
             }}
           />
           <Text style={{ color: tokens.mutedForeground, fontSize: 14, marginTop: 8 }}>
-            {t("Pick {min}–{max}", { min: GROUP_MEMBER_MIN, max: GROUP_MEMBER_MAX })}
+            {t`Pick ${ph({ min: GROUP_MEMBER_MIN })}–${ph({ max: GROUP_MEMBER_MAX })}`}
           </Text>
         </>
       ) : null}
@@ -114,7 +115,7 @@ export function BotMemberPicker({
         })}
         {visible.length === 0 ? (
           <Text style={{ color: tokens.mutedForeground, fontSize: 14, paddingVertical: 10 }}>
-            {expanded ? t("No matching bots") : t("No members yet")}
+            {expanded ? t`No matching bots` : t`No members yet`}
           </Text>
         ) : null}
       </View>

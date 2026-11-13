@@ -1,7 +1,8 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 /**
@@ -21,7 +22,7 @@ export function SocialSignInButtons({
   onPress: (providerId: string) => void;
   onEmail?: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const { width } = useWindowDimensions();
@@ -35,7 +36,7 @@ export function SocialSignInButtons({
           {providers.map((provider) => (
             <Choice
               key={provider.id}
-              label={t("Continue with {name}", { name: provider.name })}
+              label={t`Continue with ${ph({ name: provider.name })}`}
               disabled={disabled}
               onPress={() => onPress(provider.id)}
               fill={!row}
@@ -55,7 +56,7 @@ export function SocialSignInButtons({
         <>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 18 }}>
             <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
-            <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{t("or")}</Text>
+            <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{t`or`}</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
           </View>
           <Pressable
@@ -75,7 +76,7 @@ export function SocialSignInButtons({
           >
             <MailMark color={tokens.mutedForeground} />
             <Text style={{ color: tokens.mutedForeground, fontSize: 14, fontWeight: "500" }}>
-              {t("Continue with email")}
+              {t`Continue with email`}
             </Text>
           </Pressable>
         </>

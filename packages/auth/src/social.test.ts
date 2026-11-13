@@ -101,12 +101,8 @@ it("recognizes only the enabled provider's authorization endpoint", () => {
   expect(isBuiltinAuthorizationURL("oidc", "https://appleid.apple.com/auth/authorize")).toBe(false);
 });
 
-it("trusts Google and Apple for verified-email linking and leaves every other provider alone", () => {
-  expect(trustedSocialLinking("google")).toEqual({
-    enabled: true,
-    disableImplicitLinking: false,
-    trustedProviders: ["google"],
-  });
+it("never enables implicit Google linking from a verified email claim", () => {
+  expect(trustedSocialLinking("google")).toBeUndefined();
   expect(trustedSocialLinking("apple")?.trustedProviders).toEqual(["apple"]);
   expect(trustedSocialLinking("oidc")).toBeUndefined();
   expect(trustedSocialLinking(undefined)).toBeUndefined();
@@ -139,6 +135,17 @@ it("fills a later Apple sign-in from the stored account when the token omits the
   ).resolves.toMatchObject({
     user: { email: "new@example.test", emailVerified: true, name: "Ada Lovelace" },
   });
+});
+
+it("never treats client-supplied Apple email as a verified token claim", async () => {
+  const result = await appleUserInfo(
+    { account: { findFirst: async () => null } },
+    {
+      idToken: jwt({ sub: "new-subject", email_verified: true }),
+      user: { email: "victim@example.test" },
+    },
+  );
+  expect(result?.user.email).toBeUndefined();
 });
 
 function jwt(payload: Record<string, unknown>): string {

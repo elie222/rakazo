@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.12",
+    "version": "1.0.14",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -90,11 +90,9 @@
         }
       ],
       "./plugins/with-worklets-headers",
-      "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext",
       "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
-      "./plugins/with-android-r8",
       "./plugins/with-app-intents",
       "expo-apple-authentication"
     ],
@@ -104,7 +102,6 @@
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
-      "usesAppleSignIn": true,
       "buildNumber": "1",
       "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",

@@ -13,6 +13,7 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
+import { promptCacheDeclaredOff } from "./pi-local-provider-id.js";
 import {
   effectiveOutputReserve,
   operatorMaxTokens,
@@ -20,6 +21,9 @@ import {
 } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
+
+/** Opens the recalled-memory history message, which context trimming keeps. */
+export const RECALLED_MEMORY_LEAD = "Memory recalled from earlier conversations.";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -53,6 +57,8 @@ const REBUILD_MIN_SAVED_TOKENS = 16_384;
 const REBUILD_MAX_STALE_IMAGES = 8;
 /** A rebuild forced by the model's window leaves this share of it free for the next calls. */
 const REBUILD_HEADROOM = 0.25;
+/** Stale tokens that justify a rebuild when the provider's prompt cache is declared off. */
+const UNCACHED_REBUILD_MIN_SAVED_TOKENS = 3_000;
 export interface Size {
   tokens: number;
   images: number;
@@ -63,16 +69,19 @@ export interface Size {
  * With cache writes at about 1.25 and reads at about 0.1 times the input price, rebuilding every
  * k calls costs least once stale content reaches about 5 × √(rebuilt size × growth per call), so
  * a run that adds a lot per call rebuilds rarely. `appends` counts calls appended since the
- * transcript was last rebuilt at `rebuiltTokens`.
+ * transcript was last rebuilt at `rebuiltTokens`. Without a prompt cache nothing is lost by
+ * rewriting the prefix, so a rebuild pays off as soon as enough stale content has built up.
  */
 export function rebuildPaysOff(
   kept: Size,
   fresh: Size,
   rebuiltTokens: number,
   appends: number,
+  cacheOff = false,
 ): boolean {
   const stale = kept.tokens - fresh.tokens;
   const growth = (kept.tokens - rebuiltTokens) / (appends + 1);
+  if (cacheOff && stale >= UNCACHED_REBUILD_MIN_SAVED_TOKENS) return true;
   return (
     (stale >= REBUILD_MIN_SAVED_TOKENS && stale * stale >= 25 * fresh.tokens * growth) ||
     kept.images - fresh.images >= REBUILD_MAX_STALE_IMAGES
@@ -442,9 +451,7 @@ export function createRuntimeContextPolicy(
         (message as Message & OriginalMetadata).rakazoHistory &&
         !(message as Message & OriginalMetadata).rakazoMessageId &&
         (text(message).startsWith("Rakazo-owned compacted context through message sequence ") ||
-          text(message).startsWith(
-            "Memory recalled from earlier conversations that fell outside the visible history.",
-          )),
+          text(message).startsWith(`${RECALLED_MEMORY_LEAD} `)),
     );
     for (const summary of summaries) {
       const required = protectedIndexes.map((index) => messages[index]!);
@@ -459,6 +466,7 @@ export function createRuntimeContextPolicy(
         const insertIndex = messages[0]?.role === "system" ? 1 : 0;
         messages.splice(insertIndex, 0, summary);
         protectedIndexes = protectedIndexes.map((index) => index + Number(index >= insertIndex));
+        if (currentIndex >= insertIndex) currentIndex += 1;
       }
       protectedIndexes.push(messages.indexOf(summary));
     }
@@ -551,6 +559,11 @@ export function createRuntimeContextPolicy(
       cacheWarmth: predictedCache,
       recentExchanges:
         retainShortHistory || standaloneHistoryFallback ? messages.length : 8 + laterUserMessages,
+      // Eight exchanges is a floor: a request often depends on a decision made before them
+      // without sounding like a question about the past, so the bot never thinks to search.
+      ...(strategy === "retrieval"
+        ? { earlier: { before: currentIndex, tokens: shortHistoryAllowance } }
+        : {}),
     });
     const shortenedStructuredResults = selected.messages.filter((message) => {
       if (message.role !== "toolResult") return false;
@@ -672,7 +685,13 @@ export function createRuntimeContextPolicy(
           append =
             overTokens(kept) ||
             overImages(kept) ||
-            !rebuildPaysOff(kept, fresh, previous.rebuiltTokens, previous.appends);
+            !rebuildPaysOff(
+              kept,
+              fresh,
+              previous.rebuiltTokens,
+              previous.appends,
+              promptCacheDeclaredOff(model.provider),
+            );
       }
       if (previous && appended && append) {
         const projection = [

@@ -429,6 +429,46 @@ describe("helpers", () => {
 });
 
 describe("inline links", () => {
+  it.each([
+    [
+      "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    ],
+    ["https://example.org/a_(b_(c))", "https://example.org/a_(b_(c))"],
+    ["https://[2001:db8::1]", "https://[2001:db8::1]/"],
+    ["https://example.org/items[0]", "https://example.org/items[0]"],
+    ["https://example.org/a)b(c)", "https://example.org/a)b(c)"],
+    ["www.example.org/a_(b)", "https://www.example.org/a_(b)"],
+  ])("preserves paired URL delimiters in %s", (url, href) => {
+    const host = mount(<Text>{`See (${url}).`}</Text>);
+    const link = host.querySelector("a");
+    expect(link?.getAttribute("href")).toBe(href);
+    expect(link?.textContent).toBe(url);
+    expect(host.textContent).toBe(`See (${url}).`);
+  });
+
+  it("leaves unmatched closing brackets and sentence punctuation outside links", () => {
+    const host = mount(
+      <Text>{"See [https://example.org/a_(b)]., and https://example.org/plain)."}</Text>,
+    );
+    expect([...host.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
+      "https://example.org/a_(b)",
+      "https://example.org/plain",
+    ]);
+  });
+
+  it("opens the full paired URL through the host", () => {
+    const url = "https://en.wikipedia.org/wiki/Rust_(programming_language)";
+    const postMessage = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+    try {
+      const host = mount(<Text>{url}</Text>);
+      act(() => host.querySelector("a")!.click());
+      expect(postMessage).toHaveBeenCalledWith({ type: "rakazo-page:open-link", url }, "*");
+    } finally {
+      postMessage.mockRestore();
+    }
+  });
+
   it("trims a link's trailing punctuation in linear time, however long the run", () => {
     const html = (text: string) => renderToStaticMarkup(<span>{inlineMarkup(text)}</span>);
     expect(html("See https://example.com/a).")).toContain('href="https://example.com/a"');

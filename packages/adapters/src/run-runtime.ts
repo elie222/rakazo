@@ -39,6 +39,7 @@ import {
 } from "./pipedream-connector.js";
 import { reconcilePurchases } from "./purchase-poll.js";
 import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
+import { T3CodeConnections } from "./t3code-connections.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 /**
@@ -151,7 +152,11 @@ export function createConnectorRuntime(
     ...(overrides.connectors ?? []),
   ]);
   integrationSettings.warmDirectories();
-  return { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack };
+  const userCloudAgents = new T3CodeConnections(prisma, mcpOAuth, {
+    ...network,
+    allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+  });
+  return { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents };
 }
 
 export type ConnectorRuntime = ReturnType<typeof createConnectorRuntime>;
@@ -159,6 +164,7 @@ export type ConnectorRuntime = ReturnType<typeof createConnectorRuntime>;
 type SetByRunRuntime =
   | "connector"
   | "connectors"
+  | "userCloudAgents"
   | "listConnectedPluginSlugs"
   | "secrets"
   | "mcpAllowPrivateEndpoint"
@@ -189,6 +195,7 @@ export function createRunRuntime(
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
+    userCloudAgents: connectors.userCloudAgents,
     listConnectedPluginSlugs: (userId) =>
       connectors.integrationSettings.listConnectedPluginSlugs(userId),
     secrets: [
@@ -228,6 +235,7 @@ export function createRunRuntime(
     deploymentModelConfigured: env.deploymentModelConfigured,
     messaging,
     cloudAgent: deps.cloudAgent,
+    userCloudAgents: connectors.userCloudAgents,
     paymentWallet: deps.paymentWallet,
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
@@ -244,6 +252,7 @@ export function createRunReconciler(
     "prisma" | "jobs" | "events" | "notifications" | "billingEnabled" | "mediaGeneration"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
+    userCloudAgents?: ExecutorDeps["userCloudAgents"];
     paymentWallet: NonNullable<ExecutorDeps["paymentWallet"]> | null;
   },
   workerOnly: Pick<
@@ -267,7 +276,8 @@ export function createRunReconciler(
       jobs,
       billingEnabled: deps.billingEnabled,
     }),
-    reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
+    reconcileCloudAgents: () =>
+      reconcileCloudAgents({ prisma, jobs, cloudAgent, userCloudAgents: deps.userCloudAgents }),
     reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
     reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),

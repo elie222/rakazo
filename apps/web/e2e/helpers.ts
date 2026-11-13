@@ -8,7 +8,8 @@ export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
     provider === "novita" ||
     provider === "daytona" ||
     provider === "boat" ||
-    provider === "boxd"
+    provider === "boxd" ||
+    provider === "instabox"
   );
 }
 
@@ -124,7 +125,7 @@ export async function openBotPanelTab(page: Page, name: string) {
   const pill = page.getByTestId("bot-settings-trigger");
   const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
   // A reloaded page restores its saved panel a moment after it draws, so a single pass can
-  // race that restore; the sequence is retried until the tab shows.
+  // race that restore; the sequence is retried until the tab is selected.
   await expect(async () => {
     if (!(await tab.isVisible())) {
       // The pill closes whatever else the sidebar shows, such as a restored routine editor.
@@ -134,10 +135,9 @@ export async function openBotPanelTab(page: Page, name: string) {
       }
       await pill.click();
     }
-    await expect(tab).toBeVisible({ timeout: 2_000 });
+    await tab.click({ timeout: 2_000 });
+    await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
-  await tab.click();
-  await expect(tab).toHaveAttribute("aria-selected", "true");
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */

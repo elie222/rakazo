@@ -149,13 +149,14 @@ export function socialTrustedOrigins(social: SocialAuthConfig | undefined): stri
 }
 
 /**
- * Better Auth links a verified email only for a trusted provider, and only on the request that
+ * Better Auth links a verified email only for Apple, and only on the request that
  * finishes sign-in. Other providers, including generic OpenID Connect, keep implicit linking off.
  */
 export function trustedSocialLinking(
   providerId: string | undefined,
 ): { enabled: true; disableImplicitLinking: false; trustedProviders: string[] } | undefined {
-  if (providerId !== "google" && providerId !== "apple") return undefined;
+  // Google email_verified can be stale for mailboxes Google does not manage.
+  if (providerId !== "apple") return undefined;
   return { enabled: true, disableImplicitLinking: false, trustedProviders: [providerId] };
 }
 
@@ -188,8 +189,7 @@ export async function appleUserInfo(prisma: AppleAccountLookup, token: AppleIden
   const profile = jwtPayload(token.idToken);
   const subject = profile?.sub;
   if (!profile || typeof subject !== "string" || !subject.trim()) return null;
-  const claimEmail =
-    typeof profile.email === "string" ? profile.email.trim() : token.user?.email?.trim();
+  const claimEmail = typeof profile.email === "string" ? profile.email.trim() : undefined;
   let email = claimEmail || undefined;
   let emailVerified = profile.email_verified === true || profile.email_verified === "true";
   let storedName = "";

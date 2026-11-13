@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ReactElement } from "react";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Bars, LineChart, Pie } from "./charts.js";
@@ -27,6 +27,7 @@ afterEach(() => {
   for (const unmount of mounted.splice(0)) unmount();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function mount(element: ReactElement) {
@@ -621,6 +622,109 @@ describe("data display", () => {
     expect(deltas.map((d) => d.textContent)).toEqual(["Up 12%", "Up 0.3pt", "Down 3"]);
     expect(root.textContent).toContain("vs last month");
     expect(root.querySelectorAll(".rk-spark polyline")).toHaveLength(1);
+  });
+
+  it.each([false, true])(
+    "tracks scroll edges when an empty table appears (strict: %s)",
+    (strict) => {
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+      vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+      const observers: { update: () => void; disconnect: ReturnType<typeof vi.fn> }[] = [];
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          disconnect = vi.fn();
+          constructor(update: () => void) {
+            observers.push({ update, disconnect: this.disconnect });
+          }
+          observe() {}
+        },
+      );
+      const container = document.createElement("div");
+      document.body.append(container);
+      const root = createRoot(container);
+      mounted.push(() => {
+        act(() => root.unmount());
+        container.remove();
+      });
+      const draw = (visible: boolean) =>
+        act(() => {
+          const table = (
+            <Table columns={visible ? ["Name"] : []} rows={visible ? [["Alpha"]] : []} />
+          );
+          root.render(strict ? <StrictMode>{table}</StrictMode> : table);
+        });
+      draw(false);
+      expect(container.querySelector(".rk-table-scroll")).toBeNull();
+      draw(true);
+      const scroll = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+      expect(scroll.hasAttribute("data-fade-start")).toBe(false);
+      expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+      act(() => {
+        scroll.scrollLeft = 200;
+        scroll.dispatchEvent(new Event("scroll"));
+      });
+      expect(scroll.hasAttribute("data-fade-start")).toBe(true);
+      expect(scroll.hasAttribute("data-fade-end")).toBe(false);
+      act(() => {
+        scroll.scrollLeft = 50;
+        observers.at(-1)!.update();
+      });
+      expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+    },
+  );
+
+  it("cleans up a removed table and observes its replacement", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    const observers: { disconnect: ReturnType<typeof vi.fn> }[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        disconnect = vi.fn();
+        constructor() {
+          observers.push(this);
+        }
+        observe() {}
+      },
+    );
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    let unmounted = false;
+    mounted.push(() => {
+      if (!unmounted) act(() => root.unmount());
+    });
+    const draw = (visible: boolean) =>
+      act(() => root.render(<Table columns={visible ? ["Name"] : []} />));
+    draw(true);
+    const old = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    const remove = vi.spyOn(old, "removeEventListener");
+    act(() => {
+      old.scrollLeft = 200;
+      old.dispatchEvent(new Event("scroll"));
+    });
+    draw(false);
+    expect(observers[0]!.disconnect).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledWith("scroll", expect.any(Function));
+    draw(true);
+    const current = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    expect(current).not.toBe(old);
+    expect(current.hasAttribute("data-fade-start")).toBe(false);
+    expect(current.hasAttribute("data-fade-end")).toBe(true);
+    expect(observers).toHaveLength(2);
+    act(() => {
+      current.scrollLeft = 200;
+      current.dispatchEvent(new Event("scroll"));
+    });
+    expect(current.hasAttribute("data-fade-start")).toBe(true);
+    act(() => {
+      old.scrollLeft = 0;
+      old.dispatchEvent(new Event("scroll"));
+    });
+    expect(current.hasAttribute("data-fade-start")).toBe(true);
+    act(() => root.unmount());
+    unmounted = true;
+    expect(observers[1]!.disconnect).toHaveBeenCalledOnce();
   });
 
   it("sorts figures as numbers, filters long tables and pages very long ones", () => {

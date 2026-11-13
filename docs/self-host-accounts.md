@@ -258,10 +258,10 @@ Store requires Apple sign-in on a build that also offers Google, so enable both 
 Android and the web app use the system browser for either provider. Secrets stay on the API; the
 sign-in screen only learns which providers are enabled.
 
-Someone who already has an account can sign in with Google or Apple when the provider's email is
-verified and the account's email is already verified. The accounts are linked. A provider that
-does not say the email is verified, or an account that has not verified its address, is not
-linked. Generic OpenID Connect is unchanged: it still does not link by email.
+Someone who already has an account can sign in with Apple when Apple's email and the
+account's email are both verified. Google and generic OpenID Connect require the existing
+account's authenticated linking flow; a Google verification claim alone does not prove current
+control of a mailbox hosted elsewhere.
 
 Signup through Google or Apple follows the same closed registration and allowlist as email
 signup. The provider email has to be verified when an allowlist is set.
