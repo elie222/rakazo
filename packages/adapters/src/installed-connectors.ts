@@ -560,12 +560,18 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   baseUrl: string;
   operations: ApiOperation[];
 } {
-  const server = Array.isArray(document.servers) ? document.servers[0] : undefined;
-  const baseUrl =
-    server && typeof server === "object" && typeof (server as { url?: unknown }).url === "string"
-      ? String((server as { url: string }).url)
-      : "";
-  if (!baseUrl) throw new Error("OpenAPI document must define servers[0].url");
+  const server = asRecord(Array.isArray(document.servers) ? document.servers[0] : undefined);
+  if (typeof server?.url !== "string" || !server.url) {
+    throw new Error("OpenAPI document must define servers[0].url");
+  }
+  const variables = asRecord(server.variables);
+  const baseUrl = server.url.replace(/\{([^{}]+)\}/g, (_placeholder, name: string) => {
+    const variable = asRecord(variables?.[name]);
+    if (typeof variable?.default !== "string") {
+      throw new Error("OpenAPI server variable must define a string default");
+    }
+    return variable.default;
+  });
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
