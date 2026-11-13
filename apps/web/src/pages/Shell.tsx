@@ -1124,6 +1124,7 @@ function SpaceShell() {
               answerableAskIds={answerableAskIds}
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
+              workingRunIds={workingRuns.map((run) => run.id)}
               workingBots={workingBots}
               workingRoutine={workingRoutineName(workingRuns)}
               userBubble={userBubble}

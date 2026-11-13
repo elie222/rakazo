@@ -86,6 +86,7 @@ export const Transcript = memo(function Transcript({
   answerableAskIds,
   dismissableAskIds,
   running,
+  workingRunIds,
   workingBots,
   workingRoutine,
   userBubble,
@@ -134,6 +135,8 @@ export const Transcript = memo(function Transcript({
   answerableAskIds: Set<string>;
   dismissableAskIds: Set<string>;
   running: boolean;
+  /** The runs at work in this chat; the held status belongs to them. */
+  workingRunIds?: readonly string[];
   workingBots: GroupAvatarMember[];
   workingRoutine?: string;
   /** Your bubbles take the bot's color in its own chat. */
@@ -269,7 +272,7 @@ export const Transcript = memo(function Transcript({
   lastActivityLine.current = heldActivityLine(
     lastActivityLine.current,
     liveActivityLine(messages),
-    running ? workingBots.map((bot, index) => bot.botId ?? `bot-${index}`) : [],
+    running ? (workingRunIds ?? workingBots.map((bot, index) => bot.botId ?? `bot-${index}`)) : [],
   );
   const workingLabel =
     lastActivityLine.current.line ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
