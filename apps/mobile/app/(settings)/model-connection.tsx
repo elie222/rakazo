@@ -449,11 +449,16 @@ export default function ModelConnection() {
       setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
       setHeaderRows(null);
       if (!limitsOnly) setApiKey("");
+      let refreshGeneration = loadGeneration.current;
       try {
         if (!savingLimitOnly && (await finishConnecting(activeModelId, saved.id))) return;
-        await load({ modelId });
+        const refresh = load({ modelId });
+        refreshGeneration = loadGeneration.current;
+        await refresh;
+        if (refreshGeneration !== loadGeneration.current) return;
         publishFeedback(anchor, { notice: t`Saved.` });
       } catch (err) {
+        if (refreshGeneration !== loadGeneration.current) return;
         publishFeedback(anchor, {
           error: errorText(err, t`Could not load model settings`),
         });
