@@ -20,6 +20,7 @@ export interface SentryConfig {
 const FLUSH_TIMEOUT_MS = 2_000;
 // Model fields let issues be filtered by the provider and model that failed.
 const TAG_KEYS = [...CORRELATION_TAG_KEYS, "model.provider", "model.id"] as const;
+const EXTRA_KEYS = ["log.message", "error.details"] as const;
 
 export function sentryConfigFromEnv(source: NodeJS.ProcessEnv = process.env): {
   config?: SentryConfig;
@@ -131,6 +132,10 @@ export async function createSentrySink(
         if (config.pseudonymSecret && typeof userId === "string" && userId.length > 0)
           scope.setUser({ id: monitoringUserId(config.pseudonymSecret, userId), ip_address: null });
         scope.setExtra("log.message", message);
+        // Diagnostics the caller already reduced to safe fields, such as a rejected request's shape.
+        const details = event["error.details"];
+        if (typeof details === "string")
+          scope.setExtra("error.details", redactSensitiveText(details));
         const fingerprint = event["error.fingerprint"];
         // Split on top of the stack: errors rethrown from one place stop sharing one issue.
         if (Array.isArray(fingerprint) && fingerprint.every((part) => typeof part === "string"))
@@ -190,9 +195,12 @@ function redactEvent(event: SentrySdk.ErrorEvent): SentrySdk.ErrorEvent {
   delete event.breadcrumbs;
   event.server_name = undefined;
   if (event.extra) {
-    const message = event.extra["log.message"];
-    event.extra =
-      typeof message === "string" ? { "log.message": redactSensitiveText(message) } : {};
+    const extra = event.extra;
+    event.extra = Object.fromEntries(
+      EXTRA_KEYS.flatMap((key) =>
+        typeof extra[key] === "string" ? [[key, redactSensitiveText(extra[key])]] : [],
+      ),
+    );
   }
   if (event.message) event.message = redactSensitiveText(event.message);
   for (const value of event.exception?.values ?? []) {

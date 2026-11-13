@@ -539,6 +539,64 @@ describe("composio tool mapping", () => {
     }
   });
 
+  it.each([
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github", blocked: false },
+    { tool: "github_mcp_list_repos", batch: true, stale: "github", blocked: false },
+    { tool: "GITHUB_GET_REPOS", batch: false, stale: "github", blocked: true },
+    { tool: "GITHUB_GET_REPOS", batch: true, stale: "github", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github_mcp", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: true, stale: "github_mcp", blocked: true },
+  ])("routes overlapping toolkit names: %o", async ({ tool, batch, stale, blocked }) => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts([stale === "github" ? "ca-mcp" : "ca-github"]);
+    try {
+      const connector = new ComposioConnector();
+      const args = batch ? { tools: [{ tool_slug: tool, arguments: {} }] } : {};
+      const call = {
+        tool: batch ? "COMPOSIO_MULTI_EXECUTE_TOOL" : tool,
+        args,
+        executionId: "overlapping-toolkits",
+      };
+      const events: ConnectorEvent[] = [];
+      for await (const event of connector.execute(call, {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+        connectedConnections: [
+          {
+            id: "github",
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "GitHub",
+            providerRef: "ca-github",
+          },
+          {
+            id: "mcp",
+            connectorId: "composio",
+            externalId: "GitHub_MCP",
+            displayName: "GitHub MCP",
+            providerRef: "ca-mcp",
+          },
+        ],
+      }))
+        events.push(event);
+      expect(events.map((event) => event.type)).toEqual([blocked ? "error" : "result"]);
+      expect(composioSdkState.executions).toEqual(blocked ? [] : [{ tool: call.tool, args }]);
+      expect(composioSdkState.created.at(-1)?.config).toMatchObject({
+        toolkits: [stale === "github" ? "GITHUB_MCP" : "GITHUB"],
+        connectedAccounts:
+          stale === "github" ? { GITHUB_MCP: ["ca-mcp"] } : { GITHUB: ["ca-github"] },
+      });
+    } finally {
+      restore();
+    }
+  });
+
   it("pins a single concrete account without enabling multi-account mode", async () => {
     composioSdkState.created.length = 0;
     composioSdkState.sessions.clear();

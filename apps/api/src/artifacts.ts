@@ -8,7 +8,8 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
-  MCP_APP_MIME_TYPE,
+  isStepScreenshotMimeType,
+  STEP_SCREENSHOT_MIME_TYPES,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -19,7 +20,13 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, isRecordNotFound, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
+import {
+  HIDDEN_ARTIFACT_MIME_TYPES,
+  IsolationError,
+  isRecordNotFound,
+  Prisma,
+  withResolvedArtifactVersion,
+} from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -284,6 +291,8 @@ async function readArtifact(
   },
   contextBotId: string,
 ) {
+  // A reply's kept screenshot is for the bot's own later runs, never for a person's client.
+  if (isStepScreenshotMimeType(row.mimeType)) throw new IsolationError();
   const bytes = await artifacts.get(
     row.storageKey,
     createAdapterContext(actor, contextBotId, `artifact-get:${row.id}`),
@@ -410,7 +419,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} ${botFilter}
-        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
+        AND "createdAt" <= ${asOf} AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -466,13 +475,16 @@ export async function listSpaceArtifacts(
   };
 }
 
+const NOT_STEP_SCREENSHOT = { mimeType: { notIn: STEP_SCREENSHOT_MIME_TYPES } };
+
 export async function listArtifactVersions(
   deps: { prisma: Pick<PrismaClient, "artifact"> },
   actor: Actor,
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    // A reply's kept screenshot is the bot's own, not a file a person manages.
+    where: { id: input.familyId, spaceId: actor.spaceId, ...NOT_STEP_SCREENSHOT },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -501,7 +513,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    where: { id: input.familyId, spaceId: actor.spaceId, ...NOT_STEP_SCREENSHOT },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();

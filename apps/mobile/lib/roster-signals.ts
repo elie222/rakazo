@@ -1,4 +1,4 @@
-import { abortableDelay, isRetryableError, retryDelayMs } from "@rakazo/core";
+import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { subscribeRosterSignals } from "./api-live";
 import { useAppForeground } from "./app-foreground";
@@ -36,7 +36,10 @@ export function useRosterSignals(onChange: () => unknown, enabled: boolean): boo
         setLive(false);
         if (failure !== undefined && !isRetryableError(failure)) return;
         if (opened) retry = 1_000;
-        await abortableDelay(retryDelayMs(failure, retry), controller.signal);
+        await abortableDelay(
+          opened ? reconnectDelayMs(failure) : retryDelayMs(failure, retry),
+          controller.signal,
+        );
         retry = Math.min(retry * 2, 30_000);
       }
     })();

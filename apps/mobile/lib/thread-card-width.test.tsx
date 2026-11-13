@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { separateAskAnswers } from "@rakazo/core";
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { act, createContext } from "react";
 import type { Root } from "react-dom/client";
@@ -106,8 +107,23 @@ vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios }: { ios: string }) => <i data-symbol={ios} />,
 }));
 vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress?: () => void }) => (
-    <button type="button" onClick={onPress}>
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+    selected,
+  }: {
+    label: string;
+    onPress?: () => void;
+    disabled?: boolean;
+    selected?: boolean;
+  }) => (
+    <button
+      type="button"
+      onClick={onPress}
+      disabled={disabled}
+      aria-pressed={selected || undefined}
+    >
       {label}
     </button>
   ),
@@ -431,7 +447,11 @@ describe("thread cards", () => {
     ]);
   });
 
-  function renderAsk(ask: Partial<Extract<MessageBlock, { kind: "ask" }>>, canAnswer: boolean) {
+  function renderAsk(
+    ask: Partial<Extract<MessageBlock, { kind: "ask" }>>,
+    canAnswer: boolean,
+    separateAnswer?: string,
+  ) {
     const message = {
       id: "message-1",
       role: "bot",
@@ -440,6 +460,7 @@ describe("thread cards", () => {
           kind: "ask",
           text: longQuestion,
           status: "pending",
+          answerMessageId: "reply",
           actions: [
             { id: "yes", label: "Yes" },
             { id: "no", label: "No" },
@@ -455,6 +476,10 @@ describe("thread cards", () => {
           bots={[]}
           message={message}
           canAnswer={canAnswer}
+          separateAnswers={separateAskAnswers([
+            message,
+            { id: "reply", role: "user", blocks: [{ kind: "text", text: separateAnswer ?? "" }] },
+          ]).get(message.id)}
           onAnswer={async () => undefined}
           actionProps={{}}
         />,
@@ -486,6 +511,24 @@ describe("thread cards", () => {
       expect(container.querySelectorAll("button").length).toBe(doubleTapSurface ? 0 : 1);
     },
   );
+
+  it("keeps a custom choice answer unless a separate user message displays it", () => {
+    const ask = { status: "answered" as const, answer: "A different plan" };
+    expect(renderAsk(ask, false)?.textContent).toContain("A different plan");
+    expect(renderAsk(ask, false, "A different plan")?.textContent).not.toContain(
+      "A different plan",
+    );
+  });
+
+  it("keeps a selected choice summary even when the user message repeats its id", () => {
+    const card = renderAsk({ status: "answered", answer: "yes" }, false, "yes");
+    expect(card?.textContent).toContain("Yes");
+    expect(card?.textContent).not.toContain("Answered:");
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(buttons[0]?.getAttribute("aria-pressed")).toBe("true");
+  });
 
   // The iOS message menu hosts each bubble without a definite width, so a percentage width
   // resolves against the card's own cap instead of the message column and overflows the screen.

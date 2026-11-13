@@ -29,7 +29,7 @@ the default work as described for Parallel.
 
 ## Self-hosted memory
 
-Supermemory and Honcho can run on your own network. In **Settings → Memory**, choose **Local**
+Supermemory, Honcho and Hindsight can run on your own network. In **Settings → Memory**, open **Advanced**, choose **Self-hosted**
 and enter the instance's base URL. The operator must set `MCP_ALLOW_PRIVATE_ENDPOINT=true`; workspace owners can then save a local endpoint. It must
 be loopback or resolve to private addresses (a Compose service name, an RFC1918 or unique-local
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
@@ -42,6 +42,16 @@ its own PostgreSQL with pgvector, an LLM provider, and an embedding provider; se
 `EMBEDDING_VECTOR_DIMENSIONS` before its first start. Rakazo stores only explicitly saved facts
 in Honcho; conversation summaries stay in Rakazo. Bots can forget a saved fact on Honcho v3.2 or
 later.
+
+For [Hindsight](https://github.com/vectorize-io/hindsight) 1.0 or later, the key is optional when
+the server has no authentication. Hindsight needs its own LLM provider to extract facts. Rakazo
+creates a bank per bot and, for the Shared scope, one per Space. Bank names use the reserved
+`rakazo-` prefix and fixed-length hashes of the identifiers so legacy identifiers cannot collide.
+It does not configure banks, so set extraction missions in Hindsight if you want them. Rakazo sends each finished turn (unless **Learn from conversations** is off) and the
+facts bots save; banks under **Recall from banks** are only read. A bank under **Recall from banks**
+must be on the same Hindsight server or Cloud account; an app that runs Hindsight embedded on its
+own machine keeps its banks there. All names starting with `rakazo-` are reserved and cannot be
+listed there, including banks created by another app using that prefix.
 
 ## MCP servers
 
@@ -237,13 +247,31 @@ CURSOR_API_KEY=replace-with-your-key
 
 The key and explicit Space ID are both required. Use a credential whose connected repositories may be accessed by members of that Space. Each created agent is additionally bound to its initiating user; another user cannot inspect, reply to, or cancel it by supplying an agent ID. The deployment key is never a model tool argument.
 
+### Connect T3 Code
+
+T3 Code runs agents on a machine you control. Each user connects their own T3 Code environment; it needs no deployment setting, whatever `CLOUD_AGENT_PROVIDER` says, and follows the MCP server's usual access: the Rakazo agents it is assigned to, in the Spaces where it is available. Cloud agents those Rakazo agents launch then run on T3 Code instead of the deployment's provider; ones already running on the deployment's provider stay reachable.
+
+1. In T3 Code, copy the address from **Use T3 Code in another app (MCP)**. It ends in `/mcp`.
+2. In Rakazo, add it under **MCP servers** as a remote server and click **Connect OAuth**.
+3. On the T3 Code page that opens, set the access level to **Auto** (without a sign-in code it starts at **Read only**) and approve.
+
+Rakazo identifies a compatible connection by its orchestrator tools and input schemas, an explicit operate grant, and matching OAuth resource and authorization origins, rather than a display name.
+
+With **Read only**, the server is not used for new agents. With **Supervised**, every run that edits files waits for approval in T3 Code, and its card shows it running until then. To change the level, disconnect the server and connect it again; disconnecting ends its running agents as expired. T3 Code also refuses follow-ups and cancellation on threads running above the chosen level, such as full-access threads started in its own UI.
+
+T3 Code's approval lasts 30 days and cannot be renewed. Once it lapses or is revoked, new agents stop using the server, the cards of its running agents end as expired, and the server shows **Reconnect OAuth**. Removing, disabling or disconnecting the server, or making it unavailable in the Space, ends its agents the same way. Meanwhile new cloud agents run on the deployment's provider, if there is one.
+
+The address from step 1 goes through T3 Connect and is public HTTPS. A direct private address, such as a Tailscale one, needs `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. That setting is deployment-wide: it lets every user's MCP servers reach private addresses.
+
+A launch with a repository runs in a new worktree of the unarchived T3 Code project whose Git remote matches it, branched from that project's current checkout; a repository with no matching project is rejected. A launch without one uses a scratch folder. Agents use T3 Code's default model or, with none set, the first model of a provider that can run. Images are not supported. Rakazo sends a follow-up only after the agent's run ends; it waits behind a turn started in T3 Code itself. Cancel stops only the agent's current run, or removes a follow-up that has not started. When another run starts on the thread right after the agent's run finishes, as when T3 Code continues on its own, the card follows that run. A follow-up T3 Code holds instead of starting, as after a stopped or failed worktree setup, a provider failure or **Stop** in T3 Code, ends the card as failed after about a minute and is removed from T3 Code's queue where the connection's access allows it. A T3 Code version without the tools Rakazo uses fails the card.
+
 The tools are `cloud_agent_launch`, `cloud_agent_status`, `cloud_agent_reply`, and `cloud_agent_cancel`. All three mutations participate in the existing action-approval rules and auto-review policy. As with other consequential tools, an empty rule set and disabled auto-review permit execution by default.
 
 Launch accepts a prompt, optional repository, images, and `openPr`. Raw environment variables are intentionally unsupported: passing secrets through model-generated tool arguments would persist them in ordinary history. Configure remote environment secrets directly with the provider.
 
 ### Recovery
 
-The database stores ownership and pending operations independently of chat cards. The worker and reconciler recover queue failures and interrupted launches. Cursor creates use a stable client agent ID, so retrying an accepted create does not create another remote agent.
+The database stores ownership and pending operations independently of chat cards. The worker and reconciler recover queue failures and interrupted launches. Cursor creates use a stable client agent ID, so retrying an accepted create does not create another remote agent. T3 Code launches use a stable request key the same way, unless the server is reconnected while one is in flight.
 
 Each follow-up tracks its own remote run. When a follow-up response is lost, the worker observes the latest run instead of resending the prompt. Until it can distinguish the new run, status remains pending; it does not claim the older run completed the follow-up. Cancellation likewise remains pending until the remote state confirms it. If a request's outcome remains unknown indefinitely, inspect the agent on the provider's site.
 

@@ -31,6 +31,8 @@ describe("useRosterSignals", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    // Retry and reconnect waits are jittered; pin them to their unjittered values.
+    vi.spyOn(Math, "random").mockReturnValue(0);
     vi.useFakeTimers();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     streams.length = 0;

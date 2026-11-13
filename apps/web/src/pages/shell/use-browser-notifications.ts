@@ -1,5 +1,5 @@
 import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
+import { chatSnoozed, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -123,10 +123,12 @@ export function useBrowserNotifications(
       while (active) {
         controller = new AbortController();
         let failure: unknown;
+        let opened = false;
         try {
           const stream = await rpc.notifications.subscribe(undefined, {
             signal: controller.signal,
           });
+          opened = true;
           for await (const frame of stream) {
             if (!active) return;
             if (frame.type === "roster") rosterRef.current?.changed();
@@ -140,7 +142,10 @@ export function useBrowserNotifications(
         }
         if (!active || (failure !== undefined && !isRetryableError(failure))) return;
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
+          const timer = setTimeout(
+            resolve,
+            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
+          );
           cancelRetry = () => {
             clearTimeout(timer);
             resolve();

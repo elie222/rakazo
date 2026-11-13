@@ -1,4 +1,4 @@
-import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
+import type { AttachmentMimeType, HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import {
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
@@ -206,7 +206,7 @@ export function toolStepsHistoryText(
 const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
 
 /** "succeeded" when every call ended the same way, else "2 succeeded, 1 failed". */
-function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {
+export function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {
   const outcomes = (step.outcomes ?? {}) as Partial<Record<string, unknown>>;
   if (typeof outcomes !== "object") return "";
   const counts = TOOL_STEP_OUTCOMES.flatMap((outcome) => {
@@ -219,61 +219,92 @@ function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): strin
 }
 
 export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
-  return blocks
-    .map((block) => {
-      if (block.kind === "text") return block.text;
-      // The tools a reply used, and what the bot wrote before each, are kept out of its text;
-      // without them a later turn cannot tell what it already did.
-      if (block.kind === "steps") return toolStepsHistoryText(block.steps);
-      if (block.kind === "chart") return `[chart: ${block.name}]`;
-      if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
-      if (block.kind === "image") return `[image: ${block.name}]`;
-      // The id lets a later turn, or another chat, update this page instead of making a new one.
-      if (block.kind === "page") {
-        return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
-      }
-      if (block.kind === "file") {
-        return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
-      }
-      // Keep attribution on peer messages: without it a later turn cannot tell
-      // which lines came from another bot rather than the user.
-      if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
-      if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
-      if (block.kind === "channel_message") return `[from ${block.fromLabel}] ${block.text}`;
-      if (block.kind === "handoff") {
-        return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
-      }
-      // Without the answer a later turn sees the question as still open and asks it again.
-      if (block.kind === "ask") {
-        // A question card keeps its draft in the detail, and a later turn still needs
-        // it: approval cards repeat tool arguments the call itself records, and secret
-        // cards keep their detail hidden. The draft is fenced so a line in it cannot
-        // pass for the answer; only something that reads as a closing draft tag (any case or
-        // spacing) is escaped, so the bot reads the rest of its draft verbatim (an address
-        // like "Ana <ana@example.test>" stays as written).
-        const detail =
-          block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
-            ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
-            : "";
-        if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
-        const choice = block.actions?.find((action) => action.id === block.answer);
-        return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
-      }
-      // The bot needs the outcome of its own call: a missed call is its cue to follow up.
-      if (block.kind === "call_request") {
-        const outcome = {
-          ringing: "still ringing",
-          answered: "the user answered",
-          declined: "the user declined it",
-          missed: "the user did not answer",
-        }[block.status];
-        return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
-      }
-      if ("text" in block && typeof block.text === "string") return block.text;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
+  return blocks.map(blockHistoryText).filter(Boolean).join("\n");
+}
+
+/** A reply in order, with its tool steps apart from the text around them. */
+export type AgentHistorySegment = { text: string } | { steps: HistoryToolStep[] };
+
+/**
+ * The same reply as blocksToAgentHistoryText, split at its tool steps so a runtime can replay
+ * them as tool calls. Text between steps is joined as blocksToAgentHistoryText joins it.
+ */
+export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHistorySegment[] {
+  const segments: AgentHistorySegment[] = [];
+  let text: string[] = [];
+  const flush = () => {
+    if (text.length) segments.push({ text: text.join("\n") });
+    text = [];
+  };
+  for (const block of blocks) {
+    if (block.kind === "steps") {
+      // Stored blocks can come from an account import, so skip malformed entries.
+      const steps = Array.isArray(block.steps)
+        ? (block.steps as HistoryToolStep[]).filter((step) => typeof step?.label === "string")
+        : [];
+      if (!steps.length) continue;
+      flush();
+      segments.push({ steps });
+      continue;
+    }
+    const rendered = blockHistoryText(block);
+    if (rendered) text.push(rendered);
+  }
+  flush();
+  return segments;
+}
+
+function blockHistoryText(block: MessageBlock): string {
+  if (block.kind === "text") return block.text;
+  // The tools a reply used, and what the bot wrote before each, are kept out of its text;
+  // without them a later turn cannot tell what it already did.
+  if (block.kind === "steps") return toolStepsHistoryText(block.steps);
+  if (block.kind === "chart") return `[chart: ${block.name}]`;
+  if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
+  if (block.kind === "image") return `[image: ${block.name}]`;
+  // The id lets a later turn, or another chat, update this page instead of making a new one.
+  if (block.kind === "page") {
+    return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+  }
+  if (block.kind === "file") {
+    return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
+  }
+  // Keep attribution on peer messages: without it a later turn cannot tell
+  // which lines came from another bot rather than the user.
+  if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
+  if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
+  if (block.kind === "channel_message") return `[from ${block.fromLabel}] ${block.text}`;
+  if (block.kind === "handoff") {
+    return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
+  }
+  // Without the answer a later turn sees the question as still open and asks it again.
+  if (block.kind === "ask") {
+    // A question card keeps its draft in the detail, and a later turn still needs
+    // it: approval cards repeat tool arguments the call itself records, and secret
+    // cards keep their detail hidden. The draft is fenced so a line in it cannot
+    // pass for the answer; only something that reads as a closing draft tag (any case or
+    // spacing) is escaped, so the bot reads the rest of its draft verbatim (an address
+    // like "Ana <ana@example.test>" stays as written).
+    const detail =
+      block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
+        ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
+        : "";
+    if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
+    const choice = block.actions?.find((action) => action.id === block.answer);
+    return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
+  }
+  // The bot needs the outcome of its own call: a missed call is its cue to follow up.
+  if (block.kind === "call_request") {
+    const outcome = {
+      ringing: "still ringing",
+      answered: "the user answered",
+      declined: "the user declined it",
+      missed: "the user did not answer",
+    }[block.status];
+    return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
+  }
+  if ("text" in block && typeof block.text === "string") return block.text;
+  return "";
 }
 
 const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
@@ -412,4 +443,30 @@ export function userTurnMessageForRun<
       message.role === "user" &&
       (sourceMessageId ? message.id === sourceMessageId : message.runId === runId),
   );
+}
+
+/** Bound PNG inspection before image decoding on every client. */
+export const PNG_ANIMATION_HEADER_BYTES = 64 * 1024;
+
+/** Only re-encode PNGs whose header confirms they are static; unknown stays original. */
+export function isStaticPng(bytes: Uint8Array): boolean {
+  if (
+    bytes.length < 33 ||
+    ![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value)
+  )
+    return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const typeAt = (offset: number) => String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+  if (view.getUint32(8) !== 13 || typeAt(8) !== "IHDR") return false;
+  const end = Math.min(bytes.length, PNG_ANIMATION_HEADER_BYTES);
+  for (let offset = 33; offset + 8 <= end; ) {
+    const type = typeAt(offset);
+    // An APNG must declare acTL before its first IDAT, even with one animation frame.
+    if (type === "acTL" || type === "IEND") return false;
+    if (type === "IDAT") return true;
+    const next = offset + 12 + view.getUint32(offset);
+    if (next > end) return false;
+    offset = next;
+  }
+  return false;
 }

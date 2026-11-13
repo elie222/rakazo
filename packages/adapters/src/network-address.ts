@@ -78,6 +78,19 @@ export function createAddressCheckedLookup(
   };
 }
 
+const refusedEgress = new WeakSet<Error>();
+
+/** Recognize a policy refusal through transport wrappers without replacing its original type. */
+export function isEgressRefused(error: unknown): boolean {
+  const seen = new Set<Error>();
+  while (error instanceof Error && !seen.has(error)) {
+    if (refusedEgress.has(error)) return true;
+    seen.add(error);
+    error = error.cause;
+  }
+  return false;
+}
+
 /**
  * Record that an outbound-request guard refused a destination, so a probe of private addresses
  * leaves a security event. Returns the error for `throw egressRefused(...)`.
@@ -88,6 +101,7 @@ export function egressRefused(hostname: string, error: unknown): Error {
     type: "egress.refused",
     metadata: { host: hostname.slice(0, 253), reason: refusal.message },
   });
+  refusedEgress.add(refusal);
   return refusal;
 }
 

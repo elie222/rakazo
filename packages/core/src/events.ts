@@ -1,4 +1,10 @@
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type {
+  HistoryToolStep,
+  MessageBlock,
+  ThreadMessage,
+  ToolHistory,
+  ToolStepCall,
+} from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
 import { payloadAuthor } from "./message-replies.js";
@@ -393,7 +399,13 @@ export type ToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number]
  */
 export function withToolStepOutcomes(
   segments: readonly MessageBlock[],
-  calls: readonly { label: string; outcome: ToolStepOutcome | undefined }[],
+  calls: readonly {
+    label: string;
+    outcome: ToolStepOutcome | undefined;
+    /** The tool the call ran, and what it kept, when the call shows as its own step. */
+    tool?: string;
+    call?: ToolStepCall;
+  }[],
 ): MessageBlock[] {
   let next = 0;
   const annotated: MessageBlock[] = [];
@@ -402,20 +414,79 @@ export function withToolStepOutcomes(
       annotated.push(block);
       continue;
     }
-    const steps: ToolStep[] = [];
-    for (const step of block.steps) {
+    const steps: HistoryToolStep[] = [];
+    for (const step of block.steps as HistoryToolStep[]) {
       const outcomes: NonNullable<ToolStep["outcomes"]> = {};
-      for (let index = 0; index < step.count; index += 1) {
-        const call = calls[next++];
-        if (call?.label !== step.label) return [...segments];
+      const own = calls.slice(next, next + step.count);
+      next += step.count;
+      if (own.length < step.count || own.some((call) => call.label !== step.label))
+        return [...segments];
+      for (const call of own)
         if (call.outcome) outcomes[call.outcome] = (outcomes[call.outcome] ?? 0) + 1;
-      }
-      const { outcomes: _previous, ...rest } = step;
-      steps.push(Object.keys(outcomes).length > 0 ? { ...rest, outcomes } : rest);
+      const { outcomes: _previous, tool: _tool, calls: _calls, ...rest } = step;
+      // Calls are kept for a step only when every one of them was, all of the same tool.
+      const tool = own[0]?.tool;
+      const kept = own.flatMap((call) => (call.call ? [call.call] : []));
+      const replayable =
+        tool !== undefined &&
+        next <= TOOL_STEP_CALLS_KEPT &&
+        kept.length === step.count &&
+        own.every((call) => call.tool === tool);
+      steps.push({
+        ...rest,
+        ...(replayable ? { tool, calls: kept } : {}),
+        ...(Object.keys(outcomes).length > 0 ? { outcomes } : {}),
+      });
     }
     annotated.push({ ...block, steps });
   }
   return annotated;
+}
+
+/** Calls a reply keeps arguments and results for; a later turn replays no more than these. */
+export const TOOL_STEP_CALLS_KEPT = 40;
+
+/**
+ * Splits a reply's kept tool calls off its blocks: the blocks keep only what the UI shows, and
+ * the history (one entry per step, in order) is stored beside the message for later runs.
+ * Every message write goes through this, so no tool output reaches a client in the blocks.
+ */
+export function splitToolHistory(blocks: readonly MessageBlock[]): {
+  blocks: MessageBlock[];
+  toolHistory: ToolHistory | undefined;
+} {
+  const steps: ToolHistory["steps"] = [];
+  const shown = blocks.map((block): MessageBlock => {
+    if (block.kind !== "steps") return block;
+    return {
+      ...block,
+      steps: (block.steps as HistoryToolStep[]).map(({ tool, calls, ...step }) => {
+        steps.push(tool && calls?.length ? { tool, calls } : null);
+        return step;
+      }),
+    };
+  });
+  return { blocks: shown, toolHistory: steps.some(Boolean) ? { steps } : undefined };
+}
+
+/** The message's steps with the tool and calls its stored history keeps for them, for replay. */
+export function withToolHistory(
+  blocks: readonly MessageBlock[],
+  history: ToolHistory | undefined,
+): MessageBlock[] {
+  if (!history) return [...blocks];
+  let index = 0;
+  return blocks.map((block) =>
+    block.kind === "steps"
+      ? {
+          ...block,
+          steps: block.steps.map((step): HistoryToolStep => {
+            const kept = history.steps[index++];
+            return kept ? { ...step, tool: kept.tool, calls: kept.calls } : step;
+          }),
+        }
+      : block,
+  );
 }
 
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {

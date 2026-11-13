@@ -94,8 +94,12 @@ function fakeDockerLog() {
  * answers the handful of commands the app issues. The log path and mode are baked into the
  * script because the app passes docker an allowlisted environment.
  */
+function fakeDockerPath() {
+  return path.join(userData, "fake-docker.sh");
+}
+
 async function writeFakeDocker(mode: FakeDockerMode) {
-  const script = path.join(userData, "fake-docker.sh");
+  const script = fakeDockerPath();
   let up = '  up) echo "Container rakazo-web-1 Started"; exit 0 ;;';
   if (mode === "pool-exhausted") {
     up = '  up) echo "all predefined address pools have been fully subnetted" >&2; exit 1 ;;';
@@ -143,8 +147,8 @@ async function launch(mode: FakeDockerMode | "missing") {
     cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       ...env,
-      RAKAZO_DOCKER_BINARY:
-        mode === "missing" ? "/nonexistent/docker" : await writeFakeDocker(mode),
+      // "missing" points at where the fake docker will be written, so a spec can install it later.
+      RAKAZO_DOCKER_BINARY: mode === "missing" ? fakeDockerPath() : await writeFakeDocker(mode),
       RAKAZO_LOCAL_WEB_URL: serverUrl,
       RAKAZO_IMAGE_TAG: IMAGE_TAG,
     },
@@ -224,22 +228,30 @@ test("This computer installs and starts the stack, then opens the app", async ()
   ]);
 });
 
-test("without Docker the app explains how to get it and offers to check again", async () => {
+test("without Docker the app offers the download and continues once Docker is installed", async () => {
   app = await launch("missing");
   const setup = await app.firstWindow();
+  await expect(setup.getByText("Your data stays on this computer.")).toBeVisible();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "07a-setup-choices.png"),
+  });
   await setup.getByRole("radio", { name: /This computer/ }).check();
 
   await setup.getByRole("button", { name: "Continue" }).click();
+  const docker = process.platform === "linux" ? "Docker" : "Docker Desktop";
   await expect(setup.locator("#stack-phase")).toHaveText(
-    "Docker is not installed on this computer.",
+    `Rakazo needs ${docker} to run on this computer.`,
   );
-  await expect(setup.locator("#stack-phase")).toHaveAttribute("data-tone", "error");
-  await expect(setup.getByRole("button", { name: "Docker Desktop" })).toBeVisible();
-  await expect(setup.getByRole("button", { name: "OrbStack" })).toBeVisible();
-  await expect(setup.getByRole("button", { name: "Docker Engine" })).toBeVisible();
-  await expect(setup.getByRole("button", { name: "Check again" })).toBeEnabled();
+  // Installing Docker is a step, not a failure.
+  await expect(setup.locator("#stack-phase")).not.toHaveAttribute("data-tone");
+  await expect(setup.locator("#stack-waiting")).toHaveText(`Waiting for ${docker}…`);
+  const download = setup.getByRole("button", {
+    name: process.platform === "linux" ? "Install Docker" : "Download Docker Desktop",
+  });
+  await expect(download).toBeEnabled();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "07-setup-docker-missing.png"),
+    animations: "disabled",
   });
 
   // Existing instance stays available without Docker.
@@ -247,6 +259,14 @@ test("without Docker the app explains how to get it and offers to check again", 
   await expect(setup.locator("#stack")).toBeHidden();
   await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
   expect(await savedSetup()).toBeNull();
+
+  // Back on This computer, installing Docker is all it takes: setup finds it and carries on.
+  await setup.getByRole("radio", { name: /This computer/ }).check();
+  const appWindowPromise = app.waitForEvent("window");
+  await writeFakeDocker("ok");
+  const appWindow = await appWindowPromise;
+  await expect(appWindow.getByText(APP_MARKER)).toBeVisible(AFTER_PULL);
+  await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
 });
 
 test("switching to Existing instance while the stack starts keeps that choice", async () => {
@@ -291,21 +311,29 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
 });
 
-test("a stopped Docker daemon is reported and Check again asks Docker once more", async () => {
+test("a stopped Docker daemon is reported and setup keeps asking Docker on its own", async () => {
   app = await launch("daemon-down");
   const setup = await app.firstWindow();
   await setup.getByRole("radio", { name: /This computer/ }).check();
 
   await setup.getByRole("button", { name: "Continue" }).click();
+  // The fake docker belongs to no desktop app, so there is nothing for setup to open itself.
   await expect(setup.locator("#stack-phase")).toHaveText(
-    "Docker is installed but not running. Start Docker, then check again.",
+    process.platform === "linux"
+      ? "Docker is installed but not running. Start the Docker service to continue."
+      : "Docker is installed but not running. Open it to continue.",
   );
-  await expect(setup.getByRole("button", { name: "Docker Desktop" })).toBeVisible();
-  expect((await readLog()).filter((line) => line.includes("info --format"))).toHaveLength(1);
+  await expect(setup.locator("#stack-waiting")).toBeVisible();
+  // Setup looks again on its own, so there is no button to press.
+  await expect(setup.locator("#continue")).toBeHidden();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "07b-setup-docker-not-running.png"),
+    animations: "disabled",
+  });
 
-  await setup.getByRole("button", { name: "Check again" }).click();
-  await expect(setup.getByRole("button", { name: "Check again" })).toBeEnabled();
-  expect((await readLog()).filter((line) => line.includes("info --format"))).toHaveLength(2);
+  const infoCalls = async () =>
+    (await readLog()).filter((line) => line.includes("info --format")).length;
+  await expect.poll(infoCalls, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
   expect((await readLog()).some((line) => line.includes(" pull"))).toBe(false);
 });
 
@@ -320,7 +348,7 @@ test("a failed Compose check shows diagnostics instead of installation help", as
   await expect(setup.locator("#stack-output")).toContainText("Access is denied.");
   await expect(setup.locator("#stack-output")).toContainText("exited with code 7");
   await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
-  await expect(setup.locator("#stack-docker-help")).toBeHidden();
+  await expect(setup.locator("#stack-waiting")).toBeHidden();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "11-setup-compose-check-failed.png"),
   });
@@ -337,7 +365,7 @@ test("unpublished images show the docker output and a Retry button", async () =>
   );
   await expect(setup.locator("#stack-output")).toContainText("manifest unknown");
   await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
-  await expect(setup.locator("#stack-docker-help")).toBeHidden();
+  await expect(setup.locator("#stack-waiting")).toBeHidden();
   expect((await readLog()).some((line) => line.endsWith(" up -d --wait --wait-timeout 300"))).toBe(
     false,
   );

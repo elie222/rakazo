@@ -21,9 +21,6 @@ vi.mock("@rakazo/ui-web", () => ({
     <button type="button" {...props} />
   ),
 }));
-vi.mock("../../components/ComputerMaintenanceActions", () => ({
-  ComputerMaintenanceActions: () => null,
-}));
 vi.mock("../../components/teach/TeachCaptureOverlay", () => ({ TeachCaptureOverlay: () => null }));
 vi.mock("../../components/teach/TeachComputerOverlay", () => ({
   TeachComputerOverlayControl: () => null,
@@ -87,7 +84,6 @@ async function render(
         onTakeControl={() => undefined}
         onStart={onStart}
         onRefreshTeaching={async () => undefined}
-        onRefreshComputer={async () => undefined}
         onClose={() => undefined}
       />,
     );
