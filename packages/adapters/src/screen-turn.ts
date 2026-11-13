@@ -1,8 +1,8 @@
 /** How long a bot's screen action waits for a person to hand the screen back. */
 export const SCREEN_WAIT_MS = 45_000;
 /**
- * How long a bot's screen action keeps a person from taking control while it runs. Each action
- * clears it when it ends, so this only bounds an action whose worker died.
+ * How long one mark of a bot's screen action lasts. A running action renews it and clears it when
+ * it ends, so it lapses on its own only when the action's worker died.
  */
 export const SCREEN_ACTION_MS = 10_000;
 const SCREEN_POLL_MS = 1_000;

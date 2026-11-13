@@ -56,7 +56,7 @@ describe("computer control leases", () => {
 
     expect(harness.prisma.computer.updateMany.mock.calls[0]?.[0]).toMatchObject({
       where: { id: "computer-id", controlLeaseId: "lease-1" },
-      data: { controlHolder: "none" },
+      data: { controlLeaseExpiresAt: new Date(0) },
     });
     expect(harness.setScreenControl).toHaveBeenCalledWith(
       expect.objectContaining({ providerRef: "computer" }),
@@ -113,7 +113,7 @@ describe("computer control leases", () => {
     expect(harness.prisma.computer.updateMany).toHaveBeenCalledTimes(1);
     expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: "computer-id", controlLeaseId: "lease-1" }),
-      data: { controlHolder: "none" },
+      data: { controlLeaseExpiresAt: new Date(0) },
     });
     expect(harness.events.releaseUserControl).not.toHaveBeenCalled();
   });
@@ -275,29 +275,15 @@ describe("computer control leases", () => {
     expect(setScreenControl).not.toHaveBeenCalled();
   });
 
-  it("clears stale user control when the lease is empty or expired", async () => {
+  it("clears user control left without a lease, and never a lease awaiting revocation", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const prisma = { computer: { updateMany } } as unknown as PrismaClient;
-    const now = new Date("2026-01-01T00:00:00.000Z");
 
-    await expect(clearInactiveUserComputerControl(prisma, "computer-1", now)).resolves.toBe(true);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        id: "computer-1",
-        controlHolder: "user",
-        OR: [
-          { controlLeaseId: null },
-          { controlLeaseExpiresAt: null },
-          { controlLeaseExpiresAt: { lte: now } },
-        ],
-      },
-      data: {
-        controlHolder: "none",
-        controlLeaseId: null,
-        controlUserId: null,
-        controlLeaseExpiresAt: null,
-        controlBotId: null,
-      },
+    await expect(clearInactiveUserComputerControl(prisma, "computer-1")).resolves.toBe(true);
+    expect(updateMany.mock.calls[0]?.[0].where).toEqual({
+      id: "computer-1",
+      controlHolder: "user",
+      controlLeaseId: null,
     });
   });
 

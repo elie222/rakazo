@@ -535,6 +535,48 @@ it("hands control back when the computer closes, and keeps it while open", async
   expect(release).toHaveBeenCalledWith({ botId: "bot-1" }, { context: { keepalive: true } });
 });
 
+it("hands control back when the app leaves an open computer", async () => {
+  const release = vi.fn(async () => ({ ok: true }));
+  const rpc = { computer: { release, heartbeat: vi.fn(async () => ({ ok: true })) } } as never;
+  const bot = { id: "bot-1" } as never;
+  function Controls() {
+    state = useComputerState({
+      rpc,
+      panel: null,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    useComputerControls({
+      rpc,
+      state,
+      panel: null,
+      active: bot,
+      bots: [bot],
+      botsRef: { current: [bot] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () => root.render(<Controls />));
+  await act(async () => {
+    state.commitComputer({
+      botId: "bot-1",
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    } as never);
+    state.setComputerOpen(true);
+  });
+  await act(async () => root.render(<></>));
+  expect(release).toHaveBeenCalledWith({ botId: "bot-1" }, { context: { keepalive: true } });
+});
+
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {
   const onUpgrade = vi.fn();
   function Controls() {

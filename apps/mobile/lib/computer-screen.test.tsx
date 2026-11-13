@@ -847,6 +847,17 @@ describe("computer screen", () => {
     }
   });
 
+  it("hands control back when the computer screen goes away while open", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(calls("computer/release")).toHaveLength(0);
+    act(() => root?.unmount());
+    root = undefined;
+    expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
+  });
+
   it("loads the screen again when the app returns from the background", async () => {
     respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
     const view = await render();

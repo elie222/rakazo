@@ -197,7 +197,6 @@ export * from "./sandbox-provider-env.js";
 export * from "./schedule-tools.js";
 export * from "./scratchpad-context.js";
 export * from "./scratchpad-tools.js";
-export { SCREEN_ACTION_MS } from "./screen-turn.js";
 export * from "./scripted-auto-review.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";

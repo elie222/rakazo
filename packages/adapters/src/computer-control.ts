@@ -47,22 +47,16 @@ export async function enqueueTakeoverContinuation(
   }
 }
 
-/** Clears controlHolder=user when no live control lease remains (stale / orphaned rows). */
+/**
+ * Clears controlHolder=user left without a lease id. A lease with an id ends only through
+ * expireComputerControl, which stops the person's input first.
+ */
 export async function clearInactiveUserComputerControl(
   prisma: PrismaClient,
   computerId: string,
-  now = new Date(),
 ): Promise<boolean> {
   const cleared = await prisma.computer.updateMany({
-    where: {
-      id: computerId,
-      controlHolder: "user",
-      OR: [
-        { controlLeaseId: null },
-        { controlLeaseExpiresAt: null },
-        { controlLeaseExpiresAt: { lte: now } },
-      ],
-    },
+    where: { id: computerId, controlHolder: "user", controlLeaseId: null },
     data: {
       controlHolder: "none",
       controlLeaseId: null,
@@ -161,7 +155,8 @@ export async function expireComputerControl(
     );
     return false;
   }
-  // Deny input before touching the provider; the kept lease id lets a failed revoke retry. A
+  // Mark the lease spent so neither input nor a heartbeat revives it, but keep it on the row:
+  // the bot treats the screen as the person's until the provider has stopped their input. A
   // heartbeat that renewed the lease since the read above keeps it.
   const claimed = await deps.prisma.computer.updateMany({
     where: {
@@ -169,7 +164,7 @@ export async function expireComputerControl(
       controlLeaseId: leaseId,
       OR: [{ controlLeaseExpiresAt: null }, { controlLeaseExpiresAt: { lte: now } }],
     },
-    data: { controlHolder: "none" },
+    data: { controlLeaseExpiresAt: new Date(0) },
   });
   if (claimed.count !== 1) {
     const renewed = await deps.prisma.computer.findUnique({ where: { id: computer.id } });

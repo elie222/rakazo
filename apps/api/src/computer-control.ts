@@ -148,13 +148,15 @@ export async function answerComputerRequest(
   reason: "done" | "skipped",
   runId?: string,
 ): Promise<string | null> {
-  // Only an answer to a waiting request ends control; any other reply leaves the screen alone.
+  // Only an answer this person may give ends control; any other reply, or a refused one, leaves
+  // it alone.
   const waiting = await waitingTakeoverRun(deps, actor.spaceId, botId, runId);
   if (!waiting) return null;
   // Anyone in the Space can take the screen, so holding it never answers for someone else.
   if (waiting.userId !== actor.userId) {
     throw new ORPCError("CONFLICT", { message: "The bot is waiting for someone else" });
   }
+  // Hand back before answering, so a failed hand back leaves the request for a retry.
   const bot = await createRepos(deps.prisma).getBot(actor, botId);
   if (bot.computer) await releaseComputerControl(deps, actor, bot.computer, botId, reason);
   const answered = await deps.events.answerTakeoverRequest({
@@ -168,7 +170,7 @@ export async function answerComputerRequest(
   return waiting.id;
 }
 
-/** Keep this lease while its page checks in. Teaching may already hold it for longer. */
+/** Keep this lease while its page checks in. */
 export async function renewComputerControl(
   deps: RouterDeps,
   computerId: string,
@@ -180,7 +182,8 @@ export async function renewComputerControl(
       id: computerId,
       controlHolder: "user",
       controlLeaseId: leaseId,
-      controlLeaseExpiresAt: { lt: expiresAt },
+      // A lapsed lease is being revoked; only a live one is renewed.
+      controlLeaseExpiresAt: { gt: new Date(), lt: expiresAt },
     },
     data: { controlLeaseExpiresAt: expiresAt },
   });

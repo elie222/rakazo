@@ -499,12 +499,18 @@ export async function expireComputerControlAndTeaching(
   computerId: string,
   leaseId: string,
 ): Promise<boolean> {
-  const recording = await deps.prisma.taughtSkill.findFirst({
-    where: { status: "recording", bot: { computerId } },
+  const computer = await deps.prisma.computer.findUnique({
+    where: { id: computerId },
+    select: { controlLeaseId: true, controlBotId: true },
   });
   const released = await expireComputerControl(deps, computerId, leaseId);
-  if (!released || !recording) return released;
-  if (parseRecording(recording.recording).controlLeaseId !== leaseId) return released;
+  // A bot has at most one recording, and it needs that bot's screen.
+  const botId = computer?.controlLeaseId === leaseId ? computer.controlBotId : null;
+  if (!released || !botId) return released;
+  const recording = await deps.prisma.taughtSkill.findFirst({
+    where: { botId, status: "recording" },
+  });
+  if (!recording) return released;
   const actor = { spaceId: recording.spaceId, userId: recording.userId } as Actor;
   await completeTeachingSession(deps, actor, recording.id, "expired");
   await deps.jobs.cancel(skillTeachingExpireJobKey(recording.id));

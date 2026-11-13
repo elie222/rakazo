@@ -4538,13 +4538,15 @@ describe("computer terminal and file transfer", () => {
       });
     }
     expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+    // A refused answer leaves this person's control as it was.
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
   });
 
   it("hands control back on I'm done even when nothing is waiting any more", async () => {
     const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
     await expect(call("release", { reason: "done" })).resolves.toMatchObject({ status: 200 });
     expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
-      expect.objectContaining({ leaseId: "lease-1", reason: "done" }),
+      expect.objectContaining({ leaseId: "lease-1" }),
     );
     expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
   });
@@ -4606,7 +4608,8 @@ describe("computer terminal and file transfer", () => {
         id: "computer-1",
         controlHolder: "user",
         controlLeaseId: "lease-1",
-        controlLeaseExpiresAt: { lt: expect.any(Date) },
+        // Only a live lease renews; a lapsed one is on its way to revocation.
+        controlLeaseExpiresAt: { gt: expect.any(Date), lt: expect.any(Date) },
       },
       data: { controlLeaseExpiresAt: expect.any(Date) },
     });

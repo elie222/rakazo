@@ -716,6 +716,7 @@ function SpaceShell() {
     activeGroupId,
     runStatus: snapshot?.run?.status,
     sandboxProvider: bootstrapMe?.sandboxProvider,
+    teaching: Boolean(recordingSkill),
     refreshThread,
     refreshGroupThread: (id) => refreshGroupThreadRef.current(id),
     onUpgrade: () => openSettings("billing"),

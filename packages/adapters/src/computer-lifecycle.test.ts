@@ -3737,7 +3737,7 @@ describe("computer replacement", () => {
     expect(prisma.computer.updateMany).toHaveBeenCalledTimes(1);
     expect(prisma.computer.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: "computer-1", controlLeaseId: "lease-1" }),
-      data: { controlHolder: "none" },
+      data: { controlLeaseExpiresAt: new Date(0) },
     });
   });
 

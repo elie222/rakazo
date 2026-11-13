@@ -20,7 +20,6 @@ import {
   browserSnapshotFromTool,
   redactBrowserResult,
 } from "./browser-tools.js";
-import { hasActiveComputerControl } from "./computer-control.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
   displayBotWorkspacePath,
@@ -154,7 +153,20 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
   const computerId = ctx.computer.stored.id;
   const botId = ctx.bot.id;
   let marked: Date | undefined;
+  // The mark lasts as long as the action: it is renewed while the action runs, and lapses on its
+  // own only if this worker dies.
+  const renew = async () => {
+    if (!marked) return;
+    const until = new Date(Date.now() + SCREEN_ACTION_MS);
+    const renewed = await prisma.$executeRaw`
+      UPDATE computer_execution_leases SET "screenActionUntil" = ${until}
+      WHERE "computerId" = ${computerId} AND "botId" = ${botId}
+        AND "screenActionUntil" = ${marked}`;
+    if (renewed === 1) marked = until;
+  };
+  let renewing: ReturnType<typeof setInterval> | undefined;
   const end = async () => {
+    clearInterval(renewing);
     if (!marked) return;
     const until = marked;
     marked = undefined;
@@ -168,19 +180,19 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
     turn: ctx.state.screen.turn,
     look,
     readControl: async () => {
-      const now = new Date();
-      const until = new Date(now.getTime() + SCREEN_ACTION_MS);
-      // Mark this bot's action in the same statement that finds no person on its screen. The
-      // computer row is locked, as Take control locks it, so one of the two always sees the
-      // other. Raw SQL leaves updatedAt alone.
+      const until = new Date(Date.now() + SCREEN_ACTION_MS);
+      // Mark this bot's action in the same statement that finds no person on its screen. A
+      // person's lease counts until it is cleared, which happens only after the provider has
+      // stopped their input, even once it has lapsed. The computer row is locked, as Take
+      // control locks it, so one of the two always sees the other. Raw SQL leaves updatedAt
+      // alone.
       const [free] = await prisma.$queryRaw<Array<{ controlFence: number }>>`
         UPDATE computer_execution_leases AS l SET "screenActionUntil" = ${until}
         FROM (
           SELECT id, "controlFence" FROM computers
           WHERE id = ${computerId}
             AND ("controlHolder" <> 'user' OR "controlBotId" IS NULL
-              OR "controlBotId" <> ${botId} OR "controlLeaseExpiresAt" IS NULL
-              OR "controlLeaseExpiresAt" <= ${now})
+              OR "controlBotId" <> ${botId} OR "controlLeaseId" IS NULL)
           FOR UPDATE
         ) AS c
         WHERE l."computerId" = c.id AND l."botId" = ${botId}
@@ -194,7 +206,6 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
         select: {
           controlHolder: true,
           controlLeaseId: true,
-          controlLeaseExpiresAt: true,
           controlBotId: true,
           controlFence: true,
         },
@@ -202,7 +213,10 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
       if (!computer) return null;
       // Without a lease row there is no mark to make, and the action goes ahead unmarked.
       return {
-        held: hasActiveComputerControl(computer) && computer.controlBotId === botId,
+        held:
+          computer.controlHolder === "user" &&
+          Boolean(computer.controlLeaseId) &&
+          computer.controlBotId === botId,
         fence: computer.controlFence,
       };
     },
@@ -212,6 +226,9 @@ async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurn
     await end();
     return { error: refused };
   }
+  renewing = setInterval(() => {
+    renew().catch((error: unknown) => getLogger().warn("screen action mark renewal", { error }));
+  }, SCREEN_ACTION_MS / 3);
   return { end };
 }
 

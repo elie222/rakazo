@@ -329,15 +329,10 @@ export default function Computer() {
   }, [botId, computer?.state, foreground, hasControl]);
 
   // Control ends with the screen: closing it, switching bots, or leaving hands it back.
-  const computerOpenRef = useRef(computerOpen);
-  computerOpenRef.current = computerOpen;
-  const botIdRef = useRef(botId);
-  botIdRef.current = botId;
   const heldBotId = hasControl && computerOpen ? botId : undefined;
   useEffect(() => {
     if (!heldBotId) return;
     return () => {
-      if (computerOpenRef.current && botIdRef.current === heldBotId) return;
       void rpc("computer/release", { botId: heldBotId }).catch(() => undefined);
     };
   }, [heldBotId]);

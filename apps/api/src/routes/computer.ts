@@ -28,7 +28,6 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
-  SCREEN_ACTION_MS,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -73,8 +72,9 @@ import { scrollPoint } from "../computer-input.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
-/** How often a Take control waiting on a bot action looks again. */
+/** How often a Take control waiting on a bot action looks again, and for how long. */
 const SCREEN_TURN_POLL_MS = 250;
+const TAKE_CONTROL_WAIT_MS = 30_000;
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -381,9 +381,9 @@ export function computerRoutes(ctx: RouterContext) {
         const computerId = bot.computer.id;
         const leaseId = randomUUID();
         let expiresAt = controlLeaseExpiresAt();
-        // This bot's action already on its screen finishes first; its mark lapses on its own if
-        // its worker died, so this waits at most that long. Other bots' actions never delay it.
-        const deadline = Date.now() + SCREEN_ACTION_MS;
+        // This bot's action already on its screen finishes first. Other bots' actions never delay
+        // it, and an action still running past the wait leaves the screen busy for a retry.
+        const deadline = Date.now() + TAKE_CONTROL_WAIT_MS;
         for (;;) {
           const now = new Date();
           expiresAt = controlLeaseExpiresAt(now);
@@ -460,21 +460,24 @@ export function computerRoutes(ctx: RouterContext) {
         return { leaseId, expiresAt: expiresAt.toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        // Every release hands back this person's control, except the control a teaching
-        // recording holds until it stops.
-        const teaching = await getActiveTeachingSession(deps.prisma, context.actor.spaceId, bot.id);
-        if (bot.computer && !teaching) {
-          await releaseComputerControl(
-            deps,
-            context.actor,
-            bot.computer,
+        const handBack = async () => {
+          const bot = await repos.getBot(context.actor, input.botId);
+          // A teaching recording keeps its control until it stops or its page stops checking in.
+          const teaching = await getActiveTeachingSession(
+            deps.prisma,
+            context.actor.spaceId,
             bot.id,
-            input.reason ?? "released",
           );
+          if (bot.computer && !teaching) {
+            await releaseComputerControl(deps, context.actor, bot.computer, bot.id);
+          }
+        };
+        if (input.reason === undefined && input.runId === undefined) {
+          await handBack();
+          return { ok: true as const };
         }
-        // Done or Skip also answers the bot's request for help.
-        if (input.reason === undefined && input.runId === undefined) return { ok: true as const };
+        // Done or Skip answers the bot's request and then hands back. A refused answer changes
+        // nothing, including who controls the screen.
         const answered = await answerComputerRequest(
           deps,
           context.actor,
@@ -482,11 +485,13 @@ export function computerRoutes(ctx: RouterContext) {
           input.reason ?? "done",
           input.runId,
         );
-        // The card waits for its answer to land, so one that changed nothing must say so. An
-        // older app's I'm done with nothing waiting is only the hand back above.
-        if (!answered && input.runId !== undefined) {
+        if (answered) return { ok: true as const };
+        // The card waits for its answer to land, so one that changed nothing must say so.
+        if (input.runId !== undefined) {
           throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
         }
+        // The screen's I'm done with nothing waiting any more is a plain hand back.
+        await handBack();
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
