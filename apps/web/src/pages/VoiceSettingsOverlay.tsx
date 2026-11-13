@@ -304,11 +304,23 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("disconnect");
     try {
-      await rpc.voice.disconnect({ provider: providerId });
+      try {
+        await rpc.voice.disconnect({ provider: providerId });
+      } catch (err) {
+        setError(errorText(err, t`Could not disconnect this voice provider`));
+        return;
+      }
       setApiKey("");
-      await refresh(providerId);
-    } catch (err) {
-      setError(errorText(err, t`Could not disconnect this voice provider`));
+      if (providerId === providerRef.current) setVoiceId("");
+      const drop = (current: VoiceCredential[]) =>
+        current.filter((entry) => entry.provider !== providerId);
+      setCredentials(drop);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), (current) =>
+        current ? drop(current) : current,
+      );
+      await refresh(providerId).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
