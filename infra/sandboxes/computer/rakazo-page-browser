@@ -2416,7 +2416,7 @@ def purchase_refusal(step: dict[str, Any], site: str, buying: dict[str, Any] | N
     # A total the card showed beside the button (empty when it showed none) must still be the page's.
     changed = approved and any(key in step and shown(step[key]) != shown(buying.get(key, ""))
                                for key in ("label", "amount", "total"))
-    if approved and not changed:
+    if approved and not changed and buying.get("amount") != "?" and buying.get("total") != "?":
         return None
     return {"ok": False, "completed": completed, "uncertain": False, "purchase": {**buying, "site": site},
             "error": PURCHASE_CHANGED if changed else PURCHASE_REFUSED}
