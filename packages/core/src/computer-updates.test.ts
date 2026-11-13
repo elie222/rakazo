@@ -11,7 +11,10 @@ const update: ComputerUpdate = {
   status: "running",
   stage: "saving",
 };
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 describe("computer update presentation", () => {
   it("keeps a newly started update when an older poll returns, and closing does not stop polling", async () => {
     vi.useFakeTimers();
@@ -112,6 +115,8 @@ describe("computer update presentation", () => {
   });
   it("keeps polling through other failures", async () => {
     vi.useFakeTimers();
+    // Failure retries wait between half and all of the backoff; pin the full wait.
+    vi.spyOn(Math, "random").mockReturnValue(0);
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
       throw Object.assign(new Error("Unavailable"), { status: 503 });
     });

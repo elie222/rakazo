@@ -25,6 +25,7 @@ export * from "./content-migration.js";
 export * from "./credential-secrets.js";
 export * from "./cross-space-communication.js";
 export * from "./database-access.js";
+export * from "./database-outage.js";
 export * from "./deferred-migrations.js";
 export {
   eventsAfter,

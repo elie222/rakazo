@@ -10,7 +10,6 @@ import type {
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { TeachCaptureOverlay } from "../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../../components/teach/TeachRecordingChrome";
@@ -49,7 +48,6 @@ type ComputerOverlayProps = {
   onTakeControl: () => void;
   onStart: () => void;
   onRefreshTeaching: () => Promise<void>;
-  onRefreshComputer: () => Promise<void>;
   onClose: () => void;
 };
 
@@ -77,7 +75,6 @@ export function ComputerOverlay({
   onTakeControl,
   onStart,
   onRefreshTeaching,
-  onRefreshComputer,
   onClose,
 }: ComputerOverlayProps) {
   return (
@@ -179,15 +176,6 @@ export function ComputerOverlay({
                 computer={computer}
                 busy={teachBusy}
                 onRefresh={onRefreshTeaching}
-              />
-            ) : null}
-            {!recordingSkill ? (
-              <ComputerMaintenanceActions
-                botId={bot.id}
-                computer={computer}
-                onChanged={async () => {
-                  await onRefreshComputer();
-                }}
               />
             ) : null}
             <Button

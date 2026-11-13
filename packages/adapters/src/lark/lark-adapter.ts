@@ -271,14 +271,20 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
       throw new Error("Lark message content is empty or unsupported");
     return { msgType: "text", content: JSON.stringify({ text }) };
   }
-  async postMessage(threadId: string, message: AdapterPostableMessage) {
+  /** `idempotencyKey` makes Lark drop a repeat of this send for an hour. */
+  async postMessage(threadId: string, message: AdapterPostableMessage, idempotencyKey?: string) {
     const decoded = this.decodeThreadId(threadId);
     if (decoded.threadId) throw new Error("Lark group thread replies are not supported");
     const { msgType, content } = this.payload(message);
     const result = checked(
       await this.client.im.message.create({
         params: { receive_id_type: "chat_id" },
-        data: { receive_id: decoded.chatId, msg_type: msgType, content },
+        data: {
+          receive_id: decoded.chatId,
+          msg_type: msgType,
+          content,
+          ...(idempotencyKey ? { uuid: larkDedupeId(idempotencyKey) } : {}),
+        },
       }),
     );
     const id = result.data?.message_id;
@@ -298,6 +304,11 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
   async deleteMessage(_threadId: string, messageId: string) {
     checked(await this.client.im.message.delete({ path: { message_id: messageId } }));
   }
+}
+
+/** Lark's dedupe id is at most 50 characters; message keys can be longer. */
+function larkDedupeId(idempotencyKey: string): string {
+  return createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 32);
 }
 
 function checked<T extends { code?: number; msg?: string }>(result: T): T {

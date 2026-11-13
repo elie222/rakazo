@@ -124,13 +124,14 @@ export interface AppEnv {
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
+  botEmailSmtpUrl?: string;
   emailProvider?: string;
   welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
   emailFrom: string | undefined;
   emailReplyTo?: string;
   /** Mail to bots' addresses, posted by a relay; off unless the domain and secret are both set. */
-  inboundEmail?: { domain: string; secret: string; relayArcDomain?: string };
+  inboundEmail?: { domain: string; secret: string };
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
@@ -316,6 +317,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
+    botEmailSmtpUrl: optional(source.BOT_EMAIL_SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
@@ -450,8 +452,7 @@ function inboundEmailFromEnv(source: NodeJS.ProcessEnv): AppEnv["inboundEmail"] 
     throw new Error("INBOUND_EMAIL_DOMAIN must be a domain name such as bots.example.com");
   }
   if (secret.length < 32) throw new Error("INBOUND_EMAIL_SECRET must be at least 32 characters");
-  const relayArcDomain = optional(source.INBOUND_EMAIL_RELAY_ARC_DOMAIN)?.toLowerCase();
-  return { domain, secret, ...(relayArcDomain ? { relayArcDomain } : {}) };
+  return { domain, secret };
 }
 
 function optional(value: string | undefined): string | undefined {

@@ -86,8 +86,12 @@ export default function BillingScreen() {
     setPending(true);
     try {
       await work();
-    } catch {
-      Alert.alert(t`Could not update billing`);
+    } catch (error) {
+      Alert.alert(
+        (error as { status?: number }).status === 402
+          ? t`Your card was not charged`
+          : t`Could not update billing`,
+      );
     } finally {
       setPending(false);
     }

@@ -52,6 +52,7 @@ import {
   replaceBillingCustomer,
   reserveByokTrialCheckout,
   syncBillingSnapshot,
+  unexpiredCreditAccount,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
@@ -533,6 +534,8 @@ export function createBillingService(deps: {
     referralsEnabled: referrals.enabled,
     async selectFunding(actor, funding, client, interval) {
       const { organizationId } = await managedOrganization(actor);
+      // Choosing credits must see the balance left after any lapsed monthly credits expire.
+      if (funding === "credits") await expireModelCredits(prisma, organizationId);
       const account = await creditAccount(prisma, organizationId);
       const subscription = await billingAccountForOrganization(prisma, organizationId);
       if (
@@ -597,6 +600,8 @@ export function createBillingService(deps: {
       try {
         await provider.setMonthlyCredits(account.customerId, amountCents);
       } catch (error) {
+        if (error instanceof BillingPaymentNotCompletedError)
+          throw new ORPCError("PAYMENT_REQUIRED", { status: 402, message: error.message });
         if (!(error instanceof BillingNoMonthlyCreditsError)) throw error;
         // The plan ended after the page loaded; syncing lets the next status offer Subscribe.
         await sync(account.customerId);
@@ -613,9 +618,8 @@ export function createBillingService(deps: {
           await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
             getLogger().error("access grant failed", error),
           );
-        await expireModelCredits(prisma, organizationId);
         const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
-          creditAccount(prisma, organizationId),
+          unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
           trialDays(organizationId),
