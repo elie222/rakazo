@@ -4,9 +4,6 @@ import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
 
-export const COMPUTER_HEARTBEAT_MS = 60_000;
-/** Well inside the minute a person keeps control without checking in. */
-export const COMPUTER_CONTROL_HEARTBEAT_MS = 15_000;
 /**
  * Computer lifecycle calls create, start or stop a container (booting, switching between the
  * Team and a Private computer); give them far more than an ordinary RPC.

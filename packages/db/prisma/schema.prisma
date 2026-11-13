@@ -1846,6 +1846,8 @@ model Computer {
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)
+  /// A bot's screen action is running until then; a person takes control only after it.
+  screenActionUntil       DateTime?
   executionRunId          String?
   executionBotId          String?
   executionLeaseExpiresAt DateTime?

@@ -4,6 +4,7 @@ import {
   computerControlExpireJobKey,
   runContinueJob,
 } from "@rakazo/adapter-kit";
+import { COMPUTER_CONTROL_LEASE_MS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { hasActiveComputerControl, recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -18,11 +19,7 @@ export {
   userControlHeldBy,
 } from "@rakazo/db";
 
-/**
- * A person keeps control while their page checks in; a page silent this long loses it. Clients
- * check in every 15 seconds, and installed mobile apps every 60, so this leaves them a margin.
- */
-export const CONTROL_LEASE_MS = 90_000;
+export const CONTROL_LEASE_MS = COMPUTER_CONTROL_LEASE_MS;
 
 export function controlLeaseExpiresAt(now = new Date()): Date {
   return new Date(now.getTime() + CONTROL_LEASE_MS);
@@ -204,12 +201,28 @@ export async function expireComputerControl(
     );
     return false;
   }
-  // Deny input before touching the provider; the kept lease id lets a failed revoke retry.
+  // Deny input before touching the provider; the kept lease id lets a failed revoke retry. A
+  // heartbeat that renewed the lease since the read above keeps it.
   const claimed = await deps.prisma.computer.updateMany({
-    where: { id: computer.id, controlLeaseId: leaseId },
+    where: {
+      id: computer.id,
+      controlLeaseId: leaseId,
+      OR: [{ controlLeaseExpiresAt: null }, { controlLeaseExpiresAt: { lte: now } }],
+    },
     data: { controlHolder: "none" },
   });
-  if (claimed.count !== 1) return false;
+  if (claimed.count !== 1) {
+    const renewed = await deps.prisma.computer.findUnique({ where: { id: computer.id } });
+    if (renewed?.controlLeaseId === leaseId && renewed.controlLeaseExpiresAt) {
+      await scheduleComputerControlExpiry(
+        deps.jobs,
+        computer.id,
+        leaseId,
+        renewed.controlLeaseExpiresAt,
+      );
+    }
+    return false;
+  }
   const context: AdapterContext = {
     operationId: "computer.control-expire",
     traceId: "computer.control-expire",

@@ -4,6 +4,8 @@ import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import {
+  COMPUTER_CONTROL_HEARTBEAT_MS,
+  COMPUTER_HEARTBEAT_MS,
   createScreenReconnect,
   displayName,
   isRetryableError,
@@ -38,8 +40,6 @@ import { NativeActionButton } from "../components/native-action-button";
 import { currentApiBase, rpc } from "../lib/api";
 import { useAppForeground } from "../lib/app-foreground";
 import {
-  COMPUTER_CONTROL_HEARTBEAT_MS,
-  COMPUTER_HEARTBEAT_MS,
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
   computerLabel,
   controlLabel,

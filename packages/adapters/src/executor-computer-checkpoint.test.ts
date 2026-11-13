@@ -230,6 +230,7 @@ function fixture(runId = "run-1") {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     space: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
+    $executeRaw: vi.fn(async () => 0),
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     usageRecord: {
       createMany: vi.fn(async (_input: { data: Array<{ model: string }> }) => ({ count: 1 })),
@@ -309,7 +310,10 @@ function fixture(runId = "run-1") {
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
-    computer: { findUnique: vi.fn(async () => null) },
+    computer: {
+      findUnique: vi.fn(async () => null),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     secret: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },

@@ -3736,7 +3736,7 @@ describe("computer replacement", () => {
     // Input is denied, but the lease id stays so the expiry job retries the revoke.
     expect(prisma.computer.updateMany).toHaveBeenCalledTimes(1);
     expect(prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-1", controlLeaseId: "lease-1" },
+      where: expect.objectContaining({ id: "computer-1", controlLeaseId: "lease-1" }),
       data: { controlHolder: "none" },
     });
   });

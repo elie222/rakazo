@@ -20,7 +20,6 @@ import {
   browserSnapshotFromTool,
   redactBrowserResult,
 } from "./browser-tools.js";
-import { hasActiveComputerControl } from "./computer-control.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
   displayBotWorkspacePath,
@@ -52,7 +51,7 @@ import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
-import { awaitScreenTurn } from "./screen-turn.js";
+import { awaitScreenTurn, SCREEN_ACTION_MS } from "./screen-turn.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -135,37 +134,81 @@ function formatObservation(
     visualActionKey ? { unchangedVisualCount: guard.streak.count } : undefined,
   );
   screen.lastFrameId = observation.frameId;
+  screen.turn.mustLook = false;
   return result;
 }
 
-async function screenBlocked(ctx: RunContext, look = false): Promise<string | undefined> {
-  if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
+type ScreenTurnResult = { error: string } | { end: () => Promise<void> };
+
+/**
+ * Wait for this bot's turn on its screen. A turn marks the computer while the action runs, so a
+ * person taking control waits for it to end; call `end` when the action is over.
+ */
+async function takeScreenTurn(ctx: RunContext, look = false): Promise<ScreenTurnResult> {
+  if (ctx.computer.heldForTakeover) return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
   if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
-    return "Teaching is in progress. Stop teaching before using the computer.";
+    return { error: "Teaching is in progress. Stop teaching before using the computer." };
   }
+  const { prisma } = ctx.deps;
+  const computerId = ctx.computer.stored.id;
+  let marked: Date | undefined;
+  const end = async () => {
+    if (!marked) return;
+    const until = marked;
+    marked = undefined;
+    await prisma.$executeRaw`
+      UPDATE computers SET "screenActionUntil" = NULL
+      WHERE id = ${computerId} AND "screenActionUntil" = ${until}`;
+  };
   const { signal } = ctx.context;
-  return awaitScreenTurn({
+  const refused = await awaitScreenTurn({
     turn: ctx.state.screen.turn,
     look,
     readControl: async () => {
-      const computer = await ctx.deps.prisma.computer.findUnique({
-        where: { id: ctx.computer.stored.id },
-        select: {
-          controlHolder: true,
-          controlLeaseId: true,
-          controlLeaseExpiresAt: true,
-          controlBotId: true,
-          controlFence: true,
-        },
+      const now = new Date();
+      const until = new Date(now.getTime() + SCREEN_ACTION_MS);
+      // Mark the action in the same write that finds no person on this bot's screen. Raw SQL
+      // leaves updatedAt alone, which boot and sleep compare to claim the computer.
+      const [free] = await prisma.$queryRaw<Array<{ controlFence: number }>>`
+        UPDATE computers SET "screenActionUntil" = ${until}
+        WHERE id = ${computerId}
+          AND ("controlHolder" <> 'user' OR "controlBotId" IS NULL
+            OR "controlBotId" <> ${ctx.bot.id} OR "controlLeaseExpiresAt" IS NULL
+            OR "controlLeaseExpiresAt" <= ${now})
+        RETURNING "controlFence"`;
+      if (free) {
+        marked = until;
+        return { held: false, fence: free.controlFence };
+      }
+      const held = await prisma.computer.findUnique({
+        where: { id: computerId },
+        select: { controlFence: true },
       });
-      if (!computer) return null;
-      return {
-        held: hasActiveComputerControl(computer) && computer.controlBotId === ctx.bot.id,
-        fence: computer.controlFence,
-      };
+      return held ? { held: true, fence: held.controlFence } : null;
     },
     sleep: (ms) => sleep(ms, undefined, { signal }),
   });
+  if (refused) {
+    await end();
+    return { error: refused };
+  }
+  return { end };
+}
+
+/** Run a screen tool in this bot's turn, or answer with why it may not use the screen. */
+async function withScreenTurn<T>(
+  ctx: RunContext,
+  look: boolean,
+  refuse: (error: string) => T | Promise<T>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const turn = await takeScreenTurn(ctx, look);
+  if ("error" in turn) return refuse(turn.error);
+  try {
+    return await run();
+  } finally {
+    await turn.end();
+  }
 }
 
 /**
@@ -207,8 +250,6 @@ function releaseUnpressedPayment(ctx: RunContext, call: ToolCall): Promise<void>
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
-  const blocked = await screenBlocked(ctx, name === "browser_snapshot");
-  if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
   const redactions = () => [...ctx.secrets];
@@ -227,123 +268,141 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
       : name === "browser_snapshot"
         ? browserSnapshotFromTool
         : null;
-  return computerScreenToolResult(async () => {
-    // A call that presses an approved purchase spends it: a card it types leaves no pass for the next one.
-    const paying = purchaseApprovalOf(args.purchaseApproval);
-    const result = tool
-      ? redactBrowserResult(
-          await tool(ctx.providers.browser, await ctx.computer.get("tool", name), context, args, {
-            desktopTools,
-            downloads,
-          }),
-          redactions(),
-        )
-      : await browserActFromTool(
-          ctx.providers.browser,
-          await ctx.computer.get("tool", name),
-          context,
-          args,
-          {
-            desktopTools,
-            downloads,
-            redactions,
-            approvedPurchase: paying,
-            countPurchase: () => countPayment(ctx, call),
-            releasePurchase: () => releaseUnpressedPayment(ctx, call),
-            // Team bots may send only their own folder or shared/ off the computer; a
-            // private computer's helper already confines uploads to its home folder.
-            uploadRoots:
-              ctx.computer.mode === "team"
-                ? [teamBotWorkspaceDirectory(bot.id), "shared"]
-                : undefined,
-            resolveUploadPath: (path) =>
-              ctx.computer.mode === "team"
-                ? resolveBotUploadPath(ctx.computer.mode, bot.id, path)
-                : path,
-            resolveSecretFill: async (step) => {
-              const resolved = await resolveLoginFill({
-                prisma: deps.prisma,
-                secretStore: deps.secretStore,
-                scope: run,
-                runId: run.id,
-                name: step.secret,
-                field: step.field,
-              });
-              if ("error" in resolved) return resolved;
-              addRunSecrets(ctx, resolved.redactions);
-              return { text: resolved.text, origin: resolved.origin, hidden: resolved.hidden };
-            },
-            resolveCardFill: async (step) => {
-              if ("card" in step) {
-                // Only the card and checkout the person approved for this call.
-                const approvedCard = vaultCardUseOf(args.cardApproval);
-                if (approvedCard?.card !== step.card || approvedCard.site !== step.site)
-                  return { error: "The user has not approved typing this card here." };
-                const resolved = await resolveVaultCardFill({
-                  prisma: deps.prisma,
-                  secretStore: deps.secretStore,
-                  scope: run,
-                  name: step.card,
-                  field: step.field,
-                  site: step.site,
-                  savedAt: approvedCard.savedAt,
-                });
-                if ("error" in resolved) return resolved;
-                addRunSecrets(ctx, resolved.redactions);
-                // No pass for the pay click: approving the card named no amount, so the click
-                // that places the order still asks, showing what the page charges.
-                return { text: resolved.text, origin: resolved.origin };
-              }
-              const paymentWallet = deps.paymentWallet;
-              if (!paymentWallet) return { error: "Card fills are unavailable here." };
-              const resolved = await resolvePurchaseCardFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
-                run,
-                step.purchase,
-                step.field,
-              );
-              if ("error" in resolved) return resolved;
-              addRunSecrets(ctx, resolved.redactions);
-              if (!paying) ctx.state.walletHosts.add(new URL(resolved.origin).host);
-              return { text: resolved.text, origin: resolved.origin };
-            },
-            resolveCodeFill: async () => {
-              const resolved = await resolveCodeFill({
-                prisma: deps.prisma,
-                secretStore: deps.secretStore,
-                scope: run,
-                runId: run.id,
-              });
-              if ("error" in resolved) return resolved;
-              addRunSecrets(ctx, resolved.redactions);
-              const { text, origin, claim, restore } = resolved;
-              return { text, origin, claim, restore };
-            },
-            resolvePayTokenFill: async (step) => {
-              const paymentWallet = deps.paymentWallet;
-              if (!paymentWallet) return { error: "Pay tokens are unavailable here." };
-              const resolved = await resolvePurchasePayTokenFill(
-                { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
-                run,
-                step.purchase,
-              );
-              if ("error" in resolved) return resolved;
-              addRunSecrets(ctx, resolved.redactions);
-              const { text, origin, merchantAccountId } = resolved;
-              if (!paying) ctx.state.walletHosts.add(new URL(origin).host);
-              return { text, origin, merchantAccountId };
-            },
-          },
+  const look = name === "browser_snapshot";
+  return withScreenTurn(
+    ctx,
+    look,
+    (error) => call.finish({ error }),
+    () =>
+      computerScreenToolResult(async () => {
+        // A call that presses an approved purchase spends it: a card it types leaves no pass for the next one.
+        const paying = purchaseApprovalOf(args.purchaseApproval);
+        const result = tool
+          ? redactBrowserResult(
+              await tool(
+                ctx.providers.browser,
+                await ctx.computer.get("tool", name),
+                context,
+                args,
+                {
+                  desktopTools,
+                  downloads,
+                },
+              ),
+              redactions(),
+            )
+          : await browserActFromTool(
+              ctx.providers.browser,
+              await ctx.computer.get("tool", name),
+              context,
+              args,
+              {
+                desktopTools,
+                downloads,
+                redactions,
+                approvedPurchase: paying,
+                countPurchase: () => countPayment(ctx, call),
+                releasePurchase: () => releaseUnpressedPayment(ctx, call),
+                // Team bots may send only their own folder or shared/ off the computer; a
+                // private computer's helper already confines uploads to its home folder.
+                uploadRoots:
+                  ctx.computer.mode === "team"
+                    ? [teamBotWorkspaceDirectory(bot.id), "shared"]
+                    : undefined,
+                resolveUploadPath: (path) =>
+                  ctx.computer.mode === "team"
+                    ? resolveBotUploadPath(ctx.computer.mode, bot.id, path)
+                    : path,
+                resolveSecretFill: async (step) => {
+                  const resolved = await resolveLoginFill({
+                    prisma: deps.prisma,
+                    secretStore: deps.secretStore,
+                    scope: run,
+                    runId: run.id,
+                    name: step.secret,
+                    field: step.field,
+                  });
+                  if ("error" in resolved) return resolved;
+                  addRunSecrets(ctx, resolved.redactions);
+                  return { text: resolved.text, origin: resolved.origin, hidden: resolved.hidden };
+                },
+                resolveCardFill: async (step) => {
+                  if ("card" in step) {
+                    // Only the card and checkout the person approved for this call.
+                    const approvedCard = vaultCardUseOf(args.cardApproval);
+                    if (approvedCard?.card !== step.card || approvedCard.site !== step.site)
+                      return { error: "The user has not approved typing this card here." };
+                    const resolved = await resolveVaultCardFill({
+                      prisma: deps.prisma,
+                      secretStore: deps.secretStore,
+                      scope: run,
+                      name: step.card,
+                      field: step.field,
+                      site: step.site,
+                      savedAt: approvedCard.savedAt,
+                    });
+                    if ("error" in resolved) return resolved;
+                    addRunSecrets(ctx, resolved.redactions);
+                    // No pass for the pay click: approving the card named no amount, so the click
+                    // that places the order still asks, showing what the page charges.
+                    return { text: resolved.text, origin: resolved.origin };
+                  }
+                  const paymentWallet = deps.paymentWallet;
+                  if (!paymentWallet) return { error: "Card fills are unavailable here." };
+                  const resolved = await resolvePurchaseCardFill(
+                    { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                    run,
+                    step.purchase,
+                    step.field,
+                  );
+                  if ("error" in resolved) return resolved;
+                  addRunSecrets(ctx, resolved.redactions);
+                  if (!paying) ctx.state.walletHosts.add(new URL(resolved.origin).host);
+                  return { text: resolved.text, origin: resolved.origin };
+                },
+                resolveCodeFill: async () => {
+                  const resolved = await resolveCodeFill({
+                    prisma: deps.prisma,
+                    secretStore: deps.secretStore,
+                    scope: run,
+                    runId: run.id,
+                  });
+                  if ("error" in resolved) return resolved;
+                  addRunSecrets(ctx, resolved.redactions);
+                  const { text, origin, claim, restore } = resolved;
+                  return { text, origin, claim, restore };
+                },
+                resolvePayTokenFill: async (step) => {
+                  const paymentWallet = deps.paymentWallet;
+                  if (!paymentWallet) return { error: "Pay tokens are unavailable here." };
+                  const resolved = await resolvePurchasePayTokenFill(
+                    { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+                    run,
+                    step.purchase,
+                  );
+                  if ("error" in resolved) return resolved;
+                  addRunSecrets(ctx, resolved.redactions);
+                  const { text, origin, merchantAccountId } = resolved;
+                  if (!paying) ctx.state.walletHosts.add(new URL(origin).host);
+                  return { text, origin, merchantAccountId };
+                },
+              },
+            );
+        // A snapshot saves the PDF its tab shows, which is a new file on the computer.
+        if ((result as { downloads?: unknown } | null)?.downloads)
+          ctx.computer.checkpoint.markDirty();
+        ctx.state.screen.unchangedVisualStreak = unchangedVisualStreakAfterPageBrowser(
+          ctx.state.screen.unchangedVisualStreak,
+          name,
+          result,
         );
-    // A snapshot saves the PDF its tab shows, which is a new file on the computer.
-    if ((result as { downloads?: unknown } | null)?.downloads) ctx.computer.checkpoint.markDirty();
-    ctx.state.screen.unchangedVisualStreak = unchangedVisualStreakAfterPageBrowser(
-      ctx.state.screen.unchangedVisualStreak,
-      name,
-      result,
-    );
-    return browserResultForModel(result);
-  }, call.finish);
+        // A snapshot that returned the page is the fresh look a person's use asked for.
+        if (name === "browser_snapshot" && !(result as { error?: unknown } | null)?.error) {
+          ctx.state.screen.turn.mustLook = false;
+        }
+        return browserResultForModel(result);
+      }, call.finish),
+  );
 }
 
 /** Tools that drive the bot's computer: screen, page browser and shell. */
@@ -351,49 +410,58 @@ export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
     const { deps, context } = ctx;
     const { name } = call;
-    const blocked = await screenBlocked(ctx, true);
-    if (blocked) return { error: blocked };
-    return computerScreenToolResult(async () =>
-      formatObservation(
-        ctx,
-        await deps.sandbox.observe(await ctx.computer.get("tool", name), context),
-      ),
+    return withScreenTurn(
+      ctx,
+      true,
+      (error) => ({ error }),
+      () =>
+        computerScreenToolResult(async () =>
+          formatObservation(
+            ctx,
+            await deps.sandbox.observe(await ctx.computer.get("tool", name), context),
+          ),
+        ),
     );
   },
   async computer_act(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
-    const blocked = await screenBlocked(ctx);
-    if (blocked) return { error: blocked };
-    const actions = parseComputerActions(args.actions);
-    const visualActionKey = computerVisualActionKey(actions);
-    if (unchangedVisualActionBlocked(ctx.state.screen.unchangedVisualStreak, actions)) {
-      return call.finish(unchangedVisualLoopToolResult(ctx.state.screen.unchangedVisualStreak));
-    }
-    ctx.computer.checkpoint.markDirty();
-    return computerScreenToolResult(async () => {
-      const computer = await ctx.computer.get("tool", name);
-      // Counted just before the press; a desktop press is never known not to have happened.
-      const refused = await countPayment(ctx, call);
-      if (refused) return { error: refused };
-      const result = await deps.sandbox.act(
-        computer,
-        {
-          actions,
-          observe: args.observe !== false,
-          settleMs: Number(args.settle_ms ?? 350),
-        },
-        context,
-      );
-      return result.observation
-        ? formatObservation(
-            ctx,
-            result.observation,
-            `completed ${result.completed} computer action${result.completed === 1 ? "" : "s"}`,
-            visualActionKey,
-          )
-        : { ok: true, completed: result.completed };
-    }, call.finish);
+    return withScreenTurn(
+      ctx,
+      false,
+      (error) => ({ error }),
+      async () => {
+        const actions = parseComputerActions(args.actions);
+        const visualActionKey = computerVisualActionKey(actions);
+        if (unchangedVisualActionBlocked(ctx.state.screen.unchangedVisualStreak, actions)) {
+          return call.finish(unchangedVisualLoopToolResult(ctx.state.screen.unchangedVisualStreak));
+        }
+        ctx.computer.checkpoint.markDirty();
+        return computerScreenToolResult(async () => {
+          const computer = await ctx.computer.get("tool", name);
+          // Counted just before the press; a desktop press is never known not to have happened.
+          const refused = await countPayment(ctx, call);
+          if (refused) return { error: refused };
+          const result = await deps.sandbox.act(
+            computer,
+            {
+              actions,
+              observe: args.observe !== false,
+              settleMs: Number(args.settle_ms ?? 350),
+            },
+            context,
+          );
+          return result.observation
+            ? formatObservation(
+                ctx,
+                result.observation,
+                `completed ${result.completed} computer action${result.completed === 1 ? "" : "s"}`,
+                visualActionKey,
+              )
+            : { ok: true, completed: result.completed };
+        }, call.finish);
+      },
+    );
   },
   async shell(ctx, call) {
     const { deps, run, runId, bot, context } = ctx;
@@ -550,74 +618,84 @@ export const computerTools: ToolHandlers = {
   async open_path(ctx, call) {
     const { deps, bot, context } = ctx;
     const { name, args } = call;
-    const blocked = await screenBlocked(ctx);
-    if (blocked) return call.finish({ error: blocked });
-    const requestedPath = String(args.path ?? "");
-    ctx.computer.checkpoint.markDirty();
-    return computerScreenToolResult(async () => {
-      try {
-        const result = await deps.sandbox.act(
-          await ctx.computer.get("tool", name),
-          {
-            actions: [
+    return withScreenTurn(
+      ctx,
+      false,
+      (error) => call.finish({ error }),
+      async () => {
+        const requestedPath = String(args.path ?? "");
+        ctx.computer.checkpoint.markDirty();
+        return computerScreenToolResult(async () => {
+          try {
+            const result = await deps.sandbox.act(
+              await ctx.computer.get("tool", name),
               {
-                kind: "open",
-                path: /^https?:\/\//i.test(requestedPath)
-                  ? requestedPath
-                  : resolveBotWorkspacePath(ctx.computer.mode, bot.id, requestedPath),
+                actions: [
+                  {
+                    kind: "open",
+                    path: /^https?:\/\//i.test(requestedPath)
+                      ? requestedPath
+                      : resolveBotWorkspacePath(ctx.computer.mode, bot.id, requestedPath),
+                  },
+                ],
+                observe: true,
+                settleMs: 600,
               },
-            ],
-            observe: true,
-            settleMs: 600,
-          },
-          context,
-        );
-        await recordComputerAction(ctx, call, "open_path", requestedPath);
-        return result.observation
-          ? formatObservation(ctx, result.observation, `opened ${requestedPath}`)
-          : { ok: true };
-      } catch (error) {
-        await recordComputerAction(ctx, call, "open_path", requestedPath, {
-          error: error instanceof Error ? error.message : "could not open path",
-        });
-        throw error;
-      }
-    }, call.finish);
+              context,
+            );
+            await recordComputerAction(ctx, call, "open_path", requestedPath);
+            return result.observation
+              ? formatObservation(ctx, result.observation, `opened ${requestedPath}`)
+              : { ok: true };
+          } catch (error) {
+            await recordComputerAction(ctx, call, "open_path", requestedPath, {
+              error: error instanceof Error ? error.message : "could not open path",
+            });
+            throw error;
+          }
+        }, call.finish);
+      },
+    );
   },
   async launch_app(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
-    const blocked = await screenBlocked(ctx);
-    if (blocked) return call.finish({ error: blocked });
-    const application = String(args.application ?? "");
-    ctx.computer.checkpoint.markDirty();
-    return computerScreenToolResult(async () => {
-      try {
-        const result = await deps.sandbox.act(
-          await ctx.computer.get("tool", name),
-          {
-            actions: [
+    return withScreenTurn(
+      ctx,
+      false,
+      (error) => call.finish({ error }),
+      async () => {
+        const application = String(args.application ?? "");
+        ctx.computer.checkpoint.markDirty();
+        return computerScreenToolResult(async () => {
+          try {
+            const result = await deps.sandbox.act(
+              await ctx.computer.get("tool", name),
               {
-                kind: "focus",
-                application,
-                uri: args.uri ? String(args.uri) : undefined,
+                actions: [
+                  {
+                    kind: "focus",
+                    application,
+                    uri: args.uri ? String(args.uri) : undefined,
+                  },
+                ],
+                observe: true,
+                settleMs: 600,
               },
-            ],
-            observe: true,
-            settleMs: 600,
-          },
-          context,
-        );
-        await recordComputerAction(ctx, call, "launch_app", application);
-        return result.observation
-          ? formatObservation(ctx, result.observation, `launched ${application}`)
-          : { ok: true };
-      } catch (error) {
-        await recordComputerAction(ctx, call, "launch_app", application, {
-          error: error instanceof Error ? error.message : "could not launch app",
-        });
-        throw error;
-      }
-    }, call.finish);
+              context,
+            );
+            await recordComputerAction(ctx, call, "launch_app", application);
+            return result.observation
+              ? formatObservation(ctx, result.observation, `launched ${application}`)
+              : { ok: true };
+          } catch (error) {
+            await recordComputerAction(ctx, call, "launch_app", application, {
+              error: error instanceof Error ? error.message : "could not launch app",
+            });
+            throw error;
+          }
+        }, call.finish);
+      },
+    );
   },
 };

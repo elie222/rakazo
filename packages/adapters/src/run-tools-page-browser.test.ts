@@ -27,10 +27,15 @@ vi.mock("./purchase-service.js", async (importOriginal) => ({
   }),
 }));
 
+/** A computer row the screen gate finds nobody on. */
+const freeComputer = { findUnique: async () => null };
+/** The screen gate's raw writes: no person on the screen, and nothing to clear. */
+const freeScreen = { $queryRaw: async () => [], $executeRaw: async () => 0 };
+
 /** A screen this run has not shared with a person. */
 const freshScreen = () => ({
   unchangedVisualStreak: { count: 0 },
-  turn: { controlFence: undefined, mustLook: false },
+  turn: { controlFence: undefined as number | undefined, mustLook: false },
 });
 
 const secret = 'zq"xv\\mk';
@@ -54,7 +59,8 @@ async function runPageTool(name: string, args: Record<string, unknown> = {}) {
     deps: {
       prisma: {
         taughtSkill: { findFirst: async () => null },
-        computer: { findUnique: async () => null },
+        computer: freeComputer,
+        ...freeScreen,
       },
     },
     run: { spaceId: "space", botId: "b1" },
@@ -127,7 +133,8 @@ describe("page tools save a page's file downloads in the calling bot's own folde
       deps: {
         prisma: {
           taughtSkill: { findFirst: async () => null },
-          computer: { findUnique: async () => null },
+          computer: freeComputer,
+          ...freeScreen,
         },
       },
       run: { spaceId: "space", botId },
@@ -205,22 +212,38 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
     teaching: boolean,
     screen = freshScreen(),
     controlFence = 0,
+    observeFails = false,
   ) {
-    const act = vi.fn(async () => ({}));
-    const observe = vi.fn(async () => ({}));
+    const steps: string[] = [];
+    const act = vi.fn(async () => {
+      steps.push("act");
+      return {};
+    });
+    const observe = vi.fn(async () => {
+      if (observeFails) throw new Error("screen unavailable");
+      return {};
+    });
     const findFirst = vi.fn(async () => (teaching ? { id: "skill" } : null));
     const get = vi.fn(async () => computer);
     // Nobody holds the screen now; the fence counts each time a person took it.
-    const findUnique = vi.fn(async () => ({
-      controlHolder: "none",
-      controlLeaseId: null,
-      controlLeaseExpiresAt: null,
-      controlBotId: null,
-      controlFence,
-    }));
+    const until = (values: unknown[]) =>
+      values.find((value): value is Date => value instanceof Date)?.getTime();
+    const $queryRaw = vi.fn(async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+      steps.push(`mark ${until(values)}`);
+      return [{ controlFence }];
+    });
+    const $executeRaw = vi.fn(async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+      steps.push(`clear ${until(values)}`);
+      return 1;
+    });
     const ctx = {
       deps: {
-        prisma: { taughtSkill: { findFirst }, computer: { findUnique } },
+        prisma: {
+          taughtSkill: { findFirst },
+          computer: { findUnique: async () => null },
+          $queryRaw,
+          $executeRaw,
+        },
         sandbox: { act, observe },
         events: { append: async () => {} },
       },
@@ -244,8 +267,10 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
       finish: async (result: unknown) => result,
     };
     const handler = name === "browser_navigate" ? pageBrowserTool : computerTools[name];
-    const result = await handler?.(ctx as never, call as never);
-    return { result, act, observe, findFirst, get };
+    const result = await handler?.(ctx as never, call as never)?.catch((error: Error) => ({
+      thrown: error.message,
+    }));
+    return { result, act, observe, findFirst, get, steps };
   }
 
   it.each(screenTools)("%s refuses while a takeover holds the screen", async (name) => {
@@ -272,6 +297,27 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
 
   it.each(["open_path", "launch_app"])("%s acts when the screen is free", async (name) => {
     expect((await runScreenTool(name, false, false)).act).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a person from taking control while its action is on the screen", async () => {
+    const { steps, act } = await runScreenTool("launch_app", false, false);
+    expect(act).toHaveBeenCalledOnce();
+    const [mark, during, clear] = steps;
+    expect(mark).toMatch(/^mark \d+$/);
+    expect(during).toBe("act");
+    expect(clear).toBe(mark?.replace("mark", "clear"));
+  });
+
+  it("asks for a look again when the screenshot after a person's use fails", async () => {
+    const screen = { ...freshScreen(), turn: { controlFence: 1, mustLook: true } };
+    const failed = await runScreenTool("computer_observe", false, false, screen, 1, true);
+    expect(failed.observe).toHaveBeenCalledOnce();
+    expect(screen.turn.mustLook).toBe(true);
+    const refused = await runScreenTool("launch_app", false, false, screen, 1);
+    expect(refused.result).toEqual({ error: PERSON_HANDED_BACK });
+    expect(refused.act).not.toHaveBeenCalled();
+    await runScreenTool("computer_observe", false, false, screen, 1);
+    expect(screen.turn.mustLook).toBe(false);
   });
 
   it("looks again before acting once a person has used the screen in between", async () => {
@@ -301,7 +347,8 @@ describe("a run remembers the sites it typed an approved wallet purchase into", 
       deps: {
         prisma: {
           taughtSkill: { findFirst: async () => null },
-          computer: { findUnique: async () => null },
+          computer: freeComputer,
+          ...freeScreen,
         },
         paymentWallet: {},
       },
@@ -362,7 +409,8 @@ describe("browser_act types a saved card only where the user approved it", () =>
         prisma: {
           ...db.prisma,
           taughtSkill: { findFirst: async () => null },
-          computer: { findUnique: async () => null },
+          computer: freeComputer,
+          ...freeScreen,
         },
         secretStore,
       },
@@ -489,7 +537,8 @@ describe("browser_act fill_code", () => {
       deps: {
         prisma: {
           taughtSkill: { findFirst: async () => null },
-          computer: { findUnique: async () => null },
+          computer: freeComputer,
+          ...freeScreen,
           secret: {
             findFirst: async ({ where }: { where: Record<string, unknown> }) =>
               rows.find((row) => matches(row, where)) ?? null,

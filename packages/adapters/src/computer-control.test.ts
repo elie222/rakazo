@@ -77,6 +77,33 @@ describe("computer control leases", () => {
     expect(harness.enqueue).not.toHaveBeenCalled();
   });
 
+  it("keeps a lease a heartbeat renewed after the expiry job read it", async () => {
+    const lapsed = new Date("2026-01-01T00:00:00.000Z");
+    const renewed = new Date("2026-01-01T00:01:30.000Z");
+    const harness = controlHarness({ controlLeaseExpiresAt: lapsed });
+    harness.prisma.computer.findUnique
+      .mockResolvedValueOnce(harness.computer)
+      .mockResolvedValueOnce({ ...harness.computer, controlLeaseExpiresAt: renewed });
+    harness.prisma.computer.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      expireComputerControl(harness.deps, "computer-id", "lease-1", lapsed),
+    ).resolves.toBe(false);
+
+    // The claim itself requires the lease still to be lapsed, so a renewal in between wins.
+    expect(harness.prisma.computer.updateMany.mock.calls[0]?.[0]).toMatchObject({
+      where: {
+        controlLeaseId: "lease-1",
+        OR: [{ controlLeaseExpiresAt: null }, { controlLeaseExpiresAt: { lte: lapsed } }],
+      },
+    });
+    expect(harness.setScreenControl).not.toHaveBeenCalled();
+    expect(harness.events.releaseUserControl).not.toHaveBeenCalled();
+    expect(harness.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "computer.control-expire", availableAt: renewed }),
+    );
+  });
+
   it("keeps the denied lease retryable when provider revocation fails", async () => {
     const harness = controlHarness({
       revokeError: new Error("provider unavailable"),
@@ -88,7 +115,7 @@ describe("computer control leases", () => {
 
     expect(harness.prisma.computer.updateMany).toHaveBeenCalledTimes(1);
     expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-id", controlLeaseId: "lease-1" },
+      where: expect.objectContaining({ id: "computer-id", controlLeaseId: "lease-1" }),
       data: { controlHolder: "none" },
     });
     expect(harness.events.releaseUserControl).not.toHaveBeenCalled();
@@ -407,6 +434,7 @@ function controlHarness(
     releaseUserControl,
   };
   return {
+    computer,
     prisma,
     setScreenControl,
     enqueue,

@@ -1,5 +1,10 @@
 /** How long a bot's screen action waits for a person to hand the screen back. */
 export const SCREEN_WAIT_MS = 45_000;
+/**
+ * How long a bot's screen action keeps a person from taking control while it runs. Each action
+ * clears it when it ends, so this only bounds an action whose worker died.
+ */
+export const SCREEN_ACTION_MS = 10_000;
 const SCREEN_POLL_MS = 1_000;
 
 export const PERSON_HAS_CONTROL =
@@ -11,7 +16,7 @@ export const PERSON_HANDED_BACK =
 export interface ScreenTurn {
   /** The computer's control generation when this attempt last used the screen. */
   controlFence: number | undefined;
-  /** A person used the screen since this attempt last looked at it. */
+  /** A person used the screen since this attempt last saw it. */
   mustLook: boolean;
 }
 
@@ -53,10 +58,7 @@ export async function awaitScreenTurn(input: {
     turn.mustLook = true;
   }
   if (control) turn.controlFence = control.fence;
-  if (!turn.mustLook) return undefined;
-  if (input.look) {
-    turn.mustLook = false;
-    return undefined;
-  }
+  // A look runs, and clears mustLook only once it returns the screen.
+  if (!turn.mustLook || input.look) return undefined;
   return PERSON_HANDED_BACK;
 }

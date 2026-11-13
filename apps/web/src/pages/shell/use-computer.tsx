@@ -9,6 +9,8 @@ import type {
 } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
+  COMPUTER_CONTROL_HEARTBEAT_MS,
+  COMPUTER_HEARTBEAT_MS,
   createScreenReconnects,
   isRetryableError,
   screenProbeUrl,
@@ -756,7 +758,10 @@ export function useComputerControls({
         if (!isRetryableError(error)) window.clearInterval(timer);
       });
     };
-    const timer = window.setInterval(ping, hasControl ? 15_000 : 60_000);
+    const timer = window.setInterval(
+      ping,
+      hasControl ? COMPUTER_CONTROL_HEARTBEAT_MS : COMPUTER_HEARTBEAT_MS,
+    );
     ping();
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);

@@ -25,6 +25,10 @@ function scripted(control: (at: number) => ScreenControl | null) {
 }
 
 const freshTurn = (): ScreenTurn => ({ controlFence: undefined, mustLook: false });
+/** A screenshot or snapshot returned the screen, as the screen tools record it. */
+const seen = (turn: ScreenTurn) => {
+  turn.mustLook = false;
+};
 const free = (fence = 1): ScreenControl => ({ held: false, fence });
 const held = (fence = 1): ScreenControl => ({ held: true, fence });
 
@@ -52,14 +56,16 @@ describe("a bot's screen turn", () => {
     // Still not performed on a retry until the bot has looked.
     expect(await awaitScreenTurn({ turn, look: false, ...clock })).toBe(PERSON_HANDED_BACK);
     expect(await awaitScreenTurn({ turn, look: true, ...clock })).toBeUndefined();
+    seen(turn);
     expect(await awaitScreenTurn({ turn, look: false, ...clock })).toBeUndefined();
   });
 
-  it("lets a screenshot through once control returns, since that is the fresh look", async () => {
+  it("lets a screenshot through once control returns, and still asks until one succeeds", async () => {
     const clock = scripted((at) => (at < 2_000 ? held() : free()));
     const turn = freshTurn();
     expect(await awaitScreenTurn({ turn, look: true, ...clock })).toBeUndefined();
-    expect(turn.mustLook).toBe(false);
+    // The screenshot failed, so the bot has still not seen the screen.
+    expect(await awaitScreenTurn({ turn, look: false, ...clock })).toBe(PERSON_HANDED_BACK);
   });
 
   it("asks for a fresh look when a person took and handed back control between actions", async () => {
@@ -70,6 +76,7 @@ describe("a bot's screen turn", () => {
     fence = 2;
     expect(await awaitScreenTurn({ turn, look: false, ...clock })).toBe(PERSON_HANDED_BACK);
     expect(await awaitScreenTurn({ turn, look: true, ...clock })).toBeUndefined();
+    seen(turn);
     expect(await awaitScreenTurn({ turn, look: false, ...clock })).toBeUndefined();
   });
 });

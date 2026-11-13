@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
@@ -16,6 +17,7 @@ import {
   displayBotWorkspacePath,
   ensureComputerWorkspaceLayout,
   expireComputerControl,
+  getActiveTeachingSession,
   hasActiveComputerControl,
   isComputerScreenUnavailable,
   isSandboxGoneError,
@@ -26,6 +28,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  SCREEN_ACTION_MS,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -69,6 +72,9 @@ import {
 import { scrollPoint } from "../computer-input.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
+
+/** How often a Take control waiting on a bot action looks again. */
+const SCREEN_TURN_POLL_MS = 250;
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -372,29 +378,50 @@ export function computerRoutes(ctx: RouterContext) {
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
-        const leaseId = randomUUID();
-        const expiresAt = controlLeaseExpiresAt();
-        const granted = await deps.prisma.computer.updateMany({
-          where: {
-            id: bot.computer.id,
-            state: "running",
-            maintenanceId: null,
-            controlHolder: { not: "user" },
-            controlLeaseId: null,
-          },
-          data: {
-            controlHolder: "user",
-            controlLeaseId: leaseId,
-            controlLeaseExpiresAt: expiresAt,
-            controlBotId: bot.id,
-            controlUserId: context.actor.userId,
-            controlFence: { increment: 1 },
-          },
-        });
-        if (granted.count !== 1) {
-          throw new ORPCError("CONFLICT", { message: "Someone else is using this computer" });
-        }
         const computerId = bot.computer.id;
+        const leaseId = randomUUID();
+        let expiresAt = controlLeaseExpiresAt();
+        // A bot action already on the screen finishes first; its mark lapses on its own if its
+        // worker died, so this waits at most that long.
+        const deadline = Date.now() + SCREEN_ACTION_MS;
+        for (;;) {
+          const now = new Date();
+          expiresAt = controlLeaseExpiresAt(now);
+          const granted = await deps.prisma.computer.updateMany({
+            where: {
+              id: computerId,
+              state: "running",
+              maintenanceId: null,
+              controlHolder: { not: "user" },
+              controlLeaseId: null,
+              OR: [{ screenActionUntil: null }, { screenActionUntil: { lte: now } }],
+            },
+            data: {
+              controlHolder: "user",
+              controlLeaseId: leaseId,
+              controlLeaseExpiresAt: expiresAt,
+              controlBotId: bot.id,
+              controlUserId: context.actor.userId,
+              controlFence: { increment: 1 },
+            },
+          });
+          if (granted.count === 1) break;
+          const current = await deps.prisma.computer.findUniqueOrThrow({
+            where: { id: computerId },
+          });
+          // A second Take control from the holder, such as a double tap, keeps their lease.
+          if (holdsComputerControl(current, bot.id, context.actor)) {
+            const renewed = controlLeaseExpiresAt();
+            await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed);
+            return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
+          }
+          assertNotAnotherPersonsControl(current, context.actor);
+          const botActing = Boolean(current.screenActionUntil && current.screenActionUntil > now);
+          if (!botActing || Date.now() >= deadline) {
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          }
+          await sleep(SCREEN_TURN_POLL_MS);
+        }
         try {
           await scheduleComputerControlExpiry(deps.jobs, computerId, leaseId, expiresAt);
         } catch (error) {
@@ -423,12 +450,21 @@ export function computerRoutes(ctx: RouterContext) {
         return { leaseId, expiresAt: expiresAt.toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
-        // Done or Skip answers the bot's request for help; Hand back only ends control.
-        if (input.reason === undefined && input.runId === undefined) {
-          const bot = await repos.getBot(context.actor, input.botId);
-          if (bot.computer) await releaseComputerControl(deps, context.actor, bot.computer, bot.id);
-          return { ok: true as const };
+        const bot = await repos.getBot(context.actor, input.botId);
+        // Every release hands back this person's control, except the control a teaching
+        // recording holds until it stops.
+        const teaching = await getActiveTeachingSession(deps.prisma, context.actor.spaceId, bot.id);
+        if (bot.computer && !teaching) {
+          await releaseComputerControl(
+            deps,
+            context.actor,
+            bot.computer,
+            bot.id,
+            input.reason ?? "released",
+          );
         }
+        // Done or Skip also answers the bot's request for help.
+        if (input.reason === undefined && input.runId === undefined) return { ok: true as const };
         const answered = await answerComputerRequest(
           deps,
           context.actor,
@@ -437,7 +473,7 @@ export function computerRoutes(ctx: RouterContext) {
           input.runId,
         );
         // The card waits for its answer to land, so one that changed nothing must say so. An
-        // older app's I'm done with nothing waiting was only a hand back.
+        // older app's I'm done with nothing waiting is only the hand back above.
         if (!answered && input.runId !== undefined) {
           throw new ORPCError("CONFLICT", { message: "The bot is no longer waiting" });
         }
