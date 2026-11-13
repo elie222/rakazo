@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
+import { persistRefreshedModelCredential } from "./model-credential-refresh.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { connectionModelSettings, withModelSettings } from "./model-settings.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
@@ -88,6 +89,58 @@ describe("stored model settings", () => {
       ),
     );
     expect(saved).toMatchObject({ reasoning: true, models: { served: { images: true } } });
+  });
+});
+
+describe("a token a run refreshed", () => {
+  function store(plaintext: string) {
+    let current = plaintext;
+    const tx = {
+      $executeRaw: vi.fn(async () => 0),
+      secret: {
+        findFirst: vi.fn(async () => ({ ciphertext: "sealed" })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      secret: tx.secret,
+    };
+    const secrets = {
+      load: vi.fn(async () => current),
+      put: vi.fn(async (next: string) => {
+        current = next;
+        return { id: "secret-1", ciphertext: "sealed-again" };
+      }),
+    };
+    const persist = persistRefreshedModelCredential(
+      prisma as never,
+      secrets as never,
+      { userId: "user-1", spaceId: "space-1" },
+      "secret-1",
+    );
+    return { persist, tx, stored: () => parseModelSecret(current) };
+  }
+
+  it("is saved under the settings lock onto the stored copy, keeping its model settings", async () => {
+    const { persist, tx, stored } = store(
+      serializeModelSecret(
+        withModelSettings(parseModelSecret(JSON.stringify(oauth)), LISTED_ONLY, { images: true }),
+      ),
+    );
+    await persist({ type: "oauth", access: "rotated", refresh: "refresh-2", expires: 2 });
+    expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(stored()).toMatchObject({
+      kind: "oauth",
+      credential: { access: "rotated", expires: 2 },
+      models: { [LISTED_ONLY]: { images: true } },
+    });
+  });
+
+  it("leaves a newer stored token alone", async () => {
+    const { persist, tx } = store(JSON.stringify({ ...oauth, expires: 10 }));
+    await persist({ type: "oauth", access: "older", refresh: "refresh", expires: 5 });
+    expect(tx.secret.update).not.toHaveBeenCalled();
   });
 });
 

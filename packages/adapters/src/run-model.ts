@@ -18,7 +18,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import {
   kickModelCredentialRefresh,
-  persistStoredModelSecret,
+  persistRefreshedModelCredential,
   refreshStoredModelCredential,
   resolveStoredModelAuth,
   retireToReconnectMarker,
@@ -30,12 +30,7 @@ import {
 } from "./model-credit-observer.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
 import type { StoredModelSecret } from "./model-secret.js";
-import {
-  keptModelSettings,
-  parseModelSecret,
-  secretValuesToRedact,
-  serializeModelSecret,
-} from "./model-secret.js";
+import { parseModelSecret, secretValuesToRedact } from "./model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -48,7 +43,6 @@ import {
 import { connectionModelSettings } from "./model-settings.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import { codexLiveModel } from "./pi-codex-catalog.js";
-import { toOAuthCredential } from "./pi-credentials.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import { CHATGPT_OAUTH_PROVIDER, isRetiredModelCredentialError } from "./pi-oauth.js";
 
@@ -246,12 +240,6 @@ async function resolveModelKeyMaterial(
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
-      const persist = persistStoredModelSecret(
-        deps.prisma,
-        deps.secretStore,
-        { userId, spaceId },
-        row.id,
-      );
       const retire = retireToReconnectMarker(
         deps.prisma,
         deps.secretStore,
@@ -336,35 +324,12 @@ async function resolveModelKeyMaterial(
         maxImagesPerPrompt: settings.maxImagesPerPrompt,
         oauth,
         persistOAuth: oauth
-          ? async (next) => {
-              await withModelCredentialLock(credential.secretId, async () => {
-                const currentRow = await deps.prisma.secret.findFirst({
-                  where: { id: credential.secretId, userId, spaceId: null },
-                });
-                if (!currentRow) return;
-                const current = parseModelSecret(
-                  await deps.secretStore.load(currentRow.ciphertext, currentRow.id),
-                );
-                if (current.kind === "oauth" && !current.reconnectRequired) {
-                  const stored = current.credential;
-                  if (stored.expires > next.expires) return;
-                  if (
-                    stored.access === next.access &&
-                    stored.refresh === next.refresh &&
-                    stored.expires === next.expires
-                  ) {
-                    return;
-                  }
-                }
-                await persist(
-                  serializeModelSecret({
-                    kind: "oauth",
-                    credential: toOAuthCredential(next),
-                    ...keptModelSettings(current),
-                  }),
-                );
-              });
-            }
+          ? persistRefreshedModelCredential(
+              deps.prisma,
+              deps.secretStore,
+              { userId, spaceId },
+              credential.secretId,
+            )
           : undefined,
         refreshOAuth: oauth
           ? refreshStoredModelCredential(

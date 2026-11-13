@@ -10,6 +10,7 @@ import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
 import type { KeptModelSettings, StoredModelSecret } from "./model-secret.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { toOAuthCredential } from "./pi-credentials.js";
 import type { ResolveModelOpts } from "./pi-oauth.js";
 import {
   loadProviderOAuth,
@@ -310,7 +311,7 @@ export async function updateStoredModelSecret(
   secretStore: Pick<SecretStore, "load" | "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
-  update: (secret: StoredModelSecret) => StoredModelSecret,
+  update: (secret: StoredModelSecret) => StoredModelSecret | null,
 ): Promise<boolean> {
   return withModelCredentialLock(secretId, () =>
     withRefreshLock(
@@ -322,17 +323,45 @@ export async function updateStoredModelSecret(
           select: { ciphertext: true },
         });
         if (!row) return false;
-        const secret = parseModelSecret(await secretStore.load(row.ciphertext, secretId));
-        await persistStoredModelSecret(
-          tx,
-          secretStore,
-          scope,
-          secretId,
-        )(serializeModelSecret(update(secret)));
+        const next = update(parseModelSecret(await secretStore.load(row.ciphertext, secretId)));
+        if (next)
+          await persistStoredModelSecret(
+            tx,
+            secretStore,
+            scope,
+            secretId,
+          )(serializeModelSecret(next));
         return true;
       },
     ),
   );
+}
+
+/**
+ * Saves a token a run refreshed onto the stored copy, under the same locks as settings saves, so
+ * settings saved meanwhile stay. A newer or identical stored token is left alone.
+ */
+export function persistRefreshedModelCredential(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "load" | "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+): (next: AgentModelOAuthCredential) => Promise<void> {
+  return async (next) => {
+    await updateStoredModelSecret(prisma, secretStore, scope, secretId, (current) => {
+      if (current.kind === "oauth" && !current.reconnectRequired) {
+        const stored = current.credential;
+        if (stored.expires > next.expires) return null;
+        if (
+          stored.access === next.access &&
+          stored.refresh === next.refresh &&
+          stored.expires === next.expires
+        )
+          return null;
+      }
+      return { kind: "oauth", credential: toOAuthCredential(next), ...keptModelSettings(current) };
+    });
+  };
 }
 
 /**
