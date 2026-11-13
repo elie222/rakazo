@@ -836,6 +836,27 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       exposeHeaders: [SERVER_BUILD_HEADER],
     }),
   );
+  // Reading a session here can renew it. The browser must get the renewed cookie too,
+  // or it keeps the one from sign-in and is signed out when that one expires.
+  const renewedSessionCookies = new WeakMap<Request, string[]>();
+  const readSession = async (request: Request) => {
+    const { headers, response } = await auth.api.getSession({
+      headers: request.headers,
+      returnHeaders: true,
+    });
+    // A native client signs in with a bearer token and keeps no cookie.
+    const cookies = request.headers.has("authorization") ? [] : headers.getSetCookie();
+    if (cookies.length > 0) renewedSessionCookies.set(request, cookies);
+    return response;
+  };
+  app.use("*", async (c, next) => {
+    // Later middleware can swap the request object, so remember the one a route reads.
+    const request = c.req.raw;
+    await next();
+    for (const cookie of renewedSessionCookies.get(request) ?? []) {
+      c.header("set-cookie", cookie, { append: true });
+    }
+  });
   // Session and account replies must never be stored by a client or an HTTP cache.
   for (const path of ["/api/auth/*", "/rpc/*"]) {
     app.use(path, async (c, next) => {
@@ -875,7 +896,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     monitoringRoutes(
       env.browserMonitoring,
       fetch,
-      async (request) => (await auth.api.getSession({ headers: request.headers }))?.user.id,
+      async (request) => (await readSession(request))?.user.id,
     ),
   );
   app.route("/", cspReportRoutes(requestClientIp));
@@ -971,7 +992,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const requestSession = async (request: Request) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await readSession(request);
     if (!session?.user) return null;
     const actor = await actorFromMembership(
       requireMembership(
@@ -991,7 +1012,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       devices: userDevices,
       forwardSecret: userDeviceSecret,
       session: async (request) => {
-        const found = await auth.api.getSession({ headers: request.headers });
+        const found = await readSession(request);
         return found ? { userId: found.user.id, sessionId: found.session.id } : null;
       },
       trustedOrigin: (origin) => isTrustedOrigin(origin, env),
