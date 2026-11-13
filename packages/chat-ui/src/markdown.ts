@@ -70,7 +70,11 @@ function rewriteOutsideCode(
         const source = text.slice(start, end);
         result +=
           rewrite(text.slice(offset, start)) +
-          (!skipLinks && node.type === "link" ? rewrite(source) : source);
+          (!skipLinks &&
+          node.type === "link" &&
+          node.url.toLowerCase().startsWith(MENTION_URL_PREFIX)
+            ? rewrite(source)
+            : source);
         offset = end;
       }
       return;

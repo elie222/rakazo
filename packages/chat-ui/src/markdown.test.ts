@@ -475,6 +475,11 @@ describe("withMentions", () => {
     ]);
   });
 
+  it("preserves literal mention syntax in an ordinary link's code label", () => {
+    const text = "[`[Planner](rakazo-mention:bot-1)`](https://example.com)";
+    expect(withMentions([text], [planner])).toEqual([`${link} ${text}`]);
+  });
+
   it("strips a model mention wrapper while preserving inline code in its label", () => {
     expect(withMentions(["[Use `Planner`](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
       `${link} Use \`Planner\` is ready.`,
