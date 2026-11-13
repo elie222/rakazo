@@ -501,6 +501,8 @@ export type OpenAiCompatibleModelsResponse = {
   object?: string;
   data?: Array<{ id?: string; metadata?: unknown }>;
   models?: Array<{ id?: string }>;
+  has_more?: boolean;
+  last_id?: string | null;
 };
 
 /** Model ids a server lists, with per-model capabilities when the server publishes them. */
@@ -670,29 +672,60 @@ export async function probeOpenAiCompatibleModelList(
       ...opts,
       headers: input.headers,
     });
-    const response = await safeFetch(new URL("models", `${baseUrl.href}/`).href, {
-      headers,
-      redirect: "error",
-      signal: merged,
-    });
-    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new Error(
-        `Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
-      );
+    const modelsUrl = new URL("models", `${baseUrl.href}/`);
+    const ids: string[] = [];
+    // Listing entries from every page, for servers whose entries describe each model.
+    const entries: unknown[] = [];
+    const cursors = new Set<string>();
+    const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
+    while (true) {
+      merged.throwIfAborted();
+      const response = await safeFetch(modelsUrl.href, {
+        headers,
+        redirect: "error",
+        signal: merged,
+      });
+      if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(
+          `Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+        );
+      }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(
+          `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+        );
+      }
+      const body = await readBoundedJson(response, opts);
+      const pageIds = probeModelIds(body, opts);
+      if (ids.length + pageIds.length > maxModelIds) {
+        throw new Error("Model server returned too many or overly long model ids");
+      }
+      ids.push(...pageIds);
+      if (Array.isArray(body.data)) entries.push(...body.data);
+      if (input.apiProtocol !== "anthropic-messages" || body.has_more !== true) {
+        return isDeepInfraBaseUrl(baseUrl.href) && entries.length > 0
+          ? deepInfraModelList(entries as Parameters<typeof deepInfraModelList>[0], ids)
+          : { models: ids };
+      }
+      const cursor = typeof body.last_id === "string" ? body.last_id : "";
+      if (
+        !cursor.trim() ||
+        cursor.length > MAX_MODEL_ID_LENGTH ||
+        cursors.has(cursor) ||
+        !pageIds.length
+      ) {
+        throw new Error(
+          `Model server returned invalid pagination. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+        );
+      }
+      if (ids.length >= maxModelIds) {
+        throw new Error("Model server returned too many or overly long model ids");
+      }
+      cursors.add(cursor);
+      modelsUrl.searchParams.set("after_id", cursor);
     }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new Error(
-        `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
-      );
-    }
-    const body = await readBoundedJson(response, opts);
-    const ids = probeModelIds(body, opts);
-    if (isDeepInfraBaseUrl(baseUrl.href) && Array.isArray(body.data)) {
-      return deepInfraModelList(body.data, ids);
-    }
-    return { models: ids };
   } catch (error) {
     const aborted =
       (error instanceof Error && error.name === "AbortError") ||

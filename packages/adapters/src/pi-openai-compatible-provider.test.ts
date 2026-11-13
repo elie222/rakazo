@@ -1631,6 +1631,155 @@ describe("anthropic-messages wire protocol", () => {
     expect(seenHeaders?.get("authorization")).toBeNull();
   });
 
+  it("follows Anthropic model pages with the same headers and signal", async () => {
+    const first = Array.from({ length: 20 }, (_, index) => ({ id: `model-${index}` }));
+    const requests: RequestInit[] = [];
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(init ?? {});
+      return Response.json(
+        new URL(String(url)).searchParams.has("after_id")
+          ? { data: [{ id: "model-20" }], has_more: false }
+          : { data: first, has_more: true, last_id: "model-19" },
+      );
+    });
+    const result = await probeOpenAiCompatibleModels(
+      { baseUrl: input.baseUrl, apiKey: "fake-key", apiProtocol: "anthropic-messages" },
+      fetchImpl,
+      undefined,
+      OWNER,
+    );
+    expect(result).toEqual([...first.map(({ id }) => id), "model-20"]);
+    expect(requests[1]?.signal).toBe(requests[0]?.signal);
+    for (const request of requests) {
+      expect(new Headers(request.headers).get("x-api-key")).toBe("fake-key");
+      expect(new Headers(request.headers).get("anthropic-version")).toBe("2023-06-01");
+      expect(request.redirect).toBe("error");
+    }
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toBe(`${input.baseUrl}/models?after_id=model-19`);
+  });
+
+  it.each([undefined, "", "   ", 42])(
+    "rejects missing or invalid pagination cursor %s",
+    async (last_id) => {
+      const fetchImpl = vi.fn(async () =>
+        Response.json({
+          data: [{ id: "model" }],
+          has_more: true,
+          last_id,
+        }),
+      );
+      await expect(
+        probeOpenAiCompatibleModels(
+          { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+          fetchImpl,
+          undefined,
+          OWNER,
+        ),
+      ).rejects.toThrow("pagination");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("rejects repeated cursors rather than returning an incomplete list", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: [{ id: "model" }],
+        has_more: true,
+        last_id: "model",
+      }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("pagination");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces the model count limit across pages", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: Array.from({ length: 2001 }, (_, index) => ({ id: `model-${index}` })),
+        has_more: true,
+        last_id: "next",
+      }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("too many");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a later page failure and releases its response body", async () => {
+    const cancel = vi.fn();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          data: [{ id: "first" }],
+          has_more: true,
+          last_id: "first",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 429 }));
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("returned 429");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("preserves caller cancellation on a later page", async () => {
+    const caller = new AbortController();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          data: [{ id: "first" }],
+          has_more: true,
+          last_id: "first",
+        }),
+      )
+      .mockImplementationOnce(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        caller.abort();
+        init?.signal?.throwIfAborted();
+      });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        caller.signal,
+        OWNER,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("does not interpret Anthropic pagination for other protocols", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: [{ id: "model" }],
+        has_more: true,
+        last_id: "model",
+      }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: input.baseUrl }, fetchImpl, undefined, OWNER),
+    ).resolves.toEqual(["model"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("probes keyless Anthropic-compatible servers with the version header", async () => {
     // A keyless endpoint can still require the version header the SDK always sends.
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

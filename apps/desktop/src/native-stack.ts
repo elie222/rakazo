@@ -629,6 +629,10 @@ export class NativeStackController extends StackLifecycle {
         apiHealthy &&
         (await this.deps.probe(this.currentWebUrl, signal, stackToken)) === this.deps.imageTag
       ) {
+        // A service that exits while the probe resolves is not restarted, so fail, not report ready.
+        const down = crashed();
+        if (down)
+          throw new StartFailure(servicesFailed(), [...down.tail, `${down.spec.name} exited`]);
         this.push({ type: "ready" });
         await pruneRuntimes(this.dir("runtime"), [
           `container-${CONTAINER_RUNTIME_VERSION}`,

@@ -17,6 +17,47 @@ import {
 import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 
 describe("jsonSchemaParameters", () => {
+  it.each([
+    { field: { type: "integer" }, value: 1.5, normalizedCount: 1 },
+    {
+      field: { type: "array", items: { type: "integer" } },
+      value: [1.5, 2],
+      normalizedCount: [1, 2],
+    },
+    { field: { type: ["integer", "null"] }, value: 1.5, normalizedCount: 1 },
+    { field: { anyOf: [{ type: "integer" }, { type: "null" }] }, value: 1.5, normalizedCount: 1 },
+  ])(
+    "preserves integer fields through SDK normalization: $field",
+    ({ field, value, normalizedCount }) => {
+      const inputSchema = {
+        type: "object",
+        properties: { count: field, ratio: { type: "number" } },
+        required: ["count", "ratio"],
+      };
+      const original = structuredClone(inputSchema);
+      const tool = { name: "integer_input", description: "Use numeric input", inputSchema };
+      const parameters = parametersFor(tool);
+      const wire = JSON.parse(JSON.stringify(parameters));
+      const call: ToolCall = {
+        type: "toolCall",
+        id: "integer-test",
+        name: tool.name,
+        arguments: { count: value, ratio: 1.5 },
+      };
+      const normalized = validateToolArguments({ ...tool, parameters }, call);
+      expect(wire.properties.count).toEqual(
+        Array.isArray(field.type) ? { anyOf: field.type.map((type) => ({ type })) } : field,
+      );
+      expect(wire.properties.ratio).toEqual({ type: "number" });
+      // Keep the SDK's existing integer coercion rather than adding a new policy.
+      expect(normalized).toEqual({ count: normalizedCount, ratio: 1.5 });
+      expect(normalized.ratio).toBe(1.5);
+      expect(parseConnectorToolArgs(inputSchema, normalized)).toEqual(normalized);
+      expect(inputSchema).toEqual(original);
+      expect(call.arguments).toEqual({ count: value, ratio: 1.5 });
+    },
+  );
+
   it.each(["property", "array item", "union alternative"])(
     "preserves nested allOf constraints in a %s through SDK validation",
     (position) => {

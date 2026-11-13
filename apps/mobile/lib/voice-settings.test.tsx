@@ -218,6 +218,31 @@ it("falls back to an available provider when the saved provider is hidden", asyn
   expect(container.textContent).not.toContain("Disconnect Self-hosted");
 });
 
+it("keeps selected voices when a hidden provider disconnects and the read fails", async () => {
+  state.load.mockResolvedValue(false);
+  const original = state.rpc.getMockImplementation()!;
+  let disconnected = false;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") {
+      disconnected = true;
+      return undefined;
+    }
+    if (proc === "voice/catalog" && disconnected) return Promise.reject({});
+    if (proc === "voice/credentials")
+      return [
+        { id: "selected", provider: "fish-audio", voiceId: "voice" },
+        { id: "hidden", provider: "openai-compatible", voiceId: "voice" },
+      ];
+    return original(proc, args);
+  });
+  await render();
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect Self-hosted");
+  expect(container.textContent).toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Disconnect Self-hosted");
+});
+
 it("disables provider rows until the saved device preference has loaded", async () => {
   let finish!: (value: boolean) => void;
   state.load.mockReturnValue(
@@ -323,6 +348,27 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(container.textContent).not.toContain("fish-audio voice");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(state.save.mock.calls).toEqual([[false]]);
+});
+
+it("keeps a disconnect when the read after it fails", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/disconnect") return undefined;
+    // A body without a message, so the text shown is the caller's own fallback.
+    if (proc === "voice/catalog") return Promise.reject({});
+    return original(proc, args);
+  });
+  expect(container.textContent).toContain("fish-audio voice");
+  await click("Disconnect");
+  expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "fish-audio" });
+  // Its voices go with the key: picking one would only fail on the server.
+  expect(container.textContent).not.toContain("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Could not disconnect");
+  expect(container.textContent).not.toContain("Disconnect");
+  expect(container.textContent).toContain("Connect");
 });
 
 it("edits a Space's override in that Space, leaving this device's voice and sounds out", async () => {
