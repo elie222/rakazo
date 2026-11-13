@@ -4,9 +4,9 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
 } from "@rakazo/contracts";
-import { inferAttachmentMimeType } from "@rakazo/core";
+import { inferAttachmentMimeType, isStaticPng, PNG_ANIMATION_HEADER_BYTES } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
+import { File, FileMode } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -57,6 +57,21 @@ async function prepareImage(
   // Unsupported photo formats (such as HEIC) need conversion even when already small.
   if (!needsResize && mimeType) {
     return { uri, name, mimeType };
+  }
+  if (mimeType === "image/png") {
+    try {
+      const handle = new File(uri).open(FileMode.ReadOnly);
+      try {
+        if (!isStaticPng(await handle.readBytes(PNG_ANIMATION_HEADER_BYTES))) {
+          return { uri, name, mimeType };
+        }
+      } finally {
+        handle.close();
+      }
+    } catch {
+      // Never flatten a PNG when its animation metadata cannot be inspected.
+      return { uri, name, mimeType };
+    }
   }
   const manipulator = loadImageManipulator();
   if (!manipulator) return { uri, name, mimeType };

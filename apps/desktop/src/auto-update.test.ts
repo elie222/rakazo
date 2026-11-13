@@ -444,6 +444,45 @@ describe("DesktopUpdateController", () => {
     },
   );
 
+  it.each(["event", "rejection"] as const)(
+    "reports the cached offline result without retrying during cooldown (%s)",
+    async (failureMode) => {
+      let now = 1_000;
+      let fake: ReturnType<typeof fakeUpdater>;
+      fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          if (vi.mocked(fake.updater.checkForUpdates).mock.calls.length > 1) {
+            fake.emit("update-not-available");
+            return;
+          }
+          const error = new Error("net::ERR_INTERNET_DISCONNECTED");
+          if (failureMode === "rejection") throw error;
+          fake.emit("error", error);
+        }),
+      });
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, {
+        now: () => now,
+        iso: () => NOW,
+      });
+
+      expect(await controller.check(false)).toMatchObject({ phase: "idle", message: null });
+      expect(await controller.check(true)).toMatchObject({
+        phase: "idle",
+        message: "Could not reach the update server.",
+        checkedAt: NOW,
+      });
+      expect(await controller.check(false)).toMatchObject({ phase: "idle", message: null });
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+
+      now += MIN_CHECK_INTERVAL_MS;
+      expect(await controller.check(true)).toMatchObject({ phase: "idle", message: null });
+      const successful = controller.state();
+      expect(await controller.check(true)).toBe(successful);
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it.each(["loading", "checking"] as const)(
     "reports offline failures when a manual check joins a background check during %s",
     async (joinDuring) => {

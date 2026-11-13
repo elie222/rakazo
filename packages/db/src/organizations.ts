@@ -183,25 +183,23 @@ export async function claimOrganizationForDeletion(
         if (otherMembers > 0) throw new SharedOrganizationError();
         if (otherOwned === 0) throw new CannotDeleteLastOrganizationError();
         await lockOrganizationSpaces(tx, input.organizationId);
-        // The previous release claimed under the bare `organization-deletion:<id>`.
-        const earlier: Prisma.SpaceWhereInput = {
+        // Any earlier claim counts, whichever operation placed it: an attempt that takes over
+        // another's claim must never release it.
+        const claimed: Prisma.SpaceWhereInput = {
           organizationId: input.organizationId,
-          OR: [
-            { deletionClaimId: `organization-deletion:${input.organizationId}` },
-            { deletionClaimId: { startsWith: `organization-deletion:${input.organizationId}:` } },
-          ],
+          deletionClaimId: { not: null },
         };
         const live = await tx.space.count({
           where: {
-            ...earlier,
+            ...claimed,
             deletingAt: { gte: new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS) },
           },
         });
         if (live > 0) throw new SpaceDeletionInProgressError();
-        // Take over this organization's lapsed claim, if any, under this attempt's token.
+        // Take over the lapsed claim, if any, under this attempt's token.
         const taken = await tx.space.updateMany({
-          where: earlier,
-          data: { deletingAt: new Date(), deletionClaimId: claimId },
+          where: claimed,
+          data: { deletingAt: new Date(), deletionClaimId: claimId, deletionAttemptId: null },
         });
         const spaces = await tx.space.findMany({
           where: { organizationId: input.organizationId },

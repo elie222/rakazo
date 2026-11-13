@@ -444,3 +444,29 @@ export function userTurnMessageForRun<
       (sourceMessageId ? message.id === sourceMessageId : message.runId === runId),
   );
 }
+
+/** Bound PNG inspection before image decoding on every client. */
+export const PNG_ANIMATION_HEADER_BYTES = 64 * 1024;
+
+/** Only re-encode PNGs whose header confirms they are static; unknown stays original. */
+export function isStaticPng(bytes: Uint8Array): boolean {
+  if (
+    bytes.length < 33 ||
+    ![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value)
+  )
+    return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const typeAt = (offset: number) => String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+  if (view.getUint32(8) !== 13 || typeAt(8) !== "IHDR") return false;
+  const end = Math.min(bytes.length, PNG_ANIMATION_HEADER_BYTES);
+  for (let offset = 33; offset + 8 <= end; ) {
+    const type = typeAt(offset);
+    // An APNG must declare acTL before its first IDAT, even with one animation frame.
+    if (type === "acTL" || type === "IEND") return false;
+    if (type === "IDAT") return true;
+    const next = offset + 12 + view.getUint32(offset);
+    if (next > end) return false;
+    offset = next;
+  }
+  return false;
+}

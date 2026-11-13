@@ -690,13 +690,23 @@ it("deletes with the password from the native prompt when one is shown", async (
 
 it("refreshes an expired sign-in proof and keeps the deletion dialog open", async () => {
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
-    security({ hasPassword: false, freshOidcAuth: true, sso: { name: "Example SSO" } }),
+    security({
+      hasPassword: false,
+      freshOidcAuth: true,
+      sso: { name: "Example SSO" },
+      ssoLinked: true,
+    }),
   );
   const view = await renderAccount(Profile);
   await view.press("Delete account");
   // The proof expires while the dialog is open.
   vi.mocked(fetchAccountSecurity).mockResolvedValue(
-    security({ hasPassword: false, freshOidcAuth: false, sso: { name: "Example SSO" } }),
+    security({
+      hasPassword: false,
+      freshOidcAuth: false,
+      sso: { name: "Example SSO" },
+      ssoLinked: true,
+    }),
   );
   await view.press("Delete");
   expect(deleteAccount).not.toHaveBeenCalled();

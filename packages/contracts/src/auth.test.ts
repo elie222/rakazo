@@ -5,6 +5,8 @@ import {
   IDENTITY_CONFIRMATION_REQUIRED,
   legacyAuthCapabilitiesSchema,
   runWithIdentityConfirmation,
+  signInProviderGroups,
+  signInProviders,
 } from "./auth.js";
 
 it("requires explicit password and SSO capabilities", () => {
@@ -19,6 +21,33 @@ it("requires explicit password and SSO capabilities", () => {
       sso: { name: "SSO", availability: "checking" },
     }).passwordAuth,
   ).toBe(false);
+});
+
+it("lists sign-in providers and falls back to the older SSO field", () => {
+  const base = { passwordAuth: true, passwordReset: false, resetUrl: null, sso: null };
+  expect(signInProviders(authCapabilitiesSchema.parse(base))).toEqual([]);
+  expect(
+    signInProviders(
+      authCapabilitiesSchema.parse({
+        ...base,
+        sso: { name: "SSO", availability: "available" },
+      }),
+    ),
+  ).toEqual([{ id: "oidc", name: "SSO" }]);
+  const providers = [
+    { id: "google", name: "Google" },
+    { id: "apple", name: "Apple" },
+  ];
+  expect(signInProviders(authCapabilitiesSchema.parse({ ...base, providers }))).toEqual(providers);
+  expect(
+    signInProviders(
+      authCapabilitiesSchema.parse({
+        ...base,
+        sso: { name: "SSO", availability: "available" },
+        providers: [],
+      }),
+    ),
+  ).toEqual([]);
 });
 
 it("treats email code sign-in as an optional boolean capability", () => {
@@ -110,4 +139,12 @@ it("passes other failures through without asking", async () => {
     runWithIdentityConfirmation(async () => Promise.reject(failure), confirm),
   ).rejects.toBe(failure);
   expect(confirm).not.toHaveBeenCalled();
+});
+
+it("keeps SSO prominent alone and secondary alongside personal providers", () => {
+  const sso = { id: "oidc", name: "Company" };
+  const personal = { id: "personal", name: "Personal" };
+  expect(signInProviderGroups([sso])).toEqual({ primary: [sso], secondary: [] });
+  expect(signInProviderGroups([sso, personal])).toEqual({ primary: [personal], secondary: [sso] });
+  expect(signInProviderGroups([])).toEqual({ primary: [], secondary: [] });
 });

@@ -1880,12 +1880,12 @@ describe("a claimed send and its backup job", () => {
 describe("when a send fails", () => {
   it("moves a cleanly failed message's backup job up to now and holds the rest of the conversation", async () => {
     const t = setup();
+    const before = Date.now();
     const [first, second] = await t.record(threadLane("t-a"), [
       post("t-a", "a-1"),
       post("t-a", "a-2"),
     ]);
     t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
-    const before = Date.now();
     await t.delivery.send([threadLane("t-a")]);
 
     expect(t.sendToThread).toHaveBeenCalledOnce();
