@@ -368,6 +368,8 @@ function fakeRun(calls: RecordedCall[], script: Script): RunDocker {
 const ok: Script = (args) => {
   if (args[0] === "compose" && args[1] === "version") return { stdout: "2.29.0\n" };
   if (args[0] === "info") return { stdout: "27.1.1\n" };
+  if (args[0] === "inspect")
+    return { stdout: JSON.stringify([`RAKAZO_DESKTOP_STACK_TOKEN=${fakeHex(32)}`]) };
   const subcommand = args[7];
   if (subcommand === "ps") return { stdout: "fake-container-id\n" };
   if (subcommand === "pull") return { lines: ["app Pulled", "computer Pulled"] };
@@ -925,6 +927,19 @@ describe("LocalStackController", () => {
     await expect(stack.rediscoverManagedStack()).resolves.toBe(true);
     expect(probe).not.toHaveBeenCalled();
     expect(calls.some((call) => call.args.includes("ps"))).toBe(true);
+  });
+
+  it("rejects another stack on the selected Docker daemon", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    await ensureStackToken(stackPath, fakeHex);
+    const stack = controller({}, (args) =>
+      args[0] === "inspect"
+        ? { stdout: JSON.stringify(["RAKAZO_DESKTOP_STACK_TOKEN=another-stack-token"]) }
+        : ok(args),
+    );
+    await expect(stack.rediscoverManagedStack()).resolves.toBe(false);
+    expect(stack.managedStackRunning()).toBe(false);
   });
 
   it.each([

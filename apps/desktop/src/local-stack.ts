@@ -549,14 +549,31 @@ export class LocalStackController extends StackLifecycle {
     const generation = this.stopGeneration;
     if (this.stopInFlight()) return false;
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
-    if (binary === null || (await readStackToken(this.deps.stackDir)) === null) return false;
+    const token = await readStackToken(this.deps.stackDir);
+    if (binary === null || token === null) return false;
     try {
       const result = await this.compose(
         binary,
         ["ps", "--status", "running", "-q"],
         HEALTH_POLL_INTERVAL_MS,
       );
-      const running = result.code === 0 && result.stdout.trim().length > 0;
+      if (result.code !== 0 || !result.stdout.trim()) return false;
+      const inspected = await this.docker(
+        binary,
+        ["inspect", "--format", "{{json .Config.Env}}", ...result.stdout.trim().split(/\s+/)],
+        HEALTH_POLL_INTERVAL_MS,
+        undefined,
+        true,
+      );
+      const running =
+        inspected.code === 0 &&
+        inspected.stdout
+          .trim()
+          .split("\n")
+          .some((line) => {
+            const env: unknown = JSON.parse(line);
+            return Array.isArray(env) && env.includes(`RAKAZO_DESKTOP_STACK_TOKEN=${token}`);
+          });
       if (running && generation === this.stopGeneration && !this.managedStackMayRun) {
         this.managedStackMayRun = true;
         this.deps.onReuseConfirmed?.();
@@ -809,7 +826,13 @@ export class LocalStackController extends StackLifecycle {
     return createHash("sha256").update(JSON.stringify(this.deps.hostComputer)).digest("hex");
   }
 
-  private docker(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
+  private docker(
+    binary: string,
+    args: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+    quiet = false,
+  ) {
     return this.deps.run(binary, args, {
       cwd: this.deps.stackDir,
       env: dockerSpawnEnv(this.deps.platform, this.deps.env, binary, {
@@ -840,7 +863,7 @@ export class LocalStackController extends StackLifecycle {
       }),
       timeoutMs,
       signal,
-      onLine: (line) => this.push({ type: "output", line }),
+      onLine: quiet ? undefined : (line) => this.push({ type: "output", line }),
     });
   }
 
