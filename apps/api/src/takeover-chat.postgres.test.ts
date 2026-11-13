@@ -18,7 +18,11 @@ import {
   updateFleetGroup,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { stuckWorkStatusMessage, TAKEOVER_WAIT_EXPIRE_AFTER_MS } from "@rakazo/core";
+import {
+  stuckWorkStatusMessage,
+  TAKEOVER_COMPUTER_PENDING_STATE,
+  TAKEOVER_WAIT_EXPIRE_AFTER_MS,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -122,6 +126,22 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         taskId: task.id,
         status: "waiting_takeover",
         trigger,
+      },
+    });
+    // The run asked for help with a card, as a paused run always has.
+    const cardSeq = await system.thread.update({
+      where: { id: thread.id },
+      data: { nextMessageSeq: { increment: 1 } },
+      select: { nextMessageSeq: true },
+    });
+    await system.message.create({
+      data: {
+        threadId: thread.id,
+        botId: bot.id,
+        runId: run.id,
+        seq: cardSeq.nextMessageSeq - 1,
+        role: "bot",
+        blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Sign in." }],
       },
     });
     await system.computerExecutionLease.create({
@@ -777,7 +797,10 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
           runId: fixture.run.id,
           seq: 1,
           role: "bot",
-          blocks: [{ kind: "text", text: "Please enter the code on the screen." }],
+          blocks: [
+            { kind: "text", text: "Please enter the code on the screen." },
+            { kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Enter the code." },
+          ],
         },
       });
       const call = async (path: "send" | "react", json: Record<string, unknown>) => {

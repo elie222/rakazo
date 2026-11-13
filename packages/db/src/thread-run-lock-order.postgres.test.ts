@@ -1,3 +1,4 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
@@ -193,6 +194,22 @@ describePostgres("thread row before run rows for clear and control release (Post
         status: "waiting_takeover",
         trigger: "user",
         startedAt: new Date(),
+      },
+    });
+    // The run asked for help with a card, as a paused run always has.
+    const cardSeq = await system.thread.update({
+      where: { id: threadId },
+      data: { nextMessageSeq: { increment: 1 } },
+      select: { nextMessageSeq: true },
+    });
+    await system.message.create({
+      data: {
+        threadId,
+        botId,
+        runId: run.id,
+        seq: cardSeq.nextMessageSeq - 1,
+        role: "bot",
+        blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Sign in." }],
       },
     });
     return run.id;

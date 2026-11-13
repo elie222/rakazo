@@ -909,6 +909,25 @@ describe("answerTakeoverRequest", () => {
     expect(publish).toHaveBeenCalledWith("thread:group-thread", JSON.stringify({ cursor: 8 }));
   });
 
+  it("answers a request once: a second Done never stamps the resumed run's next request", async () => {
+    const tx = takeoverTx([{ count: 0 }, { count: 1 }]);
+    // The first answer settled the card; the run is running again.
+    tx.message.findMany.mockResolvedValue([
+      {
+        id: "message-1",
+        blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_DONE_STATE, text: "Sign in." }],
+      },
+    ]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(answerTakeoverRequest(prisma, input)).resolves.toBe(false);
+
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.event.create).not.toHaveBeenCalled();
+  });
+
   it("stamps a skip on a run still preparing its pause without taking its lease", async () => {
     const tx = takeoverTx([{ count: 0 }, { count: 1 }]);
     const prisma = {

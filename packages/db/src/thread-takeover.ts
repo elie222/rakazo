@@ -132,6 +132,9 @@ export async function answerTakeoverRequest(
     });
     if (!run) return null;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+    // Each request is answered once: its card is published before the run pauses and settled by
+    // the answer, so a second Done or Skip finds nothing pending and never stamps a later request.
+    if (!(await hasPendingTakeoverCard(tx, run.threadId, input.runId))) return null;
     const checkpoint = input.reason === "skipped" ? "takeover-skipped" : "takeover";
     const resumed = await tx.run.updateMany({
       where: { id: input.runId, status: "waiting_takeover" },
@@ -240,6 +243,21 @@ export async function settleReleasedTakeoverCards(
     return settleReleasedTakeoverCardsInTransaction(tx, input);
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (seq !== null) await notify?.(input.threadId, seq);
+}
+
+async function hasPendingTakeoverCard(
+  tx: Prisma.TransactionClient,
+  threadId: string,
+  runId: string,
+): Promise<boolean> {
+  const messages = await tx.message.findMany({
+    where: { threadId, runId, role: "bot" },
+    select: { blocks: true },
+  });
+  return messages.some((message) => {
+    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
+    return parsed.success && releasedTakeoverComputerBlocks(parsed.data, "done") !== null;
+  });
 }
 
 async function settleReleasedTakeoverCardsInTransaction(
