@@ -21,10 +21,12 @@ dbTests("plan choice funnel", () => {
   };
   const provider = new BillingEmulator({ modelCredits: true, namespace: `funnel-${stamp}` });
   const events: AnalyticsEvent[] = [];
+  const identities: Array<string | undefined> = [];
   const analytics: ProductAnalytics = {
-    capture: (captured, event) => {
+    capture: (captured, event, identity) => {
       expect(captured).toBe(userId);
       events.push(event);
+      identities.push(identity?.id);
     },
     flush: async () => {},
   };
@@ -82,7 +84,11 @@ dbTests("plan choice funnel", () => {
       interval: "year",
       amountCents: BYOK_TIERS.pro.annualPriceCents,
     } as const;
-    provider.completeByokCheckout(customer);
+    const subscriptionId = provider.completeByokCheckout(customer);
+    // The first payment is still pending when the checkout returns.
+    provider.setStatus(customer, "incomplete");
+    await service.sync(customer);
+    provider.setStatus(customer, "trialing");
     await service.sync(customer);
     await service.sync(customer);
     provider.setStatus(customer, "active");
@@ -94,5 +100,9 @@ dbTests("plan choice funnel", () => {
       { name: "subscription_started", ...terms, trial: true },
       { name: "trial_ended", ...terms, converted: true },
     ]);
+    // The analytics provider deduplicates lifecycle events that concurrent syncs both report.
+    expect(identities).toEqual([undefined, undefined, subscriptionId, subscriptionId]);
+    // A returning subscriber is not part of the layout comparison.
+    expect((await service.status(actor)).planLayout).toBeUndefined();
   });
 });

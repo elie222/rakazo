@@ -326,24 +326,28 @@ export function createBillingService(deps: {
     });
   }
 
-  /** Reports a new subscription, or the end of its trial, once per change a sync records. */
+  /**
+   * Reports a new subscription, or the end of its trial, when a sync records it. Concurrent syncs
+   * can both see the change, so each event carries the subscription and a time from its snapshot,
+   * which the analytics provider deduplicates on.
+   */
   async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
     const { analytics } = deps;
-    const started =
-      live.subscriptionId !== previous.subscriptionId && hasBillingAccess(live.status);
-    const trialEnded =
-      live.subscriptionId === previous.subscriptionId &&
-      previous.status === "trialing" &&
-      live.status !== "trialing";
+    const same = live.subscriptionId === previous.subscriptionId;
+    // A checkout whose first payment was still pending syncs as incomplete before it starts.
+    const started = hasBillingAccess(live.status) && (!same || previous.status === "incomplete");
+    const trialEnded = same && previous.status === "trialing" && live.status !== "trialing";
     const terms = planTerms(live);
     if (!analytics || !terms || !(started || trialEnded)) return;
     const owner = await ownerUserId(previous.organizationId);
     if (!owner) return;
+    const at = (started ? live.currentPeriodStartsAt : live.trialEndsAt) ?? new Date();
     analytics.capture(
       owner,
       started
         ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
         : { name: "trial_ended", ...terms, converted: live.status === "active" },
+      { id: live.subscriptionId, at },
     );
   }
 
@@ -726,7 +730,10 @@ export function createBillingService(deps: {
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),
-          ...(offers.length > 1 ? { planLayout: planLayout(organizationId) } : {}),
+          // New organizations only, so a returning subscriber's choice stays out of the comparison.
+          ...(offers.length > 1 && !account?.subscribedAt
+            ? { planLayout: planLayout(organizationId) }
+            : {}),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable:
