@@ -31,6 +31,23 @@ describe("classifyModelConnectionFailure", () => {
     );
   });
 
+  it.each([
+    ["rate_limit", "429 Too Many Requests"],
+    ["rate_limit", "HTTP 429"],
+    ["unauthorized", "Request failed with status 401"],
+    ["unauthorized", "HTTP 403: forbidden"],
+  ])("reads %s from the status code in %j", (outcome, message) => {
+    expect(classifyModelConnectionFailure(new Error(message)).outcome).toBe(outcome);
+  });
+
+  it.each([
+    "connect ECONNREFUSED 127.0.0.1:4030",
+    "connect ECONNREFUSED 127.0.0.1:14290",
+    "connect ECONNREFUSED 10.0.0.1:34010",
+  ])("does not read a port or id as a status code in %j", (message) => {
+    expect(classifyModelConnectionFailure(new Error(message)).outcome).toBe("unreachable");
+  });
+
   it("keeps manual model entry for custom servers and catalog picks for catalog providers", () => {
     expect(unavailableSelectedModel("gpt-missing", ["gpt-test"])?.nextAction).toMatch(
       /enter a model id/,

@@ -68,7 +68,7 @@ export function classifyModelConnectionFailure(
     };
   }
 
-  if (lower.includes("429") || lower.includes("rate limit") || lower.includes("rate-limit")) {
+  if (/\b429\b/.test(lower) || lower.includes("rate limit") || lower.includes("rate-limit")) {
     return {
       outcome: "rate_limit",
       message: message || t`The provider is rate-limiting requests.`,
@@ -77,8 +77,7 @@ export function classifyModelConnectionFailure(
   }
 
   if (
-    lower.includes("401") ||
-    lower.includes("403") ||
+    /\b(401|403)\b/.test(lower) ||
     lower.includes("unauthorized") ||
     lower.includes("invalid api key") ||
     lower.includes("authentication")
