@@ -62,6 +62,37 @@ describe("stored model settings", () => {
       expect(parseModelSecret(serializeModelSecret(next)).models).toEqual(kept.models);
   });
 
+  it("keeps selected models' settings across a URL change without forwarding credentials", () => {
+    const previous = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: "https://models.example.test/old",
+      apiKey: "fake-old-api-key",
+      headers: { "x-private": "fake-private-value" },
+      reasoning: true,
+      enabledModelIds: ["kept", "removed"],
+      models: {
+        kept: { images: true, reasoning: false, contextWindow: 32000, maxTokens: 2000 },
+        removed: { images: false },
+      },
+    });
+    const saved = parseModelSecret(
+      buildModelConnectPlaintext(
+        {
+          provider: "openai-compatible",
+          baseUrl: "https://models.example.test/new",
+          modelId: "kept",
+        },
+        previous,
+      ),
+    );
+    expect(saved.models).toEqual({
+      kept: { images: true, reasoning: false, contextWindow: 32000, maxTokens: 2000 },
+    });
+    expect(saved).not.toHaveProperty("apiKey");
+    expect(saved).not.toHaveProperty("headers");
+    expect(saved).not.toHaveProperty("reasoning");
+  });
+
   it("survive a key replacement and an endpoint save on the same server", () => {
     const keyed = serializeModelSecret(
       withModelSettings(parseModelSecret(KEY), LISTED_ONLY, { images: true }),

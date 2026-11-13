@@ -162,7 +162,10 @@ export function buildModelConnectPlaintext(
           : enabledModelIds,
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
       // Settings follow the models the connection still serves.
-      ...keptCompatibleModels(compatiblePrevious?.models, enabledModelIds),
+      ...keptCompatibleModels(
+        previous?.kind === "openai_compatible" ? previous.models : undefined,
+        enabledModelIds,
+      ),
     };
     return serializeModelSecret(secret);
   }
