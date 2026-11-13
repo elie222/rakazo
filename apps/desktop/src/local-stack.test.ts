@@ -25,7 +25,6 @@ import {
   stackFailureMessage,
   stackResourceDir,
 } from "./local-stack.js";
-import { stackStopAvailable } from "./stop-local-stack.js";
 
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
@@ -368,12 +367,7 @@ function fakeRun(calls: RecordedCall[], script: Script): RunDocker {
 const ok: Script = (args) => {
   if (args[0] === "compose" && args[1] === "version") return { stdout: "2.29.0\n" };
   if (args[0] === "info") return { stdout: "27.1.1\n" };
-  if (args[0] === "inspect")
-    return {
-      stdout: JSON.stringify({ running: true, env: [`RAKAZO_DESKTOP_STACK_TOKEN=${fakeHex(32)}`] }),
-    };
   const subcommand = args[7];
-  if (subcommand === "ps") return { stdout: "fake-container-id\n" };
   if (subcommand === "pull") return { lines: ["app Pulled", "computer Pulled"] };
   if (subcommand === "up") return { lines: ["Container rakazo-web-1 Started"] };
   return {};
@@ -444,12 +438,6 @@ describe("LocalStackController", () => {
         hostComputer: { ...hostComputer, token: "cd".repeat(32) },
       }).matchesDesiredStack(),
     ).toBe(false);
-    // The off-switch still finds that stack: it runs under our token whatever its bridge.
-    expect(
-      await controller({
-        hostComputer: { ...hostComputer, token: "cd".repeat(32) },
-      }).rediscoverManagedStack(),
-    ).toBe(true);
   });
 
   it("pushes every state change so the setup window is never left waiting on a poll", async () => {
@@ -871,20 +859,6 @@ describe("LocalStackController", () => {
     expect(notifiedRunning).toEqual([true]);
   });
 
-  it("shows the off-switch to a saved external server when a restart rediscovers the stack", async () => {
-    const stackPath = path.join(root, "stack");
-    await mkdir(stackPath, { recursive: true });
-    const token = await ensureStackToken(stackPath, fakeHex);
-    const stack = controller({
-      probe: (_url, _signal, supplied) => Promise.resolve(supplied === token ? "v1.2.3" : null),
-    });
-    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(false);
-
-    // The startup path for a saved external server: probe only, never start or stop.
-    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
-    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(true);
-  });
-
   it("probes nothing on startup when no local stack files exist", async () => {
     let probes = 0;
     const stack = controller({
@@ -894,128 +868,6 @@ describe("LocalStackController", () => {
       },
     });
     await expect(stack.matchesDesiredStack()).resolves.toBe(false);
-    expect(probes).toBe(0);
-    expect(stack.managedStackRunning()).toBe(false);
-  });
-
-  it("redisplays the off-switch for a stack left on an older release", async () => {
-    const stackPath = path.join(root, "stack");
-    await mkdir(stackPath, { recursive: true });
-    const token = await ensureStackToken(stackPath, fakeHex);
-    let notified = 0;
-    const stack = controller({
-      onReuseConfirmed: () => {
-        notified += 1;
-      },
-      probe: (_url, _signal, supplied) => Promise.resolve(supplied === token ? "v1.2.2" : null),
-    });
-    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(false);
-
-    await expect(stack.rediscoverManagedStack()).resolves.toBe(true);
-    expect(stack.managedStackRunning()).toBe(true);
-    expect(stackStopAvailable("existing", stack.managedStackRunning())).toBe(true);
-    expect(notified).toBe(1);
-    // Reuse stays strict: an older release is never adopted as the desired stack.
-    await expect(stack.matchesDesiredStack()).resolves.toBe(false);
-    expect(notified).toBe(1);
-  });
-
-  it("rediscovers through Docker without disclosing the management token", async () => {
-    const stackPath = path.join(root, "stack");
-    await mkdir(stackPath, { recursive: true });
-    await ensureStackToken(stackPath, fakeHex);
-    const probe = vi.fn();
-    const onState = vi.fn();
-    const stack = controller({ probe, onState }, (args) =>
-      args[7] === "ps"
-        ? { ...ok(args), lines: ["fake-container-id", "fake warning"] }
-        : args[0] === "inspect"
-          ? { ...ok(args), lines: ["private inspection output"] }
-          : ok(args),
-    );
-    await expect(stack.rediscoverManagedStack()).resolves.toBe(true);
-    expect(probe).not.toHaveBeenCalled();
-    expect(onState).not.toHaveBeenCalled();
-    expect(calls.some((call) => call.args.includes("ps"))).toBe(true);
-  });
-
-  it.each([true, false])(
-    "discovers partial stacks only when a service still runs: %s",
-    async (running) => {
-      const stackPath = path.join(root, "stack");
-      await mkdir(stackPath, { recursive: true });
-      await ensureStackToken(stackPath, fakeHex);
-      const stack = controller({}, (args) =>
-        args[0] === "inspect"
-          ? {
-              stdout: [
-                JSON.stringify({
-                  running: false,
-                  env: [`RAKAZO_DESKTOP_STACK_TOKEN=${fakeHex(32)}`],
-                }),
-                JSON.stringify({ running, env: [] }),
-              ].join("\n"),
-            }
-          : ok(args),
-      );
-      await expect(stack.rediscoverManagedStack()).resolves.toBe(running);
-      expect(stack.managedStackRunning()).toBe(running);
-    },
-  );
-
-  it("rejects another stack on the selected Docker daemon", async () => {
-    const stackPath = path.join(root, "stack");
-    await mkdir(stackPath, { recursive: true });
-    await ensureStackToken(stackPath, fakeHex);
-    const stack = controller({}, (args) =>
-      args[0] === "inspect"
-        ? {
-            stdout: JSON.stringify({
-              running: true,
-              env: ["RAKAZO_DESKTOP_STACK_TOKEN=another-stack-token"],
-            }),
-          }
-        : ok(args),
-    );
-    await expect(stack.rediscoverManagedStack()).resolves.toBe(false);
-    expect(stack.managedStackRunning()).toBe(false);
-  });
-
-  it.each([
-    { code: 0, stdout: "" },
-    { code: 1, stdout: "fake-container-id" },
-  ])("does not advertise a stopped stack or a failed container query: %j", async (reply) => {
-    const stackPath = path.join(root, "stack");
-    await mkdir(stackPath, { recursive: true });
-    await ensureStackToken(stackPath, fakeHex);
-    const stack = controller({}, (args) => (args[7] === "ps" ? reply : ok(args)));
-    await expect(stack.rediscoverManagedStack()).resolves.toBe(false);
-    expect(stack.managedStackRunning()).toBe(false);
-  });
-
-  it("does not rediscover while a stop is pending", async () => {
-    const stackPath = path.join(root, "stack");
-    await mkdir(stackPath, { recursive: true });
-    const token = await ensureStackToken(stackPath, fakeHex);
-    let releaseStop: () => void = () => undefined;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
-    let probes = 0;
-    const stack = controller(
-      {
-        probe: (_url, _signal, supplied) => {
-          probes += 1;
-          return Promise.resolve(supplied === token ? ("v1.2.2" as string | null) : null);
-        },
-      },
-      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
-    );
-
-    const stopping = stack.stop();
-    await expect(stack.rediscoverManagedStack()).resolves.toBe(false);
-    releaseStop();
-    await stopping;
     expect(probes).toBe(0);
     expect(stack.managedStackRunning()).toBe(false);
   });

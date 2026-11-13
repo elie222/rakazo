@@ -115,7 +115,6 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     "#!/bin/sh",
     `printf '%s | %s | %s\\n' "$PWD" "$RAKAZO_IMAGE_TAG" "$*" >> '${fakeDockerLog()}'`,
     'case "$1 $2" in',
-    `  "inspect --format") echo '{"running":true,"env":["RAKAZO_DESKTOP_STACK_TOKEN=${"ab".repeat(32)}"]}'; exit 0 ;;`,
     mode === "compose-check-fails"
       ? '  "compose version") echo "Access is denied." >&2; exit 7 ;;'
       : '  "compose version") echo "5.6.1"; exit 0 ;;',
@@ -131,7 +130,6 @@ async function writeFakeDocker(mode: FakeDockerMode) {
       ? '    echo "Error response from daemon: manifest unknown" >&2; exit 1 ;;'
       : '    echo " a235d761c5d1 Downloading 59.47MB"; echo " a235d761c5d1 Downloading 412.3MB"; echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
     up,
-    '  ps) echo "fake-container-id"; exit 0 ;;',
     '  logs) echo "web-1 | listening"; exit 0 ;;',
     "esac",
     "exit 0",
@@ -428,60 +426,33 @@ test("a saved local stack is reused only after its private identity matches", as
   expect(await readLog()).toEqual([]);
 });
 
-test("a restart with a saved external server keeps the off-switch for a running stack", async () => {
-  const stackDir = path.join(userData, "stack");
-  await mkdir(stackDir, { recursive: true });
-  const host = await prepareHostComputer(userData);
-  await writeFile(
-    path.join(stackDir, ".desktop-host-config"),
-    createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),
-  );
-  await host.close();
-  await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  await writeFile(
-    path.join(userData, "setup.json"),
-    `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
-    { encoding: "utf8", mode: 0o600 },
-  );
-
-  app = await launch("ok");
-  const appWindow = await app.firstWindow();
-  await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
-  await expect
-    .poll(() =>
-      app!.evaluate(
-        ({ Menu }) =>
-          Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible === true,
+for (const hasStackFiles of [false, true]) {
+  test(`a saved external server does not discover local services (${hasStackFiles ? "retained" : "absent"} stack files)`, async () => {
+    if (hasStackFiles) {
+      const stackDir = path.join(userData, "stack");
+      await mkdir(stackDir, { recursive: true });
+      await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+    await writeFile(
+      path.join(userData, "setup.json"),
+      `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    app = await launch("ok");
+    const appWindow = await app.firstWindow();
+    await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+    expect(stackProbes).toBe(0);
+    expect(await readLog()).toEqual([]);
+    expect(
+      await app.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible,
       ),
-    )
-    .toBe(true);
-  // Rediscovery inspects containers without starting or stopping them.
-  const discovery = await readLog();
-  expect(discovery).toHaveLength(2);
-  expect(discovery[0]).toContain(" ps --all -q");
-  expect(discovery[1]).toContain("inspect --format");
-});
-
-test("a restart with a saved external server and no stack files probes nothing", async () => {
-  await writeFile(
-    path.join(userData, "setup.json"),
-    `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
-    { encoding: "utf8", mode: 0o600 },
-  );
-
-  app = await launch("ok");
-  const appWindow = await app.firstWindow();
-  await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
-  expect(stackProbes).toBe(0);
-  expect(
-    await app.evaluate(
-      ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible,
-    ),
-  ).toBe(false);
-});
+    ).toBe(false);
+  });
+}
 
 test("a saved local target is the exact origin authenticated before reuse", async () => {
   const uncheckedServer = createServer((request, response) => {

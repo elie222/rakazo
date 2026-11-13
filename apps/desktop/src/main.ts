@@ -978,13 +978,6 @@ app.whenReady().then(async () => {
       showSetupWindow();
     }
   } else if (target.source !== "env") {
-    // A saved external server: the app-managed stack may still be running from before the
-    // switch — possibly on an older release, which must not be reused but still needs the
-    // off-switch. Probe only: with no stack files this returns before any request, and
-    // nothing starts or stops. Server processes the app runs itself stop with it, so only a
-    // container stack can outlive a launch.
-    if (target.source === "saved" && desktop.localStack instanceof LocalStackController)
-      void desktop.localStack.rediscoverManagedStack();
     const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
     if (reachability.ok) {
       if (await appOpener.open(target.url)) {

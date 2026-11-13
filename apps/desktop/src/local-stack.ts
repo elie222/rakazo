@@ -530,79 +530,15 @@ export class LocalStackController extends StackLifecycle {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    // A successful stop during either file read invalidates the probe result.
+    const stopGeneration = this.stopGeneration;
+    if (this.stopInFlight()) return false;
     if (
       this.deps.hostComputer &&
       (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
         this.hostConfigIdentity()
     )
       return false;
-    return this.probeStack((probed) => probed === this.deps.imageTag, url);
-  }
-
-  /**
-   * Startup rediscovery behind a saved external server: the stack may be an older release
-   * this app must not reuse, or one started before the computer-access settings changed, so
-   * inspect the managed Compose project locally without sending its token to a listener.
-   * nothing starts or stops.
-   */
-  async rediscoverManagedStack(): Promise<boolean> {
-    const generation = this.stopGeneration;
-    if (this.stopInFlight()) return false;
-    const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
-    const token = await readStackToken(this.deps.stackDir);
-    if (binary === null || token === null) return false;
-    try {
-      const result = await this.compose(
-        binary,
-        ["ps", "--all", "-q"],
-        DOCKER_INFO_TIMEOUT_MS,
-        undefined,
-        true,
-      );
-      if (result.code !== 0 || !result.stdout.trim()) return false;
-      const inspected = await this.docker(
-        binary,
-        [
-          "inspect",
-          "--format",
-          '{"running":{{json .State.Running}},"env":{{json .Config.Env}}}',
-          ...result.stdout.trim().split(/\s+/),
-        ],
-        DOCKER_INFO_TIMEOUT_MS,
-        undefined,
-        true,
-      );
-      const containers: { running?: boolean; env?: unknown }[] = inspected.stdout
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-      const running =
-        inspected.code === 0 &&
-        containers.some((container) => container.running === true) &&
-        containers.some(
-          (container) =>
-            Array.isArray(container.env) &&
-            container.env.includes(`RAKAZO_DESKTOP_STACK_TOKEN=${token}`),
-        );
-      if (running && generation === this.stopGeneration && !this.managedStackMayRun) {
-        this.managedStackMayRun = true;
-        this.deps.onReuseConfirmed?.();
-      }
-      return running;
-    } catch {
-      return false;
-    }
-  }
-
-  /** One probe through the private identity; `matches` decides what counts and is returned. */
-  private async probeStack(
-    matches: (probed: string | null) => boolean,
-    url: string,
-  ): Promise<boolean> {
-    // Captured before the first await, so a stop that succeeds during the token read
-    // still counts as later than this probe.
-    const stopGeneration = this.stopGeneration;
-    if (this.stopInFlight()) return false;
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;
@@ -612,7 +548,7 @@ export class LocalStackController extends StackLifecycle {
         AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS),
         token,
       );
-      const matched = matches(probed);
+      const matched = probed === this.deps.imageTag;
       // A stop that succeeded while the probe was pending may have stopped the stack it saw.
       if (matched && stopGeneration === this.stopGeneration && !this.managedStackMayRun) {
         this.managedStackMayRun = true;
@@ -836,13 +772,7 @@ export class LocalStackController extends StackLifecycle {
     return createHash("sha256").update(JSON.stringify(this.deps.hostComputer)).digest("hex");
   }
 
-  private docker(
-    binary: string,
-    args: string[],
-    timeoutMs: number,
-    signal?: AbortSignal,
-    quiet = false,
-  ) {
+  private docker(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
     return this.deps.run(binary, args, {
       cwd: this.deps.stackDir,
       env: dockerSpawnEnv(this.deps.platform, this.deps.env, binary, {
@@ -873,17 +803,11 @@ export class LocalStackController extends StackLifecycle {
       }),
       timeoutMs,
       signal,
-      onLine: quiet ? undefined : (line) => this.push({ type: "output", line }),
+      onLine: (line) => this.push({ type: "output", line }),
     });
   }
 
-  private compose(
-    binary: string,
-    args: string[],
-    timeoutMs: number,
-    signal?: AbortSignal,
-    quiet = false,
-  ) {
+  private compose(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
     return this.docker(
       binary,
       [
@@ -898,7 +822,6 @@ export class LocalStackController extends StackLifecycle {
       ],
       timeoutMs,
       signal,
-      quiet,
     );
   }
 }
