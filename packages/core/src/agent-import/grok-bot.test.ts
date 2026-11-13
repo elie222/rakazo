@@ -561,3 +561,18 @@ it("rejects an empty bot import plan", () => {
     ]),
   ).toHaveProperty("error");
 });
+
+it("does not offer nested bot-shaped metadata as another export", () => {
+  const source = JSON.stringify({
+    bots: [
+      {
+        name: "Actual",
+        instructions: "Keep",
+        metadata: { bots: [{ name: "Nested", instructions: "Ignore" }] },
+      },
+    ],
+  });
+  expect(parseGrokBotExport(`Here is the export:\n${source}`).map((bot) => bot.name)).toEqual([
+    "Actual",
+  ]);
+});

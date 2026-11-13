@@ -152,7 +152,7 @@ function looseJson(source: string): unknown {
  */
 function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   const found: string[] = [];
-  const starts: { index: number; export: boolean }[] = [];
+  const starts: { index: number; export: boolean; foundAt: number }[] = [];
   let quote: string | null = null;
   let candidates = 0;
   let comment: "line" | "block" | null = null;
@@ -192,12 +192,15 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
       const candidate = EXPORT_START.test(source);
       if (candidate && ++candidates > 100) throw new GrokBotExportError("too_large");
       if (candidate) openExports += 1;
-      starts.push({ index, export: candidate });
+      starts.push({ index, export: candidate, foundAt: found.length });
     } else if (char === "}") {
       const start = starts.pop();
       if (start?.export) {
         openExports -= 1;
-        found.push(source.slice(start.index, index + 1));
+        const part = source.slice(start.index, index + 1);
+        if (isExportDocument(looseJson(part) ?? looseJson(repairQuotes(part))))
+          found.splice(start.foundAt);
+        found.push(part);
       }
     }
   }

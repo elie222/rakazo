@@ -136,7 +136,15 @@ export function useAgentImportSource() {
       }
       setPlan(found);
     } catch (err) {
-      if (read === latestRead.current) failure(err, t`Could not read these files`);
+      if (read === latestRead.current) {
+        if (
+          next[0]?.path === GROK_BOT_EXPORT_PATH &&
+          err instanceof Error &&
+          err.message === AGENT_IMPORT_NOT_FOUND
+        )
+          setError(grokBotErrorText("not_export"));
+        else failure(err, t`Could not read these files`);
+      }
     } finally {
       if (read === latestRead.current) setBusy(false);
     }
@@ -352,6 +360,7 @@ export function useAgentImportSource() {
 
   function stopReading() {
     ++latestRead.current;
+    setGrokBots([]);
     setBusy(false);
   }
 

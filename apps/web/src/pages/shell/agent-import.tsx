@@ -302,7 +302,10 @@ export function AgentImportForm({
             title={<Trans>Grok Bot</Trans>}
             prompt={GROK_BOT_EXPORT_PROMPT}
             reply={grokReply}
-            onReplyChange={setGrokReply}
+            onReplyChange={(reply) => {
+              stopReading();
+              setGrokReply(reply);
+            }}
             accept=".json,.md,.txt,application/json,text/plain,text/markdown"
             multiple
             busy={busy}
