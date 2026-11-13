@@ -6,15 +6,14 @@ Replies return to the same chat app.
 **Settings → Messaging** shows the chat apps configured on your server. Self-hosted operators
 set them up using the [messaging setup guide](./self-host-integrations.md#messaging-apps).
 
-| Chat app                    | Direct messages        | Groups and channels                            |
-| --------------------------- | ---------------------- | ---------------------------------------------- |
-| Microsoft Teams             | Yes                    | Not supported                                  |
-| Slack                       | Yes, after linking DMs | Workspace channels                             |
-| Telegram                    | Yes                    | Personal group linking; not broadcast channels |
-| iMessage and SMS (Sendblue) | Yes                    | Personal group linking for iMessage            |
-| iMessage (Photon)           | Yes                    | Not supported                                  |
-| WhatsApp                    | Yes                    | Not supported                                  |
-| Feishu/Lark                 | Yes                    | Not supported                                  |
+| Chat app         | Direct messages        | Groups and channels                             |
+| ---------------- | ---------------------- | ----------------------------------------------- |
+| Microsoft Teams  | Yes                    | Not supported                                   |
+| Slack            | Yes, after linking DMs | Workspace channels                              |
+| Telegram         | Yes                    | Personal group linking; not broadcast channels  |
+| iMessage and SMS | Yes                    | iMessage only, when supported by the connection |
+| WhatsApp         | Yes                    | Not supported                                   |
+| Feishu/Lark      | Yes                    | Not supported                                   |
 
 ## Link a bot to a chat app
 
@@ -69,9 +68,9 @@ For groups, follow the privacy-mode instructions below.
 
 ## iMessage and SMS
 
-Send the link code to the number supplied by your server operator. iMessage through Sendblue
-supports personal group linking; SMS and iMessage through Photon are direct-message connections.
-On a shared Photon line, you must message the number first.
+Send the link code to the number supplied by your server operator. SMS is direct-message only.
+For iMessage, ask your operator whether the configured connection supports personal group linking.
+Some shared numbers require you to message first before the bot can reply.
 
 ## WhatsApp
 
@@ -85,7 +84,7 @@ link code. Group chats are not supported.
 
 ## Group chats
 
-Personal group linking is available on Telegram and iMessage through Sendblue. Add the Telegram
+Personal group linking is available on Telegram and supported iMessage connections. Add the Telegram
 bot or iMessage number to a group. The invite appears under **Requests** in
 **Settings → Messaging**; choose **Approve** or **Decline**. Approved groups are listed under
 **Conversations**, where you can **Leave** one at any time.
