@@ -28,6 +28,8 @@ try {
 
   // The deploy allows 30 seconds after the stop signal; leave time for stop() and the log flush.
   const drain = trackConnections(server as Server);
+  // Outlive the reverse proxy's 2-minute idle reuse, or a request can hit a socket Node just closed.
+  (server as Server).keepAliveTimeout = 125_000;
 
   let stopping = false;
   const shutdown = async () => {
