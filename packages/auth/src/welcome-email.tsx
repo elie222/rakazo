@@ -2,7 +2,7 @@
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import { Link, Text } from "react-email";
-import { emailText, greeting, linkStyle, message, withNodes } from "./email.js";
+import { ASSETS, emailText, greeting, linkStyle, message, withNodes } from "./email.js";
 
 const APPS: Readonly<Record<string, string>> = {
   iPhone: IOS_APP_STORE_URL,
@@ -84,6 +84,6 @@ export function welcomeEmail(
       <Text>Elie</Text>
     </>,
     unsubscribeUrl,
-    { src: "https://rakazo.com/email/welcome.jpg", alt: "Rakazo" },
+    { src: `${ASSETS}/welcome.jpg`, alt: "Rakazo" },
   );
 }
