@@ -234,7 +234,7 @@ export async function executeSubagent(
         requestModel.cacheCapabilities?.retentionMode,
       ),
   };
-  const toolCallIds = new Set<string>();
+  const toolCallIds = { used: new Set<string>(), provider: host.providerToolCallIds };
   nested = new Agent({
     finishTurn: async (turn, turnSignal) => {
       await deliverFinishedShells(

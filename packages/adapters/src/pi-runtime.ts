@@ -101,7 +101,7 @@ import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
-import { toolCallIdsIn, uniqueToolCallIdStream } from "./tool-call-ids.js";
+import { runToolCallIds, uniqueToolCallIdStream } from "./tool-call-ids.js";
 import type { ComputerModeCheckpoint } from "./turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
@@ -308,6 +308,7 @@ export class PiAgentRuntime implements AgentRuntime {
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           toolCallBudget: trackedBudget,
           toolCallSeq: { value: 0 },
+          providerToolCallIds: new Map(),
           abortTurn: () => undefined,
           signal,
           depth: 0,
@@ -638,7 +639,7 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer",
             );
         }
-        const toolCallIds = toolCallIdsIn(history as Message[]);
+        const toolCallIds = runToolCallIds(history as Message[], host.providerToolCallIds);
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
@@ -1118,9 +1119,9 @@ export class PiAgentRuntime implements AgentRuntime {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
               );
-              agent.state.messages.push(
-                ...toHistory(addedHistory, "", undefined, offeredToolNames),
-              );
+              const replayed = toHistory(addedHistory, "", undefined, offeredToolNames);
+              for (const id of runToolCallIds(replayed as Message[]).used) toolCallIds.used.add(id);
+              agent.state.messages.push(...replayed);
               for (const message of addedHistory)
                 if (message.id) representedHistoryIds.add(message.id);
               for (const item of initialSteering) {
