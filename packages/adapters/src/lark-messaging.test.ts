@@ -628,6 +628,57 @@ describe("Lark messaging conformance", () => {
     ]);
   });
 
+  it.each([false, true])(
+    "resolves rich-text mention placeholders with code blocks: %s",
+    async (withCode) => {
+      const { surface, events } = createSurface();
+      const payload = messageWith("post", {
+        content: [
+          [
+            { tag: "at", user_id: "@_user_1", user_name: "" },
+            { tag: "text", text: " and " },
+            { tag: "at", user_id: "@_user_2" },
+            { tag: "text", text: " and " },
+            { tag: "at", user_id: "@_user_3", user_name: "Display name" },
+          ],
+          ...(withCode ? [[{ tag: "code_block", text: "@_user_1" }]] : []),
+        ],
+      });
+      Object.assign(payload.event.message, {
+        mentions: [
+          { key: "@_user_1", name: "Alice", id: { open_id: "ou-alice" } },
+          { key: "@_user_2", name: "Bob", id: { open_id: "ou-bob" } },
+          { key: "@_user_3", name: "Other name", id: { open_id: "ou-other" } },
+        ],
+      });
+      await surface.handleWebhook("lark", webhook(payload));
+      expect(events).toEqual([
+        expect.objectContaining({
+          content: `@Alice and @Bob and @Display name${withCode ? "\n@_user_1" : ""}`,
+        }),
+      ]);
+    },
+  );
+
+  it("preserves unresolved rich-text mention IDs and falls back without an ID", async () => {
+    const { surface, events } = createSurface();
+    await surface.handleWebhook(
+      "lark",
+      webhook(
+        messageWith("post", {
+          content: [
+            [
+              { tag: "at", user_id: "@_user_9", user_name: "" },
+              { tag: "text", text: " and " },
+              { tag: "at" },
+            ],
+          ],
+        }),
+      ),
+    );
+    expect(events).toEqual([expect.objectContaining({ content: "@_user_9 and @unknown" })]);
+  });
+
   it("does not replace mention keys inside code blocks", async () => {
     const { surface, events } = createSurface();
     const payload = message();

@@ -346,13 +346,21 @@ function inboundText(
     if (!post || typeof post !== "object") return plain("");
     const rich = post as {
       title?: string;
-      content?: { tag: string; text?: string; href?: string; user_name?: string }[][];
+      content?: {
+        tag: string;
+        text?: string;
+        href?: string;
+        user_name?: string;
+        user_id?: string;
+      }[][];
     };
     const itemText = (item: NonNullable<typeof rich.content>[number][number]) =>
       item.tag === "a"
         ? `[${item.text ?? ""}](${item.href ?? ""})`
         : item.tag === "at"
-          ? `@${item.user_name ?? "unknown"}`
+          ? item.user_name
+            ? `@${item.user_name}`
+            : item.user_id || "@unknown"
           : item.tag === "text" || item.tag === "code_block"
             ? (item.text ?? "")
             : "";
