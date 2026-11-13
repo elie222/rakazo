@@ -1713,8 +1713,8 @@ describe("mobile API server and Space selection", () => {
     let releaseResume!: () => void;
     vi.mocked(resumeLiveNotifications).mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          releaseResume = resolve;
+        new Promise<boolean>((resolve) => {
+          releaseResume = () => resolve(true);
         }),
     );
     vi.stubGlobal(
