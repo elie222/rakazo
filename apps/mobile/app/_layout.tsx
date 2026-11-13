@@ -51,6 +51,7 @@ import { clearAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { useCallSession } from "../lib/call-session";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { loadHapticsPreference } from "../lib/haptics";
@@ -394,198 +395,209 @@ function LayoutContent() {
           <ChatContentProviders loadRemoteImages={loadRemoteImages}>
             <ThemeProvider value={navigationTheme}>
               <StatusBar style={resolved === "light" ? "dark" : "light"} />
-              <KeyboardAvoidingView enabled={Boolean(call)} behavior="padding" style={{ flex: 1 }}>
-                <SplitFrame>
-                  <Stack
-                    screenLayout={({ navigation, options, children }) => (
-                      <AvatarScreenFocus navigation={navigation}>
-                        {/* Sheets and modals cover the window, so the chat list is not beside them. */}
-                        {options.presentation && options.presentation !== "card" ? (
-                          <InboxBesideContext.Provider value={false}>
-                            {children}
-                          </InboxBesideContext.Provider>
-                        ) : (
-                          children
-                        )}
-                      </AvatarScreenFocus>
-                    )}
-                    screenOptions={{
-                      headerStyle: { backgroundColor: navigationTheme.colors.background },
-                      ...floatingHeaderOptions(),
-                      headerTintColor: navigationTheme.colors.text,
-                      headerShadowVisible: false,
-                      headerBackButtonDisplayMode: "minimal",
-                      contentStyle: { backgroundColor: String(native.page) },
-                    }}
-                  >
-                    <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
-                    <Stack.Screen
-                      name="search"
-                      options={{
-                        headerShown: false,
-                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
-                        sheetAllowedDetents: [1],
-                        sheetGrabberVisible: false,
-                        sheetExpandsWhenScrolledToEdge: false,
+              <CallKeyboardContext.Provider value={Boolean(call)}>
+                <KeyboardAvoidingView
+                  enabled={Boolean(call)}
+                  behavior="padding"
+                  style={{ flex: 1 }}
+                >
+                  <SplitFrame>
+                    <Stack
+                      screenLayout={({ navigation, options, children }) => (
+                        <AvatarScreenFocus navigation={navigation}>
+                          {/* Sheets and modals cover the window, so the chat list is not beside them. */}
+                          {options.presentation && options.presentation !== "card" ? (
+                            <InboxBesideContext.Provider value={false}>
+                              {children}
+                            </InboxBesideContext.Provider>
+                          ) : (
+                            children
+                          )}
+                        </AvatarScreenFocus>
+                      )}
+                      screenOptions={{
+                        headerStyle: { backgroundColor: navigationTheme.colors.background },
+                        ...floatingHeaderOptions(),
+                        headerTintColor: navigationTheme.colors.text,
+                        headerShadowVisible: false,
+                        headerBackButtonDisplayMode: "minimal",
+                        contentStyle: { backgroundColor: String(native.page) },
                       }}
-                    />
-                    <Stack.Screen name="share" options={{ headerShown: false }} />
-                    <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-                    <Stack.Screen
-                      name="paywall"
-                      options={{
-                        headerShown: false,
-                        presentation: "fullScreenModal",
-                        gestureEnabled: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="(settings)"
-                      options={{
-                        headerShown: false,
-                        // One stack of settings pages in a sheet over the screen that opened it.
-                        // Android keeps pushed pages: it has no nested stack inside a formSheet.
-                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
-                        sheetAllowedDetents: [0.95],
-                        sheetGrabberVisible: false,
-                        sheetExpandsWhenScrolledToEdge: false,
-                        contentStyle: { backgroundColor: native.groupedPage },
-                      }}
-                    />
-                    <Stack.Screen
-                      name="server"
-                      options={{
-                        title: t`Server`,
-                        // Android formSheet hides the header Save action.
-                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
-                        sheetAllowedDetents: [0.6, 1],
-                        sheetGrabberVisible: true,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="invite"
-                      options={{
-                        headerShown: false,
-                        presentation: "formSheet",
-                        sheetAllowedDetents: "fitToContents",
-                        sheetGrabberVisible: true,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new-bot"
-                      options={{
-                        title: t`New bot`,
-                        presentation: "modal",
-                        gestureEnabled: true,
-                        headerBackVisible: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new-group"
-                      options={{
-                        title: t`New group chat`,
-                        presentation: "modal",
-                        gestureEnabled: true,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new-space"
-                      options={{
-                        title: t`New private space`,
-                        presentation: "modal",
-                        gestureEnabled: true,
-                        headerBackVisible: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="space-members"
-                      options={{
-                        title: t`Members`,
-                        presentation: "modal",
-                        gestureEnabled: true,
-                        headerBackVisible: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new-organization"
-                      options={{
-                        headerShown: false,
-                        presentation: "formSheet",
-                        sheetAllowedDetents: "fitToContents",
-                        sheetGrabberVisible: true,
-                        contentStyle: { backgroundColor: native.groupedPage },
-                      }}
-                    />
-                    <Stack.Screen name="artifacts" options={glassHeaderOptions(t`Artifacts`)} />
-                    <Stack.Screen name="artifact" options={{ title: t`Artifact` }} />
-                    <Stack.Screen name="pages" options={glassHeaderOptions(t`Pages`)} />
-                    <Stack.Screen
-                      name="page"
-                      options={{
-                        headerShown: false,
-                        // An iPad shows a page as a sheet over the chat; a phone shows it whole.
-                        presentation:
-                          Platform.OS === "ios" && Platform.isPad ? "pageSheet" : "fullScreenModal",
-                      }}
-                    />
-                    <Stack.Screen
-                      name="page-share"
-                      options={{
-                        headerShown: false,
-                        presentation: "formSheet",
-                        sheetAllowedDetents: [0.6, 1],
-                        sheetGrabberVisible: true,
-                        contentStyle: { backgroundColor: native.groupedPage },
-                      }}
-                    />
-                    <Stack.Screen
-                      name="group-thread"
-                      options={({ route }) => ({
-                        title: t`Group`,
-                        animation: chatAnimation,
-                        ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
-                      })}
-                    />
-                    <Stack.Screen
-                      name="group-settings"
-                      options={glassHeaderOptions(t`Group settings`)}
-                    />
-                    <Stack.Screen name="bot-profile" options={glassHeaderOptions(t`Profile`)} />
-                    <Stack.Screen
-                      name="bot-settings"
-                      options={glassHeaderOptions(t`Chat settings`)}
-                    />
-                    <Stack.Screen name="bot-model" options={glassHeaderOptions(t`Model`)} />
-                    <Stack.Screen
-                      name="thread"
-                      options={({ route }) => ({
-                        title: t`Thread`,
-                        animation: chatAnimation,
-                        ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
-                      })}
-                    />
-                    <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />
-                    <Stack.Screen name="routine" options={glassHeaderOptions(t`Routine`)} />
-                    <Stack.Screen
-                      name="routine-runs"
-                      options={glassHeaderOptions(t`Run history`)}
-                    />
-                    <Stack.Screen name="board" options={glassHeaderOptions(t`Board`)} />
-                    <Stack.Screen name="computer" options={{ title: t`Computer` }} />
-                    <Stack.Screen
-                      name="image"
-                      options={{
-                        headerShown: false,
-                        presentation: "transparentModal",
-                        contentStyle: { backgroundColor: "transparent" },
-                        animation: "fade",
-                      }}
-                    />
-                  </Stack>
-                </SplitFrame>
-                <CallCard />
-                <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
-              </KeyboardAvoidingView>
+                    >
+                      <Stack.Screen
+                        name="index"
+                        options={{ headerShown: false, title: "Rakazo" }}
+                      />
+                      <Stack.Screen
+                        name="search"
+                        options={{
+                          headerShown: false,
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [1],
+                          sheetGrabberVisible: false,
+                          sheetExpandsWhenScrolledToEdge: false,
+                        }}
+                      />
+                      <Stack.Screen name="share" options={{ headerShown: false }} />
+                      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                      <Stack.Screen
+                        name="paywall"
+                        options={{
+                          headerShown: false,
+                          presentation: "fullScreenModal",
+                          gestureEnabled: false,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="(settings)"
+                        options={{
+                          headerShown: false,
+                          // One stack of settings pages in a sheet over the screen that opened it.
+                          // Android keeps pushed pages: it has no nested stack inside a formSheet.
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [0.95],
+                          sheetGrabberVisible: false,
+                          sheetExpandsWhenScrolledToEdge: false,
+                          contentStyle: { backgroundColor: native.groupedPage },
+                        }}
+                      />
+                      <Stack.Screen
+                        name="server"
+                        options={{
+                          title: t`Server`,
+                          // Android formSheet hides the header Save action.
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [0.6, 1],
+                          sheetGrabberVisible: true,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="invite"
+                        options={{
+                          headerShown: false,
+                          presentation: "formSheet",
+                          sheetAllowedDetents: "fitToContents",
+                          sheetGrabberVisible: true,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new-bot"
+                        options={{
+                          title: t`New bot`,
+                          presentation: "modal",
+                          gestureEnabled: true,
+                          headerBackVisible: false,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new-group"
+                        options={{
+                          title: t`New group chat`,
+                          presentation: "modal",
+                          gestureEnabled: true,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new-space"
+                        options={{
+                          title: t`New private space`,
+                          presentation: "modal",
+                          gestureEnabled: true,
+                          headerBackVisible: false,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="space-members"
+                        options={{
+                          title: t`Members`,
+                          presentation: "modal",
+                          gestureEnabled: true,
+                          headerBackVisible: false,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new-organization"
+                        options={{
+                          headerShown: false,
+                          presentation: "formSheet",
+                          sheetAllowedDetents: "fitToContents",
+                          sheetGrabberVisible: true,
+                          contentStyle: { backgroundColor: native.groupedPage },
+                        }}
+                      />
+                      <Stack.Screen name="artifacts" options={glassHeaderOptions(t`Artifacts`)} />
+                      <Stack.Screen name="artifact" options={{ title: t`Artifact` }} />
+                      <Stack.Screen name="pages" options={glassHeaderOptions(t`Pages`)} />
+                      <Stack.Screen
+                        name="page"
+                        options={{
+                          headerShown: false,
+                          // An iPad shows a page as a sheet over the chat; a phone shows it whole.
+                          presentation:
+                            Platform.OS === "ios" && Platform.isPad
+                              ? "pageSheet"
+                              : "fullScreenModal",
+                        }}
+                      />
+                      <Stack.Screen
+                        name="page-share"
+                        options={{
+                          headerShown: false,
+                          presentation: "formSheet",
+                          sheetAllowedDetents: [0.6, 1],
+                          sheetGrabberVisible: true,
+                          contentStyle: { backgroundColor: native.groupedPage },
+                        }}
+                      />
+                      <Stack.Screen
+                        name="group-thread"
+                        options={({ route }) => ({
+                          title: t`Group`,
+                          animation: chatAnimation,
+                          ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
+                        })}
+                      />
+                      <Stack.Screen
+                        name="group-settings"
+                        options={glassHeaderOptions(t`Group settings`)}
+                      />
+                      <Stack.Screen name="bot-profile" options={glassHeaderOptions(t`Profile`)} />
+                      <Stack.Screen
+                        name="bot-settings"
+                        options={glassHeaderOptions(t`Chat settings`)}
+                      />
+                      <Stack.Screen name="bot-model" options={glassHeaderOptions(t`Model`)} />
+                      <Stack.Screen
+                        name="thread"
+                        options={({ route }) => ({
+                          title: t`Thread`,
+                          animation: chatAnimation,
+                          ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
+                        })}
+                      />
+                      <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />
+                      <Stack.Screen name="routine" options={glassHeaderOptions(t`Routine`)} />
+                      <Stack.Screen
+                        name="routine-runs"
+                        options={glassHeaderOptions(t`Run history`)}
+                      />
+                      <Stack.Screen name="board" options={glassHeaderOptions(t`Board`)} />
+                      <Stack.Screen name="computer" options={{ title: t`Computer` }} />
+                      <Stack.Screen
+                        name="image"
+                        options={{
+                          headerShown: false,
+                          presentation: "transparentModal",
+                          contentStyle: { backgroundColor: "transparent" },
+                          animation: "fade",
+                        }}
+                      />
+                    </Stack>
+                  </SplitFrame>
+                  <CallCard />
+                  <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                </KeyboardAvoidingView>
+              </CallKeyboardContext.Provider>
               <ComputerUpdateProgress />
               <MessageMenuHost />
               <MessageActionSheetHost />
