@@ -14,7 +14,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { useFloatingHeaderInset } from "../lib/floating-header";
 import { native, useThemedStyles } from "../lib/native";
@@ -47,7 +46,6 @@ export function ModelPickerList({
 }) {
   const { t } = useLingui();
   const navigation = useNavigation();
-  const _insets = useSafeAreaInsets();
   const contentBottomInset = useContentBottomInset();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);

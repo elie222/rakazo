@@ -16,7 +16,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
@@ -39,7 +38,6 @@ export default function ArtifactsScreen() {
   const router = useRouter();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const _insets = useSafeAreaInsets();
   const contentBottomInset = useContentBottomInset();
 
   const [bots, setBots] = useState<MobileBot[]>([]);
