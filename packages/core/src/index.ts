@@ -25,6 +25,7 @@ export * from "./bot-templates.js";
 export * from "./call-nonce.js";
 export * from "./call-request.js";
 export * from "./call-session.js";
+export * from "./chat-app-asks.js";
 export * from "./chat-snooze.js";
 export * from "./client-id.js";
 export * from "./cloud-agent.js";
