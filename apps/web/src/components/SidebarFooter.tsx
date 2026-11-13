@@ -14,6 +14,7 @@ import {
   Check,
   Download,
   FolderOpen,
+  Gauge,
   Link2,
   LogOut,
   Plug,
@@ -45,6 +46,9 @@ type Props = {
   onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
+  /** How much of the member's allowance is used; the Usage row shows only with one. */
+  usage?: string | null;
+  onUsage?: () => void;
   onInvite?: () => void;
   onLogOut: () => void;
   signingOut: boolean;
@@ -75,6 +79,8 @@ export function SidebarFooter({
   onLink,
   onArtifacts,
   onSettings,
+  usage,
+  onUsage,
   onInvite,
   onLogOut,
   signingOut,
@@ -177,6 +183,19 @@ export function SidebarFooter({
               >
                 <Plug className="text-muted-foreground" strokeWidth={1.75} />
                 <Trans>Connect apps</Trans>
+              </Button>
+            ) : null}
+            {usage ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onUsage}
+              >
+                <Gauge className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Usage</Trans>
+                <span className="ms-auto text-body-sm tabular-nums text-muted-foreground">
+                  {usage}
+                </span>
               </Button>
             ) : null}
             <Button

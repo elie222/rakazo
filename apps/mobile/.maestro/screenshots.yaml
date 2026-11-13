@@ -90,13 +90,17 @@ tags:
 
 - openLink: "rakazo:///account"
 - extendedWaitUntil:
-    visible: "Change password"
+    visible: "General"
     timeout: 10000
 - takeScreenshot: "10-account"
+- openLink: "rakazo:///profile"
+- extendedWaitUntil:
+    visible: "Change password"
+    timeout: 10000
 - tapOn: "Change password"
 - assertVisible: "Current password"
 - takeScreenshot: "10b-change-password"
-- back
+- openLink: "rakazo:///general"
 - scrollUntilVisible:
     element: "Notification settings"
     direction: DOWN
@@ -244,7 +248,7 @@ tags:
 - takeScreenshot: "21-routine"
 
 # Verify saved appearance changes on already-mounted screens and modal routes.
-- openLink: "rakazo:///account"
+- openLink: "rakazo:///general"
 - extendedWaitUntil:
     visible: "Dark"
     timeout: 10000
@@ -283,7 +287,7 @@ tags:
 - assertVisible: "Delete group"
 - takeScreenshot: "28-group-settings-dark"
 
-- openLink: "rakazo:///account"
+- openLink: "rakazo:///general"
 - tapOn: "Light"
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - assertVisible: "The fixture workspace is ready."

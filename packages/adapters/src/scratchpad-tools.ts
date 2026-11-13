@@ -5,8 +5,8 @@ export type ScratchpadStatus = (typeof SCRATCHPAD_STATUSES)[number];
 
 export const OPEN_SCRATCHPAD_STATUSES: ScratchpadStatus[] = ["open", "parked"];
 
-const TITLE_MAX = 200;
-const NOTES_MAX = 4_000;
+export const SCRATCHPAD_TITLE_MAX_LENGTH = 200;
+export const SCRATCHPAD_NOTES_MAX_LENGTH = 4_000;
 
 export type ScratchpadToolDeps = {
   prisma: PrismaClient;
@@ -80,9 +80,11 @@ export async function addScratchpadItemFromTool(
 ) {
   const title = input.title.trim();
   if (!title) return { error: "title is required." };
-  if (title.length > TITLE_MAX) return { error: `title must be at most ${TITLE_MAX} characters.` };
+  if (title.length > SCRATCHPAD_TITLE_MAX_LENGTH)
+    return { error: `title must be at most ${SCRATCHPAD_TITLE_MAX_LENGTH} characters.` };
   const notes = (input.notes ?? "").trim();
-  if (notes.length > NOTES_MAX) return { error: `notes must be at most ${NOTES_MAX} characters.` };
+  if (notes.length > SCRATCHPAD_NOTES_MAX_LENGTH)
+    return { error: `notes must be at most ${SCRATCHPAD_NOTES_MAX_LENGTH} characters.` };
 
   let status: ScratchpadStatus = "open";
   if (input.status !== undefined) {
@@ -134,8 +136,8 @@ export async function updateScratchpadItemFromTool(
   if (input.title !== undefined) {
     const title = input.title.trim();
     if (!title) return { error: "title cannot be empty." };
-    if (title.length > TITLE_MAX)
-      return { error: `title must be at most ${TITLE_MAX} characters.` };
+    if (title.length > SCRATCHPAD_TITLE_MAX_LENGTH)
+      return { error: `title must be at most ${SCRATCHPAD_TITLE_MAX_LENGTH} characters.` };
     data.title = title;
   }
   if (input.status !== undefined) {
@@ -146,8 +148,8 @@ export async function updateScratchpadItemFromTool(
   }
   if (input.notes !== undefined) {
     const notes = input.notes.trim();
-    if (notes.length > NOTES_MAX)
-      return { error: `notes must be at most ${NOTES_MAX} characters.` };
+    if (notes.length > SCRATCHPAD_NOTES_MAX_LENGTH)
+      return { error: `notes must be at most ${SCRATCHPAD_NOTES_MAX_LENGTH} characters.` };
     data.notes = notes;
   }
   if (Object.keys(data).length === 0) {

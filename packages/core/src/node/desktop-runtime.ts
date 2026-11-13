@@ -218,7 +218,8 @@ function screenClaimGtkLines(display: string, log: string) {
     "  screen_gtk_pid=$!",
     "  screen_gtk_ready=0",
     "  for i in $(seq 1 50); do",
-    '    screen_live "$screen_gtk_pid" xdg-desktop-portal-gtk || break',
+    // Right after the fork the pid still runs the shell or nohup until it execs the portal.
+    '    screen_starting "$screen_gtk_pid" xdg-desktop-portal-gtk || break',
     "    if dbus-send --session --print-reply --dest=org.freedesktop.DBus \\",
     "        /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \\",
     "        string:org.freedesktop.impl.portal.desktop.gtk 2>/dev/null | grep -q 'boolean true'; then",
@@ -272,6 +273,13 @@ function screenSessionMatchers() {
     '  kill -0 "$1" 2>/dev/null || return 1',
     '  case "$(readlink "/proc/$1/exe" 2>/dev/null || true)" in',
     '    */"$2"|"$2") return 0 ;;',
+    "  esac",
+    "  return 1",
+    "}",
+    "screen_starting() {",
+    '  kill -0 "$1" 2>/dev/null || return 1',
+    '  case "$(readlink "/proc/$1/exe" 2>/dev/null || true)" in',
+    '    */"$2"|"$2"|*/bash|*/dash|*/sh|*/nohup) return 0 ;;',
     "  esac",
     "  return 1",
     "}",
@@ -793,7 +801,10 @@ function renderEnsureScreenCommand(
           `  if [ -f /etc/rakazo/fluxbox/init ]; then cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init; else printf "session.screen0.toolbar.visible: false\\n" >${fluxHome}/.fluxbox/init; fi`,
           `  cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
           `  printf '\\nsession.menuFile: %s\\n' ${fluxHome}/.fluxbox/menu >>${fluxHome}/.fluxbox/init`,
-          `  HOME=${shellQuote(env.homeDir)} CHROME_USER_DATA_DIR=${shellQuote(profile)} BROWSER=${browserLauncherPath(layout.displayNumber)} DISPLAY=${layout.display} nohup fluxbox -rc ${fluxHome}/.fluxbox/init 8>&- 9>&- </dev/null >${log}-fluxbox.log 2>&1 &`,
+          // A stock image's style sets its wallpaper through fbsetbg, which opens an error dialog
+          // on the screen when no wallpaper tool is installed. Paint the computer image's color.
+          `  mkdir -p ${fluxHome}/bin && printf '#!/bin/sh\\nexec xsetroot -solid "#111113"\\n' >${fluxHome}/bin/fbsetbg && chmod +x ${fluxHome}/bin/fbsetbg`,
+          `  PATH=${fluxHome}/bin:$PATH HOME=${shellQuote(env.homeDir)} CHROME_USER_DATA_DIR=${shellQuote(profile)} BROWSER=${browserLauncherPath(layout.displayNumber)} DISPLAY=${layout.display} nohup fluxbox -rc ${fluxHome}/.fluxbox/init 8>&- 9>&- </dev/null >${log}-fluxbox.log 2>&1 &`,
           "fi",
         ];
   const targetFile = `${TARGETS}/view-${layout.displayNumber}`;
@@ -897,7 +908,8 @@ export function interactiveScreenCommand(
     `if ! { [ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && [ -S ${socket} ] && pgrep -f ${process} >/dev/null; }; then`,
     stopProcesses,
     `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
-    `nohup x11vnc -display ${layout.display} -forever -shared -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &`,
+    // A person is typing here: shorter polling and batching show input sooner.
+    `nohup x11vnc -display ${layout.display} -forever -shared -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 -wait 5 -defer 5 8>&- 9>&- </dev/null >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &`,
     `for i in $(seq 1 50); do [ -S ${socket} ] && pgrep -f ${process} >/dev/null && break; sleep 0.1; done`,
     `[ -S ${socket} ] && pgrep -f ${process} >/dev/null || exit 1`,
     `printf %s ${shellQuote(controlToken)} >${tokenFile}`,

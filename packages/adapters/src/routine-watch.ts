@@ -14,7 +14,12 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
-import { connectorKindFromToolName, redactSecrets, watchToolRefusal } from "@rakazo/core";
+import {
+  connectorKindFromToolName,
+  isAbandonedRequest,
+  redactSecrets,
+  watchToolRefusal,
+} from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -33,7 +38,10 @@ import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { isEgressRefused } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
+import type { SafeWebFetchOptions } from "./web-ssrf.js";
+import { fetchSafeHttpRequest } from "./web-ssrf.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -66,6 +74,8 @@ export type RoutineWatchDeps = {
   /** Decrypts Vault credentials. Absent, a command watch runs without them. */
   secretStore?: SecretStore;
   paymentWallet?: PaymentWalletProvider | null;
+  /** HTTP transport and DNS boundary; destination checks and limits always stay enabled. */
+  http?: Pick<SafeWebFetchOptions, "fetch" | "resolveHostname">;
 };
 
 export type RoutineWatchTarget = {
@@ -109,6 +119,8 @@ export function nextRoutineWatchAt(watch: Pick<RoutineWatch, "everyMinutes">, fr
 export function describeRoutineWatch(watch: RoutineWatch): string {
   if (watch.kind === "files") return (watch.paths ?? []).join(", ");
   if (watch.kind === "command") return `\`${watch.command ?? ""}\``;
+  // A status URL can contain an access token, so do not copy it into messages.
+  if (watch.kind === "http") return "HTTPS endpoint";
   return watch.tool ?? "";
 }
 
@@ -121,9 +133,11 @@ export async function checkRoutineWatch(
   if (!watch) throw new RoutineWatchError("The change trigger's settings are not valid.");
   const previous = parseRoutineWatchState(routine.watchState);
   const reading =
-    watch.kind === "tool"
-      ? await readTool(deps, routine, watch)
-      : await readComputer(deps, routine, watch);
+    watch.kind === "http"
+      ? await readHttp(deps, watch, routine.id)
+      : watch.kind === "tool"
+        ? await readTool(deps, routine, watch)
+        : await readComputer(deps, routine, watch);
   return compareReading(previous, reading, now);
 }
 
@@ -135,6 +149,96 @@ type Reading = {
   /** Hidden from a change description, which can name items from the last reading. */
   secrets?: readonly string[];
 };
+
+/** A structured public GET, never a shell command or an authenticated server session. */
+async function readHttp(
+  deps: RoutineWatchDeps,
+  watch: RoutineWatch,
+  routineId: string,
+): Promise<Reading> {
+  let response: Awaited<ReturnType<typeof fetchSafeHttpRequest>>;
+  try {
+    response = await fetchSafeHttpRequest(
+      watch.url!,
+      { method: "GET" },
+      {
+        ...deps.http,
+        allowedPorts: [443],
+        timeoutMs: 15_000,
+        maxBytes: 1_000_000,
+      },
+    );
+  } catch (error) {
+    getLogger().warn("routine.http_check_failed", {
+      "routine.id": routineId,
+      "http.failure.kind": httpFailureKind(error),
+    });
+    // Keep destination refusals permanent even when the transport wraps one in its cause.
+    if (isEgressRefused(error)) throw new RoutineWatchError("Could not check the HTTPS endpoint.");
+    // Never expose a transport error's URL; it can carry a token in its path or query.
+    throw new RoutineWatchRetry("Could not check the HTTPS endpoint.");
+  }
+  if (response.status === 408 || response.status === 429 || response.status >= 500)
+    throw new RoutineWatchRetry(`HTTPS check returned status ${response.status}.`);
+  if (response.status < 200 || response.status >= 300)
+    throw new RoutineWatchError(`HTTPS check returned status ${response.status}.`);
+  if (response.truncated) throw new RoutineWatchError("HTTPS check response is too large.");
+  const text = new TextDecoder().decode(response.body);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    if (watch.track) throw new RoutineWatchError("Tracked HTTP fields require a JSON response.");
+    return { fingerprint: sha256(text), detail: null };
+  }
+  // Bound recursion in the shared JSON comparators before handing them external data.
+  const pending = [{ value: data, depth: 0 }];
+  while (pending.length) {
+    const { value, depth } = pending.pop()!;
+    if (value === null || typeof value !== "object") continue;
+    if (depth > 64) throw new RoutineWatchError("HTTPS check JSON is too deeply nested.");
+    for (const child of Object.values(value)) {
+      if (child !== null && typeof child === "object")
+        pending.push({ value: child, depth: depth + 1 });
+    }
+  }
+  // Store only a fingerprint: endpoint data must not become trusted instructions or internal tool output.
+  const fingerprint = watch.track
+    ? readJsonItems(data, watch.track).fingerprint
+    : sha256(stableStringify(data));
+  return { fingerprint, detail: null };
+}
+
+const HTTP_FAILURE_CODES: Record<string, string> = {
+  ENOTFOUND: "dns",
+  EAI_AGAIN: "dns",
+  ECONNREFUSED: "connection",
+  ECONNRESET: "connection",
+  EHOSTUNREACH: "connection",
+  ENETUNREACH: "connection",
+  ETIMEDOUT: "timeout",
+  UND_ERR_CONNECT_TIMEOUT: "timeout",
+  UND_ERR_HEADERS_TIMEOUT: "timeout",
+  UND_ERR_BODY_TIMEOUT: "timeout",
+  CERT_HAS_EXPIRED: "tls",
+  ERR_TLS_CERT_ALTNAME_INVALID: "tls",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "tls",
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "tls",
+};
+
+/** Only fixed categories leave this boundary: error names, codes, and messages may contain secrets. */
+function httpFailureKind(error: unknown): string {
+  if (isEgressRefused(error)) return "destination_refused";
+  if (isAbandonedRequest(error)) return "timeout";
+  let current = error;
+  for (let depth = 0; current !== null && typeof current === "object" && depth < 4; depth += 1) {
+    const { code, cause } = current as { code?: unknown; cause?: unknown };
+    if (typeof code === "string" && Object.hasOwn(HTTP_FAILURE_CODES, code))
+      return HTTP_FAILURE_CODES[code]!;
+    current = cause;
+  }
+  return "transport";
+}
 
 /** Pure: decides baseline / unchanged / changed and describes the change. */
 export function compareReading(
@@ -227,6 +331,14 @@ export function readItems(
   track: readonly string[],
   secrets: readonly string[] = [],
 ): Reading {
+  return readJsonItems(resultJson(data), track, secrets);
+}
+
+function readJsonItems(
+  data: unknown,
+  track: readonly string[],
+  secrets: readonly string[] = [],
+): Reading {
   const [identity, ...fields] = track;
   const items = new Map<string, { fields: string[]; titles: string[] }>();
   let count = 0;
@@ -249,7 +361,7 @@ export function readItems(
     }
     for (const child of Object.values(record)) visit(child);
   };
-  visit(redactJsonStrings(resultJson(data), secrets));
+  visit(redactJsonStrings(data, secrets));
   // IDs can repeat in nested results. Preserve every object's values, independent of order.
   const entries = Object.fromEntries(
     [...items].map(([id, item]) => [
@@ -732,16 +844,42 @@ export async function tickRoutineWatch(
     if (!watch) throw new RoutineWatchError("The change trigger's settings are not valid.");
     outcome = await checkRoutineWatch(deps, routine, now);
   } catch (error) {
-    // A key manager outage passes; the check waits for it rather than pausing the routine.
+    // Defer a key outage instead of pausing the routine.
     if (error instanceof RoutineWatchRetry || error instanceof VaultKeyUnavailableError) {
       if (error instanceof VaultKeyUnavailableError)
         getLogger().warn("routine.watch_deferred", { "routine.id": routine.id, error });
-      const retryAt = new Date(now.getTime() + RETRY_AFTER_MS);
+      const retryAt =
+        watch?.kind === "http"
+          ? nextRoutineWatchAt(watch, now)
+          : new Date(now.getTime() + RETRY_AFTER_MS);
       const deferred = await deps.prisma.routine.updateMany({
         where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
-        data: { nextRunAt: retryAt },
+        data: {
+          nextRunAt: retryAt,
+          ...(watch?.kind === "http"
+            ? {
+                watchState: {
+                  checkedAt: now.toISOString(),
+                  outcome: "failed",
+                  retrying: true,
+                  fingerprint: previous?.fingerprint ?? null,
+                  detail: error.message,
+                } satisfies RoutineWatchState,
+              }
+            : {}),
+        },
       });
-      if (deferred.count === 1) await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
+      if (deferred.count === 1) {
+        await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
+        if (watch?.kind === "http" && previous?.retrying !== true) {
+          await postRoutineWatchMessage(deps, {
+            spaceId: routine.spaceId,
+            ...target,
+            role: "system",
+            text: `The **${routine.name}** routine's HTTPS check failed: ${error.message} I'll keep checking.`,
+          });
+        }
+      }
       return { run: false };
     }
     const reason = error instanceof Error ? error.message : String(error);

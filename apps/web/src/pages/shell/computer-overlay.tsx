@@ -10,11 +10,15 @@ import type {
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { TeachCaptureOverlay } from "../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../../components/teach/TeachRecordingChrome";
 import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
+import {
+  DARWIN_WINDOW_CONTROLS_WIDTH_PX,
+  desktopBridge,
+  windowChromeKind,
+} from "../../lib/desktop";
 import { computerTakeoverBlocked } from "../../lib/thread-events";
 import { ComputerReleaseActions } from "./computer-release-actions";
 import { computerLabel, DesktopKindEmptyState } from "./computer-view";
@@ -44,7 +48,6 @@ type ComputerOverlayProps = {
   onTakeControl: () => void;
   onStart: () => void;
   onRefreshTeaching: () => Promise<void>;
-  onRefreshComputer: () => Promise<void>;
   onClose: () => void;
 };
 
@@ -72,7 +75,6 @@ export function ComputerOverlay({
   onTakeControl,
   onStart,
   onRefreshTeaching,
-  onRefreshComputer,
   onClose,
 }: ComputerOverlayProps) {
   return (
@@ -88,6 +90,11 @@ export function ComputerOverlay({
         <div
           data-testid="computer-chrome"
           className="app-no-drag flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5"
+          style={
+            windowChromeKind(desktopBridge()) === "darwin"
+              ? { paddingLeft: DARWIN_WINDOW_CONTROLS_WIDTH_PX + 18 }
+              : undefined
+          }
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <BotAvatar
@@ -169,15 +176,6 @@ export function ComputerOverlay({
                 computer={computer}
                 busy={teachBusy}
                 onRefresh={onRefreshTeaching}
-              />
-            ) : null}
-            {!recordingSkill ? (
-              <ComputerMaintenanceActions
-                botId={bot.id}
-                computer={computer}
-                onChanged={async () => {
-                  await onRefreshComputer();
-                }}
               />
             ) : null}
             <Button

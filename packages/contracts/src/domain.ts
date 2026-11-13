@@ -1176,6 +1176,35 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
+/** One rolling allowance of a model subscription the member signed in with. */
+export const PlanLimitWindowSchema = z.object({
+  period: z.enum(["session", "week", "month"]),
+  usedPercent: z.number().min(0).max(100),
+  resetsAt: z.string().nullable(),
+});
+export type PlanLimitWindow = z.infer<typeof PlanLimitWindowSchema>;
+/** A subscription connection's allowances, as its provider last reported them. */
+export const PlanLimitsSchema = z.object({
+  credentialId: z.string(),
+  /** The subscription's name. */
+  name: z.string(),
+  /** The connection's own name, which tells two sign-ins to one subscription apart. */
+  label: z.string(),
+  windows: z.array(PlanLimitWindowSchema).min(1),
+});
+export type PlanLimits = z.infer<typeof PlanLimitsSchema>;
+
+/**
+ * How used the subscription with the most room is. Each one is only as open as its fullest
+ * allowance, so a nearly spent session on one plan does not read as the member being out.
+ */
+export function planUsagePercent(plans: readonly PlanLimits[]): number | null {
+  if (!plans.length) return null;
+  return Math.min(
+    ...plans.map((plan) => Math.max(...plan.windows.map((window) => window.usedPercent))),
+  );
+}
+
 export const MessagingLinkedIdentitySchema = z.object({
   id: Id,
   provider: z.string(),

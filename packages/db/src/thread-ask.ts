@@ -111,6 +111,8 @@ function resumePrompt(
 }
 
 export interface AnswerRunInput {
+  /** A composer message already accepted in this transaction, never client-supplied. */
+  answerMessageId?: string;
   spaceId: string;
   threadId: string;
   runId: string;
@@ -454,6 +456,9 @@ async function commitAnswerRunInput(
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
+          ...(!secretAsk && input.answerMessageId
+            ? { answerMessageId: input.answerMessageId }
+            : {}),
           ...(dismissed ? { dismissed: true as const } : {}),
           ...(input.remember === false ? { remembered: false as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
@@ -525,7 +530,14 @@ export async function answerRunInput(
 /** The caller holds the thread row lock acquired while accepting the new user message. */
 export async function retireWaitingQuestionInTransaction(
   tx: Prisma.TransactionClient,
-  input: { spaceId: string; threadId: string; botId: string; runId: string; answer: string },
+  input: {
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    answer: string;
+    answerMessageId: string;
+  },
 ): Promise<boolean> {
   const answer = input.answer.trim();
   if (!answer) return false;
@@ -560,7 +572,14 @@ export async function retireWaitingQuestionInTransaction(
       questions.push({
         id: message.id,
         blocks: parsed.data.map((block) =>
-          pending.includes(block) ? { ...block, status: "answered" as const, answer } : block,
+          pending.includes(block)
+            ? {
+                ...block,
+                status: "answered" as const,
+                answer,
+                answerMessageId: input.answerMessageId,
+              }
+            : block,
         ),
       });
     }
@@ -615,8 +634,12 @@ export async function eligibleWaitingTextAnswer(
     answeredByUserId: string;
     answer: string;
     beforeMessageSeq?: number;
-    /** Explicit reaction target; composer replies must pass the latest-message check. */
+    /** A user message accepted by the composer in the same transaction. */
+    answerMessageId?: string;
+    /** Strict reaction target, which must identify this run's pending question. */
     messageId?: string;
+    /** A composer quote; matching questions bypass recency, other quotes use the usual latest-message check. */
+    replyToMessageId?: string;
   },
 ): Promise<string | null> {
   const answer = input.answer.trim();
@@ -626,7 +649,7 @@ export async function eligibleWaitingTextAnswer(
   if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
   if (input.messageId !== undefined) {
     if (input.messageId !== found.messageId) return null;
-  } else {
+  } else if (input.replyToMessageId !== found.messageId) {
     // Reactions are projected beneath their target, not new transcript messages.
     let beforeSeq = input.beforeMessageSeq;
     while (true) {

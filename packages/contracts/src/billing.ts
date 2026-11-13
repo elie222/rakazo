@@ -168,8 +168,10 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
-  /** Computer hours left this calendar month; absent when computers have no limit. */
+  /** Computer hours left in the current allowance period; absent when computers have no limit. */
   computerHoursLeft: z.number().nonnegative().nullable().optional(),
+  /** Next allowance renewal, distinct from a yearly subscription payment. */
+  computerHoursResetAt: z.string().nullable().optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
@@ -177,6 +179,16 @@ export const BillingStatusSchema = z.object({
     .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
+
+/**
+ * The hosted-model credit balance, or null for a member who only runs on their own keys and
+ * subscriptions. A balance left after switching to an own key still pays, so it still counts.
+ */
+export function modelCreditsUsd(status: BillingStatus | null | undefined): number | null {
+  if (!status) return null;
+  const balance = status.balanceUsd ?? 0;
+  return status.funding === "credits" || balance > 0 ? balance : null;
+}
 
 /** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
