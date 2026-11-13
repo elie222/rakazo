@@ -19,7 +19,7 @@ import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
-import { EvalFailure, judgeOutcome, observe, withinDeadline } from "./grading.js";
+import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
 import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
@@ -1081,18 +1081,8 @@ export async function runTrial(
     if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
     const grading = { judge: options.judge, deadline, secrets };
     await judgeOutcome(scenario, evidence, result, grading);
-    result.status =
-      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
-    result.category = result.status === "passed" ? null : "agent";
-    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
-    if (result.status === "failed" && handles.harnessIssues?.length) {
-      if (scenario.shellUnneeded)
-        result.reason = `Outcome criteria failed after the bot chose a command the case does not need: ${handles.harnessIssues.join(" ")}`;
-      else {
-        result.category = "harness";
-        result.reason = handles.harnessIssues.join(" ");
-      }
-    }
+    if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];
+    settle(scenario, result, handles.harnessIssues ?? []);
     const observations = await observe(scenario, evidence, grading);
     if (observations) result.observations = observations;
   } catch (error) {

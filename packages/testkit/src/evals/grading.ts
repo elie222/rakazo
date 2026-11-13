@@ -85,6 +85,25 @@ export async function observe(
   return observations;
 }
 
+/**
+ * The trial's verdict from its criteria. A failure after the offline sandbox refused something the
+ * bot needed is the harness's, unless the case needs no command at all.
+ */
+export function settle(scenario: EvalCase, result: TrialResult, harnessIssues: readonly string[]) {
+  result.status =
+    result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
+  result.category = result.status === "passed" ? null : "agent";
+  result.reason = result.status === "passed" ? null : "Outcome criteria failed";
+  if (result.status === "failed" && harnessIssues.length) {
+    if (scenario.shellUnneeded)
+      result.reason = `Outcome criteria failed after the bot chose a command the case does not need: ${harnessIssues.join(" ")}`;
+    else {
+      result.category = "harness";
+      result.reason = harnessIssues.join(" ");
+    }
+  }
+}
+
 /** Whether a stored trial can be graded again: it reached grading and kept what it was graded on. */
 export function regradable(scenario: EvalCase, trial: TrialResult) {
   return !trial.criteria.length || !(scenario.judge || scenario.observe) || !!trial.evidence;
@@ -110,9 +129,7 @@ export async function regradeTrial(
   if (result.criteria.every((c) => c.pass)) {
     try {
       await judgeOutcome(scenario, evidence, result, grading);
-      result.status = result.criteria.every((c) => c.pass) ? "passed" : "failed";
-      result.category = result.status === "passed" ? null : "agent";
-      result.reason = result.status === "passed" ? null : "Outcome criteria failed";
+      settle(scenario, result, stored.harnessIssues ?? []);
     } catch (error) {
       result.status = "failed";
       result.category = error instanceof EvalFailure ? error.category : "harness";

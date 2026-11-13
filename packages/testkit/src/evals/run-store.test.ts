@@ -345,11 +345,22 @@ describe("regrading a stored trial", () => {
     };
     const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "ok" }));
     await regradeTrial(mapped, trial(1, { evidence: evidenceSnapshot(live, []) }), judge, 1000);
-    // Stored like the artifacts: redacted, then graded from the same shapes.
+    // Fixture links stay so the regrade sees what the live grade saw; credentials do not.
     expect(judge).toHaveBeenCalledWith(
-      { rubric: "Drafted", evidence: ["Hi [url]"] },
+      { rubric: "Drafted", evidence: ["Hi https://private.test/x"] },
       expect.anything(),
     );
+    expect(JSON.stringify(evidenceSnapshot({ key: "sk-live123 and k1" }, ["k1"]))).toBe(
+      '{"key":"[redacted] and [redacted]"}',
+    );
+  });
+
+  it("labels a regraded failure the way the run did", async () => {
+    const judge = vi.fn<EvalJudge>(async () => ({ pass: false, reason: "no" }));
+    const issue = "The offline sandbox refused a shell command.";
+    expect(
+      await regradeTrial(scenario, trial(1, { harnessIssues: [issue] }), judge, 1000),
+    ).toMatchObject({ status: "failed", category: "harness", reason: issue });
   });
 
   it("leaves the trial incomplete when the judge fails", async () => {

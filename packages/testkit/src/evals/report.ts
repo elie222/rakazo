@@ -35,6 +35,8 @@ export type TrialResult = {
   judgment?: Judgment;
   /** What the trial was graded on, so a new rubric can grade it again without running the bot. */
   evidence?: unknown;
+  /** What the offline sandbox could not do in the trial; a regrade weighs a failure as the run did. */
+  harnessIssues?: string[];
   /** Whether this run ran the trial, or took it from a stored run with the same fingerprint. */
   origin?: { kind: "reused" | "regraded"; fingerprint: string; startedAt: string };
   /** Recorded behaviour; `present` is null when the judge could not grade it. */
@@ -169,16 +171,25 @@ export function redact(text: string, secrets: readonly string[] = []): string {
 }
 
 /**
- * What a trial was graded on, as JSON redacted like its artifacts. Maps and Sets (an app's drafts)
- * are tagged so `restoreEvidence` gives judges the same shapes back.
+ * What a trial was graded on, as JSON. Configured secrets and credential-shaped tokens are removed;
+ * synthetic fixture paths, links and addresses stay, because a regrade must see what the live grade
+ * saw (recall checks rerun recorded commands against fixture paths). Maps and Sets (an app's
+ * drafts) are tagged so `restoreEvidence` gives judges the same shapes back.
  */
 export function evidenceSnapshot(value: unknown, secrets: readonly string[]): unknown {
   return JSON.parse(
     JSON.stringify(value, (_, v) =>
       v instanceof Map ? { $map: [...v] } : v instanceof Set ? { $set: [...v] } : v,
     ),
-    (_, v) => (typeof v === "string" ? redact(v, secrets) : v),
+    (_, v) => (typeof v === "string" ? withoutCredentials(v, secrets) : v),
   );
+}
+
+function withoutCredentials(text: string, secrets: readonly string[]) {
+  let safe = text;
+  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length))
+    safe = safe.replaceAll(secret, "[redacted]");
+  return safe.replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[redacted]");
 }
 
 export function restoreEvidence(value: unknown): unknown {
