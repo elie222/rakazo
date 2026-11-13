@@ -373,6 +373,13 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       try {
         row = await deps.prisma.$transaction(async (tx) => {
           await tx.$executeRaw`SELECT id FROM bots WHERE id = ${botId} FOR UPDATE`;
+          // The recording ends with its control, so it starts only while that control holds; the
+          // lock keeps a release from ending it in between.
+          const [control] = await tx.$queryRaw<Array<{ controlLeaseId: string | null }>>`
+            SELECT "controlLeaseId" FROM computers WHERE id = ${bot.computer!.id} FOR UPDATE`;
+          if (control?.controlLeaseId !== leaseId) {
+            throw new ORPCError("CONFLICT", { message: "Could not take control of the computer" });
+          }
           const existing = await tx.taughtSkill.findFirst({
             where: { botId, status: "recording" },
           });
