@@ -3,7 +3,7 @@ import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
 import { useNavigation } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ListViewToken } from "react-native";
 import {
   AccessibilityInfo,
@@ -14,6 +14,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { useFloatingHeaderInset } from "../lib/floating-header";
 import { native, useThemedStyles } from "../lib/native";
@@ -47,6 +48,7 @@ export function ModelPickerList({
   const { t } = useLingui();
   const navigation = useNavigation();
   const contentBottomInset = useContentBottomInset();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const headerInset = useFloatingHeaderInset();
@@ -212,7 +214,7 @@ export function ModelPickerList({
         { paddingTop: headerInset + 16, paddingBottom: contentBottomInset + 72 },
       ]}
       // Reserve the transparent bar explicitly: native search can drop its automatic inset.
-      automaticallyAdjustKeyboardInsets
+      automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
       contentInsetAdjustmentBehavior={headerInset > 0 ? "never" : "automatic"}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
