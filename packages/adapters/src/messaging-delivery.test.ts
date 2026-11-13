@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   BackgroundJob,
   JobTransaction,
+  MessagingInstallProvider,
   MessagingPlatformDescriptor,
   MessagingSendRequest,
   MessagingSendResult,
@@ -19,6 +20,7 @@ import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
+import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
 import type { MessagingDeliveryDeps, OutboundLane, OutboundRow } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
@@ -1926,6 +1928,23 @@ describe("when a send fails", () => {
     expect(bodies(t)).toEqual(["a-1", "a-2"]);
     expect(statuses(t)).toEqual(["failed", "sent"]);
     expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("fails a team-chat reply whose workspace was removed on its first try, without retries", async () => {
+    const surface = vi.fn();
+    const installed = new InstalledMessagingSurface(
+      { get: vi.fn(async () => null), getById: vi.fn(async () => null), removeWorkspace: vi.fn() },
+      { provider: "slack", surface } as unknown as MessagingInstallProvider,
+    );
+    const t = setup({ messaging: installed });
+    const lane = threadLane("slack~removed:C1:1700.1");
+    const [id] = await t.record(lane, [post("slack~removed:C1:1700.1", "could not complete")]);
+
+    await t.delivery.sendJob(id!, attempt(1));
+
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(sendJobs(t)).toEqual([]);
+    expect(surface).not.toHaveBeenCalled();
   });
 
   it("hands a failure inside the backup job back to the job queue", async () => {
