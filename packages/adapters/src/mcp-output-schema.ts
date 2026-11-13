@@ -11,6 +11,8 @@ import { getLogger } from "@rakazo/logging";
 const PATTERN_PREVIEW_CHARS = 160;
 const REASON_PREVIEW_CHARS = 300;
 const MAX_LOGGED_PATTERNS = 8;
+const LITERAL_KEYWORDS = new Set(["const", "enum", "default", "examples", "example"]);
+const SCHEMA_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
 
 /**
  * Compiler for MCP tool output schemas.
@@ -121,7 +123,14 @@ function stripInvalidUnicodePatterns(value: unknown, dropped: string[]): void {
       }
     }
   }
-  for (const child of Object.values(record)) stripInvalidUnicodePatterns(child, dropped);
+  for (const [key, child] of Object.entries(record)) {
+    if (LITERAL_KEYWORDS.has(key)) continue;
+    if (SCHEMA_MAP_KEYWORDS.has(key) && isRecord(child)) {
+      for (const schema of Object.values(child)) stripInvalidUnicodePatterns(schema, dropped);
+    } else {
+      stripInvalidUnicodePatterns(child, dropped);
+    }
+  }
 }
 
 function compilesWithUnicodeFlag(pattern: string): boolean {

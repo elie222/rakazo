@@ -142,6 +142,63 @@ describe("MCP output schema patterns", () => {
     ]);
   });
 
+  it.each(["const", "enum"])("preserves %s literals when repairing a pattern", (keyword) => {
+    const literal = { pattern: "^https\\:" };
+    const schema: JsonSchemaType = {
+      type: "object",
+      properties: {
+        href: { type: "string", pattern: PAYPAL_STYLE_PATTERN },
+        value: { [keyword]: keyword === "enum" ? [literal] : literal },
+      },
+      required: ["value"],
+    };
+    const original = structuredClone(schema);
+    const validate = createMcpJsonSchemaValidator().getValidator(schema);
+
+    expect(validate({ value: literal }).valid).toBe(true);
+    expect(validate({ value: {} }).valid).toBe(false);
+    expect(validate({ value: { pattern: "different" } }).valid).toBe(false);
+    expect(schema).toEqual(original);
+  });
+
+  it.each(["default", "examples", "example"])(
+    "preserves %s annotations when repairing a pattern",
+    (keyword) => {
+      const sink = recordWarnings();
+      const literal = { pattern: "^https\\:" };
+      const validate = createMcpJsonSchemaValidator().getValidator({
+        type: "string",
+        pattern: PAYPAL_STYLE_PATTERN,
+        [keyword]: keyword === "examples" ? [literal] : literal,
+      });
+
+      expect(validate("text").valid).toBe(true);
+      expect(sink.events).toEqual([
+        expect.objectContaining({ patterns: [PAYPAL_STYLE_PATTERN], patternCount: 1 }),
+      ]);
+    },
+  );
+
+  it("preserves schema map entries named after keywords", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      properties: {
+        href: { type: "string", pattern: PAYPAL_STYLE_PATTERN },
+        pattern: { type: "string" },
+        patternProperties: { type: "string" },
+        const: { type: "string", pattern: PAYPAL_STYLE_PATTERN },
+      },
+      required: ["pattern", "patternProperties", "const"],
+      additionalProperties: false,
+    });
+
+    expect(validate({ pattern: "text", patternProperties: "text", const: "text" }).valid).toBe(
+      true,
+    );
+    expect(validate({ pattern: 1, patternProperties: "text", const: "text" }).valid).toBe(false);
+    expect(validate({ pattern: "text", patternProperties: 1, const: "text" }).valid).toBe(false);
+  });
+
   it("still applies unicode patterns on a schema that also has an illegal one", () => {
     const validate = createMcpJsonSchemaValidator().getValidator({
       type: "object",
