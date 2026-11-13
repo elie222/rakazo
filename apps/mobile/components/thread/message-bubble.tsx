@@ -321,8 +321,14 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
-    const from = memberName(members, handoff.fromBotId) ?? t`bot`;
-    const to = memberName(members, handoff.toBotId) ?? t`bot`;
+    const from =
+      memberName(members, handoff.fromBotId) ??
+      bots.find((bot) => bot.id === handoff.fromBotId)?.name ??
+      t`bot`;
+    const to =
+      memberName(members, handoff.toBotId) ??
+      bots.find((bot) => bot.id === handoff.toBotId)?.name ??
+      t`bot`;
     return (
       <AgentEventLabel
         actionProps={actionProps}
@@ -565,7 +571,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     .join("\n");
   if (attachments.length > 0) {
     const speaker =
-      message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
+      message.role === "bot"
+        ? (memberName(members, message.botId) ??
+          bots.find((bot) => bot.id === message.botId)?.name ??
+          botName)
+        : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
     const hasInlineImages = attachments.some(isInlineImageBlock);
@@ -724,7 +734,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const segments = messagePresentationSegments(message.blocks);
   const speaker =
-    message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
+    message.role === "bot"
+      ? (memberName(members, message.botId) ??
+        bots.find((bot) => bot.id === message.botId)?.name ??
+        botName)
+      : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
   const showSpeaker = showBotSenderName || Boolean(authorName);

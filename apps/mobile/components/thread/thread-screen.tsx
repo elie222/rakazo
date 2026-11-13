@@ -623,7 +623,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
                 ? (otherAuthor(replyTarget.author, userId)?.name ??
                   channelMessageSender(replyTarget.blocks) ??
                   t`You`)
-                : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t`Bot`)
+                : (memberName(snap?.members, replyTarget?.botId) ??
+                  mentionBots.find((bot) => bot.id === replyTarget?.botId)?.name ??
+                  displayName ??
+                  t`Bot`)
             }
             replyQuote={replyQuote}
             threadTarget={artifactTarget}
