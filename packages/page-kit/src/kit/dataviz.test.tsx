@@ -47,6 +47,12 @@ const key = (target: Element, name: string) =>
   act(() => {
     target.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
   });
+const pointer = (target: Element, type: string, pointerType = "touch") =>
+  act(() => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: 100, clientY: 50 });
+    Object.defineProperty(event, "pointerType", { value: pointerType });
+    target.dispatchEvent(event);
+  });
 const tip = (root: Element) => root.querySelector(".rk-tip")?.textContent ?? null;
 /** Charts measure their box; jsdom has none, so each observed box reports this width. */
 function stubWidth(width: number) {
@@ -85,6 +91,54 @@ describe("charts", () => {
     const chosen = mount(<Columns points={points} emphasis="none" />);
     expect(chosen.querySelectorAll("svg > g[data-emphasis]")).toHaveLength(3);
     expect(mount(<Columns points={[]} />).textContent).toBe("No data");
+  });
+
+  it("keeps a touch selection after release and dismisses it outside the chart", () => {
+    const root = mount(<Columns points={[{ label: "Jan", value: 12 }]} />);
+    const svg = root.querySelector('svg[role="img"]')!;
+    key(svg, "Home");
+    pointer(svg, "pointerdown");
+    expect(tip(root)).toBe("Jan12");
+    pointer(svg, "pointerup");
+    pointer(svg, "pointerout");
+    expect(tip(root)).toBe("Jan12");
+    pointer(document.body, "pointerdown");
+    expect(tip(root)).toBeNull();
+
+    pointer(svg, "pointerdown");
+    pointer(svg, "pointercancel");
+    pointer(svg, "pointerout");
+    expect(tip(root)).toBeNull();
+    pointer(svg, "pointerdown");
+    key(svg, "Escape");
+    expect(tip(root)).toBeNull();
+    pointer(svg, "pointermove", "mouse");
+    expect(tip(root)).toBe("Jan12");
+    pointer(svg, "pointerout", "mouse");
+    expect(tip(root)).toBeNull();
+    key(svg, "Home");
+    expect(tip(root)).toBe("Jan12");
+    act(() => svg.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(tip(root)).toBeNull();
+  });
+
+  it("moves touch selection between charts without leaving the first tip open", () => {
+    const root = mount(
+      <>
+        <Columns points={[{ label: "Jan", value: 12 }]} />
+        <Columns points={[{ label: "Feb", value: 35 }]} />
+      </>,
+    );
+    const [first, second] = root.querySelectorAll('svg[role="img"]');
+    pointer(first!, "pointerdown");
+    pointer(first!, "pointerout");
+    expect(tip(root)).toBe("Jan12");
+    pointer(second!, "pointerdown");
+    pointer(second!, "pointerout");
+    expect(root.querySelectorAll(".rk-tip")).toHaveLength(1);
+    expect(tip(root)).toBe("Feb35");
+    pointer(document.body, "pointerdown");
+    expect(tip(root)).toBeNull();
   });
 
   it("stacks series to a round ceiling, marks a reference and totals the stack in its tip", () => {
