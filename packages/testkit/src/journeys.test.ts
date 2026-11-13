@@ -257,6 +257,53 @@ describeJourneys("required product journeys", () => {
     }
   });
 
+  it("switching computers answers not found when the bot is removed mid-switch", async () => {
+    const cookie = await signup(app, `switch-removed-${stamp}@rakazo.test`, "Switch removed");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Mover",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "bots/setComputer", { botId: bot.id, mode: "dedicated" });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let stopping!: () => void;
+    const stopStarted = new Promise<void>((resolve) => {
+      stopping = resolve;
+    });
+    const stop = sandbox.stop.bind(sandbox);
+    const spy = vi.spyOn(sandbox, "stop").mockImplementationOnce(async (...args) => {
+      stopping();
+      await gate;
+      return stop(...args);
+    });
+    try {
+      const switched = app.request("/rpc/bots/setComputer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ json: { botId: bot.id, mode: "team" } }),
+      });
+      await stopStarted;
+      await rpc(app, cookie, "bots/remove", { botId: bot.id });
+      release();
+      expect((await switched).status).toBe(404);
+    } finally {
+      release();
+      spy.mockRestore();
+    }
+  });
+
   it("updating a computer the user has taken over hands control back first", async () => {
     const cookie = await signup(app, `maintenance-control-${stamp}@rakazo.test`, "Maintenance");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
