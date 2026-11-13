@@ -8,6 +8,7 @@ import {
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsTags,
 } from "./model-settings-form.js";
 
 const COMPATIBLE = "openai-compatible";
@@ -122,7 +123,7 @@ describe("modelSettingsRequest", () => {
     });
   });
 
-  it("saves capabilities only where they can be set", () => {
+  it("saves capabilities only where they can be set, and an image limit wherever images are read", () => {
     const on = { ...fields, images: true, reasoning: true, maxImagesPerPrompt: " 8 " };
     expect(modelSettingsRequest({ fields: on, provider: "zai", entry: live })).toEqual({
       status: "ready",
@@ -130,7 +131,7 @@ describe("modelSettingsRequest", () => {
     });
     expect(modelSettingsRequest({ fields: on, provider: "zai", entry: {} })).toEqual({
       status: "ready",
-      settings: {},
+      settings: { maxImagesPerPrompt: 8 },
     });
   });
 
@@ -218,5 +219,17 @@ describe("catalogEntryFor", () => {
     expect(catalogEntryFor(catalog, "azure-openai-responses", "deployment")).toBe(catalog[1]);
     expect(catalogEntryFor(catalog, "zai", "missing")).toBeUndefined();
     expect(catalogEntryFor(catalog, "elsewhere", "glm-5.3")).toBeUndefined();
+  });
+});
+
+describe("modelSettingsTags", () => {
+  it("names what a model's own settings change, and nothing for one that follows its card", () => {
+    expect(modelSettingsTags({ maxTokens: 1, reasoning: true, images: true })).toEqual([
+      "images",
+      "thinking",
+      "limits",
+    ]);
+    expect(modelSettingsTags({ images: false })).toEqual([]);
+    expect(modelSettingsTags(undefined)).toEqual([]);
   });
 });

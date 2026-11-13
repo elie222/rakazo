@@ -56,3 +56,13 @@ it("shows image and thinking settings only where the model's capabilities are co
   expect(configurable.textContent).toContain("Supports images");
   expect(configurable.textContent).toContain("Supports thinking");
 });
+
+it("offers an image limit whenever the model reads images", () => {
+  const imageLimit = { onMaxImagesPerPromptChange: () => {}, maxImagesLabel: "Maximum images" };
+  expect(render(<ModelSettingsFields {...limits} {...imageLimit} images />).textContent).toContain(
+    "Maximum images",
+  );
+  expect(render(<ModelSettingsFields {...limits} {...imageLimit} />).textContent).not.toContain(
+    "Maximum images",
+  );
+});

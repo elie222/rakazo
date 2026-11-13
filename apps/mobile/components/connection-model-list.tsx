@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ModelSettings } from "@rakazo/contracts";
 import type { ConnectionModel } from "@rakazo/core";
+import { modelSettingsTags } from "@rakazo/core";
 import { useListSearch } from "../lib/use-list-search";
 import { ListSearchInput } from "./list-search-input";
 import { SettingsGroup, SettingsRow } from "./settings-group";
@@ -18,13 +19,10 @@ export function ConnectionModelList({
     text: (model) => `${model.label} ${model.id}`,
     id: (model) => model.id,
   });
+  const labels = { images: t`Images`, thinking: t`Thinking`, limits: t`Limits` };
   const summary = (settings: ModelSettings | undefined) =>
-    [
-      settings?.images ? t`Images` : null,
-      settings?.reasoning ? t`Thinking` : null,
-      settings?.contextWindow !== undefined || settings?.maxTokens !== undefined ? t`Limits` : null,
-    ]
-      .filter(Boolean)
+    modelSettingsTags(settings)
+      .map((tag) => labels[tag])
       .join(" · ") || undefined;
   if (models.length === 0) return null;
   return (

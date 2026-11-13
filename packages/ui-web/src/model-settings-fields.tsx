@@ -97,7 +97,7 @@ export function ModelSettingsFields({
           {imagesLabel}
         </label>
       ) : null}
-      {capabilities && images && onMaxImagesPerPromptChange ? (
+      {images && onMaxImagesPerPromptChange ? (
         <Field orientation="horizontal" className="mt-3">
           <FieldLabel htmlFor={maxImagesId}>{maxImagesLabel}</FieldLabel>
           <Input

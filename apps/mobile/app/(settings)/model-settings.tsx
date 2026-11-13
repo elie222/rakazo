@@ -187,7 +187,7 @@ export default function ModelSettingsScreen() {
             </View>
           </View>
         ) : null}
-        {capabilities && fields.images ? (
+        {fields.images ? (
           <LimitField
             label={t`Maximum images per request`}
             value={fields.maxImagesPerPrompt}

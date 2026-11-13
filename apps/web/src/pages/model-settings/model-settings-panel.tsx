@@ -50,6 +50,8 @@ export function ModelSettingsPanel({
   };
 
   async function persist(settings: ModelSettings) {
+    setError(null);
+    setNotice(null);
     setPending(true);
     try {
       await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });

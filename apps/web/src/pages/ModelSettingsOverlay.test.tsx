@@ -486,17 +486,24 @@ it("resets a customized model to its defaults", async () => {
   models.credentials.mockResolvedValue([
     { ...deepseekCredential, modelSettings: { "deepseek-chat": { maxTokens: 4096 } } },
   ]);
-  models.saveModelSettings.mockResolvedValue({ ok: true });
+  models.saveModelSettings
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValue({ ok: true });
 
   const view = await renderSettings();
   try {
     await rowMenu("Manage model");
     expect(labeled(view.container, "Maximum output tokens")?.value).toBe("4096");
-    await click(
-      buttons(view.container, "Reset to defaults").find(
-        (entry) => entry.textContent === "Reset to defaults",
-      ),
-    );
+    const reset = () =>
+      click(
+        buttons(view.container, "Reset to defaults").find(
+          (entry) => entry.textContent === "Reset to defaults",
+        ),
+      );
+    await reset();
+    expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+    await reset();
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
     expect(models.saveModelSettings).toHaveBeenCalledWith({
       credentialId: "cred-deepseek",
       modelId: "deepseek-chat",

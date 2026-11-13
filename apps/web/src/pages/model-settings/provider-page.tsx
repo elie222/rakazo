@@ -1,6 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ModelSettings } from "@rakazo/contracts";
 import type { ConnectionModel } from "@rakazo/core";
+import { modelSettingsTags } from "@rakazo/core";
 import { Button, ListSearchInput, SectionHeading } from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
@@ -49,13 +50,10 @@ export function ModelSettingsPageHeader({
 /** What a model's own settings change, in a few words; nothing when it follows its card. */
 function useSettingsSummary() {
   const { t } = useLingui();
+  const labels = { images: t`Images`, thinking: t`Thinking`, limits: t`Limits` };
   return (settings: ModelSettings | undefined) =>
-    [
-      settings?.images ? t`Images` : null,
-      settings?.reasoning ? t`Thinking` : null,
-      settings?.contextWindow !== undefined || settings?.maxTokens !== undefined ? t`Limits` : null,
-    ]
-      .filter(Boolean)
+    modelSettingsTags(settings)
+      .map((tag) => labels[tag])
       .join(" · ");
 }
 

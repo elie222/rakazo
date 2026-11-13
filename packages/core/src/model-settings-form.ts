@@ -111,6 +111,19 @@ export function connectionModels(
   ];
 }
 
+/** What a model's own settings change, in the order the apps show them. */
+export function modelSettingsTags(
+  settings: ModelSettings | undefined,
+): ("images" | "thinking" | "limits")[] {
+  return [
+    ...(settings?.images ? (["images"] as const) : []),
+    ...(settings?.reasoning ? (["thinking"] as const) : []),
+    ...(settings?.contextWindow !== undefined || settings?.maxTokens !== undefined
+      ? (["limits"] as const)
+      : []),
+  ];
+}
+
 /** The values a model runs with when its fields are left empty. */
 export function modelSettingsDefaults(
   provider: string,
@@ -205,12 +218,11 @@ export function modelSettingsRequest(input: {
   if (modelCapabilitiesConfigurable(provider, entry)) {
     settings.images = fields.images;
     settings.reasoning = fields.reasoning;
-    if (fields.images && fields.maxImagesPerPrompt.trim()) {
-      const maxImagesPerPrompt = parseModelMaxImagesPerPrompt(fields.maxImagesPerPrompt.trim());
-      if (maxImagesPerPrompt === undefined)
-        return { status: "invalid", field: "maxImagesPerPrompt" };
-      settings.maxImagesPerPrompt = maxImagesPerPrompt;
-    }
+  }
+  if (fields.images && fields.maxImagesPerPrompt.trim()) {
+    const maxImagesPerPrompt = parseModelMaxImagesPerPrompt(fields.maxImagesPerPrompt.trim());
+    if (maxImagesPerPrompt === undefined) return { status: "invalid", field: "maxImagesPerPrompt" };
+    settings.maxImagesPerPrompt = maxImagesPerPrompt;
   }
   return { status: "ready", settings };
 }
