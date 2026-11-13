@@ -128,6 +128,7 @@ describe("safeName", () => {
 
   it("retains existing ASCII naming and removes unsafe path characters", () => {
     expect(safeName("Baseline V2.0_test")).toBe("baseline-v2.0_test");
+    expect(safeName("run-0123456789abcdef")).toBe("run-0123456789abcdef");
     expect(safeName("../基线\\优化后: *?<>|\u0000")).toBe("..-基线-优化后-");
     expect(safeName("中文／路径")).toBe("中文-路径");
     expect(safeName("a/b")).toBe(safeName("a?b"));

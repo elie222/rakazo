@@ -178,14 +178,10 @@ export function safeName(value: string) {
   const name = value.toLowerCase().replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-");
   // Leave room for the longest report wrapper: web-chat-<name>.json.
   const maxBytes = 255 - Buffer.byteLength("web-chat-.json");
-  if (
-    Buffer.byteLength(name) <= maxBytes &&
-    name === name.normalize("NFC") &&
-    !/-[a-f0-9]{16}$/.test(name)
-  )
-    return name;
+  if (Buffer.byteLength(name) <= maxBytes && name === name.normalize("NFC")) return name;
 
-  const suffix = `-${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+  // The separator is excluded from sanitized labels, reserving generated names.
+  const suffix = `~${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
   const prefixBudget = maxBytes - Buffer.byteLength(suffix);
   let prefix = "";
   let bytes = 0;
