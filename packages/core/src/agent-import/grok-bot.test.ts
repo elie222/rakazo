@@ -298,3 +298,15 @@ describe("a Grok Bot as an import plan", () => {
     expect(parseAgentImport([{ path: GROK_BOT_EXPORT_PATH, content }])).toHaveProperty("error");
   });
 });
+
+it("rejects oversized collections before allocating import names", () => {
+  for (const field of ["skills", "apps", "memories", "routines"]) {
+    const source = JSON.stringify({
+      bots: [{ name: "Example", [field]: Array(101).fill({ name: "same" }) }],
+    });
+    expect(() => readGrokBotExportJson(source)).toThrow(GrokBotExportError);
+  }
+  expect(() =>
+    readGrokBotExportJson(JSON.stringify({ bots: Array(101).fill({ name: "same" }) })),
+  ).toThrow(GrokBotExportError);
+});

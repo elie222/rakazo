@@ -338,6 +338,22 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
   const raw = documents.flatMap((document) =>
     Array.isArray(document.bots) ? document.bots.filter(isObject) : [document],
   );
+  if (
+    raw.length > 100 ||
+    raw.some((bot) =>
+      [
+        bot.skills,
+        bot.apps,
+        bot.plugins,
+        bot.integrations,
+        bot.routines,
+        bot.memories,
+        bot.user_facts,
+        bot.userFacts,
+      ].some((items) => Array.isArray(items) && items.length > 100),
+    )
+  )
+    throw new GrokBotExportError("too_large");
   const bots = mergeBots(raw.map(readBot).filter((bot) => bot.name));
   if (bots.length === 0) throw new GrokBotExportError("not_export");
   return bots;
