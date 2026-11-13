@@ -1947,7 +1947,7 @@ PURCHASE_HELPERS = r"""
     let found = "";
     lines.forEach((line, i) => {
       if (!TOTAL.test(line.slice(0, 200))) return;
-      found = moneyIn(line.slice(0, 200)) || moneyIn(lines[i + 1] || "") || found;
+      found = moneyIn(line) || moneyIn(lines[i + 1] || "") || found;
     });
     return found;
   }

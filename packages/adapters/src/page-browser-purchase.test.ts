@@ -340,13 +340,15 @@ describe("purchase detection in the page helper", () => {
     expect(none.intent("Pay now")?.amount).toBe("");
   });
 
-  it.each(["$100, fee .99 USD", `$${"0".repeat(40)}1, total $100`, "\n.99 USD $100"])(
-    "refuses an ambiguous total: %s",
-    (total) => {
-      const checkout = page(`<p>Total: ${total}</p><button>Pay now</button>`);
-      expect(checkout.intent("Pay now")?.amount).toBe("?");
-    },
-  );
+  it.each([
+    "$100, fee .99 USD",
+    `$${"0".repeat(40)}1, total $100`,
+    "\n.99 USD $100",
+    `.99 USD ${"x".repeat(220)} $100`,
+  ])("refuses an ambiguous total: %s", (total) => {
+    const checkout = page(`<p>Total: ${total}</p><button>Pay now</button>`);
+    expect(checkout.intent("Pay now")?.amount).toBe("?");
+  });
 
   it.each(["Pay $.99 now; $100 due on click", "Pay $100"])(
     "refuses conflicting prices in button descriptions: %s",
