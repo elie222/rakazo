@@ -26,6 +26,7 @@ const MAX_AMOUNT = 2_147_483_647;
 export function parsePageAmount(
   text: string,
 ): { amount: number; currency: SpendingCurrency } | null {
+  if (text.length > 1000) return null;
   const currencies = new Set(
     CURRENCY_MARKS.filter(([mark]) => mark.test(text)).map(([, currency]) => currency),
   );

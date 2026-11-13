@@ -345,6 +345,7 @@ describe("purchase detection in the page helper", () => {
     `$${"0".repeat(40)}1, total $100`,
     "\n.99 USD $100",
     `.99 USD ${"x".repeat(220)} $100`,
+    ".".repeat(10000),
   ])("refuses an ambiguous total: %s", (total) => {
     const checkout = page(`<p>Total: ${total}</p><button>Pay now</button>`);
     expect(checkout.intent("Pay now")?.amount).toBe("?");

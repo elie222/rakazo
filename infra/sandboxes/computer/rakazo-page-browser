@@ -1937,7 +1937,9 @@ PURCHASE_HELPERS = r"""
   const MONEY = new RegExp(`(?:[$€£₪¥]\\s?${NUMBER}|${NUMBER}\\s?(?:[$€£₪¥]|USD|EUR|GBP|ILS|NIS|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS)\\s?${NUMBER})`, "gi");
   const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
   const moneyIn = (text) => {
-    const found = String(text).match(MONEY);
+    const value = String(text);
+    if (value.length > 1000) return "?";
+    const found = value.match(MONEY);
     if (found?.length > 1) return "?";
     return found ? found[0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
   };
