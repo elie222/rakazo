@@ -903,6 +903,39 @@ describePostgres("row-level security (PostgreSQL)", () => {
     expect(counts).toEqual([1, 2, 1]);
   });
 
+  it("repairs vault helper grants when provisioning a runtime role after migration", async () => {
+    await owner.pool.query(`
+      REVOKE EXECUTE ON FUNCTION app_vault_item_unrestricted(text) FROM ${RUNTIME_ROLE};
+      REVOKE EXECUTE ON FUNCTION app_vault_run_unrestricted(text, text) FROM ${RUNTIME_ROLE};
+    `);
+    try {
+      await expect(
+        runAsTenant(
+          a,
+          () => db.$queryRaw`
+        SELECT app_vault_item_unrestricted('missing')
+      `,
+        ),
+      ).rejects.toThrow(/permission denied/);
+      await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+      expect(
+        await runAsTenant(
+          a,
+          () => db.$queryRaw`
+        SELECT app_vault_item_unrestricted('missing') AS item,
+          app_vault_run_unrestricted(${a.userId}, ${a.spaceId}) AS run
+      `,
+        ),
+      ).toEqual([{ item: true, run: true }]);
+      await expect(runAsTenant(a, () => db.vaultCredential.findMany())).resolves.toBeInstanceOf(
+        Array,
+      );
+      await expect(runAsTenant(a, () => db.secret.findMany())).resolves.toBeInstanceOf(Array);
+    } finally {
+      await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+    }
+  });
+
   it("gives the runtime login the job queue, replacing a hand-made policy", async () => {
     const policies = () =>
       owner.prisma.$queryRaw<Array<{ tablename: string; cmd: string; roles: string[] }>>`
