@@ -311,6 +311,7 @@ export function VoiceSettingsOverlay({
         return;
       }
       setApiKey("");
+      if (providerId === providerRef.current) setVoiceId("");
       const drop = (current: VoiceCredential[]) =>
         current.filter((entry) => entry.provider !== providerId);
       setCredentials(drop);
