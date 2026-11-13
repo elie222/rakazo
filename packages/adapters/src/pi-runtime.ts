@@ -101,6 +101,7 @@ import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
+import { toolCallIdsIn, uniqueToolCallIdStream } from "./tool-call-ids.js";
 import type { ComputerModeCheckpoint } from "./turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
@@ -637,14 +638,18 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer",
             );
         }
+        const toolCallIds = toolCallIdsIn(history as Message[]);
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
           streamFn: (_m, ctx, options) =>
-            fallbackAwareModelStream(
-              fallbackState,
-              ctx,
-              withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
+            uniqueToolCallIdStream(
+              fallbackAwareModelStream(
+                fallbackState,
+                ctx,
+                withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
+              ),
+              toolCallIds,
             ),
           getApiKey:
             hasBackups || computer
