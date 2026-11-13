@@ -136,7 +136,16 @@ vi.mock("./api", () => ({
       mocks.savedMaxTokens = saved.maxTokens ?? undefined;
       if (saved.accountId) mocks.savedAccountId = saved.accountId;
       if (saved.gatewayId) mocks.savedGatewayId = saved.gatewayId;
-      return { id: CREDENTIAL_ID };
+      return {
+        id: CREDENTIAL_ID,
+        provider: cloudflare?.provider ?? "openrouter",
+        label: cloudflare?.providerName ?? "OpenRouter",
+        maxTokens: mocks.savedMaxTokens,
+        accountId: mocks.savedAccountId,
+        gatewayId: mocks.savedGatewayId,
+        modelId: "vendor/model-1",
+        hasKey: true,
+      };
     }
     if (procedure === "models/beginOAuth")
       return {

@@ -24,15 +24,20 @@ export const KO_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "본인임을 확인하려면 Rakazo에서 이 코드를 입력하세요:",
   "Welcome to Rakazo": "Rakazo에 오신 것을 환영합니다",
-  "Thanks for signing up for Rakazo.": "Rakazo에 가입해 주셔서 감사합니다.",
-  "Rakazo also has apps for": "Rakazo는 다음 플랫폼용 앱도 제공합니다:",
-  "Questions or ideas?": "질문이나 아이디어가 있으신가요?",
-  "Join us on Discord": "Discord에 참여하세요",
-  "Rakazo is open source. If you like it,": "Rakazo는 오픈 소스입니다. 마음에 드신다면",
-  "a star on GitHub": "GitHub 스타",
-  "helps others find it.": "하나가 다른 사람들이 Rakazo를 찾는 데 도움이 됩니다.",
-  "Want to run it on your own servers?": "직접 서버에서 운영하고 싶으신가요?",
-  "Self-host Rakazo": "Rakazo 셀프 호스팅",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Rakazo에 오신 것을 환영합니다. Rakazo를 가장 잘 활용하는 사람들은 세 가지를 합니다.",
+  "Get the apps": "앱 받기",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo는 {platforms}에서 실행되므로 봇이 어디서든 연락할 수 있습니다.",
+  "Join the community": "커뮤니티 참여하기",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "{discord}에서 다른 사람들이 만드는 것을 보고, 빠르게 도움을 받고, 다음에 만들 것을 알려 주세요.",
+  "Star us on GitHub": "GitHub에서 스타 누르기",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo는 오픈 소스입니다. {star}는 더 많은 사람이 Rakazo를 찾는 데 도움이 됩니다.",
+  "A star on GitHub": "GitHub 스타",
+  "Questions? Just reply. I read every one.":
+    "질문이 있으신가요? 답장만 보내 주세요. 모두 읽습니다.",
   "Have any questions? Reply to this email.": "궁금한 점이 있으신가요? 이 이메일에 답장하세요.",
   Unsubscribe: "수신 거부",
   "Invite a friend": "친구 초대",
