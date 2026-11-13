@@ -48,6 +48,7 @@ function fixture(status = "queued") {
   const rows = [row];
   const computer = {
     updateMany: vi.fn(async () => ({ count: 1 })),
+    findFirst: vi.fn(async () => null),
     findUniqueOrThrow: vi.fn(async () => row.computer),
   };
   const computerUpdate = {
@@ -749,6 +750,7 @@ function takeoverQueue(
     computer: { ...computerRow, bots: [{ id: "bot-1", name: "Writer" }] },
   };
   const computer = {
+    findFirst: vi.fn(async () => null),
     updateMany: vi.fn(
       async (args?: {
         where?: { controlLeaseId?: unknown };

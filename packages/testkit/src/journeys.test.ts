@@ -3427,6 +3427,30 @@ describeJourneys("required product journeys", () => {
     expect(ended.status).toBe("draft");
   });
 
+  it("18d: stopping the computer mid-teaching ends control and saves the recording", async () => {
+    const cookie = await signup(app, `teach-stop-j-${stamp}@rakazo.test`, "Teach Stop");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Stopper",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    const skill = await rpc<{ id: string }>(app, cookie, "skills/start", {
+      botId: bot.id,
+      goal: "Stop demo",
+    });
+    await rpc(app, cookie, "computer/stop", { botId: bot.id });
+    expect(
+      await prisma.computer.findFirstOrThrow({ where: { bots: { some: { id: bot.id } } } }),
+    ).toMatchObject({ controlHolder: "none", controlLeaseId: null });
+    expect((await prisma.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } })).status).toBe(
+      "draft",
+    );
+  });
+
   it("18c: a stale lease's expiry leaves a recording bound to another lease alone", async () => {
     const cookie = await signup(app, `teach-stale-j-${stamp}@rakazo.test`, "Teach Stale");
     const writer = await rpc<Bot>(app, cookie, "bots/create", {

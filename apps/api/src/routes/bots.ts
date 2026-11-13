@@ -5,6 +5,7 @@ import {
   archiveBot,
   checkpointAndStopComputer,
   defaultVaultItemTitle,
+  endTeachingWithLease,
   forgetBotSecret,
   forgetPageShareSecrets,
   groupsRemovedByDeletingBot,
@@ -721,6 +722,7 @@ export function botsRoutes(ctx: RouterContext) {
               },
             });
             await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");
+            await endTeachingWithLease(deps, context.actor.spaceId, bot.computer.controlLeaseId);
           }
           const updated = await repos.setBotComputer(context.actor, bot.id, input.mode);
           deps.analytics?.capture(context.actor.userId, {

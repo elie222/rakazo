@@ -14,6 +14,7 @@ import {
   controlLeaseExpiresAt,
   diskUsedPercent,
   displayBotWorkspacePath,
+  endTeachingWithLease,
   ensureComputerWorkspaceLayout,
   isComputerScreenUnavailable,
   isSandboxGoneError,
@@ -234,6 +235,7 @@ export function computerRoutes(ctx: RouterContext) {
           });
           if (stopped.count !== 1) return computerStatus(deps, context.actor, input.botId);
           await recordComputerRunEnd(deps.prisma, bot.computer, end);
+          await endTeachingWithLease(deps, context.actor.spaceId, controlLeaseId);
         } catch (error) {
           // A failed save, or a stop the provider put off, leaves the computer up: hand it back
           // to idle sleep and metering instead of hiding it as an error.

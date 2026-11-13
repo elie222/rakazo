@@ -602,6 +602,10 @@ export async function provisionComputer(
     if (activated.count !== 1) {
       throw busy("activation_lost");
     }
+    // A start clears a lapsed lease it found; the recording made under it ends with it.
+    if (!reconnecting && !activeControl) {
+      await endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId);
+    }
     // A computer we believed running that the provider had to resume or replace was stopped
     // or lost at the provider without us.
     await recordComputerRunStart(
@@ -1340,6 +1344,7 @@ export async function replaceComputer(
     });
     if (stopped.count !== 1) throw new ComputerBusyError();
     await recordComputerRunEnd(deps.prisma, existing, "replaced");
+    await endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId);
     return provisionComputer(deps, computerId, context, controlHolder, onProgress);
   } catch (error) {
     const failedState =

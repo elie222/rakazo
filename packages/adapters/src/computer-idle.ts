@@ -28,7 +28,11 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "./coding-agent-activity.js";
-import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
+import {
+  endTeachingWithLease,
+  expireComputerControl,
+  hasActiveComputerControl,
+} from "./computer-control.js";
 import { diskUpdate, measureComputerDisk } from "./computer-disk.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { BrowserStillRunningError } from "./computer-screens.js";
@@ -599,7 +603,10 @@ export async function sleepComputerIfIdle(
           controlBotId: null,
         },
       });
-      if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
+      if (cleared.count === 1) {
+        await recordComputerRunEnd(deps.prisma, computer, "gone");
+        await endTeachingWithLease(deps, computer.spaceId, computer.controlLeaseId);
+      }
       return;
     }
     if (isSandboxDamagedError(error)) {
@@ -711,6 +718,7 @@ export async function sleepComputerIfIdle(
   }
   const reason = allowanceUsed ? "allowance" : limitReached ? "active_limit" : "idle";
   await recordComputerRunEnd(deps.prisma, computer, reason);
+  await endTeachingWithLease(deps, computer.spaceId, computer.controlLeaseId);
   getLogger().info("computer.suspended", {
     "computer.id": computerId,
     provider: computer.kind,
@@ -734,7 +742,12 @@ export async function sleepComputerIfIdle(
  * provider's restore can fail. Returns whether it was marked suspended.
  */
 async function suspendStoppedComputer(
-  deps: { prisma: PrismaClient; sandbox: SandboxProvider; events: ThreadEvents },
+  deps: {
+    prisma: PrismaClient;
+    sandbox: SandboxProvider;
+    events: ThreadEvents;
+    jobs: JobPublisher;
+  },
   computer: NonNullable<Awaited<ReturnType<typeof loadComputer>>>,
   ref: ComputerRef,
   ctx: AdapterContext,
@@ -765,6 +778,7 @@ async function suspendStoppedComputer(
   });
   if (suspended.count !== 1) return false;
   await recordComputerRunEnd(deps.prisma, computer, "gone");
+  await endTeachingWithLease(deps, computer.spaceId, computer.controlLeaseId);
   getLogger().info("computer.suspended", {
     "computer.id": computer.id,
     provider: computer.kind,

@@ -8,7 +8,7 @@ import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { spaceTakesWork } from "@rakazo/db";
+import { draftRecordingsOfLeaseInTransaction, spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { endTeachingWithLease, revokeScreenControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -400,7 +400,7 @@ async function abandonRevokedHandback(
 ) {
   try {
     await prisma.$transaction(async (tx) => {
-      await clearRevokedTakeover(tx.computer, computerId, updateId, handback.botId);
+      await clearRevokedTakeover(tx, computerId, updateId, handback.botId);
       await tx.computerUpdate.deleteMany({
         where: { id: updateId, status: { in: [...PENDING_HANDBACK_STATUSES] } },
       });
@@ -413,25 +413,30 @@ async function abandonRevokedHandback(
         data: { status: "dismissed" },
       })
       .catch(() => undefined);
-    await clearRevokedTakeover(prisma.computer, computerId, updateId, handback.botId).catch(
-      () => undefined,
-    );
+    await prisma
+      .$transaction((tx) => clearRevokedTakeover(tx, computerId, updateId, handback.botId))
+      .catch(() => undefined);
   }
 }
 
 async function clearRevokedTakeover(
-  computer: PrismaClient["computer"],
+  tx: Prisma.TransactionClient,
   computerId: string,
   updateId: string,
   botId: string,
 ) {
-  const cleared = await computer.updateMany({
-    where: {
-      id: computerId,
-      maintenanceId: updateId,
-      controlHolder: "none",
-      controlBotId: botId,
-    },
+  const where = {
+    id: computerId,
+    maintenanceId: updateId,
+    controlHolder: "none",
+    controlBotId: botId,
+  };
+  const held = await tx.computer.findFirst({
+    where,
+    select: { spaceId: true, controlLeaseId: true },
+  });
+  const cleared = await tx.computer.updateMany({
+    where,
     data: {
       maintenanceId: null,
       controlHolder: "none",
@@ -441,8 +446,17 @@ async function clearRevokedTakeover(
       controlBotId: null,
     },
   });
-  if (cleared.count === 1) return;
-  await computer.updateMany({
+  if (cleared.count === 1) {
+    // The lease is gone, so the teaching recording made under it ends with it.
+    if (held?.controlLeaseId) {
+      await draftRecordingsOfLeaseInTransaction(tx, {
+        spaceId: held.spaceId,
+        leaseId: held.controlLeaseId,
+      });
+    }
+    return;
+  }
+  await tx.computer.updateMany({
     where: { id: computerId, maintenanceId: updateId },
     data: { maintenanceId: null },
   });
@@ -620,7 +634,7 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
         if (status === "revoked") {
           // The provider release returned. Clear the lease with the holder so a later
           // takeover grants a new lease.
-          await clearRevokedTakeover(tx.computer, update.computerId, update.id, update.botId);
+          await clearRevokedTakeover(tx, update.computerId, update.id, update.botId);
           return;
         }
         // The provider release has not returned, so control can still belong to the user.
