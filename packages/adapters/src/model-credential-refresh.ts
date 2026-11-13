@@ -333,25 +333,27 @@ export async function updateStoredModelSecret(
   update: (secret: StoredModelSecret) => StoredModelSecret | null,
 ): Promise<boolean> {
   return withModelCredentialLock(secretId, () =>
-    withRefreshLock(
-      prisma,
-      (tx) => lockModelCredential(tx, secretId),
-      async (tx) => {
-        const row = await tx.secret.findFirst({
-          where: { id: secretId, userId: scope.userId, spaceId: null },
-          select: { ciphertext: true },
-        });
-        if (!row) return false;
-        const next = update(parseModelSecret(await secretStore.load(row.ciphertext, secretId)));
-        if (next)
-          await persistStoredModelSecret(
-            tx,
-            secretStore,
-            scope,
-            secretId,
-          )(serializeModelSecret(next));
-        return true;
-      },
+    holdSecretNotifications(() =>
+      withRefreshLock(
+        prisma,
+        (tx) => lockModelCredential(tx, secretId),
+        async (tx) => {
+          const row = await tx.secret.findFirst({
+            where: { id: secretId, userId: scope.userId, spaceId: null },
+            select: { ciphertext: true },
+          });
+          if (!row) return false;
+          const next = update(parseModelSecret(await secretStore.load(row.ciphertext, secretId)));
+          if (next)
+            await persistStoredModelSecret(
+              tx,
+              secretStore,
+              scope,
+              secretId,
+            )(serializeModelSecret(next));
+          return true;
+        },
+      ),
     ),
   );
 }
