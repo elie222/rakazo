@@ -340,6 +340,35 @@ describe("purchase detection in the page helper", () => {
     expect(none.intent("Pay now")?.amount).toBe("");
   });
 
+  it.each([
+    "$100, fee .99 USD",
+    `$${"0".repeat(40)}1, total $100`,
+    "\n.99 USD $100",
+    `.99 USD ${"x".repeat(220)} $100`,
+    ".".repeat(10000),
+  ])("refuses an ambiguous total: %s", (total) => {
+    const checkout = page(`<p>Total: ${total}</p><button>Pay now</button>`);
+    expect(checkout.intent("Pay now")?.amount).toBe("?");
+  });
+
+  it.each(["Pay $.99 now; $100 due on click", "Pay $100"])(
+    "refuses conflicting prices in button descriptions: %s",
+    (title) => {
+      const checkout = page(`<button title="${title}">Pay $.99</button>`);
+      expect(checkout.intent(title)?.amount).toBe("?");
+    },
+  );
+
+  it("keeps the separator of an amount with no whole part", () => {
+    expect(page(`<button>Pay $.99</button>`).intent("Pay $.99")?.amount).toBe("$.99");
+    const after = page(`<p>Total: .99 USD</p><button>Pay now</button>`);
+    expect(after.intent("Pay now")?.amount).toBe(".99 USD");
+    const comma = page(`<p>Total: ,50 €</p><button>Pay now</button>`);
+    expect(comma.intent("Pay now")?.amount).toBe(",50 €");
+    const before = page(`<p>Total: €,50</p><button>Pay now</button>`);
+    expect(before.intent("Pay now")?.amount).toBe("€,50");
+  });
+
   it("flags a script-driven control worded as a final step on a page with no card", () => {
     const { intent } = page(`<div onclick="charge()">Pay $5</div>`);
     expect(intent("Pay $5")?.reason).toBe("final_step");
