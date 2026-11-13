@@ -25,7 +25,7 @@ import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
-import { emptyTrial, redact, withoutSecrets } from "./report.js";
+import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
 import { EvalServices } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
 import { SilenceObserver } from "./silence-observer.js";
@@ -1078,7 +1078,7 @@ export async function runTrial(
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
     // Kept so a new rubric can grade the trial again without running the bot.
-    if (scenario.judge || scenario.observe) result.evidence = withoutSecrets(evidence, secrets);
+    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
     const grading = { judge: options.judge, deadline, secrets };
     await judgeOutcome(scenario, evidence, result, grading);
     result.status =

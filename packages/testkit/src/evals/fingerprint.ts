@@ -4,10 +4,10 @@ import type { EvalCase } from "./cases.js";
 
 /**
  * What changes between two trials of an unchanged case without changing what the model is asked:
- * record ids, the clock (and dates written relative to it), and loopback ports. Ids become numbered
+ * record ids, loopback ports, and the clock with dates written relative to it. Ids become numbered
  * placeholders in order of appearance, so two different ids in one request stay distinct.
  */
-const VOLATILE: Array<[RegExp, string | null]> = [
+const IDS: Array<[RegExp, string | null]> = [
   [/\bc[a-z0-9]{24}\b/g, null],
   [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, null],
   [/\b(?:127\.0\.0\.1|localhost):\d+/g, "<loopback>"],
@@ -16,6 +16,13 @@ const VOLATILE: Array<[RegExp, string | null]> = [
     "<date>",
   ],
   [/\b\d{4}\/\d{2}\/\d{2}\b/g, "<date>"],
+];
+/**
+ * Also written relative to the clock in a request (its current date line, relative fixture dates),
+ * but a case's own data keeps them: a deadline moved from Friday to Tuesday is a new case.
+ */
+const CLOCK: Array<[RegExp, string | null]> = [
+  ...IDS,
   [
     /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? {1,2}\d{1,2}(?:, \d{4})?\b/g,
     "<date>",
@@ -24,56 +31,45 @@ const VOLATILE: Array<[RegExp, string | null]> = [
 ];
 
 /**
- * A model request body as sent, reduced to what drives the reply: keys sorted, and the volatile
- * values above replaced. Non-JSON bodies are kept as they are.
+ * JSON with keys sorted and every string normalized by `patterns`, so equal content hashes equal.
+ * A string that is not JSON is normalized as text.
  */
-export function canonicalModelRequest(body: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return normalize(body, new Map());
-  }
+function canonical(value: unknown, patterns = CLOCK): string {
   const ids = new Map<string, string>();
-  const walk = (value: unknown): unknown => {
-    if (typeof value === "string") return normalize(value, ids);
-    if (Array.isArray(value)) return value.map(walk);
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.keys(value)
-          .sort()
-          .map((key) => [key, walk((value as Record<string, unknown>)[key])]),
-      );
-    return value;
+  const text = (input: string) => {
+    let out = input;
+    for (const [pattern, replacement] of patterns)
+      out = out.replace(pattern, (match) => {
+        if (replacement !== null) return replacement;
+        if (!ids.has(match)) ids.set(match, `<id${ids.size + 1}>`);
+        return ids.get(match)!;
+      });
+    return out;
   };
-  return JSON.stringify(walk(parsed));
+  const walk = (v: unknown): unknown => {
+    if (typeof v === "string") return text(v);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object")
+      return Object.fromEntries(
+        Object.keys(v)
+          .sort()
+          .map((key) => [key, walk((v as Record<string, unknown>)[key])]),
+      );
+    return v;
+  };
+  return JSON.stringify(walk(value));
 }
 
-function normalize(text: string, ids: Map<string, string>) {
-  let out = text;
-  for (const [pattern, replacement] of VOLATILE)
-    out = out.replace(pattern, (match) => {
-      if (replacement !== null) return replacement;
-      if (!ids.has(match)) ids.set(match, `<id${ids.size + 1}>`);
-      return ids.get(match)!;
-    });
-  return out;
+/** A model request body as sent, reduced to what drives the reply. */
+export function canonicalModelRequest(body: string): string {
+  try {
+    return canonical(JSON.parse(body));
+  } catch {
+    return canonical(body);
+  }
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
-
-/** Sorted-key JSON, so the same settings always hash the same. */
-function stable(value: unknown): string {
-  return JSON.stringify(value, (_, v) =>
-    v && typeof v === "object" && !Array.isArray(v)
-      ? Object.fromEntries(
-          Object.keys(v)
-            .sort()
-            .map((k) => [k, v[k]]),
-        )
-      : v,
-  );
-}
 
 /** Connection settings that shape replies; the key, label and save options do not. */
 export function modelSettings(connection: ModelConnectInput) {
@@ -103,17 +99,20 @@ export function caseFingerprint(input: {
   maxToolCalls: number;
 }): string {
   return sha256(
-    stable({
-      v: 1,
-      request: canonicalModelRequest(input.request),
-      model: modelSettings(input.connection),
-      caseVersion: input.caseVersion,
-      // Functions drop out; the steps, files and scripts a case feeds the bot later stay.
-      caseData: canonicalModelRequest(JSON.stringify(input.scenario)),
-      strategy: input.strategy,
-      replyMode: input.replyMode,
-      maxToolCalls: input.maxToolCalls,
-    }),
+    canonical(
+      {
+        v: 1,
+        request: canonicalModelRequest(input.request),
+        model: modelSettings(input.connection),
+        caseVersion: input.caseVersion,
+        // Functions drop out; the steps, files and scripts a case feeds the bot later stay.
+        caseData: JSON.parse(JSON.stringify(input.scenario)),
+        strategy: input.strategy,
+        replyMode: input.replyMode,
+        maxToolCalls: input.maxToolCalls,
+      },
+      IDS,
+    ),
   );
 }
 
@@ -140,11 +139,21 @@ export function firstRequestFetch(
   upstream: typeof fetch,
   modelId: string,
   onFirst: (body: string) => boolean,
+  scenario?: EvalCase,
 ): typeof fetch {
+  // A new bot's intro run can race the case's first turn; only a request carrying that turn counts.
+  const first = scenario?.steps[0];
+  const turn = first && ("ask" in first ? first.ask : "slack" in first ? first.slack : null);
+  const marker = turn ? JSON.stringify(turn).slice(1, -1) : null;
   let seen = false;
   let open = true;
   return (input, init) => {
-    if (!seen && typeof init?.body === "string" && isFor(input, init.body, modelId)) {
+    if (
+      !seen &&
+      typeof init?.body === "string" &&
+      isFor(input, init.body, modelId) &&
+      (!marker || init.body.includes(marker))
+    ) {
       seen = true;
       open = onFirst(init.body);
     }

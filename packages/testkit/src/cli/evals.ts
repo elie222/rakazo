@@ -648,7 +648,7 @@ async function main() {
       trial: number,
       scenario: EvalCase,
     ): Promise<TrialResult> => {
-      const source = plan.trials[trial - 1]!;
+      const source = plan.trials.find((t) => t.trial === trial)!;
       const origin = {
         kind: plan.kind === "reuse" ? ("reused" as const) : ("regraded" as const),
         fingerprint: plan.from.fingerprint,
@@ -688,7 +688,9 @@ async function main() {
       const known = plans.get(key);
       // Set when this trial's first request matches a stored run: the run stops before it is sent.
       const stored: { plan?: StoredPlan } =
-        known && known.kind !== "run" && known.trials[planned.trial - 1] ? { plan: known } : {};
+        known && known.kind !== "run" && known.trials.some((t) => t.trial === planned.trial)
+          ? { plan: known }
+          : {};
       const modelFetch = firstRequestFetch(
         observeWire
           ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
@@ -719,10 +721,12 @@ async function main() {
                 })
               : { kind: "run" };
           plans.set(key, plan);
-          if (plan.kind === "run" || !plan.trials[planned.trial - 1]) return true;
+          if (plan.kind === "run" || !plan.trials.some((t) => t.trial === planned.trial))
+            return true;
           stored.plan = plan;
           return false;
         },
+        scenario,
       );
       if (!stored.plan) {
         const ran = {

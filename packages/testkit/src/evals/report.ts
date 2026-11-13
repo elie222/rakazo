@@ -168,13 +168,26 @@ export function redact(text: string, secrets: readonly string[] = []): string {
     );
 }
 
-/** A JSON copy with configured secrets removed from every string, like the tool-calls artifact. */
-export function withoutSecrets(value: unknown, secrets: readonly string[]): unknown {
-  const sorted = secrets.filter(Boolean).sort((a, b) => b.length - a.length);
+/**
+ * What a trial was graded on, as JSON redacted like its artifacts. Maps and Sets (an app's drafts)
+ * are tagged so `restoreEvidence` gives judges the same shapes back.
+ */
+export function evidenceSnapshot(value: unknown, secrets: readonly string[]): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_, v) =>
+      v instanceof Map ? { $map: [...v] } : v instanceof Set ? { $set: [...v] } : v,
+    ),
+    (_, v) => (typeof v === "string" ? redact(v, secrets) : v),
+  );
+}
+
+export function restoreEvidence(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value), (_, v) =>
-    typeof v === "string"
-      ? sorted.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), v)
-      : v,
+    v && typeof v === "object" && Array.isArray(v.$map)
+      ? new Map(v.$map)
+      : v && typeof v === "object" && Array.isArray(v.$set)
+        ? new Set(v.$set)
+        : v,
   );
 }
 

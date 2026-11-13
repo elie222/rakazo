@@ -115,14 +115,12 @@ export class RunStore {
     if (legacy && this.entries().some((entry) => entry.fingerprint === fingerprint))
       throw new Error("This report is already in the store");
     mkdirSync(path.join(this.dir, fingerprint), { recursive: true });
+    // A rerun or a regrade of the same fingerprint sits beside the first; nothing is overwritten.
+    const stamp = report.startedAt.replace(/[^0-9TZ]/g, "");
     let relative = path.join(fingerprint, "report.json.gz");
-    // A rerun or a regrade of the same fingerprint sits beside the first.
-    if (existsSync(path.join(this.dir, relative)))
-      relative = path.join(
-        fingerprint,
-        `report-${report.startedAt.replace(/[^0-9TZ]/g, "")}.json.gz`,
-      );
-    writeFileSync(path.join(this.dir, relative), gzipSync(json), { mode: 0o600 });
+    for (let n = 1; existsSync(path.join(this.dir, relative)); n++)
+      relative = path.join(fingerprint, `report-${stamp}${n > 1 ? `-${n}` : ""}.json.gz`);
+    writeFileSync(path.join(this.dir, relative), gzipSync(json), { mode: 0o600, flag: "wx" });
     const attempted = report.trials.filter((t) => t.status !== "not-run");
     const origin = (kind?: string) => report.trials.filter((t) => t.origin?.kind === kind).length;
     const entry: RunIndexEntry = {
@@ -167,7 +165,8 @@ export class RunStore {
   /**
    * How to get a case's trials: from a stored run with the same fingerprint (as they are under the
    * same judge, regraded under another), or by running it. Prefers a run with enough trials, then
-   * one under the current judge, then the newest. Missing trials beyond the stored ones still run.
+   * one under the current judge, then the newest. Trials keep their numbers; a planned trial with no
+   * usable stored trial of that number still runs.
    */
   plan(input: {
     scenario: EvalCase;

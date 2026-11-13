@@ -1,7 +1,7 @@
 import type { EvalCase, Evidence } from "./cases.js";
 import type { EvalJudge } from "./judge.js";
 import type { FailureCategory, TrialResult } from "./report.js";
-import { redact } from "./report.js";
+import { redact, restoreEvidence } from "./report.js";
 
 export class EvalFailure extends Error {
   constructor(
@@ -102,7 +102,7 @@ export async function regradeTrial(
 ): Promise<TrialResult> {
   const result = structuredClone(stored);
   if (!stored.criteria.length || !stored.evidence) return result;
-  const evidence = stored.evidence as Evidence;
+  const evidence = restoreEvidence(stored.evidence) as Evidence;
   const grading = { judge, deadline: Date.now() + timeoutMs, secrets: [] };
   result.criteria = stored.criteria.filter((c) => c.id !== "semantic-outcome");
   delete result.judgment;

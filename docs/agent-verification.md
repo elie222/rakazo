@@ -252,9 +252,11 @@ the summary say what was reused or regraded, and `workflowTotals` counts only
 new spend. Reports imported with `--import <report.json>` from before
 fingerprints are listed as legacy and never reused.
 
-The fingerprint sees what the model is asked first, not what tools return
-later: when only a tool's output or a fake service's behaviour changes, bump the
-case's fixture version or use `--fresh`.
+The fingerprint sees what the model is asked first and the case's data, not
+code: when only a tool's output, a fake service's behaviour or a case's
+deterministic checks change, bump the case's fixture version or use `--fresh`.
+A case whose data states a date relative to the day it runs gets a new
+fingerprint each day.
 
 The September 2026 Luna/OpenRouter baseline passed all 15 cases over three
 trials each (45/45) after correcting the harness. The initial run passed 41/45:

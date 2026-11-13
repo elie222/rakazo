@@ -14,7 +14,7 @@ import {
 import { regradeTrial } from "./grading.js";
 import type { EvalJudge } from "./judge.js";
 import type { TrialResult } from "./report.js";
-import { emptyTrial } from "./report.js";
+import { emptyTrial, evidenceSnapshot } from "./report.js";
 import type { StoredReport } from "./run-store.js";
 import { judgeIdentity, RunStore } from "./run-store.js";
 
@@ -81,6 +81,11 @@ describe("run fingerprint", () => {
       fingerprint({ connection: { ...connection, maxTokens: 1024 } }),
       fingerprint({ caseVersion: "recall-v2" }),
       fingerprint({ scenario: { ...scenario, steps: [...scenario.steps, { ask: "And rent?" }] } }),
+      // A weekday the case itself states is part of the case, unlike the request's clock.
+      fingerprint({ scenario: { ...scenario, steps: [{ ask: "Remind me on Tuesday" }] } }) ===
+      fingerprint({ scenario: { ...scenario, steps: [{ ask: "Remind me on Friday" }] } })
+        ? base
+        : "differs",
       fingerprint({ strategy: "retrieval" }),
       fingerprint({ replyMode: "messages" }),
       fingerprint({ maxToolCalls: 8 }),
@@ -111,9 +116,23 @@ describe("run fingerprint", () => {
     expect(seen).toHaveLength(1);
     expect(upstream).toHaveBeenCalledTimes(1);
 
+    // With a case, a request that does not carry its first turn (a new bot's intro) is passed by.
+    const onFirst = vi.fn(() => true);
+    const caseFetch = firstRequestFetch(upstream, "fixture-model", onFirst, scenario);
+    await caseFetch("http://model.test/v1", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "fixture-model",
+        messages: [{ content: "Introduce yourself" }],
+      }),
+    });
+    expect(onFirst).not.toHaveBeenCalled();
+    await caseFetch("http://model.test/v1", { method: "POST", body: request("c1", "2026-11-13") });
+    expect(onFirst).toHaveBeenCalledTimes(1);
+
     const pass = firstRequestFetch(upstream, "fixture-model", () => true);
     await pass("http://model.test/v1", { method: "POST", body: request("c1", "2026-11-13") });
-    expect(upstream).toHaveBeenCalledTimes(2);
+    expect(upstream).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -185,10 +204,13 @@ describe("run store", () => {
       costUsd: { new: 0.03, trials: 0.02 },
       cases: { "lease/current": "f1" },
     });
-    const again = s.save(report([trial(1)], { startedAt: "2026-11-14T00:00:00.000Z" }));
-    expect(again.path).not.toBe(first.path);
-    expect(readdirSync(path.join(dir, "f1".padStart(64, "0")))).toHaveLength(2);
-    expect(s.entries()).toHaveLength(2);
+    // Reruns of one fingerprint, even with the same start time, sit beside each other.
+    const again = s.save(report([trial(1)]));
+    const third = s.save(report([trial(1)]));
+    expect(new Set([first.path, again.path, third.path]).size).toBe(3);
+    expect(readdirSync(path.join(dir, "f1".padStart(64, "0")))).toHaveLength(3);
+    expect(s.entries()).toHaveLength(3);
+    expect(s.read(third).trials).toHaveLength(1);
     expect(s.read(first).trials).toHaveLength(2);
   });
 
@@ -227,6 +249,12 @@ describe("run store", () => {
     // A trial that failed before grading needs no evidence: no judge ever saw it.
     s.save(report([trial(1, { status: "failed", category: "agent", criteria: [] })]));
     expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 1 }] });
+  });
+
+  it("keeps stored trial numbers when an earlier trial is not usable", () => {
+    const s = store();
+    s.save(report([trial(1, { status: "failed", category: "provider" }), trial(2)]));
+    expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 2 }] });
   });
 
   it("prefers the stored run with more trials", () => {
@@ -275,6 +303,27 @@ describe("regrading a stored trial", () => {
     const early = trial(2, { status: "failed", category: "product", criteria: [], reason: "x" });
     expect(await regradeTrial(scenario, early, judge, 1000)).toEqual(early);
     expect(judge).not.toHaveBeenCalled();
+  });
+
+  it("gives judges back the maps a stored trial was graded on", async () => {
+    const mapped: EvalCase = {
+      ...scenario,
+      judge: (e) => ({
+        rubric: "Drafted",
+        evidence: [...(e.apps!.mail as unknown as { drafts: Map<string, string> }).drafts.values()],
+      }),
+    };
+    const live = {
+      ...evidence("done"),
+      apps: { mail: { drafts: new Map([["d1", "Hi https://private.test/x"]]) } },
+    };
+    const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "ok" }));
+    await regradeTrial(mapped, trial(1, { evidence: evidenceSnapshot(live, []) }), judge, 1000);
+    // Stored like the artifacts: redacted, then graded from the same shapes.
+    expect(judge).toHaveBeenCalledWith(
+      { rubric: "Drafted", evidence: ["Hi [url]"] },
+      expect.anything(),
+    );
   });
 
   it("leaves the trial incomplete when the judge fails", async () => {
