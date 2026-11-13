@@ -1388,11 +1388,11 @@ msgstr "此供應商儲存的是 API 金鑰，不是訂閱登入。"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "An external memory service for storing and recalling context across chats."
-msgstr ""
+msgstr "外部記憶服務，用於在各個聊天之間儲存與回想脈絡。"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An HTTPS endpoint"
-msgstr ""
+msgstr "HTTPS 端點"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -2904,7 +2904,7 @@ msgstr "對話"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "為了儲存與回想脈絡，會傳送對話、名稱、記憶、搜尋內容，以及機器人和空間 ID。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -4882,7 +4882,7 @@ msgstr "測試前請輸入 API 金鑰。"
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Enter an HTTPS URL"
-msgstr ""
+msgstr "請輸入 HTTPS URL"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5115,7 +5115,7 @@ msgstr "失敗處理"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
-msgstr ""
+msgstr "要比較的欄位（選填）"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5607,7 +5607,7 @@ msgstr "http://127.0.0.1:8000/v1"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "HTTPS URL"
-msgstr ""
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5945,7 +5945,7 @@ msgstr "稍後"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Learn from conversations"
-msgstr ""
+msgstr "從對話中學習"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7754,7 +7754,7 @@ msgstr "外掛"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
-msgstr ""
+msgstr "檢查未發現變化時發送一則聊天訊息。例行任務不會執行。"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7940,15 +7940,15 @@ msgstr "回想與寫入"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall automatically"
-msgstr ""
+msgstr "自動回想"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall depth"
-msgstr ""
+msgstr "回想深度"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall from banks"
-msgstr ""
+msgstr "從記憶庫回想"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -8354,7 +8354,7 @@ msgstr "正在回覆 {0}"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
-msgstr ""
+msgstr "回報無變化的檢查"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -9375,7 +9375,7 @@ msgstr "跳過或使用部署金鑰"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Skip unrelated memories"
-msgstr ""
+msgstr "略過無關記憶"
 
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
@@ -9712,11 +9712,11 @@ msgstr "需要訂閱"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries"
-msgstr ""
+msgstr "摘要"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries and facts"
-msgstr ""
+msgstr "摘要與事實"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -11064,7 +11064,7 @@ msgstr "這個機器人是做什麼的"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "What to recall"
-msgstr ""
+msgstr "回想內容"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11303,7 +11303,7 @@ msgstr "今天將從你的卡片扣除按比例計算的差額。"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card was not charged"
-msgstr ""
+msgstr "你的卡片未被扣款"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

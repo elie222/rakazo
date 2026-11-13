@@ -1387,11 +1387,11 @@ msgstr "Há uma chave de API armazenada para este provedor, não um login de ass
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "An external memory service for storing and recalling context across chats."
-msgstr ""
+msgstr "Um serviço de memória externo para armazenar e recuperar contexto entre chats."
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An HTTPS endpoint"
-msgstr ""
+msgstr "Um endpoint HTTPS"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -2903,7 +2903,7 @@ msgstr "Conversas"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "Conversas, nomes, memórias, pesquisas e IDs de bots e Espaços são enviados para armazenar e recuperar contexto."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -4881,7 +4881,7 @@ msgstr "Informe uma chave de API antes de testar."
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Enter an HTTPS URL"
-msgstr ""
+msgstr "Digite uma URL HTTPS"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5114,7 +5114,7 @@ msgstr "Tratamento de falhas"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
-msgstr ""
+msgstr "Campos para comparar (opcional)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5606,7 +5606,7 @@ msgstr "http://127.0.0.1:8000/v1"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "HTTPS URL"
-msgstr ""
+msgstr "URL HTTPS"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5944,7 +5944,7 @@ msgstr "Mais tarde"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Learn from conversations"
-msgstr ""
+msgstr "Aprender com as conversas"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7753,7 +7753,7 @@ msgstr "Plugins"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
-msgstr ""
+msgstr "Publica uma mensagem no chat quando uma verificação não encontra alterações. A rotina não será executada."
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7939,15 +7939,15 @@ msgstr "Recuperar e escrever"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall automatically"
-msgstr ""
+msgstr "Recuperar automaticamente"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall depth"
-msgstr ""
+msgstr "Profundidade da recuperação"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall from banks"
-msgstr ""
+msgstr "Recuperar dos bancos"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -8353,7 +8353,7 @@ msgstr "Respondendo a {0}"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
-msgstr ""
+msgstr "Informar verificações sem alterações"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -9374,7 +9374,7 @@ msgstr "Ignorar ou implantar chave"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Skip unrelated memories"
-msgstr ""
+msgstr "Ignorar memórias não relacionadas"
 
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
@@ -9711,11 +9711,11 @@ msgstr "Assinatura necessária"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries"
-msgstr ""
+msgstr "Resumos"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries and facts"
-msgstr ""
+msgstr "Resumos e fatos"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -11063,7 +11063,7 @@ msgstr "Para que serve este bot"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "What to recall"
-msgstr ""
+msgstr "O que recuperar"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11302,7 +11302,7 @@ msgstr "Seu cartão é cobrado hoje pela diferença proporcional."
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card was not charged"
-msgstr ""
+msgstr "Seu cartão não foi cobrado"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

@@ -1387,11 +1387,11 @@ msgstr "Bu sağlayıcı için abonelik girişi değil, bir API anahtarı saklan�
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "An external memory service for storing and recalling context across chats."
-msgstr ""
+msgstr "Sohbetler arasında bağlamı saklamak ve hatırlamak için harici bir hafıza hizmeti."
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An HTTPS endpoint"
-msgstr ""
+msgstr "Bir HTTPS uç noktası"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -2903,7 +2903,7 @@ msgstr "Sohbetler"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "Bağlamı saklamak ve hatırlamak için sohbetler, adlar, hafıza kayıtları, aramalar ile bot ve Alan kimlikleri gönderilir."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -4881,7 +4881,7 @@ msgstr "Test etmeden önce bir API anahtarı gir."
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Enter an HTTPS URL"
-msgstr ""
+msgstr "Bir HTTPS URL'si gir"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5114,7 +5114,7 @@ msgstr "Hata yönetimi"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
-msgstr ""
+msgstr "Karşılaştırılacak alanlar (isteğe bağlı)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5606,7 +5606,7 @@ msgstr "http://127.0.0.1:8000/v1"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "HTTPS URL"
-msgstr ""
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5944,7 +5944,7 @@ msgstr "Daha sonra"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Learn from conversations"
-msgstr ""
+msgstr "Sohbetlerden öğren"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7753,7 +7753,7 @@ msgstr "Eklentiler"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
-msgstr ""
+msgstr "Bir kontrol değişiklik bulmadığında sohbete mesaj gönder. Rutin çalışmaz."
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7939,15 +7939,15 @@ msgstr "Hatırla ve yaz"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall automatically"
-msgstr ""
+msgstr "Otomatik hatırla"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall depth"
-msgstr ""
+msgstr "Hatırlama derinliği"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall from banks"
-msgstr ""
+msgstr "Hatırlanacak bankalar"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -8353,7 +8353,7 @@ msgstr "{0} kişisine yanıt veriliyor"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
-msgstr ""
+msgstr "Değişiklik olmayan kontrolleri bildir"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -9374,7 +9374,7 @@ msgstr "Atla veya dağıtım anahtarı kullan"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Skip unrelated memories"
-msgstr ""
+msgstr "İlgisiz hafıza kayıtlarını atla"
 
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
@@ -9711,11 +9711,11 @@ msgstr "Abonelik gerekli"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries"
-msgstr ""
+msgstr "Özetler"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries and facts"
-msgstr ""
+msgstr "Özetler ve bilgiler"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -11063,7 +11063,7 @@ msgstr "Bu botun amacı"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "What to recall"
-msgstr ""
+msgstr "Hatırlanacak içerik"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11302,7 +11302,7 @@ msgstr "Kartınızdan bugün orantılı fark tahsil edilir."
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card was not charged"
-msgstr ""
+msgstr "Kartından ücret alınmadı"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

@@ -1387,11 +1387,11 @@ msgstr "このプロバイダーにはサブスクリプションのログイン
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "An external memory service for storing and recalling context across chats."
-msgstr ""
+msgstr "チャットをまたいでコンテキストを保存・参照する外部のメモリサービスです。"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An HTTPS endpoint"
-msgstr ""
+msgstr "HTTPSエンドポイント"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -2903,7 +2903,7 @@ msgstr "会話"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "コンテキストの保存と参照のために、会話、名前、メモリ、検索内容、ボットとSpaceのIDが送信されます。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -4881,7 +4881,7 @@ msgstr "テストする前にAPIキーを入力してください。"
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Enter an HTTPS URL"
-msgstr ""
+msgstr "HTTPSのURLを入力してください"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5114,7 +5114,7 @@ msgstr "失敗時の対応"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
-msgstr ""
+msgstr "比較するフィールド（任意）"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5606,7 +5606,7 @@ msgstr "http://127.0.0.1:8000/v1"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "HTTPS URL"
-msgstr ""
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5944,7 +5944,7 @@ msgstr "後で"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Learn from conversations"
-msgstr ""
+msgstr "会話から学習"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7753,7 +7753,7 @@ msgstr "プラグイン"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
-msgstr ""
+msgstr "確認で変更が見つからなかったときにチャットメッセージを投稿します。ルーティンは実行されません。"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7939,15 +7939,15 @@ msgstr "参照と書き込み"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall automatically"
-msgstr ""
+msgstr "自動的に参照"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall depth"
-msgstr ""
+msgstr "参照の深さ"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall from banks"
-msgstr ""
+msgstr "参照するバンク"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -8353,7 +8353,7 @@ msgstr "{0}に返信中"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
-msgstr ""
+msgstr "変更なしの確認を報告"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -9374,7 +9374,7 @@ msgstr "スキップまたはデプロイキーを使用"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Skip unrelated memories"
-msgstr ""
+msgstr "無関係なメモリをスキップ"
 
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
@@ -9711,11 +9711,11 @@ msgstr "サブスクリプションが必要です"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries"
-msgstr ""
+msgstr "要約"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries and facts"
-msgstr ""
+msgstr "要約と事実"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -11063,7 +11063,7 @@ msgstr "このボットの用途"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "What to recall"
-msgstr ""
+msgstr "参照する内容"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11302,7 +11302,7 @@ msgstr "日割りの差額が本日カードに請求されます。"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card was not charged"
-msgstr ""
+msgstr "カードへの請求は行われていません"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx

@@ -1387,11 +1387,11 @@ msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonnementsaanme
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "An external memory service for storing and recalling context across chats."
-msgstr ""
+msgstr "Een externe geheugendienst die context over chats heen opslaat en ophaalt."
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "An HTTPS endpoint"
-msgstr ""
+msgstr "Een HTTPS-eindpunt"
 
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -2903,7 +2903,7 @@ msgstr "Gesprekken"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "Gesprekken, namen, herinneringen, zoekopdrachten en bot- en Space-ID's worden verstuurd om context op te slaan en op te halen."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -4881,7 +4881,7 @@ msgstr "Voer een API-sleutel in voordat je test."
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Enter an HTTPS URL"
-msgstr ""
+msgstr "Voer een HTTPS-URL in"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5114,7 +5114,7 @@ msgstr "Foutafhandeling"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
-msgstr ""
+msgstr "Te vergelijken velden (optioneel)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5606,7 +5606,7 @@ msgstr "http://127.0.0.1:8000/v1"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "HTTPS URL"
-msgstr ""
+msgstr "HTTPS-URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5944,7 +5944,7 @@ msgstr "Later"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Learn from conversations"
-msgstr ""
+msgstr "Leren van gesprekken"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
@@ -7753,7 +7753,7 @@ msgstr "Plugins"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
-msgstr ""
+msgstr "Plaats een chatbericht wanneer een controle geen wijzigingen vindt. De routine wordt niet uitgevoerd."
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7939,15 +7939,15 @@ msgstr "Ophalen en schrijven"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall automatically"
-msgstr ""
+msgstr "Automatisch ophalen"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall depth"
-msgstr ""
+msgstr "Ophaaldiepte"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Recall from banks"
-msgstr ""
+msgstr "Ophalen uit banken"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
@@ -8353,7 +8353,7 @@ msgstr "Antwoordt op {0}"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
-msgstr ""
+msgstr "Ongewijzigde controles melden"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -9374,7 +9374,7 @@ msgstr "Overslaan of deploysleutel"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Skip unrelated memories"
-msgstr ""
+msgstr "Niet-gerelateerde herinneringen overslaan"
 
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
@@ -9711,11 +9711,11 @@ msgstr "Abonnement vereist"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries"
-msgstr ""
+msgstr "Samenvattingen"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "Summaries and facts"
-msgstr ""
+msgstr "Samenvattingen en feiten"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -11063,7 +11063,7 @@ msgstr "Waarvoor deze bot is"
 
 #: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 msgid "What to recall"
-msgstr ""
+msgstr "Wat ophalen"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11302,7 +11302,7 @@ msgstr "Je kaart wordt vandaag belast met het naar rato berekende verschil."
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card was not charged"
-msgstr ""
+msgstr "Je kaart is niet belast"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
