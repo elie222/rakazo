@@ -30,6 +30,7 @@ import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
+import { useContentBottomInset } from "../../lib/content-bottom-inset";
 import { cronLabels } from "../../lib/cron";
 import { useUiLocale } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
@@ -132,11 +133,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
+  const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
-  const bottomInset = Math.max(dockHeight, readOnly && !rootAvoidsKeyboard ? insets.bottom : 0);
+  const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);

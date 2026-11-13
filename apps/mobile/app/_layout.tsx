@@ -22,7 +22,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardAvoidingView, KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -594,8 +594,13 @@ function LayoutContent() {
                       />
                     </Stack>
                   </SplitFrame>
-                  <CallCard />
-                  <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    style={{ flexGrow: 0, flexShrink: 1, maxHeight: "50%" }}
+                  >
+                    <CallCard />
+                    <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                  </ScrollView>
                 </KeyboardAvoidingView>
               </CallKeyboardContext.Provider>
               <ComputerUpdateProgress />

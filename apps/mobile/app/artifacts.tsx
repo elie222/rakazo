@@ -3,15 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { artifactTypeLabel } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent, ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
@@ -33,7 +25,7 @@ import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactSummary } from "../lib/artifacts";
 import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
@@ -47,8 +39,8 @@ export default function ArtifactsScreen() {
   const router = useRouter();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
-  const rootOwnsBottom = useContext(CallKeyboardContext);
+  const _insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
 
   const [bots, setBots] = useState<MobileBot[]>([]);
   const { botId } = useLocalSearchParams<{ botId?: string }>();
@@ -269,7 +261,7 @@ export default function ArtifactsScreen() {
   }, [activeBotId, madeByBots, load]);
 
   return (
-    <View style={[styles.screen, { paddingBottom: rootOwnsBottom ? 0 : insets.bottom }]}>
+    <View style={[styles.screen, { paddingBottom: contentBottomInset }]}>
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
           <View>
