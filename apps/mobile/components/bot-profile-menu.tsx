@@ -52,14 +52,18 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
         if (!confirmation) return;
         void confirmDeleteBot(
           { id: botId, name },
-          () => {
+          (affectedGroupIds) => {
             notifyArchivedChatsChanged();
             // The profile may have been popped back to this bot's chat while deleting.
             // Inspect the live route rather than the confirmation's expired screen visit.
             const route = navigation.getCurrentRoute() as
-              | { params?: { botId?: string } }
+              | { params?: { botId?: string; groupId?: string } }
               | undefined;
-            if (route?.params?.botId === botId) leave();
+            if (
+              route?.params?.botId === botId ||
+              (route?.params?.groupId && affectedGroupIds.includes(route.params.groupId))
+            )
+              leave();
           },
           confirmation.current,
           undefined,

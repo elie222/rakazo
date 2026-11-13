@@ -44,18 +44,20 @@ type ListUpdate<T> = Dispatch<SetStateAction<T[]>>;
 
 /** Row actions on inbox chats: read state, pin, archive, delete, organize and sections. */
 export function useInboxChatActions({
+  confirmationActive,
   loadBots,
   setBots,
   setGroups,
   setSpaces,
 }: {
+  confirmationActive?: boolean;
   loadBots: () => Promise<unknown>;
   setBots: ListUpdate<MobileBot>;
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
 }) {
   const { t } = useLingui();
-  const beginDelete = useConfirmationGuard();
+  const beginDelete = useConfirmationGuard(confirmationActive);
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );

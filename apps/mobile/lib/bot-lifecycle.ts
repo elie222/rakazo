@@ -9,7 +9,7 @@ import { errorText } from "./user-error";
 
 export async function confirmDeleteBot(
   bot: { id: string; name: string },
-  onDeleted: () => void,
+  onDeleted: (affectedGroupIds: readonly string[]) => void,
   // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
   current: () => boolean = () => true,
   requestContext?: ApiRequestContext,
@@ -17,6 +17,7 @@ export async function confirmDeleteBot(
 ) {
   // Native alerts cannot update their message: resolve the preview before opening one.
   let groupWarning = "";
+  let affectedGroupIds: string[] = [];
   try {
     const groups = requestContext
       ? await rpc(
@@ -25,6 +26,7 @@ export async function confirmDeleteBot(
           { requestContext, skipSpaceAuthRecovery: true },
         )
       : await rpc("bots/removePreview", { botId: bot.id });
+    affectedGroupIds = groups.map((group) => group.id);
     const names = groups.map((group) => group.name).join(", ");
     if (groups.length === 1) {
       groupWarning = t`The group ${ph({ names })} will be deleted too, including its messages, files, and pages.`;
@@ -53,7 +55,7 @@ export async function confirmDeleteBot(
         await rpc("bots/remove", { botId: bot.id, deleteMemories });
       }
       removeFromSearchInbox(bot.id);
-      onDeleted();
+      onDeleted(affectedGroupIds);
     } catch (error) {
       if (current()) Alert.alert(t`Could not delete bot`, errorText(error, t`Try again.`));
     } finally {

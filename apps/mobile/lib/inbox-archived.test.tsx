@@ -385,6 +385,9 @@ describe("bot profile menu archive notifications", () => {
     [{ name: "thread", params: { botId: "bot-b" } }, true],
     [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
     [{ name: "thread", params: { botId: "other-bot" } }, false],
+    [{ name: "thread", params: { groupId: "removed-group" } }, true],
+    [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
+    [{ name: "thread", params: { groupId: "retained-group" } }, false],
     [{ name: "index" }, false],
     [undefined, false],
   ])(
@@ -393,12 +396,14 @@ describe("bot profile menu archive notifications", () => {
       const { listener, stop } = listenForArchiveChanges();
       const action = renderActions();
       let finish!: () => void;
-      mocks.rpc.mockResolvedValueOnce([]).mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      );
+      mocks.rpc
+        .mockResolvedValueOnce([{ id: "removed-group", name: "Fixture group" }])
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finish = resolve;
+            }),
+        );
       action("Delete…").onPress();
       await flush();
       alertButton(0, "Keep memories").onPress!();

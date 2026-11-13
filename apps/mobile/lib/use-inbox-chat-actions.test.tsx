@@ -15,10 +15,16 @@ import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
 import { useInboxChatActions } from "./use-inbox-chat-actions";
 
-const session = vi.hoisted(() => ({ space: "space-a", generation: 1, alert: vi.fn() }));
+const session = vi.hoisted(() => ({
+  space: "space-a",
+  generation: 1,
+  focused: true,
+  alert: vi.fn(),
+}));
 
 vi.mock("expo-router", () => ({
-  useFocusEffect: (effect: () => () => void) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => () => void) =>
+    useEffect(() => (session.focused ? effect() : undefined), [effect]),
 }));
 vi.mock("react-native", () => ({ Alert: { alert: session.alert } }));
 vi.mock("./api-server", () => ({}));
@@ -56,6 +62,7 @@ let root: Root | undefined;
 const sent = (call: unknown[]) => call.slice(0, 2);
 
 beforeEach(() => {
+  session.focused = true;
   session.space = "space-a";
   session.generation = 1;
   vi.clearAllMocks();
@@ -68,6 +75,7 @@ afterEach(() => {
 
 async function handlers(
   respond: (procedure: string, input: unknown, options?: unknown) => Promise<unknown>,
+  confirmationActive?: boolean,
 ) {
   vi.mocked(rpc).mockImplementation(respond as typeof rpc);
   const lists = {
@@ -87,6 +95,7 @@ async function handlers(
   let actions: Actions | undefined;
   function Harness() {
     actions = useInboxChatActions({
+      confirmationActive,
       loadBots,
       setBots: update("bots"),
       setGroups: update("groups"),
@@ -279,7 +288,7 @@ it.each([
     expect(vi.mocked(confirm).mock.calls[0]![0]).toEqual({ id: "x", name: "Ada" });
     // A chat in the selected space is deleted with the session's own space.
     expect(vi.mocked(confirm).mock.calls[0]![kind === "bot" ? 3 : 2]).toBeUndefined();
-    vi.mocked(confirm).mock.calls[0]![1]!();
+    vi.mocked(confirm).mock.calls[0]![1]!([]);
     expect(h.loadBots).toHaveBeenCalledTimes(1);
   },
 );
@@ -488,4 +497,12 @@ it("guards inbox deletion until dismissed and invalidates it on unmount", async 
   root!.unmount();
   root = undefined;
   expect(second[2]!()).toBe(false);
+});
+
+it("allows delete in a visible embedded inbox without route focus", async () => {
+  session.focused = false;
+  const h = await handlers(async () => [], true);
+  await h.runRowAction("bot", { id: "x", name: "Ada" }, "delete");
+  expect(confirmDeleteBot).toHaveBeenCalledOnce();
+  expect(vi.mocked(confirmDeleteBot).mock.calls[0]![2]!()).toBe(true);
 });
