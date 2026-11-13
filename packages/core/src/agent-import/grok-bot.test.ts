@@ -390,3 +390,12 @@ it("preserves an opening instructions heading in exported rules", () => {
     ]),
   ).toBe("# Instructions for incidents\n\nFollow the runbook");
 });
+
+it("repairs each split document even when an earlier part already parses", () => {
+  const first = JSON.stringify({ bots: [{ name: "Example", instructions: "First" }] });
+  const second = JSON.stringify({ bots: [{ name: "Example", instructions: "Second" }] }).replace(
+    /"/g,
+    "“",
+  );
+  expect(parseGrokBotExport(`${first}\n${second}`)[0]?.instructions).toBe("First\n\nSecond");
+});

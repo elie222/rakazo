@@ -207,7 +207,15 @@ function documentsIn(source: string): Json[] {
     const scan = bracedObjects(version);
     cutOff = scan.cutOff;
     if (cutOff) continue;
-    const documents = scan.found.map(looseJson).filter(isExportDocument);
+    const documents = scan.found
+      .map(
+        (part) =>
+          looseJson(part) ??
+          looseJson(
+            part.replace(/[“”]/g, '"').replace(/(?<![\p{L}\p{N}])[‘’]|[‘’](?![\p{L}\p{N}])/gu, "'"),
+          ),
+      )
+      .filter(isExportDocument);
     if (documents.length > 0) return documents;
   }
   if (cutOff) throw new GrokBotExportError("cut_off");
