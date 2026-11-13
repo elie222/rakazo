@@ -65,8 +65,8 @@ export async function confirmDeleteBot(
   Alert.alert(
     t`Delete ${ph({ name: bot.name })}?`,
     [
-      t`Its conversation, files, and routines will be permanently deleted. What should happen to its memories?`,
       groupWarning,
+      t`Its conversation, files, and routines will be permanently deleted. What should happen to its memories?`,
     ]
       .filter(Boolean)
       .join("\n\n"),

@@ -267,7 +267,7 @@ it("removes deleted bots from an open group picker after deletion completes", as
   await act(async () => root.render(<GroupSettings />));
   rpc.mockImplementation(async (procedure: string) =>
     procedure === "groups/list"
-      ? [group]
+      ? [{ ...group, members: group.members.slice(1) }]
       : procedure === "bots/list"
         ? bots.slice(1)
         : procedure === "bots/listArchived"

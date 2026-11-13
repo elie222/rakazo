@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { rpc, alert, removeFromSearchInbox, captureApiRequestContext } = vi.hoisted(() => ({
@@ -18,6 +19,8 @@ vi.mock("./user-error", () => ({ errorText: () => "Try again." }));
 import { confirmDeleteBot, confirmDeleteGroup, restoreArchivedBot } from "./bot-lifecycle";
 
 beforeEach(() => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.resetAllMocks();
   rpc.mockResolvedValue([]);
   captureApiRequestContext.mockResolvedValue({

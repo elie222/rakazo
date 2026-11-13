@@ -34,18 +34,18 @@ export default function GroupSettingsScreen() {
     async function load() {
       const request = ++generation;
       try {
-        const [groups, nextBots, archivedBots] = await Promise.all([
-          rpc("groups/list"),
-          rpc("bots/list"),
-          rpc("bots/listArchived", {}),
-        ]);
+        const [groups, nextBots] = await Promise.all([rpc("groups/list"), rpc("bots/list")]);
         if (request !== generation) return;
         const nextGroup = groups.find((row) => row.id === groupId);
         if (!nextGroup) throw new Error(t`Group not found`);
-        const ids = new Set([...nextBots, ...archivedBots].map((bot) => bot.id));
+        const ids = new Set([
+          ...nextBots.map((bot) => bot.id),
+          ...nextGroup.members.map((member) => member.botId),
+        ]);
         const previousMembers = new Set(baseline?.members.map((member) => member.botId));
         const initial = baseline === null;
         baseline = nextGroup;
+        setError(null);
         setGroup(nextGroup);
         if (initial) setName(nextGroup.name);
         setSelected((previous) =>
