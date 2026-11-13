@@ -122,6 +122,82 @@ describe("runtime context policy", () => {
     },
   );
 
+  it.each([0, 100])("keeps fitting recent results with %i earlier messages", (historyCount) => {
+    const { request, context } = fixture(historyCount);
+    const bodies = ["first ".repeat(1000), "second ".repeat(1000), "ok"];
+    for (const [index, body] of bodies.entries()) {
+      context.messages.push(
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: `step-${index}`, name: "shell", arguments: {} }],
+          timestamp: 101,
+        } as Message,
+        {
+          role: "toolResult",
+          toolCallId: `step-${index}`,
+          toolName: "shell",
+          content: [{ type: "text", text: body }],
+          isError: false,
+          timestamp: 102,
+        },
+      );
+    }
+    const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+    const prepared = policy.prepareContext(context, { ...model, contextWindow: 20_000 });
+    expect(
+      prepared.messages
+        .filter((message) => message.role === "toolResult")
+        .map((message) => message.content),
+    ).toEqual(bodies.map((text) => [{ type: "text", text }]));
+    expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(20_000 - 4096);
+    if (historyCount) expect(prepared.messages.length).toBeLessThan(context.messages.length);
+  });
+
+  it.each(["retrieval", "snapshots", "cache-aware"] as const)(
+    "shortens recent results rather than discarding active progress under %s",
+    (strategy) => {
+      const { request, context } = fixture(100);
+      const bodies = [
+        "earlier progress",
+        "evidence ".repeat(4000),
+        "more evidence ".repeat(3000),
+        "ok",
+      ];
+      for (const [index, body] of bodies.entries()) {
+        context.messages.push(
+          {
+            role: "assistant",
+            content: [{ type: "toolCall", id: `step-${index}`, name: "shell", arguments: {} }],
+            timestamp: 101,
+          } as Message,
+          {
+            role: "toolResult",
+            toolCallId: `step-${index}`,
+            toolName: "shell",
+            content: [{ type: "text", text: body }],
+            isError: false,
+            timestamp: 102,
+          },
+        );
+      }
+      const policy = createRuntimeContextPolicy({ ...request, contextStrategy: strategy });
+      const prepared = policy.prepareContext(context, { ...model, contextWindow: 12_000 });
+      const results = prepared.messages.filter((message) => message.role === "toolResult");
+      expect(results.map((message) => message.toolCallId)).toEqual(
+        bodies.map((_, index) => `step-${index}`),
+      );
+      expect(results[0]!.content).toEqual([{ type: "text", text: bodies[0] }]);
+      expect(JSON.stringify(results[1]!.content)).toContain(
+        "Earlier result shortened after you read it",
+      );
+      expect(JSON.stringify(results[2]!.content)).toContain(
+        "Earlier result shortened after you read it",
+      );
+      expect(results[3]!.content).toEqual([{ type: "text", text: "ok" }]);
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(12_000 - 4096);
+    },
+  );
+
   it("never restores shortened connector pages on later rebuilds with more room", () => {
     const { request, context } = connectorPages();
     const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
