@@ -23,7 +23,11 @@ export function personalCliAccessCheck(deps: {
     if (await modelCreditBillingEnabled(deps)) return PERSONAL_CLI_BILLING_REFUSAL;
     const people = await runAsSystem("check that Personal CLI access serves one person", () =>
       deps.prisma.user.count({
-        where: { deactivatedAt: null, NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
+        where: {
+          deactivatedAt: null,
+          NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
+          members: { some: { spaceMemberships: { some: {} } } },
+        },
       }),
     );
     return people > 1 ? PERSONAL_CLI_SHARED_REFUSAL : undefined;

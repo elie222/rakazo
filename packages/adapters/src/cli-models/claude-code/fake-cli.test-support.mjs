@@ -1,7 +1,7 @@
 // A stand-in for the `claude` CLI that speaks its stream-json protocol, for offline tests.
 // Usage: node fake-cli.test-support.mjs <scenario> <record file> ...cli args
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const [scenario, recordPath, ...args] = process.argv.slice(2);
@@ -51,6 +51,7 @@ async function inventory() {
 
 /** Answers one stream-json request the way the CLI would, by scenario. */
 async function chat() {
+  writeFileSync(`${recordPath}.spawned`, "");
   const tools = await inventory();
   out({
     type: "system",
@@ -86,7 +87,16 @@ async function chat() {
   const system = readFileSync(args[args.indexOf("--system-prompt-file") + 1], "utf8");
   writeFileSync(
     recordPath,
-    JSON.stringify({ args, env: process.env, cwd: process.cwd(), system, frames, tools }),
+    JSON.stringify({
+      args,
+      env: process.env,
+      cwd: process.cwd(),
+      cwdEntries: readdirSync(process.cwd()),
+      cwdMode: statSync(process.cwd()).mode & 0o777,
+      system,
+      frames,
+      tools,
+    }),
   );
 
   /** Writes a marker if the process is still running later, which it should not be. */
@@ -158,6 +168,7 @@ async function chat() {
       });
       break;
     }
+    case "incomplete-tool":
     case "tool": {
       process.on("SIGTERM", () => {});
       stream({ type: "message_start", message: { id: "msg_2", usage } });
@@ -176,7 +187,7 @@ async function chat() {
         index: 0,
         delta: { type: "input_json_delta", partial_json: '"Taipei"}' },
       });
-      stream({ type: "content_block_stop", index: 0 });
+      if (scenario !== "incomplete-tool") stream({ type: "content_block_stop", index: 0 });
       stream({
         type: "message_delta",
         delta: { stop_reason: "tool_use" },

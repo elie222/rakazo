@@ -6,4 +6,4 @@
 export const CLAUDE_CODE_PROVIDER_ID = "claude-code";
 
 /** What the deployment's host credentials are, for the existing "Uses this server's own …" line. */
-export const CLAUDE_CODE_CREDENTIAL_SOURCE = "Claude Code";
+export const CLAUDE_CODE_CREDENTIAL_SOURCE = "CLI";

@@ -1,4 +1,6 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import type * as FsPromises from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +34,11 @@ import {
   claudeCodeProvider,
   registerClaudeCodeProvider,
 } from "./provider.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof FsPromises>();
+  return { ...original, writeFile: vi.fn(original.writeFile) };
+});
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.test-support.mjs", import.meta.url));
 const MODEL_ID = "claude-sonnet-5";
@@ -84,11 +91,14 @@ function fakeClaude(scenario: string) {
   vi.stubEnv("PATH", `${dir}${delimiter}${process.env.PATH ?? ""}`);
   return {
     started: () => existsSync(record),
+    spawned: () => existsSync(`${record}.spawned`),
     read: () =>
       JSON.parse(readFileSync(record, "utf8")) as {
         args: string[];
         env: Record<string, string>;
         cwd: string;
+        cwdEntries: string[];
+        cwdMode: number;
         system: string;
         frames: unknown[];
         tools: { init?: { protocolVersion?: string }; tools: unknown[]; call?: unknown };
@@ -190,7 +200,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
   it("starts the unmodified CLI with its own tools, settings and sessions off", async () => {
     const cli = fakeClaude("reply");
     await run(hello);
-    const { args, cwd } = cli.read();
+    const { args, cwdEntries, cwdMode } = cli.read();
     const value = (flag: string) => args[args.indexOf(flag) + 1];
 
     expect(args.slice(0, 5)).toEqual([
@@ -229,7 +239,31 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       expect(args).not.toContain(flag);
     }
     // An empty private directory, so the CLI finds no project files.
-    expect(readdirSync(cwd)).toEqual([]);
+    expect(cwdEntries).toEqual([]);
+    expect(cwdMode).toBe(0o700);
+  });
+
+  it("uses a fresh empty directory for each turn and removes it afterward", async () => {
+    const cli = fakeClaude("reply");
+    await run(hello);
+    const first = cli.read().cwd;
+    await vi.waitFor(() => expect(existsSync(first)).toBe(false));
+    await run(hello);
+    const second = cli.read().cwd;
+    expect(second).not.toBe(first);
+    expect(cli.read().cwdEntries).toEqual([]);
+    await vi.waitFor(() => expect(existsSync(second)).toBe(false));
+  });
+
+  it("does not launch the model after cancellation during file setup", async () => {
+    const cli = fakeClaude("reply");
+    const controller = new AbortController();
+    vi.mocked(writeFile).mockImplementationOnce(async () => {
+      controller.abort();
+    });
+    const { message } = await run(hello, { signal: controller.signal });
+    expect(message.stopReason).toBe("aborted");
+    expect(cli.spawned()).toBe(false);
   });
 
   it("keeps API keys, tokens and other server secrets out of the CLI's environment", async () => {
@@ -347,6 +381,36 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       },
     ]);
   });
+
+  it.each(["empty", "unsigned-thinking"])(
+    "preserves user turns around an %s assistant reply",
+    async (kind) => {
+      const cli = fakeClaude("reply");
+      const previous = (await run(hello)).message;
+      await run({
+        ...hello,
+        messages: [
+          { role: "user", content: "Earlier", timestamp: 1 },
+          {
+            ...previous,
+            content: kind === "empty" ? [] : [{ type: "thinking", thinking: "Unreplayable" }],
+          },
+          { role: "user", content: "Current", timestamp: 3 },
+        ],
+      });
+      expect(cli.read().frames).toEqual([
+        {
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: "Earlier" }] },
+          shouldQuery: false,
+        },
+        {
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: "Current" }] },
+        },
+      ]);
+    },
+  );
 
   it("keeps distinct historical tool calls paired with their results", async () => {
     const cli = fakeClaude("reply");
@@ -477,6 +541,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     ["old-version", /older than \d+\.\d+\.\d+\. Run `claude update`/],
     ["built-in-tools", /its own tools enabled: Bash, Read/],
     ["no-tool-server", /could not load Rakazo's tools/],
+    ["incomplete-tool", /incomplete content blocks/],
   ])("fails clearly on %s", async (scenario, error) => {
     fakeClaude(scenario);
     const { message } = await run(hello);
@@ -541,7 +606,7 @@ describe("Claude Code deployment", () => {
     expect(resolveDeploymentModel({ ...env, PI_DEFAULT_CREDENTIALS: undefined }).configured).toBe(
       false,
     );
-    expect(hostCredentialSource(CLAUDE_CODE_PROVIDER_ID)).toBe("Claude Code");
+    expect(hostCredentialSource(CLAUDE_CODE_PROVIDER_ID)).toBe("CLI");
   });
 
   it("registers the explicitly supplied model without rereading process settings", () => {
@@ -578,8 +643,22 @@ describe("personalCliAccessCheck", () => {
     const db = prisma(1);
     expect(await personalCliAccessCheck({ prisma: db.client })()).toBeUndefined();
     expect(db.count).toHaveBeenCalledWith({
-      where: { deactivatedAt: null, NOT: { email: { endsWith: "@messaging.invalid" } } },
+      where: {
+        deactivatedAt: null,
+        NOT: { email: { endsWith: "@messaging.invalid" } },
+        members: { some: { spaceMemberships: { some: {} } } },
+      },
     });
+  });
+
+  it("does not count an abandoned signup without workspace membership", async () => {
+    const users = [{ admitted: true }, { admitted: false }];
+    const db = prisma(2);
+    db.client.user.count = vi.fn(
+      async ({ where }: { where?: { members?: unknown } }) =>
+        users.filter((user) => !where?.members || user.admitted).length,
+    ) as typeof db.client.user.count;
+    expect(await personalCliAccessCheck({ prisma: db.client })()).toBeUndefined();
   });
 
   it("refuses a server shared by more than one account", async () => {

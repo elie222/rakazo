@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -34,7 +34,6 @@ import {
   CLAUDE_CODE_SIGNED_OUT_ERROR,
   checkClaudeCode,
   claudeCodeEnv,
-  claudeCodeWorkdir,
   startClaudeCode,
 } from "./cli.js";
 
@@ -144,10 +143,11 @@ function toolResultBlocks(message: ToolResultMessage): { result: Block; after: B
 export function claudeCodeFrames(context: TranscriptContext, model: Model<Api>): Frame[] {
   const frames: Frame[] = [];
   let after: Block[] = [];
-  const addUser = (blocks: Block[]) => {
+  let mergeNextUser = false;
+  const addUser = (blocks: Block[], merge = true) => {
     if (!blocks.length) return;
     const last = frames.at(-1);
-    if (last?.type === "user") last.message.content.push(...blocks);
+    if (merge && last?.type === "user") last.message.content.push(...blocks);
     else frames.push({ type: "user", message: { role: "user", content: blocks } });
   };
   const flushAfter = () => {
@@ -159,16 +159,18 @@ export function claudeCodeFrames(context: TranscriptContext, model: Model<Api>):
       const blocks = toolResultBlocks(message);
       addUser([blocks.result]);
       after.push(...blocks.after);
+      mergeNextUser = true;
       continue;
     }
     flushAfter();
     if (message.role === "user") {
-      addUser(contentBlocks((message as UserMessage).content));
+      addUser(contentBlocks((message as UserMessage).content), mergeNextUser);
     } else if (message.role === "assistant") {
       const content = assistantBlocks(message);
       if (content.length)
         frames.push({ type: "assistant", message: { role: "assistant", content } });
     }
+    mergeNextUser = false;
   }
   flushAfter();
   if (frames.at(-1)?.type !== "user") {
@@ -372,12 +374,14 @@ export function streamClaudeCode(
     options.signal?.addEventListener("abort", stop, { once: true });
     try {
       await options.assertAllowed?.();
-      await checkClaudeCode(options.signal);
       if (options.signal?.aborted) throw new Aborted("Request was aborted");
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages);
       const frames = claudeCodeFrames(context, model);
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
+      const cwd = join(files, "cwd");
+      await mkdir(cwd, { mode: 0o700 });
+      await checkClaudeCode(cwd, options.signal);
       const systemFile = join(files, "system.md");
       await writeFile(systemFile, system, { mode: 0o600 });
       const args = [
@@ -435,8 +439,9 @@ export function streamClaudeCode(
       }
       if (model.reasoning && options.reasoning) args.push("--effort", EFFORT[options.reasoning]);
       const maxTokens = options.maxTokens ?? model.maxTokens;
+      options.signal?.throwIfAborted();
       child = startClaudeCode(args, {
-        cwd: await claudeCodeWorkdir(),
+        cwd,
         env: claudeCodeEnv(
           process.env,
           maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
@@ -446,6 +451,7 @@ export function streamClaudeCode(
       const read = () => nextEvent(child!, options.signal, idleMs);
 
       for (const frame of frames) {
+        options.signal?.throwIfAborted();
         const write = child.write(`${JSON.stringify(frame)}\n`).then(
           () => true,
           () => false,
@@ -657,6 +663,8 @@ export function streamClaudeCode(
             break;
           }
           case "message_stop": {
+            if (blocks.size)
+              throw new Error("Claude Code ended a reply with incomplete content blocks.");
             messageComplete = true;
             if (output.stopReason === "toolUse" || output.stopReason === "error") {
               finish();

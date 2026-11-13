@@ -1,8 +1,5 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 /**
@@ -97,14 +94,6 @@ export function claudeCodeEnv(
     }
   }
   return { ...env, ...BRIDGE_ENV, ...extra };
-}
-
-let workdir: Promise<string> | undefined;
-
-/** An empty private directory (mode 0700) the CLI runs in, so it finds no project files. */
-export function claudeCodeWorkdir(): Promise<string> {
-  workdir ??= mkdtemp(join(tmpdir(), "rakazo-claude-code-"));
-  return workdir;
 }
 
 const stoppedProcesses = new WeakSet<ChildProcess>();
@@ -284,14 +273,13 @@ const ready = new Map<string, number>();
  * `claude auth status`; the account details it prints are ignored. A probe that times out or
  * prints something unexpected does not block the request: the CLI then reports its own error.
  */
-export async function checkClaudeCode(signal?: AbortSignal): Promise<void> {
+export async function checkClaudeCode(cwd: string, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
   const env = claudeCodeEnv();
   // A different PATH, home or config directory can mean a different CLI or sign-in.
   const key = JSON.stringify(env);
   const checkedAt = ready.get(key);
   if (checkedAt !== undefined && Date.now() - checkedAt < READY_CACHE_MS) return;
-  const cwd = await claudeCodeWorkdir();
   const version = await capture(["--version"], cwd, signal);
   if (version.missing) throw new Error(CLAUDE_CODE_NOT_INSTALLED_ERROR);
   const installed = /(\d+\.\d+\.\d+)/.exec(version.stdout)?.[1];
