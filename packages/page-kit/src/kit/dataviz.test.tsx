@@ -853,6 +853,26 @@ describe("data display", () => {
     expect(cells[2]!.querySelector("strong")?.textContent).toBe("Nested");
   });
 
+  it("filters rows by labels rendered in array cells", () => {
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={Array.from({ length: 16 }, (_, i) => [
+          [<Status key="tag">{i === 0 ? "Ready" : "Pending"}</Status>],
+        ])}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filter, "Ready");
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "Ready",
+    ]);
+  });
+
   it("sorts figures as numbers, filters long tables and pages very long ones", () => {
     const root = mount(
       <Table

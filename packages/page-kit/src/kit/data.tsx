@@ -305,6 +305,7 @@ const LONG_TABLE = 15;
 const PAGE_ROWS = 200;
 
 function cellText(cell: TableCell): string {
+  if (Array.isArray(cell)) return cell.map((item) => cellText(item)).join("");
   if (typeof cell === "string" || typeof cell === "number") return String(cell);
   if (cell && typeof cell === "object" && !isValidElement(cell) && "text" in cell) {
     return cellText(cell.text as TableCell);
