@@ -509,3 +509,17 @@ it("finds exports inside surrounding chat braces", () => {
     )[0]?.instructions,
   ).toBe("Keep this");
 });
+
+it("reads reordered export keys in fenced replies", () => {
+  expect(
+    parseGrokBotExport(
+      '```json\n{"description":"Example","bots":[{"name":"Example","instructions":"Keep this"}]}\n```',
+    )[0]?.instructions,
+  ).toBe("Keep this");
+});
+it("preserves internal newline runs and leading indentation", () => {
+  const content = `\n    code${"\n".repeat(100000)}end\n`;
+  expect(combineImportedInstructions([{ title: "Instructions", content, role: "working" }])).toBe(
+    content.slice(1, -1),
+  );
+});

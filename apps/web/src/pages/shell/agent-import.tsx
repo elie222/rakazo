@@ -316,9 +316,9 @@ export function AgentImportForm({
                   <Trans>Which Bot?</Trans>
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {grokBots.map((bot) => (
+                  {grokBots.map((bot, index) => (
                     <Button
-                      key={bot.name}
+                      key={`${bot.exportId ?? bot.name}:${index}`}
                       variant="outline"
                       disabled={busy}
                       onClick={() => void previewGrokBot(bot)}

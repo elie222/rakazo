@@ -410,7 +410,12 @@ export function combineImportedInstructions(
 }
 
 function withoutFileTitle(file: string, content: string): string {
-  const text = content.replace(/\r\n?/g, "\n").replace(/^\n+|\n+$/g, "");
+  const normalized = content.replace(/\r\n?/g, "\n");
+  let start = 0;
+  let end = normalized.length;
+  while (start < end && normalized[start] === "\n") start += 1;
+  while (end > start && normalized[end - 1] === "\n") end -= 1;
+  const text = normalized.slice(start, end);
   const name = file.split("/").at(-1) ?? file;
   const first = text.split("\n", 1)[0] ?? "";
   if (name.endsWith(".md") && /^#\s/.test(first) && first.replace(/^#\s+/, "").startsWith(name)) {
