@@ -475,6 +475,7 @@ export function createRouterContext(deps: RouterDeps) {
     removeBot,
     agentImportServices,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,

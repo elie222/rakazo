@@ -6730,8 +6730,8 @@ describe("codex live catalog", () => {
         : {
             userModelCredential: {
               findMany: vi.fn().mockResolvedValue([
-                { provider: "openai-codex", secretId: "secret-api" },
-                { provider: "openai-codex", secretId: "secret-oauth" },
+                { id: "credential-api", provider: "openai-codex", secretId: "secret-api" },
+                { id: "credential-oauth", provider: "openai-codex", secretId: "secret-oauth" },
               ]),
             },
             userModelPreference: {
@@ -6745,6 +6745,10 @@ describe("codex live catalog", () => {
               findMany: vi
                 .fn()
                 .mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
+              findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+                id: where.id,
+                ciphertext: where.id === "secret-oauth" ? "cipher-oauth" : "cipher-api",
+              })),
             },
           };
     const deps = {
@@ -6868,6 +6872,10 @@ describe("codex live catalog", () => {
           { id: "secret-a", ciphertext: "cipher-a" },
           { id: "secret-b", ciphertext: "cipher-b" },
         ]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id === "secret-a" ? "cipher-a" : "cipher-b",
+        })),
       },
     };
     const secrets = {

@@ -70,6 +70,7 @@ export function modelsRoutes(ctx: RouterContext) {
     connectModelCredential,
     refreshExpiredCredential,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,
@@ -117,7 +118,9 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
-      list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
+      list: authed.models.list.handler(async ({ context }) =>
+        withServingConnections(context.actor, await chatCatalog(context.actor)),
+      ),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({
