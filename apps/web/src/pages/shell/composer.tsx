@@ -782,12 +782,7 @@ const ComposerBody = memo(function Composer({
                   highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
                 });
                 // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
-                // Shift+Tab still moves focus back out of the field.
-                if (
-                  showSlashPicker &&
-                  action.type !== "none" &&
-                  !(event.key === "Tab" && event.shiftKey)
-                ) {
+                if (showSlashPicker && action.type !== "none") {
                   event.preventDefault();
                   if (action.type === "complete" || action.type === "send")
                     pickSlashOption(activeSlashIndex);

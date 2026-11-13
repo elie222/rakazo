@@ -61,7 +61,7 @@ describe("resolveMentionPickerKey", () => {
     });
   });
 
-  it("ignores Shift+Enter while completing on Tab and Shift+Tab", () => {
+  it("ignores Shift+Enter and Shift+Tab, and completes on plain Tab", () => {
     expect(
       resolveMentionPickerKey({
         key: "Enter",
@@ -77,7 +77,11 @@ describe("resolveMentionPickerKey", () => {
         optionCount: 2,
         highlightedIndex: 0,
       }),
-    ).toEqual({ type: "complete", index: 0 });
+    ).toEqual({ type: "none" });
+    expect(resolveMentionPickerKey({ key: "Tab", optionCount: 2, highlightedIndex: 1 })).toEqual({
+      type: "complete",
+      index: 1,
+    });
   });
 
   it("leaves modified Tab, arrows and Escape to the field and app shortcuts", () => {
