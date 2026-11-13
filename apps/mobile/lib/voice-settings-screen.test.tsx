@@ -64,7 +64,6 @@ vi.mock("./device-voice", () => ({
   saveDeviceVoiceEnabled: vi.fn(),
 }));
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
 vi.mock("../components/row-accessories", () => ({ Checkmark: () => null, Chevron: () => null }));
@@ -77,6 +76,34 @@ vi.mock("../components/native-action-button", () => ({
 }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    value,
+    onChange,
+    disabled,
+  }: {
+    disabled?: boolean;
+    choices: { key: string; label: string }[];
+    value: string;
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map((choice) => (
+        <button
+          key={choice.key}
+          type="button"
+          disabled={disabled}
+          aria-pressed={choice.key === value}
+          onClick={() => onChange(choice.key)}
+        >
+          {choice.label}
+          {choice.key === value ? <span data-testid="checkmark" /> : null}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("../components/native-switch", () => ({
   NativeSwitch: (props: {
@@ -237,6 +264,7 @@ it("offers a retry when the first load fails, then loads the providers again", a
 });
 
 it("clears a failed refresh's banner once a provider choice succeeds", async () => {
+  mocks.loadDevice.mockResolvedValue(true);
   await render();
   expect(container.textContent).toContain("ElevenLabs");
   mocks.focused = false;

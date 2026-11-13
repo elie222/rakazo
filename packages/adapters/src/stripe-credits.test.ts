@@ -1,4 +1,4 @@
-import { BillingNoMonthlyCreditsError } from "@rakazo/adapter-kit";
+import { BillingNoMonthlyCreditsError, BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { byokTierOf, StripeBillingProvider } from "./stripe-billing.js";
 
@@ -16,8 +16,10 @@ function fixture(routes: Record<string, unknown> = {}) {
     fetch: vi.fn(async (input, init) => {
       const url = new URL(String(input));
       requests.push({ path: url.pathname, params: new URLSearchParams(String(init?.body ?? "")) });
+      const route = routes[`${init?.method} ${url.pathname}`];
+      if (route instanceof Response) return route;
       return Response.json(
-        routes[`${init?.method} ${url.pathname}`] ??
+        route ??
           routes[url.pathname] ??
           (url.pathname === "/v1/checkout/sessions" && init?.method === "POST"
             ? { url: "https://checkout.example.test/session" }
@@ -70,6 +72,25 @@ describe("Stripe prepaid model credits", () => {
     expect(requests[0]!.params.get("payment_intent_data[metadata][rakazo_credit_cents]")).toBe(
       "2000",
     );
+  });
+  it("asks the bank to confirm the buyer of every credit purchase", async () => {
+    const { provider, requests } = fixture();
+    for (const [amountCents, monthly] of [
+      [1000, true],
+      [1000, false],
+    ] as const)
+      await provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents,
+        monthly,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      });
+    expect(
+      requests
+        .filter((r) => r.path === "/v1/checkout/sessions" && r.params.has("mode"))
+        .map((r) => r.params.get("payment_method_options[card][request_three_d_secure]")),
+    ).toEqual(["any", "any"]);
   });
   it("looks up a monthly price once, not on every checkout", async () => {
     const { provider, requests } = fixture();
@@ -339,6 +360,52 @@ describe("Stripe prepaid model credits", () => {
     ).rejects.toThrow("Invalid credit amount");
     expect(requests).toHaveLength(0);
   });
+  it("no longer sells retired amounts but still counts what was paid for them", async () => {
+    const { provider, requests } = fixture({
+      "/v1/charges": {
+        data: [
+          {
+            id: "ch_retired",
+            payment_intent: "pi_retired",
+            currency: "usd",
+            paid: true,
+            captured: true,
+            disputed: false,
+            amount: 50000,
+            amount_refunded: 0,
+          },
+        ],
+        has_more: false,
+      },
+      "/v1/checkout/sessions": {
+        data: [
+          {
+            id: "cs_retired",
+            mode: "payment",
+            payment_status: "paid",
+            currency: "usd",
+            amount_total: 50000,
+            payment_intent: "pi_retired",
+            metadata: { rakazo_credit_cents: "50000" },
+          },
+        ],
+        has_more: false,
+      },
+    });
+    await expect(
+      provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents: 50000,
+        monthly: true,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      }),
+    ).rejects.toThrow("Invalid credit amount");
+    expect(requests).toHaveLength(0);
+    expect(await provider.listCreditPurchases("cus_fixture")).toEqual([
+      { id: "cs_retired", amountCents: 50000 },
+    ]);
+  });
   it("reads only settled credit payments, deducts refunds, and ignores legacy invoices", async () => {
     const { provider } = fixture({
       "/v1/charges": {
@@ -531,6 +598,18 @@ describe("Stripe prepaid model credits", () => {
       BillingNoMonthlyCreditsError,
     );
     expect(requests.some((r) => r.path === "/v1/subscriptions/sub_fixture")).toBe(false);
+  });
+  it("names a declined upgrade as a payment that was not completed", async () => {
+    const { provider } = fixture({
+      "/v1/subscriptions": subscription(1000),
+      "POST /v1/subscriptions/sub_fixture": Response.json(
+        { error: { type: "card_error", code: "card_declined", message: "declined" } },
+        { status: 402 },
+      ),
+    });
+    await expect(provider.setMonthlyCredits("cus_fixture", 2000)).rejects.toBeInstanceOf(
+      BillingPaymentNotCompletedError,
+    );
   });
   it("changes the renewal price without a charge or proration when downgrading", async () => {
     const { provider, requests } = fixture({ "/v1/subscriptions": subscription(2000) });

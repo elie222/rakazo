@@ -20,6 +20,19 @@ name: Auth
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 02-sign-in
+# The standard offline fixture offers email only. Capture the chooser too when
+# a chooser is available; the offline backend itself configures no providers.
+- runFlow:
+    when:
+      visible: "Continue with email"
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: 02-provider-chooser
+      - tapOn: "Continue with email"
+      - waitForAnimationToEnd:
+          timeout: 3000
+- takeScreenshot: 02-email-sign-in
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
 - tapOn: "Password"

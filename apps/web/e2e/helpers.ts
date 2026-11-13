@@ -8,7 +8,8 @@ export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
     provider === "novita" ||
     provider === "daytona" ||
     provider === "boat" ||
-    provider === "boxd"
+    provider === "boxd" ||
+    provider === "instabox"
   );
 }
 
@@ -83,6 +84,15 @@ export async function signup(
   await page.goto(verify ? "/sign-up?verify=email" : "/onboarding");
 }
 
+/** Opens the email form when the server offers a provider chooser first. */
+export async function openEmailSignIn(page: Page) {
+  const email = page.getByLabel("Email", { exact: true });
+  const choice = page.getByRole("button", { name: "Continue with email" });
+  await expect(email.or(choice)).toBeVisible();
+  if (await choice.isVisible()) await choice.click();
+  await expect(email).toBeVisible();
+}
+
 export async function signupThroughForm(
   page: Page,
   email: string,
@@ -92,6 +102,7 @@ export async function signupThroughForm(
 ) {
   await page.goto("/sign-up");
   await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await openEmailSignIn(page);
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
@@ -114,7 +125,7 @@ export async function openBotPanelTab(page: Page, name: string) {
   const pill = page.getByTestId("bot-settings-trigger");
   const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
   // A reloaded page restores its saved panel a moment after it draws, so a single pass can
-  // race that restore; the sequence is retried until the tab shows.
+  // race that restore; the sequence is retried until the tab is selected.
   await expect(async () => {
     if (!(await tab.isVisible())) {
       // The pill closes whatever else the sidebar shows, such as a restored routine editor.
@@ -124,10 +135,9 @@ export async function openBotPanelTab(page: Page, name: string) {
       }
       await pill.click();
     }
-    await expect(tab).toBeVisible({ timeout: 2_000 });
+    await tab.click({ timeout: 2_000 });
+    await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
-  await tab.click();
-  await expect(tab).toHaveAttribute("aria-selected", "true");
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */

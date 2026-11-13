@@ -106,6 +106,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "PushToken",
   "CallPushDevice",
   "WorkActivityToken",
+  "WorkActivityStartToken",
   "EmailSend",
   "Thread",
   "ThreadRead",
@@ -117,6 +118,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "Secret",
   "BotSecret",
   "VaultCredential",
+  "VaultCredentialBot",
+  "VaultCredentialLimit",
   "AgentSecret",
   "UserModelCredential",
   "UserVoiceCredential",
@@ -212,7 +215,7 @@ function settingsFor(context: DbContext | undefined, bypassKey: string): Setting
 }
 
 const SET_SESSION =
-  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_bypass_key', $4, false)";
+  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_bypass_key', $4, false), set_config('app.vault_access_version', '1', false)";
 const applied = new WeakMap<PoolClient, string>();
 
 async function applySettings(client: PoolClient, settings: Settings): Promise<void> {
@@ -277,7 +280,7 @@ export function installDbContext(pool: Pool): void {
 }
 
 const LOCAL_SETTINGS = (settings: Settings) =>
-  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_bypass_key', ${settings[3]}, true)`;
+  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_bypass_key', ${settings[3]}, true), set_config('app.vault_access_version', '1', true)`;
 
 // A wrapped read keeps the pool's checkout timeout and no run limit it did not
 // have before, instead of Prisma's 2s/5s transaction defaults.

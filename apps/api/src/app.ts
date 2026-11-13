@@ -14,6 +14,7 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -27,6 +28,7 @@ import type {
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  configuredBotEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -72,6 +74,7 @@ import {
   userDeviceInternalAddress,
   verifyModelServesAgents,
   WorkActivities,
+  withHostComputerScreen,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
@@ -81,8 +84,9 @@ import {
   createAuth,
   createDirectory,
   isBlockedAuthPath,
+  publicSignInProviders,
 } from "@rakazo/auth";
-import type { Actor, AuthCapabilities } from "@rakazo/contracts";
+import type { Actor, AuthCapabilities, ModelCredential } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
   PLUGIN_SUBMISSIONS_PATH,
@@ -365,10 +369,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     ticketBoardEnabled,
   });
+  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...sandboxProviderOptionsFromEnv(),
+      ...hostComputer,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
       e2bApiKey: env.e2bApiKey,
@@ -384,7 +389,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       secrets,
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
@@ -417,8 +422,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  const onEmailError = (error: unknown) =>
-    getLogger().error("transactional email delivery failed", error);
+  const botEmail: TransactionalEmailProvider | undefined =
+    configuredBotEmailProvider({
+      smtpUrl: env.botEmailSmtpUrl,
+      domain: env.inboundEmail?.domain,
+    }) ?? localEmailEmulator;
+  const emailErrorLogger = (message: string) => (error: unknown) => {
+    if (error instanceof EmailRecipientRejectedError) {
+      getLogger().warn(message, { "error.message": error.message });
+    } else getLogger().error(message, error);
+  };
+  const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
   const billingProvider: BillingProvider | undefined =
     billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
@@ -451,7 +465,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       connectors: connectorOverrides,
     },
   );
-  const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack } = connectors;
+  const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack, userCloudAgents } =
+    connectors;
   const runtime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
@@ -499,6 +514,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     passwordAuth: env.passwordAuth,
     breachedPasswordCheck: env.breachedPasswordCheck,
     oidc: env.oidc,
+    social: env.social,
     secret: env.authSecret,
     baseURL: env.authUrl,
     webOrigin: env.webOrigin,
@@ -517,7 +533,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
                 email,
                 origin: env.authUrl,
                 secret: env.authSecret,
-                onError: (error) => getLogger().error("welcome email delivery failed", error),
+                onError: emailErrorLogger("welcome email delivery failed"),
               },
               userId,
               headers,
@@ -534,6 +550,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           sandbox,
           home,
           jobs,
+          memoryProviders,
           artifacts,
           dataDir: env.dataDir,
           messagingInstallations,
@@ -601,48 +618,67 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { executor, jobHandlers } = createRunRuntime(runtimeEnv, connectors, {
-    billingEnabled: modelCreditsEnabled,
-    mediaGeneration,
-    contextStrategy,
-    prisma,
-    runtime,
-    codexCatalog,
-    sandbox,
-    memory,
-    memoryProviders,
-    home,
-    artifacts,
-    secretStore: secrets,
-    secretHttp: remoteConnectors,
-    notifications,
-    jobs,
-    events,
-    onTicketChange: ticketChanges,
-    email,
-    messaging,
-    cloudAgent,
-    userDevices: userDevicesOverride ?? userDevices,
-    paymentWallet,
-    shutdownSignal: shutdown.signal,
-    now,
-  });
+  const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
+    runtimeEnv,
+    connectors,
+    {
+      billingEnabled: modelCreditsEnabled,
+      mediaGeneration,
+      contextStrategy,
+      prisma,
+      runtime,
+      codexCatalog,
+      sandbox,
+      memory,
+      memoryProviders,
+      home,
+      artifacts,
+      secretStore: secrets,
+      secretHttp: remoteConnectors,
+      notifications,
+      jobs,
+      events,
+      onTicketChange: ticketChanges,
+      email: botEmail,
+      messaging,
+      isMessagingInstallationActive: messagingInstallations
+        ? (id: string) => messagingInstallations.isActive(id)
+        : undefined,
+      cloudAgent,
+      userDevices:
+        userDevicesOverride ??
+        withHostComputerScreen(userDevices, {
+          prisma,
+          sandboxKind: env.sandboxProvider,
+          url: hostComputer.hostComputerUrl,
+          token: hostComputer.hostComputerToken,
+        }),
+      paymentWallet,
+      shutdownSignal: shutdown.signal,
+      now,
+    },
+  );
 
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
   }
   runs?.attach(jobHandlers);
   const reconciler = inMemoryJobs
-    ? createRunReconciler({
-        prisma,
-        jobs,
-        events,
-        notifications,
-        cloudAgent,
-        paymentWallet,
-        mediaGeneration,
-        billingEnabled: modelCreditsEnabled,
-      })
+    ? createRunReconciler(
+        {
+          prisma,
+          jobs,
+          events,
+          notifications,
+          cloudAgent,
+          userCloudAgents,
+          paymentWallet,
+          mediaGeneration,
+          billingEnabled: modelCreditsEnabled,
+        },
+        {},
+        { messagingDelivery, teamChat },
+      )
     : undefined;
   reconciler?.start();
   const stopReferralEmails =
@@ -680,6 +716,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       sandbox,
       home,
       jobs,
+      memoryProviders,
       artifacts,
       dataDir: env.dataDir,
       messagingInstallations,
@@ -705,6 +742,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     pluginRepoFetcher,
     pluginMarketplaceRead,
     cloudAgent,
+    userCloudAgents,
     paymentWallet,
     codexCatalog,
     prisma,
@@ -737,6 +775,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     dataDir: env.dataDir,
     billing,
     messagingInstallations,
+    messagingDelivery,
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
@@ -809,6 +848,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       sso: env.oidc
         ? { name: env.oidc.name, availability: auth.ssoAvailability() ?? "checking" }
         : null,
+      providers: publicSignInProviders(env.social, env.oidc),
       passwordAuth: env.passwordAuth !== false,
       passwordReset: env.passwordAuth !== false && Boolean(email),
       resetUrl:
@@ -871,7 +911,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     app.on(["GET", "POST", "PUT", "PATCH", "DELETE"], "/api/auth/scim/v2/*", async (c) => {
       const changes: DirectoryAccountChange[] = [];
       const response = await directoryChanges.run(changes, () =>
-        directory.handler(withClientIp(c.req.raw, requestClientIp(c))),
+        withAuthLibraryFailures(() =>
+          directory.handler(withClientIp(c.req.raw, requestClientIp(c))),
+        ),
       );
       // A retried write reports an account again; the last report per account stands.
       const latest = new Map(changes.map((change) => [change.userId, change]));
@@ -916,7 +958,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       return c.json({ error: "Not available in version 1" }, 404);
     }
     const ip = requestClientIp(c);
-    const response = await auth.handler(withClientIp(emptyAuthBodyAsJson(c.req.raw), ip));
+    const response = await withAuthLibraryFailures(() =>
+      auth.handler(withClientIp(emptyAuthBodyAsJson(c.req.raw), ip)),
+    );
     await auditAuthResponse(path, ip, response);
     return response;
   });
@@ -1010,6 +1054,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       sandbox,
       home,
       jobs,
+      memoryProviders,
       artifacts,
       dataDir: env.dataDir,
       messagingInstallations,
@@ -1040,21 +1085,23 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       authenticate: sessionActor,
     });
   }
-  const messagingRuntime = messaging
-    ? await startMessagingRuntime({
-        app,
-        prisma,
-        events,
-        jobs,
-        sandbox,
-        secrets,
-        artifacts,
-        runtime,
-        env,
-        messaging,
-        messagingInstallations,
-      })
-    : undefined;
+  const messagingRuntime =
+    messaging && messagingDelivery && teamChat
+      ? await startMessagingRuntime({
+          app,
+          prisma,
+          events,
+          jobs,
+          sandbox,
+          secrets,
+          artifacts,
+          env,
+          messaging,
+          messagingInstallations,
+          delivery: messagingDelivery,
+          teamChat,
+        })
+      : undefined;
 
   app.route(
     "/",
@@ -1108,7 +1155,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       // Aborted runs hand themselves back while realtime is still open to announce them.
       const runsStopped = runs?.stop();
       await userDeviceHub?.close();
-      oauthLogins.abortAll();
+      await oauthLogins.abortAll();
       await messagingRuntime?.stop();
       await stopReferralEmails?.();
       await stopHomeRetention?.();
@@ -1118,6 +1165,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await mcpArgsMove;
       await runsStopped;
       await requestsSettled;
+      await botEmail?.drain?.();
       await email?.drain?.();
       await jobs.close();
       await secrets.close();
@@ -1167,19 +1215,47 @@ export async function actorFromMembership(membership: Promise<Actor>): Promise<A
   }
 }
 
+type AuthLibraryFailure = { event: string; message: string; error?: Error };
+const authLibraryFailures = new AsyncLocalStorage<AuthLibraryFailure[]>();
+
 /**
- * The auth library repeats each failure as a bare message after logging it with its error. That
- * echo stays out of the collector; the request's completion reports a failure nothing else did.
+ * The auth library logs a client's bad passkey or undeliverable address with the same call as its
+ * own crashes, so a request holds them until its status says which they were.
  */
-function authLibraryLogger(event: string) {
+export function authLibraryLogger(event: string) {
   return {
     level: "error" as const,
-    log: (_level: string, _message: string, ...args: unknown[]) =>
-      getLogger().error(
+    log: (_level: string, message: string, ...args: unknown[]) => {
+      const failure = {
         event,
-        args.find((arg) => arg instanceof Error) ?? { "error.report": false },
-      ),
+        message,
+        error: args.find((arg): arg is Error => arg instanceof Error),
+      };
+      const held = authLibraryFailures.getStore();
+      if (held) held.push(failure);
+      else logAuthLibraryFailure(failure, true);
+    },
   };
+}
+
+/** Reports the auth library's failures only when the request answers 5xx, otherwise warns. */
+export async function withAuthLibraryFailures(handle: () => Promise<Response>) {
+  const failures: AuthLibraryFailure[] = [];
+  let crashed = true;
+  try {
+    const response = await authLibraryFailures.run(failures, handle);
+    crashed = response.status >= 500;
+    return response;
+  } finally {
+    for (const failure of failures) logAuthLibraryFailure(failure, crashed);
+  }
+}
+
+function logAuthLibraryFailure({ event, message, error }: AuthLibraryFailure, crashed: boolean) {
+  // Without an error, the library is echoing a failure it already logged with one.
+  if (crashed)
+    getLogger().error(event, error ?? { "error.report": false, "error.message": message });
+  else getLogger().warn(event, { error, "error.message": message });
 }
 
 /**

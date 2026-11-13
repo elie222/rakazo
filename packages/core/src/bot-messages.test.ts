@@ -146,6 +146,28 @@ describe("addressing", () => {
     expect(resolveBotAddress(twins, { name: "ana" })?.id).toBe("b_2");
   });
 
+  it.each(["Reviewer", "  Reviewer  ", "REVIEWER"])(
+    "refuses duplicate exact names for %j regardless of candidate order",
+    (name) => {
+      const twins = [
+        { id: "b_1", name: "Reviewer" },
+        { id: "b_2", name: "Reviewer" },
+        { id: "b_3", name: "reviewer" },
+      ];
+      expect(resolveBotAddress(twins, { name })).toBeUndefined();
+      expect(resolveBotAddress([...twins].reverse(), { name })).toBeUndefined();
+    },
+  );
+
+  it("resolves duplicate names by explicit id without falling back from an unknown id", () => {
+    const twins = [
+      { id: "b_1", name: "Reviewer" },
+      { id: "b_2", name: "Reviewer" },
+    ];
+    expect(resolveBotAddress(twins, { botId: " b_2 ", name: "Reviewer" })).toBe(twins[1]);
+    expect(resolveBotAddress(twins, { botId: "b_404", name: "Reviewer" })).toBeUndefined();
+  });
+
   it("returns nothing for an unknown target", () => {
     expect(resolveBotAddress(bots, { botId: "b_404" })).toBeUndefined();
     expect(resolveBotAddress(bots, {})).toBeUndefined();

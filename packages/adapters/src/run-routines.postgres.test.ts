@@ -16,8 +16,7 @@ import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 describePostgres("routine tick prompt and model consistency (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -352,6 +351,8 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
         enqueue: async (job: BackgroundJob) => {
           published.push(job);
         },
+        enqueueIn: async () => undefined,
+        cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,
       };

@@ -1272,11 +1272,11 @@ describe("browser_act fill_code", () => {
     expect(() => parseBrowserActions([{ kind: "fill_code" }])).toThrow(/requires ref/);
   });
 
-  function held(overrides: { claim?: () => Promise<boolean> } = {}) {
+  function held(overrides: { claim?: () => Promise<string | undefined> } = {}) {
     return {
       text: "123456",
       origin,
-      claim: overrides.claim ?? vi.fn(async () => true),
+      claim: overrides.claim ?? vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
     };
   }
@@ -1450,13 +1450,56 @@ describe("browser_act fill_code", () => {
       computer,
       context,
       { actions: [{ kind: "fill_code", ref: "e1" }] },
-      { resolveCodeFill: async () => held({ claim: async () => false }) },
+      {
+        resolveCodeFill: async () =>
+          held({ claim: async () => "No code is waiting. Use request_secret with oneTimeCode." }),
+      },
     );
     expect(result).toMatchObject({
       ok: false,
       completed: 0,
       error: expect.stringContaining("No code"),
     });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it("releases an approved purchase when its code is refused or can't be taken", async () => {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act");
+    const releasePurchase = vi.fn(async () => {});
+    const claims = [
+      async () => "No code is waiting.",
+      async () => {
+        throw new Error("The login could not be read.");
+      },
+    ];
+    for (const claim of claims) {
+      const result = await browserActFromTool(
+        browser,
+        computer,
+        context,
+        {
+          actions: [
+            { kind: "fill_code", ref: "e1" },
+            { kind: "click", ref: "e2" },
+          ],
+        },
+        {
+          resolveCodeFill: async () => held({ claim }),
+          approvedPurchase: {
+            steps: [1],
+            site: "shop.example.test",
+            label: "Pay $5",
+            amount: "$5",
+            amountSource: "button",
+          },
+          countPurchase: async () => undefined,
+          releasePurchase,
+        },
+      );
+      expect(result).toMatchObject({ ok: false });
+    }
+    expect(releasePurchase).toHaveBeenCalledTimes(2);
     expect(act).not.toHaveBeenCalled();
   });
 

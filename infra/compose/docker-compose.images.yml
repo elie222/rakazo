@@ -13,8 +13,7 @@ name: rakazo
 # only sees what it uses instead of the whole .env. A key with no value is passed through
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
-x-app-environment: &app-environment
-  # Runtime
+x-app-environment: &app-environment # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
@@ -48,16 +47,14 @@ x-app-environment: &app-environment
   BOT_MESSAGE_MAX_HOPS:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
+  STUCK_WORK_NOTIFY_AFTER_MS:
+  STUCK_WORK_EXPIRE_AFTER_MS:
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
-  EMAIL_PROVIDER:
-  EMAIL_API_KEY:
-  SMTP_URL:
-  EMAIL_FROM:
-  EMAIL_REPLY_TO:
+  BOT_EMAIL_SMTP_URL:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -114,10 +111,15 @@ x-app-environment: &app-environment
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
+  RAKAZO_LOCAL_MODELS_API_KEY:
+  # Where a localhost model or speech URL goes: the computer running Docker.
+  RAKAZO_LOOPBACK_HOST: host.docker.internal
   RAKAZO_LOCAL_VISION_MODELS:
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
   RAKAZO_LOCAL_MAX_TOKENS:
+  RAKAZO_LOCAL_TOKENS_PER_MINUTE:
+  RAKAZO_LOCAL_PROMPT_CACHE:
   RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
   RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC:
   RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS:
@@ -204,7 +206,6 @@ x-app-environment: &app-environment
   SANDBOX_MAX_COMPUTERS_PER_USER:
   COMPUTER_MAX_ACTIVE_MS:
   COMPUTER_MAX_ACTIVE_UNBILLED_MS:
-  COMPUTER_TAKEOVER_TTL_MS:
   BROWSER_PROVIDER:
   NOVITA_API_KEY:
   SANDBOX_TEMPLATE:
@@ -217,6 +218,7 @@ x-app-environment: &app-environment
   BOAT_API_URL:
   BOXD_API_KEY:
   BOXD_ORG:
+  INSTABOX_API_KEY:
   RAILWAY_API_TOKEN:
   RAILWAY_ENVIRONMENT_ID:
   RAILWAY_SANDBOX_REGION:
@@ -272,8 +274,13 @@ x-app-environment: &app-environment
   SENDBLUE_PHONE_NUMBER:
   SLACK_CLIENT_ID:
   SLACK_CLIENT_SECRET:
+  TEAMS_APP_ID:
+  TEAMS_APP_PASSWORD:
+  TEAMS_APP_TENANT_ID:
   SLACK_BOT_TOKEN:
   SLACK_SIGNING_SECRET:
+  TEAM_CHAT_JUDGE_PROVIDER:
+  TEAM_CHAT_JUDGE_MODEL:
   WHATSAPP_ACCESS_TOKEN:
   WHATSAPP_PHONE_NUMBER_ID:
   WHATSAPP_APP_SECRET:
@@ -331,7 +338,24 @@ services:
     image: ${BUSYBOX_IMAGE:-busybox:1}
     # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
     # in the volume; -h changes a symlink itself, never its target.
-    command: ["find", "/data", "!", "(", "-user", "1000", "-group", "1000", ")", "-exec", "chown", "-h", "1000:1000", "{}", "+"]
+    command:
+      [
+        "find",
+        "/data",
+        "!",
+        "(",
+        "-user",
+        "1000",
+        "-group",
+        "1000",
+        ")",
+        "-exec",
+        "chown",
+        "-h",
+        "1000:1000",
+        "{}",
+        "+",
+      ]
     network_mode: none
     restart: "no"
     volumes:
@@ -458,6 +482,13 @@ services:
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_PRIVATE_KEY_FILE: ${APPLE_PRIVATE_KEY_FILE:-}
       SCIM_BEARER_TOKEN: ${SCIM_BEARER_TOKEN:-}
       SIGNUPS_ENABLED:
       SIGNUP_ALLOWLIST:
@@ -468,6 +499,11 @@ services:
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
       WELCOME_EMAIL_ENABLED:
+      EMAIL_PROVIDER:
+      EMAIL_API_KEY:
+      SMTP_URL:
+      EMAIL_FROM:
+      EMAIL_REPLY_TO:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
@@ -475,8 +511,6 @@ services:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
       SLACK_RAKAZO_BOT_ID:
-      TEAM_CHAT_JUDGE_PROVIDER:
-      TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
@@ -513,7 +547,9 @@ services:
     restart: unless-stopped
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
+    # Busy runs allocate fast; a larger young generation cuts the garbage collection that otherwise
+    # takes most of the worker's CPU.
+    command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
     # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
     stop_grace_period: 50m

@@ -1,14 +1,16 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { Bot, BotAvatarSet, ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
 import {
-  BOT_AVATAR_SHAPE_COUNT,
-  BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
+  botLookState,
   credentialForModel,
+  DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
   parseModelOptionKey,
@@ -18,9 +20,12 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
+import { BotLookPicker } from "../components/bot-look-picker";
+import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { GrowingTextInput } from "../components/growing-text-input";
@@ -37,19 +42,11 @@ import {
   SettingsSwitch,
 } from "../components/settings-group";
 import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
-import {
-  avatarColor,
-  avatarShape,
-  isAvatarPhoto,
-  withAvatarColor,
-  withAvatarShape,
-} from "../lib/bot-avatar-edit";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
-import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
@@ -63,21 +60,21 @@ import { stopVoicePlayback } from "../lib/voice";
 export default function BotSettingsScreen() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const {
     botId,
     model: pickedModel,
     focus,
   } = useLocalSearchParams<{ botId: string; model?: string; focus?: string }>();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
   const threadId = useRef<string | undefined>(undefined);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [color, setColor] = useState<string>(BOT_COLORS[0]);
+  const [color, setColor] = useState<string>(DEFAULT_BOT_AVATAR_COLOR);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -96,6 +93,7 @@ export default function BotSettingsScreen() {
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const computerMaintenanceRows = useComputerMaintenanceRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
@@ -111,7 +109,7 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, crossSpaceCommunication: value });
         },
         onChange: setCrossSpaceCommunication,
-        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+        onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
   );
@@ -122,7 +120,7 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, dailyCheckIns: value });
         },
         onChange: setDailyCheckIns,
-        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+        onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
   );
@@ -134,7 +132,7 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, fleetManagement: value });
         },
         onChange: setFleetManagement,
-        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+        onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
   );
@@ -146,7 +144,7 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, replyMode: value });
         },
         onChange: setReplyMode,
-        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+        onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
   );
@@ -221,7 +219,7 @@ export default function BotSettingsScreen() {
         setReplyMode(next.replyMode);
         replyModeSave.reset(next.replyMode);
       })
-      .catch((err) => setError(errorText(err, t("Could not load bot"))));
+      .catch((err) => setError(errorText(err, t`Could not load bot`)));
   }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, replyModeSave, notifySave, nameSave]);
 
   useEffect(() => {
@@ -235,7 +233,7 @@ export default function BotSettingsScreen() {
       })
       .catch((err) => {
         setModelMetaReady(false);
-        setModelMetaError(errorText(err, t("Could not load model settings")));
+        setModelMetaError(errorText(err, t`Could not load model settings`));
       });
   }, [t]);
 
@@ -268,16 +266,16 @@ export default function BotSettingsScreen() {
   ).filter((level) => level !== "off");
 
   const modelChoices = useMemo(
-    () => chatModelPickerChoices(me, catalog, credentials, selectedModelKey, t),
+    () => chatModelPickerChoices(me, catalog, credentials, selectedModelKey),
     [catalog, credentials, me, selectedModelKey, t],
   );
 
   const thinkingChoices: MenuPickerChoice[] = useMemo(
     () => [
-      { key: "", label: t("Default") },
+      { key: "", label: t`Default` },
       ...thinkingOptions.map((level) => ({
         key: level,
-        label: thinkingLevelLabel(level, t),
+        label: thinkingLevelLabel(level),
       })),
     ],
     [t, thinkingOptions],
@@ -310,7 +308,7 @@ export default function BotSettingsScreen() {
 
   function failVoices() {
     setVoices([]);
-    setVoiceError(t("Could not load voices"));
+    setVoiceError(t`Could not load voices`);
   }
 
   useFocusEffect(
@@ -359,7 +357,7 @@ export default function BotSettingsScreen() {
     } catch {
       if (choice !== voiceChoice.current) return;
       setVoiceId(savedVoiceId.current);
-      setError(t("Could not save that voice"));
+      setError(t`Could not save that voice`);
       return;
     }
     if (choice !== voiceChoice.current) return;
@@ -371,7 +369,7 @@ export default function BotSettingsScreen() {
       if (choice !== voiceChoice.current) return;
       const sampleName = name.trim();
       Speech.speak(
-        sampleName ? t("Hi, I'm {name}.", { name: sampleName }) : t("Hi, this is how I'll sound."),
+        sampleName ? t`Hi, I'm ${ph({ name: sampleName })}.` : t`Hi, this is how I'll sound.`,
         { voice: voice.identifier },
       );
     } catch {
@@ -380,7 +378,7 @@ export default function BotSettingsScreen() {
   }
 
   const currentVoice = voices.find((voice) => voice.identifier === voiceId);
-  const currentVoiceLabel = currentVoice ? voiceLabel(currentVoice) : t("Default");
+  const currentVoiceLabel = currentVoice ? voiceLabel(currentVoice) : t`Default`;
 
   async function retryDeviceVoices() {
     if (!botId) return;
@@ -460,7 +458,7 @@ export default function BotSettingsScreen() {
       ]);
       router.back();
     } catch (err) {
-      setError(errorText(err, t("Could not save bot")));
+      setError(errorText(err, t`Could not save bot`));
     } finally {
       setPending(false);
     }
@@ -482,11 +480,11 @@ export default function BotSettingsScreen() {
   const voiceRowContent = (
     <SettingsRow
       accessible
-      accessibilityLabel={t("Device voice")}
+      accessibilityLabel={t`Device voice`}
       accessibilityRole={hasVoiceMenu || voiceError ? "button" : undefined}
       accessibilityValue={{ text: voiceError ?? currentVoiceLabel }}
       onPress={voiceError ? () => void retryDeviceVoices() : undefined}
-      title={t("Device voice")}
+      title={t`Device voice`}
       value={voiceError ? undefined : currentVoiceLabel}
       trailing={
         voiceError ? (
@@ -507,7 +505,7 @@ export default function BotSettingsScreen() {
   const voiceRow = hasVoiceMenu ? (
     <MenuPickerMenu
       choices={voices.map((voice) => ({ key: voice.identifier, label: voiceLabel(voice) }))}
-      label={t("Device voice")}
+      label={t`Device voice`}
       onChange={(key) => {
         const voice = voices.find((candidate) => candidate.identifier === key);
         if (voice) void chooseVoice(voice);
@@ -522,7 +520,7 @@ export default function BotSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={glassHeaderOptions(t("Chat settings"))} />
+      <Stack.Screen options={glassHeaderOptions(t`Chat settings`)} />
       <ScrollView
         ref={scrollRef}
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
@@ -536,7 +534,7 @@ export default function BotSettingsScreen() {
           <View style={{ alignItems: "center", marginBottom: 24 }}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t("Edit avatar")}
+              accessibilityLabel={t`Edit avatar`}
               onPress={() => setAvatarOpen(true)}
               style={{ padding: 4 }}
             >
@@ -564,8 +562,8 @@ export default function BotSettingsScreen() {
         ) : null}
         <View style={{ alignItems: "center", gap: 4, marginTop: -16, marginBottom: -8 }}>
           <ProfileEditDialog
-            label={t("Name")}
-            editLabel={t("Edit name")}
+            label={t`Name`}
+            editLabel={t`Edit name`}
             value={name}
             maxLength={BOT_NAME_MAX_LENGTH}
             large
@@ -575,9 +573,9 @@ export default function BotSettingsScreen() {
           />
         </View>
         <View style={{ marginTop: 24 }}>
-          <SettingsGroup label={t("Notifications")}>
+          <SettingsGroup label={t`Notifications`}>
             <SettingsSwitch
-              label={t("When it finishes or needs input")}
+              label={t`When it finishes or needs input`}
               value={notifyOnFinish}
               onChange={(value) => notifySave.update(value)}
             />
@@ -586,7 +584,7 @@ export default function BotSettingsScreen() {
         {botId ? <BotContextCards key={botId} botId={botId} /> : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("Advanced")}
+          accessibilityLabel={t`Advanced`}
           accessibilityState={{ expanded: advancedOpen }}
           onPress={() => setAdvancedOpen((open) => !open)}
           style={{
@@ -598,7 +596,7 @@ export default function BotSettingsScreen() {
           }}
         >
           <Text style={{ color: native.secondaryLabel, ...typeScale.caption, paddingStart: 16 }}>
-            {t("Advanced")}
+            {t`Advanced`}
           </Text>
           <Chevron expanded={advancedOpen} />
         </Pressable>
@@ -611,10 +609,10 @@ export default function BotSettingsScreen() {
                 scrollRef.current?.scrollTo({ y: modelY.current, animated: true });
             }}
           >
-            <SettingsGroup label={t("Model")} footer={modelMetaError ?? undefined}>
+            <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>
               <MenuPicker
                 choices={modelChoices}
-                label={t("Model")}
+                label={t`Model`}
                 showLabel={false}
                 onChange={selectModel}
                 onPress={
@@ -631,28 +629,29 @@ export default function BotSettingsScreen() {
               {thinkingOptions.length ? (
                 <MenuPicker
                   choices={thinkingChoices}
-                  label={t("Thinking")}
+                  label={t`Thinking`}
                   onChange={setThinkingLevel}
                   value={thinkingLevel}
                 />
               ) : null}
             </SettingsGroup>
-            <SettingsGroup label={t("Computer")}>
+            <SettingsGroup label={t`Computer`}>
               <View style={styles.cardContent}>
                 <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
               </View>
+              {computerMaintenanceRows}
             </SettingsGroup>
-            <SettingsGroup label={t("Voice")}>
+            <SettingsGroup label={t`Voice`}>
               <SettingsSwitch
-                label={t("Read replies aloud")}
+                label={t`Read replies aloud`}
                 onChange={setAutoSpeak}
                 value={autoSpeak}
               />
               {deviceVoiceEnabled ? voiceRow : null}
             </SettingsGroup>
-            <SettingsGroup label={t("Permissions")}>
+            <SettingsGroup label={t`Permissions`}>
               <SettingsSwitch
-                label={t("Daily check-ins on unfinished work")}
+                label={t`Daily check-ins on unfinished work`}
                 value={dailyCheckIns}
                 onChange={(value) => {
                   if (!botId) return;
@@ -661,7 +660,7 @@ export default function BotSettingsScreen() {
                 }}
               />
               <SettingsSwitch
-                label={t("Allow cross-space bot communication")}
+                label={t`Allow cross-space bot communication`}
                 value={crossSpaceCommunication}
                 onChange={(value) => {
                   if (!botId) return;
@@ -670,7 +669,7 @@ export default function BotSettingsScreen() {
                 }}
               />
               <SettingsSwitch
-                label={t("Manage other bots")}
+                label={t`Manage other bots`}
                 onChange={(value) => {
                   if (!botId) return;
                   setError(null);
@@ -679,13 +678,13 @@ export default function BotSettingsScreen() {
                 value={fleetManagement}
               />
             </SettingsGroup>
-            <SettingsGroup label={t("Replies")}>
+            <SettingsGroup label={t`Replies`}>
               <MenuPicker
                 choices={[
-                  { key: "chat", label: t("Chat") },
-                  { key: "messages", label: t("Messages") },
+                  { key: "chat", label: t`Chat` },
+                  { key: "messages", label: t`Messages` },
                 ]}
-                label={t("Replies")}
+                label={t`Replies`}
                 showLabel={false}
                 onChange={(value) => {
                   if (!botId) return;
@@ -704,11 +703,11 @@ export default function BotSettingsScreen() {
                   paddingEnd: 16,
                 }}
               >
-                <SettingsLabel>{t("Instructions")}</SettingsLabel>
+                <SettingsLabel>{t`Instructions`}</SettingsLabel>
                 {bot?.instructionHistory?.length && instructions === bot.instructions ? (
                   <View style={{ width: 44 }}>
                     <MenuPickerMenu
-                      label={t("Instruction history")}
+                      label={t`Instruction history`}
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
@@ -720,10 +719,10 @@ export default function BotSettingsScreen() {
                           (item) => item.id === versionId,
                         );
                         if (version)
-                          Alert.alert(t("Restore"), version.instructions, [
-                            { text: t("Cancel"), style: "cancel" },
+                          Alert.alert(t`Restore`, version.instructions, [
+                            { text: t`Cancel`, style: "cancel" },
                             {
-                              text: t("Restore"),
+                              text: t`Restore`,
                               onPress: () => {
                                 void rpc("bots/restoreInstructions", {
                                   botId: bot.id,
@@ -743,7 +742,7 @@ export default function BotSettingsScreen() {
                       <View
                         accessible
                         accessibilityRole="button"
-                        accessibilityLabel={t("Instruction history")}
+                        accessibilityLabel={t`Instruction history`}
                         style={{
                           minHeight: 44,
                           minWidth: 44,
@@ -763,7 +762,7 @@ export default function BotSettingsScreen() {
                 ) : null}
               </View>
               <GrowingTextInput
-                label={t("Instructions")}
+                label={t`Instructions`}
                 maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
                 value={instructions}
                 onChangeText={setInstructions}
@@ -771,20 +770,20 @@ export default function BotSettingsScreen() {
                 fontSize={17}
               />
             </View>
-            <SettingsGroup label={t("How other bots see it")}>
+            <SettingsGroup label={t`How other bots see it`}>
               <GrowingTextInput
-                label={t("How other bots see it")}
+                label={t`How other bots see it`}
                 value={description}
                 maxLength={BOT_DESCRIPTION_MAX_LENGTH}
                 onChangeText={setDescription}
-                placeholder={t("What this bot is for")}
+                placeholder={t`What this bot is for`}
                 fontSize={17}
               />
             </SettingsGroup>
             <SettingsGroup>
               <SettingsRow
                 accessibilityRole="button"
-                title={t("Export")}
+                title={t`Export`}
                 trailing={
                   <NativeSymbol
                     ios="square.and.arrow.down"
@@ -802,12 +801,12 @@ export default function BotSettingsScreen() {
               <SettingsRow
                 accessibilityRole="button"
                 destructive
-                title={t("Clear conversation")}
+                title={t`Clear conversation`}
                 onPress={() =>
-                  Alert.alert(t("Clear conversation"), undefined, [
-                    { text: t("Cancel"), style: "cancel" },
+                  Alert.alert(t`Clear conversation`, undefined, [
+                    { text: t`Cancel`, style: "cancel" },
                     {
-                      text: t("Clear conversation"),
+                      text: t`Clear conversation`,
                       style: "destructive",
                       onPress: () => {
                         void rpc("threads/clear", { botId })
@@ -826,7 +825,7 @@ export default function BotSettingsScreen() {
         {dirty ? (
           <NativeActionButton
             disabled={!name.trim() || pending || !bot}
-            label={pending ? t("Saving…") : t("Save")}
+            label={pending ? t`Saving…` : t`Save`}
             onPress={() => void save()}
             style={{ marginTop: 24 }}
           />
@@ -843,118 +842,38 @@ export default function BotSettingsScreen() {
             contentContainerStyle={{ padding: 24, gap: 16 }}
             style={{ backgroundColor: tokens.background }}
           >
-            <NativeActionButton label={t("Done")} onPress={() => setAvatarOpen(false)} />
-            {bot && isAvatarPhoto(color) ? (
+            <NativeActionButton label={t`Done`} onPress={() => setAvatarOpen(false)} />
+            {bot && botLookState(color).photo ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setColor(avatarColor(bot.color))}
+                onPress={() => setColor(botLookState(bot.color).color)}
                 style={{ marginTop: 12 }}
               >
                 <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-                  {t("Remove photo")}
+                  {t`Remove photo`}
                 </Text>
               </Pressable>
             ) : null}
             <MenuPicker
-              label={t("Icon set")}
+              label={t`Icon set`}
               choices={[
-                { key: "organic", label: t("Original") },
-                { key: "rakazo", label: t("Rakazo") },
+                { key: "organic", label: t`Original` },
+                { key: "rakazo", label: t`Rakazo` },
               ]}
               value={avatarSet}
               onChange={(next) => {
                 setAvatarSet(resolveBotAvatarSet(next));
-                setColor((current) => avatarColor(current));
+                setColor((current) => botLookState(current).color);
               }}
               plain
             />
-            <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
-              {t("Color")}
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingVertical: 8, paddingHorizontal: 4 }}
-              accessibilityRole="radiogroup"
-            >
-              {BOT_COLORS.map((option, index) => (
-                <Pressable
-                  key={option}
-                  accessibilityRole="radio"
-                  accessibilityLabel={t("Color {number}", { number: index + 1 })}
-                  accessibilityState={{ checked: avatarColor(color) === option }}
-                  onPress={() => setColor((current) => withAvatarColor(current, option))}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: option,
-                    borderWidth: 3,
-                    borderColor: avatarColor(color) === option ? tokens.foreground : "transparent",
-                  }}
-                />
-              ))}
-            </ScrollView>
-            {bot && !isAvatarPhoto(color) ? (
-              <>
-                <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
-                  {t("Shape")}
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 10, paddingVertical: 8, paddingHorizontal: 4 }}
-                  accessibilityRole="radiogroup"
-                >
-                  <Pressable
-                    accessibilityRole="radio"
-                    accessibilityLabel={t("Default")}
-                    accessibilityState={{
-                      checked: avatarSet === "organic" && avatarShape(color) === null,
-                    }}
-                    onPress={() => {
-                      setAvatarSet("organic");
-                      setColor((current) => avatarColor(current));
-                    }}
-                    style={{
-                      padding: 4,
-                      borderRadius: 14,
-                      borderWidth: 2,
-                      borderColor:
-                        avatarSet === "organic" && avatarShape(color) === null
-                          ? tokens.foreground
-                          : "transparent",
-                    }}
-                  >
-                    <BotAvatar color={avatarColor(color)} identity={bot.id} size={36} />
-                  </Pressable>
-                  {Array.from({ length: BOT_AVATAR_SHAPE_COUNT }, (_, shape) => (
-                    <Pressable
-                      key={shape}
-                      accessibilityRole="radio"
-                      accessibilityLabel={t("Shape {number}", { number: shape + 1 })}
-                      accessibilityState={{ checked: avatarShape(color) === shape }}
-                      onPress={() => {
-                        setAvatarSet("organic");
-                        setColor((current) => withAvatarShape(current, shape));
-                      }}
-                      style={{
-                        padding: 4,
-                        borderRadius: 14,
-                        borderWidth: 2,
-                        borderColor:
-                          avatarShape(color) === shape ? tokens.foreground : "transparent",
-                      }}
-                    >
-                      <BotAvatar
-                        color={withAvatarShape(color, shape)}
-                        identity={bot.id}
-                        size={36}
-                      />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
+            {bot ? (
+              <BotLookPicker
+                value={color}
+                identity={bot.id}
+                avatarSet={avatarSet}
+                onChange={(next) => setColor(next)}
+              />
             ) : null}
           </ScrollView>
         </Modal>

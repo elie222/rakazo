@@ -1,14 +1,19 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
   artifactTypeLabel,
   attachmentExtensionForMimeType,
   attachmentsForBot,
+  blocksToAgentHistorySegments,
   blocksToAgentHistoryText,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
+  isStaticPng,
   normalizeVoiceTranscript,
+  PNG_ANIMATION_HEADER_BYTES,
   promptTextForAttachments,
+  toolStepsHistoryText,
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
@@ -447,5 +452,156 @@ describe("artifactTypeLabel", () => {
 
   it("falls back to the subtype for a type without a known extension", () => {
     expect(artifactTypeLabel("application/x-custom")).toBe("X-CUST");
+  });
+});
+
+describe("tool step history", () => {
+  it("lists each step with its count and the note written before it", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "steps",
+          steps: [
+            { label: "Searched the web", count: 2 },
+            { label: "Shell", count: 1, note: "Installing\n\nthe extension." },
+          ],
+        },
+        { kind: "text", text: "Installed." },
+      ]),
+    ).toBe(
+      "[tool calls this reply made]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
+    );
+  });
+
+  it("lists at most 40 steps", () => {
+    const steps = Array.from({ length: 45 }, (_, index) => ({ label: `Tool ${index}`, count: 1 }));
+    const text = blocksToAgentHistoryText([{ kind: "steps", steps }]);
+    expect(text).toContain("- Tool 39\n- …and 5 more");
+    expect(text).not.toContain("Tool 40");
+  });
+
+  it("skips malformed imported steps instead of throwing", () => {
+    const blocks = [
+      { kind: "steps", steps: "nope" },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, note: 42 }, { count: 1 }] },
+    ] as unknown as MessageBlock[];
+    expect(blocksToAgentHistoryText(blocks)).toBe("[tool calls this reply made]\n- Shell");
+  });
+
+  it("keeps full notes and every step when asked", () => {
+    const steps = Array.from({ length: 45 }, (_, index) => ({
+      label: `Tool ${index}`,
+      count: 1,
+      note: index === 44 ? `${"a".repeat(400)} needle` : undefined,
+    }));
+    const text = toolStepsHistoryText(steps, { full: true });
+    expect(text).toContain("Tool 44");
+    expect(text).toContain("needle");
+    expect(text).not.toContain("more");
+  });
+
+  it("shortens an oversized imported label in the replayed list only", () => {
+    const steps = [{ label: "x".repeat(5_000), count: 1 }];
+    expect(toolStepsHistoryText(steps)).toBe(`[tool calls this reply made]\n- ${"x".repeat(80)}…`);
+    expect(toolStepsHistoryText(steps, { full: true })).toContain("x".repeat(5_000));
+  });
+
+  it("shortens a long note", () => {
+    const text = blocksToAgentHistoryText([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
+    ]);
+    expect(text).toBe(`[tool calls this reply made]\n- Shell: ${"a".repeat(300)}…`);
+  });
+
+  it("says how each step's calls ended, and leaves steps without outcomes as they were", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "steps",
+          steps: [
+            { label: "Shell", count: 2, outcomes: { succeeded: 2 }, note: "Installing it." },
+            { label: "Computer", count: 3, outcomes: { succeeded: 1, failed: 1, stopped: 1 } },
+            { label: "Read file", count: 2, outcomes: { failed: 1 } },
+            { label: "Web search", count: 1 },
+          ],
+        },
+      ]),
+    ).toBe(
+      [
+        "[tool calls this reply made]",
+        "- Shell ×2 (succeeded): Installing it.",
+        "- Computer ×3 (1 succeeded, 1 failed, 1 stopped)",
+        "- Read file ×2 (1 failed)",
+        "- Web search",
+      ].join("\n"),
+    );
+  });
+
+  it("renders nothing for an empty steps block", () => {
+    expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
+  });
+
+  it("splits a reply at its tool steps, in order, rendering the rest as the text form does", () => {
+    const steps = [{ label: "Shell", tool: "shell", count: 1, note: "Checking." }];
+    const blocks = [
+      { kind: "text", text: "First." },
+      { kind: "steps", steps },
+      { kind: "steps", steps: [{ count: 1 }] },
+      { kind: "text", text: "Done." },
+      { kind: "image", name: "shot.png" },
+    ] as unknown as MessageBlock[];
+    expect(blocksToAgentHistorySegments(blocks)).toEqual([
+      { text: "First." },
+      { steps },
+      { text: "Done.\n[image: shot.png]" },
+    ]);
+    expect(blocksToAgentHistorySegments([{ kind: "text", text: "Hi." }])).toEqual([
+      { text: "Hi." },
+    ]);
+  });
+});
+
+describe("isStaticPng", () => {
+  function header(...chunks: Array<[string, number]>) {
+    const bytes = new Uint8Array(33 + chunks.reduce((sum, [, size]) => sum + size + 12, 0));
+    bytes.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+    const view = new DataView(bytes.buffer);
+    let offset = 33;
+    for (const [type, size] of chunks) {
+      view.setUint32(offset, size);
+      bytes.set(
+        [...type].map((c) => c.charCodeAt(0)),
+        offset + 4,
+      );
+      offset += size + 12;
+    }
+    return bytes;
+  }
+  it("allows static PNG headers with ancillary chunks", () => {
+    expect(isStaticPng(header(["tEXt", 16], ["IDAT", 0]))).toBe(true);
+  });
+  it("preserves animation even for a single-frame or malformed acTL", () => {
+    expect(isStaticPng(header(["acTL", 8], ["IDAT", 0]))).toBe(false);
+    expect(isStaticPng(header(["acTL", 0], ["IDAT", 0]))).toBe(false);
+  });
+  it("does not mistake acTL inside ancillary data for an animation chunk", () => {
+    const bytes = header(["tEXt", 8], ["IDAT", 0]);
+    bytes.set([97, 99, 84, 76], 41);
+    expect(isStaticPng(bytes)).toBe(true);
+  });
+  it("preserves truncated, invalid and over-budget headers", () => {
+    expect(isStaticPng(new Uint8Array(100))).toBe(false);
+    expect(isStaticPng(header(["IDAT", 0]).subarray(0, 36))).toBe(false);
+    expect(isStaticPng(header(["IEND", 0]))).toBe(false);
+    expect(isStaticPng(header(["tEXt", PNG_ANIMATION_HEADER_BYTES], ["IDAT", 0]))).toBe(false);
+    const bytes = header(["tEXt", 0], ["IDAT", 0]);
+    new DataView(bytes.buffer).setUint32(33, 0xffffffff);
+    expect(isStaticPng(bytes)).toBe(false);
+  });
+  it("handles a bounded subarray without inspecting adjacent memory", () => {
+    const png = header(["IDAT", 0]);
+    const bytes = new Uint8Array(png.length + 10);
+    bytes.set(png, 5);
+    expect(isStaticPng(bytes.subarray(5, 5 + png.length))).toBe(true);
   });
 });

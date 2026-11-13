@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { Socket } from "node:net";
 import {
   createModels,
   fauxAssistantMessage,
@@ -284,6 +286,32 @@ describe("private model endpoints", () => {
       );
     }
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("sends loopback requests to the deployment's host address", async () => {
+    const urls: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response("{}", { status: 200 });
+    });
+    const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, OWNER);
+    try {
+      await safeFetch("http://localhost:11234/v1/models");
+      vi.stubEnv("RAKAZO_LOOPBACK_HOST", "host.docker.internal");
+      await safeFetch("http://127.0.0.1:11234/v1/models");
+      await safeFetch("http://10.0.0.5:8000/v1/models");
+      vi.stubEnv("RAKAZO_LOOPBACK_HOST", "169.254.169.254");
+      await expect(safeFetch("http://localhost:11234/v1/models")).rejects.toThrow(
+        "blocked metadata",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(urls).toEqual([
+      "http://localhost:11234/v1/models",
+      "http://host.docker.internal:11234/v1/models",
+      "http://10.0.0.5:8000/v1/models",
+    ]);
   });
 
   it.each([undefined, true])(
@@ -927,6 +955,47 @@ describe("openai-compatible provider", () => {
     expect(cancelled).toBe(true);
   });
 
+  it("says a refused model server is not running, and keeps other transport errors", async () => {
+    const down: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+      });
+    };
+    const bothAddressesDown: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: new AggregateError([
+          Object.assign(new Error("connect ECONNREFUSED ::1"), { code: "ECONNREFUSED" }),
+          Object.assign(new Error("connect ECONNREFUSED 127.0.0.1"), { code: "ECONNREFUSED" }),
+        ]),
+      });
+    };
+    const redirected: typeof fetch = async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    };
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:11234/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("Check that it's running");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://localhost:11234/v1" },
+        bothAddressesDown,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("Check that it's running");
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://10.0.0.5:8000/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("Check that it's running");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:11234/v1" },
+        redirected,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("fetch failed");
+  });
+
   it("clarifies probe timeouts with hand-fill hint", async () => {
     const fetchImpl: typeof fetch = async (_input, init) =>
       new Promise((_, reject) => {
@@ -1426,6 +1495,155 @@ describe("anthropic-messages wire protocol", () => {
     expect(seenHeaders?.get("authorization")).toBeNull();
   });
 
+  it("follows Anthropic model pages with the same headers and signal", async () => {
+    const first = Array.from({ length: 20 }, (_, index) => ({ id: `model-${index}` }));
+    const requests: RequestInit[] = [];
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(init ?? {});
+      return Response.json(
+        new URL(String(url)).searchParams.has("after_id")
+          ? { data: [{ id: "model-20" }], has_more: false }
+          : { data: first, has_more: true, last_id: "model-19" },
+      );
+    });
+    const result = await probeOpenAiCompatibleModels(
+      { baseUrl: input.baseUrl, apiKey: "fake-key", apiProtocol: "anthropic-messages" },
+      fetchImpl,
+      undefined,
+      OWNER,
+    );
+    expect(result).toEqual([...first.map(({ id }) => id), "model-20"]);
+    expect(requests[1]?.signal).toBe(requests[0]?.signal);
+    for (const request of requests) {
+      expect(new Headers(request.headers).get("x-api-key")).toBe("fake-key");
+      expect(new Headers(request.headers).get("anthropic-version")).toBe("2023-06-01");
+      expect(request.redirect).toBe("error");
+    }
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toBe(`${input.baseUrl}/models?after_id=model-19`);
+  });
+
+  it.each([undefined, "", "   ", 42])(
+    "rejects missing or invalid pagination cursor %s",
+    async (last_id) => {
+      const fetchImpl = vi.fn(async () =>
+        Response.json({
+          data: [{ id: "model" }],
+          has_more: true,
+          last_id,
+        }),
+      );
+      await expect(
+        probeOpenAiCompatibleModels(
+          { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+          fetchImpl,
+          undefined,
+          OWNER,
+        ),
+      ).rejects.toThrow("pagination");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("rejects repeated cursors rather than returning an incomplete list", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: [{ id: "model" }],
+        has_more: true,
+        last_id: "model",
+      }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("pagination");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces the model count limit across pages", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: Array.from({ length: 2001 }, (_, index) => ({ id: `model-${index}` })),
+        has_more: true,
+        last_id: "next",
+      }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("too many");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a later page failure and releases its response body", async () => {
+    const cancel = vi.fn();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          data: [{ id: "first" }],
+          has_more: true,
+          last_id: "first",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 429 }));
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("returned 429");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("preserves caller cancellation on a later page", async () => {
+    const caller = new AbortController();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          data: [{ id: "first" }],
+          has_more: true,
+          last_id: "first",
+        }),
+      )
+      .mockImplementationOnce(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        caller.abort();
+        init?.signal?.throwIfAborted();
+      });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: input.baseUrl, apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        caller.signal,
+        OWNER,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("does not interpret Anthropic pagination for other protocols", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        data: [{ id: "model" }],
+        has_more: true,
+        last_id: "model",
+      }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: input.baseUrl }, fetchImpl, undefined, OWNER),
+    ).resolves.toEqual(["model"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("probes keyless Anthropic-compatible servers with the version header", async () => {
     // A keyless endpoint can still require the version header the SDK always sends.
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -1445,5 +1663,85 @@ describe("anthropic-messages wire protocol", () => {
       ),
     ).resolves.toEqual(["claude-fixture"]);
     expect(new Headers(fetchImpl.mock.calls[0]?.[1]?.headers).get("x-api-key")).toBeNull();
+  });
+});
+
+describe("outbound proxy", () => {
+  async function withConnectProxy(
+    run: (proxy: { targetPort: number; connects: string[]; hosts: string[] }) => Promise<void>,
+  ): Promise<void> {
+    const connects: string[] = [];
+    const hosts: string[] = [];
+    const target = createServer((request, response) => {
+      hosts.push(request.headers.host ?? "");
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "proxied-model" }] }));
+    });
+    const proxy = createServer((_request, response) => response.writeHead(405).end());
+    proxy.on("connect", (request, client) => {
+      connects.push(request.url ?? "");
+      const upstream = new Socket();
+      upstream.connect((target.address() as AddressInfo).port, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        upstream.pipe(client).pipe(upstream);
+      });
+    });
+    await Promise.all(
+      [target, proxy].map(
+        (server) => new Promise<void>((done) => server.listen(0, "127.0.0.1", done)),
+      ),
+    );
+    const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+    vi.stubEnv("HTTP_PROXY", proxyUrl);
+    vi.stubEnv("http_proxy", proxyUrl);
+    vi.stubEnv("NO_PROXY", "");
+    vi.stubEnv("no_proxy", "");
+    try {
+      await run({ targetPort: (target.address() as AddressInfo).port, connects, hosts });
+    } finally {
+      vi.unstubAllEnvs();
+      proxy.closeAllConnections();
+      target.closeAllConnections();
+      await Promise.all([target, proxy].map((server) => new Promise((done) => server.close(done))));
+    }
+  }
+
+  it("tunnels a public endpoint to the checked address and keeps the original host", async () => {
+    await withConnectProxy(async ({ connects, hosts }) => {
+      const safeFetch = createOpenAiCompatibleFetch(
+        undefined,
+        async () => [{ address: "203.0.113.10", family: 4 }],
+        { allowPublic: true },
+      );
+      const response = await safeFetch("http://models.example.com/v1/models");
+
+      await expect(response.json()).resolves.toEqual({ data: [{ id: "proxied-model" }] });
+      expect(connects).toEqual(["203.0.113.10:80"]);
+      expect(hosts).toEqual(["models.example.com"]);
+    });
+  });
+
+  it("refuses a public endpoint that resolves to a private address before the proxy is asked", async () => {
+    await withConnectProxy(async ({ connects }) => {
+      const safeFetch = createOpenAiCompatibleFetch(
+        undefined,
+        async () => [{ address: "10.0.0.5", family: 4 }],
+        { allowPublic: true },
+      );
+
+      await expect(safeFetch("http://models.example.com/v1/models")).rejects.toThrow();
+      expect(connects).toEqual([]);
+    });
+  });
+
+  it("keeps a local model server on the direct route", async () => {
+    await withConnectProxy(async ({ targetPort, connects, hosts }) => {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
+      const response = await safeFetch(`http://127.0.0.1:${targetPort}/v1/models`);
+
+      await expect(response.json()).resolves.toEqual({ data: [{ id: "proxied-model" }] });
+      expect(connects).toEqual([]);
+      expect(hosts).toEqual([`127.0.0.1:${targetPort}`]);
+    });
   });
 });

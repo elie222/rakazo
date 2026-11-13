@@ -1,26 +1,61 @@
 import * as z from "zod";
 
+/** Preserve mailbox casing; only the domain is case-insensitive. */
+export const BotEmailRecipientSchema = z.email().transform((address) => {
+  const at = address.lastIndexOf("@");
+  return `${address.slice(0, at)}@${address.slice(at + 1).toLowerCase()}`;
+});
+
 export const BOT_EMAIL_NAME_TAKEN = "That address isn't available";
 
-/** Role and abuse-desk names (RFC 2142) and names people trust by reflex. */
+/** Role and abuse-desk names (RFC 2142), names people trust by reflex, and the project's own. */
 const RESERVED_BOT_EMAIL_NAMES = new Set([
   "abuse",
+  "accounts",
   "admin",
   "administrator",
   "billing",
+  "careers",
+  "contact",
+  "elie",
   "help",
+  "hello",
+  "hi",
   "hostmaster",
   "info",
+  "jobs",
+  "legal",
+  "mail",
   "mailer-daemon",
+  "marketing",
   "no-reply",
   "noc",
   "noreply",
+  "notifications",
+  "partners",
   "postmaster",
+  "press",
+  "privacy",
+  "rakazo",
   "root",
+  "sales",
   "security",
   "support",
+  "team",
+  "verify",
   "webmaster",
 ]);
+
+/** A reserved name, alone or before a separator (support-team, admin.bot), or anything rakazo*. */
+function isReservedBotEmailName(name: string): boolean {
+  return (
+    name.startsWith("rakazo") ||
+    [...RESERVED_BOT_EMAIL_NAMES].some(
+      (reserved) =>
+        name.startsWith(reserved) && ["", ".", "-", "_"].includes(name.charAt(reserved.length)),
+    )
+  );
+}
 
 /** The part of a bot's address before the @, as its owner chose it. */
 export const BotEmailNameSchema = z
@@ -31,7 +66,7 @@ export const BotEmailNameSchema = z
   .max(64, "Use at most 64 characters")
   .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, "Use letters, numbers, dots, dashes or underscores")
   .refine((name) => !name.includes(".."), "Use letters, numbers, dots, dashes or underscores")
-  .refine((name) => !RESERVED_BOT_EMAIL_NAMES.has(name), BOT_EMAIL_NAME_TAKEN);
+  .refine((name) => !isReservedBotEmailName(name), BOT_EMAIL_NAME_TAKEN);
 
 /** Why a name can't be claimed, for each app to word in its own language. */
 export type BotEmailNameProblem = "length" | "taken" | "characters";
@@ -74,10 +109,11 @@ export type BotEmailAddresses = z.infer<typeof BotEmailAddressesSchema>;
 
 /**
  * A first address suggestion from a bot's name, such as "research-helper". ASCII only: many mail
- * servers still refuse non-ASCII addresses. Empty when nothing in the name can be kept.
+ * servers still refuse non-ASCII addresses. Empty when nothing in the name can be kept or what
+ * is left is reserved.
  */
 export function suggestedEmailName(botName: string): string {
-  return botName
+  const name = botName
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[\u0300-\u036f]/g, "")
@@ -85,4 +121,5 @@ export function suggestedEmailName(botName: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)
     .replace(/-+$/, "");
+  return isReservedBotEmailName(name) ? "" : name;
 }

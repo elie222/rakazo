@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
@@ -6,14 +8,13 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { computerUpdates } from "../lib/computer-updates";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { GlassSurface } from "./glass-surface";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 
 export function ComputerUpdateProgress() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
@@ -26,24 +27,24 @@ export function ComputerUpdateProgress() {
   const authenticated = !["/sign-in"].includes(pathname);
   useEffect(() => (authenticated ? computerUpdates.watch() : undefined), [authenticated]);
   const labels = [
-    t("Getting ready"),
-    t("Saving your workspace"),
-    t("Recreating the computer"),
-    t("Restoring your workspace"),
-    t("Reconnecting"),
+    t`Getting ready`,
+    t`Saving your workspace`,
+    t`Recreating the computer`,
+    t`Restoring your workspace`,
+    t`Reconnecting`,
   ];
   const title = (update: ComputerUpdate) =>
     computerUpdateNeedsAttention(update)
       ? update.action === "recover"
-        ? t("Recovery failed")
-        : t("Update failed")
+        ? t`Recovery failed`
+        : t`Update failed`
       : update.action === "recover"
         ? update.mode === "team"
-          ? t("Recovering Team Computer")
-          : t("Recovering {name}’s Computer", { name: update.name })
+          ? t`Recovering Team Computer`
+          : t`Recovering ${ph({ name: update.name })}’s Computer`
         : update.mode === "team"
-          ? t("Updating Team Computer")
-          : t("Updating {name}’s Computer", { name: update.name });
+          ? t`Updating Team Computer`
+          : t`Updating ${ph({ name: update.name })}’s Computer`;
   const selected = updates.find((item) => item.id === openId);
   if (!authenticated) return null;
   return (
@@ -92,8 +93,8 @@ export function ComputerUpdateProgress() {
             {computerUpdateNeedsAttention(selected) ? (
               <Text style={{ color: tokens.mutedForeground }}>
                 {selected.status === "interrupted"
-                  ? t("Recovery is unavailable until the previous operation has stopped.")
-                  : t("Recovery restores the last saved workspace. Unsaved work may be lost.")}
+                  ? t`Recovery is unavailable until the previous operation has stopped.`
+                  : t`Recovery restores the last saved workspace. Unsaved work may be lost.`}
               </Text>
             ) : (
               computerUpdateStages(selected.action).map((stage, index) => {
@@ -124,12 +125,12 @@ export function ComputerUpdateProgress() {
             )}
             {error ? (
               <Text accessibilityRole="alert" style={{ color: tokens.destructive }}>
-                {t("Could not complete action")}
+                {t`Could not complete action`}
               </Text>
             ) : null}
             {selected.status === "failed" ? (
               <NativeActionButton
-                label={t("Recover computer")}
+                label={t`Recover computer`}
                 busy={busy}
                 onPress={() => {
                   setBusy(true);
@@ -142,7 +143,7 @@ export function ComputerUpdateProgress() {
               />
             ) : null}
             <NativeActionButton
-              label={selected.status === "failed" ? t("Dismiss") : t("Continue in Background")}
+              label={selected.status === "failed" ? t`Dismiss` : t`Continue in Background`}
               prominence="secondary"
               fill
               onPress={() => {

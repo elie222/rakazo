@@ -1,5 +1,6 @@
 import type {
   AdapterContext,
+  AgentToolCompletion,
   BrowserProvider,
   ComputerRef,
   ConnectorTool,
@@ -9,7 +10,14 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type {
+  AttachmentImageMimeType,
+  ComputerMode,
+  MessageBlock,
+  ReplyMode,
+  ToolStepCall,
+} from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -27,6 +35,7 @@ import {
   terminatingToolResult,
 } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import type { VaultItemUse } from "./bot-secrets.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
@@ -36,13 +45,18 @@ import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
+import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
+import type { ScreenTurn } from "./screen-turn.js";
 import type { inferScript } from "./scripted-runtime.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
+import type { ToolRefusal } from "./tool-refusal.js";
+import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { recordVaultItemUse } from "./vault-activity.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
 
@@ -117,6 +131,18 @@ export interface ReplyState {
    * sentence boundary, so the step chips never render in the middle of a clause.
    */
   pendingToolNames: string[];
+  /** Every step label a call made, in call order, so its outcome can be saved on its step. */
+  toolCalls: { label: string; executionId: string; tool?: string }[];
+  /** How each finished call ended, by execution id. */
+  toolOutcomes: Map<string, ToolStepOutcome>;
+  /** What each call that shows as its own step was called with and returned, by execution id. */
+  toolStepCalls: Map<string, ToolStepCall>;
+  /** Characters of results the reply has kept so far, against its budget. */
+  keptResultChars: number;
+  /** Calls that finished before their call event was handled, kept once it is. */
+  earlyCompletions?: Map<string, AgentToolCompletion>;
+  /** The last screenshot a kept call returned, saved with the reply for its later turns. */
+  latestScreenshot?: { executionId: string; mimeType: AttachmentImageMimeType; data: Uint8Array };
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;
@@ -152,6 +178,7 @@ export interface EffectState {
 export interface ScreenState {
   lastFrameId: string | undefined;
   unchangedVisualStreak: UnchangedVisualStreak;
+  turn: ScreenTurn;
 }
 
 /** What one attempt changes while it runs. Every piece shares these objects by reference. */
@@ -170,6 +197,8 @@ export interface RunState {
   toolCallStreak: LoopGuardStreak;
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
+  /** Calls refused before their tool ran, by execution id, for the log of a loop one causes. */
+  toolRefusals?: Map<string, ToolRefusal>;
   /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
   overLimitActionCalls: number;
   /**
@@ -197,6 +226,9 @@ export interface RunState {
    * the wallet owner approved paying there, so the pay click there asks nothing more.
    */
   walletHosts: Set<string>;
+  /** Where the page browser last said its page was, which picks a login's site to fill on. */
+  pageUrl?: string;
+  vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
 }
@@ -343,6 +375,32 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   reply.redactor = createStreamingRedactor(ctx.secrets);
 }
 
+// Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes
+// the run, but a login typed on another of its sites shows there too. A command variable goes to
+// the bot's shell, which is no site, so it is once per item however many commands get it.
+export async function recordVaultUse(
+  ctx: RunContext,
+  tool: string,
+  item: VaultItemUse,
+  site?: string,
+) {
+  const use = JSON.stringify([item.id, site ?? null]);
+  if (ctx.state.vaultUses.has(use)) return;
+  ctx.state.vaultUses.add(use);
+  const recorded = await recordVaultItemUse({
+    bot: ctx.bot,
+    spaceId: ctx.run.spaceId,
+    // The run's person, whose vault holds the item.
+    userId: ctx.run.userId,
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    tool,
+    item,
+    site,
+  });
+  if (!recorded) ctx.state.vaultUses.delete(use);
+}
+
 export function pauseForApproval(ctx: RunContext) {
   ctx.state.approval.pausePending = true;
   return approvalPausedToolResult();
@@ -371,7 +429,7 @@ export function refuseOwnerSettingsChange(
     return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
   }
   ctx.state.ownerSettingsRefused = true;
-  return { error };
+  return refusal("outside_content_blocks_owner_settings", error);
 }
 
 export async function isRunTainted(ctx: RunContext) {
@@ -383,6 +441,11 @@ export async function isRunTainted(ctx: RunContext) {
   if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage()))
     state.tainted = true;
   return state.tainted;
+}
+
+/** Fresh outside input applies the existing action protections for this run. */
+export async function markReadOutsideContent(ctx: RunContext) {
+  ctx.state.tainted = true;
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
@@ -436,7 +499,8 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
 /**
  * Reserve the effect occurrences a saved turn already assigned, so its pending call claims the
  * same effect when it resumes. Returns undefined when the turn cannot resume with this run's
- * tools or transcript format.
+ * tools or transcript format. A pinned computer-mode turn whose pending tool is not offered
+ * right now throws PausedTurnToolsUnavailableError instead, so setup retries it quietly.
  */
 export function restoreTurnCheckpointEffects(
   ctx: RunContext,
@@ -462,19 +526,25 @@ export function restoreTurnCheckpointEffects(
         return undefined;
       available.add(computerMode === "main" ? "enter_computer_mode" : "leave_computer_mode");
     }
-    if (
-      saved.messages.some(
-        (message) =>
-          message.role === "assistant" &&
-          message.content.some(
+    const missing = saved.messages.flatMap((message) =>
+      message.role === "assistant"
+        ? message.content.filter(
             (call) =>
               call.type === "toolCall" &&
               unresolved.has(call) &&
               (saved.executionMode === "sequential" || call.id === saved.pendingToolCallId) &&
               !available.has(call.name),
-          ),
-      )
-    ) {
+          )
+        : [],
+    );
+    if (missing.length) {
+      // A transition for the other mode is an invalid checkpoint, not a tool that went offline.
+      const transition = missing.some(
+        (call) =>
+          call.type === "toolCall" &&
+          (call.name === "enter_computer_mode" || call.name === "leave_computer_mode"),
+      );
+      if (computerMode && !transition) throw new PausedTurnToolsUnavailableError();
       return undefined;
     }
     if (saved.effectOccurrences) {
@@ -516,7 +586,8 @@ export function restoreTurnCheckpointEffects(
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
-  } catch {
+  } catch (error) {
+    if (error instanceof PausedTurnToolsUnavailableError) throw error;
     // Incompatible transcripts use the existing canonical approval replay.
     // Decryption happens earlier and must still fail closed.
     return undefined;

@@ -1,117 +1,540 @@
-import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import type {
+  AdapterContext,
+  BackgroundJob,
+  JobTransaction,
+  MessagingInstallProvider,
+  MessagingPlatformDescriptor,
+  MessagingSendRequest,
+  MessagingSendResult,
+  MessagingSurface,
+} from "@rakazo/adapter-kit";
+import {
+  MESSAGING_SEND_MAX_ATTEMPTS,
+  messagingReplyJob,
+  messagingReplyJobKey,
+  messagingSendJobKey,
+  RetryJobLaterError,
+} from "@rakazo/adapter-kit";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
+import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
-import type { MessagingDeliveryDeps } from "./messaging-delivery.js";
+import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
+import type { MessagingDeliveryDeps, OutboundLane, OutboundRow } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
-  deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
-  MESSAGING_OUTBOUND_MAX_ATTEMPTS,
-  mirrorMessagingOutbound,
-  mirrorMessagingProgress,
+  MESSAGING_SEND_BACKUP_MS,
+  MESSAGING_SEND_STALE_MS,
+  MESSAGING_SEND_TIMEOUT_MS,
+  MessagingDelivery,
 } from "./messaging-delivery.js";
 import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 import { userProgressClientNonce } from "./user-progress.js";
 
-const context: AdapterContext = {
-  operationId: "op-1",
-  traceId: "trace-1",
-  spaceId: "ws-1",
-  userId: "user-1",
-  signal: new AbortController().signal,
+type Where = Record<string, unknown>;
+
+type OutboundRecord = {
+  id: string;
+  idempotencyKey: string;
+  kind: string;
+  identityId: string | null;
+  threadId: string | null;
+  body: string;
+  status: string;
+  providerHandle: string | null;
+  claimedAt?: Date | null;
+  sourceMessageId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
-const identity = {
-  id: "mi-1",
-  provider: "sendblue",
-  address: "+15551234567",
-  dmThreadId: "sendblue:dm-1",
-  userId: "user-1",
-  spaceId: "ws-1",
-  botId: "bot-1",
-  outboundSinceInbound: 0,
+type MessageRecord = {
+  id: string;
+  threadId: string;
+  runId: string | null;
+  role: string;
+  seq: number;
+  clientNonce: string | null;
+  blocks: unknown[];
+  replyToMessageId: string | null;
 };
 
-const messagingRun = {
-  id: "run-1",
-  botId: "bot-1",
-  userId: "user-1",
-  trigger: "messaging",
-  sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
+type IdentityRecord = {
+  id: string;
+  botId: string;
+  userId: string;
+  spaceId: string;
+  provider: string;
+  address: string;
+  dmThreadId: string | null;
+  outboundSinceInbound: number;
 };
 
-type OutboundRowFilter = Record<string, unknown>;
+type Reply = { id: string; blocks: unknown[]; clientNonce?: string };
 
-/** The drains' send order: createdAt, then id to break remaining ties. */
-function bySendOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
-  const byTime = (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime();
-  return byTime || String(a.id).localeCompare(String(b.id));
+function createWorld() {
+  const bot = (name: string, userId: string, spaceId: string) => ({
+    name,
+    userId,
+    spaceId,
+    crossSpaceCommunication: true,
+    archivedAt: null as Date | null,
+  });
+  return {
+    users: new Map([
+      ["user-1", { name: "Alice Owner", deactivatedAt: null as Date | null }],
+      ["user-2", { name: "Bob Peer", deactivatedAt: null as Date | null }],
+      ["user-9", { name: "Carol Requester", deactivatedAt: null as Date | null }],
+    ]),
+    bots: new Map([
+      ["bot-1", bot("Assistant", "user-1", "ws-1")],
+      ["bot-2", bot("Helper", "user-2", "ws-2")],
+      ["bot-9", bot("Scout", "user-9", "ws-9")],
+    ]),
+    identities: [
+      {
+        id: "mi-1",
+        botId: "bot-1",
+        userId: "user-1",
+        spaceId: "ws-1",
+        provider: "sendblue",
+        address: "+15551234567",
+        dmThreadId: "sendblue:dm-1",
+        outboundSinceInbound: 0,
+      },
+      {
+        id: "mi-2",
+        botId: "bot-2",
+        userId: "user-2",
+        spaceId: "ws-2",
+        provider: "sendblue",
+        address: "+15553333333",
+        dmThreadId: "sendblue:dm-2",
+        outboundSinceInbound: 0,
+      },
+    ] as IdentityRecord[],
+    threads: [
+      { id: "thread-1", botId: "bot-1", userId: "user-1", nextMessageSeq: 100, nextEventSeq: 100 },
+      { id: "thread-2", botId: "bot-2", userId: "user-2", nextMessageSeq: 100, nextEventSeq: 100 },
+      // bot-1's thread for one team-chat conversation.
+      {
+        id: "thread-slack",
+        botId: "bot-1",
+        userId: "user-1",
+        nextMessageSeq: 100,
+        nextEventSeq: 100,
+        conversationBotId: "bot-1",
+      },
+    ] as Array<{
+      id: string;
+      botId: string;
+      userId: string;
+      nextMessageSeq: number;
+      nextEventSeq: number;
+      conversationBotId?: string;
+    }>,
+    runs: [] as Array<{
+      id: string;
+      botId: string;
+      threadId: string;
+      userId: string;
+      trigger: string;
+      status: string;
+      sourceMessageId: string | null;
+      messagingMirroredAt: Date | null;
+      /** The previous release's marker for a delegated reply it posted itself. */
+      teamChatMirroredAt?: Date | null;
+    }>,
+    messages: [] as MessageRecord[],
+    externalMessages: [] as Array<{
+      id: string;
+      runId: string;
+      kind: string;
+      status: string;
+      replyThreadId: string | null;
+      externalConversation: { conversationId: string };
+    }>,
+    channels: [{ id: "ch-1", provider: "sendblue", threadId: "sendblue:grp-1", name: "Family" }],
+    channelMembers: [
+      { channelId: "ch-1", identityId: "mi-1", status: "approved" },
+      { channelId: "ch-1", identityId: "mi-2", status: "approved" },
+    ],
+    artifacts: [] as Array<{
+      id: string;
+      spaceId: string;
+      userId: string;
+      name: string;
+      mimeType: string;
+      storageKey: string;
+    }>,
+    /** agent_connections status by `requesterBotId:targetBotId`. */
+    connections: new Map<string, string>(),
+    outbound: [] as OutboundRecord[],
+    events: [] as Array<Record<string, unknown>>,
+  };
 }
 
-function compareBound(cell: unknown, bound: unknown, after: boolean): boolean {
-  if (cell instanceof Date && bound instanceof Date) {
-    return after ? cell.getTime() > bound.getTime() : cell.getTime() < bound.getTime();
-  }
-  if (typeof cell === "string" && typeof bound === "string") {
-    return after ? cell > bound : cell < bound;
-  }
-  return false;
+type World = ReturnType<typeof createWorld>;
+
+function compare(a: unknown, b: unknown): number {
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+  return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
 }
 
-/** The where shapes the drain queries use: field equality, lt/gt bounds, OR/AND. */
-function matchesWhere(row: Record<string, unknown>, where: OutboundRowFilter): boolean {
-  return Object.entries(where).every(([key, value]) => {
-    if (key === "OR")
-      return (value as OutboundRowFilter[]).some((condition) => matchesWhere(row, condition));
-    if (key === "AND")
-      return (value as OutboundRowFilter[]).every((condition) => matchesWhere(row, condition));
-    if (value instanceof Date)
-      return row[key] instanceof Date && (row[key] as Date).getTime() === value.getTime();
-    // The mocks do not emulate @updatedAt: an unset one counts as "just now".
-    if (key === "updatedAt" && row[key] === undefined)
-      return compareBound(new Date(), (value as { gt: unknown }).gt, true);
-    if (value !== null && typeof value === "object") {
-      const bound = value as { lt?: unknown; gt?: unknown };
-      if (bound.lt !== undefined) return compareBound(row[key], bound.lt, false);
-      if (bound.gt !== undefined) return compareBound(row[key], bound.gt, true);
-      return false;
-    }
-    // Prisma's null means IS NULL; a mock row without the field counts too.
-    if (value === null) return row[key] == null;
-    return row[key] === value;
+function matchesValue(value: unknown, condition: unknown): boolean {
+  if (condition === null) return value == null;
+  if (condition instanceof Date) return compare(value, condition) === 0;
+  if (typeof condition !== "object") return value === condition;
+  const bound = condition as { in?: unknown[]; not?: unknown; lt?: unknown; gt?: unknown };
+  return (
+    (bound.in === undefined || bound.in.includes(value)) &&
+    (bound.not === undefined || !matchesValue(value, bound.not)) &&
+    (bound.lt === undefined || compare(value, bound.lt) < 0) &&
+    (bound.gt === undefined || compare(value, bound.gt) > 0)
+  );
+}
+
+/** The where shapes the delivery queries use: equality, null, in/not/lt/gt, OR, AND and NOT. */
+function matches(record: object, where: Where = {}): boolean {
+  const fields = record as Record<string, unknown>;
+  return Object.entries(where).every(([key, condition]) => {
+    if (key === "OR") return (condition as Where[]).some((part) => matches(record, part));
+    if (key === "AND") return (condition as Where[]).every((part) => matches(record, part));
+    if (key === "NOT") return !matches(record, condition as Where);
+    return matchesValue(fields[key], condition);
   });
 }
 
-/** A lane's next pending row, or an earlier row still pending or in flight. */
-function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRowFilter) {
-  const ordered = rows.every((row) => row.createdAt instanceof Date)
-    ? [...rows].sort(bySendOrder)
-    : rows;
-  return ordered.find((row) => matchesWhere(row, where)) ?? null;
+function bySendOrder(a: OutboundRecord, b: OutboundRecord) {
+  return compare(a.createdAt, b.createdAt) || compare(a.id, b.id);
 }
 
-function createFakeSurface(sendError?: Error) {
-  const sendToThread = vi.fn(async () => ({ handle: "handle-out-1" }));
-  if (sendError) sendToThread.mockRejectedValue(sendError);
+function copy<T extends object>(record: T | undefined): T | null {
+  return record ? { ...record } : null;
+}
+
+function applyData(record: object, data: Where) {
+  const fields = record as Record<string, unknown>;
+  for (const [key, value] of Object.entries(data)) {
+    fields[key] =
+      value !== null && typeof value === "object" && "increment" in value
+        ? (fields[key] as number) + (value as { increment: number }).increment
+        : value;
+  }
+}
+
+function updateAll(records: object[], where: Where, data: Where) {
+  const matched = records.filter((record) => matches(record, where));
+  for (const record of matched) applyData(record, data);
+  return { count: matched.length };
+}
+
+function createJobs() {
+  const scheduled = new Map<string, BackgroundJob>();
+  const add = async (job: BackgroundJob) => {
+    scheduled.set(job.replaceKey ?? job.name, job);
+  };
+  const remove = async (key: string) => {
+    scheduled.delete(key);
+  };
+  return {
+    scheduled,
+    enqueue: vi.fn(add),
+    enqueueIn: vi.fn((_tx: JobTransaction, job: BackgroundJob) => add(job)),
+    cancel: vi.fn(remove),
+    cancelIn: vi.fn((_tx: JobTransaction, key: string) => remove(key)),
+  };
+}
+
+/** An in-memory database for what delivery reads and writes; a failed transaction rolls back. */
+function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
+  let outboundIds = 0;
+  const messageView = (message: MessageRecord) => {
+    const replyTo = world.messages.find((candidate) => candidate.id === message.replyToMessageId);
+    return {
+      ...message,
+      thread: { userId: world.threads.find((thread) => thread.id === message.threadId)!.userId },
+      replyTo: replyTo ? { runId: replyTo.runId } : null,
+    };
+  };
+  const prisma = {
+    user: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const user = world.users.get(where.id);
+        return user ? { id: where.id, ...user } : null;
+      }),
+    },
+    bot: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const bot = world.bots.get(where.id);
+        return bot ? { id: where.id, ...bot } : null;
+      }),
+    },
+    run: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const run = world.runs.find((candidate) => candidate.id === where.id);
+        if (!run) return null;
+        return {
+          ...run,
+          sourceMessage: copy(world.messages.find((message) => message.id === run.sourceMessageId)),
+          bot: { name: world.bots.get(run.botId)!.name },
+          thread: {
+            externalConversation: (() => {
+              const thread = world.threads.find((candidate) => candidate.id === run.threadId);
+              return thread?.conversationBotId ? { botId: thread.conversationBotId } : null;
+            })(),
+          },
+          externalMessage: copy(world.externalMessages.find((message) => message.runId === run.id)),
+        };
+      }),
+      updateMany: vi.fn(async ({ where, data }: { where: Where; data: Where }) =>
+        updateAll(world.runs, where, data),
+      ),
+    },
+    message: {
+      findMany: vi.fn(async ({ where }: { where: Where }) =>
+        world.messages
+          .filter((message) => matches(message, where))
+          .sort((a, b) => a.seq - b.seq)
+          .map((message) => ({ ...message })),
+      ),
+      findFirst: vi.fn(async ({ where }: { where: Where }) =>
+        copy(
+          world.messages
+            .filter((message) => matches(message, where))
+            .sort((a, b) => b.seq - a.seq)[0],
+        ),
+      ),
+      findUnique: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { id?: string; threadId_clientNonce?: { threadId: string; clientNonce: string } };
+        }) => {
+          const unique = where.threadId_clientNonce;
+          const message = world.messages.find((candidate) =>
+            unique
+              ? candidate.threadId === unique.threadId &&
+                candidate.clientNonce === unique.clientNonce
+              : candidate.id === where.id,
+          );
+          return message ? messageView(message) : null;
+        },
+      ),
+      create: vi.fn(async ({ data }: { data: Partial<MessageRecord> }) => {
+        const message = {
+          id: `ctx-${world.messages.length + 1}`,
+          runId: null,
+          replyToMessageId: null,
+          clientNonce: null,
+          ...data,
+        } as MessageRecord;
+        world.messages.push(message);
+        return { ...message };
+      }),
+    },
+    thread: {
+      findFirst: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.threads.find((thread) => matches(thread, where))),
+      ),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Where }) => {
+        const thread = world.threads.find((candidate) => candidate.id === where.id)!;
+        applyData(thread, data);
+        return { ...thread };
+      }),
+    },
+    event: {
+      create: vi.fn(async ({ data }: { data: Where }) => {
+        const event = { id: `evt-${world.events.length + 1}`, createdAt: new Date(), ...data };
+        world.events.push(event);
+        return { ...event };
+      }),
+    },
+    messagingIdentity: {
+      findUnique: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.identities.find((identity) => matches(identity, where))),
+      ),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Where }) => {
+        const identity = world.identities.find((candidate) => candidate.id === where.id)!;
+        applyData(identity, data);
+        return { ...identity };
+      }),
+    },
+    messagingChannel: {
+      findUnique: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.channels.find((channel) => matches(channel, where))),
+      ),
+    },
+    messagingChannelMember: {
+      findMany: vi.fn(async ({ where }: { where: Where }) =>
+        world.channelMembers.filter((member) => matches(member, where)),
+      ),
+    },
+    artifact: {
+      findFirst: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.artifacts.find((artifact) => matches(artifact, where))),
+      ),
+    },
+    externalMessage: {
+      findUnique: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.externalMessages.find((message) => matches(message, where))),
+      ),
+      updateMany: vi.fn(async ({ where, data }: { where: Where; data: Where }) =>
+        updateAll(world.externalMessages, where, data),
+      ),
+    },
+    messagingOutbound: {
+      aggregate: vi.fn(async ({ where }: { where: Where }) => {
+        const times = world.outbound
+          .filter((row) => matches(row, where))
+          .map((row) => row.createdAt.getTime());
+        return { _max: { createdAt: times.length ? new Date(Math.max(...times)) : null } };
+      }),
+      createManyAndReturn: vi.fn(async ({ data }: { data: Array<Partial<OutboundRecord>> }) => {
+        const created: Array<{ id: string }> = [];
+        for (const item of data) {
+          if (world.outbound.some((row) => row.idempotencyKey === item.idempotencyKey)) continue;
+          outboundIds += 1;
+          const row = {
+            id: `out-${String(outboundIds).padStart(3, "0")}`,
+            identityId: null,
+            threadId: null,
+            status: "pending",
+            providerHandle: null,
+            sourceMessageId: null,
+            createdAt: new Date(),
+            ...item,
+            updatedAt: new Date(),
+          } as OutboundRecord;
+          world.outbound.push(row);
+          created.push({ id: row.id });
+        }
+        return created;
+      }),
+      findFirst: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.outbound.filter((row) => matches(row, where)).sort(bySendOrder)[0]),
+      ),
+      findUnique: vi.fn(async ({ where }: { where: Where }) =>
+        copy(world.outbound.find((row) => matches(row, where))),
+      ),
+      findMany: vi.fn(
+        async ({ where, distinct }: { where: Where; distinct?: Array<keyof OutboundRecord> }) => {
+          const seen = new Set<string>();
+          return world.outbound
+            .filter((row) => matches(row, where))
+            .sort(bySendOrder)
+            .filter((row) => {
+              if (!distinct) return true;
+              const key = distinct.map((field) => String(row[field])).join("|");
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .map((row) => ({ ...row }));
+        },
+      ),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Where }) => {
+        const row = world.outbound.find((candidate) => candidate.id === where.id);
+        if (!row) throw new Error("Record to update not found.");
+        applyData(row, { updatedAt: new Date(), ...data });
+        return { ...row };
+      }),
+      updateMany: vi.fn(async ({ where, data }: { where: Where; data: Where }) =>
+        updateAll(world.outbound, where, { updatedAt: new Date(), ...data }),
+      ),
+      deleteMany: vi.fn(async ({ where }: { where: Where }) => {
+        const kept = world.outbound.filter((row) => !matches(row, where));
+        const count = world.outbound.length - kept.length;
+        world.outbound.splice(0, Infinity, ...kept);
+        return { count };
+      }),
+    },
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join("?");
+      // The previous release's relay marker; a run without the key models the dropped column.
+      if (sql.includes("teamChatMirroredAt")) {
+        const run = world.runs.find((candidate) => candidate.id === values[0]);
+        return run
+          ? [{ tracked: "teamChatMirroredAt" in run, relayed: Boolean(run.teamChatMirroredAt) }]
+          : [];
+      }
+      if (sql.includes("FROM bots")) {
+        return [...new Set(values as string[])].sort().flatMap((id) => {
+          const bot = world.bots.get(id);
+          return bot ? [{ id, ...bot }] : [];
+        });
+      }
+      // The conversation's identity or channel row lock.
+      if (sql.includes("FOR UPDATE") && !sql.includes("agent_connections")) return [];
+      if (sql.includes("agent_connections")) {
+        const status = world.connections.get(`${values[0]}:${values[1]}`);
+        return status ? [{ status }] : [];
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }),
+    $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join("?").includes(`SET "teamChatMirroredAt"`)) {
+        const run = world.runs.find((candidate) => candidate.id === values[0]);
+        if (run) run.teamChatMirroredAt = new Date();
+      }
+      return 1;
+    }),
+  };
+  const $transaction = vi.fn(async (fn: (tx: typeof prisma) => Promise<unknown>) => {
+    const saved = structuredClone({
+      outbound: world.outbound,
+      messages: world.messages,
+      events: world.events,
+      externalMessages: world.externalMessages,
+      runs: world.runs,
+    });
+    const savedJobs = [...jobs.scheduled];
+    try {
+      return await fn(prisma);
+    } catch (error) {
+      for (const key of Object.keys(saved) as Array<keyof typeof saved>)
+        (world[key] as unknown[]).splice(0, Infinity, ...saved[key]);
+      jobs.scheduled.clear();
+      for (const [key, job] of savedJobs) jobs.scheduled.set(key, job);
+      throw error;
+    }
+  });
+  return Object.assign(prisma, { $transaction });
+}
+
+const PLATFORMS: MessagingPlatformDescriptor[] = [
+  { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
+  {
+    provider: "telegram",
+    capabilities: { direct: true, groups: false, receipt: null, files: true },
+  },
+];
+
+function createSurface() {
+  let handles = 0;
+  const sendToThread = vi.fn(
+    async (
+      _request: MessagingSendRequest,
+      _context: AdapterContext,
+    ): Promise<MessagingSendResult> => {
+      handles += 1;
+      return { handle: `handle-${handles}` };
+    },
+  );
   const openDirectThread = vi.fn(
-    async (_provider: string, address: string) => `sendblue:opened:${address}`,
+    async (_provider: string, address: string, _context: AdapterContext) =>
+      `sendblue:opened:${address}`,
   );
   const messaging: MessagingSurface = {
     describe: () => ({
-      id: "chat-sdk",
+      id: "fake",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { providers: ["sendblue"] },
+      capabilities: { providers: PLATFORMS.map((platform) => platform.provider) },
     }),
-    platforms: () => [
-      { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
-      {
-        provider: "telegram",
-        capabilities: { direct: true, groups: false, receipt: null, files: true },
-      },
-    ],
+    platforms: () => PLATFORMS,
     handleWebhook: () => null,
     onInbound: () => undefined,
     sendToThread,
@@ -121,217 +544,214 @@ function createFakeSurface(sendError?: Error) {
   return { messaging, sendToThread, openDirectThread };
 }
 
-/** A message_user update or another interim message a running run posted. */
-function interim(id: string, text: string) {
-  return { id, clientNonce: userProgressClientNonce("run-1"), blocks: [{ kind: "text", text }] };
-}
+const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
 
-function createDeps(overrides: {
-  run?: unknown;
-  identity?: Record<string, unknown> | null;
-  messages?: unknown[];
-  outboundRows?: unknown[];
-  existingOutbox?: unknown;
-  sendError?: Error;
-  connectionStatus?: string | null;
-  blockedBot?: string;
-  artifacts?: Array<Record<string, unknown>>;
-}) {
-  const rows = [...(overrides.outboundRows ?? [])] as Array<Record<string, unknown>>;
-  const { messaging, sendToThread, openDirectThread } = createFakeSurface(overrides.sendError);
-  // Stateful identity row so a cached dmThreadId is visible to later reads.
-  const identityRow =
-    overrides.identity === null ? null : { ...identity, ...(overrides.identity ?? {}) };
-  const prisma = {
-    user: {
-      findUnique: vi.fn(
-        async (_query: { where: { id: string } }): Promise<{ deactivatedAt: Date | null } | null> =>
-          null,
-      ),
-    },
-    bot: {
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
-        userId: `owner-of-${where.id}`,
-      })),
-    },
-    run: {
-      findUnique: vi.fn(async () => overrides.run ?? messagingRun),
-      updateMany: vi.fn(async () => ({ count: 1 })),
-    },
-    message: {
-      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
-      findMany: vi.fn(
-        async () =>
-          overrides.messages ?? [
-            { id: "m-1", blocks: [{ kind: "text", text: "Hello from your bot" }] },
-          ],
-      ),
-    },
-    messagingIdentity: {
-      findUnique: vi.fn(async () => identityRow),
-      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        if (identityRow && typeof data.dmThreadId === "string") {
-          identityRow.dmThreadId = data.dmThreadId;
-        }
-        return identityRow;
-      }),
-    },
-    artifact: {
-      findFirst: vi.fn(
-        async ({ where }: { where: { id: string; spaceId: string } }) =>
-          (overrides.artifacts ?? []).find(
-            (artifact) => artifact.id === where.id && artifact.spaceId === where.spaceId,
-          ) ?? null,
-      ),
-    },
-    agentConnection: {
-      findUnique: vi.fn(async () =>
-        overrides.connectionStatus === null
-          ? null
-          : overrides.connectionStatus
-            ? { status: overrides.connectionStatus }
-            : { status: "pending" },
-      ),
-    },
-    $queryRaw: vi.fn(async (query: TemplateStringsArray) =>
-      query.join("").includes("FROM bots")
-        ? ["bot-1", "bot-2"].map((id) => ({
-            id,
-            spaceId: id,
-            crossSpaceCommunication: id !== overrides.blockedBot,
-            archivedAt: null,
-          }))
-        : overrides.connectionStatus === null
-          ? []
-          : [{ status: overrides.connectionStatus ?? "pending" }],
-    ),
-    messagingOutbound: {
-      findUnique: vi.fn(async ({ where }: { where?: { id?: string } } = {}) => {
-        if (overrides.existingOutbox) return overrides.existingOutbox;
-        if (where?.id) return rows.find((row) => row.id === where.id) ?? null;
-        return null;
-      }),
-      findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
-        const now = Date.now();
-        const found = rows.filter((row) => {
-          if (where?.status && row.status !== where.status) return false;
-          if (!where?.OR) return row.status === "pending";
-          const next = row.nextAttemptAt;
-          if (next == null) return true;
-          const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
-          return nextMs <= now;
-        });
-        // The drain reads in send order (createdAt, then id).
-        const ordered = found.every((row) => row.createdAt instanceof Date)
-          ? found.sort(bySendOrder)
-          : found;
-        return ordered;
-      }),
-      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
-        findOutboundRow(rows, where),
-      ),
-      aggregate: vi.fn(
-        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
-          const times = rows
-            .filter((row) => matchesWhere(row, where ?? {}))
-            .map((row) => (row.createdAt as Date | undefined)?.getTime())
-            .filter((time): time is number => time !== undefined);
-          return {
-            _max: {
-              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
-            },
-          };
-        },
-      ),
-      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-        let count = 0;
-        for (const item of data) {
-          // Simulates skipDuplicates against the idempotencyKey unique key.
-          const duplicate =
-            rows.some((row) => row.idempotencyKey === item.idempotencyKey) ||
-            (overrides.existingOutbox as { idempotencyKey?: string } | null)?.idempotencyKey ===
-              item.idempotencyKey;
-          if (duplicate) continue;
-          rows.push({ id: `out-${rows.length + 1}`, status: "pending", ...item });
-          count += 1;
-        }
-        return { count };
-      }),
-      update: vi.fn(async ({ where, data }: { where: { id: string }; data: unknown }) => {
-        const row = rows.find((candidate) => candidate.id === where.id);
-        if (row) Object.assign(row, data);
-        return row;
-      }),
-      updateMany: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id?: string; providerHandle?: string; status?: string };
-          data: Record<string, unknown>;
-        }) => {
-          let count = 0;
-          for (const row of rows) {
-            if (where.id && row.id !== where.id) continue;
-            if (where.providerHandle && row.providerHandle !== where.providerHandle) continue;
-            if (where.status && row.status !== where.status) continue;
-            Object.assign(row, data);
-            count += 1;
-          }
-          return { count };
-        },
-      ),
-    },
+function setup(options: { messaging?: MessagingSurface } = {}) {
+  const world = createWorld();
+  const jobs = createJobs();
+  const prisma = createPrisma(world, jobs);
+  const surface = createSurface();
+  const events = {
+    sendUserMessage: vi.fn(async (_input: Record<string, unknown>) => ({
+      messageId: "msg-wake",
+      runId: "run-wake",
+      seq: 4,
+    })),
+    notify: vi.fn(async (_threadId: string, _seq: number) => undefined),
   };
-  (prisma as { $transaction?: unknown }).$transaction = vi.fn(
-    async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
-  );
+  const artifacts = {
+    get: vi.fn(async (storageKey: string, _context: AdapterContext) => bytes(storageKey)),
+  };
+  const delivery = new MessagingDelivery({
+    prisma: prisma as unknown as PrismaClient,
+    messaging: options.messaging ?? surface.messaging,
+    events: events as unknown as MessagingDeliveryDeps["events"],
+    jobs,
+    artifacts,
+  });
   return {
-    prisma: prisma as unknown as PrismaClient & typeof prisma,
-    messaging,
-    events: {
-      sendUserMessage: vi.fn(),
-      notify: vi.fn(async () => undefined),
-    } as unknown as MessagingDeliveryDeps["events"],
-    jobs: { enqueue: vi.fn(async () => undefined) },
-    artifacts: { get: vi.fn(async (storageKey: string) => new TextEncoder().encode(storageKey)) },
-    sendToThread,
-    openDirectThread,
-    rows,
+    ...surface,
+    world,
+    jobs,
+    prisma,
+    events,
+    artifacts,
+    delivery,
+    /** Records rows in a caller's transaction, as inbound handlers do, without sending them. */
+    record: (lane: OutboundLane, rows: OutboundRow[]) =>
+      delivery.recordIn(prisma as unknown as Prisma.TransactionClient, lane, rows),
   };
 }
 
-describe("deliverMessagingOutbound", () => {
-  it("mirrors a messaging DM run's bot text to the identity's conversation", async () => {
-    const deps = createDeps({});
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+type Setup = ReturnType<typeof setup>;
 
-    expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:dm-1", body: "Hello from your bot" },
-      context,
-    );
-    expect(deps.rows).toEqual([
+function threadOf(world: World, botId: string): string {
+  return world.threads.find((thread) => thread.botId === botId)!.id;
+}
+
+function addReply(world: World, runId: string, reply: Reply) {
+  const run = world.runs.find((candidate) => candidate.id === runId)!;
+  world.messages.push({
+    id: reply.id,
+    threadId: run.threadId,
+    runId,
+    role: "bot",
+    seq: world.messages.length + 1,
+    clientNonce: reply.clientNonce ?? null,
+    blocks: reply.blocks,
+    replyToMessageId: null,
+  });
+}
+
+/** A run with the message that started it (`src-<id>`) and the bot's replies. */
+function addRun(
+  world: World,
+  input: {
+    id?: string;
+    botId?: string;
+    threadId?: string;
+    userId?: string;
+    trigger?: string;
+    status?: string;
+    source?: unknown[];
+    replyTo?: string;
+    replies?: Reply[];
+  } = {},
+) {
+  const id = input.id ?? "run-1";
+  const botId = input.botId ?? "bot-1";
+  const threadId = input.threadId ?? threadOf(world, botId);
+  world.messages.push({
+    id: `src-${id}`,
+    threadId,
+    runId: null,
+    role: "user",
+    seq: world.messages.length + 1,
+    clientNonce: null,
+    blocks: input.source ?? [{ kind: "text", text: "hi" }],
+    replyToMessageId: input.replyTo ?? null,
+  });
+  world.runs.push({
+    id,
+    botId,
+    threadId,
+    userId: input.userId ?? "user-1",
+    trigger: input.trigger ?? "messaging",
+    status: input.status ?? "completed",
+    sourceMessageId: `src-${id}`,
+    messagingMirroredAt: null,
+  });
+  for (const reply of input.replies ?? []) addReply(world, id, reply);
+}
+
+const text = (id: string, value: string): Reply => ({
+  id,
+  blocks: [{ kind: "text", text: value }],
+});
+
+/** A message_user update or another interim message a running run posted. */
+const interim = (id: string, value: string): Reply => ({
+  ...text(id, value),
+  clientNonce: userProgressClientNonce("run-1"),
+});
+
+function seedRow(world: World, row: Partial<OutboundRecord> & { id: string }) {
+  world.outbound.push({
+    idempotencyKey: `key:${row.id}`,
+    kind: "group",
+    identityId: null,
+    threadId: "t-a",
+    body: row.id,
+    status: "pending",
+    providerHandle: null,
+    sourceMessageId: null,
+    createdAt: new Date(1_000),
+    updatedAt: new Date(),
+    ...row,
+  });
+}
+
+const dm: OutboundLane = { identityId: "mi-1" };
+const threadLane = (threadId: string): OutboundLane => ({ identityId: null, threadId });
+const post = (threadId: string, body: string): OutboundRow => ({
+  idempotencyKey: `${threadId}:${body}`,
+  kind: "group",
+  threadId,
+  body,
+});
+
+const TELEGRAM = { provider: "telegram", address: "123", dmThreadId: "telegram:123" };
+const WHATSAPP = { provider: "whatsapp", address: "15551234567", dmThreadId: "whatsapp:p:1" };
+const attempt = (number: number) => ({ number, max: MESSAGING_SEND_MAX_ATTEMPTS });
+const lastAttempt = attempt(MESSAGING_SEND_MAX_ATTEMPTS);
+
+function linkProvider(world: World, identity: Partial<IdentityRecord>) {
+  Object.assign(world.identities[0]!, identity);
+}
+
+const inSendOrder = (t: Setup) => [...t.world.outbound].sort(bySendOrder);
+/** A claimed row is marked sent before its handle is known; anything else by its status. */
+const statuses = (t: Setup) =>
+  inSendOrder(t).map((row) =>
+    row.status === "sent" && row.providerHandle === null ? "in-flight" : row.status,
+  );
+const requests = (t: Setup) => t.sendToThread.mock.calls.map(([request]) => request);
+const bodies = (t: Setup) =>
+  requests(t).map((request) =>
+    request.attachment ? `file:${request.attachment.name}` : request.body,
+  );
+const backupJob = (t: Setup, outboundId: string) =>
+  t.jobs.scheduled.get(messagingSendJobKey(outboundId));
+const sendJobs = (t: Setup) =>
+  [...t.jobs.scheduled.values()].filter((job) => job.name === "messaging.send");
+
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { opened, open };
+}
+
+describe("deliverRun to a 1:1 chat", () => {
+  it("sends a chat run's reply to its owner's conversation and settles its jobs", async () => {
+    const t = setup();
+    addRun(t.world, { replies: [text("m-1", "Hello from your bot")] });
+    t.jobs.scheduled.set(messagingReplyJobKey("run-1"), messagingReplyJob("run-1"));
+    const before = Date.now();
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:dm-1", body: "Hello from your bot", idempotencyKey: "msg:m-1" },
+    ]);
+    const [row] = t.world.outbound;
+    expect(t.world.outbound).toEqual([
       expect.objectContaining({
         idempotencyKey: "msg:m-1",
         kind: "dm",
         identityId: "mi-1",
         status: "sent",
-        providerHandle: "handle-out-1",
+        providerHandle: "handle-1",
         sourceMessageId: "m-1",
       }),
     ]);
-    expect(deps.prisma.messagingIdentity.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { outboundSinceInbound: { increment: 1 } } }),
+    // Recorded with a backup job, which the direct send removed again.
+    const [, backup] = t.jobs.enqueueIn.mock.calls[0]!;
+    expect(backup).toEqual(
+      expect.objectContaining({ name: "messaging.send", payload: { outboundId: row!.id } }),
     );
-    expect(deps.prisma.run.updateMany).toHaveBeenCalledWith({
-      where: { id: "run-1", trigger: "messaging" },
-      data: { messagingMirroredAt: expect.any(Date) },
-    });
+    expect(backup.availableAt!.getTime()).toBeGreaterThanOrEqual(before + MESSAGING_SEND_BACKUP_MS);
+    expect(t.jobs.cancelIn).toHaveBeenCalledWith(expect.anything(), messagingSendJobKey(row!.id));
+    expect([...t.jobs.scheduled.keys()]).toEqual([]);
+    expect(t.world.identities[0]!.outboundSinceInbound).toBe(1);
+    expect(t.world.runs[0]!.messagingMirroredAt).toEqual(expect.any(Date));
   });
 
   it("sends a page the bot named as its title, never as an app-only page link", async () => {
-    const deps = createDeps({
-      messages: [
+    const t = setup();
+    addRun(t.world, {
+      replies: [
         {
           id: "m-1",
           blocks: [
@@ -341,869 +761,492 @@ describe("deliverMessagingOutbound", () => {
         },
       ],
     });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:dm-1", body: "I made a Test dashboard for you." },
-      context,
-    );
+    expect(bodies(t)).toEqual(["I made a Test dashboard for you."]);
   });
 
-  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
-    (deps.sendToThread.mock.calls as unknown as [{ body: string }][]).map(([input]) => input.body);
-
-  it("sends a page card's title when the reply does not name the page, and only once when it does", async () => {
-    const card = {
-      id: "m-1",
-      blocks: [{ kind: "page", pageId: "cm123", version: 1, title: "Plan" }],
-    };
-    const silent = createDeps({
-      messages: [card, { id: "m-2", blocks: [{ kind: "text", text: "Done." }] }],
-    });
-    await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
-    expect(sentBodies(silent)).toEqual(["Plan", "Done."]);
-
-    const named = createDeps({
-      messages: [
-        card,
-        { id: "m-2", blocks: [{ kind: "text", text: "Here is [Plan](page:cm123)." }] },
-      ],
-    });
-    await deliverMessagingOutbound(named, { runId: "run-1" }, context);
-    expect(sentBodies(named)).toEqual(["Here is Plan."]);
-
+  it.each([
+    ["does not name the page", "Done.", ["Plan", "Done."]],
+    ["names the page", "Here is [Plan](page:cm123).", ["Here is Plan."]],
     // A link shown inside a code example names nothing, so the card's title still goes.
-    const example = createDeps({
-      messages: [
-        card,
-        { id: "m-2", blocks: [{ kind: "text", text: "Write `[Plan](page:cm123)` to link it." }] },
+    [
+      "only shows a link in a code example",
+      "Write `[Plan](page:cm123)` to link it.",
+      ["Plan", "Write `[Plan](page:cm123)` to link it."],
+    ],
+    [
+      "names the page and also shows the link as code",
+      "Open [Plan](page:cm123), or write `[Plan](page:cm123)`.",
+      ["Open Plan, or write `[Plan](page:cm123)`."],
+    ],
+  ])("sends a page card's title only when the reply %s", async (_label, reply, expected) => {
+    const t = setup();
+    addRun(t.world, {
+      replies: [
+        { id: "m-1", blocks: [{ kind: "page", pageId: "cm123", version: 1, title: "Plan" }] },
+        text("m-2", reply),
       ],
     });
-    await deliverMessagingOutbound(example, { runId: "run-1" }, context);
-    expect(sentBodies(example)).toEqual(["Plan", "Write `[Plan](page:cm123)` to link it."]);
+    await t.delivery.deliverRun("run-1");
 
-    // A real link still counts when the same text also shows it as a code example.
-    const both = createDeps({
-      messages: [
-        card,
-        {
-          id: "m-2",
-          blocks: [
-            { kind: "text", text: "Open [Plan](page:cm123), or write `[Plan](page:cm123)`." },
-          ],
-        },
-      ],
-    });
-    await deliverMessagingOutbound(both, { runId: "run-1" }, context);
-    expect(sentBodies(both)).toEqual(["Open Plan, or write `[Plan](page:cm123)`."]);
+    expect(bodies(t)).toEqual(expected);
   });
 
-  it("resolves the DM thread once and caches it when the identity has none", async () => {
-    const deps = createDeps({
-      identity: { dmThreadId: null },
-      messages: [
-        { id: "m-1", blocks: [{ kind: "text", text: "first" }] },
-        { id: "m-2", blocks: [{ kind: "text", text: "second" }] },
-      ],
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("opens the conversation once and caches it when the identity has none", async () => {
+    const t = setup();
+    t.world.identities[0]!.dmThreadId = null;
+    addRun(t.world, { replies: [text("m-1", "first"), text("m-2", "second")] });
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.openDirectThread).toHaveBeenCalledTimes(1);
-    expect(deps.openDirectThread).toHaveBeenCalledWith("sendblue", "+15551234567", context);
-    expect(deps.prisma.messagingIdentity.update).toHaveBeenCalledWith({
-      where: { id: "mi-1" },
-      data: { dmThreadId: "sendblue:opened:+15551234567" },
-    });
-    expect(deps.sendToThread).toHaveBeenNthCalledWith(
-      1,
-      { threadId: "sendblue:opened:+15551234567", body: "first" },
-      context,
+    expect(t.openDirectThread).toHaveBeenCalledExactlyOnceWith(
+      "sendblue",
+      "+15551234567",
+      expect.anything(),
     );
-    expect(deps.sendToThread).toHaveBeenNthCalledWith(
-      2,
-      { threadId: "sendblue:opened:+15551234567", body: "second" },
-      context,
-    );
+    expect(t.world.identities[0]!.dmThreadId).toBe("sendblue:opened:+15551234567");
+    expect(requests(t).map(({ threadId, body }) => [threadId, body])).toEqual([
+      ["sendblue:opened:+15551234567", "first"],
+      ["sendblue:opened:+15551234567", "second"],
+    ]);
   });
 
-  it("does not mirror a message that already has an outbox row", async () => {
-    const deps = createDeps({
-      existingOutbox: { id: "out-1", idempotencyKey: "msg:m-1", status: "sent" },
+  it("sends a reply once, however often its run is delivered", async () => {
+    const t = setup();
+    addRun(t.world, { replies: [text("m-1", "only once")] });
+    await t.delivery.deliverRun("run-1");
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual(["only once"]);
+    expect(t.world.outbound).toHaveLength(1);
+  });
+
+  it("sends a running run's interim messages without marking the run delivered", async () => {
+    const t = setup();
+    addRun(t.world, {
+      status: "running",
+      replies: [
+        interim("m-1", "Checking flights now."),
+        { id: "m-2", blocks: [{ kind: "steps", steps: [] }] },
+        interim("m-3", "Found two options."),
+      ],
     });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    t.jobs.scheduled.set(messagingReplyJobKey("run-1"), messagingReplyJob("run-1"));
+    await t.delivery.deliverRun("run-1", { progress: true });
 
-    expect(deps.rows).toHaveLength(0);
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-  });
+    expect(bodies(t)).toEqual(["Checking flights now.", "Found two options."]);
+    // Delivered still means the reply is out, and the reply's backup job still waits for it.
+    expect(t.world.runs[0]!.messagingMirroredAt).toBeNull();
+    expect(t.jobs.scheduled.has(messagingReplyJobKey("run-1"))).toBe(true);
 
-  it("queues a running chat run's interim messages without marking the run mirrored", async () => {
-    const messages: unknown[] = [
-      interim("m-1", "Checking flights now."),
-      { id: "m-2", blocks: [{ kind: "steps", steps: [] }] },
-      interim("m-3", "Found two options."),
-    ];
-    const deps = createDeps({ messages });
-    await mirrorMessagingProgress(deps, "run-1");
-    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-3"]);
-    // Mirrored still means the reply is out.
-    expect(deps.prisma.run.updateMany).not.toHaveBeenCalled();
+    addReply(t.world, "run-1", text("m-4", "Booked the cheaper one."));
+    t.world.runs[0]!.status = "completed";
+    await t.delivery.deliverRun("run-1");
 
-    messages.push({ id: "m-4", blocks: [{ kind: "text", text: "Booked the cheaper one." }] });
-    await mirrorMessagingOutbound(deps, "run-1");
-    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-3", "msg:m-4"]);
-    expect(deps.prisma.run.updateMany).toHaveBeenCalledOnce();
+    expect(inSendOrder(t).map((row) => row.idempotencyKey)).toEqual([
+      "msg:m-1",
+      "msg:m-3",
+      "msg:m-4",
+    ]);
+    expect(bodies(t)).toEqual([
+      "Checking flights now.",
+      "Found two options.",
+      "Booked the cheaper one.",
+    ]);
+    expect(t.world.runs[0]!.messagingMirroredAt).toEqual(expect.any(Date));
+    expect(t.jobs.scheduled.has(messagingReplyJobKey("run-1"))).toBe(false);
   });
 
   it("holds a card, a file and everything after them for the end of the run", async () => {
-    const messages: unknown[] = [
-      interim("m-1", "Planning the trip."),
-      { id: "m-2", blocks: [{ kind: "page", pageId: "p-1", title: "Trip plan" }] },
-      interim("m-3", "Sent you the plan, now the budget."),
-      { id: "m-4", blocks: [{ kind: "file", artifactId: "art-1", name: "budget.csv" }] },
-      interim("m-5", "Sent the budget too."),
-    ];
-    const deps = createDeps({ identity: { provider: "telegram" }, messages });
-    await mirrorMessagingProgress(deps, "run-1");
-    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1"]);
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    t.world.artifacts.push({
+      id: "art-1",
+      spaceId: "ws-1",
+      userId: "user-1",
+      name: "budget.csv",
+      mimeType: "text/csv",
+      storageKey: "key-1",
+    });
+    addRun(t.world, {
+      status: "running",
+      replies: [
+        interim("m-1", "Planning the trip."),
+        { id: "m-2", blocks: [{ kind: "page", pageId: "p-1", title: "Trip plan" }] },
+        interim("m-3", "Sent you the plan, now the budget."),
+        { id: "m-4", blocks: [{ kind: "file", artifactId: "art-1", name: "budget.csv" }] },
+        interim("m-5", "Sent the budget too."),
+      ],
+    });
+    await t.delivery.deliverRun("run-1", { progress: true });
+    expect(bodies(t)).toEqual(["Planning the trip."]);
 
     // The reply links the page, so its card never goes as a stray title.
-    messages.push({
-      id: "m-6",
-      blocks: [{ kind: "text", text: "Your [Trip plan](page:p-1) is ready." }],
-    });
-    await mirrorMessagingProgress(deps, "run-1");
-    await mirrorMessagingOutbound(deps, "run-1");
-    expect(deps.rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
+    addReply(t.world, "run-1", text("m-6", "Your [Trip plan](page:p-1) is ready."));
+    await t.delivery.deliverRun("run-1", { progress: true });
+    t.world.runs[0]!.status = "completed";
+    await t.delivery.deliverRun("run-1");
+
+    expect(inSendOrder(t).map((row) => [row.idempotencyKey, row.body])).toEqual([
       ["msg:m-1", "Planning the trip."],
       ["msg:m-3", "Sent you the plan, now the budget."],
       ["msg:m-4:file:art-1", ""],
       ["msg:m-5", "Sent the budget too."],
       ["msg:m-6", "Your Trip plan is ready."],
     ]);
+    expect(bodies(t)).toEqual([
+      "Planning the trip.",
+      "Sent you the plan, now the budget.",
+      "file:budget.csv",
+      "Sent the budget too.",
+      "Your Trip plan is ready.",
+    ]);
   });
 
   it("sends a long interim message's parts once when the run's reply follows", async () => {
-    const messages: unknown[] = [interim("m-1", `${"x".repeat(4_200)} TAIL-MARK`)];
-    const deps = createDeps({ identity: { provider: "telegram" }, messages });
-    await mirrorMessagingProgress(deps, "run-1");
-    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
-
-    messages.push({ id: "m-2", blocks: [{ kind: "text", text: "Done." }] });
-    await mirrorMessagingProgress(deps, "run-1");
-    await mirrorMessagingOutbound(deps, "run-1");
-    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2", "msg:m-2"]);
-    expect(deps.rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
-  });
-
-  it("leaves group and in-app runs to the end-of-run mirror", async () => {
-    const channel = createDeps({
-      run: {
-        ...messagingRun,
-        sourceMessage: { blocks: [{ kind: "channel_message", channelId: "c-1" }] },
-      },
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    addRun(t.world, {
+      status: "running",
+      replies: [interim("m-1", `${"x".repeat(4_200)} TAIL-MARK`)],
     });
-    await mirrorMessagingProgress(channel, "run-1");
-    expect(channel.rows).toEqual([]);
-    for (const trigger of ["user", "bot_message"]) {
-      const other = createDeps({ run: { ...messagingRun, trigger } });
-      await mirrorMessagingProgress(other, "run-1");
-      expect(other.rows).toEqual([]);
-    }
+    await t.delivery.deliverRun("run-1", { progress: true });
+    expect(inSendOrder(t).map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
+
+    addReply(t.world, "run-1", text("m-2", "Done."));
+    await t.delivery.deliverRun("run-1", { progress: true });
+    t.world.runs[0]!.status = "completed";
+    await t.delivery.deliverRun("run-1");
+
+    expect(inSendOrder(t).map((row) => row.idempotencyKey)).toEqual([
+      "msg:m-1",
+      "msg:m-1:2",
+      "msg:m-2",
+    ]);
+    expect(bodies(t)).toHaveLength(3);
+    expect(bodies(t).join("")).toContain("TAIL-MARK");
   });
 
-  it("ignores in-app runs and runs without a messaging identity", async () => {
-    const notMessaging = createDeps({ run: { ...messagingRun, trigger: "user" } });
-    await deliverMessagingOutbound(notMessaging, { runId: "run-1" }, context);
-    expect(notMessaging.sendToThread).not.toHaveBeenCalled();
+  it.each([
+    ["a group run", { source: [{ kind: "channel_message", channelId: "ch-1", hop: 0 }] }],
+    ["an in-app run", { trigger: "user" }],
+    ["a delegated run", { trigger: "bot_message" }],
+  ])("sends no interim messages for %s", async (_label, run) => {
+    const t = setup();
+    addRun(t.world, { ...run, status: "running", replies: [interim("m-1", "Working on it.")] });
+    await t.delivery.deliverRun("run-1", { progress: true });
 
-    const noIdentity = createDeps({ identity: null });
-    await deliverMessagingOutbound(noIdentity, { runId: "run-1" }, context);
-    expect(noIdentity.sendToThread).not.toHaveBeenCalled();
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
   });
 
-  it("mirrors delegated bot_message replies to the linked DM", async () => {
-    const deps = createDeps({ run: { ...messagingRun, trigger: "bot_message" } });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:dm-1", body: "Hello from your bot" },
-      context,
-    );
+  it("leaves in-app runs and bots without a linked chat in the app", async () => {
+    const inApp = setup();
+    addRun(inApp.world, { trigger: "user", replies: [text("m-1", "Hello")] });
+    await inApp.delivery.deliverRun("run-1");
+    expect(inApp.world.outbound).toEqual([]);
+
+    const unlinked = setup();
+    unlinked.world.identities = [];
+    addRun(unlinked.world, { replies: [text("m-1", "Hello")] });
+    await unlinked.delivery.deliverRun("run-1");
+    expect(unlinked.world.outbound).toEqual([]);
+    expect(unlinked.sendToThread).not.toHaveBeenCalled();
   });
 
-  it("keeps another member's bot_message run out of the linked person's DM", async () => {
-    const deps = createDeps({
-      run: { ...messagingRun, trigger: "bot_message", userId: "user-2" },
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.rows).toHaveLength(0);
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-  });
+  it("sends a delegated run's reply to its owner's chat", async () => {
+    const t = setup();
+    addRun(t.world, { trigger: "bot_message", replies: [text("m-1", "Hello from your bot")] });
+    await t.delivery.deliverRun("run-1");
 
-  it("holds sendblue DM sends at the consecutive-outbound cap", async () => {
-    const deps = createDeps({
-      identity: {
-        provider: "sendblue",
-        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
-      },
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows).toEqual([expect.objectContaining({ kind: "dm", status: "pending" })]);
-  });
-
-  it("does not apply the sendblue outbound cap to other providers", async () => {
-    const deps = createDeps({
-      identity: {
-        provider: "slack",
-        address: "U123",
-        outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
-      },
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(deps.sendToThread).toHaveBeenCalled();
-    expect(deps.rows).toEqual([
-      expect.objectContaining({ kind: "dm", status: "sent", providerHandle: "handle-out-1" }),
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:dm-1", body: "Hello from your bot", idempotencyKey: "msg:m-1" },
     ]);
   });
 
-  it("returns a transient send failure to pending and schedules a delayed retry", async () => {
-    const deps = createDeps({ sendError: new Error("messaging provider 500") });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it.each(["messaging", "bot_message"])(
+    "keeps another Space member's %s run on the bot out of the linked person's chat",
+    async (trigger) => {
+      const t = setup();
+      addRun(t.world, { trigger, userId: "user-2", replies: [text("m-1", "For user 2")] });
+      await t.delivery.deliverRun("run-1");
 
-    expect(deps.rows).toEqual([
-      expect.objectContaining({
+      expect(t.world.outbound).toEqual([]);
+      expect(t.sendToThread).not.toHaveBeenCalled();
+    },
+  );
+
+  it("holds sendblue messages at the consecutive-outbound cap until the person replies", async () => {
+    const t = setup();
+    t.world.identities[0]!.outboundSinceInbound = MESSAGING_DM_OUTBOUND_CAP;
+    addRun(t.world, { replies: [text("m-1", "Hello from your bot")] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["pending"]);
+    const id = t.world.outbound[0]!.id;
+
+    // Its backup job finds the cap still reached and looks again later.
+    await t.delivery.sendJob(id, attempt(1));
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["pending"]);
+    expect(backupJob(t, id)!.availableAt!.getTime()).toBeGreaterThan(Date.now() + 10 * 60_000);
+
+    // The person's reply resets the count, and the inbound handler sends what waited.
+    t.world.identities[0]!.outboundSinceInbound = 0;
+    await t.delivery.send([dm]);
+    expect(bodies(t)).toEqual(["Hello from your bot"]);
+    expect(statuses(t)).toEqual(["sent"]);
+    expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("does not apply the sendblue cap to other providers", async () => {
+    const t = setup();
+    linkProvider(t.world, {
+      provider: "slack",
+      address: "U123",
+      outboundSinceInbound: MESSAGING_DM_OUTBOUND_CAP,
+    });
+    addRun(t.world, { replies: [text("m-1", "Hello from your bot")] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([
+      expect.objectContaining({ kind: "dm", status: "sent", providerHandle: "handle-1" }),
+    ]);
+  });
+
+  it("fails what was queued for a person who has since been deactivated", async () => {
+    const t = setup();
+    t.world.identities[0]!.dmThreadId = null;
+    const [id] = await t.record(dm, [
+      {
+        idempotencyKey: "late:1",
         kind: "dm",
-        status: "pending",
-        attempts: 1,
-        nextAttemptAt: expect.any(Date),
-      }),
+        identityId: "mi-1",
+        body: "a reply queued before deactivation",
+      },
     ]);
-    expect(deps.rows[0]!.providerHandle ?? null).toBeNull();
-    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "messaging.deliver", availableAt: expect.any(Date) }),
-    );
-  });
+    t.world.users.get("user-1")!.deactivatedAt = new Date();
+    await t.delivery.send([dm]);
 
-  it("skips pending rows whose nextAttemptAt is still in the future", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        {
-          id: "out-wait",
-          idempotencyKey: "invite:ch-1:mi-1",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "backoff hold",
-          status: "pending",
-          attempts: 1,
-          nextAttemptAt: new Date(Date.now() + 60_000),
-          providerHandle: null,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "pending", attempts: 1 }));
-  });
-
-  it("drains leftover pending rows without a run id", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        {
-          id: "out-9",
-          idempotencyKey: "invite:ch-1:mi-1",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "pending earlier",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:dm-1", body: "pending earlier" },
-      context,
-    );
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "sent" }));
-  });
-
-  it("claims a row before sending so concurrent drains cannot double-send", async () => {
-    const deps = createDeps({});
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    const calls = deps.prisma.messagingOutbound.updateMany.mock.calls as Array<
-      [{ where?: { status?: string } }]
-    >;
-    const claimIndex = calls.findIndex(([args]) => args.where?.status === "pending");
-    expect(claimIndex).toBeGreaterThanOrEqual(0);
-    expect(
-      deps.prisma.messagingOutbound.updateMany.mock.invocationCallOrder[claimIndex]!,
-    ).toBeLessThan(deps.sendToThread.mock.invocationCallOrder[0]!);
-  });
-
-  it("skips the send when another drain won the claim", async () => {
-    const deps = createDeps({});
-    deps.prisma.messagingOutbound.updateMany = vi.fn(async () => ({
-      count: 0,
-    })) as unknown as typeof deps.prisma.messagingOutbound.updateMany;
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-  });
-
-  it("fails malformed rows instead of re-scanning them forever", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        {
-          id: "out-bad",
-          idempotencyKey: "broken:1",
-          kind: "dm",
-          identityId: null,
-          body: "nowhere to go",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
-  });
-
-  it("drops what was queued for a person who has since been deactivated", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        {
-          id: "out-late",
-          idempotencyKey: "late:1",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "a reply queued before deactivation",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.openDirectThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(t.openDirectThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(t.jobs.cancelIn).toHaveBeenCalledWith(expect.anything(), messagingSendJobKey(id!));
+    expect(sendJobs(t)).toEqual([]);
   });
 
   it("does not post a group reply queued by a person who has since been deactivated", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        {
-          id: "out-group",
-          idempotencyKey: "group:1",
-          kind: "group",
-          threadId: "group-thread",
-          sourceMessageId: "m-1",
-          body: "a group reply queued before deactivation",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    vi.mocked(deps.prisma.message.findUnique).mockResolvedValue({
-      thread: { userId: "user-1" },
-    } as never);
-    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
-  });
-
-  it("does not send a connect invite after the connection was revoked", async () => {
-    const deps = createDeps({
-      run: null,
-      connectionStatus: "revoked",
-      outboundRows: [
-        {
-          id: "out-connect",
-          idempotencyKey: "connect:bot-1:bot-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "wants to connect. Reply YES to allow, NO to decline.",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
-    expect(deps.prisma.$queryRaw).toHaveBeenCalled();
-  });
-
-  it("does not send a connect invite when revoke already deleted the claim", async () => {
-    const deps = createDeps({
-      run: null,
-      connectionStatus: "pending",
-      outboundRows: [
-        {
-          id: "out-connect",
-          idempotencyKey: "connect:bot-1:bot-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "wants to connect. Reply YES to allow, NO to decline.",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    // After claim, revoke deletes the row before the locked gate runs.
-    deps.prisma.messagingOutbound.findUnique = vi.fn(async () => null) as never;
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-  });
-
-  it("still sends a connect invite while the connection is pending", async () => {
-    const deps = createDeps({
-      run: null,
-      connectionStatus: "pending",
-      outboundRows: [
-        {
-          id: "out-connect",
-          idempotencyKey: "connect:bot-1:bot-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "wants to connect. Reply YES to allow, NO to decline.",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).toHaveBeenCalledWith(
+    const t = setup();
+    addRun(t.world, { replies: [text("m-1", "a group reply")] });
+    await t.record(threadLane("group-thread"), [
       {
-        threadId: "sendblue:dm-1",
-        body: "wants to connect. Reply YES to allow, NO to decline.",
+        ...post("group-thread", "a group reply queued before deactivation"),
+        sourceMessageId: "m-1",
       },
-      context,
-    );
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "sent" }));
-    expect(deps.prisma.messagingIdentity.update).toHaveBeenCalledWith({
-      where: { id: "mi-1" },
-      data: { outboundSinceInbound: { increment: 1 } },
-    });
+    ]);
+    t.world.users.get("user-1")!.deactivatedAt = new Date();
+    await t.delivery.send([threadLane("group-thread")]);
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["failed"]);
   });
 
-  it("does not send a connect invite queued by a person who has since been deactivated", async () => {
-    const deps = createDeps({
-      run: null,
-      connectionStatus: "pending",
-      outboundRows: [
-        {
-          id: "out-connect",
-          idempotencyKey: "connect:bot-1:bot-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "wants to connect. Reply YES to allow, NO to decline.",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
-    });
-    deps.prisma.user.findUnique.mockImplementation(async ({ where }) => ({
-      deactivatedAt: where.id === "owner-of-bot-1" ? new Date() : null,
-    }));
-    await deliverMessagingOutbound(deps, {}, context);
+  it("fails a message with nowhere to go instead of keeping it queued", async () => {
+    const t = setup();
+    seedRow(t.world, { id: "nowhere", kind: "dm", threadId: null });
+    seedRow(t.world, { id: "unlinked", kind: "dm", identityId: "mi-gone", threadId: null });
+    await t.delivery.sendJob("nowhere", attempt(1));
+    await t.delivery.send([{ identityId: "mi-gone" }]);
 
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(t.world.outbound.map((row) => row.status)).toEqual(["failed", "failed"]);
+  });
+});
+
+describe("connect invites", () => {
+  const invite: OutboundRow = {
+    idempotencyKey: "connect:bot-9:bot-1",
+    kind: "dm",
+    identityId: "mi-1",
+    body: "Scout wants to connect. Reply YES to allow, NO to decline.",
+  };
+
+  function pendingInvite() {
+    const t = setup();
+    t.world.connections.set("bot-9:bot-1", "pending");
+    return t;
+  }
+
+  it("sends an invite while its connection is pending", async () => {
+    const t = pendingInvite();
+    await t.delivery.record(dm, [invite]);
+
+    expect(requests(t)).toEqual([{ threadId: "sendblue:dm-1", body: invite.body }]);
+    expect(t.world.outbound).toEqual([
+      expect.objectContaining({ status: "sent", providerHandle: "handle-1" }),
+    ]);
+    expect(t.world.identities[0]!.outboundSinceInbound).toBe(1);
+    expect(sendJobs(t)).toEqual([]);
   });
 
-  it("does not re-queue a connect invite when the provider send fails", async () => {
-    const deps = createDeps({
-      run: null,
-      connectionStatus: "pending",
-      sendError: new Error("provider down"),
-      outboundRows: [
-        {
-          id: "out-connect",
-          idempotencyKey: "connect:bot-1:bot-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "wants to connect",
-          status: "pending",
-          providerHandle: null,
-          attempts: 0,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
+  it.each<[string, (t: Setup) => void]>([
+    ["the connection was revoked", (t) => t.world.connections.set("bot-9:bot-1", "revoked")],
+    ["the connection is gone", (t) => t.world.connections.clear()],
+    [
+      "its requester was deactivated",
+      (t) => {
+        t.world.users.get("user-9")!.deactivatedAt = new Date();
+      },
+    ],
+    [
+      "its requester's Space opted out of other Spaces",
+      (t) => {
+        t.world.bots.get("bot-9")!.crossSpaceCommunication = false;
+      },
+    ],
+  ])("does not send an invite when %s", async (_label, change) => {
+    const t = pendingInvite();
+    change(t);
+    await t.delivery.record(dm, [invite]);
 
-    // At-most-once: keep the claim rather than risk a duplicate YES/NO.
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "sent" }));
-    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
-    expect(deps.prisma.messagingIdentity.update).not.toHaveBeenCalled();
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(sendJobs(t)).toEqual([]);
   });
 
-  it("does not re-queue a connect invite after a delivery transaction timeout", async () => {
-    const deps = createDeps({
-      run: null,
-      connectionStatus: "pending",
-      outboundRows: [
-        {
-          id: "out-connect",
-          idempotencyKey: "connect:bot-1:bot-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "wants to connect",
-          status: "pending",
-          providerHandle: null,
-        },
-      ],
+  it("does not send an invite whose row a revoke deleted before the lock", async () => {
+    const t = pendingInvite();
+    t.prisma.messagingOutbound.findUnique.mockImplementationOnce(async () => {
+      t.world.outbound.splice(0, Infinity);
+      return null;
     });
-    let claimTransaction = true;
-    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(
-      async (fn: (tx: unknown) => Promise<unknown>) => {
-        // The claim's transaction succeeds; the invite delivery times out.
-        if (claimTransaction) {
-          claimTransaction = false;
-          return fn(deps.prisma);
-        }
+    await t.delivery.record(dm, [invite]);
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(t.world.outbound).toEqual([]);
+  });
+
+  it("records an invite whose provider call failed as failed, and never resends it", async () => {
+    const t = pendingInvite();
+    t.sendToThread.mockRejectedValueOnce(new Error("provider down"));
+    await t.delivery.record(dm, [invite]);
+
+    expect(t.sendToThread).toHaveBeenCalledOnce();
+    // Failed, not sent: a YES or NO never answers a request that may not have arrived.
+    expect(t.world.outbound).toEqual([
+      expect.objectContaining({ status: "failed", providerHandle: null }),
+    ]);
+    expect(t.world.identities[0]!.outboundSinceInbound).toBe(0);
+    expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("leaves an invite to its backup job when the database is down before the provider call", async () => {
+    const t = pendingInvite();
+    const query = t.prisma.$queryRaw.getMockImplementation()!;
+    t.prisma.$queryRaw.mockImplementation(async (strings, ...values) => {
+      if (strings.join("").includes("agent_connections"))
+        throw Object.assign(new Error("cannot execute SELECT in a read-only transaction"), {
+          code: "25006",
+        });
+      return query(strings, ...values);
+    });
+    await t.delivery.record(dm, [invite]).catch(() => undefined);
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).not.toContain("failed");
+    expect(sendJobs(t)).toHaveLength(1);
+  });
+
+  it("never resends an invite when its transaction times out", async () => {
+    const t = pendingInvite();
+    const query = t.prisma.$queryRaw.getMockImplementation()!;
+    t.prisma.$queryRaw.mockImplementation(async (strings, ...values) => {
+      if (strings.join("").includes("agent_connections"))
         throw new Error("Transaction API error: Transaction already closed");
-      },
-    );
-    await deliverMessagingOutbound(deps, {}, context);
+      return query(strings, ...values);
+    });
+    await t.delivery.record(dm, [invite]);
 
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "sent" }));
-    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(sendJobs(t)).toEqual([]);
   });
 });
 
 describe("applyMessagingOutboundStatus", () => {
-  it("maps terminal statuses onto outbox rows by handle", async () => {
-    const deps = createDeps({});
-    await applyMessagingOutboundStatus(deps.prisma, {
-      type: "status",
-      provider: "sendblue",
-      handle: "h-1",
-      status: "ERROR",
-    });
-    expect(deps.prisma.messagingOutbound.updateMany).toHaveBeenCalledWith({
-      where: { providerHandle: "h-1" },
-      data: { status: "failed" },
-    });
+  it("maps terminal provider statuses onto rows by handle", async () => {
+    const t = setup();
+    seedRow(t.world, { id: "a", status: "sent", providerHandle: "h-1" });
+    seedRow(t.world, { id: "b", status: "sending", providerHandle: "h-2" });
+    seedRow(t.world, { id: "c", status: "sending", providerHandle: "h-3" });
+    for (const [handle, status] of [
+      ["h-1", "ERROR"],
+      ["h-2", "DELIVERED"],
+      ["h-3", "QUEUED"],
+    ]) {
+      await applyMessagingOutboundStatus(t.prisma as unknown as PrismaClient, {
+        type: "status",
+        provider: "sendblue",
+        handle: handle!,
+        status: status!,
+      });
+    }
 
-    await applyMessagingOutboundStatus(deps.prisma, {
-      type: "status",
-      provider: "sendblue",
-      handle: "h-2",
-      status: "DELIVERED",
-    });
-    expect(deps.prisma.messagingOutbound.updateMany).toHaveBeenCalledWith({
-      where: { providerHandle: "h-2" },
-      data: { status: "sent" },
-    });
-
-    await applyMessagingOutboundStatus(deps.prisma, {
-      type: "status",
-      provider: "sendblue",
-      handle: "h-3",
-      status: "QUEUED",
-    });
-    expect(deps.prisma.messagingOutbound.updateMany).toHaveBeenCalledTimes(2);
+    expect(t.world.outbound.map((row) => row.status)).toEqual(["failed", "sent", "sending"]);
   });
 });
 
-function createChannelDeps(
-  overrides: {
-    text?: string;
-    sourceHop?: number;
-    transport?: string;
-    peerBotName?: string | null;
-    blockedBot?: string;
-    messages?: unknown[];
-    posterProvider?: string;
-    runs?: Array<{ id: string; messages: unknown[] }>;
-    /** Accounts that are deactivated. */
-    deactivated?: string[];
-  } = {},
-) {
-  const text = overrides.text ?? "found it";
-  const channelRun = {
-    id: "run-1",
-    botId: "bot-1",
-    trigger: "messaging",
-    sourceMessage: {
-      blocks: [
+describe("deliverRun to a group", () => {
+  function groupRun(
+    world: World,
+    replies: Reply[],
+    block: Record<string, unknown> = {},
+    id = "run-1",
+  ) {
+    addRun(world, {
+      id,
+      replies,
+      source: [
         {
           kind: "channel_message",
           provider: "sendblue",
-          ...(overrides.transport ? { transport: overrides.transport } : {}),
           channelId: "ch-1",
-          fromAddress: "+15551111111",
-          fromLabel: "Alice",
+          fromAddress: "+15559990000",
+          fromLabel: "Dana",
           text: "group hi",
-          hop: overrides.sourceHop ?? 0,
+          hop: 0,
+          ...block,
         },
-      ],
-    },
-  };
-  const posterIdentity = {
-    id: "mi-1",
-    provider: overrides.posterProvider ?? "sendblue",
-    address: "+15551111111",
-    dmThreadId: "sendblue:dm-1",
-    userId: "user-1",
-    spaceId: "ws-1",
-    botId: "bot-1",
-    outboundSinceInbound: 0,
-  };
-  const peerIdentity = {
-    id: "mi-2",
-    provider: "sendblue",
-    address: "+15553333333",
-    dmThreadId: "sendblue:dm-2",
-    userId: "user-2",
-    spaceId: "ws-2",
-    botId: "bot-2",
-    outboundSinceInbound: 0,
-  };
-  const rows: Array<Record<string, unknown>> = [];
-  const contextMessages: Array<Record<string, unknown>> = [];
-  const { messaging, sendToThread } = createFakeSurface();
-  const sendUserMessage = vi.fn(async () => ({ messageId: "msg-wake", runId: "run-wake", seq: 4 }));
-  const notify = vi.fn(async () => undefined);
-  const enqueue = vi.fn(async () => undefined);
-  const peerBotName = overrides.peerBotName === undefined ? "Helper" : overrides.peerBotName;
-  const txMock = {
-    thread: { update: vi.fn(async () => ({ nextMessageSeq: 5, nextEventSeq: 10 })) },
-    message: {
-      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const message = { id: `ctx-${contextMessages.length + 1}`, seq: 4, ...data };
-        contextMessages.push(message);
-        return message;
-      }),
-    },
-    run: { findUnique: vi.fn(async () => null) },
-    event: {
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-        id: "evt-1",
-        ...data,
-      })),
-    },
-  };
-  const prisma = {
-    run: {
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
-        if (!overrides.runs) return channelRun;
-        const entry = overrides.runs.find((run) => run.id === where.id);
-        return entry ? { ...channelRun, id: entry.id } : null;
-      }),
-      updateMany: vi.fn(async () => ({ count: 1 })),
-    },
-    message: {
-      findMany: vi.fn(async ({ where }: { where?: { runId?: string } } = {}) =>
-        overrides.runs
-          ? (overrides.runs.find((run) => run.id === where?.runId)?.messages ?? [])
-          : (overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }]),
-      ),
-      findUnique: vi.fn(async () => null),
-    },
-    messagingIdentity: {
-      findUnique: vi.fn(async ({ where }: { where: { botId?: string; id?: string } }) => {
-        if (where.botId === "bot-1" || where.id === "mi-1") return posterIdentity;
-        if (where.botId === "bot-2" || where.id === "mi-2") return peerIdentity;
-        return null;
-      }),
-      update: vi.fn(async () => posterIdentity),
-    },
-    messagingChannel: {
-      findUnique: vi.fn(async () => ({
-        id: "ch-1",
-        provider: "sendblue",
-        threadId: "sendblue:grp-1",
-        name: "Family",
-        introPostedAt: null,
-      })),
-    },
-    messagingChannelMember: {
-      findMany: vi.fn(async () => [
-        {
-          id: "mm-2",
-          channelId: "ch-1",
-          address: "+15553333333",
-          identityId: "mi-2",
-          status: "approved",
-        },
-      ]),
-    },
-    messagingOutbound: {
-      findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
-        const now = Date.now();
-        const found = rows.filter((row) => {
-          if (where?.status && row.status !== where.status) return false;
-          if (!where?.OR) return row.status === "pending";
-          const next = row.nextAttemptAt;
-          if (next == null) return true;
-          const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
-          return nextMs <= now;
-        });
-        // The drain reads in send order (createdAt, then id).
-        const ordered = found.every((row) => row.createdAt instanceof Date)
-          ? found.sort(bySendOrder)
-          : found;
-        return ordered;
-      }),
-      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
-        findOutboundRow(rows, where),
-      ),
-      aggregate: vi.fn(
-        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
-          const times = rows
-            .filter((row) => matchesWhere(row, where ?? {}))
-            .map((row) => (row.createdAt as Date | undefined)?.getTime())
-            .filter((time): time is number => time !== undefined);
-          return {
-            _max: {
-              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
-            },
-          };
-        },
-      ),
-      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-        for (const item of data)
-          rows.push({ id: `out-${rows.length + 1}`, status: "pending", ...item });
-        return { count: data.length };
-      }),
-      update: vi.fn(async ({ where, data }: { where: { id: string }; data: unknown }) => {
-        const row = rows.find((candidate) => candidate.id === where.id);
-        if (row) Object.assign(row, data);
-        return row;
-      }),
-      updateMany: vi.fn(
-        async ({ where, data }: { where: { id?: string; status?: string }; data: unknown }) => {
-          let count = 0;
-          for (const row of rows) {
-            if (where.id && row.id !== where.id) continue;
-            if (where.status && row.status !== where.status) continue;
-            Object.assign(row, data);
-            count += 1;
-          }
-          return { count };
-        },
-      ),
-    },
-    user: {
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
-        id: where.id,
-        name: "Alice Owner",
-        deactivatedAt: overrides.deactivated?.includes(where.id) ? new Date() : null,
-      })),
-    },
-    $queryRaw: vi.fn(async () =>
-      ["bot-1", "bot-2"].map((id) => ({
-        id,
-        spaceId: id,
-        crossSpaceCommunication: id !== overrides.blockedBot,
-        archivedAt: null,
-      })),
-    ),
-    bot: {
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
-        where.id === "bot-1"
-          ? { id: "bot-1", name: "Assistant" }
-          : peerBotName
-            ? { id: "bot-2", name: peerBotName }
-            : null,
-      ),
-    },
-    thread: { findFirst: vi.fn(async () => ({ id: "thread-2" })) },
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ ...txMock, messagingOutbound: prisma.messagingOutbound, $queryRaw: prisma.$queryRaw }),
-    ),
-  };
-  return {
-    prisma: prisma as unknown as PrismaClient & typeof prisma,
-    messaging,
-    events: { sendUserMessage, notify } as unknown as MessagingDeliveryDeps["events"],
-    jobs: { enqueue },
-    artifacts: { get: vi.fn() },
-    sendToThread,
-    sendUserMessage,
-    notify,
-    enqueue,
-    rows,
-    contextMessages,
-    txMock,
-  };
-}
-
-describe("deliverMessagingOutbound channel runs", () => {
-  it("keeps privately answered runs out of the group and peer fan-out on retries", async () => {
-    const deps = createChannelDeps({
-      messages: [
-        {
-          id: "ask-1",
-          blocks: [{ kind: "ask", text: "Details?", status: "answered", answer: "Private detail" }],
-        },
-        { id: "reply-1", blocks: [{ kind: "text", text: "Reply containing private detail" }] },
       ],
     });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.rows).toEqual([]);
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.contextMessages).toEqual([]);
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-  });
+  }
 
-  it("can still publish a group reply alongside an unanswered ask", async () => {
-    const deps = createChannelDeps({
-      messages: [
-        { id: "ask-1", blocks: [{ kind: "ask", text: "Details?", status: "pending" }] },
-        { id: "reply-1", blocks: [{ kind: "text", text: "Public update" }] },
-      ],
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:grp-1", body: "Alice's agent: Public update" },
-      context,
-    );
-  });
+  const peerContext = (t: Setup) =>
+    t.world.messages.filter((message) => message.threadId === "thread-2");
+  const wakes = (t: Setup) =>
+    [...t.jobs.scheduled.values()].filter((job) => job.name === "run.continue");
 
-  it("posts the bot reply to the group with owner attribution and fans it out to peers", async () => {
-    const deps = createChannelDeps();
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("posts the reply with its owner's name and gives peer bots the post as context", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "found it")]);
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendToThread).toHaveBeenCalledWith(
-      { threadId: "sendblue:grp-1", body: "Alice's agent: found it" },
-      context,
-    );
-    expect(deps.rows).toEqual([
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:grp-1", body: "Alice's agent: found it", idempotencyKey: "msg:m-1" },
+    ]);
+    expect(t.world.outbound).toEqual([
       expect.objectContaining({
         idempotencyKey: "msg:m-1",
         kind: "group",
+        identityId: null,
         threadId: "sendblue:grp-1",
         status: "sent",
       }),
     ]);
-    // peer context: appended without a run, carrying the next hop
-    expect(deps.contextMessages).toEqual([
+    // Peer context: appended without a run, carrying the next hop.
+    expect(peerContext(t)).toEqual([
       expect.objectContaining({
-        threadId: "thread-2",
         role: "user",
         clientNonce: "messaging-peer:m-1:bot-2",
         blocks: [
@@ -1211,7 +1254,7 @@ describe("deliverMessagingOutbound channel runs", () => {
             kind: "channel_message",
             provider: "sendblue",
             channelId: "ch-1",
-            fromAddress: "+15551111111",
+            fromAddress: "+15551234567",
             fromLabel: "Alice's agent",
             text: "found it",
             hop: 1,
@@ -1219,407 +1262,1130 @@ describe("deliverMessagingOutbound channel runs", () => {
         ],
       }),
     ]);
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    expect(deps.enqueue).not.toHaveBeenCalled();
+    expect(t.world.events).toEqual([
+      expect.objectContaining({ threadId: "thread-2", type: "thread.message.created" }),
+    ]);
+    expect(t.events.notify).toHaveBeenCalledWith("thread-2", expect.any(Number));
+    expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+    expect(wakes(t)).toEqual([]);
   });
 
-  it("splits a long group reply into platform-sized parts that keep the tail", async () => {
-    const text = `${"x".repeat(4_200)} TAIL-MARK`;
-    const deps = createChannelDeps({
-      posterProvider: "telegram",
-      messages: [{ id: "m-1", blocks: [{ kind: "text", text }] }],
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("keeps a privately answered run out of the group and its peers, however often delivered", async () => {
+    const t = setup();
+    groupRun(t.world, [
+      {
+        id: "ask-1",
+        blocks: [{ kind: "ask", text: "Details?", status: "answered", answer: "Private detail" }],
+      },
+      text("reply-1", "Reply containing private detail"),
+    ]);
+    await t.delivery.deliverRun("run-1");
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
-    expect(deps.rows.every((row) => (row.body as string).length <= 4_096)).toBe(true);
-    expect((deps.rows[0]!.body as string).startsWith("Alice's agent: ")).toBe(true);
-    expect(deps.rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
-      deps.rows.map((row) => ({ threadId: "sendblue:grp-1", body: row.body })),
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(peerContext(t)).toEqual([]);
+    expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("still posts a reply alongside an unanswered ask", async () => {
+    const t = setup();
+    groupRun(t.world, [
+      { id: "ask-1", blocks: [{ kind: "ask", text: "Details?", status: "pending" }] },
+      text("reply-1", "Public update"),
+    ]);
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual(["Alice's agent: Public update"]);
+  });
+
+  it("splits a long reply into platform-sized parts that keep the tail", async () => {
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    groupRun(t.world, [text("m-1", `${"x".repeat(4_200)} TAIL-MARK`)]);
+    await t.delivery.deliverRun("run-1");
+
+    const rows = inSendOrder(t);
+    expect(rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
+    expect(rows.every((row) => row.body.length <= 4_096)).toBe(true);
+    expect(rows[0]!.body.startsWith("Alice's agent: ")).toBe(true);
+    expect(rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
+    expect(rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+    expect(requests(t)).toEqual(
+      rows.map((row) => ({
+        threadId: "sendblue:grp-1",
+        body: row.body,
+        idempotencyKey: row.idempotencyKey,
+      })),
     );
   });
 
-  it("gives group rows a strictly ordered createdAt across messages", async () => {
-    const deps = createChannelDeps({
-      messages: [
-        { id: "m-1", blocks: [{ kind: "text", text: "checking" }] },
-        { id: "m-2", blocks: [{ kind: "text", text: "here is the answer" }] },
-      ],
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("orders a run's messages strictly", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "checking"), text("m-2", "here is the answer")]);
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
+    const rows = inSendOrder(t);
+    expect(rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
       ["msg:m-1", "Alice's agent: checking"],
       ["msg:m-2", "Alice's agent: here is the answer"],
     ]);
-    expect((deps.rows[1]!.createdAt as Date).getTime()).toBeGreaterThan(
-      (deps.rows[0]!.createdAt as Date).getTime(),
-    );
+    expect(rows[1]!.createdAt.getTime()).toBeGreaterThan(rows[0]!.createdAt.getTime());
   });
 
-  it("keeps a later group reply's whole range after an earlier reply's", async () => {
-    // The same millisecond for both mirrors: wall-clock ties must not let
-    // one reply's parts sort into the middle of the other's.
+  it("keeps a later reply's whole range after an earlier reply's, even on a clock tie", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     try {
+      const t = setup();
+      linkProvider(t.world, TELEGRAM);
       const reply = (marker: string) => `${marker}${marker.repeat(4_100)}`;
-      const deps = createChannelDeps({
-        posterProvider: "telegram",
-        runs: [
-          { id: "run-1", messages: [{ id: "m-1", blocks: [{ kind: "text", text: reply("1") }] }] },
-          { id: "run-2", messages: [{ id: "m-2", blocks: [{ kind: "text", text: reply("2") }] }] },
-        ],
-      });
-      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-      await deliverMessagingOutbound(deps, { runId: "run-2" }, context);
+      groupRun(t.world, [text("m-1", reply("1"))], {}, "run-1");
+      groupRun(t.world, [text("m-2", reply("2"))], {}, "run-2");
+      await t.delivery.deliverRun("run-1");
+      await t.delivery.deliverRun("run-2");
 
       const timesOf = (messageId: string) =>
-        deps.rows
-          .filter((row) => (row.idempotencyKey as string).startsWith(`msg:${messageId}`))
-          .map((row) => (row.createdAt as Date).getTime());
+        t.world.outbound
+          .filter((row) => row.sourceMessageId === messageId)
+          .map((row) => row.createdAt.getTime());
+      expect(timesOf("m-1")).toHaveLength(2);
       expect(Math.min(...timesOf("m-2"))).toBeGreaterThan(Math.max(...timesOf("m-1")));
-
-      const bodies = deps.sendToThread.mock.calls.map(
-        (call) => ((call as unknown[])[0] as { body: string }).body,
-      );
-      const lastA = Math.max(
-        ...bodies.flatMap((body, index) => (body.includes("1") ? [index] : [])),
-      );
-      const firstB = Math.min(
-        ...bodies.flatMap((body, index) => (body.includes("2") ? [index] : [])),
-      );
-      expect(firstB).toBeGreaterThan(lastA);
+      const sent = bodies(t);
+      const lastFirst = sent.findLastIndex((body) => body.includes("1"));
+      expect(sent.findIndex((body) => body.includes("2"))).toBeGreaterThan(lastFirst);
     } finally {
       clock.mockRestore();
     }
   });
 
-  it("preserves source transport on peer fan-out blocks", async () => {
-    const deps = createChannelDeps({ transport: "SMS" });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("keeps the source transport on peer context", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "found it")], { transport: "SMS" });
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.contextMessages).toEqual([
+    expect(peerContext(t)).toEqual([
       expect.objectContaining({
-        clientNonce: "messaging-peer:m-1:bot-2",
-        blocks: [
-          expect.objectContaining({
-            kind: "channel_message",
-            provider: "sendblue",
-            transport: "SMS",
-            text: "found it",
-            hop: 1,
-          }),
-        ],
+        blocks: [expect.objectContaining({ kind: "channel_message", transport: "SMS", hop: 1 })],
       }),
     ]);
   });
 
-  it("preserves source transport when waking an @-mentioned peer", async () => {
-    const deps = createChannelDeps({ text: "@Helper what do you think?", transport: "RCS" });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("wakes an @-mentioned peer bot with a run, keeping the source transport", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper what do you think?")], { transport: "RCS" });
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendUserMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        botId: "bot-2",
-        blocks: [
-          expect.objectContaining({
-            kind: "channel_message",
-            transport: "RCS",
-          }),
-        ],
-      }),
-    );
-  });
-
-  it("wakes an @-mentioned peer bot with a run", async () => {
-    const deps = createChannelDeps({ text: "@Helper what do you think?" });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+    expect(t.events.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         spaceId: "ws-2",
         threadId: "thread-2",
         botId: "bot-2",
+        userId: "user-2",
         trigger: "messaging",
         crossSpaceSenderBotId: "bot-1",
         clientNonce: "messaging-peer:m-1:bot-2",
+        prompt: `[Group "Family" — Alice's agent]: @Helper what do you think?`,
+        blocks: [expect.objectContaining({ kind: "channel_message", transport: "RCS", hop: 1 })],
       }),
     );
-    expect(deps.enqueue).toHaveBeenCalledWith(
+    expect(wakes(t)).toEqual([
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-wake" } }),
-    );
-    expect(deps.contextMessages).toHaveLength(0);
+    ]);
+    expect(peerContext(t)).toEqual([]);
   });
 
-  it("skips a mentioned peer whose Space is being deleted", async () => {
-    const deps = createChannelDeps({ text: "@Helper what do you think?" });
-    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("wakes an @-mentioned peer whatever the casing", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@helper ping")]);
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
-    expect(deps.enqueue).not.toHaveBeenCalledWith(
-      expect.objectContaining({ name: "run.continue" }),
-    );
-  });
-
-  it("wakes an @-mentioned peer even when the casing differs", async () => {
-    const deps = createChannelDeps({ text: "@helper ping" });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+    expect(t.events.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "bot-2", clientNonce: "messaging-peer:m-1:bot-2" }),
     );
   });
 
-  it("keeps a reply by a since-deactivated person's bot out of the group and its peers", async () => {
-    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-1"] });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("skips a mentioned peer whose Space is being deleted", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper what do you think?")]);
+    t.events.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.rows).toEqual([]);
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.contextMessages).toEqual([]);
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(t.events.sendUserMessage).toHaveBeenCalledOnce();
+    expect(wakes(t)).toEqual([]);
+    expect(statuses(t)).toEqual(["sent"]);
+  });
+
+  it("keeps a reply by a since-deactivated person's bot out of the group and its peers", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper what do you think?")]);
+    t.world.users.get("user-1")!.deactivatedAt = new Date();
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(peerContext(t)).toEqual([]);
+    expect(t.events.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("leaves a deactivated peer's bot out of the fan-out", async () => {
-    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-2"] });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper what do you think?")]);
+    t.world.users.get("user-2")!.deactivatedAt = new Date();
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendToThread).toHaveBeenCalledOnce();
-    expect(deps.contextMessages).toEqual([]);
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    expect(deps.enqueue).not.toHaveBeenCalled();
+    expect(t.sendToThread).toHaveBeenCalledOnce();
+    expect(peerContext(t)).toEqual([]);
+    expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+    expect(wakes(t)).toEqual([]);
   });
 
-  it("does not wake anyone when the hop budget is exhausted", async () => {
-    const deps = createChannelDeps({ text: "@Helper again?", sourceHop: 6 });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("only gives peers context once the hop budget is spent", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper again?")], { hop: 6 });
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    expect(deps.enqueue).not.toHaveBeenCalled();
-    // still delivered as context, with the clamped hop recorded
-    expect(deps.contextMessages[0]).toEqual(
-      expect.objectContaining({ clientNonce: "messaging-peer:m-1:bot-2" }),
-    );
-  });
-});
-
-describe("deliverMessagingOutbound transient failure retry", () => {
-  it("marks the row failed only once the attempt budget is exhausted", async () => {
-    const deps = createDeps({
-      run: null,
-      sendError: new Error("messaging provider 500"),
-      outboundRows: [
-        {
-          id: "out-9",
-          idempotencyKey: "msg:m-9",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "fourth failure",
-          status: "pending",
-          providerHandle: null,
-          attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.rows).toEqual([
-      expect.objectContaining({ status: "failed", attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS }),
-    ]);
-    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
-  });
-});
-
-describe("deliverMessagingOutbound retry enqueue failure", () => {
-  it("propagates the enqueue failure so the job queue retries the drain", async () => {
-    const deps = createDeps({});
-    deps.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
-    deps.jobs.enqueue.mockRejectedValueOnce(new Error("queue down"));
-
-    // A swallowed enqueue failure would strand the row in pending forever:
-    // no job reconciler reclaims messaging_outbound rows.
-    await expect(deliverMessagingOutbound(deps, { runId: "run-1" }, context)).rejects.toThrow(
-      "queue down",
-    );
-    expect(deps.rows).toEqual([
+    expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+    expect(wakes(t)).toEqual([]);
+    expect(peerContext(t)).toEqual([
       expect.objectContaining({
-        kind: "dm",
-        status: "pending",
-        attempts: 1,
-        nextAttemptAt: expect.any(Date),
+        clientNonce: "messaging-peer:m-1:bot-2",
+        blocks: [expect.objectContaining({ hop: 7 })],
       }),
     ]);
+  });
 
-    // The delayed messaging.deliver job fires at nextAttemptAt: make the row due.
-    deps.rows[0]!.nextAttemptAt = new Date(Date.now() - 1);
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.sendToThread).toHaveBeenCalledTimes(2);
-    expect(deps.rows).toEqual([
-      expect.objectContaining({ kind: "dm", status: "sent", providerHandle: "handle-out-1" }),
+  it.each(["bot-1", "bot-2"])(
+    "gives a peer neither context nor a wake when %s keeps to its own Space",
+    async (blockedBot) => {
+      const t = setup();
+      t.world.bots.get(blockedBot)!.crossSpaceCommunication = false;
+      groupRun(t.world, [text("m-1", "@Helper private reply")]);
+      await t.delivery.deliverRun("run-1");
+
+      expect(peerContext(t)).toEqual([]);
+      expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+      expect(bodies(t)).toEqual(["Alice's agent: @Helper private reply"]);
+    },
+  );
+});
+
+describe("deliverRun for team chat", () => {
+  const teamThread = "slack:C1:1700.1";
+
+  function teamChatRun(
+    world: World,
+    input: { kind?: string; status?: string; replies?: Reply[]; messageStatus?: string } = {},
+  ) {
+    addRun(world, { status: input.status ?? "completed", replies: input.replies ?? [] });
+    world.externalMessages.push({
+      id: "em-1",
+      runId: "run-1",
+      kind: input.kind ?? "direct",
+      status: input.messageStatus ?? "running",
+      replyThreadId: "1700.1",
+      externalConversation: { conversationId: "slack:C1" },
+    });
+  }
+
+  it("answers once, in the thread the message came from, and never in the bot's 1:1 chat", async () => {
+    const t = setup();
+    teamChatRun(t.world, { replies: [text("m-1", "Here is the summary.")] });
+    await t.delivery.deliverRun("run-1");
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      {
+        threadId: teamThread,
+        body: "Here is the summary.",
+        idempotencyKey: "external-message:em-1",
+      },
     ]);
+    expect(t.world.outbound).toEqual([
+      expect.objectContaining({
+        idempotencyKey: "external-message:em-1",
+        kind: "team",
+        identityId: null,
+        threadId: teamThread,
+        sourceMessageId: "m-1",
+        status: "sent",
+      }),
+    ]);
+    expect(t.world.externalMessages[0]!.status).toBe("delivered");
+    expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("records nothing for progress or before the run ends", async () => {
+    const t = setup();
+    teamChatRun(t.world, { status: "running", replies: [interim("m-1", "Looking into it.")] });
+    await t.delivery.deliverRun("run-1", { progress: true });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.world.externalMessages[0]!.status).toBe("running");
+  });
+
+  const failure = "Assistant could not complete that request. Open Rakazo for details.";
+  it.each([
+    ["a run that failed", "direct", "failed", [["external-message:em-1:failure", failure]]],
+    [
+      "a run that was cancelled",
+      "direct",
+      "cancelled",
+      [["external-message:em-1:failure", failure]],
+    ],
+    [
+      "a run that wrote nothing",
+      "direct",
+      "completed",
+      [["external-message:em-1", "Assistant completed the request without a written reply."]],
+    ],
+    ["an ambient run that chose silence", "ambient", "completed", []],
+    ["an ambient run that failed", "ambient", "failed", []],
+  ])("answers a message after %s", async (_label, kind, status, expected) => {
+    const t = setup();
+    teamChatRun(t.world, {
+      kind,
+      status,
+      replies: status === "completed" ? [{ id: "m-1", blocks: [] }] : [],
+    });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound.map((row) => [row.idempotencyKey, row.body])).toEqual(expected);
+    expect(bodies(t)).toEqual(expected.map(([, body]) => body));
+    expect(t.world.externalMessages[0]!.status).toBe("delivered");
+  });
+
+  it("records nothing when another process already answered the message", async () => {
+    const t = setup();
+    teamChatRun(t.world, {
+      messageStatus: "delivered",
+      replies: [text("m-1", "Here is the summary.")],
+    });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
   });
 });
 
-describe("deliverMessagingOutbound send failure classification", () => {
-  it("fails a permanently rejected row at once instead of retrying it", async () => {
-    const deps = createDeps({
-      sendError: new MessagingSendError(new Error("channel_not_found"), {
+describe("delegated team-chat replies", () => {
+  /**
+   * A team-chat message started run-a in bot-1's conversation thread. It delegated to bot-2
+   * (run-b), whose answer came back as run-c: bot-1's bot_message run in that same thread.
+   */
+  function delegationChain(
+    world: World,
+    input: { status?: string; replies?: Reply[]; threadId?: string } = {},
+  ) {
+    addRun(world, {
+      id: "run-a",
+      threadId: "thread-slack",
+      replies: [text("a-msg", "Asking around.")],
+    });
+    world.externalMessages.push({
+      id: "em-1",
+      runId: "run-a",
+      kind: "direct",
+      status: "delivered",
+      replyThreadId: "1700.1",
+      externalConversation: { conversationId: "slack:C1" },
+    });
+    addRun(world, {
+      id: "run-b",
+      botId: "bot-2",
+      userId: "user-2",
+      trigger: "bot_message",
+      replyTo: "a-msg",
+      replies: [text("b-msg", "Three flights found.")],
+    });
+    addRun(world, {
+      id: "run-c",
+      threadId: input.threadId ?? "thread-slack",
+      trigger: "bot_message",
+      status: input.status ?? "completed",
+      replyTo: "b-msg",
+      replies: input.replies ?? [text("c-msg", "Helper found three flights.")],
+    });
+  }
+
+  const summary = (t: Setup) =>
+    t.world.outbound.map((row) => [
+      row.idempotencyKey,
+      row.identityId ?? row.threadId,
+      row.body,
+      row.status,
+    ]);
+
+  it("answers once in the thread the chain started in, and in its owner's chat", async () => {
+    const t = setup();
+    delegationChain(t.world);
+    await t.delivery.deliverRun("run-c");
+    await t.delivery.deliverRun("run-c");
+
+    expect(summary(t)).toEqual([
+      ["msg:c-msg", "mi-1", "Helper found three flights.", "sent"],
+      ["team-chat-run:run-c", "slack:C1:1700.1", "Helper found three flights.", "sent"],
+    ]);
+    expect(t.world.outbound[1]).toEqual(
+      expect.objectContaining({ kind: "team", sourceMessageId: "c-msg" }),
+    );
+    expect(t.sendToThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("says in the thread when the delegated run failed", async () => {
+    const t = setup();
+    delegationChain(t.world, { status: "failed", replies: [] });
+    await t.delivery.deliverRun("run-c");
+
+    expect(summary(t)).toEqual([
+      [
+        "team-chat-run:run-c",
+        "slack:C1:1700.1",
+        "Assistant could not complete the delegated request. Open Rakazo for details.",
+        "sent",
+      ],
+    ]);
+  });
+
+  it.each<[string, (world: World) => void]>([
+    [
+      "wrote nothing",
+      (world) => delegationChain(world, { replies: [{ id: "c-msg", blocks: [] }] }),
+    ],
+    ["was cancelled", (world) => delegationChain(world, { status: "cancelled", replies: [] })],
+    [
+      "did not start in team chat",
+      (world) => {
+        delegationChain(world);
+        world.externalMessages = [];
+      },
+    ],
+    // A continuation in the bot's private thread may have read its owner's memory.
+    [
+      "ran in the bot's private thread",
+      (world) => delegationChain(world, { threadId: "thread-1" }),
+    ],
+  ])("posts nothing to team chat when the delegated run %s", async (_label, arrange) => {
+    const t = setup();
+    arrange(t.world);
+    await t.delivery.deliverRun("run-c");
+
+    expect(t.world.outbound.filter((row) => row.kind === "team")).toEqual([]);
+  });
+
+  it("never relays another bot's run, which answered with its own context", async () => {
+    const t = setup();
+    delegationChain(t.world);
+    await t.delivery.deliverRun("run-b");
+
+    expect(t.world.outbound.filter((row) => row.kind === "team")).toEqual([]);
+  });
+});
+
+describe("a claimed send and its backup job", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("waits for a provider call past its timeout instead of abandoning it, and records it sent", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "slow")]);
+    let signal: AbortSignal | undefined;
+    t.sendToThread.mockImplementationOnce(async (_request, context) => {
+      // A provider that cannot take the abort signal keeps going past the timeout.
+      signal = context.signal;
+      await new Promise((resolve) => setTimeout(resolve, MESSAGING_SEND_TIMEOUT_MS + 20_000));
+      return { handle: "late" };
+    });
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(MESSAGING_SEND_TIMEOUT_MS + 20_000);
+    await sending;
+
+    // Its backup job finds the message sent and sends nothing more.
+    await t.delivery.sendJob(id!, attempt(1));
+    expect({ sends: t.sendToThread.mock.calls.length, status: statuses(t) }).toEqual({
+      sends: 1,
+      status: ["sent"],
+    });
+    expect(t.world.outbound[0]!.providerHandle).toBe("late");
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("leaves a call still running at its deadline to the backup job, which only resends once the claim is stale", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "hung")]);
+    t.sendToThread.mockImplementationOnce(() => new Promise<MessagingSendResult>(() => {}));
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS);
+    await sending;
+    expect(statuses(t)).toEqual(["in-flight"]);
+
+    // Too early: the claim is not stale yet, so the job looks again later.
+    t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS + 1_000);
+    await t.delivery.sendJob(id!, attempt(1));
+    expect(t.sendToThread).toHaveBeenCalledOnce();
+
+    t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1);
+    await t.delivery.sendJob(id!, attempt(1));
+    expect({ sends: t.sendToThread.mock.calls.length, status: statuses(t) }).toEqual({
+      sends: 2,
+      status: ["sent"],
+    });
+  });
+
+  it("holds the conversation behind its own stale claim until the backup job resends it", async () => {
+    const t = setup();
+    const stale = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1_000);
+    // This release claimed the first message, then its sender died.
+    seedRow(t.world, {
+      id: "a-1",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: stale,
+      updatedAt: stale,
+    });
+    seedRow(t.world, { id: "a-2", createdAt: new Date(1_001) });
+    await t.delivery.send([threadLane("t-a")]);
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: [],
+      status: ["in-flight", "pending"],
+    });
+
+    await t.delivery.sendJob("a-1", attempt(1));
+    expect({ sends: bodies(t), status: statuses(t) }).toEqual({
+      sends: ["a-1", "a-2"],
+      status: ["sent", "sent"],
+    });
+    expect(t.world.outbound.map((row) => row.claimedAt)).toEqual([null, null]);
+  });
+
+  it("gives its own stale claim whose job gave up a new job, never the previous release's", async () => {
+    const t = setup();
+    const old = new Date(Date.now() - 10 * 60_000);
+    seedRow(t.world, {
+      id: "ours",
+      threadId: "t-a",
+      status: "sent",
+      providerHandle: null,
+      claimedAt: old,
+      updatedAt: old,
+    });
+    seedRow(t.world, {
+      id: "theirs",
+      threadId: "t-b",
+      status: "sent",
+      providerHandle: null,
+      updatedAt: old,
+    });
+    await t.delivery.sweepStalled();
+    expect(sendJobs(t).map((job) => job.payload)).toEqual([{ outboundId: "ours" }]);
+
+    await t.delivery.sendJob("ours", attempt(1));
+    expect(bodies(t)).toEqual(["ours"]);
+  });
+
+  it("retries the bookkeeping of a message that went out instead of leaving it to be sent again", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "accepted")]);
+    const updateMany = t.prisma.messagingOutbound.updateMany.getMockImplementation()!;
+    let failures = 2;
+    t.prisma.messagingOutbound.updateMany.mockImplementation(async (args) => {
+      // Saving the handle, after the claim.
+      if ("providerHandle" in (args.data as object) && failures-- > 0)
+        throw new Error("Connection terminated unexpectedly");
+      return updateMany(args);
+    });
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await sending;
+
+    expect({
+      sends: t.sendToThread.mock.calls.length,
+      status: statuses(t),
+      backup: backupJob(t, id!),
+    }).toEqual({ sends: 1, status: ["sent"], backup: undefined });
+  });
+
+  it("records a send that lands after its deadline against its own claim, so nothing is resent", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id, next] = await t.record(threadLane("t-a"), [
+      post("t-a", "very slow"),
+      post("t-a", "after it"),
+    ]);
+    t.sendToThread.mockImplementationOnce(async () => {
+      // Past the claim's deadline, before it goes stale.
+      await new Promise((resolve) => setTimeout(resolve, MESSAGING_SEND_STALE_MS - 5_000));
+      return { handle: "late" };
+    });
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS - 9_000);
+    await sending;
+    expect(statuses(t)).toEqual(["in-flight", "pending"]);
+
+    // It lands: recorded, its job removed, and the conversation carries on.
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.waitFor(() => expect(statuses(t)).toEqual(["sent", "sent"]));
+    await t.delivery.sendJob(id!, attempt(1));
+    expect({
+      bodies: bodies(t),
+      handle: t.world.outbound[0]!.providerHandle,
+      jobs: [backupJob(t, id!), backupJob(t, next!)],
+    }).toEqual({ bodies: ["very slow", "after it"], handle: "late", jobs: [undefined, undefined] });
+  });
+
+  it("leaves a late send's result alone once its backup job has taken the claim over", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "raced")]);
+    let land!: () => void;
+    t.sendToThread.mockImplementationOnce(
+      () =>
+        new Promise<MessagingSendResult>((resolve) => {
+          land = () => resolve({ handle: "first" });
+        }),
+    );
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS);
+    await sending;
+    // The claim went stale; the backup job takes it over and sends.
+    t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1);
+    await t.delivery.sendJob(id!, attempt(1));
+    land();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    // The backup job's handle stands; the late "first" result changes nothing.
+    expect({ handle: t.world.outbound[0]!.providerHandle, sends: bodies(t) }).toEqual({
+      handle: "handle-1",
+      sends: ["raced", "raced"],
+    });
+  });
+
+  it("claims by compare-and-set, so a message another release claimed meanwhile is not sent", async () => {
+    const t = setup();
+    await t.record(threadLane("t-a"), [post("t-a", "contested")]);
+    const updateMany = t.prisma.messagingOutbound.updateMany.getMockImplementation()!;
+    t.prisma.messagingOutbound.updateMany.mockImplementationOnce(async (args) => {
+      // The previous release's drain marks the row sent between the read and the claim.
+      t.world.outbound[0]!.status = "sent";
+      return updateMany(args);
+    });
+    await t.delivery.send([threadLane("t-a")]);
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+});
+
+describe("when a send fails", () => {
+  it("moves a cleanly failed message's backup job up to now and holds the rest of the conversation", async () => {
+    const t = setup();
+    const before = Date.now();
+    const [first, second] = await t.record(threadLane("t-a"), [
+      post("t-a", "a-1"),
+      post("t-a", "a-2"),
+    ]);
+    t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
+    await t.delivery.send([threadLane("t-a")]);
+
+    expect(t.sendToThread).toHaveBeenCalledOnce();
+    expect(statuses(t)).toEqual(["retry", "pending"]);
+    expect(t.world.outbound[0]!.providerHandle).toBeNull();
+    const retry = backupJob(t, first!)!.availableAt!.getTime();
+    expect(retry).toBeGreaterThanOrEqual(before);
+    expect(retry).toBeLessThanOrEqual(Date.now());
+    expect(backupJob(t, second!)!.availableAt!.getTime()).toBeGreaterThanOrEqual(
+      before + MESSAGING_SEND_BACKUP_MS,
+    );
+  });
+
+  it("moves the backup job to the provider's retry-after", async () => {
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "a-1")]);
+    t.sendToThread.mockRejectedValueOnce(
+      new MessagingSendError(new Error("rate limited"), { permanent: false, retryAfterMs: 30_000 }),
+    );
+    const before = Date.now();
+    await t.delivery.send([threadLane("t-a")]);
+
+    expect(statuses(t)).toEqual(["retry"]);
+    const retry = backupJob(t, id!)!.availableAt!.getTime();
+    expect(retry).toBeGreaterThanOrEqual(before + 30_000);
+    expect(retry).toBeLessThanOrEqual(Date.now() + 30_000);
+  });
+
+  it("fails a permanently rejected message at once and moves on", async () => {
+    const t = setup();
+    await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
+    t.sendToThread.mockRejectedValueOnce(
+      new MessagingSendError(new Error("channel_not_found"), {
         permanent: true,
         retryAfterMs: null,
       }),
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    );
+    await t.delivery.send([threadLane("t-a")]);
 
-    expect(deps.rows).toEqual([expect.objectContaining({ status: "failed", attempts: 1 })]);
-    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+    expect(bodies(t)).toEqual(["a-1", "a-2"]);
+    expect(statuses(t)).toEqual(["failed", "sent"]);
+    expect(sendJobs(t)).toEqual([]);
   });
 
-  it("waits at least the provider's retry-after before the next attempt", async () => {
-    const deps = createDeps({
-      sendError: new MessagingSendError(new Error("rate limited"), {
-        permanent: false,
-        retryAfterMs: 30_000,
-      }),
-    });
-    const before = Date.now();
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("fails a team-chat reply whose workspace was removed on its first try, without retries", async () => {
+    const surface = vi.fn();
+    const installed = new InstalledMessagingSurface(
+      { get: vi.fn(async () => null), getById: vi.fn(async () => null), removeWorkspace: vi.fn() },
+      { provider: "slack", surface } as unknown as MessagingInstallProvider,
+    );
+    const t = setup({ messaging: installed });
+    const lane = threadLane("slack~removed:C1:1700.1");
+    const [id] = await t.record(lane, [post("slack~removed:C1:1700.1", "could not complete")]);
 
-    const retryAt = deps.rows[0]!.nextAttemptAt as Date;
-    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "pending", attempts: 1 }));
-    expect(retryAt.getTime()).toBeGreaterThanOrEqual(before + 30_000);
-    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "messaging.deliver", availableAt: retryAt }),
+    await t.delivery.sendJob(id!, attempt(1));
+
+    expect(statuses(t)).toEqual(["failed"]);
+    expect(sendJobs(t)).toEqual([]);
+    expect(surface).not.toHaveBeenCalled();
+  });
+
+  it("hands a failure inside the backup job back to the job queue", async () => {
+    const t = setup();
+    const [head] = await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
+    t.world.outbound[0]!.status = "retry";
+
+    t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
+    await expect(t.delivery.sendJob(head!, attempt(2))).rejects.toThrow("messaging provider 500");
+    expect(statuses(t)).toEqual(["retry", "pending"]);
+
+    // A provider's retry-after goes back with it.
+    t.sendToThread.mockRejectedValueOnce(
+      new MessagingSendError(new Error("rate limited"), { permanent: false, retryAfterMs: 5_000 }),
+    );
+    const retried = t.delivery.sendJob(head!, attempt(3));
+    await expect(retried).rejects.toBeInstanceOf(RetryJobLaterError);
+    await expect(retried).rejects.toMatchObject({ delayMs: 5_000 });
+    expect(statuses(t)).toEqual(["retry", "pending"]);
+    expect(t.sendToThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives a message up on its last attempt and sends what waited behind it", async () => {
+    const t = setup();
+    const [head] = await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
+    t.world.outbound[0]!.status = "retry";
+    t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
+    await t.delivery.sendJob(head!, lastAttempt);
+
+    expect(bodies(t)).toEqual(["a-1", "a-2"]);
+    expect(statuses(t)).toEqual(["failed", "sent"]);
+    expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("does nothing for a backup job whose message is settled or gone", async () => {
+    const t = setup();
+    seedRow(t.world, { id: "done", status: "sent" });
+    seedRow(t.world, { id: "given-up", status: "failed" });
+    await t.delivery.sendJob("done", attempt(1));
+    await t.delivery.sendJob("given-up", attempt(1));
+    await t.delivery.sendJob("missing", attempt(1));
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(t.world.outbound.map((row) => row.status)).toEqual(["sent", "failed"]);
+  });
+
+  it("checks back later when an earlier message holds the conversation", async () => {
+    const t = setup();
+    const [, second] = await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
+    t.world.outbound[0]!.status = "retry";
+    t.jobs.scheduled.delete(messagingSendJobKey(second!));
+    const before = Date.now();
+    await t.delivery.sendJob(second!, attempt(1));
+
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["retry", "pending"]);
+    expect(backupJob(t, second!)!.availableAt!.getTime()).toBeGreaterThanOrEqual(
+      before + MESSAGING_SEND_BACKUP_MS,
     );
   });
+
+  it("leaves a message to its backup job when moving the job up fails", async () => {
+    const t = setup();
+    const [id] = await t.record(threadLane("t-a"), [post("t-a", "a-1")]);
+    t.sendToThread.mockRejectedValueOnce(new Error("messaging provider 500"));
+    t.jobs.enqueueIn.mockRejectedValueOnce(new Error("queue down"));
+    await t.delivery.send([threadLane("t-a")]);
+
+    // The failure's transaction rolled back: the claim stands, and so does the backup job.
+    expect(statuses(t)).toEqual(["in-flight"]);
+    expect(backupJob(t, id!)!.availableAt!.getTime()).toBeGreaterThan(Date.now());
+
+    // When it fires, the claim is stale and the job takes over the abandoned send.
+    t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1);
+    await t.delivery.sendJob(id!, attempt(1));
+    expect(bodies(t)).toEqual(["a-1", "a-1"]);
+    expect(statuses(t)).toEqual(["sent"]);
+    expect(sendJobs(t)).toEqual([]);
+  });
+
+  it.each(["group", "intro", "text", "attachment"])(
+    "retries %s when the provider fails before accepting it",
+    async (kind) => {
+      const t = setup();
+      linkProvider(t.world, TELEGRAM);
+      t.world.artifacts.push({
+        id: "art-1",
+        spaceId: "ws-1",
+        userId: "user-1",
+        name: "chart.png",
+        mimeType: "image/png",
+        storageKey: "chart",
+      });
+      const direct = kind === "text" || kind === "attachment";
+      const lane = direct ? dm : threadLane("telegram:group");
+      const [id] = await t.record(lane, [
+        {
+          idempotencyKey: kind === "attachment" ? "msg:m-1:file:art-1" : "msg:m-1",
+          kind: direct ? "dm" : kind,
+          ...(direct ? { identityId: "mi-1" } : { threadId: "telegram:group" }),
+          body: kind === "attachment" ? "" : "Hello",
+        },
+      ]);
+      t.sendToThread.mockRejectedValueOnce(new Error("provider unavailable"));
+      await t.delivery.send([lane]);
+      expect(statuses(t)).toEqual(["retry"]);
+      expect(backupJob(t, id!)!.availableAt!.getTime()).toBeLessThanOrEqual(Date.now());
+
+      await t.delivery.sendJob(id!, attempt(1));
+      expect(t.sendToThread).toHaveBeenCalledTimes(2);
+      expect(statuses(t)).toEqual(["sent"]);
+      expect(sendJobs(t)).toEqual([]);
+    },
+  );
 });
 
-describe("deliverMessagingOutbound conversation order", () => {
-  const whatsapp = { provider: "whatsapp", address: "15551234567", dmThreadId: "whatsapp:p:1" };
+describe("accepted sends whose bookkeeping fails", () => {
+  it.each(["text", "attachment"])(
+    "does not resend an accepted %s when its counter cannot be saved",
+    async (kind) => {
+      const t = setup();
+      linkProvider(t.world, TELEGRAM);
+      t.world.artifacts.push({
+        id: "art-1",
+        spaceId: "ws-1",
+        userId: "user-1",
+        name: "chart.png",
+        mimeType: "image/png",
+        storageKey: "chart",
+      });
+      const [id] = await t.record(dm, [
+        {
+          idempotencyKey: kind === "attachment" ? "msg:m-1:file:art-1" : "msg:m-1",
+          kind: "dm",
+          identityId: "mi-1",
+          body: kind === "attachment" ? "" : "Hello",
+        },
+      ]);
+      t.prisma.messagingIdentity.update.mockRejectedValueOnce(new Error("bookkeeping unavailable"));
+      await t.delivery.send([dm]);
+      await t.delivery.sendJob(id!, attempt(1));
+
+      expect(t.sendToThread).toHaveBeenCalledOnce();
+      expect(t.world.outbound).toEqual([
+        expect.objectContaining({ status: "sent", providerHandle: "handle-1" }),
+      ]);
+      expect(sendJobs(t)).toEqual([]);
+    },
+  );
+});
+
+describe("conversation order", () => {
   const part = (letter: string) => letter.repeat(3000);
   const longReply = [part("a"), part("b"), part("c")].join("\n\n");
 
   it.each([
-    whatsapp,
-    { provider: "telegram", address: "123", dmThreadId: "telegram:123" },
+    WHATSAPP,
+    TELEGRAM,
     { provider: "telegram-work", address: "123", dmThreadId: "telegram-work:123" },
-  ])("queues a long $provider reply as one row per message-sized part", async (identity) => {
-    const deps = createDeps({
-      identity,
-      messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  ])("sends a long $provider reply as one message per sized part", async (identity) => {
+    const t = setup();
+    linkProvider(t.world, identity);
+    addRun(t.world, { replies: [text("m-1", longReply)] });
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.rows.map((row) => [row.idempotencyKey, row.body, row.status])).toEqual([
+    expect(inSendOrder(t).map((row) => [row.idempotencyKey, row.body, row.status])).toEqual([
       ["msg:m-1", part("a"), "sent"],
       ["msg:m-1:2", part("b"), "sent"],
       ["msg:m-1:3", part("c"), "sent"],
     ]);
-    expect(deps.rows.every((row) => row.sourceMessageId === "m-1")).toBe(true);
+    expect(t.world.outbound.every((row) => row.sourceMessageId === "m-1")).toBe(true);
   });
 
   it("re-sends only the parts that failed, in order", async () => {
-    const deps = createDeps({
-      identity: whatsapp,
-      messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
-    });
-    deps.sendToThread
+    const t = setup();
+    linkProvider(t.world, WHATSAPP);
+    addRun(t.world, { replies: [text("m-1", longReply)] });
+    t.sendToThread
       .mockResolvedValueOnce({ handle: "wamid.1" })
       .mockRejectedValueOnce(new Error("WhatsApp API error"));
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    await t.delivery.deliverRun("run-1");
 
     // The third part waits behind the failed second one.
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending", "pending"]);
-    expect(deps.rows[2]!.attempts ?? 0).toBe(0);
+    expect(statuses(t)).toEqual(["sent", "retry", "pending"]);
 
-    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
-      [part("a"), part("b"), part("b"), part("c")].map((body) => ({
-        threadId: "whatsapp:p:1",
-        body,
-      })),
-    );
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent", "sent"]);
+    await t.delivery.sendJob(inSendOrder(t)[1]!.id, attempt(1));
+    expect(bodies(t)).toEqual([part("a"), part("b"), part("b"), part("c")]);
+    expect(statuses(t)).toEqual(["sent", "sent", "sent"]);
   });
 
   it.each([
-    ["in flight in another drain", "sent", new Date(), false],
-    ["abandoned mid-send long ago", "sent", new Date(Date.now() - 10 * 60_000), true],
-    ["permanently failed", "failed", new Date(), true],
-  ] as const)(
-    "a later part whose first part is %s is sent=%s",
-    async (_label, status, updatedAt, sent) => {
-      const part = (id: string, key: string, offset: number, extra: Record<string, unknown>) => ({
-        id,
-        idempotencyKey: key,
-        kind: "dm",
-        identityId: "mi-1",
-        body: id,
-        sourceMessageId: "m-1",
-        providerHandle: null,
-        attempts: 0,
-        nextAttemptAt: null,
-        createdAt: new Date(1_000 + offset),
-        ...extra,
-      });
-      const deps = createDeps({
-        run: null,
-        identity: whatsapp,
-        outboundRows: [
-          part("p-1", "msg:m-1", 0, { status, updatedAt }),
-          part("p-2", "msg:m-1:2", 1, { status: "pending" }),
-        ],
-      });
-      await deliverMessagingOutbound(deps, {}, context);
+    ["in flight in this release or the previous one (sent, no handle yet)", "sent", null, false],
+    ["sent", "sent", "wamid.1", true],
+    ["failed for good", "failed", null, true],
+  ])("a later part whose first part is %s is sent: %s", async (_label, status, handle, sent) => {
+    const t = setup();
+    linkProvider(t.world, WHATSAPP);
+    const row = { kind: "dm", identityId: "mi-1", threadId: null, sourceMessageId: "m-1" };
+    seedRow(t.world, {
+      ...row,
+      id: "p-1",
+      idempotencyKey: "msg:m-1",
+      status,
+      providerHandle: handle,
+    });
+    seedRow(t.world, {
+      ...row,
+      id: "p-2",
+      idempotencyKey: "msg:m-1:2",
+      createdAt: new Date(1_001),
+    });
+    await t.delivery.send([dm]);
 
-      expect(deps.sendToThread).toHaveBeenCalledTimes(sent ? 1 : 0);
-      expect(deps.rows[1]!.status).toBe(sent ? "sent" : "pending");
-    },
-  );
+    expect(bodies(t)).toEqual(sent ? ["p-2"] : []);
+    expect(t.world.outbound[1]!.status).toBe(sent ? "sent" : "pending");
+  });
 
-  it("holds later rows to a conversation while an earlier one waits out its backoff", async () => {
-    const pendingRow = (id: string, body: string, nextAttemptAt: Date | null) => ({
-      id,
-      idempotencyKey: `msg:${id}`,
+  it("drains every conversation for the previous release's job, past one held by a retry", async () => {
+    const t = setup();
+    seedRow(t.world, { id: "first", threadId: "t-held", status: "retry" });
+    seedRow(t.world, { id: "second", threadId: "t-held", createdAt: new Date(1_001) });
+    seedRow(t.world, { id: "elsewhere", threadId: "t-other", createdAt: new Date(1_002) });
+    seedRow(t.world, {
+      id: "earlier dm",
       kind: "dm",
       identityId: "mi-1",
-      body,
-      status: "pending",
-      attempts: nextAttemptAt ? 1 : 0,
-      nextAttemptAt,
-      providerHandle: null,
+      threadId: null,
+      createdAt: new Date(1_003),
     });
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        pendingRow("out-1", "first", new Date(Date.now() + 60_000)),
-        pendingRow("out-2", "second", null),
-        {
-          ...pendingRow("out-3", "elsewhere", null),
-          identityId: null,
-          kind: "group",
-          threadId: "sendblue:grp",
-        },
-      ],
-    });
-    await deliverMessagingOutbound(deps, {}, context);
+    await t.delivery.drainAll();
 
-    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
-      { threadId: "sendblue:grp", body: "elsewhere" },
-      context,
+    expect(requests(t).map(({ threadId, body }) => [threadId, body])).toEqual(
+      expect.arrayContaining([
+        ["t-other", "elsewhere"],
+        ["sendblue:dm-1", "earlier dm"],
+      ]),
     );
-    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending", "sent"]);
+    expect(t.sendToThread).toHaveBeenCalledTimes(2);
+    expect(t.world.outbound.map((row) => row.status)).toEqual(["retry", "pending", "sent", "sent"]);
+  });
+
+  it("sends separate conversations without waiting for a slow one", async () => {
+    const t = setup();
+    await t.record(threadLane("t-slow"), [post("t-slow", "slow-1")]);
+    await t.record(threadLane("t-fast"), [post("t-fast", "fast-1")]);
+    const slow = gate();
+    t.sendToThread.mockImplementation(async (request) => {
+      if (request.body === "slow-1") await slow.opened;
+      return { handle: `handle-${request.body}` };
+    });
+
+    const sending = t.delivery.send([threadLane("t-slow"), threadLane("t-fast")]);
+    // The fast conversation is out before the slow one answers.
+    await vi.waitFor(() => expect(statuses(t)).toEqual(["in-flight", "sent"]));
+    slow.open();
+    await sending;
+
+    expect(statuses(t)).toEqual(["sent", "sent"]);
+  });
+
+  it("keeps one conversation in order while its first send is running", async () => {
+    const t = setup();
+    await t.record(threadLane("t-a"), [post("t-a", "a-1"), post("t-a", "a-2")]);
+    const first = gate();
+    t.sendToThread.mockImplementationOnce(async () => {
+      await first.opened;
+      return { handle: "h-1" };
+    });
+
+    const sending = t.delivery.send([threadLane("t-a")]);
+    await vi.waitFor(() => expect(t.sendToThread).toHaveBeenCalledOnce());
+    // Claimed before it went out, so another sender leaves the conversation to this one.
+    expect(statuses(t)).toEqual(["in-flight", "pending"]);
+    await t.delivery.send([threadLane("t-a")]);
+    expect(t.sendToThread).toHaveBeenCalledOnce();
+
+    first.open();
+    await sending;
+    expect(bodies(t)).toEqual(["a-1", "a-2"]);
+    expect(statuses(t)).toEqual(["sent", "sent"]);
+  });
+
+  it("orders messages recorded at the same instant by id", async () => {
+    const t = setup();
+    seedRow(t.world, { id: "z-2" });
+    seedRow(t.world, { id: "a-1" });
+    await t.delivery.send([threadLane("t-a")]);
+
+    expect(bodies(t)).toEqual(["a-1", "z-2"]);
+  });
+
+  it("leaves a conversation alone while another process sends its first message", async () => {
+    const t = setup();
+    seedRow(t.world, { id: "a-1", status: "sent", providerHandle: null });
+    seedRow(t.world, { id: "a-2", createdAt: new Date(1_001) });
+    await t.delivery.send([threadLane("t-a")]);
+
+    // Overtaking would reorder the conversation, so the later message waits too.
+    expect(t.sendToThread).not.toHaveBeenCalled();
+    expect(statuses(t)).toEqual(["in-flight", "pending"]);
+  });
+
+  it("sends a reply recorded while the conversation's previous send was running", async () => {
+    const t = setup();
+    await t.record(threadLane("t-a"), [post("t-a", "a-1")]);
+    t.sendToThread.mockImplementationOnce(async () => {
+      // A reply recorded meanwhile, whose own send found the conversation busy.
+      await t.record(threadLane("t-a"), [post("t-a", "a-2")]);
+      await t.delivery.send([threadLane("t-a")]);
+      return { handle: "h-1" };
+    });
+    await t.delivery.send([threadLane("t-a")]);
+
+    expect(bodies(t)).toEqual(["a-1", "a-2"]);
+    expect(statuses(t)).toEqual(["sent", "sent"]);
+  });
+});
+
+describe("replies the previous release delivered", () => {
+  it("does not resend a 1:1 reply the previous release mirrored under the same key", async () => {
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    addRun(t.world, { replies: [text("m-1", "already out")] });
+    t.world.runs[0]!.messagingMirroredAt = new Date();
+    seedRow(t.world, {
+      id: "old-1",
+      idempotencyKey: "msg:m-1",
+      kind: "dm",
+      identityId: "mi-1",
+      threadId: null,
+      status: "sent",
+      providerHandle: "h-old",
+    });
+    await t.delivery.deliverRun("run-1");
+
+    expect({ rows: t.world.outbound.length, sends: bodies(t) }).toEqual({ rows: 1, sends: [] });
+  });
+
+  /** A run in a team-chat thread that another bot's team-chat run delegated to. */
+  function delegated(t: Setup, marker: Date | null | "dropped") {
+    addRun(t.world, {
+      id: "run-a",
+      threadId: "thread-slack",
+      replies: [text("a-msg", "Asking around.")],
+    });
+    t.world.externalMessages.push({
+      id: "em-1",
+      runId: "run-a",
+      kind: "direct",
+      status: "delivered",
+      replyThreadId: null,
+      externalConversation: { conversationId: "slack:C1" },
+    });
+    addRun(t.world, {
+      id: "run-b",
+      threadId: "thread-slack",
+      trigger: "bot_message",
+      replyTo: "a-msg",
+      replies: [text("b-msg", "Found it.")],
+    });
+    if (marker !== "dropped") t.world.runs[1]!.teamChatMirroredAt = marker;
+  }
+  const teamSends = (t: Setup) =>
+    requests(t).filter((request) => request.threadId.startsWith("slack:"));
+
+  it("skips a delegated reply the previous release posted, from any job", async () => {
+    const t = setup();
+    delegated(t, new Date());
+    await t.delivery.deliverRun("run-b");
+
+    expect(t.world.outbound.filter((row) => row.kind === "team")).toEqual([]);
+    expect(teamSends(t)).toEqual([]);
+  });
+
+  it("marks a delegated reply it relays, so the previous release does not post it too", async () => {
+    const t = setup();
+    delegated(t, null);
+    await t.delivery.deliverRun("run-b");
+
+    expect(teamSends(t)).toEqual([expect.objectContaining({ threadId: "slack:C1" })]);
+    expect(t.world.runs[1]!.teamChatMirroredAt).toBeInstanceOf(Date);
+    // Its run-end job, or a second process, finds the marker and records nothing more.
+    await t.delivery.deliverRun("run-b");
+    expect(t.world.outbound.filter((row) => row.kind === "team")).toHaveLength(1);
+    expect(teamSends(t)).toHaveLength(1);
+  });
+
+  it("finds the carried row once the marker column is gone", async () => {
+    for (const carried of [true, false]) {
+      const t = setup();
+      delegated(t, "dropped");
+      if (carried)
+        seedRow(t.world, {
+          id: "relayed:run-b",
+          idempotencyKey: "team-chat-run:run-b",
+          kind: "team",
+          threadId: null,
+          body: "",
+          status: "sent",
+          providerHandle: "",
+        });
+      await t.delivery.deliverRun("run-b");
+
+      expect(teamSends(t)).toHaveLength(carried ? 0 : 1);
+    }
+  });
+});
+
+describe("the Chat SDK surface and the send's abort signal", () => {
+  it("does not start a post once the send's time is up", async () => {
+    const postMessage = vi.fn(async () => ({ id: "m-1", threadId: "slack:C1", raw: {} }));
+    const messaging = new ChatSdkMessagingSurface([
+      {
+        provider: "slack",
+        capabilities: { direct: true, groups: true, receipt: null },
+        adapter: {
+          name: "slack",
+          userName: "bot",
+          initialize: async () => undefined,
+          handleWebhook: async () => new Response("ok"),
+          postMessage,
+          encodeThreadId: (data: { id: string }) => `slack:${data.id}`,
+          decodeThreadId: (threadId: string) => ({ id: threadId.slice("slack:".length) }),
+        } as unknown as Adapter,
+      },
+    ]);
+    const signal = AbortSignal.abort(new Error("send timed out"));
+    await expect(
+      messaging.sendToThread(
+        { threadId: "slack:C1", body: "too late" },
+        { operationId: "op", traceId: "op", spaceId: "", userId: "", signal },
+      ),
+    ).rejects.toThrow("send timed out");
+    expect(postMessage).not.toHaveBeenCalled();
   });
 });
 
 describe("WhatsApp rendered outbound delivery", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  const deliver = async (body: string, failSend?: number) => {
+  async function deliver(body: string, failSend?: number) {
     const sends: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -1640,19 +2406,13 @@ describe("WhatsApp rendered outbound delivery", () => {
         whatsappVerifyToken: "test-verify",
       }),
     );
-    const deps = createDeps({
-      identity: {
-        provider: "whatsapp",
-        address: "15551234567",
-        dmThreadId: "whatsapp:123:15551234567",
-      },
-      messages: [{ id: "m-1", blocks: [{ kind: "text", text: body }] }],
-    });
-    const run = () => deliverMessagingOutbound({ ...deps, messaging }, { runId: "run-1" }, context);
-    await run();
-    return { deps, sends, run };
-  };
-  const intact = (text: string) => text.length <= 4096 && !/\p{Cs}/u.test(text);
+    const t = setup({ messaging });
+    linkProvider(t.world, { ...WHATSAPP, dmThreadId: "whatsapp:123:15551234567" });
+    addRun(t.world, { replies: [text("m-1", body)] });
+    await t.delivery.deliverRun("run-1");
+    return { t, sends };
+  }
+  const intact = (body: string) => body.length <= 4096 && !/\p{Cs}/u.test(body);
 
   it("splits before Markdown rendering pushes an emoji across the limit", async () => {
     // Rendering expands this auto-link so the emoji would begin at UTF-16 offset 4095.
@@ -1660,19 +2420,18 @@ describe("WhatsApp rendered outbound delivery", () => {
     const body = `${link} ${"x".repeat(65)}😀zzz`;
     expect(body.length).toBeLessThan(4096);
 
-    const { deps, sends, run } = await deliver(body, 2);
+    const { t, sends } = await deliver(body, 2);
 
-    expect(deps.rows).toHaveLength(2);
+    expect(t.world.outbound).toHaveLength(2);
     expect(sends).toHaveLength(2);
     expect(sends.every(intact)).toBe(true);
     expect(sends.join(" ")).toContain("😀zzz");
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending"]);
+    expect(statuses(t)).toEqual(["sent", "retry"]);
 
-    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
-    await run();
+    await t.delivery.sendJob(inSendOrder(t)[1]!.id, attempt(1));
 
     expect(sends.slice(2)).toEqual([sends[1]]);
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+    expect(statuses(t)).toEqual(["sent", "sent"]);
   });
 
   it("sends a table that renders past the limit as one request per queued part", async () => {
@@ -1685,40 +2444,38 @@ describe("WhatsApp rendered outbound delivery", () => {
     ].join("\n");
     expect(body.length).toBeLessThan(4096);
 
-    const { deps, sends } = await deliver(body);
+    const { t, sends } = await deliver(body);
 
-    expect(deps.rows.length).toBeGreaterThan(1);
-    expect(sends).toHaveLength(deps.rows.length);
+    expect(t.world.outbound.length).toBeGreaterThan(1);
+    expect(sends).toHaveLength(t.world.outbound.length);
     expect(sends.every(intact)).toBe(true);
-    expect(deps.rows.every((row) => row.status === "sent")).toBe(true);
+    expect(t.world.outbound.every((row) => row.status === "sent")).toBe(true);
   });
 });
 
-describe("deliverMessagingOutbound attachments", () => {
-  const telegram = { provider: "telegram", address: "123", dmThreadId: "telegram:123" };
-  const artifacts = [
-    {
-      id: "art-1",
-      spaceId: "ws-1",
-      userId: "user-1",
-      name: "chart.png",
-      mimeType: "image/png",
-      storageKey: "key-1",
-    },
-    {
-      id: "art-2",
-      spaceId: "ws-1",
-      userId: "user-1",
-      name: "report.pdf",
-      mimeType: "application/pdf",
-      storageKey: "key-2",
-    },
-  ];
-  const reply = {
+describe("files", () => {
+  const chart = {
+    id: "art-1",
+    spaceId: "ws-1",
+    userId: "user-1",
+    name: "chart.png",
+    mimeType: "image/png",
+    storageKey: "key-1",
+  };
+  const report = {
+    id: "art-2",
+    spaceId: "ws-1",
+    userId: "user-1",
+    name: "report.pdf",
+    mimeType: "application/pdf",
+    storageKey: "key-2",
+  };
+  const image = { kind: "image", artifactId: "art-1", mimeType: "image/png", name: "chart.png" };
+  const reply: Reply = {
     id: "m-1",
     blocks: [
       { kind: "text", text: "Here you go" },
-      { kind: "image", artifactId: "art-1", mimeType: "image/png", name: "chart.png" },
+      image,
       {
         kind: "file",
         artifactId: "art-2",
@@ -1728,543 +2485,159 @@ describe("deliverMessagingOutbound attachments", () => {
       },
     ],
   };
-  const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
-  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
-    deps.sendToThread.mock.calls.map((call) => {
-      const request = (call as unknown[])[0] as { body: string; attachment?: { name: string } };
-      return request.attachment ? `file:${request.attachment.name}` : request.body;
-    });
 
-  it("sends a reply's image and file after its text, one row each", async () => {
-    const deps = createDeps({ identity: telegram, messages: [reply], artifacts });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  function withFiles(artifacts = [chart, report]) {
+    const t = setup();
+    linkProvider(t.world, TELEGRAM);
+    t.world.artifacts.push(...artifacts);
+    return t;
+  }
 
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
-      { threadId: "telegram:123", body: "Here you go" },
+  it("sends a reply's image and file after its text, one message each", async () => {
+    const t = withFiles();
+    addRun(t.world, { replies: [reply] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      { threadId: "telegram:123", body: "Here you go", idempotencyKey: "msg:m-1" },
       {
         threadId: "telegram:123",
         body: "",
+        idempotencyKey: "msg:m-1:file:art-1",
         attachment: { name: "chart.png", mimeType: "image/png", data: bytes("key-1") },
       },
       {
         threadId: "telegram:123",
         body: "",
+        idempotencyKey: "msg:m-1:file:art-2",
         attachment: { name: "report.pdf", mimeType: "application/pdf", data: bytes("key-2") },
       },
     ]);
-    expect(deps.rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
+    expect(inSendOrder(t).map((row) => [row.idempotencyKey, row.status])).toEqual([
       ["msg:m-1", "sent"],
       ["msg:m-1:file:art-1", "sent"],
       ["msg:m-1:file:art-2", "sent"],
     ]);
     // Bytes come from the artifact store, read in the artifact's own Space.
-    expect(deps.artifacts.get).toHaveBeenCalledWith(
+    expect(t.artifacts.get).toHaveBeenCalledWith(
       "key-1",
       expect.objectContaining({ spaceId: "ws-1", userId: "user-1" }),
     );
   });
 
   it("sends a reply that is only a file", async () => {
-    const deps = createDeps({
-      identity: telegram,
-      messages: [{ id: "m-1", blocks: [reply.blocks[1]] }],
-      artifacts,
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    const t = withFiles();
+    addRun(t.world, { replies: [{ id: "m-1", blocks: [image] }] });
+    await t.delivery.deliverRun("run-1");
 
-    expect(sentBodies(deps)).toEqual(["file:chart.png"]);
+    expect(bodies(t)).toEqual(["file:chart.png"]);
   });
 
-  it("keeps text-only delivery on platforms that cannot send files", async () => {
-    const deps = createDeps({ messages: [reply], artifacts });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+  it("sends only the text on platforms that cannot send files", async () => {
+    const t = setup();
+    t.world.artifacts.push(chart, report);
+    addRun(t.world, { replies: [reply] });
+    await t.delivery.deliverRun("run-1");
 
-    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
-      { threadId: "sendblue:dm-1", body: "Here you go" },
-      context,
-    );
-    expect(deps.rows).toHaveLength(1);
-    expect(deps.artifacts.get).not.toHaveBeenCalled();
+    expect(requests(t)).toEqual([
+      { threadId: "sendblue:dm-1", body: "Here you go", idempotencyKey: "msg:m-1" },
+    ]);
+    expect(t.world.outbound).toHaveLength(1);
+    expect(t.artifacts.get).not.toHaveBeenCalled();
   });
 
   it("retries a failed file without sending the text again", async () => {
-    const deps = createDeps({ identity: telegram, messages: [reply], artifacts });
-    deps.sendToThread
+    const t = withFiles();
+    addRun(t.world, { replies: [reply] });
+    t.sendToThread
       .mockResolvedValueOnce({ handle: "text-1" })
       .mockRejectedValueOnce(new Error("Telegram 500"));
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    await t.delivery.deliverRun("run-1");
 
     // The second file waits behind the failed first one.
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending", "pending"]);
+    expect(statuses(t)).toEqual(["sent", "retry", "pending"]);
 
-    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(sentBodies(deps)).toEqual([
+    await t.delivery.sendJob(inSendOrder(t)[1]!.id, attempt(1));
+    expect(bodies(t)).toEqual([
       "Here you go",
       "file:chart.png",
       "file:chart.png",
       "file:report.pdf",
     ]);
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent", "sent"]);
+    expect(statuses(t)).toEqual(["sent", "sent", "sent"]);
   });
 
-  it("queues a short notice once a file's attempts run out, without repeating the text", async () => {
-    const fileRow = {
-      id: "out-2",
-      idempotencyKey: "msg:m-1:file:art-1",
-      kind: "dm",
-      identityId: "mi-1",
-      body: "",
-      sourceMessageId: "m-1",
-      status: "pending",
-      attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
-      nextAttemptAt: null,
-      providerHandle: null,
-      createdAt: new Date(1_001),
-    };
-    const deps = createDeps({
-      run: null,
-      identity: telegram,
-      artifacts,
-      outboundRows: [
-        {
-          ...fileRow,
-          id: "out-1",
-          idempotencyKey: "msg:m-1",
-          body: "Here you go",
-          status: "sent",
-          providerHandle: "text-1",
-          createdAt: new Date(1_000),
-        },
-        fileRow,
+  it("sends a notice in place of a file that fails for good, ahead of what was queued after it", async () => {
+    const t = withFiles();
+    addRun(t.world, {
+      replies: [
+        { id: "m-1", blocks: [{ kind: "text", text: "Here you go" }, image] },
+        text("m-2", "Later reply"),
       ],
     });
-    deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
-    await deliverMessagingOutbound(deps, {}, context);
+    t.sendToThread
+      .mockResolvedValueOnce({ handle: "text-1" })
+      .mockRejectedValueOnce(new Error("Telegram 500"));
+    await t.delivery.deliverRun("run-1");
+    expect(statuses(t)).toEqual(["sent", "retry", "pending"]);
+    const file = inSendOrder(t)[1]!;
 
-    expect(deps.rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
-      ["msg:m-1", "sent"],
-      ["msg:m-1:file:art-1", "failed"],
-      ["msg:m-1:file:art-1:notice", "pending"],
-    ]);
-    expect(deps.rows[2]).toEqual(
-      expect.objectContaining({ kind: "dm", identityId: "mi-1", sourceMessageId: "m-1" }),
-    );
-    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "messaging.deliver" }),
-    );
+    t.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
+    await t.delivery.sendJob(file.id, lastAttempt);
 
-    await deliverMessagingOutbound(deps, {}, context);
-    expect(sentBodies(deps)).toEqual(["file:chart.png", 'Could not send "chart.png".']);
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "failed", "sent"]);
-  });
-
-  it("sends the notice in the file's place, before a later reply already queued", async () => {
-    const deps = createDeps({
-      run: null,
-      identity: telegram,
-      artifacts,
-      outboundRows: [
-        {
-          id: "out-1",
-          idempotencyKey: "msg:m-1:file:art-1",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "",
-          sourceMessageId: "m-1",
-          status: "pending",
-          attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
-          nextAttemptAt: null,
-          providerHandle: null,
-          createdAt: new Date(1_000),
-        },
-        {
-          id: "out-2",
-          idempotencyKey: "msg:m-2",
-          kind: "dm",
-          identityId: "mi-1",
-          body: "Later reply",
-          sourceMessageId: "m-2",
-          status: "pending",
-          attempts: 0,
-          nextAttemptAt: null,
-          providerHandle: null,
-          createdAt: new Date(2_000),
-        },
-      ],
-    });
-    deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
-    await deliverMessagingOutbound(deps, {}, context);
-    // One transaction claims the row for sending; the failure and its notice
-    // are then saved together in a second one.
-    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(2);
-
-    await deliverMessagingOutbound(deps, {}, context);
-    expect(sentBodies(deps)).toEqual([
+    expect(bodies(t)).toEqual([
+      "Here you go",
+      "file:chart.png",
       "file:chart.png",
       'Could not send "chart.png".',
       "Later reply",
     ]);
-  });
-
-  it("drops a file whose artifact is gone or belongs to another Space", async () => {
-    const deps = createDeps({
-      identity: telegram,
-      messages: [reply],
-      artifacts: [{ ...artifacts[0]!, spaceId: "ws-2" }],
-    });
-    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-
-    expect(sentBodies(deps)).toEqual(["Here you go"]);
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "failed", "failed"]);
-    expect(deps.artifacts.get).not.toHaveBeenCalled();
-  });
-});
-
-describe("cross-space group reply isolation", () => {
-  it.each(["bot-1", "bot-2"])(
-    "does not send history or wake a peer when %s is blocked",
-    async (blockedBot) => {
-      const deps = createChannelDeps({ blockedBot, text: "@Helper private reply" });
-      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-      expect(deps.contextMessages).toHaveLength(0);
-      expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    },
-  );
-});
-
-it("drops a queued connection invite after opt-out", async () => {
-  const deps = createDeps({
-    run: null,
-    blockedBot: "bot-1",
-    connectionStatus: "pending",
-    outboundRows: [
-      {
-        id: "invite",
-        idempotencyKey: "connect:bot-1:bot-2",
+    const rows = inSendOrder(t);
+    expect(rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
+      ["msg:m-1", "sent"],
+      ["msg:m-1:file:art-1", "failed"],
+      ["msg:m-1:file:art-1:notice", "sent"],
+      ["msg:m-2", "sent"],
+    ]);
+    expect(rows[2]).toEqual(
+      expect.objectContaining({
         kind: "dm",
         identityId: "mi-1",
-        body: "Connection invite",
-        status: "pending",
-        providerHandle: null,
-      },
-    ],
-  });
-  await deliverMessagingOutbound(deps, {}, context);
-  expect(deps.sendToThread).not.toHaveBeenCalled();
-});
-
-describe("accepted outbound bookkeeping failures", () => {
-  const cases = [
-    ["group", "handle"],
-    ["intro", "handle"],
-    ["invite", "counter"],
-    ["text", "handle"],
-    ["text", "counter"],
-    ["attachment", "handle"],
-    ["attachment", "counter"],
-  ] as const;
-
-  function pending(kind: string) {
-    return createDeps({
-      identity: { provider: "telegram", dmThreadId: "telegram:123" },
-      outboundRows: [
-        {
-          id: "out-accepted",
-          idempotencyKey:
-            kind === "invite"
-              ? "connect:bot-1:bot-9"
-              : kind === "attachment"
-                ? "msg:m-1:file:art-1"
-                : "msg:m-1",
-          sourceMessageId: "m-1",
-          kind: kind === "group" || kind === "intro" ? kind : "dm",
-          identityId: kind === "group" || kind === "intro" ? null : "mi-1",
-          threadId: kind === "group" || kind === "intro" ? "telegram:group" : null,
-          body: kind === "attachment" ? "" : "Hello",
-          status: "pending",
-          attempts: 0,
-          providerHandle: null,
-          nextAttemptAt: null,
-          createdAt: new Date(1_000),
-        },
-      ],
-      artifacts: [
-        {
-          id: "art-1",
-          spaceId: "ws-1",
-          userId: "user-1",
-          name: "chart.png",
-          mimeType: "image/png",
-          storageKey: "chart",
-        },
-      ],
-    });
-  }
-
-  it.each(cases)("does not resend accepted %s after a %s save failure", async (kind, failure) => {
-    const deps = pending(kind);
-    const error = new Error("bookkeeping unavailable");
-    if (failure === "counter") {
-      deps.prisma.messagingIdentity.update.mockRejectedValueOnce(error);
-    } else if (kind === "group" || kind === "intro") {
-      deps.prisma.messagingOutbound.update.mockRejectedValueOnce(error);
-    } else {
-      const update = deps.prisma.messagingOutbound.updateMany.getMockImplementation()!;
-      deps.prisma.messagingOutbound.updateMany
-        .mockImplementationOnce(update)
-        .mockRejectedValueOnce(error);
-    }
-    await deliverMessagingOutbound(deps, {}, context);
-    // Past every send retry and abandoned-part deadline, the accepted row stays claimed.
-    deps.rows[0]!.nextAttemptAt = new Date(0);
-    deps.rows[0]!.updatedAt = new Date(0);
-    await deliverMessagingOutbound(deps, {}, context);
-    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
-    expect(deps.rows[0]!.status).toBe("sent");
-    expect(deps.rows[0]!.attempts).toBe(0);
-    expect(deps.rows[0]!.providerHandle).toBe(failure === "counter" ? "handle-out-1" : null);
-    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
-    expect(deps.rows).toHaveLength(1);
-  });
-
-  it.each(["group", "intro", "text", "attachment"])(
-    "still retries %s when the provider fails before acceptance",
-    async (kind) => {
-      const deps = pending(kind);
-      deps.sendToThread.mockRejectedValueOnce(new Error("provider unavailable"));
-      await deliverMessagingOutbound(deps, {}, context);
-      expect(deps.rows[0]!.status).toBe("pending");
-      expect(deps.rows[0]!.attempts).toBe(1);
-      expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          name: "messaging.deliver",
-          availableAt: deps.rows[0]!.nextAttemptAt,
-        }),
-      );
-      deps.rows[0]!.nextAttemptAt = new Date(0);
-      await deliverMessagingOutbound(deps, {}, context);
-      expect(deps.sendToThread).toHaveBeenCalledTimes(2);
-      expect(deps.rows[0]!.status).toBe("sent");
-    },
-  );
-});
-
-describe("drain lanes", () => {
-  const groupRow = (id: string, threadId: string, offset: number) => ({
-    id,
-    idempotencyKey: `msg:${id}`,
-    kind: "group",
-    identityId: null,
-    threadId,
-    body: id,
-    status: "pending",
-    sourceMessageId: `${id}-source`,
-    providerHandle: null,
-    attempts: 0,
-    nextAttemptAt: null,
-    createdAt: new Date(1_000 + offset),
-  });
-
-  it("sends separate conversations without waiting for a slow one", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [groupRow("slow-1", "t-slow", 0), groupRow("fast-1", "t-fast", 1)],
-    });
-    let releaseSlow = () => {};
-    const slowSend = new Promise<void>((resolve) => {
-      releaseSlow = resolve;
-    });
-    deps.sendToThread.mockImplementationOnce(async () => {
-      await slowSend;
-      return { handle: "h-slow" };
-    });
-
-    const drained = deliverMessagingOutbound(deps, {}, context);
-    // Both conversations are on the wire before the slow one answers.
-    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(2));
-    releaseSlow();
-    await drained;
-
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
-  });
-
-  it("keeps one conversation in order while its first send is running", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
-    });
-    let releaseFirst = () => {};
-    const firstSend = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    deps.sendToThread.mockImplementationOnce(async () => {
-      await firstSend;
-      return { handle: "h-1" };
-    });
-
-    const drained = deliverMessagingOutbound(deps, {}, context);
-    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
-    expect(deps.rows[1]!.status).toBe("pending");
-
-    releaseFirst();
-    await drained;
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
-      { threadId: "t-a", body: "a-1" },
-      { threadId: "t-a", body: "a-2" },
-    ]);
-  });
-
-  it("waits behind an equal-createdAt row that another drain is sending", async () => {
-    const createdAt = new Date(1_000);
-    const deps = createDeps({
-      run: null,
-      outboundRows: [
-        { ...groupRow("z-2", "t-a", 0), createdAt },
-        { ...groupRow("a-1", "t-a", 0), createdAt },
-      ],
-    });
-    let releaseFirst = () => {};
-    const firstSend = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    deps.sendToThread.mockImplementationOnce(async () => {
-      await firstSend;
-      return { handle: "h-1" };
-    });
-
-    const firstDrain = deliverMessagingOutbound(deps, {}, context);
-    // The head is a-1: the tie-break on id orders rows of equal createdAt.
-    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
-
-    await deliverMessagingOutbound(deps, {}, context);
-    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
-    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "sent"]);
-
-    releaseFirst();
-    await firstDrain;
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
-      { threadId: "t-a", body: "a-1" },
-      { threadId: "t-a", body: "z-2" },
-    ]);
-    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
-  });
-
-  it("does not claim beside a row that committed between the check and the claim", async () => {
-    const deps = createDeps({ run: null, outboundRows: [groupRow("r-1", "t-a", 10)] });
-    let releaseIntroSend = () => {};
-    const introSend = new Promise<void>((resolve) => {
-      releaseIntroSend = resolve;
-    });
-    deps.sendToThread.mockImplementationOnce(async () => {
-      await introSend;
-      return { handle: "h-intro" };
-    });
-
-    // Between the first drain's blocker check and its claim, an unlocked
-    // writer commits an earlier row and a second drain picks it up and goes
-    // in flight — the first drain must see it before claiming.
-    let drainB: Promise<void> | null = null;
-    let injected = false;
-    const inject = async () => {
-      if (injected) return;
-      injected = true;
-      deps.rows.push(groupRow("intro", "t-a", 0));
-      drainB = deliverMessagingOutbound(deps, {}, context);
-      await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
-    };
-    const prisma = deps.prisma as unknown as {
-      $transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
-      messagingOutbound: {
-        updateMany: {
-          getMockImplementation: () => (args: never) => unknown;
-          mockImplementationOnce: (impl: (args: never) => unknown) => unknown;
-        };
-      };
-    };
-    const realTransaction = prisma.$transaction.bind(prisma);
-    prisma.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
-      await inject();
-      return realTransaction(fn);
-    };
-    const realUpdateMany = prisma.messagingOutbound.updateMany.getMockImplementation()!;
-    prisma.messagingOutbound.updateMany.mockImplementationOnce(
-      async (args: Parameters<typeof realUpdateMany>[0]) => {
-        await inject();
-        return realUpdateMany(args);
-      },
+        sourceMessageId: "m-1",
+        createdAt: file.createdAt,
+      }),
     );
-
-    await deliverMessagingOutbound(deps, {}, context);
-    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
-    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
-      ["r-1", "pending"],
-      ["intro", "sent"],
-    ]);
-
-    releaseIntroSend();
-    await drainB;
-    await deliverMessagingOutbound(deps, {}, context);
-    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
-      ["r-1", "sent"],
-      ["intro", "sent"],
-    ]);
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
-      { threadId: "t-a", body: "intro" },
-      { threadId: "t-a", body: "r-1" },
-    ]);
-  });
-
-  it("leaves a conversation alone when another drain claimed its oldest row", async () => {
-    const deps = createDeps({
-      run: null,
-      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
-    });
-    (
-      deps.prisma.messagingOutbound.updateMany as unknown as ReturnType<typeof vi.fn>
-    ).mockResolvedValueOnce({ count: 0 });
-
-    await deliverMessagingOutbound(deps, {}, context);
-
-    // Overtaking would reorder the conversation, so the later row waits too.
-    expect(deps.sendToThread).not.toHaveBeenCalled();
-    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending"]);
-  });
-
-  it("sends a reply queued while its conversation's previous send was running", async () => {
-    const deps = createDeps({ run: null, outboundRows: [groupRow("a-1", "t-a", 0)] });
-    deps.sendToThread.mockImplementationOnce(async () => {
-      // Another drain started for this reply, found a-1 in flight, and left it.
-      deps.rows.push(groupRow("a-2", "t-a", 1));
-      return { handle: "h-1" };
-    });
-
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
-      { threadId: "t-a", body: "a-1" },
-      { threadId: "t-a", body: "a-2" },
-    ]);
-  });
-
-  it("does not let a long held conversation starve the others", async () => {
-    const held = Array.from({ length: 100 }, (_, index) => ({
-      ...groupRow(`w-${index}`, "t-held", index),
-      nextAttemptAt: new Date(Date.now() + 60_000),
-    }));
-    const deps = createDeps({
-      run: null,
-      outboundRows: [...held, groupRow("later", "t-other", 1_000)],
-    });
-
-    await deliverMessagingOutbound(deps, {}, context);
-
-    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
-      { threadId: "t-other", body: "later" },
-      context,
+    expect(t.jobs.enqueueIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: "messaging.send", payload: { outboundId: rows[2]!.id } }),
     );
+    expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("sends the notice at once when the provider rejects a file for good", async () => {
+    const t = withFiles();
+    addRun(t.world, {
+      replies: [{ id: "m-1", blocks: [{ kind: "text", text: "Here you go" }, image] }],
+    });
+    t.sendToThread.mockResolvedValueOnce({ handle: "text-1" }).mockRejectedValueOnce(
+      new MessagingSendError(new Error("file too large"), {
+        permanent: true,
+        retryAfterMs: null,
+      }),
+    );
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual(["Here you go", "file:chart.png", 'Could not send "chart.png".']);
+    expect(statuses(t)).toEqual(["sent", "failed", "sent"]);
+  });
+
+  it("fails a file whose artifact is gone or belongs to another Space, without a notice", async () => {
+    const t = withFiles([{ ...chart, spaceId: "ws-2" }]);
+    addRun(t.world, { replies: [reply] });
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual(["Here you go"]);
+    expect(statuses(t)).toEqual(["sent", "failed", "failed"]);
+    expect(t.artifacts.get).not.toHaveBeenCalled();
   });
 });

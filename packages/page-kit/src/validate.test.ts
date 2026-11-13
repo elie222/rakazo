@@ -255,6 +255,26 @@ describe("checkPageSource", () => {
     ).toEqual({ ok: true, code: expect.any(String) });
   });
 
+  it.each([
+    "function () { return <Status />; }",
+    "() => <Status />",
+    "() => React.createElement(Status, null)",
+  ])("accepts a harmless kit-name helper before default export %s", (exported) => {
+    expect(
+      checkPageSource(
+        `function Status() { return <Text>Ready</Text>; }\nexport default ${exported};`,
+      ),
+    ).toEqual({ ok: true, code: expect.any(String) });
+  });
+
+  it("still rejects a recursive helper before an anonymous default export", () => {
+    expect(
+      checkPageSource(
+        "function Status() { return <Status />; }\nexport default function () { return <Status />; }",
+      ).ok,
+    ).toBe(false);
+  });
+
   it("limits a page's size in bytes, not characters, before parsing it", () => {
     const head = "const App = () => <Text>x</Text>;\n// ";
     const room = PAGE_SOURCE_MAX_BYTES - new TextEncoder().encode(page(head)).byteLength;
@@ -308,5 +328,103 @@ describe("checkPageSource", () => {
   );
 }`;
     expect(checkPageSource(source)).toEqual({ ok: true, code: expect.any(String) });
+  });
+  describe("a hook called outside a component", () => {
+    it("rejects a hook at the top level of the file, which crashes the viewer", () => {
+      const result = checkPageSource(
+        "const t = useTheme();\nexport default function App() { return <Text>{t.text.primary}</Text>; }\n",
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors).toContain(
+        "line 1: useTheme() must be called inside a component, not at the top level of the file.",
+      );
+    });
+
+    it("handles a source-sized sequence of semicolon-free arrows and ends their scopes", () => {
+      const declarations = Array.from({ length: 12000 }, (_, i) => `const a${i}=()=>1`).join("\n");
+      const result = checkPageSource(
+        `${declarations}\nconst value=useState(0)\nexport default () => <Text>Hello</Text>`,
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors).toContain(
+        "line 12001: useState() must be called inside a component, not at the top level of the file.",
+      );
+    });
+
+    it("rejects an exported hook at the top level of the file", () => {
+      const result = checkPageSource(
+        "export const t = useTheme();\nexport default function App() { return <Text>{t.text.primary}</Text>; }\n",
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors).toContain(
+        "line 1: useTheme() must be called inside a component, not at the top level of the file.",
+      );
+    });
+
+    it("rejects a hook at the top level of the file whatever the hook is", () => {
+      const result = checkPageSource(
+        "const [v] = useState(1);\nexport default function App() { return <Text>{v}</Text>; }\n",
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors).toContain(
+        "line 1: useState() must be called inside a component, not at the top level of the file.",
+      );
+    });
+
+    it("accepts a hook inside a component", () => {
+      expect(
+        checkPageSource(
+          "export default function App() { const t = useTheme(); return <Text>{t.text.primary}</Text>; }\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
+
+    it("accepts a hook inside a component written as an arrow", () => {
+      expect(
+        checkPageSource(
+          "const App = () => { const [v] = useState(1); return <Text>{v}</Text>; };\nexport default App;\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
+
+    it("accepts a hook inside a nested function", () => {
+      expect(
+        checkPageSource(
+          "function inner() { const t = useTheme(); return t; }\nfunction App() { return <Text>{inner().text.primary}</Text>; }\nexport default App;\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
+
+    it("accepts a hook that is referenced but not called", () => {
+      expect(
+        checkPageSource(
+          "const f = useTheme;\nexport default function App() { return <Text>{f().text.primary}</Text>; }\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
+
+    it("accepts a hook used as a property of something else", () => {
+      expect(
+        checkPageSource(
+          "const helpers = { useTheme };\nexport default function App() { return <Text>{helpers.useTheme().text.primary}</Text>; }\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
+
+    it("accepts an ordinary function called at the top level of the file", () => {
+      expect(
+        checkPageSource(
+          "const total = sum([1, 2, 3]);\nexport default function App() { return <Text>{total}</Text>; }\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
+
+    it("accepts a page that keeps its own hook, so the name is not React's", () => {
+      expect(
+        checkPageSource(
+          "function useTotal() { return 3; }\nconst total = useTotal();\nexport default function App() { return <Text>{total}</Text>; }\n",
+        ),
+      ).toEqual({ ok: true, code: expect.any(String) });
+    });
   });
 });

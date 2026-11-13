@@ -15,7 +15,7 @@ import {
 // The runtime login, so row-level security applies exactly as it does in a deployment.
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 
-describe.skipIf(!enabled).sequential("items available across a user's spaces (PostgreSQL)", () => {
+describe.skipIf(!enabled)("items available across a user's spaces (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
   const suffix = randomUUID().slice(0, 8);

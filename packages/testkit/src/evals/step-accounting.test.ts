@@ -86,3 +86,43 @@ it("reconciles measured token buckets and keeps unavailable buckets unknown", ()
   expect(result.steps[0]!.cacheReadTokens).toBeNull();
   expect(result.background.compaction.cacheReadTokens).toBe(4);
 });
+
+it("lists a step's calls in the order they were made, so tool round trips can be told apart", () => {
+  const at = (ms: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, 0, ms));
+  const result = measureWorkflowSteps(
+    [
+      call("later", { runId: "run", operation: "retrieval", outputTokens: 7, createdAt: at(2) }),
+      call("first", { runId: "run", operation: "retrieval", outputTokens: 3, createdAt: at(1) }),
+    ],
+    new Map([["run", 1]]),
+  );
+  expect(
+    result.steps[0]!.calls.map((c) => [c.ordered, c.operation, c.outputTokens, c.costUsd]),
+  ).toEqual([
+    [true, "retrieval", 3, 0.01],
+    [true, "retrieval", 7, 0.01],
+  ]);
+});
+
+it("marks calls recorded at the same time as unordered instead of naming one first", () => {
+  const at = (ms: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, 0, ms));
+  const rows = [
+    call("b", { runId: "run", outputTokens: 7, createdAt: at(1) }),
+    call("c", { runId: "run", outputTokens: 9, createdAt: at(2) }),
+    call("a", { runId: "run", outputTokens: 3, createdAt: at(1) }),
+    call("d", { runId: "run", outputTokens: 1 }),
+  ];
+  const listed = (input: LedgerCall[]) =>
+    measureWorkflowSteps(input, new Map([["run", 1]])).steps[0]!.calls.map((c) => [
+      c.ordered,
+      c.outputTokens,
+    ]);
+  // Tied and undated calls keep one fixed order whatever order the ledger returned them in.
+  expect(listed(rows)).toEqual([
+    [false, 1],
+    [false, 3],
+    [false, 7],
+    [true, 9],
+  ]);
+  expect(listed([...rows].reverse())).toEqual(listed(rows));
+});

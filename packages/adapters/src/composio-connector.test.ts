@@ -31,7 +31,11 @@ const composioSdkState = vi.hoisted(() => ({
     args: Record<string, unknown>;
     options?: { account?: string };
   }>,
-  executeResult: null as null | { data: Record<string, unknown>; error: string | null },
+  executeResult: null as null | {
+    data: Record<string, unknown>;
+    error: string | null;
+    resultType?: "completed" | "failed" | "blocked";
+  },
   failTools: null as null | string[],
   logIds: null as null | string[],
   connectedAccounts: {
@@ -130,10 +134,12 @@ vi.mock("@composio/core", () => ({
         ) => {
           composioSdkState.executions.push(options ? { tool, args, options } : { tool, args });
           const failed = composioSdkState.failTools?.includes(tool) ?? false;
+          const result = failed
+            ? { data: { ok: false }, error: "listing failed" }
+            : (composioSdkState.executeResult ?? { data: { ok: true }, error: null });
           return {
-            ...(failed
-              ? { data: { ok: false }, error: "listing failed" }
-              : (composioSdkState.executeResult ?? { data: { ok: true }, error: null })),
+            resultType: result.error ? "failed" : "completed",
+            ...result,
             logId: composioSdkState.logIds?.shift() ?? "log-github",
           };
         },
@@ -497,6 +503,64 @@ describe("composio tool mapping", () => {
           toolkits: ["GITHUB"],
           connectedAccounts: { GITHUB: ["ca_current"] },
         },
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it.each([
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github", blocked: false },
+    { tool: "github_mcp_list_repos", batch: true, stale: "github", blocked: false },
+    { tool: "GITHUB_GET_REPOS", batch: false, stale: "github", blocked: true },
+    { tool: "GITHUB_GET_REPOS", batch: true, stale: "github", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: false, stale: "github_mcp", blocked: true },
+    { tool: "GITHUB_MCP_LIST_REPOS", batch: true, stale: "github_mcp", blocked: true },
+  ])("routes overlapping toolkit names: %o", async ({ tool, batch, stale, blocked }) => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const restore = stubActiveAccounts([stale === "github" ? "ca-mcp" : "ca-github"]);
+    try {
+      const connector = new ComposioConnector();
+      const args = batch ? { tools: [{ tool_slug: tool, arguments: {} }] } : {};
+      const call = {
+        tool: batch ? "COMPOSIO_MULTI_EXECUTE_TOOL" : tool,
+        args,
+        executionId: "overlapping-toolkits",
+      };
+      const events: ConnectorEvent[] = [];
+      for await (const event of connector.execute(call, {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+        connectedConnections: [
+          {
+            id: "github",
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "GitHub",
+            providerRef: "ca-github",
+          },
+          {
+            id: "mcp",
+            connectorId: "composio",
+            externalId: "GitHub_MCP",
+            displayName: "GitHub MCP",
+            providerRef: "ca-mcp",
+          },
+        ],
+      }))
+        events.push(event);
+      expect(events.map((event) => event.type)).toEqual([blocked ? "error" : "result"]);
+      expect(composioSdkState.executions).toEqual(blocked ? [] : [{ tool: call.tool, args }]);
+      expect(composioSdkState.created.at(-1)?.config).toMatchObject({
+        toolkits: [stale === "github" ? "GITHUB_MCP" : "GITHUB"],
+        connectedAccounts:
+          stale === "github" ? { GITHUB_MCP: ["ca-mcp"] } : { GITHUB: ["ca-github"] },
       });
     } finally {
       restore();
@@ -974,6 +1038,43 @@ describe("composio tool mapping", () => {
           '1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found. access_token="[redacted]" client_secret: "[redacted]" api_key="[redacted]" password="[redacted]"',
       },
     ]);
+  });
+
+  it("reports a call the provider marked failed even when its error text is empty", async () => {
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = { data: {}, error: null, resultType: "failed" };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-failed-without-error",
+      traceId: "composio-failed-without-error",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        { tool: "GITHUB_GET_REPOS", args: {}, executionId: "composio-failed-without-error" },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+    expect(events).toEqual([{ type: "error", message: "GITHUB_GET_REPOS failed" }]);
   });
 
   it("redacts credential values in successful tool results without dropping the payload", async () => {

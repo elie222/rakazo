@@ -22,7 +22,7 @@ const runtimeUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && runtimeUrl && migrationUrl && runtimeUrl !== migrationUrl
-    ? describe.sequential
+    ? describe
     : describe.skip;
 
 type Tenant = {
@@ -614,6 +614,267 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
   });
 
+  it("limits vault guard helpers to runtime callers without exposing another tenant's restrictions", async () => {
+    const publicGrants = await owner.pool.query(
+      `SELECT p.proname FROM pg_proc p
+       CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+       WHERE p.proname = ANY($1) AND acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'`,
+      [["app_vault_item_unrestricted", "app_vault_run_unrestricted"]],
+    );
+    expect(publicGrants.rows).toEqual([]);
+    const ids = [a, b].map((t) => `guard-${t.userId}`);
+    try {
+      for (const [index, t] of [a, b].entries()) {
+        await owner.prisma.vaultCredential.create({
+          data: {
+            id: ids[index]!,
+            userId: t.userId,
+            name: ids[index]!,
+            origin: "",
+            auth: {},
+            ciphertext: "fake",
+          },
+        });
+        await owner.prisma.vaultCredentialLimit.create({
+          data: { credentialId: ids[index]!, userId: t.userId, spaceId: t.spaceId },
+        });
+      }
+      const probe = () =>
+        runAsTenant(
+          a,
+          () => db.$queryRaw`
+        SELECT app_vault_item_unrestricted(${ids[0]}) AS own_item,
+          app_vault_item_unrestricted(${ids[1]}) AS other_item,
+          app_vault_run_unrestricted(${a.userId}, ${a.spaceId}) AS own_run,
+          app_vault_run_unrestricted(${b.userId}, ${b.spaceId}) AS other_run
+      `,
+        );
+      const expected = [{ own_item: false, other_item: true, own_run: false, other_run: false }];
+      expect(await probe()).toEqual(expected);
+      await owner.prisma.vaultCredentialLimit.deleteMany({ where: { credentialId: ids[1] } });
+      // Another tenant's restrictions changing produces the same answers.
+      expect(await probe()).toEqual(expected);
+      await owner.prisma.vaultCredentialLimit.deleteMany({ where: { credentialId: ids[0] } });
+      expect(await probe()).toEqual([{ ...expected[0], own_item: true, own_run: true }]);
+    } finally {
+      await owner.prisma.vaultCredential.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
+  it.each([false, true])(
+    "preserves legacy unrestricted use and fences restrictions, including system=%s",
+    async (system) => {
+      const tag = `rollout-${system}-${suffix}`;
+      const connect = () => app.pool.connect();
+      const client = await (system
+        ? runAsSystem("legacy rollout test", connect)
+        : runAsTenant(a, connect));
+      const vaultId = (name: string) => `${tag}-${name}`;
+      const kinds = [
+        "run-login:rollout:login",
+        "run-code:rollout",
+        "run-code-spent:rollout",
+        "run-secret:rollout",
+      ];
+      try {
+        // Exactly the settings the previous release sends: no capability declaration.
+        await client.query("RESET app.vault_access_version");
+        await client.query(
+          `INSERT INTO vault_credentials (id, "userId", name, origin, auth, ciphertext, "updatedAt")
+           VALUES ($1, $2, $1, 'https://example.test', '{}', 'fake-unrestricted', now())`,
+          [vaultId("open"), a.userId],
+        );
+        const read = (id: string) =>
+          client.query("SELECT ciphertext FROM vault_credentials WHERE id = $1", [id]);
+        expect((await read(vaultId("open"))).rows).toEqual([{ ciphertext: "fake-unrestricted" }]);
+        expect(
+          (
+            await client.query(
+              `UPDATE vault_credentials SET ciphertext = 'fake-updated' WHERE id = $1 RETURNING id`,
+              [vaultId("open")],
+            )
+          ).rowCount,
+        ).toBe(1);
+        for (const [i, kind] of kinds.entries()) {
+          await client.query(
+            `INSERT INTO secrets (id, "userId", "spaceId", kind, ciphertext) VALUES ($1, $2, $3, $4, 'fake-run')`,
+            [`${tag}-run-${i}`, a.userId, a.spaceId, kind],
+          );
+        }
+        const runs = () =>
+          client.query("SELECT id FROM secrets WHERE id LIKE $1", [`${tag}-run-%`]);
+        expect((await runs()).rowCount).toBe(kinds.length);
+        // A Space-only restriction must not fence the same owner's other Spaces.
+        await owner.prisma.vaultCredential.create({
+          data: {
+            id: vaultId("space-only"),
+            userId: a.userId,
+            spaceId: a.spaceId,
+            name: vaultId("space-only"),
+            origin: "https://example.test",
+            auth: {},
+            ciphertext: "fake",
+            policy: "off",
+          },
+        });
+        await owner.prisma.secret.create({
+          data: {
+            id: `${tag}-other-space`,
+            userId: a.userId,
+            spaceId: b.spaceId,
+            kind: kinds[0]!,
+            ciphertext: "fake",
+          },
+        });
+        if (system)
+          expect(
+            (await client.query("SELECT id FROM secrets WHERE id = $1", [`${tag}-other-space`]))
+              .rowCount,
+          ).toBe(1);
+        expect((await runs()).rowCount).toBe(0);
+        await owner.prisma.vaultCredential.delete({ where: { id: vaultId("space-only") } });
+        expect((await runs()).rowCount).toBe(kinds.length);
+        // A restriction made by new code applies immediately to old connections.
+        for (const policy of ["off", "ask", "allow"]) {
+          await owner.prisma.vaultCredential.create({
+            data: {
+              id: vaultId(policy),
+              userId: a.userId,
+              name: vaultId(policy),
+              origin: "https://example.test",
+              auth: {},
+              ciphertext: "fake-restricted",
+              policy,
+            },
+          });
+        }
+        // Even a limit hidden by tenant RLS in another Space protects the shared item
+        // from an old account-vault writer. The old binary knows nothing of this table.
+        await owner.prisma.vaultCredentialLimit.create({
+          data: {
+            credentialId: vaultId("allow"),
+            userId: a.userId,
+            spaceId: b.spaceId,
+          },
+        });
+        for (const policy of ["off", "ask", "allow"]) {
+          const id = vaultId(policy);
+          expect((await read(id)).rows).toEqual([]);
+          expect(
+            (
+              await client.query(
+                `UPDATE vault_credentials SET ciphertext = 'fake-overwrite', policy = 'allow' WHERE id = $1 RETURNING id`,
+                [id],
+              )
+            ).rowCount,
+          ).toBe(0);
+          expect(
+            (await client.query("DELETE FROM vault_credentials WHERE id = $1 RETURNING id", [id]))
+              .rowCount,
+          ).toBe(0);
+          // An old save cannot recreate the hidden name and use a replacement.
+          await expect(
+            client.query(
+              `INSERT INTO vault_credentials (id, "userId", name, origin, auth, ciphertext, "updatedAt")
+             VALUES ($1, $2, $3, 'https://example.test', '{}', 'fake-replacement', now())`,
+              [`${id}-duplicate`, a.userId, id],
+            ),
+          ).rejects.toThrow(/unique constraint/);
+        }
+        // Existing unrestricted credentials still work in the same vault.
+        expect((await read(vaultId("open"))).rows).toEqual([{ ciphertext: "fake-updated" }]);
+        expect((await runs()).rows).toEqual([]);
+        expect(
+          (
+            await client.query(
+              `UPDATE vault_credentials SET ciphertext = 'fake-still-usable' WHERE id = $1 RETURNING id`,
+              [vaultId("open")],
+            )
+          ).rowCount,
+        ).toBe(1);
+        await expect(
+          client.query(
+            `INSERT INTO vault_credentials (id, "userId", name, origin, auth, ciphertext, policy, "updatedAt")
+           VALUES ($1, $2, $1, 'https://example.test', '{}', 'fake', 'off', now())`,
+            [vaultId("blocked-insert"), a.userId],
+          ),
+        ).rejects.toThrow(/row-level security/);
+        // Ordinary secret storage is unaffected even for the restricted owner.
+        await client.query(
+          `INSERT INTO secrets (id, "userId", "spaceId", kind, ciphertext) VALUES ($1, $2, $3, 'model', 'fake')`,
+          [`${tag}-ordinary`, a.userId, null],
+        );
+        expect(
+          (await client.query("SELECT id FROM secrets WHERE id = $1", [`${tag}-ordinary`]))
+            .rowCount,
+        ).toBe(1);
+        // Restrictions never disable another owner's run-only credentials.
+        await owner.prisma.secret.create({
+          data: {
+            id: `${tag}-other-owner`,
+            userId: b.userId,
+            spaceId: b.spaceId,
+            kind: kinds[0]!,
+            ciphertext: "fake",
+          },
+        });
+        const other = await runAsTenant(b, connect);
+        try {
+          await other.query("RESET app.vault_access_version");
+          expect(
+            (await other.query("SELECT id FROM secrets WHERE id = $1", [`${tag}-other-owner`]))
+              .rowCount,
+          ).toBe(1);
+        } finally {
+          other.release(true);
+        }
+        for (const [i, kind] of kinds.entries()) {
+          expect(
+            (
+              await client.query(
+                `UPDATE secrets SET ciphertext = 'fake-overwrite' WHERE id = $1 RETURNING id`,
+                [`${tag}-run-${i}`],
+              )
+            ).rowCount,
+          ).toBe(0);
+          expect(
+            (
+              await client.query("DELETE FROM secrets WHERE id = $1 RETURNING id", [
+                `${tag}-run-${i}`,
+              ])
+            ).rowCount,
+          ).toBe(0);
+          await expect(
+            client.query(
+              `INSERT INTO secrets (id, "userId", "spaceId", kind, ciphertext) VALUES ($1, $2, $3, $4, 'fake')`,
+              [`${tag}-blocked-${i}`, a.userId, a.spaceId, kind],
+            ),
+          ).rejects.toThrow(/row-level security/);
+        }
+        // New code can still enforce the restrictions and read the rows itself.
+        await client.query("SELECT set_config('app.vault_access_version', '1', false)");
+        expect((await read(vaultId("off"))).rowCount).toBe(1);
+        expect((await runs()).rowCount).toBe(kinds.length);
+        await client.query("RESET app.vault_access_version");
+        await owner.prisma.vaultCredential.deleteMany({
+          where: { id: { in: ["off", "ask", "allow"].map(vaultId) } },
+        });
+        expect((await runs()).rowCount).toBe(kinds.length);
+        expect(
+          (
+            await client.query("DELETE FROM vault_credentials WHERE id = $1 RETURNING id", [
+              vaultId("open"),
+            ])
+          ).rowCount,
+        ).toBe(1);
+      } finally {
+        client.release(true);
+        await owner.prisma.secret.deleteMany({ where: { id: { startsWith: tag } } });
+        await owner.prisma.vaultCredential.deleteMany({ where: { id: { startsWith: tag } } });
+      }
+    },
+  );
+
   it("routes every bypass policy through the key check", async () => {
     const policies = await owner.prisma.$queryRaw<
       Array<{ policyname: string; qual: string; with_check: string | null }>
@@ -640,6 +901,39 @@ describePostgres("row-level security (PostgreSQL)", () => {
       }),
     );
     expect(counts).toEqual([1, 2, 1]);
+  });
+
+  it("repairs vault helper grants when provisioning a runtime role after migration", async () => {
+    await owner.pool.query(`
+      REVOKE EXECUTE ON FUNCTION app_vault_item_unrestricted(text) FROM ${RUNTIME_ROLE};
+      REVOKE EXECUTE ON FUNCTION app_vault_run_unrestricted(text, text) FROM ${RUNTIME_ROLE};
+    `);
+    try {
+      await expect(
+        runAsTenant(
+          a,
+          () => db.$queryRaw`
+        SELECT app_vault_item_unrestricted('missing')
+      `,
+        ),
+      ).rejects.toThrow(/permission denied/);
+      await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+      expect(
+        await runAsTenant(
+          a,
+          () => db.$queryRaw`
+        SELECT app_vault_item_unrestricted('missing') AS item,
+          app_vault_run_unrestricted(${a.userId}, ${a.spaceId}) AS run
+      `,
+        ),
+      ).toEqual([{ item: true, run: true }]);
+      await expect(runAsTenant(a, () => db.vaultCredential.findMany())).resolves.toBeInstanceOf(
+        Array,
+      );
+      await expect(runAsTenant(a, () => db.secret.findMany())).resolves.toBeInstanceOf(Array);
+    } finally {
+      await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+    }
   });
 
   it("gives the runtime login the job queue, replacing a hand-made policy", async () => {

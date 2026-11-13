@@ -298,6 +298,7 @@ function percentFrom(payload: unknown): number | null {
 export class DesktopUpdateController {
   private current: DesktopUpdateState;
   private lastCheck = 0;
+  private lastCheckWasOffline = false;
   private updaterPromise: Promise<ElectronAutoUpdater | null> | null = null;
   private loadedUpdater: ElectronAutoUpdater | null = null;
   private verification: Promise<void> | null = null;
@@ -325,8 +326,16 @@ export class DesktopUpdateController {
   private push(event: UpdaterEvent) {
     if (event.type === "failed") {
       const failure = classifyUpdaterFailure(event.error);
+      this.lastCheckWasOffline = failure.kind === "offline";
       if (failure.kind === "signature" || failure.kind === "other")
         reportDesktopError(event.error, "desktop.update", { "update.failure": failure.kind });
+    }
+    if (
+      event.type === "check-start" ||
+      event.type === "not-available" ||
+      event.type === "available"
+    ) {
+      this.lastCheckWasOffline = false;
     }
     this.current = reduceUpdateState(this.current, event, this.clock.iso());
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
@@ -427,7 +436,13 @@ export class DesktopUpdateController {
       environmentSupportsUpdates: updaterSupport(this.environment).supported,
     };
     let now = this.clock.now();
-    if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
+    if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) {
+      if (userInitiated && this.current.phase === "idle" && this.lastCheckWasOffline) {
+        // Surface the last result to the requester without making background state noisy.
+        return { ...this.current, message: t("Could not reach the update server.") };
+      }
+      return this.current;
+    }
     this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {

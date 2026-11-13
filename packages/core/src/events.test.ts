@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   appendTextSegment,
@@ -19,12 +20,15 @@ import {
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
+  splitToolHistory,
   stripLiveStreamingProgress,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
   withoutLastToolStepNotes,
+  withToolHistory,
+  withToolStepOutcomes,
 } from "./events.js";
 import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
 
@@ -1102,5 +1106,75 @@ describe("liveActivityLine", () => {
     expect(
       liveActivityLine([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
     ).toBeUndefined();
+  });
+});
+
+describe("withToolStepOutcomes", () => {
+  it("tallies each call's outcome on the step it showed as, in order", () => {
+    const segments = noteLastToolStep(
+      appendToolCallSegment(
+        appendToolCallSegment(appendToolCallSegment([], "shell"), "shell"),
+        "web_search",
+      ),
+      "Looking it up.",
+    );
+    expect(
+      withToolStepOutcomes(segments, [
+        { label: "Shell", outcome: "succeeded" },
+        { label: "Shell", outcome: "failed" },
+        { label: "Web search", outcome: undefined },
+      ]),
+    ).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 2, outcomes: { succeeded: 1, failed: 1 } },
+          { label: "Web search", count: 1, note: "Looking it up." },
+        ],
+      },
+    ]);
+  });
+
+  it("leaves the steps as they were when the calls do not line up", () => {
+    const segments = appendToolCallSegment([], "shell");
+    expect(withToolStepOutcomes(segments, [{ label: "Web search", outcome: "failed" }])).toEqual(
+      segments,
+    );
+    expect(withToolStepOutcomes(segments, [])).toEqual(segments);
+  });
+});
+
+describe("a reply's kept tool calls", () => {
+  it("split off the blocks as one entry per step and merge back unchanged", () => {
+    const kept = {
+      tool: "shell",
+      calls: [{ arguments: '{"command":"ls"}', result: "notes.txt" }],
+    };
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ] as MessageBlock[];
+    const { blocks: shown, toolHistory } = splitToolHistory(blocks);
+    expect(JSON.stringify(shown)).not.toMatch(/"tool"|"calls"|notes\.txt/);
+    expect(toolHistory).toEqual({ steps: [kept, null, kept] });
+    expect(withToolHistory(shown, toolHistory)).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ]);
+    expect(splitToolHistory(shown).toolHistory).toBeUndefined();
   });
 });

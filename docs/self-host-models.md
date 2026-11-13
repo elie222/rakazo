@@ -10,11 +10,11 @@ English | [简体中文](./zh-CN/self-host-models.md)
 The deployment model is used by anyone who has not connected a model of their own. `PI_DEFAULT_PROVIDER`
 picks the provider and `PI_DEFAULT_MODEL` the model:
 
-| `PI_DEFAULT_PROVIDER` | Key | Default model |
-| --- | --- | --- |
+| `PI_DEFAULT_PROVIDER`  | Key                  | Default model                |
+| ---------------------- | -------------------- | ---------------------------- |
 | `openrouter` (default) | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
+| `anthropic`            | `ANTHROPIC_API_KEY`  | `claude-sonnet-5`            |
+| `deepseek`             | `DEEPSEEK_API_KEY`   | `deepseek-flash`             |
 
 Pick a vision-capable model so screenshot computer tools stay available.
 
@@ -69,13 +69,26 @@ MLX, list its model IDs and an endpoint that both the API and worker processes c
 ```env
 RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
+# Optional: key for a server that requires one, sent as the bearer token.
+RAKAZO_LOCAL_MODELS_API_KEY=
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 # Optional: model ids on this endpoint that accept images (screenshot computer tools).
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 # Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
+# Optional: prompt tokens per minute the server accepts (a rate-limited key or quota).
+RAKAZO_LOCAL_TOKENS_PER_MINUTE=200000
+# Optional: off when the server does not cache prompts.
+RAKAZO_LOCAL_PROMPT_CACHE=off
 ```
+
+Set `RAKAZO_LOCAL_MODELS_API_KEY` when the server requires a key, such as LiteLLM, vLLM started
+with `--api-key`, or a company gateway. Every request to `RAKAZO_LOCAL_MODELS_URL` then sends it as
+`Authorization: Bearer`; unset, requests carry the placeholder `local`. Like the other deployment
+keys, it stays on the API and worker and is redacted from run output. Use HTTPS unless the network
+is trusted. To make a local model the deployment model, set `PI_DEFAULT_PROVIDER=local`,
+`PI_DEFAULT_MODEL` to one of `RAKAZO_LOCAL_MODELS` and `PI_DEFAULT_CREDENTIALS=host`.
 
 A model in `RAKAZO_LOCAL_REASONING_MODELS` offers thinking levels and sends the chosen level as
 `reasoning_effort` (`medium` by default, `none` when thinking is off). Other local models never
@@ -85,6 +98,22 @@ receive the field.
 connection sets its own max-tokens value. It never exceeds a quarter of
 `RAKAZO_LOCAL_CONTEXT_WINDOW`, so the prompt keeps the rest; a higher limit leaves less room for the
 prompt, so long chats are compacted sooner.
+
+A server behind a rate-limited key (a free tier, an organisation token quota) often answers `429`
+with a fixed `Retry-After` of a minute, so each rejected call costs a minute. Set
+`RAKAZO_LOCAL_TOKENS_PER_MINUTE` to the server's prompt-token limit and Rakazo paces calls to the
+local provider under it with a sliding one-minute window, waiting only as long as the window needs.
+The estimate is calibrated against the prompt tokens the server reports. Leave some headroom if
+other clients share the key; a `429` that still happens keeps the usual `Retry-After` handling.
+Unset, calls are sent as soon as they are ready. Like the other token limits, a value that is not
+a positive integer is rejected when the local provider is configured.
+
+Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
+hitting, and trims old page state only when that saves more than the cache would. A server without
+prompt caching (several hosted gateways and confidential-compute endpoints report no cached
+tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
+`RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
+tokens of it have built up. Unset, behaviour is unchanged.
 
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
 prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
@@ -113,6 +142,9 @@ and worker to block them.
 Literal private IP, loopback, and `host.docker.internal` targets do not, but they are refused
 unless `MCP_ALLOW_PRIVATE_ENDPOINT=true` is set on the API and worker, which allows them for every
 user. This is checked on save, on model discovery, and on every run.
+With the Docker images install and the desktop app, a `localhost` or `127.0.0.1` connection
+reaches the computer running Docker (through `host.docker.internal`). On Linux, the model server
+must listen on an address the Docker bridge can reach, not only `127.0.0.1`.
 For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
