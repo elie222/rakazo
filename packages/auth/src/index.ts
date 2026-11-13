@@ -416,8 +416,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           if (source.action === "link-account") {
             if (!verified) return { error: "unable_to_link_account" };
             const target = await ctx.context.internalAdapter.findUserById(String(user.id));
-            if (!target?.emailVerified || target.email.toLowerCase() !== email)
-              return { error: "account_not_linked" };
+            if (!target?.emailVerified) return { error: "unable_to_link_account" };
+            if (target.email.toLowerCase() !== email) return { error: "email_does_not_match" };
           }
           return;
         }

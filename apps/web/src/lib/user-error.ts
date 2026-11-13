@@ -60,6 +60,7 @@ export function authErrorText(error: unknown, fallback: string): string {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   if (code === "SSO_UNAVAILABLE") return t`SSO is temporarily unavailable. Try again.`;
   if (code === "account_not_linked") return t`Sign in to your existing account to link SSO`;
+  if (code === "email_does_not_match") return t`Use an account with the same email address`;
   if (code === "ACCOUNT_DEACTIVATED") return t`This account is deactivated`;
   if (code === "REGISTRATION_CLOSED") return t`Registration is closed`;
   if (code === "EMAIL_NOT_ALLOWED") return t`Email is not allowed to register`;

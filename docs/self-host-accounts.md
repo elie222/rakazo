@@ -267,6 +267,9 @@ account's email are both verified. Google and generic OpenID Connect require the
 account's authenticated linking flow in account settings (Link Google or Link SSO); a Google verification claim alone does not prove current
 control of a mailbox hosted elsewhere.
 
+Linking requires the provider's verified email to match the verified Rakazo email. A different
+provider address, including Apple's Hide My Email relay address, cannot be linked to that account.
+
 Signup through Google or Apple follows the same closed registration and allowlist as email
 signup. The provider email has to be verified when an allowlist is set. Google verification
 counts only for Gmail or a matching verified Workspace domain. Other Google mailboxes cannot

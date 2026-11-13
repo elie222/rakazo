@@ -1808,64 +1808,87 @@ it("rejects stale Google verification during allowlisted signup", async () => {
   expect(rows("session")).toHaveLength(0);
 });
 
-it("starts Google linking only for an authenticated account and rejects provider redirect origins", async () => {
-  setup({
-    social: {
-      providers: [
-        {
-          id: "google",
-          name: "Google",
-          clientId: "offline-client",
-          clientSecret: "offline-secret",
-        },
-      ],
-    },
-  });
-  const input = { provider: "google", callbackURL: `${origin}/app` };
-  expect((await request("/link-social", input)).status).toBe(401);
-  expect(
-    (
-      await request("/sign-up/email", {
-        email: "local@example.test",
-        password: "test-password-123",
+it.each([
+  ["google", "local@example.test"],
+  ["google", "other@example.test"],
+  ["apple", "local@example.test"],
+  ["apple", "relay@privaterelay.example.test"],
+])(
+  "links %s only for the authenticated account's verified email (%s)",
+  async (providerId, email) => {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      social: {
+        providers: [
+          {
+            id: "google",
+            name: "Google",
+            clientId: "offline-client",
+            clientSecret: "offline-secret",
+          },
+          {
+            id: "apple",
+            name: "Apple",
+            clientId: "service",
+            teamId: "team",
+            keyId: "key",
+            privateKey: pem,
+          },
+        ],
+      },
+    });
+    const input = { provider: providerId, callbackURL: `${origin}/app` };
+    expect((await request("/link-social", input)).status).toBe(401);
+    expect(
+      (
+        await request("/sign-up/email", {
+          email: "local@example.test",
+          password: "test-password-123",
+          name: "Test",
+        })
+      ).status,
+    ).toBe(200);
+    const linked = await request("/link-social", input);
+    expect(linked.status).toBe(200);
+    expect(new URL(((await linked.json()) as { url: string }).url).origin).toBe(
+      providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+    );
+    rows("user")[0]!.emailVerified = true;
+    const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
+    provider.validateAuthorizationCode = async () => ({
+      accessToken: "offline-token",
+      tokenType: "Bearer",
+      idToken: jwt({
+        sub: "linked-subject",
+        email,
+        email_verified: true,
         name: "Test",
-      })
-    ).status,
-  ).toBe(200);
-  const linked = await request("/link-social", input);
-  expect(linked.status).toBe(200);
-  expect(new URL(((await linked.json()) as { url: string }).url).origin).toBe(
-    "https://accounts.google.com",
-  );
-  rows("user")[0]!.emailVerified = true;
-  const provider = (await auth.$context).socialProviders.find((item) => item.id === "google")!;
-  provider.validateAuthorizationCode = async () => ({
-    accessToken: "offline-token",
-    tokenType: "Bearer",
-    idToken: jwt({
-      sub: "linked-subject",
-      email: "local@example.test",
-      email_verified: true,
-      name: "Test",
-    }),
-  });
-  provider.idToken = { verify: async () => true };
-  const retry = await request("/link-social", input);
-  const authorization = new URL(((await retry.json()) as { url: string }).url);
-  const callback = await request(
-    `/callback/google?code=offline-code&state=${authorization.searchParams.get("state")}`,
-  );
-  expect(callback.headers.get("location")).toBe(`${origin}/app`);
-  expect(rows("account").some((account) => account.providerId === "google")).toBe(true);
-  expect(
-    (await request("/link-social", { ...input, callbackURL: "https://accounts.google.com/" }))
-      .status,
-  ).toBe(403);
-  expect(
-    (await request("/link-social", input, undefined, { origin: "https://accounts.google.com" }))
-      .status,
-  ).toBe(403);
-});
+      }),
+    });
+    provider.idToken = { verify: async () => true };
+    const retry = await request("/link-social", input);
+    const authorization = new URL(((await retry.json()) as { url: string }).url);
+    const callback = await request(
+      `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
+    );
+    const matches = email === "local@example.test";
+    if (matches) expect(callback.headers.get("location")).toBe(`${origin}/app`);
+    else expect(callback.headers.get("location")).toContain("error=email_does_not_match");
+    expect(rows("account").some((account) => account.providerId === providerId)).toBe(matches);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("user")[0]!.email).toBe("local@example.test");
+    expect(
+      (await request("/link-social", { ...input, callbackURL: "https://accounts.google.com/" }))
+        .status,
+    ).toBe(403);
+    expect(
+      (await request("/link-social", input, undefined, { origin: "https://accounts.google.com" }))
+        .status,
+    ).toBe(403);
+  },
+);
 
 it("reports only the authenticated user's linked provider ids", async () => {
   setup();
