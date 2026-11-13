@@ -546,6 +546,62 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect((await h.state(id)).status).toBe("finished");
   });
 
+  it.each([
+    ["is still running", false],
+    ["has finished", true],
+  ])(
+    "sends a follow-up the provider did not take while a run someone else started %s",
+    async (_label, done) => {
+      const h = await setup();
+      const id = await h.launch();
+      await h.poll(id);
+      await h.finish(id);
+      const remoteId = (await h.state(id)).remoteId!;
+      // Someone continues the finished agent in Cursor itself; the card no longer polls.
+      await h.wire.fetch(`https://api.cursor.com/v1/agents/${remoteId}/runs`, {
+        method: "POST",
+        headers: { authorization: "Bearer fake-key" },
+        body: JSON.stringify({ prompt: { text: "Rename it" } }),
+      });
+      if (done) h.wire.complete(remoteId);
+      await h.tool("reply", { id, prompt: "Add tests" });
+      // A busy agent refuses the follow-up; an idle one fails it with no response.
+      let failed = false;
+      h.connection.provider = new CursorCloudAgentProvider({
+        apiKey: "fake-key",
+        fetch: async (input, init) => {
+          if (done && !failed && init?.method === "POST") {
+            failed = true;
+            return new Response(null, { status: 503 });
+          }
+          return h.wire.fetch(input, init);
+        },
+      });
+      await h.poll(id);
+      await h.poll(id);
+      expect(await h.runs(id)).toHaveLength(2);
+      expect(await h.state(id)).toMatchObject({ followup: { prompt: "Add tests" } });
+      expect(await h.wakes()).toHaveLength(1);
+      if (!done) h.wire.complete(remoteId);
+      await h.settle(id);
+      await h.poll(id);
+      await h.poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "running", followup: null });
+      expect(await h.runs(id)).toHaveLength(3);
+      expect(
+        h.wire.requests.filter(
+          (request) => request.method === "POST" && request.path.endsWith("/runs"),
+        ),
+      ).toMatchObject([
+        { body: { prompt: { text: "Rename it" } } },
+        ...(done ? [] : [{ body: { prompt: { text: "Add tests" } } }]),
+        { body: { prompt: { text: "Add tests" } } },
+      ]);
+      await h.finish(id);
+      expect(await h.wakes()).toHaveLength(2);
+    },
+  );
+
   it("does not report cancellation success while transport fails or the provider is still running", async () => {
     const h = await setup();
     const id = await h.launch();
@@ -1015,6 +1071,31 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       }
     });
 
+    it("sends a follow-up T3 Code did not take after a newer run started there", async () => {
+      const { h, actor, t3, tool, launch, poll } = await connected();
+      await connectServer(actor, { allBots: true });
+      const id = await launch();
+      await poll(id);
+      const remoteId = (await h.state(id)).remoteId!;
+      t3.complete(remoteId);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "finished" });
+      // A newer run starts in T3 Code itself after the card stopped polling.
+      t3.continueRun(remoteId);
+      await tool("reply", { id, prompt: "Add tests" });
+      t3.failNext = { status: 500, tool: "t3_thread_send" };
+      await poll(id);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ followup: { prompt: "Add tests" } });
+      await h.settle(id);
+      await poll(id);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "running", followup: null });
+      expect(t3.calls.filter((call) => call.tool === "t3_thread_send")).toHaveLength(2);
+      expect(t3.threads.get(remoteId)!.runs).toHaveLength(3);
+      expect(await h.wakes()).toHaveLength(1);
+    });
+
     it("keeps status and cancellation usable after revocation without a deployment provider", async () => {
       const { h, actor, deps, launch, poll } = await connected();
       const server = await connectServer(actor, { allBots: true });
@@ -1079,7 +1160,10 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       const calls = t3.calls.length;
       await poll(id);
       expect(await h.state(id)).toMatchObject({ status: "expired", nextPollAt: null });
-      expect(t3.calls).toHaveLength(calls);
+      // A follow-up first reads which run is newest, a status read revocation still allows.
+      expect(t3.calls.slice(calls).map(({ tool }) => tool)).toEqual(
+        operation === "reply" ? ["t3_thread_read"] : [],
+      );
       expect(await tool("reply", { id, prompt: "Restart" })).toEqual({
         error: "Unknown cloud agent.",
       });
