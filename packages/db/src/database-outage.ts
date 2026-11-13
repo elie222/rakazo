@@ -112,6 +112,7 @@ export async function retryWhileDatabaseUnavailable<T>(
       )
         throw error;
       await sleep(Math.min(5_000, databaseCapacityBackoffMs(attempt)));
+      if (options.signal?.aborted) throw error;
     }
   }
 }

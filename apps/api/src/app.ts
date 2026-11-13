@@ -1263,6 +1263,8 @@ export async function withAuthLibraryFailures(handle: () => Promise<Response>) {
         status: 503,
         headers: { "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS) },
       });
+    // An auth request that went through read the database, so any outage is over.
+    if (response.status < 400 && !requestHitDatabaseOutage()) databaseOutage.succeeded();
     return response;
   } finally {
     for (const failure of failures) logAuthLibraryFailure(failure, crashed);

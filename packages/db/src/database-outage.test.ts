@@ -1,6 +1,6 @@
 import type { LogEvent } from "@rakazo/logging";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isDatabaseUnavailable } from "./client.js";
 import { DatabaseOutage, retryWhileDatabaseUnavailable } from "./database-outage.js";
 
@@ -241,5 +241,18 @@ describe("retryWhileDatabaseUnavailable", () => {
       }),
     ).rejects.toThrow("25006");
     expect(waits).toEqual([]);
+    const stop = new AbortController();
+    const work = vi.fn(async () => {
+      throw readOnlyPrismaError();
+    });
+    await expect(
+      retryWhileDatabaseUnavailable(work, {
+        source: "test",
+        outage,
+        signal: stop.signal,
+        sleep: async () => stop.abort(),
+      }),
+    ).rejects.toThrow("25006");
+    expect(work).toHaveBeenCalledTimes(1);
   });
 });
