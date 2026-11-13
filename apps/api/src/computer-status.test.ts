@@ -64,6 +64,10 @@ describe("toComputerStatus", () => {
     expect(toComputerStatus("bot-1", computer, undefined, true, "user-1").controlLeaseId).toBe(
       "lease-1",
     );
+    // Another bot's screen on the same Team computer is not this lease's.
+    expect(
+      toComputerStatus("bot-2", computer, undefined, true, "user-1").controlLeaseId,
+    ).toBeUndefined();
     const watcher = toComputerStatus("bot-1", computer, undefined, true, "user-2");
     expect(watcher.controlLeaseId).toBeUndefined();
     expect(watcher.controlledByOther).toBe(true);

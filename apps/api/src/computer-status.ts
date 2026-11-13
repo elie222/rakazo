@@ -74,6 +74,7 @@ export function toComputerStatus(
   const ownLeaseId =
     viewerId &&
     computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
     computer.controlLeaseId &&
     holdsUserControl(computer, viewerId)
       ? computer.controlLeaseId
