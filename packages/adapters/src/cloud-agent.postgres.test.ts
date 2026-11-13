@@ -1015,6 +1015,28 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       }
     });
 
+    it("settles a cancel of an agent whose launch T3 Code refused", async () => {
+      const { h, actor, tool, launch, poll } = await connected();
+      await connectServer(actor, { allBots: true });
+      // T3 Code has no project for this repository, so nothing remote is ever created.
+      const id = await launch({ repository: "https://github.com/example/missing" });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({
+        status: "failed",
+        remoteId: null,
+        nextPollAt: null,
+      });
+      expect(await tool("cancel", { id })).toMatchObject({ cancellationPending: true });
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({
+        status: "failed",
+        cancelRequested: false,
+        nextPollAt: null,
+        errorCount: 0,
+      });
+      expect(await h.wakes()).toHaveLength(1);
+    });
+
     it("keeps status and cancellation usable after revocation without a deployment provider", async () => {
       const { h, actor, deps, launch, poll } = await connected();
       const server = await connectServer(actor, { allBots: true });

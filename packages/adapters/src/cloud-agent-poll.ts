@@ -74,6 +74,11 @@ export async function pollCloudAgent(
       return;
     }
     if (!agent.remoteId) {
+      // A refused launch created nothing remote, so a later cancel has nothing to stop.
+      if (agent.status !== "running") {
+        await finishPoll(deps, agent, {}, abandoned);
+        return;
+      }
       // Write dispatch intent before I/O; a crash replays the same idempotent create.
       const marked = await deps.prisma.cloudAgent.updateMany({
         where: fence(agent),
