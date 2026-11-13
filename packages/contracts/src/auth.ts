@@ -13,7 +13,6 @@ export const signInProviderSchema = z.object({
             .array(
               z.object({
                 d: z.string().max(4096),
-                fill: z.string().regex(/^(currentColor|#[0-9a-fA-F]{6})$/),
               }),
             )
             .max(8),

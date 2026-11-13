@@ -170,13 +170,14 @@ it.each(["in", "up"] as const)("offers providers before the email form on %s", a
 });
 
 it("shows a configured provider beside the password form and hides the rest", async () => {
+  const mark = { viewBox: "0 0 24 24", paths: [{ d: "M1 1h2v2H1z" }] };
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({
     ...capabilities,
     passwordAuth: true,
     sso: null,
     providers: [
-      { id: "google", name: "Google" },
-      { id: "apple", name: "Apple", native: true },
+      { id: "google", name: "Google", presentation: { variant: "outline", mark } },
+      { id: "apple", name: "Apple", native: true, presentation: { variant: "solid", mark } },
     ],
   });
   await render();
@@ -185,9 +186,7 @@ it("shows a configured provider beside the password form and hides the rest", as
   const apple = button("Continue with Apple");
   const emailChoice = button("Continue with email");
   expect(google.dataset.variant).toBe("outline");
-  expect(google.className).toContain("bg-white");
-  expect(apple.className).toContain("bg-black");
-  expect(apple.className).toContain("dark:bg-white");
+  expect(apple.dataset.variant).toBe("default");
   expect(google.parentElement).toBe(apple.parentElement);
   expect(google.parentElement?.className).toContain("sm:flex-row");
   expect(google.querySelector("svg")).not.toBeNull();

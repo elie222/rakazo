@@ -37,7 +37,7 @@ export function SocialSignInButtons({
                   aria-hidden="true"
                 >
                   {provider.presentation.mark.paths.map((path) => (
-                    <path key={path.d} {...path} />
+                    <path key={path.d} d={path.d} fill="currentColor" />
                   ))}
                 </svg>
               ) : null}
