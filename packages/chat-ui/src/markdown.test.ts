@@ -326,6 +326,12 @@ describe("closeUnterminatedFence", () => {
     );
   });
 
+  it("does not add a second fence when a stream stops between \\r and \\n", () => {
+    const closed = "```ts\r\ncode\r\n```\r";
+    expect(closeUnterminatedFence(closed)).toBe(closed);
+    expect(closeUnterminatedFence("```ts\r\ncode\r")).toBe("```ts\r\ncode\r\n```");
+  });
+
   it("does not open a backtick fence whose info string has a backtick", () => {
     for (const markdown of ["```npm``` is great\nmore", "```a`b\ntext", "   ``` `x`\ntext"]) {
       expect(closeUnterminatedFence(markdown)).toBe(markdown);
