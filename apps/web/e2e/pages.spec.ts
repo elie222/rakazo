@@ -648,6 +648,16 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await page.route("**/rpc/pages/rename", (route) => route.abort("failed"));
   await view.getByRole("button", { name: "Beta" }).click();
   await view.getByRole("textbox", { name: "Page title" }).fill("Gamma");
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    for (const key of ["Enter", "Escape"]) {
+      await view.getByRole("textbox", { name: "Page title" }).dispatchEvent("keydown", {
+        key,
+        bubbles: true,
+        ...composition,
+      });
+      await expect(view.getByRole("textbox", { name: "Page title" })).toHaveValue("Gamma");
+    }
+  }
   await view.getByRole("textbox", { name: "Page title" }).press("Enter");
   await expect(view.getByRole("alert")).toHaveText("Could not rename this page. Try again.");
   await captureScreenshot(page, testInfo, "page-rename-error");
@@ -786,6 +796,18 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await library.getByRole("button", { name: "Actions for Alpha" }).click();
   await page.getByRole("menuitem", { name: "Rename" }).click();
   await library.getByRole("textbox", { name: "Page title" }).fill("Alpha renamed");
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    for (const key of ["Enter", "Escape"]) {
+      await library.getByRole("textbox", { name: "Page title" }).dispatchEvent("keydown", {
+        key,
+        bubbles: true,
+        ...composition,
+      });
+      await expect(library.getByRole("textbox", { name: "Page title" })).toHaveValue(
+        "Alpha renamed",
+      );
+    }
+  }
   await captureScreenshot(page, testInfo, "page-library-rename");
   await library.getByRole("textbox", { name: "Page title" }).press("Enter");
   await expect(library.getByRole("button", { name: /^Alpha renamed/ })).toBeVisible();

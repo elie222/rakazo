@@ -317,6 +317,8 @@ export class PiAgentRuntime implements AgentRuntime {
         resumeHost = host;
         const allTools = toAgentTools(toolDefs, host);
         const toolsByAgentName = agentToolDefinitions(toolDefs);
+        // Replayed calls to tools the model no longer has say so in their results.
+        const offeredToolNames = new Set(allTools.map((tool) => tool.name));
         let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -339,6 +341,7 @@ export class PiAgentRuntime implements AgentRuntime {
             withoutSteeringMessages(request.history, initialSteering),
             request.prompt,
             request.sourceMessageId,
+            offeredToolNames,
           );
         const representedHistoryIds = new Set(
           restored
@@ -444,6 +447,11 @@ export class PiAgentRuntime implements AgentRuntime {
         let activeStreamTarget = host.activeModel;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
+        // Whether ending now would leave the user nothing: no text shown, no tools run, and the run
+        // may not stay silent. Such a run answers with the empty-response text, so an empty model
+        // reply is repeated first.
+        const wouldEndEmpty = () =>
+          !request.allowSilentEmpty && toolCalls === 0 && !streamed.trim();
         let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
@@ -454,6 +462,7 @@ export class PiAgentRuntime implements AgentRuntime {
           backupOutcomes: new Map(),
           selfRecoveries: 0,
           cutReplies: new WeakMap(),
+          retriesEmptyReply: wouldEndEmpty,
           stream: (target, ctx, options) => {
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
@@ -1104,7 +1113,9 @@ export class PiAgentRuntime implements AgentRuntime {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
               );
-              agent.state.messages.push(...toHistory(addedHistory, ""));
+              agent.state.messages.push(
+                ...toHistory(addedHistory, "", undefined, offeredToolNames),
+              );
               for (const message of addedHistory)
                 if (message.id) representedHistoryIds.add(message.id);
               for (const item of initialSteering) {
@@ -1119,7 +1130,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 });
               }
               // A run cannot continue from an assistant message. What trails here is this
-              // bot's own earlier text, which the restored transcript already carries.
+              // bot's own earlier reply, which the restored transcript already carries; a
+              // continue from its tool results would extend that old reply.
               for (let last = agent.state.messages.at(-1); isHistoryReply(last); ) {
                 agent.state.messages.pop();
                 last = agent.state.messages.at(-1);
@@ -1262,7 +1274,7 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = fallback;
           } else if (toolWorkPendingFinal && !request.allowSilentEmpty) {
             throw new ModelOutputError(MISSING_TOOL_FINAL_RESPONSE_ERROR);
-          } else if (toolCalls === 0 && !request.allowSilentEmpty) {
+          } else if (wouldEndEmpty()) {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
           }

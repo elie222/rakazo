@@ -1,7 +1,34 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { describe, expect, it, vi } from "vitest";
-import { stopProcess } from "./cli/performance-stack.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { benchmarkEnvironment, stopProcess } from "./cli/performance-stack.js";
+
+describe("benchmarkEnvironment", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("disables inherited billing configuration without changing the parent environment", () => {
+    const billing = {
+      STRIPE_SECRET_KEY: "sk_test_benchmark_placeholder",
+      STRIPE_WEBHOOK_SECRET: "whsec_benchmark_placeholder",
+      STRIPE_PRICE_ID: "price_benchmark_placeholder",
+    };
+    for (const [name, value] of Object.entries(billing)) vi.stubEnv(name, value);
+    const env = benchmarkEnvironment({
+      databaseUrl: "postgres://benchmark:benchmark@127.0.0.1:5432/benchmark",
+      webPort: 5173,
+      apiPort: 3000,
+      dataDir: "/tmp/benchmark-data",
+    });
+    expect(env).toMatchObject({
+      STRIPE_SECRET_KEY: "",
+      STRIPE_WEBHOOK_SECRET: "",
+      STRIPE_PRICE_ID: "",
+      AGENT_RUNTIME: "scripted",
+      SIGNUPS_ENABLED: "true",
+    });
+    expect(process.env).toMatchObject(billing);
+  });
+});
 
 describe("stopProcess", () => {
   it("returns for a child that exited normally", async () => {

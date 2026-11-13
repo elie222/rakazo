@@ -120,6 +120,12 @@
     ]
   },
   {
+    "id": "vault",
+    "title": "Vault logins",
+    "flow": "flows/vault.yaml",
+    "screens": ["vault"]
+  },
+  {
     "id": "messaging",
     "title": "Messaging",
     "flow": "flows/messaging.yaml",
