@@ -24,7 +24,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppErrorBoundary } from "../components/app-error-boundary";
@@ -51,6 +51,7 @@ import { clearAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
+import { useCallSession } from "../lib/call-session";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n } from "../lib/i18n";
@@ -275,6 +276,7 @@ function ChatContentProviders({
 export const unstable_settings = { anchor: "index" };
 
 function LayoutContent() {
+  const call = useCallSession();
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
@@ -392,7 +394,7 @@ function LayoutContent() {
           <ChatContentProviders loadRemoteImages={loadRemoteImages}>
             <ThemeProvider value={navigationTheme}>
               <StatusBar style={resolved === "light" ? "dark" : "light"} />
-              <View style={{ flex: 1 }}>
+              <KeyboardAvoidingView enabled={Boolean(call)} behavior="padding" style={{ flex: 1 }}>
                 <SplitFrame>
                   <Stack
                     screenLayout={({ navigation, options, children }) => (
@@ -583,7 +585,7 @@ function LayoutContent() {
                 </SplitFrame>
                 <CallCard />
                 <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
-              </View>
+              </KeyboardAvoidingView>
               <ComputerUpdateProgress />
               <MessageMenuHost />
               <MessageActionSheetHost />

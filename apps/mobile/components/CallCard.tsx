@@ -6,7 +6,7 @@ import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ import type { CallPhase } from "../lib/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
+import { getVoicePlaybackState, subscribeVoicePlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -36,6 +37,7 @@ function KeepCallAwake() {
 
 export function CallCard() {
   const call = useCallSession();
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
@@ -128,7 +130,7 @@ export function CallCard() {
   return (
     <GlassSurface
       shape="roundedRectangle"
-      style={[styles.card, { marginBottom: insets.bottom + 8 }]}
+      style={[styles.card, { marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0 }]}
       fallbackStyle={[
         styles.cardFallback,
         {

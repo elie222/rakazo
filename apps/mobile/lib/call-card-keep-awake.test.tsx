@@ -120,7 +120,10 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-file-system", () => ({ File: class {} }));
+const idlePlayback = vi.hoisted(() => ({ status: "idle" }));
 vi.mock("./voice", () => ({
+  subscribeVoicePlayback: () => () => undefined,
+  getVoicePlaybackState: () => idlePlayback,
   createSpeechOwner: () => Symbol("SpeechOwner"),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),

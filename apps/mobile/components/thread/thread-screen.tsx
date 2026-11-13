@@ -569,6 +569,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
+        enabled={!call}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
