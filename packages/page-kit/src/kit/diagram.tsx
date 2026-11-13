@@ -27,7 +27,10 @@ const SERIES_COLORS = ["--rk-c1", "--rk-c2", "--rk-c3", "--rk-c4", "--rk-c5"];
 // Estimate full-width glyphs as two Latin characters, consistently for wrapping and sizing.
 const wideGlyph =
   /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
-const characterWidth = (character: string) => (wideGlyph.test(character) ? 2 : 1);
+const characterWidth = (character: string) => {
+  if (/\p{Mark}/u.test(character)) return 0;
+  return wideGlyph.test(character) || character.length > 1 ? 2 : 1;
+};
 const textWidth = (text: string) =>
   [...text].reduce((width, character) => width + characterWidth(character), 0);
 
