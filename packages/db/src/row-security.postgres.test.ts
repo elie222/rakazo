@@ -614,6 +614,53 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
   });
 
+  it("limits vault guard helpers to runtime callers without exposing another tenant's restrictions", async () => {
+    const publicGrants = await owner.pool.query(
+      `SELECT p.proname FROM pg_proc p
+       CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+       WHERE p.proname = ANY($1) AND acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'`,
+      [["app_vault_item_unrestricted", "app_vault_run_unrestricted"]],
+    );
+    expect(publicGrants.rows).toEqual([]);
+    const ids = [a, b].map((t) => `guard-${t.userId}`);
+    try {
+      for (const [index, t] of [a, b].entries()) {
+        await owner.prisma.vaultCredential.create({
+          data: {
+            id: ids[index]!,
+            userId: t.userId,
+            name: ids[index]!,
+            origin: "",
+            auth: {},
+            ciphertext: "fake",
+          },
+        });
+        await owner.prisma.vaultCredentialLimit.create({
+          data: { credentialId: ids[index]!, userId: t.userId, spaceId: t.spaceId },
+        });
+      }
+      const probe = () =>
+        runAsTenant(
+          a,
+          () => db.$queryRaw`
+        SELECT app_vault_item_unrestricted(${ids[0]}) AS own_item,
+          app_vault_item_unrestricted(${ids[1]}) AS other_item,
+          app_vault_run_unrestricted(${a.userId}, ${a.spaceId}) AS own_run,
+          app_vault_run_unrestricted(${b.userId}, ${b.spaceId}) AS other_run
+      `,
+        );
+      const expected = [{ own_item: false, other_item: true, own_run: false, other_run: false }];
+      expect(await probe()).toEqual(expected);
+      await owner.prisma.vaultCredentialLimit.deleteMany({ where: { credentialId: ids[1] } });
+      // Another tenant's restrictions changing produces the same answers.
+      expect(await probe()).toEqual(expected);
+      await owner.prisma.vaultCredentialLimit.deleteMany({ where: { credentialId: ids[0] } });
+      expect(await probe()).toEqual([{ ...expected[0], own_item: true, own_run: true }]);
+    } finally {
+      await owner.prisma.vaultCredential.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
   it.each([false, true])(
     "preserves legacy unrestricted use and fences restrictions, including system=%s",
     async (system) => {
