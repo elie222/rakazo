@@ -169,16 +169,17 @@ function setup(
         query([...externalMessages.values()].map(withRelations), args)[0] ?? null,
       findMany: async (args: FindArgs) =>
         query([...externalMessages.values()].map(withRelations), args),
-      count: async (args: FindArgs) =>
-        query([...externalMessages.values()].map(withRelations), args).length,
-      groupBy: async ({ by, where }: { by: ["senderId"]; where: Where }) =>
-        [
-          ...new Set(
-            query([...externalMessages.values()].map(withRelations), { where }).map(
-              (row) => row[by[0]],
-            ),
-          ),
-        ].map((senderId) => ({ senderId })),
+      groupBy: async ({ where }: { by: ["senderId"]; where: Where }) => {
+        const groups = new Map<string, Date | null>();
+        for (const row of query([...externalMessages.values()].map(withRelations), { where })) {
+          const last = groups.get(row.senderId) ?? null;
+          groups.set(
+            row.senderId,
+            row.judgedAt && (!last || row.judgedAt > last) ? row.judgedAt : last,
+          );
+        }
+        return [...groups].map(([senderId, judgedAt]) => ({ senderId, _max: { judgedAt } }));
+      },
       update: async ({ where, data }: { where: { id: string }; data: object }) => {
         const row = externalMessages.get(where.id);
         if (!row) throw new Error(`No external message ${where.id}`);
@@ -199,6 +200,8 @@ function setup(
         query([...threadMessages.values()].map(withTranscriptOf), args),
     },
     artifact: { findMany: async (args: FindArgs) => query(artifacts, args) },
+    // The conversation's ambient scheduling lock.
+    $executeRaw: async () => 0,
   };
   const prisma = {
     ...tables,
@@ -1006,6 +1009,65 @@ describe("TeamChat.ambientJob", () => {
     expect(chat.decide).not.toHaveBeenCalled();
     expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
       new Date(judgedAt.getTime() + 6 * HOUR_MS),
+    );
+  });
+
+  it("ignores a room's waiting digests at once when the bot no longer answers there", async () => {
+    const chat = setup({
+      conversation: {
+        teamChatAmbientEnabled: false,
+        automatedSenderPolicies: {
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+    });
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: new Date(Date.now() - HOUR_MS),
+    });
+    const digest = chat.ambient({ senderId: "later-bot", senderIsBot: true });
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    expect(chat.row(digest.id)?.status).toBe("ignored");
+    expect(chat.jobs.has(`team_chat.ambient:${chat.conversation.id}`)).toBe(false);
+  });
+
+  it("keeps a message that arrives during a decision on its own quiet window", async () => {
+    let arrive = () => {};
+    const chat = setup({
+      conversation: {
+        automatedSenderPolicies: {
+          "later-bot": { name: "Later", mode: "rollup", rollupHours: 6 },
+        },
+      },
+      judge: async () => {
+        arrive();
+        return { act: false, reason: "Small talk." };
+      },
+    });
+    chat.record({
+      kind: "ambient",
+      status: "ignored",
+      senderId: "later-bot",
+      senderIsBot: true,
+      judgedAt: new Date(Date.now() - HOUR_MS),
+    });
+    chat.ambient({ senderId: "later-bot", senderIsBot: true });
+    chat.ambient();
+    let late: { createdAt: Date } | undefined;
+    arrive = () => {
+      late ??= chat.ambient({ createdAt: new Date() });
+    };
+
+    await chat.teamChat.ambientJob(chat.conversation.id);
+
+    // Not the waiting digest's due time, hours away.
+    expect(chat.jobs.get(`team_chat.ambient:${chat.conversation.id}`)?.availableAt).toEqual(
+      new Date(late!.createdAt.getTime() + DEBOUNCE_MS),
     );
   });
 
