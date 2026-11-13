@@ -684,6 +684,36 @@ describe("LocalStackController", () => {
     expect(failedUp.managedStackRunning()).toBe(true);
   });
 
+  it("rejects a reuse response while a later stop is still pending", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    await ensureStackToken(stackPath, fakeHex);
+    let resolveProbe!: (tag: string) => void;
+    const probe = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveProbe = resolve;
+        }),
+    );
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const stack = controller({ probe }, (args) =>
+      args[7] === "stop" ? { wait: stopGate } : ok(args),
+    );
+    const reuse = stack.matchesDesiredStack();
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce());
+    const stopping = stack.stop();
+    resolveProbe("v1.2.3");
+    try {
+      await expect(reuse).resolves.toBe(false);
+    } finally {
+      releaseStop();
+      await stopping;
+    }
+  });
+
   it("does not resurrect a stopped stack from a probe that resolves after the stop", async () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });

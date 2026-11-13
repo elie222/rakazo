@@ -113,7 +113,10 @@ export function applicationMenuInstaller({
       stackRunning: desktop.localStack.managedStackRunning(),
       stop: () => {
         desktop.hostComputer?.activate(false);
-        return desktop.localStack.stop();
+        return desktop.localStack.stop().then((state) => {
+          if (state.phase === "failed") showSetupWindow(state.message);
+          return state;
+        });
       },
       rebuildMenu: () => installApplicationMenu(),
     });

@@ -556,7 +556,7 @@ export class LocalStackController extends StackLifecycle {
         // The phase stays idle, so no lifecycle event follows; announce the flip itself.
         this.deps.onReuseConfirmed?.();
       }
-      return matched && stopGeneration === this.stopGeneration;
+      return matched && stopGeneration === this.stopGeneration && !this.stopInFlight();
     } catch {
       return false;
     }
