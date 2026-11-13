@@ -722,6 +722,19 @@ describe("OpenAPI connector import", () => {
     );
   });
 
+  it("measures the whole server URL when later defaults are shorter than their placeholders", () => {
+    const baseUrl = importOpenApiDocument({
+      servers: [
+        {
+          url: `https://api.example.test/{long}${"{empty}".repeat(400)}`,
+          variables: { long: { default: "a".repeat(1_500) }, empty: { default: "" } },
+        },
+      ],
+      paths: { "/items": { get: { operationId: "listItems" } } },
+    }).baseUrl;
+    expect(baseUrl).toBe(`https://api.example.test/${"a".repeat(1_500)}`);
+  });
+
   it("accepts server URLs at the length limit", () => {
     const prefix = "https://api.example.test/";
     const baseUrl = importOpenApiDocument({

@@ -582,7 +582,6 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   let length = server.url.length;
   for (const [placeholder, name] of server.url.matchAll(OPENAPI_SERVER_VARIABLE)) {
     length += serverDefault(name!).length - placeholder.length;
-    if (length > MAX_OPENAPI_BASE_URL_LENGTH) break;
   }
   if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
     throw new Error(`OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`);
