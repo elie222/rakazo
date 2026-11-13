@@ -923,9 +923,17 @@ describe("LocalStackController", () => {
     await mkdir(stackPath, { recursive: true });
     await ensureStackToken(stackPath, fakeHex);
     const probe = vi.fn();
-    const stack = controller({ probe });
+    const onState = vi.fn();
+    const stack = controller({ probe, onState }, (args) =>
+      args[7] === "ps"
+        ? { ...ok(args), lines: ["fake-container-id", "fake warning"] }
+        : args[0] === "inspect"
+          ? { ...ok(args), lines: ["private inspection output"] }
+          : ok(args),
+    );
     await expect(stack.rediscoverManagedStack()).resolves.toBe(true);
     expect(probe).not.toHaveBeenCalled();
+    expect(onState).not.toHaveBeenCalled();
     expect(calls.some((call) => call.args.includes("ps"))).toBe(true);
   });
 

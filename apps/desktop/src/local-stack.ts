@@ -556,6 +556,8 @@ export class LocalStackController extends StackLifecycle {
         binary,
         ["ps", "--status", "running", "-q"],
         HEALTH_POLL_INTERVAL_MS,
+        undefined,
+        true,
       );
       if (result.code !== 0 || !result.stdout.trim()) return false;
       const inspected = await this.docker(
@@ -867,7 +869,13 @@ export class LocalStackController extends StackLifecycle {
     });
   }
 
-  private compose(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
+  private compose(
+    binary: string,
+    args: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+    quiet = false,
+  ) {
     return this.docker(
       binary,
       [
@@ -882,6 +890,7 @@ export class LocalStackController extends StackLifecycle {
       ],
       timeoutMs,
       signal,
+      quiet,
     );
   }
 }
