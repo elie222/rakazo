@@ -62,9 +62,10 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   const source = `function CalendarPage() {
     return <Page width="wide" title="Calendar layout">
       <Grid columns={2}>
-        <Section heading="Week"><WeekView week="2026-11-09" start={8} end={18} events={[
+        <Section heading="Week"><WeekView week="2026-11-09" events={[
           { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
-          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" }
+          { date: "2026-11-15", start: 9.5, end: 10.5, title: "Sunday event" },
+          { date: "2026-11-16", start: 22, end: 23, title: "Next week event" }
         ]} /></Section>
         <Section heading="Day"><DayView start={8} end={18} events={[
           { start: 9.5, end: 10.5, title: "Day event" }
@@ -96,6 +97,7 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
       heads,
       columns,
       weekGrid: rect(week.querySelector(".rk-cal-columns")!),
+      weekHeight: week.querySelector(".rk-cal-body")!.getBoundingClientRect().height,
       weekScroll: { client: week.clientWidth, scroll: week.scrollWidth },
       sunday: rect(sunday),
       sundayText: sunday.textContent,
@@ -120,8 +122,10 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
     expect(layout.columns[i]!.y).toBeCloseTo(layout.columns[0]!.y, 0);
     expect(Math.abs(layout.heads[i]!.x - layout.columns[i]!.x)).toBeLessThanOrEqual(1);
   }
+  expect(layout.weekHeight).toBeCloseTo(88, 0);
+  await expect(frame.getByText("Next week event")).toHaveCount(0);
   expect(layout.sundayText).toContain("Sunday event");
-  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(67, 0);
+  expect(layout.sunday.y - layout.columns[6]!.y).toBeCloseTo(23, 0);
   expect(layout.dayColumns).toHaveLength(1);
   expect(layout.dayColumns[0]!.width).toBeCloseTo(layout.dayGrid.width - 1, 0);
   expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
