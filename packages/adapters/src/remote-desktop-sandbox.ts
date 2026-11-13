@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   CommandRequest,
@@ -26,6 +27,7 @@ import {
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { installPageBrowserCommand } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
@@ -161,12 +163,15 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       const result = await this.runSetupCommand(computer, command, context.signal);
       return { code: result.exitCode, stdout: result.stdout, stderr: result.stderr };
     },
+    runWithInput: (computer, command, input, timeoutMs, context) =>
+      this.runWithPrivateInput(computer, command, input, timeoutMs, context),
     screenUrl: async (computer, port) =>
       `https://${(await this.box(computer)).getHost(port)}/vnc.html`,
   });
   private readonly boxes = new Map<string, RemoteDesktop>();
   private readonly connections = new Map<string, Promise<RemoteDesktop>>();
   private readonly lastTouchedAt = new Map<string, number>();
+  readonly pageBrowser?: SandboxProvider["pageBrowser"];
 
   constructor(
     private readonly config: {
@@ -177,8 +182,15 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       template: string;
       fallbackTemplate?: string;
       isTimeoutError: (error: unknown) => boolean;
+      /** Installs and serves the page tools; set only where they were verified on its computers. */
+      pageBrowser?: boolean;
     },
-  ) {}
+  ) {
+    // Bots are offered page tools only where these computers install them.
+    if (config.pageBrowser)
+      this.pageBrowser = (computer, request, context) =>
+        this.desktops.pageBrowser(computer, request, context);
+  }
 
   describe() {
     return {
@@ -350,6 +362,95 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     const result = await this.runSetupCommand(computer, PREPARE_LINUX_DESKTOP, context.signal);
     if (result.exitCode !== 0)
       throw new Error(result.stderr || "could not prepare computer desktop tools");
+    if (this.config.pageBrowser) await this.installPageBrowser(computer, context);
+  }
+
+  /** Without the page tools, bots keep the desktop tools, which still work. */
+  private async installPageBrowser(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    // The installer carries the helper's files, more than one command may hold, so it runs from a file.
+    const script = `/tmp/rakazo-page-browser-${randomUUID()}.sh`;
+    const installed = await this.use(computer, (desktop) =>
+      desktop.files.write(
+        [{ path: script, data: toArrayBuffer(Buffer.from(installPageBrowserCommand())) }],
+        { signal: context.signal },
+      ),
+    )
+      .then(() =>
+        this.runSetupCommand(
+          computer,
+          `status=0; bash ${shellQuote(script)} || status=$?; rm -f -- ${shellQuote(script)}; exit "$status"`,
+          context.signal,
+        ),
+      )
+      .then(
+        (result) => result.exitCode === 0,
+        () => false,
+      );
+    if (!installed)
+      getLogger().warn("sandbox.page_browser", {
+        provider: this.config.id,
+        outcome: "install_failed",
+      });
+  }
+
+  /**
+   * Hands a page request to a command on its stdin. The request can carry saved logins and cards,
+   * so it travels as a file in a private folder that the command removes before it starts.
+   */
+  private async runWithPrivateInput(
+    computer: ComputerRef,
+    command: string,
+    input: string,
+    timeoutMs: number,
+    context: AdapterContext,
+  ): Promise<{ code: number; stdout: string }> {
+    context.signal.throwIfAborted();
+    const directory = `/tmp/rakazo-page-input-${randomUUID()}`;
+    const file = `${directory}/request`;
+    const created = await this.run(computer, `mkdir -m 700 -- ${shellQuote(directory)}`, {
+      timeoutMs: 10_000,
+    });
+    if (created.exitCode !== 0) throw new Error("Could not prepare browser input");
+    try {
+      context.signal.throwIfAborted();
+      try {
+        await this.use(computer, (desktop) =>
+          desktop.files.write([{ path: file, data: toArrayBuffer(Buffer.from(input)) }], {}),
+        );
+      } catch {
+        throw new Error("Could not transfer browser input");
+      }
+      context.signal.throwIfAborted();
+      // Not cancelled midway: an action already sent finishes, then the abort is reported.
+      let result: CommandResult;
+      try {
+        result = await this.run(
+          computer,
+          `bash -c ${shellQuote(`exec 0< ${shellQuote(file)} || exit 1; rm -f -- ${shellQuote(file)} && rmdir -- ${shellQuote(directory)} || exit 1; ${command}`)}`,
+          { timeoutMs },
+        );
+      } catch {
+        context.signal.throwIfAborted();
+        // The bot gets the page tools' own failure, never the provider's error text.
+        throw new Error("Page browser unavailable or interrupted");
+      }
+      context.signal.throwIfAborted();
+      return { code: result.exitCode, stdout: result.stdout };
+    } finally {
+      const cleaned = await this.run(
+        computer,
+        `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
+        { timeoutMs: 10_000 },
+      ).then(
+        (result) => result.exitCode === 0,
+        () => false,
+      );
+      if (!cleaned)
+        getLogger().warn("sandbox.page_browser", {
+          provider: this.config.id,
+          outcome: "input_cleanup_failed",
+        });
+    }
   }
 
   async *execute(

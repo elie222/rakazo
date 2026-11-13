@@ -25,7 +25,8 @@ interface EmulatedComputer {
  * In-memory instabox SDK: the sandbox lifecycle, commands (foreground and background jobs), files,
  * published ports, and the SDK's own error classes, so the real adapter's translation runs
  * offline. Its shell understands only what the adapter sends: desktop runtime scripts, the home
- * link, mkdir, find, stat, chmod, `env`, `echo`, and `printenv`.
+ * link, page requests, mkdir, find, stat, chmod, `env`, `echo`, and `printenv`. Like instabox, it
+ * refuses a command longer than 64 KiB.
  */
 export class InstaboxEmulator implements InstaboxApi {
   readonly computers = new Map<string, EmulatedComputer>();
@@ -49,6 +50,10 @@ export class InstaboxEmulator implements InstaboxApi {
   resizeFails = false;
   /** Thrown by the next resize request before any change, as an API or transport failure is. */
   resizeError: Error | undefined;
+  /** The page tools' helper, given the request it read on stdin; unset, it is not installed. */
+  pageBrowser: ((request: unknown) => { exitCode: number; stdout: string }) | undefined;
+  /** Thrown by the next file write, as a transfer failure is. */
+  writeError: Error | undefined;
   private sequence = 0;
 
   async create(
@@ -151,7 +156,11 @@ export class InstaboxEmulator implements InstaboxApi {
         },
         write: async (path, data) => {
           this.request(`write ${path}`);
-          this.awake(id).files.set(path, { content: new Uint8Array(data), mode: 0o644 });
+          const computer = this.awake(id);
+          const failure = this.writeError;
+          this.writeError = undefined;
+          if (failure) throw failure;
+          computer.files.set(path, { content: new Uint8Array(data), mode: 0o644 });
         },
       },
       ports: {
@@ -170,6 +179,11 @@ export class InstaboxEmulator implements InstaboxApi {
     options: InstaboxRunOptions,
   ): Promise<InstaboxCommandResult | InstaboxJob> {
     this.request(`run ${id}${options.background ? " background" : ""}`);
+    if (Buffer.byteLength(command) > 65_536)
+      throw new InstaboxError("cmd is longer than 65536 bytes", {
+        status: 400,
+        code: "bad_request",
+      });
     const computer = this.awake(id);
     this.commands.push(command);
     if (options.background) {
@@ -218,6 +232,19 @@ export class InstaboxEmulator implements InstaboxApi {
   private shell(computer: EmulatedComputer, command: string, envs: Record<string, string>) {
     const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "" });
     if (this.fails(command)) return { exitCode: 1, stdout: "", stderr: "permission denied\n" };
+    // A page request: stdin from a private file the command removes before the helper starts.
+    const input = command.match(/exec 0< \S*?(\/tmp\/rakazo-page-input-[^'"\s;]+)/)?.[1];
+    if (input) {
+      const file = computer.files.get(input);
+      computer.files.delete(input);
+      if (!file) return { exitCode: 1, stdout: "", stderr: "No such file or directory\n" };
+      if (!this.pageBrowser)
+        return { exitCode: 127, stdout: "", stderr: "rakazo-page-browser: not found\n" };
+      return {
+        ...this.pageBrowser(JSON.parse(new TextDecoder().decode(file.content))),
+        stderr: "",
+      };
+    }
     const desktop = computer.respond(command);
     if (desktop) return desktop;
     if (command.includes("ln -s")) return ok();
