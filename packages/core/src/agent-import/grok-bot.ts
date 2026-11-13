@@ -213,6 +213,8 @@ const looksLikeBot = (value: unknown): value is Json =>
  */
 function documentsIn(source: string): Json[] {
   const repaired = source.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  // Set by the last text tried: an export part that never closed would leave its setup out.
+  let cutOff = false;
   for (const version of repaired === source ? [source] : [source, repaired]) {
     const whole = looseJson(version.trim());
     if (isExportDocument(whole)) return [whole];
@@ -220,12 +222,13 @@ function documentsIn(source: string): Json[] {
     if (Array.isArray(whole) && whole.length > 0 && whole.every(looksLikeBot)) {
       return [{ bots: whole }];
     }
-    const { found, cutOff } = bracedObjects(version);
-    // A part that never closed would leave its setup out, so the reply is cut off.
-    if (cutOff) throw new GrokBotExportError("cut_off");
-    const documents = found.map(looseJson).filter(isExportDocument);
+    const scan = bracedObjects(version);
+    cutOff = scan.cutOff;
+    if (cutOff) continue;
+    const documents = scan.found.map(looseJson).filter(isExportDocument);
     if (documents.length > 0) return documents;
   }
+  if (cutOff) throw new GrokBotExportError("cut_off");
   return [];
 }
 

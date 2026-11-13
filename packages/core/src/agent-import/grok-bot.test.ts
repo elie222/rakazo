@@ -127,6 +127,12 @@ describe("reading a Grok Bot's reply", () => {
 
   it("says why a reply cannot be read", () => {
     expect(errorCode('{"format":"grok-bot-export","bots":[{"name":"A"')).toBe("cut_off");
+    // A brace inside a curly-quoted value is text, not a part left open.
+    expect(
+      parseGrokBotExport(
+        '{"format":"grok-bot-export","bots":[{"name":"A","instructions":“Use { to begin.”}]}',
+      )[0]!.instructions,
+    ).toBe("Use { to begin.");
     // A complete first part does not hide a later part that never closed.
     expect(
       errorCode(
