@@ -64,6 +64,21 @@ describe("speakable", () => {
     expect(speakable("**Done** ✅ — [x] shipped the _thing_")).toBe("Done — shipped the thing");
   });
 
+  it("keeps underscores inside identifiers and asterisks in arithmetic", () => {
+    expect(speakable("Open user_profile_page.tsx and set max_retry_count to 3")).toBe(
+      "Open user_profile_page.tsx and set max_retry_count to 3",
+    );
+    expect(speakable("compute 2*3*4 now")).toBe("compute 2*3*4 now");
+    expect(speakable("a_b and c_d")).toBe("a_b and c_d");
+  });
+
+  it("still drops emphasis markers around a word or phrase", () => {
+    expect(speakable("this is _really_ good")).toBe("this is really good");
+    expect(speakable("this is *really* good")).toBe("this is really good");
+    expect(speakable("this is *very good indeed* here")).toBe("this is very good indeed here");
+    expect(speakable("(_note_) and *(this)*")).toBe("(note) and (this)");
+  });
+
   it("drops a horizontal rule however it is spaced", () => {
     for (const rule of ["---", "***", "___", "* * *", "- - -", "_ _ _", "  ***  ", "-----"]) {
       expect(speakable(`Intro\n\n${rule}\n\nBody`)).toBe("Intro. Body");

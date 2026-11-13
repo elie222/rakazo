@@ -83,7 +83,7 @@ export function speakable(input: string): string {
   text = text.replace(/^\s*>\s?/gm, "");
 
   text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
-  text = text.replace(/(\*|_)(?=\S)(.*?)(?<=\S)\1/g, "$2");
+  text = text.replace(/(?<![\p{L}\p{N}])(\*|_)(?=\S)(.*?)(?<=\S)\1(?![\p{L}\p{N}])/gu, "$2");
   text = text.replace(/~~(.*?)~~/g, "$1");
 
   text = text.replace(/\[[ xX]\]\s*/g, "");
