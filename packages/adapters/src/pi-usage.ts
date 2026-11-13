@@ -24,6 +24,8 @@ import { estimateModelContextTokens } from "./model-context.js";
 import { openRouterInferenceFetch } from "./openrouter-usage.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
+import type { RejectedProviderRequest } from "./provider-request-shape.js";
+import { withRejectedRequestCapture } from "./provider-request-shape.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 /** Pi initializes absent usage to zero. Only raw numeric fields can prove reported zero. */
@@ -344,6 +346,7 @@ export function observedPiStream(
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
     /** Provider failures only; excludes context, reservations and usage settlement. */
     onProviderError?: (message: AssistantMessage) => void;
+    onRejectedRequest?: (rejection: RejectedProviderRequest | undefined, model: Model<Api>) => void;
   },
 ) {
   const stream = createAssistantMessageEventStream();
@@ -448,7 +451,7 @@ export function observedPiStream(
         collectRawUsage =
           /^(openai-|anthropic-)/.test(model.api) && !model.provider.startsWith("google");
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
-        const streamOptions = withGoogleToolHistory(
+        const historyOptions = withGoogleToolHistory(
           model,
           withChatCompletionsCompatibility(model, {
             ...options,
@@ -456,6 +459,9 @@ export function observedPiStream(
             ...(observer ? { maxRetries: 0 } : {}),
           }),
         );
+        const streamOptions = hooks?.onRejectedRequest
+          ? withRejectedRequestCapture(historyOptions, hooks.onRejectedRequest)
+          : historyOptions;
         let upstream: ReturnType<Models["streamSimple"]>;
         try {
           const reportRequestId = (id: string) =>

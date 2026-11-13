@@ -24,7 +24,7 @@ export default function SettingsLayout() {
         headerTintColor: tokens.foreground,
         headerShadowVisible: false,
         headerBackButtonDisplayMode: "minimal",
-        // Account has no visible title, so iOS's long-press back menu would list it as a blank entry.
+        // Settings has no visible title, so iOS's long-press back menu would list it as a blank entry.
         headerBackButtonMenuEnabled: false,
         contentStyle: { backgroundColor: String(native.page) },
         // The first page closes the sheet, or returns Home when opened by a cold deep link.
@@ -57,11 +57,25 @@ export default function SettingsLayout() {
     >
       <Stack.Screen
         name="account"
-        // The sheet's first page shows only its close button on iOS; "Account" still names it.
+        // The sheet's first page shows only its close button on iOS; "Settings" still names it.
         // A title function returning null would fall back to showing the title text.
         options={{
-          ...glassHeaderOptions(t`Account`),
+          ...glassHeaderOptions(t`Settings`),
           ...(Platform.OS === "ios" ? { headerTitle: "" } : null),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
+        name="general"
+        options={{
+          ...glassHeaderOptions(t`General`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
+        name="profile"
+        options={{
+          ...glassHeaderOptions(t`Account`),
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />

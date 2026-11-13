@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { inboundRoutineModelPin, isPermanentDecryptFailure } from "@rakazo/adapters";
+import type { InboundSource } from "@rakazo/adapters";
+import { inboundDeliveryClientNonce, inboundRoutineModelPin, isPermanentDecryptFailure } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
 import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Context } from "hono";
@@ -48,8 +48,6 @@ export type WebhookTarget = {
   threadId: string;
   expected: string;
 };
-
-type InboundSource = "webhook" | "github" | "messaging" | "email";
 
 export type InboundTarget = {
   bot: Pick<WebhookTarget["bot"], "id" | "spaceId" | "userId">;
@@ -243,19 +241,6 @@ export async function loadWebhookTarget(
   };
 }
 
-/** Idempotency key shared by messaging wakes and TeamChat duplicate-skip lookups. */
-export function messagingWakeIdempotencyKey(provider: string, handle: string): string {
-  return `${provider}:${handle}`;
-}
-
-export function inboundDeliveryClientNonce(
-  source: InboundSource,
-  botId: string,
-  idempotencyKey: string,
-): string {
-  return `${source}:${botId}:${createHash("sha256").update(idempotencyKey).digest("base64url")}`;
-}
-
 /**
  * Answers an authenticated delivery. A Space being deleted takes none: the sender gets a 409, not
  * a server error, so the request is not reported as a failure.
@@ -290,6 +275,8 @@ export async function deliverWebhookEvent(
     idempotencyKey?: string;
     /** Messaging wakes share the live chat thread; keep a separate webhook run. */
     allowParallelRun?: boolean;
+    /** Claims what the wake answers in the transaction that starts its run. */
+    claim?: SendUserMessageInput["claim"];
   },
 ) {
   const promptText =
@@ -319,6 +306,7 @@ export async function deliverWebhookEvent(
     botId: target.bot.id,
     userId: target.bot.userId,
     blocks: [
+      { kind: "delivery" },
       { kind: "text", text: promptText },
       ...(input.artifacts ?? []).map(messageBlockForArtifact),
     ],
@@ -326,6 +314,7 @@ export async function deliverWebhookEvent(
     trigger: "webhook",
     clientNonce,
     ...(input.allowParallelRun ? { allowParallelRun: true } : {}),
+    ...(input.claim ? { claim: input.claim } : {}),
     ...(pin.modelProvider && pin.modelId
       ? {
           modelPin: {

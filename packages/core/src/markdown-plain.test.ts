@@ -370,3 +370,24 @@ describe("plainTextFromMarkdown comparison signs", () => {
     expect(plainTextFromMarkdown("a <!-- note --> b")).toBe("a b");
   });
 });
+
+describe("plainTextFromMarkdown HTML comments", () => {
+  it.each([
+    "a <!-- x > hidden --> b",
+    "a <!-- x > hidden\nmore --> b",
+    "a <!-- an unmatched ' quote > hidden --> b",
+    "a <!-- <b>hidden</b> --> b",
+    "a <!-- x > hidden --> <!-- more > hidden --> b",
+  ])("removes the complete comment in %s", (source) => {
+    expect(plainTextFromMarkdown(source)).toBe("a b");
+  });
+
+  it.each(["a <!-- hidden", "a <!-- x > hidden"])("hides an unfinished comment in %s", (source) => {
+    expect(plainTextFromMarkdown(source)).toBe("a");
+  });
+
+  it("keeps comments written as literal code or escaped text", () => {
+    expect(plainTextFromMarkdown("`<!-- x > hidden -->`")).toBe("<!-- x > hidden -->");
+    expect(plainTextFromMarkdown("\\<!-- x > hidden -->")).toBe("<!-- x > hidden -->");
+  });
+});

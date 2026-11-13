@@ -539,6 +539,51 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
+  it("starts a screen's window manager with a wallpaper setter that cannot open an error dialog", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "desktop-wallpaper-test-"));
+    roots.push(root);
+    const bin = path.join(root, "bin");
+    const log = path.join(root, "log");
+    mkdirSync(bin);
+    const stub = (name: string, body: string) =>
+      writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    stub("Xvfb", "exit 0");
+    stub("websockify", "exit 0");
+    stub("xsetroot", `echo "xsetroot $*" >>"${log}"`);
+    // A stock image's style asks for its wallpaper like this.
+    stub(
+      "fluxbox",
+      `echo "fbsetbg=$(command -v fbsetbg)" >>"${log}"\nfbsetbg -z -f /usr/share/images/fluxbox/debian-squared.jpg`,
+    );
+    const script = ensureScreenCommand(0, "bot", "token", env)
+      .replaceAll("/etc/rakazo/", path.join(root, "image/"))
+      .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
+      .replaceAll("/tmp/.X", path.join(root, ".X"))
+      .replaceAll("/tmp/rakazo", root)
+      .replaceAll("/usr/share/novnc", root);
+    const result = spawnSync(
+      "bash",
+      [
+        "-c",
+        // The display is down on the first check; stop once the window manager has started.
+        [
+          "checks=0",
+          'xdpyinfo() { checks=$((checks + 1)); if [ "$checks" -ge 4 ]; then wait; exit 0; fi; [ "$checks" -gt 1 ]; }',
+          script,
+        ].join("\n"),
+      ],
+      {
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(log, "utf8")).toBe(
+      `fbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
+    );
+  });
+
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",
     async (failPublish) => {
@@ -1642,6 +1687,47 @@ describe("shared Linux desktop lifecycle", () => {
       } finally {
         // Let both portals finish exec and log their pids so cleanup can stop them.
         await new Promise((resolve) => setTimeout(resolve, 500));
+        cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "accepts a file chooser that execs between process checks",
+    async () => {
+      const { bin, libexec, screenEnv, run, relocate, cleanup } = await portalScreenFixture();
+      // The first executable read sees nohup; the next sees the portal after exec.
+      writeFileSync(
+        path.join(bin, "readlink"),
+        [
+          "#!/bin/bash",
+          'target=$(/usr/bin/readlink "$@") || exit 1',
+          'case "$1" in',
+          "  /proc/*/exe)",
+          '    proc_dir=$(dirname "$1")',
+          `    if [ ! -f "$0.seen" ] && tr '\\0' '\\n' < "$proc_dir/cmdline" 2>/dev/null | grep -Fx -- ${shellQuote(path.join(libexec, "xdg-desktop-portal-gtk"))} >/dev/null; then`,
+          "      for i in $(seq 1 100); do",
+          '        target=$(/usr/bin/readlink "$@") || exit 1',
+          '        case "$target" in */xdg-desktop-portal-gtk) break ;; esac',
+          "        sleep 0.01",
+          "      done",
+          '      case "$target" in */xdg-desktop-portal-gtk) ;; *) exit 1 ;; esac',
+          '      touch "$0.seen"',
+          "      printf '/usr/bin/nohup\\n'",
+          "      exit 0",
+          "    fi ;;",
+          "esac",
+          `printf '%s\\n' "$target"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(path.join(bin, "readlink"), 0o755);
+      try {
+        const result = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+        expect(existsSync(path.join(bin, "readlink.seen"))).toBe(true);
+        expect(result.status, result.stderr).toBe(0);
+      } finally {
         cleanup();
       }
     },

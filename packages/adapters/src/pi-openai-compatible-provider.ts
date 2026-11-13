@@ -1,6 +1,13 @@
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
-import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  Model,
+  MutableModels,
+  Provider,
+  ProviderStreams,
+} from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -38,6 +45,7 @@ import {
   MODEL_STREAM_AGENT_TIMEOUTS,
   modelConnectTimeoutMs,
 } from "./pi-runtime-limits.js";
+import { splitLeadingThinkBlock } from "./pi-think-tags.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
 import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
@@ -162,17 +170,27 @@ function openAiCompatibleProvider(
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
   // dispatcher-matched default; never the bare global.
   const streamPolicy = { ...policy, modelStream: true };
+  // Only chat completions carries thoughts inside the answer text; the other protocols have
+  // their own reasoning blocks.
+  const answerOnly = (model: Model<Api>, stream: AssistantMessageEventStream) =>
+    model.api === "openai-completions" ? splitLeadingThinkBlock(stream) : stream;
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api(model.api).stream(model, context, {
-        ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
-      }),
+      answerOnly(
+        model,
+        api(model.api).stream(model, context, {
+          ...options,
+          fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
+        }),
+      ),
     streamSimple: (model, context, options) =>
-      api(model.api).streamSimple(model, context, {
-        ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
-      }),
+      answerOnly(
+        model,
+        api(model.api).streamSimple(model, context, {
+          ...options,
+          fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, streamPolicy),
+        }),
+      ),
   };
   return createProvider({
     id: OPENAI_COMPATIBLE_PROVIDER_ID,

@@ -10,7 +10,7 @@ import {
   routineWakeupJob,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
-import type { McpOAuthSummary } from "@rakazo/adapters";
+import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -5217,6 +5217,32 @@ describe("model credential persistence", () => {
     return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
   }
 
+  /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
+   *  finish returns what it saved. */
+  async function finishSignIn(
+    { deps, finish, handler }: ReturnType<typeof persistDeps>,
+    login: Omit<PiOAuthConnected, "signal">,
+  ) {
+    let persist: PiOAuthPersist<unknown> | undefined;
+    Object.assign(deps.oauthLogins, {
+      begin: vi.fn(async (input: { persist: PiOAuthPersist<unknown> }) => {
+        persist = input.persist;
+        return {
+          loginId: "login-1",
+          provider: login.provider,
+          mode: "device-code" as const,
+          userCode: "CODE",
+          verificationUri: "https://auth.example.com/device",
+          expiresInSeconds: 60,
+        };
+      }),
+    });
+    await call(handler, "models/beginOAuth", { provider: login.provider });
+    const value = await persist?.({ ...login, signal: new AbortController().signal });
+    finish.mockResolvedValue({ status: "connected", value, provider: login.provider });
+    return call(handler, "models/finishOAuth", { loginId: "login-1" });
+  }
+
   async function call(
     handler: RouterHandler,
     path: string,
@@ -5279,25 +5305,19 @@ describe("model credential persistence", () => {
   });
 
   it("does not persist a stringified null model id from subscription sign-in", async () => {
-    const { upsert, finish, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "anthropic",
-        modelId: "null",
-        label: "Anthropic",
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { upsert } = setup;
+    const response = await finishSignIn(setup, {
+      provider: "anthropic",
+      modelId: "null",
+      label: "Anthropic",
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
     expect(response.status).toBe(200);
     const persisted = upsert.mock.calls[0]?.[0] as {
       create: { modelId: string | null };
@@ -5857,22 +5877,16 @@ describe("model credential persistence", () => {
   });
 
   it("names a second subscription account by the email it signed in with", async () => {
-    const { finish, deps, handler } = persistDeps();
+    const setup = persistDeps();
+    const { deps } = setup;
     const access = `fake.${Buffer.from(
       JSON.stringify({ "https://api.openai.com/profile": { email: "work@example.com" } }),
     ).toString("base64url")}.fake`;
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "openai-codex",
-        credentialId: null,
-        credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const response = await finishSignIn(setup, {
+      provider: "openai-codex",
+      credentialId: null,
+      credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -5887,23 +5901,17 @@ describe("model credential persistence", () => {
     ["openai-codex", "OpenAI Codex"],
     ["anthropic", "Anthropic"],
   ])("labels a %s subscription sign-in with its own provider name", async (provider, label) => {
-    const { finish, deps, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider,
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { deps } = setup;
+    const response = await finishSignIn(setup, {
+      provider,
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -9437,7 +9445,9 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
-      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [],
@@ -9448,7 +9458,9 @@ describe("groups.remove", () => {
         }),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
           calls.push("cancel run");
           return where.id.in.map((id) => ({ id }));
@@ -9487,6 +9499,7 @@ describe("groups.remove", () => {
       calls.push("expire lease");
     });
     const prisma = {
+      run: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       computerExecutionLease: { updateMany: leaseUpdate },
       computer: { updateMany: vi.fn() },
@@ -9498,8 +9511,18 @@ describe("groups.remove", () => {
       calls.push("cancel run work");
       return [];
     });
+    const purgeHistory = vi.fn(async (_request: { botId: string }) => ({
+      ok: true as const,
+      value: undefined,
+    }));
     const deps = {
       prisma,
+      memoryProviders: {
+        resolve: async () => ({
+          provider: { describe: () => ({ capabilities: { purgesByThread: true } }), purgeHistory },
+          defaultScope: "isolated",
+        }),
+      },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -9530,6 +9553,16 @@ describe("groups.remove", () => {
     );
 
     expect(response?.status).toBe(200);
+    expect(
+      purgeHistory.mock.calls.map(([request]) => (request as { botId: string }).botId).sort(),
+    ).toEqual(["bot-1", "past-bot"]);
+    expect(purgeHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-1", generations: [2, 3] }),
+      expect.any(Object),
+    );
+    expect(purgeHistory.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.chatGroup.delete.mock.invocationCallOrder[0]!,
+    );
     expect(releaseScreen).toHaveBeenCalledWith(
       expect.objectContaining({ id: "computer-1" }),
       expect.objectContaining({
@@ -9557,7 +9590,9 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
-      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
@@ -9566,7 +9601,9 @@ describe("groups.remove", () => {
         delete: vi.fn(async () => undefined),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
@@ -9593,6 +9630,7 @@ describe("groups.remove", () => {
     const deleteSecret = vi.fn(async () => undefined);
     const deps = {
       prisma,
+      memoryProviders: { resolve: async () => null },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",

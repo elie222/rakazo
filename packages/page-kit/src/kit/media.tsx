@@ -296,11 +296,16 @@ export function Gallery({
   if (items.length === 0) return null;
   // Fewer photos on a later render keep the last one marked rather than none.
   const current = Math.min(chosen, items.length - 1);
+  // A right-to-left track starts at zero and scrolls to negative offsets towards later photos.
+  const side = (node: HTMLElement) => (getComputedStyle(node).direction === "rtl" ? -1 : 1);
   const show = (index: number) => {
     const node = track.current;
     if (!node) return;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    node.scrollTo({ left: index * node.clientWidth, behavior: reduced ? "auto" : "smooth" });
+    node.scrollTo({
+      left: side(node) * index * node.clientWidth,
+      behavior: reduced ? "auto" : "smooth",
+    });
     setCurrent(index);
   };
   return (
@@ -319,13 +324,16 @@ export function Gallery({
         onKeyDown={(event) => {
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
             event.preventDefault();
-            const step = event.key === "ArrowRight" ? 1 : -1;
+            const step = (event.key === "ArrowRight" ? 1 : -1) * side(event.currentTarget);
             show(Math.min(items.length - 1, Math.max(0, current + step)));
           }
         }}
         onScroll={(event) => {
           const node = event.currentTarget;
-          if (node.clientWidth > 0) setCurrent(Math.round(node.scrollLeft / node.clientWidth));
+          if (node.clientWidth > 0) {
+            const index = Math.round((side(node) * node.scrollLeft) / node.clientWidth);
+            setCurrent(Math.min(items.length - 1, Math.max(0, index)));
+          }
         }}
       >
         {items.map((photo, index) => (

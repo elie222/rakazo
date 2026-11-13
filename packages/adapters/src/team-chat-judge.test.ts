@@ -1,11 +1,11 @@
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
   renderTeamChatEngagementPrompt,
 } from "./team-chat-judge.js";
+import { mainRole, withModelRoles } from "./testing/model-roles.js";
 
 class ModelTeamChatEngagementJudge extends Judge {
   constructor(deps: ConstructorParameters<typeof Judge>[0]) {
@@ -365,14 +365,14 @@ describe("team chat engagement judge", () => {
     { provider: "amazon-bedrock", key: undefined, personal: true },
     { provider: "amazon-bedrock", key: undefined, personal: false },
   ])(
-    "meters $provider host credentials with personal=$personal",
+    "uses $provider personal connection when present, otherwise meters host credentials",
     async ({ provider, key, personal }) => {
       vi.stubEnv("PI_DEFAULT_PROVIDER", provider);
       vi.stubEnv("PI_DEFAULT_MODEL", "fixture-model");
       vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
       vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
       try {
-        const load = vi.fn();
+        const load = vi.fn().mockResolvedValue("fixture-personal-key");
         const run = vi.fn(async function* (_request: unknown) {
           yield { type: "done", text: '{"act":false}' };
         });
@@ -383,10 +383,17 @@ describe("team chat engagement judge", () => {
               findFirst: async () =>
                 personal
                   ? {
+                      isDefault: true,
                       credential: { id: "personal", provider, secretId: "personal-secret" },
                       modelId: "fixture-model",
                     }
                   : null,
+            },
+            userModelCredential: {
+              findFirst: async () => (personal ? { id: "personal" } : null),
+            },
+            secret: {
+              findFirst: async () => ({ id: "personal-secret", ciphertext: "fixture-ciphertext" }),
             },
             space: {
               findFirst: async () => ({ organization: { modelCredits: { mode: "credits" } } }),
@@ -416,12 +423,15 @@ describe("team chat engagement judge", () => {
           messages: [],
         });
         expect(run).toHaveBeenCalledOnce();
-        expect(run.mock.calls[0]?.[0]).toMatchObject({
-          model: { callObserver: expect.any(Object) },
-        });
-        if (key) expect(run.mock.calls[0]?.[0]).toHaveProperty("model.apiKey", key);
+        if (personal) expect(run.mock.calls[0]?.[0]).not.toHaveProperty("model.callObserver");
+        else
+          expect(run.mock.calls[0]?.[0]).toMatchObject({
+            model: { callObserver: expect.any(Object) },
+          });
+        const expectedKey = personal ? "fixture-personal-key" : key;
+        if (expectedKey) expect(run.mock.calls[0]?.[0]).toHaveProperty("model.apiKey", expectedKey);
         else expect(run.mock.calls[0]?.[0]).not.toHaveProperty("model.apiKey");
-        expect(load).not.toHaveBeenCalled();
+        expect(load).toHaveBeenCalledTimes(personal ? 1 : 0);
       } finally {
         vi.unstubAllEnvs();
       }

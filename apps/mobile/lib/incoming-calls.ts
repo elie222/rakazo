@@ -6,6 +6,7 @@ import {
   callIsRinging,
   isRetryableError,
   nextIncomingCall,
+  reconnectDelayMs,
   respondToIncomingCall,
   retryDelayMs,
 } from "@rakazo/core";
@@ -137,10 +138,12 @@ async function follow(controller: AbortController) {
   let retry = 250;
   let failure: unknown;
   while (!controller.signal.aborted && generation === currentSessionGeneration()) {
+    let opened = false;
     try {
       await subscribeIncomingCallEvents((incoming) => {
         // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
         if (controller.signal.aborted || feed !== controller) return;
+        opened = true;
         const listed = new Map(
           incoming.map((call) => [
             call.incomingCall.callId,
@@ -165,7 +168,10 @@ async function follow(controller: AbortController) {
       if (controller.signal.aborted || !isRetryableError(error)) return;
       failure = error;
     }
-    await abortableDelay(retryDelayMs(failure, retry), controller.signal).catch(() => undefined);
+    await abortableDelay(
+      opened ? reconnectDelayMs(failure) : retryDelayMs(failure, retry),
+      controller.signal,
+    ).catch(() => undefined);
     retry = Math.min(retry * 2, 5000);
   }
 }

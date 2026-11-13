@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ApprovalMode } from "@rakazo/contracts";
+import type { ReactNode } from "react";
 import { View } from "react-native";
 import type { ApprovalSettings } from "../lib/approval-settings";
 import { native } from "../lib/native";
@@ -11,9 +12,11 @@ import { SettingsRow } from "./settings-group";
 export function ApprovalModeRow({
   approvals,
   disabled = false,
+  leading,
 }: {
   approvals: ApprovalSettings;
   disabled?: boolean;
+  leading?: ReactNode;
 }) {
   const { t } = useLingui();
   const { settings, pending, loadError } = approvals;
@@ -44,6 +47,7 @@ export function ApprovalModeRow({
         accessibilityRole="button"
         detail={loadError}
         disabled={disabled}
+        leading={leading}
         onPress={approvals.retry}
         title={t`Approvals`}
         value={t`Retry`}
@@ -72,6 +76,7 @@ export function ApprovalModeRow({
           accessibilityValue={current ? { text: current } : undefined}
           detail={detail}
           dimmed={pending}
+          leading={leading}
           title={t`Approvals`}
           trailing={
             <NativeSymbol
@@ -92,10 +97,12 @@ export function ApprovalModeRow({
 export function ApprovalRulesRow({
   count,
   disabled = false,
+  leading,
   onPress,
 }: {
   count: number;
   disabled?: boolean;
+  leading?: ReactNode;
   onPress: () => void;
 }) {
   const { t } = useLingui();
@@ -104,6 +111,7 @@ export function ApprovalRulesRow({
       accessibilityRole="button"
       chevron="right"
       disabled={disabled}
+      leading={leading}
       onPress={onPress}
       title={t`Rules`}
       value={String(count)}

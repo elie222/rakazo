@@ -203,6 +203,25 @@ describe("parseNumericText", () => {
     expect(parseNumericText("(-12)")).toBe(-12);
   });
 
+  it("parses decimals without a leading zero", () => {
+    for (const [text, expected] of [
+      [".5", 0.5],
+      [".25", 0.25],
+      ["-.5", -0.5],
+      ["(.25)", -0.25],
+      ["$.50", 0.5],
+      [".5%", 0.5],
+    ] as const) {
+      expect(parseNumericText(text)).toBe(expected);
+    }
+  });
+
+  it("rejects incomplete or malformed decimals", () => {
+    for (const text of [".", "-.", "(.)", "1.", "..5", ".5.0", "1,23.5"]) {
+      expect(parseNumericText(text)).toBeNull();
+    }
+  });
+
   it("rejects non-numeric text", () => {
     for (const value of ["", "  ", "abc", "1,2,3,4,5", "NaN", "1.2.3", "-", "$", "12px"]) {
       expect(parseNumericText(value)).toBeNull();
@@ -219,6 +238,10 @@ describe("isNumericColumn", () => {
 
   it("is true when every non-empty cell is numeric", () => {
     expect(isNumericColumn(rows, 0)).toBe(true);
+  });
+
+  it("recognizes leading-dot decimals in numeric columns", () => {
+    expect(isNumericColumn([[".5"], ["-.25"], [""], ["1"]], 0)).toBe(true);
   });
 
   it("is false when a cell is not numeric or all cells are empty", () => {
@@ -242,6 +265,12 @@ describe("sortRows", () => {
   it("keeps empty cells at the bottom in both directions", () => {
     expect(sortRows(rows, 1, "desc").map((r) => r[0])).toEqual(["Beta", "Alpha", "Delta", "Gamma"]);
     expect(sortRows(rows, 1, "asc").at(-1)).toEqual(["Gamma", ""]);
+  });
+
+  it("sorts leading-dot decimals with other numbers in both directions", () => {
+    const values = [[".5"], [""], ["2"], ["-.5"], [".25"], ["0.1"]];
+    expect(sortRows(values, 0, "asc")).toEqual([["-.5"], ["0.1"], [".25"], [".5"], ["2"], [""]]);
+    expect(sortRows(values, 0, "desc")).toEqual([["2"], [".5"], [".25"], ["0.1"], ["-.5"], [""]]);
   });
 
   it("sorts text columns with locale compare", () => {

@@ -154,6 +154,71 @@ describe("media", () => {
     expect(current()).toEqual(["Show photo 1"]);
     act(() => root.unmount());
   });
+
+  describe.each([
+    { dir: "ltr", sign: 1, forward: "ArrowRight", back: "ArrowLeft" },
+    { dir: "rtl", sign: -1, forward: "ArrowLeft", back: "ArrowRight" },
+  ])("in a $dir page", ({ dir, sign, forward, back }) => {
+    const WIDTH = 300;
+    const mountGallery = () => {
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(WIDTH);
+      const scrollTo = vi.spyOn(Element.prototype, "scrollTo");
+      const wrapper = host.appendChild(document.createElement("div"));
+      wrapper.dir = dir;
+      const root = createRoot(wrapper);
+      act(() => root.render(<Gallery photos={[{ src: PNG }, { src: PNG }, { src: PNG }]} />));
+      const track = wrapper.querySelector<HTMLElement>(".rk-gallery-track")!;
+      const current = () =>
+        [...wrapper.querySelectorAll("button[aria-current]")].map((dot) =>
+          dot.getAttribute("aria-label"),
+        );
+      const press = (key: string) =>
+        act(() => {
+          track.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+        });
+      const scrollTrack = (left: number) =>
+        act(() => {
+          Object.defineProperty(track, "scrollLeft", { value: left, configurable: true });
+          track.dispatchEvent(new Event("scroll"));
+        });
+      return { wrapper, scrollTo, current, press, scrollTrack };
+    };
+
+    it("scrolls to the chosen photo's side and marks its dot", () => {
+      const { wrapper, scrollTo, current } = mountGallery();
+      click(wrapper.querySelector('button[aria-label="Show photo 2"]'));
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: sign * WIDTH }));
+      expect(current()).toEqual(["Show photo 2"]);
+    });
+
+    it("marks the photo the track has scrolled to, never none", () => {
+      const { current, scrollTrack } = mountGallery();
+      scrollTrack(sign * WIDTH);
+      expect(current()).toEqual(["Show photo 2"]);
+      scrollTrack(sign * 2 * WIDTH);
+      expect(current()).toEqual(["Show photo 3"]);
+      scrollTrack(0);
+      expect(current()).toEqual(["Show photo 1"]);
+      scrollTrack(-sign * WIDTH);
+      expect(current()).toEqual(["Show photo 1"]);
+      scrollTrack(sign * 5 * WIDTH);
+      expect(current()).toEqual(["Show photo 3"]);
+    });
+
+    it("steps with the arrow that points the way the photos lie, stopping at both ends", () => {
+      const { scrollTo, current, press } = mountGallery();
+      press(back);
+      expect(current()).toEqual(["Show photo 1"]);
+      press(forward);
+      expect(current()).toEqual(["Show photo 2"]);
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: sign * WIDTH }));
+      press(forward);
+      press(forward);
+      expect(current()).toEqual(["Show photo 3"]);
+      press(back);
+      expect(current()).toEqual(["Show photo 2"]);
+    });
+  });
 });
 
 describe("cards and people", () => {

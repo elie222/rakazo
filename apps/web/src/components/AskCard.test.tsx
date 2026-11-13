@@ -73,10 +73,18 @@ async function render(
     fields?: LoginFieldInput[],
     remember?: false,
   ) => Promise<void> = async () => undefined,
+  answerIsSeparate?: boolean,
 ) {
   await act(async () =>
     root.render(
-      <AskCard block={block} canAnswer canDismiss onAnswer={onAnswer} onDismiss={onDismiss} />,
+      <AskCard
+        block={block}
+        answerIsSeparate={answerIsSeparate}
+        canAnswer
+        canDismiss
+        onAnswer={onAnswer}
+        onDismiss={onDismiss}
+      />,
     ),
   );
 }
@@ -776,10 +784,12 @@ it("offers Save to Vault only on login cards", async () => {
   expect(container.textContent).not.toContain("Save to Vault");
 });
 
-it("quotes an edited reply and marks a sent draft", async () => {
+it("leaves a typed reply in its message and marks a sent draft", async () => {
   const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
   await render(block);
-  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).toContain("Tuesday");
+  await render(block, undefined, undefined, true);
+  expect(container.textContent).not.toContain("Tuesday");
   expect(container.textContent).not.toContain("Answered");
 
   await render({ ...block, answer: "approved" });
@@ -1018,4 +1028,19 @@ it("draws a payment's order as a receipt in place of the text detail", async () 
     [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
   ).toEqual(["Total$20.00"]);
   expect(container.textContent).toContain("Read from the page, not checked");
+});
+
+it("leaves plain questions to the composer and dims the question after answering", async () => {
+  const block: AskBlock = { kind: "ask", text: "Which city?", status: "pending" };
+  await render(block);
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.querySelector("input")).toBeNull();
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(false);
+  await render({ ...block, status: "answered", answer: "Paris" }, undefined, undefined, true);
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(true);
+  expect(container.textContent).not.toContain("Paris");
 });

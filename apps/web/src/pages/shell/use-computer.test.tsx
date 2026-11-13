@@ -20,7 +20,7 @@ vi.mock("@rakazo/ui-web", () => ({
   Spinner: () => null,
 }));
 vi.mock("../../components/ComputerMaintenanceActions", () => ({
-  ComputerMaintenanceActions: () => null,
+  ComputerMaintenanceActions: () => <button type="button">Recover computer</button>,
 }));
 
 import type { ComputerState } from "./use-computer";
@@ -524,4 +524,36 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
   expect(onUpgrade).toHaveBeenCalledOnce();
   await act(async () => state.commitComputer({ state: "running", kind: "browser" } as never));
   expect(container.textContent).not.toContain("Upgrade");
+});
+
+it("offers Recover for a computer that failed to boot", async () => {
+  const bot = { id: "bot-fixture", name: "Fixture" } as never;
+  function Controls() {
+    state = useComputerState({
+      rpc: {} as never,
+      panel: null,
+      activeId: "bot-fixture",
+      activeBotId: { current: "bot-fixture" },
+    });
+    const controls = useComputerControls({
+      rpc: {} as never,
+      state,
+      panel: null,
+      active: bot,
+      bots: [bot],
+      botsRef: { current: [bot] },
+      activeBotId: { current: "bot-fixture" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return <>{controls.computerScreenError}</>;
+  }
+  await act(async () => root.render(<Controls />));
+  await act(async () => state.commitComputer({ state: "error", kind: "browser" } as never));
+  const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
+  expect(buttons).toEqual(["Retry screen", "Recover computer"]);
 });

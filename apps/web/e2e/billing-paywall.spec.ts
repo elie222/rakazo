@@ -528,3 +528,35 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
   await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
 });
+
+test("yearly billing shows the monthly computer reset separately from renewal", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `annual-hours-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    access: true,
+    trialAvailable: false,
+    funding: "byok",
+    byokTier: "max",
+    byokPriceCents: 94800,
+    byokInterval: "year",
+    state: "active",
+    hasCustomer: true,
+    currentPeriodEndsAt: "2031-01-15T12:00:00.000Z",
+    computerHoursLeft: 180,
+    computerHoursResetAt: "2030-02-15T12:00:00.000Z",
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(settings.getByText("Resets Feb 15, 2030", { exact: true })).toBeVisible();
+  await expect(settings.getByText("Renews Jan 15, 2031", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-annual-computer-reset");
+});
