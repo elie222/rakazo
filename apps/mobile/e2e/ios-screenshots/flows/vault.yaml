@@ -1,0 +1,72 @@
+appId: com.rakazo.app
+name: Vault logins
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///vault"
+- extendedWaitUntil:
+    visible: ".*Help desk.*"
+    timeout: 15000
+- tapOn: "Help desk"
+- extendedWaitUntil:
+    visible: "Also on"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-login-item
+# Editing a login reveals it, which asks the signed-in person to confirm it's them.
+# Editing closes the item and opens the editor in its place, so Cancel returns to the list.
+- tapOn: "Edit"
+- extendedWaitUntil:
+    visible: "Confirm it's you"
+    timeout: 10000
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-login-edit
+- scrollUntilVisible:
+    element: "Bots"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Ask first"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-login-ask-first
+- tapOn: "Chosen bots"
+- extendedWaitUntil:
+    visible: "Researcher"
+    timeout: 10000
+- tapOn: "Researcher"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-login-chosen-bots
+- tapOn: "Block"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-login-blocked
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible: "New item"
+    timeout: 10000
+- tapOn: "New item"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 06-vault-new-menu
+- tapOn: "Login"
+- extendedWaitUntil:
+    visible: "Add other sites"
+    timeout: 10000
+- tapOn: "Add other sites"
+- tapOn: "Add an authenticator key"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 07-login-new
+- tapOn: "Cancel"
+# Import CSV opens the system file picker, which the fixtures put no export in, so the review and
+# its result are not captured.
