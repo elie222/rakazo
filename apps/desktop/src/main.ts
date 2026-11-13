@@ -668,9 +668,10 @@ app.whenReady().then(async () => {
   // Signing an MCP server in again with another account starts from an empty
   // browser: no cookies, no cached login pages, no stored site data.
   ipcMain.handle("desktop.mcpBrowser.clear", async (event, serverId: unknown) => {
-    if (!fromAppFrame(permissionTarget(), event) || !isMcpOAuthServerId(serverId))
+    const target = permissionTarget();
+    if (!target || !fromAppFrame(target, event) || !isMcpOAuthServerId(serverId))
       throw new Error("Invalid sign-in browser request.");
-    const browser = session.fromPartition(mcpOAuthPartition(serverId));
+    const browser = session.fromPartition(mcpOAuthPartition(target.url, serverId));
     await Promise.all([
       browser.clearStorageData(),
       browser.clearCache(),

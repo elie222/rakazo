@@ -69,10 +69,13 @@ describe("MCP sign-in browsers", () => {
   });
 
   it("gives every server a persistent, opaque jar of its own", () => {
-    const first = mcpOAuthPartition("clx123abc");
+    const first = mcpOAuthPartition("https://first.example.test", "clx123abc");
     expect(first).toMatch(/^persist:rakazo-mcp-[0-9a-f]{24}$/);
-    expect(mcpOAuthPartition("clx123abc")).toBe(first);
-    expect(mcpOAuthPartition("clx999xyz")).not.toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test", "clx123abc")).toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test", "clx999xyz")).not.toBe(first);
+    expect(mcpOAuthPartition("https://second.example.test", "clx123abc")).not.toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test:8443", "clx123abc")).not.toBe(first);
+    expect(mcpOAuthPartition("https://first.example.test/settings", "clx123abc")).toBe(first);
     expect(first).not.toContain("clx123abc");
   });
 });

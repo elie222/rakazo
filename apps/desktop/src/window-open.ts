@@ -22,9 +22,12 @@ export function isMcpOAuthServerId(value: unknown): value is string {
   return typeof value === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 }
 
-/** One persistent cookie jar per server, so sign-ins never share cookies. */
-export function mcpOAuthPartition(serverId: string) {
-  const digest = createHash("sha256").update(serverId).digest("hex").slice(0, 24);
+/** One persistent cookie jar per connected instance and server. */
+export function mcpOAuthPartition(appUrl: string, serverId: string) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([new URL(appUrl).origin, serverId]))
+    .digest("hex")
+    .slice(0, 24);
   return `persist:rakazo-mcp-${digest}`;
 }
 

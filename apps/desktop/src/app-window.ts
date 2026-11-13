@@ -182,7 +182,7 @@ export function createWindow(url: string, partition: string | null) {
       return {
         action: "allow",
         overrideBrowserWindowOptions: oauthPopupWindowOptions(
-          mcpServerId === null ? partition : mcpOAuthPartition(mcpServerId),
+          mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
         ),
       };
     }
