@@ -326,10 +326,11 @@ export function useAgentImportSource() {
     try {
       const texts = await Promise.all(chosen.map((file) => file.text()));
       if (read !== latestRead.current) return;
-      await previewGrokReply(texts.join("\n\n"), read);
+      const parts = texts.flatMap((text) => parseGrokBotExport(text).map(grokBotExportJson));
+      await previewGrokReply(parts.join("\n\n"), read);
     } catch (err) {
       if (read !== latestRead.current) return;
-      setError(readError(err));
+      setError(err instanceof GrokBotExportError ? grokBotErrorText(err.code) : readError(err));
       setBusy(false);
     }
   }
