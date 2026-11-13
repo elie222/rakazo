@@ -25,7 +25,10 @@ import {
   pickCatalogModelId,
 } from "./model-providers.js";
 
-type CatalogModel = Pick<ModelCatalogEntry, "provider" | "id" | "recommended" | "thinkingLevels">;
+type CatalogModel = Pick<
+  ModelCatalogEntry,
+  "provider" | "id" | "recommended" | "thinkingLevels" | "routingFields"
+>;
 type DefaultModel = { defaultProvider: string | null; defaultModel: string | null };
 
 /** What a connection form edits, as the strings and toggles its fields hold. */
@@ -41,6 +44,8 @@ export type ConnectionFormFields = {
   maxImagesPerPrompt: string;
   accountId: string;
   gatewayId: string;
+  projectId?: string;
+  region?: string;
 };
 
 /**
@@ -90,6 +95,8 @@ export function connectionFormFields(input: {
     | "maxImagesPerPrompt"
     | "accountId"
     | "gatewayId"
+    | "projectId"
+    | "region"
   >;
   /** Prefills a new OpenAI-compatible connection, such as a hosted preset. */
   presetBaseUrl?: string;
@@ -116,6 +123,11 @@ export function connectionFormFields(input: {
     maxImagesPerPrompt: String(credential?.maxImagesPerPrompt ?? ""),
     accountId: credential?.accountId ?? "",
     gatewayId: credential?.gatewayId ?? "",
+    ...(catalog.some(
+      (entry) => entry.provider === provider && entry.routingFields?.includes("projectId"),
+    )
+      ? { projectId: credential?.projectId ?? "", region: credential?.region ?? "global" }
+      : {}),
   };
 }
 
@@ -263,7 +275,9 @@ export function modelConnectRequest(input: {
       provider: selected.provider,
       ...(newKey ? { apiKey: newKey } : {}),
       ...(selected.routingFields?.length
-        ? { accountId: form.accountId.trim(), gatewayId: form.gatewayId.trim() }
+        ? Object.fromEntries(
+            selected.routingFields.map((field) => [field, (form[field] ?? "").trim()]),
+          )
         : {}),
       modelId: selected.id,
       // A limits-only save leaves the stored effort alone while the model and effort stay

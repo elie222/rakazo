@@ -178,11 +178,13 @@ describe("contracts", () => {
     expect(modelRoutingForm(undefined, {})).toEqual({
       needsRouting: false,
       needsGateway: false,
+      needsProject: false,
       routingReady: true,
     });
     expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
       needsRouting: true,
       needsGateway: true,
+      needsProject: false,
       routingReady: false,
     });
     expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);

@@ -554,6 +554,8 @@ export interface AgentRunModel {
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
+  projectId?: string;
+  region?: string;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;

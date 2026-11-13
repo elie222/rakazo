@@ -93,6 +93,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     contextWindow,
     enabledModelIds,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     invalidatePreflight,
     needsRouting,
@@ -312,7 +314,9 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
       (needsRouting &&
         (accountId.trim() !== (credential?.accountId ?? "") ||
-          gatewayId.trim() !== (credential?.gatewayId ?? ""))));
+          gatewayId.trim() !== (credential?.gatewayId ?? "") ||
+          projectId.trim() !== (credential?.projectId ?? "") ||
+          (projectId && region.trim() !== (credential?.region ?? "global")))));
 
   /** Opens a connection (by id) or a new one (null) for the provider. */
   function chooseProvider(
@@ -389,6 +393,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         maxImagesPerPrompt,
         accountId,
         gatewayId,
+        projectId,
+        region,
       },
       selected,
       credential,

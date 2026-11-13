@@ -100,6 +100,8 @@ export const ModelCredentialSchema = z.object({
   apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
+  projectId: z.string().optional(),
+  region: z.string().optional(),
   modelId: z.string().optional(),
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -162,7 +164,7 @@ export const MAX_MODEL_CONNECTION_LABEL = 80;
 export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL_CONNECTION_LABEL);
 
 /** Ids a provider needs besides its key to route requests, like an account. */
-export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId"]);
+export const ModelRoutingFieldSchema = z.enum(["accountId", "gatewayId", "projectId", "region"]);
 export type ModelRoutingField = z.infer<typeof ModelRoutingFieldSchema>;
 
 /** Routing ids are substituted into a URL path, so only a single path segment is accepted. */
@@ -187,10 +189,11 @@ export function modelRoutingReady(
 export function modelRoutingForm(
   fields: readonly ModelRoutingField[] | undefined,
   values: Partial<Record<ModelRoutingField, string>>,
-): { needsRouting: boolean; needsGateway: boolean; routingReady: boolean } {
+): { needsRouting: boolean; needsGateway: boolean; needsProject: boolean; routingReady: boolean } {
   return {
     needsRouting: Boolean(fields?.length),
     needsGateway: Boolean(fields?.includes("gatewayId")),
+    needsProject: Boolean(fields?.includes("projectId")),
     routingReady: modelRoutingReady(fields, values),
   };
 }
@@ -202,6 +205,8 @@ export const ModelConnectInputSchema = z
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
+    projectId: z.string().optional(),
+    region: z.string().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     apiProtocol: ModelApiProtocolSchema.optional(),

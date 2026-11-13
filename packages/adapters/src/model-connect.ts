@@ -12,6 +12,7 @@ import {
   cloudflareModelRouting,
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
+import { vertexRoutingForConnect } from "./google-vertex-routing.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
@@ -177,7 +178,8 @@ export function buildModelConnectPlaintext(
   if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
     throw new Error("Maximum output tokens must leave room for input");
   }
-  const routing = cloudflareRoutingForConnect(input, previous);
+  const routing =
+    vertexRoutingForConnect(input, inherited) ?? cloudflareRoutingForConnect(input, previous);
   if (apiKey) {
     if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");
     assertHeaderSafeApiKey(apiKey);
@@ -322,6 +324,8 @@ export function modelCredentialDto(
         : {}),
       ...(parsed.kind === "api_key" && parsed.accountId ? { accountId: parsed.accountId } : {}),
       ...(parsed.kind === "api_key" && parsed.gatewayId ? { gatewayId: parsed.gatewayId } : {}),
+      ...(parsed.kind === "api_key" && parsed.projectId ? { projectId: parsed.projectId } : {}),
+      ...(parsed.kind === "api_key" && parsed.region ? { region: parsed.region } : {}),
     };
   }
   const compatibleCredential = {

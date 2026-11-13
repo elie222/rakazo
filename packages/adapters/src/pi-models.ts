@@ -61,7 +61,8 @@ const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   openai: "gpt-6-luna",
   openrouter: "anthropic/claude-haiku-5.5",
   anthropic: "claude-haiku-5-5",
-  google: "gemini-3.8-flash",
+  google: "gemini-4-hydrogen",
+  "google-vertex": "gemini-4-hydrogen",
   groq: "openai/gpt-oss-120b",
   minimax: "MiniMax-M3",
 };
@@ -314,7 +315,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
-    const routingFields = cloudflareRoutingFields(provider.id);
+    const routingFields =
+      provider.id === "google-vertex"
+        ? (["projectId", "region"] as ("projectId" | "region")[])
+        : cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       if (maximumModelCallCost(model.cost, 0, 0) !== undefined)

@@ -202,6 +202,8 @@ async function resolveModelKeyMaterial(
   apiKey?: string;
   accountId?: string;
   gatewayId?: string;
+  projectId?: string;
+  region?: string;
   baseUrl?: string;
   apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
   headers?: Record<string, string>;
@@ -316,10 +318,14 @@ async function resolveModelKeyMaterial(
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
       cloudflareProviderEnv({ provider, accountId, gatewayId });
+      const projectId = resolved.secret.kind === "api_key" ? resolved.secret.projectId : undefined;
+      const region = resolved.secret.kind === "api_key" ? resolved.secret.region : undefined;
       return {
         apiKey: resolved.apiKey,
         accountId,
         gatewayId,
+        projectId,
+        region,
         baseUrl,
         apiProtocol:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
@@ -401,6 +407,8 @@ export function resolvedModelRunFields(
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
+    ...(resolved.projectId ? { projectId: resolved.projectId } : {}),
+    ...(resolved.region ? { region: resolved.region } : {}),
     baseUrl: resolved.baseUrl,
     apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,

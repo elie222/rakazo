@@ -8,6 +8,7 @@ import {
   completeOnboarding,
   manageModelConnection,
   modelConnectionDialog,
+  modelConnectOption,
   openBotPanelTab,
   openModelConnection,
   openUserSettings,
@@ -439,4 +440,48 @@ test("a refused private model server names the setting that allows it", async ({
     alert.getByText("Review provider settings and test again.", { exact: true }),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "openai-compatible-private-endpoint-refused");
+});
+
+test("project-scoped model connection keeps its routing after reopening", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `model-project-${Date.now()}@rakazo.test`, "password12", "Model Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  const dialog = await openModelConnection(page, "Google Vertex AI");
+  await expect(dialog.getByLabel("Project ID", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Region", { exact: true })).toHaveValue("global");
+  await dialog.getByLabel("Project ID", { exact: true }).fill("example-project");
+  await dialog.getByLabel("API key", { exact: true }).fill("fake-vertex-api-key");
+  await captureScreenshot(page, testInfo, "model-project-connection");
+  await dialog.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const credentials = await rpc<Array<{ provider: string; projectId?: string; region?: string }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(credentials.find((credential) => credential.provider === "google-vertex")).toMatchObject({
+    projectId: "example-project",
+    region: "global",
+  });
+  await pickReopenedModel(page, "Gemini 4 Hydrogen");
+  const saved = await manageModelConnection(page, "Google Vertex AI");
+  await expect(saved.getByLabel("Project ID", { exact: true })).toHaveValue("example-project");
+  await expect(saved.getByLabel("Region", { exact: true })).toHaveValue("global");
+});
+
+test("project connection label is readable in Korean", async ({ page }, testInfo) => {
+  await signup(page, `model-label-${Date.now()}@rakazo.test`, "password12", "Model Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  await page.evaluate(() => localStorage.setItem("rakazo.uiLocale", "ko"));
+  await page.reload();
+  await page.getByTestId("model-role-main").getByTestId("model-role-default").click();
+  await page.getByRole("combobox").fill("Google Vertex AI");
+  await modelConnectOption(page, "Google Vertex AI").click();
+  const dialog = page.getByTestId("model-connection");
+  await expect(dialog.getByLabel("프로젝트 ID", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("지역", { exact: true })).toHaveValue("global");
+  await captureScreenshot(page, testInfo, "model-project-connection-ko");
 });

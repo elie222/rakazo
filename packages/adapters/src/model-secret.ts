@@ -30,6 +30,8 @@ export type StoredModelSecret =
       maxTokens?: number;
       accountId?: string;
       gatewayId?: string;
+      projectId?: string;
+      region?: string;
     } & StoredModelLimits)
   | { kind: "oauth"; reconnectRequired: true; maxTokens?: number }
   | { kind: "oauth"; reconnectRequired?: false; credential: OAuthCredential; maxTokens?: number }
@@ -147,12 +149,16 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     const maxTokens = parsedMaxTokens(parsed.maxTokens);
     const accountId = parsedRoutingId(parsed.accountId);
     const gatewayId = parsedRoutingId(parsed.gatewayId);
+    const projectId = parsedRoutingId(parsed.projectId);
+    const region = parsedRoutingId(parsed.region);
     return {
       kind: "api_key",
       key: parsed.key,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(accountId ? { accountId } : {}),
       ...(gatewayId ? { gatewayId } : {}),
+      ...(projectId ? { projectId } : {}),
+      ...(region ? { region } : {}),
       ...modelLimits(parsed),
     };
   }
@@ -217,6 +223,8 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     secret.maxTokens === undefined &&
     secret.accountId === undefined &&
     secret.gatewayId === undefined &&
+    secret.projectId === undefined &&
+    secret.region === undefined &&
     secret.contextWindow === undefined &&
     secret.cacheCapabilities === undefined
   ) {
@@ -228,6 +236,8 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
     ...(secret.accountId ? { accountId: secret.accountId } : {}),
     ...(secret.gatewayId ? { gatewayId: secret.gatewayId } : {}),
+    ...(secret.projectId ? { projectId: secret.projectId } : {}),
+    ...(secret.region ? { region: secret.region } : {}),
     ...modelLimits(secret as unknown as Record<string, unknown>),
   });
 }

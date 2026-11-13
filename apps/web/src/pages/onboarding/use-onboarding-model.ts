@@ -86,6 +86,8 @@ export function useOnboardingModel({
     routingReady,
     contextWindow,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     needsRouting,
     isOpenAiCompatible,
@@ -294,7 +296,14 @@ export function useOnboardingModel({
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...(needsRouting
+            ? Object.fromEntries(
+                (selected?.routingFields ?? []).map((field) => [
+                  field,
+                  { accountId, gatewayId, projectId, region }[field].trim(),
+                ]),
+              )
+            : {}),
           modelId,
           label: selected?.providerName ?? provider,
         });
