@@ -230,9 +230,14 @@ describe("MCP connector session cache", () => {
     }
   });
 
-  it.each([false, true])(
-    "retries a credential change during connection (repeated: %s)",
-    async (repeated) => {
+  it.each([
+    { repeated: false, rejectSetup: false },
+    { repeated: true, rejectSetup: false },
+    { repeated: false, rejectSetup: true },
+    { repeated: true, rejectSetup: true },
+  ])(
+    "retries a credential change during connection (repeated: $repeated, rejected: $rejectSetup)",
+    async ({ repeated, rejectSetup }) => {
       const state = {
         failNext: false,
         initializations: 0,
@@ -247,6 +252,7 @@ describe("MCP connector session cache", () => {
         if (state.initializations === 1 || repeated) {
           token = "rotated";
           changed("secret-ref");
+          if (rejectSetup) return new Response("Old credential rejected", { status: 401 });
         }
         return result;
       });

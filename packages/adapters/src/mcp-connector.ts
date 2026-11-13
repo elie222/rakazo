@@ -1052,6 +1052,12 @@ export class McpConnector implements ConnectorProvider {
         if (connected.stdio) this.startReaper();
         return session;
       },
+      (error: unknown) => {
+        // connectSession has already closed the failed connection and sanitized its error.
+        // Share the rotation result with every caller waiting on this connection.
+        if (this.connecting.get(sessionKey)?.invalidated) throw new McpSecretChangedError();
+        throw error;
+      },
     );
     this.connecting.set(sessionKey, { revision: server.revision, promise });
     try {
