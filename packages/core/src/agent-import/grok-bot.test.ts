@@ -350,3 +350,11 @@ it("keeps populated aliases beside empty canonical arrays", () => {
   expect(bot?.userFacts).toEqual(["Prefers brief replies"]);
   expect(bot?.apps.map((app) => app.name)).toEqual(["Calendar"]);
 });
+
+it("keeps contractions when repairing curly single quote delimiters", () => {
+  expect(
+    parseGrokBotExport(
+      "{‘format’:‘grok-bot-export’,‘bots’:[{‘name’:‘Example’,‘instructions’:‘don’t forget’}]}",
+    )[0]?.instructions,
+  ).toBe("don’t forget");
+});

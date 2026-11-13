@@ -192,7 +192,9 @@ const looksLikeBot = (value: unknown): value is Json =>
  * repaired only once the text as written found nothing.
  */
 function documentsIn(source: string): Json[] {
-  const repaired = source.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  const repaired = source
+    .replace(/[“”]/g, '"')
+    .replace(/(?<![\p{L}\p{N}])[‘’]|[‘’](?![\p{L}\p{N}])/gu, "'");
   // Set by the last text tried: an export part that never closed would leave its setup out.
   let cutOff = false;
   for (const version of repaired === source ? [source] : [source, repaired]) {

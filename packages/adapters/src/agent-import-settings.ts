@@ -230,6 +230,7 @@ export function readGrokBotImportSettings(
     // Only a remote address that carries no key can come over.
     const server =
       url?.protocol === "https:" &&
+      ["", "sse", "http", "streamable_http", "streamable-http"].includes(app.transport) &&
       !url.search &&
       !url.hash &&
       !url.username &&
