@@ -201,6 +201,9 @@ model for that decision, set both `TEAM_CHAT_JUDGE_PROVIDER` and `TEAM_CHAT_JUDG
 
 ### Microsoft Teams
 
+This guide covers installation in the Microsoft tenant that owns the bot registration.
+Cross-company distribution has not been verified for this configuration.
+
 1. Register an app in Microsoft Entra ID and create a client secret. Create an Azure Bot using
    that app's **Single Tenant** identity, then enable its Microsoft Teams channel.
 2. Set `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD` (the client secret **value**), and `TEAMS_APP_TENANT_ID`
@@ -231,9 +234,10 @@ already published it there; a Developer Portal preview is a separate upload path
 
 See Microsoft's [custom app installation guide](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/deploy-and-publish/apps-upload)
 and [app setup policies](https://learn.microsoft.com/en-us/microsoftteams/teams-app-setup-policies).
-Before making an app available to another company, verify installation, individual linking, and a
-message/reply roundtrip in that company's tenant. A validated package or successful installation
-alone does not verify message delivery.
+Before considering setup complete, link a user in the registration's tenant and verify a
+message/reply roundtrip. Repeat with a second user linked to a different Rakazo bot to check
+individual routing. A validated package or successful installation alone does not verify message
+delivery.
 
 ### Slack
 

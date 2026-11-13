@@ -33,9 +33,10 @@ To stop, choose **Unlink**.
 
 ## Microsoft Teams
 
-Install the custom Rakazo Teams app supplied by your server operator, then open its personal chat.
-Your Microsoft 365 administrator may need to upload and allow the app in your organization's app
-catalog. A public Teams Store listing is not required for this installation.
+Install the custom Rakazo Teams app supplied by your server operator in the Microsoft tenant
+that owns the bot registration, then open its personal chat. Your Microsoft 365 administrator
+may need to upload and allow the app in that tenant's app catalog. A public Teams Store listing
+is not required for this installation. Cross-company distribution is not yet verified.
 
 In **Settings → Messaging**, pick your bot and choose `teams` under **Connect a chat app**. Send
 the code to the Rakazo app in a Teams direct message within 10 minutes. Until you link it, an
