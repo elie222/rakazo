@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { BrowserProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
@@ -7,6 +7,8 @@ import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
 import {
+  LOGIN_CODE_CHANGED,
+  loginCodeClaim,
   resolveCodeFill,
   resolveLoginFill,
   resolveVaultCardFill,
@@ -45,7 +47,7 @@ import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
-import { addRunSecrets } from "./run-context.js";
+import { addRunSecrets, recordVaultUse } from "./run-context.js";
 import { builtinOffered } from "./run-instructions.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
@@ -58,7 +60,7 @@ import {
 import { recordPagePayment } from "./spending-gate.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
-import { vaultCardUseOf } from "./vault-card-use.js";
+import { LOGIN_CODE_FIELD, vaultCardUseOf, vaultLoginUseOf } from "./vault-card-use.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
@@ -202,19 +204,35 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
       : name === "browser_snapshot"
         ? browserSnapshotFromTool
         : null;
+  // Where the page is, from the browser's own result: page text the run hides is never a URL to match.
+  // A refused step reports no address, which leaves the last one the run saw.
+  const raw = ctx.providers.browser;
+  const seen = <T extends { url?: string }>(result: T) => {
+    if (result.url) ctx.state.pageUrl = result.url;
+    return result;
+  };
+  const pageUrlTrackingBrowser: BrowserProvider = {
+    describe: () => raw.describe(),
+    navigate: async (...args) => seen(await raw.navigate(...args)),
+    snapshot: async (...args) => seen(await raw.snapshot(...args)),
+    act: async (...args) => seen(await raw.act(...args)),
+    ...(raw.purchaseCheck && { purchaseCheck: (...args) => raw.purchaseCheck!(...args) }),
+  };
   return computerScreenToolResult(async () => {
     // A call that presses an approved purchase spends it: a card it types leaves no pass for the next one.
     const paying = purchaseApprovalOf(args.purchaseApproval);
+    // The sites of the saved logins this call fills, and the one each was sent for.
+    const loginFills: { origin: string; sites: string[]; index: number }[] = [];
     const result = tool
       ? redactBrowserResult(
-          await tool(ctx.providers.browser, await ctx.computer.get("tool", name), context, args, {
+          await tool(pageUrlTrackingBrowser, await ctx.computer.get("tool", name), context, args, {
             desktopTools,
             downloads,
           }),
           redactions(),
         )
       : await browserActFromTool(
-          ctx.providers.browser,
+          pageUrlTrackingBrowser,
           await ctx.computer.get("tool", name),
           context,
           args,
@@ -235,7 +253,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               ctx.computer.mode === "team"
                 ? resolveBotUploadPath(ctx.computer.mode, bot.id, path)
                 : path,
-            resolveSecretFill: async (step) => {
+            resolveSecretFill: async (step, index) => {
               const resolved = await resolveLoginFill({
                 prisma: deps.prisma,
                 secretStore: deps.secretStore,
@@ -243,10 +261,19 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                 runId: run.id,
                 name: step.secret,
                 field: step.field,
+                approval: vaultLoginUseOf(args.loginApproval),
+                pageUrl: ctx.state.pageUrl,
               });
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
-              return { text: resolved.text, origin: resolved.origin, hidden: resolved.hidden };
+              loginFills.push({ ...resolved, index });
+              const { used } = resolved;
+              return {
+                text: resolved.text,
+                origin: resolved.origin,
+                hidden: resolved.hidden,
+                ...(used && { typed: () => recordVaultUse(ctx, name, used, resolved.origin) }),
+              };
             },
             resolveCardFill: async (step) => {
               if ("card" in step) {
@@ -267,7 +294,11 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                 addRunSecrets(ctx, resolved.redactions);
                 // No pass for the pay click: approving the card named no amount, so the click
                 // that places the order still asks, showing what the page charges.
-                return { text: resolved.text, origin: resolved.origin };
+                return {
+                  text: resolved.text,
+                  origin: resolved.origin,
+                  typed: () => recordVaultUse(ctx, name, resolved.used, resolved.origin),
+                };
               }
               const paymentWallet = deps.paymentWallet;
               if (!paymentWallet) return { error: "Card fills are unavailable here." };
@@ -282,7 +313,51 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               if (!paying) ctx.state.walletHosts.add(new URL(resolved.origin).host);
               return { text: resolved.text, origin: resolved.origin };
             },
-            resolveCodeFill: async () => {
+            resolveCodeFill: async (step, index) => {
+              if (step.secret) {
+                const resolved = await resolveLoginFill({
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  scope: run,
+                  runId: run.id,
+                  name: step.secret,
+                  field: LOGIN_CODE_FIELD,
+                  code: true,
+                  approval: vaultLoginUseOf(args.loginApproval),
+                  pageUrl: ctx.state.pageUrl,
+                });
+                if ("error" in resolved) return resolved;
+                if (!resolved.used || !resolved.login)
+                  return {
+                    error:
+                      "This login has no authenticator key. Use request_secret with oneTimeCode.",
+                  };
+                addRunSecrets(ctx, resolved.redactions);
+                loginFills.push({ ...resolved, index });
+                const { used, codeEnds } = resolved;
+                // Counted and taken just before the page is asked, as one step.
+                const code = loginCodeClaim({
+                  prisma: deps.prisma,
+                  secretStore: deps.secretStore,
+                  scope: run,
+                  runId: run.id,
+                  login: resolved.login,
+                  origin: resolved.origin,
+                  code: resolved.text,
+                });
+                return {
+                  text: resolved.text,
+                  origin: resolved.origin,
+                  // The rest of the call was resolved since the code was made. One the
+                  // authenticator has moved on from is neither typed nor counted.
+                  claim: async () =>
+                    codeEnds !== undefined && Date.now() >= codeEnds
+                      ? LOGIN_CODE_CHANGED
+                      : code.claim(),
+                  restore: code.restore,
+                  typed: () => recordVaultUse(ctx, name, used, resolved.origin),
+                };
+              }
               const resolved = await resolveCodeFill({
                 prisma: deps.prisma,
                 secretStore: deps.secretStore,
@@ -292,6 +367,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
               const { text, origin, claim, restore } = resolved;
+              // A code the person entered for this run was never in the vault: no item, no use.
               return { text, origin, claim, restore };
             },
             resolvePayTokenFill: async (step) => {
@@ -310,6 +386,28 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
             },
           },
         );
+    // The run saw the page on one of a login's sites, but it had moved to another: now that the run
+    // knows where it is, the same call fills there.
+    // Only when that fill itself was refused, surely and with no word of its own from the page.
+    const now = URL.canParse(ctx.state.pageUrl ?? "") ? new URL(ctx.state.pageUrl!).origin : "";
+    const stopped = result as {
+      ok?: unknown;
+      uncertain?: unknown;
+      completed?: unknown;
+      note?: unknown;
+    };
+    if (
+      stopped?.ok === false &&
+      stopped.uncertain === false &&
+      stopped.note === undefined &&
+      loginFills.some(
+        (fill) =>
+          fill.index === stopped.completed && fill.origin !== now && fill.sites.includes(now),
+      )
+    )
+      Object.assign(result as object, {
+        note: "The page moved to another of this login's sites. Call browser_act again to fill it there.",
+      });
     // A snapshot saves the PDF its tab shows, which is a new file on the computer.
     if ((result as { downloads?: unknown } | null)?.downloads) ctx.computer.checkpoint.markDirty();
     ctx.state.screen.unchangedVisualStreak = unchangedVisualStreakAfterPageBrowser(
@@ -445,6 +543,8 @@ export const computerTools: ToolHandlers = {
         (usesNativeShell(computer.kind)
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
+      // The computer is sent the command with its variables here, so each is a use from then on,
+      // recorded once the command answers, fails or runs on. One stopped before this got none.
       const observed = await observeShellCommand(
         deps.sandbox.execute(
           computer,
@@ -478,7 +578,9 @@ export const computerTools: ToolHandlers = {
             if (output) publishRunning(output);
           },
         },
-      );
+      ).finally(async () => {
+        for (const item of commandEnvironment.used) await recordVaultUse(ctx, name, item);
+      });
       if (observed.completion) {
         const completion = observed.completion.then(async (final) => {
           clearPublishTimer();

@@ -115,6 +115,8 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
                 target: typeof kind === "string" ? { type: kind } : undefined,
               }),
           spaceId: event.spaceId,
+          // Every vault item is its person's own; see the vault rule in audit-events.ts.
+          userId: kind === "vault_credential" ? userId : undefined,
           runId: typeof runId === "string" ? runId : undefined,
           metadata: event.metadata,
         }),

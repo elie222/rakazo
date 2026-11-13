@@ -25,15 +25,26 @@ export {
   forgetBotSecret,
   getBotSecretMetadata,
   isSecretAlreadySaved,
+  LOGIN_ALREADY_SAVED,
+  LOGIN_CODE_REPEAT_WINDOW_MS,
+  LOGIN_CODE_TRIES,
+  LOGIN_CODES_USED_UP,
   listBotSecretMetadata,
+  listBotSecrets,
   listVaultItems,
+  loginCodeClaim,
   newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
   relabelVaultItem,
+  resolveLoginFill,
   revealBotSecret,
+  SAVED_LOGIN_UNREADABLE,
   SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
+  UNKNOWN_BOTS,
+  UNSUPPORTED_ACCESS,
+  VAULT_CHANGED,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
@@ -227,6 +238,7 @@ export * from "./user-device-emulator.js";
 export * from "./user-device-gateway.js";
 export * from "./user-device-protocol.js";
 export { openingAcknowledgementEnabled } from "./user-progress.js";
+export { listVaultItemUses } from "./vault-activity.js";
 export {
   migrateVaultValues,
   openSealedVaultValue,

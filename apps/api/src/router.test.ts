@@ -26,15 +26,18 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
+  BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
+  UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -1055,9 +1058,26 @@ describe("thread answer delivery", () => {
   });
 });
 
-describe("oversized one-time answer", () => {
-  it("says the answer is too long, without echoing it", async () => {
-    const answerRunInput = vi.fn().mockRejectedValue(new AnswerTooLongError());
+describe("answers the server can't save", () => {
+  it.each([
+    ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
+    // The person blocked bots from the item while the request waited.
+    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for an item chosen for other bots",
+      new Error(UNCHOSEN_ITEM_ANSWER),
+      UNCHOSEN_ITEM_ANSWER,
+      400,
+    ],
+    // The saved login it replaces can't be read for now: a retry may save it.
+    [
+      "held back by a saved login it can't read",
+      new Error(SAVED_LOGIN_UNREADABLE),
+      SAVED_LOGIN_UNREADABLE,
+      409,
+    ],
+  ])("says why one is %s, without echoing it", async (_, error, message, status) => {
+    const answerRunInput = vi.fn().mockRejectedValue(error);
     const enqueue = vi.fn();
     const prisma = {
       bot: {
@@ -1100,9 +1120,9 @@ describe("oversized one-time answer", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(status);
     const body = await response.text();
-    expect(body).toContain("This answer is too long.");
+    expect(body).toContain(message);
     expect(body).not.toContain("fake-code-");
     expect(enqueue).not.toHaveBeenCalled();
   });

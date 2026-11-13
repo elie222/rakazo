@@ -28,6 +28,7 @@ import {
   terminatingToolResult,
 } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import type { VaultItemUse } from "./bot-secrets.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
@@ -48,6 +49,7 @@ import type { LoopGuardStreak } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
 import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { recordVaultItemUse } from "./vault-activity.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
 
@@ -210,6 +212,9 @@ export interface RunState {
    * the wallet owner approved paying there, so the pay click there asks nothing more.
    */
   walletHosts: Set<string>;
+  /** Where the page browser last said its page was, which picks a login's site to fill on. */
+  pageUrl?: string;
+  vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
 }
@@ -356,6 +361,32 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   reply.pendingProgress += reply.redactor.finish();
   ctx.secrets.push(...additions);
   reply.redactor = createStreamingRedactor(ctx.secrets);
+}
+
+// Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes
+// the run, but a login typed on another of its sites shows there too. A command variable goes to
+// the bot's shell, which is no site, so it is once per item however many commands get it.
+export async function recordVaultUse(
+  ctx: RunContext,
+  tool: string,
+  item: VaultItemUse,
+  site?: string,
+) {
+  const use = JSON.stringify([item.id, site ?? null]);
+  if (ctx.state.vaultUses.has(use)) return;
+  ctx.state.vaultUses.add(use);
+  const recorded = await recordVaultItemUse({
+    bot: ctx.bot,
+    spaceId: ctx.run.spaceId,
+    // The run's person, whose vault holds the item.
+    userId: ctx.run.userId,
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    tool,
+    item,
+    site,
+  });
+  if (!recorded) ctx.state.vaultUses.delete(use);
 }
 
 export function pauseForApproval(ctx: RunContext) {
