@@ -136,7 +136,8 @@ export function resolveBotWorkspaceCwd(
   botId: string,
   requestedCwd: string | undefined,
 ): string | undefined {
-  if (scope !== "team") return requestedCwd;
+  if (scope !== "team")
+    return requestedCwd === undefined ? undefined : expandHomePrefix(requestedCwd);
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
   if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
     return requestedCwd;
