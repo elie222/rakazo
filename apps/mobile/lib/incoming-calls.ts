@@ -363,6 +363,7 @@ async function drainNative() {
       ).catch(() => undefined);
     }
   } finally {
+    // Start storage and network bookkeeping only after pending answers finish.
     if (state.token && running && generation === currentSessionGeneration())
       void registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
   }
