@@ -17,11 +17,6 @@ export interface AnswerTakeoverRequestInput {
   reason: TakeoverAnswer;
 }
 
-export interface ReleaseUserControlResult {
-  /** Teaching recordings made under the lease, now saved as drafts. */
-  draftedSkillIds: string[];
-}
-
 export interface ReleaseUserControlInput {
   spaceId: string;
   computerId: string;
@@ -179,7 +174,7 @@ export async function releaseUserControl(
   prisma: PrismaClient,
   input: ReleaseUserControlInput,
   realtime?: RealtimeFanout,
-): Promise<ReleaseUserControlResult | false> {
+): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
       where: { id: input.computerId, spaceId: input.spaceId, controlLeaseId: input.leaseId },
@@ -212,13 +207,13 @@ export async function releaseUserControl(
       });
       notices.push({ threadId: event.threadId, seq: event.seq });
     }
-    return { notices, draftedSkillIds: drafted.map((ended) => ended.skillId) };
+    return { notices };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return false;
   for (const notice of committed.notices) {
     await notifyRealtime(realtime, notice.threadId, notice.seq);
   }
-  return { draftedSkillIds: committed.draftedSkillIds };
+  return true;
 }
 
 /**

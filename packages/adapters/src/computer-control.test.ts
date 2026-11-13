@@ -358,7 +358,7 @@ function controlHarness(
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   if (options.enqueueError) enqueue.mockRejectedValueOnce(options.enqueueError);
   const jobs = { enqueue, cancel: vi.fn().mockResolvedValue(undefined), close: vi.fn() };
-  const releaseUserControl = vi.fn().mockResolvedValue({ draftedSkillIds: [] });
+  const releaseUserControl = vi.fn().mockResolvedValue(true);
   if (options.finalizeError) {
     releaseUserControl.mockRejectedValueOnce(options.finalizeError);
   }

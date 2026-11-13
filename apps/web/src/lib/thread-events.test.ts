@@ -326,6 +326,33 @@ describe("computer event reduction", () => {
     ).toBe(prev);
   });
 
+  it("ignores the release of an earlier lease while this viewer holds a newer one", () => {
+    const holding = computer({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlLeaseId: "lease-2",
+    });
+    expect(
+      reduceComputerStatus(
+        holding,
+        event({
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-1", reason: "expired" },
+        }),
+      ),
+    ).toBe(holding);
+    expect(
+      reduceComputerStatus(
+        holding,
+        event({
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-2", reason: "released" },
+        }),
+      ),
+    ).toMatchObject({ controlHolder: "none", controlLeaseId: undefined });
+  });
+
   it("marks takeover requested without touching who holds the screen", () => {
     const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "none" });
     expect(

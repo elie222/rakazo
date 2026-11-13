@@ -214,7 +214,7 @@ export async function queueComputerUpdate(
             });
           if (deps.events) {
             await endTeachingWithLease(
-              { events: deps.events, jobs: deps.jobs },
+              { events: deps.events },
               prepared.handback.spaceId,
               prepared.handback.leaseId,
             ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));
@@ -255,7 +255,7 @@ export async function queueComputerUpdate(
     }
     if (deps.events) {
       await endTeachingWithLease(
-        { events: deps.events, jobs: deps.jobs },
+        { events: deps.events },
         prepared.handback.spaceId,
         prepared.handback.leaseId,
       ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));

@@ -37,6 +37,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
   let current = structuredClone(skill);
   const tx = {
     $executeRaw: vi.fn(),
+    $queryRaw: vi.fn(async () => []),
     taughtSkill: {
       findUniqueOrThrow: vi.fn(async () => current),
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -50,6 +51,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
         .mockResolvedValue([
           { id: "message-1", blocks: [{ kind: "skill_draft", skillId: "skill-1" }] },
         ]),
+      create: vi.fn(async () => ({ id: "message-1" })),
     },
     bot: {
       findUnique: vi.fn(),
@@ -94,7 +96,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
       events: {
         append: vi.fn(),
         notify: vi.fn(),
-        releaseUserControl: vi.fn().mockResolvedValue({ draftedSkillIds: [] }),
+        releaseUserControl: vi.fn().mockResolvedValue(true),
       },
       jobs: {
         enqueue: vi.fn().mockResolvedValue(undefined),

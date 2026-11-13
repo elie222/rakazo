@@ -1,15 +1,18 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import type { MessageBlock } from "@rakazo/contracts";
 import type { TeachRecordingEvent, TeachSnapshot } from "@rakazo/core";
 import { buildPlaybookFromRecording } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { notifyRealtime } from "./event-stream.js";
 import { appendEventInTransaction } from "./events.js";
+import { createThreadMessageInTransaction } from "./messages.js";
 
 type TaughtSkillRow = Prisma.TaughtSkillGetPayload<Record<string, never>>;
 
 /**
  * Save a teaching recording as a draft, as stopping it does: its playbook is built from what was
- * recorded, and the stopped event commits with it. The caller holds the row lock.
+ * recorded, and the stopped event and the draft card commit with it. The caller holds the row
+ * lock.
  */
 export async function draftTeachingRecordingInTransaction(
   tx: Prisma.TransactionClient,
@@ -50,14 +53,35 @@ export async function draftTeachingRecordingInTransaction(
     include: { thread: true },
   });
   if (!bot?.thread) return { skill: updated, stopped: null };
-  const event = await appendEventInTransaction(tx, {
+  const threadId = bot.thread.id;
+  await appendEventInTransaction(tx, {
     spaceId: input.spaceId,
-    threadId: bot.thread.id,
+    threadId,
     botId: skill.botId,
     type: "skill.teaching.stopped",
     payload: { skillId: skill.id, reason: input.reason },
   });
-  return { skill: updated, stopped: { threadId: bot.thread.id, seq: event.seq } };
+  // The draft card posts with the draft, so no way of ending a recording can leave it unposted.
+  const name = skill.name || skill.goal.slice(0, 80);
+  const blocks: MessageBlock[] = [
+    { kind: "skill_draft", skillId: skill.id, name, goal: skill.goal, playbook, status: "draft" },
+  ];
+  const message = await createThreadMessageInTransaction(tx, { threadId, role: "bot", blocks });
+  await appendEventInTransaction(tx, {
+    spaceId: input.spaceId,
+    threadId,
+    botId: skill.botId,
+    type: "thread.message.created",
+    payload: { messageId: message.id, role: "bot", blocks },
+  });
+  const drafted = await appendEventInTransaction(tx, {
+    spaceId: input.spaceId,
+    threadId,
+    botId: skill.botId,
+    type: "skill.draft.created",
+    payload: { skillId: skill.id, name },
+  });
+  return { skill: updated, stopped: { threadId, seq: drafted.seq } };
 }
 
 /**

@@ -3,7 +3,6 @@ import {
   computerControlExpireJob,
   computerControlExpireJobKey,
   runContinueJob,
-  skillTeachingExpireJob,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_CONTROL_LEASE_MS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -134,17 +133,7 @@ export async function releaseComputerControlLease(
   await deps.jobs
     .cancel(computerControlExpireJobKey(computer.id, leaseId))
     .catch((error) => getLogger().error("computer control expiry cancellation", error));
-  await publishTeachingDrafts(deps.jobs, released.draftedSkillIds);
   return true;
-}
-
-/** A recording that ended with its control is a draft now; its job posts the draft to the chat. */
-async function publishTeachingDrafts(jobs: JobPublisher, skillIds: string[]): Promise<void> {
-  for (const skillId of skillIds) {
-    await jobs
-      .enqueue(skillTeachingExpireJob(skillId, new Date()))
-      .catch((error) => getLogger().error("teaching draft publish enqueue", error));
-  }
 }
 
 /**
@@ -152,15 +141,12 @@ async function publishTeachingDrafts(jobs: JobPublisher, skillIds: string[]): Pr
  * as every other way of ending control does.
  */
 export async function endTeachingWithLease(
-  deps: { events: Pick<ThreadEvents, "draftRecordingsOfLease">; jobs: JobPublisher },
+  deps: { events: Pick<ThreadEvents, "draftRecordingsOfLease"> },
   spaceId: string,
   leaseId: string | null,
 ): Promise<void> {
   if (!leaseId) return;
-  await publishTeachingDrafts(
-    deps.jobs,
-    await deps.events.draftRecordingsOfLease({ spaceId, leaseId }),
-  );
+  await deps.events.draftRecordingsOfLease({ spaceId, leaseId });
 }
 
 /** Ends a lease its page stopped renewing; a renewed one is checked again when it would lapse. */

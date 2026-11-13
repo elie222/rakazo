@@ -4462,7 +4462,7 @@ describe("computer terminal and file transfer", () => {
       },
       events: {
         append: vi.fn().mockResolvedValue(undefined),
-        releaseUserControl: vi.fn().mockResolvedValue({ draftedSkillIds: [] }),
+        releaseUserControl: vi.fn().mockResolvedValue(true),
         answerTakeoverRequest: vi.fn().mockResolvedValue(true),
       },
       env: {

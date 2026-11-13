@@ -113,6 +113,8 @@ export function reduceComputerStatus(
     if (event.payload.answered === true) {
       return prev.takeoverRequested ? { ...prev, takeoverRequested: false } : prev;
     }
+    // A late event about an earlier lease never ends the control this viewer holds now.
+    if (prev.controlLeaseId && event.payload.leaseId !== prev.controlLeaseId) return prev;
     return prev.controlHolder === "none" &&
       prev.controlBotId === null &&
       !prev.controlledByOther &&

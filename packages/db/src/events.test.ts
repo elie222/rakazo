@@ -982,6 +982,8 @@ describe("releaseUserControl", () => {
   function controlTx(cleared: number, recordings: string[] = []) {
     return {
       $queryRaw: vi.fn().mockResolvedValue(recordings.map((id) => ({ id }))),
+      $executeRaw: vi.fn().mockResolvedValue(0),
+      message: { create: vi.fn(async () => ({ id: "draft-message" })) },
       taughtSkill: {
         findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => ({
           id: where.id,
@@ -1025,9 +1027,7 @@ describe("releaseUserControl", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(releaseUserControl(prisma, input, fanout)).resolves.toEqual({
-      draftedSkillIds: [],
-    });
+    await expect(releaseUserControl(prisma, input, fanout)).resolves.toBe(true);
 
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
       where: { id: "computer-1", spaceId: "workspace-1", controlLeaseId: "lease-1" },
@@ -1058,9 +1058,7 @@ describe("releaseUserControl", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(releaseUserControl(prisma, input)).resolves.toEqual({
-      draftedSkillIds: ["skill-1"],
-    });
+    await expect(releaseUserControl(prisma, input)).resolves.toBe(true);
     // Only recordings bound to this very lease are locked and ended.
     expect(tx.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["lease-1"]);
     expect(tx.taughtSkill.update).toHaveBeenCalledWith(
@@ -1074,6 +1072,16 @@ describe("releaseUserControl", () => {
         data: expect.objectContaining({
           type: "skill.teaching.stopped",
           payload: { skillId: "skill-1", reason: "stopped" },
+        }),
+      }),
+    );
+    // Its draft card posts in the same transaction, so no path can leave it unposted.
+    expect(tx.message.create).toHaveBeenCalledOnce();
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "skill.draft.created",
+          payload: expect.objectContaining({ skillId: "skill-1" }),
         }),
       }),
     );
@@ -1096,9 +1104,7 @@ describe("releaseUserControl", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
-    await expect(releaseUserControl(prisma, { ...input, botId: null })).resolves.toEqual({
-      draftedSkillIds: [],
-    });
+    await expect(releaseUserControl(prisma, { ...input, botId: null })).resolves.toBe(true);
 
     expect(tx.bot.findFirst).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();

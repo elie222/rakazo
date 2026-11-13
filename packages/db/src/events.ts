@@ -66,7 +66,6 @@ import type {
   AnswerTakeoverRequestInput,
   PauseRunForTakeover,
   ReleaseUserControlInput,
-  ReleaseUserControlResult,
 } from "./thread-takeover.js";
 import {
   answerTakeoverRequest,
@@ -119,7 +118,7 @@ export interface ThreadEvents {
   answerTakeoverRequest(input: AnswerTakeoverRequestInput): Promise<boolean>;
   draftRecordingsOfLease(input: { spaceId: string; leaseId: string }): Promise<string[]>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
-  releaseUserControl(input: ReleaseUserControlInput): Promise<ReleaseUserControlResult | false>;
+  releaseUserControl(input: ReleaseUserControlInput): Promise<boolean>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
