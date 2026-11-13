@@ -69,7 +69,8 @@ compose=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
 #
 # Ask the running container where /data is rather than rebuilding the volume name: `compose
 # config` ignores an operator's `-p`/COMPOSE_PROJECT_NAME and would archive the wrong volume.
-api="$("${compose[@]}" ps -q api)"
+# Every api replica mounts the same volume, so ask the first one.
+api="$("${compose[@]}" ps -q api | head -n 1)"
 [[ -n "${api}" ]] || { echo "the api service is not running; cannot locate /data" >&2; exit 1; }
 appdata="$(docker inspect "${api}" \
   --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
