@@ -320,6 +320,17 @@ describe("checkPageSource", () => {
       );
     });
 
+    it("handles a source-sized sequence of semicolon-free arrows and ends their scopes", () => {
+      const declarations = Array.from({ length: 12000 }, (_, i) => `const a${i}=()=>1`).join("\n");
+      const result = checkPageSource(
+        `${declarations}\nconst value=useState(0)\nexport default () => <Text>Hello</Text>`,
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors).toContain(
+        "line 12001: useState() must be called inside a component, not at the top level of the file.",
+      );
+    });
+
     it("rejects an exported hook at the top level of the file", () => {
       const result = checkPageSource(
         "export const t = useTheme();\nexport default function App() { return <Text>{t.text.primary}</Text>; }\n",
