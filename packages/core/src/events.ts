@@ -383,6 +383,14 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
+/** A message's written text: its text blocks, joined. */
+export function messageBlocksText(blocks: readonly MessageBlock[]): string {
+  return blocks
+    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
+    .map((block) => block.text)
+    .join("");
+}
+
 /** The working line a chat holds, and the work it belongs to. */
 export type HeldActivityLine = { line?: string; workers: string };
 

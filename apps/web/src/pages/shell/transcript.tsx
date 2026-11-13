@@ -15,6 +15,7 @@ import {
   isPeerReceiptBlocks,
   liveActivityLine,
   liveMessageComposing,
+  messageBlocksText,
   peerExchangeLines,
   projectBotMentions,
   projectMessageReactions,
@@ -490,10 +491,7 @@ export const Transcript = memo(function Transcript({
     const { entering, pendingSends: stillPending } = sentMessageEntrances({
       messages: messages.map((message) => ({
         ...message,
-        text: message.blocks
-          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-          .join("")
-          .trim(),
+        text: messageBlocksText(message.blocks).trim(),
       })),
       seenIds,
       pendingSends: pendingSends.current,

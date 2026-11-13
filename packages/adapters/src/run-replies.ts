@@ -3,6 +3,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   isBackgroundRunTrigger,
   isConversationalRun,
+  messageBlocksText,
 } from "@rakazo/core";
 import { NO_RESPONSE } from "./silent-reply.js";
 import { messageUserMaxLength, openingAcknowledgementEnabled } from "./user-progress.js";
@@ -120,12 +121,7 @@ export const TOOL_STEPS_WITHOUT_RESPONSE =
   "The model finished its tool steps without a written response.";
 
 /** The message's text blocks joined, untrimmed. */
-export function messageBlocksText(blocks: readonly MessageBlock[]): string {
-  return blocks
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("");
-}
+export { messageBlocksText };
 
 /** True when the only written completion is the empty delegated notice after tool steps. */
 export function emptyDelegatedToolTurnShouldFail(blocks: MessageBlock[]): boolean {
