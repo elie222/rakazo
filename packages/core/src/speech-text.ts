@@ -77,10 +77,10 @@ export function speakable(input: string): string {
     ENDS_SENTENCE.test(head) ? head : `${head.trim()}.`,
   );
 
+  text = text.replace(/^\s*(?:[-*_]\s*){3,}$/gm, "");
   text = text.replace(/^\s*[-*+]\s+/gm, "");
   text = text.replace(/^\s*\d+[.)]\s+/gm, "");
   text = text.replace(/^\s*>\s?/gm, "");
-  text = text.replace(/^\s*(?:[-*_]\s*){3,}$/gm, "");
 
   text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
   text = text.replace(/(\*|_)(?=\S)(.*?)(?<=\S)\1/g, "$2");
