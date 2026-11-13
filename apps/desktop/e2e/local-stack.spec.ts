@@ -115,6 +115,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     "#!/bin/sh",
     `printf '%s | %s | %s\\n' "$PWD" "$RAKAZO_IMAGE_TAG" "$*" >> '${fakeDockerLog()}'`,
     'case "$1 $2" in',
+    `  "inspect --format") echo '["RAKAZO_DESKTOP_STACK_TOKEN=${"ab".repeat(32)}"]'; exit 0 ;;`,
     mode === "compose-check-fails"
       ? '  "compose version") echo "Access is denied." >&2; exit 7 ;;'
       : '  "compose version") echo "5.6.1"; exit 0 ;;',
@@ -130,6 +131,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
       ? '    echo "Error response from daemon: manifest unknown" >&2; exit 1 ;;'
       : '    echo " a235d761c5d1 Downloading 59.47MB"; echo " a235d761c5d1 Downloading 412.3MB"; echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
     up,
+    '  ps) echo "fake-container-id"; exit 0 ;;',
     '  logs) echo "web-1 | listening"; exit 0 ;;',
     "esac",
     "exit 0",
@@ -456,8 +458,11 @@ test("a restart with a saved external server keeps the off-switch for a running 
       ),
     )
     .toBe(true);
-  // Rediscovery probes only: the stack is neither started nor stopped.
-  expect(await readLog()).toEqual([]);
+  // Rediscovery inspects containers without starting or stopping them.
+  const discovery = await readLog();
+  expect(discovery).toHaveLength(2);
+  expect(discovery[0]).toContain(" ps --status running -q");
+  expect(discovery[1]).toContain("inspect --format");
 });
 
 test("a restart with a saved external server and no stack files probes nothing", async () => {
