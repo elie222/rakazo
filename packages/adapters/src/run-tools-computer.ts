@@ -390,6 +390,8 @@ export const computerTools: ToolHandlers = {
       secretStore: deps.secretStore,
       scope: run,
       registerRedactions: (values) => addRunSecrets(ctx, values),
+      // The run hid the values it loaded at its start, which refused to start without them.
+      keyOutage: "unset",
     });
     ctx.computer.checkpoint.markDirty();
     const commandEvent = {
