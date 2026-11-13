@@ -5,8 +5,10 @@ import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createBillingService, planLayout, TRIAL_DAYS } from "./billing.js";
+import { createBillingService, TRIAL_DAYS } from "./billing.js";
+import { createExperiments } from "./experiments.js";
 
+const experiments = createExperiments("plan-layout");
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("plan choice funnel", () => {
   const stamp = `${process.pid}-${Date.now()}`;
@@ -52,6 +54,7 @@ dbTests("plan choice funnel", () => {
     service = createBillingService({
       prisma,
       provider,
+      experiments,
       webOrigin: "https://example.test",
       analytics,
     });
@@ -64,9 +67,9 @@ dbTests("plan choice funnel", () => {
   });
 
   it("lays out the plan choice the same way on every read", async () => {
-    await expect(service.status(actor)).resolves.toMatchObject({
-      planLayout: planLayout(organizationId),
-    });
+    const first = await service.status(actor);
+    expect(first.planLayout).toBe(experiments.variant("plan-layout", organizationId));
+    await expect(service.status(actor)).resolves.toMatchObject({ planLayout: first.planLayout });
   });
 
   it("reports the chosen tier from checkout through the end of its trial, once each", async () => {

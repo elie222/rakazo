@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type {
@@ -22,7 +21,6 @@ import type {
   BillingStatus,
   ByokInterval,
   ByokTier,
-  PlanLayout,
 } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
@@ -64,6 +62,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
+import type { Experiments } from "./experiments.js";
+import { createExperiments } from "./experiments.js";
 import { createReferrals } from "./referrals.js";
 
 export { TRIAL_DAYS };
@@ -136,13 +136,6 @@ function byokTrialAvailable(
   return !ownerHadOne && !account?.subscribedAt && !credits.byokFreeUntil;
 }
 
-/** Half of organizations see the plan choice as tiers, by a stable hash of their id. */
-export function planLayout(organizationId: string): PlanLayout {
-  return createHash("sha256").update(`plan-layout:${organizationId}`).digest()[0]! % 2
-    ? "tiers"
-    : "cards";
-}
-
 type PlanTerms = Omit<Extract<AnalyticsEvent, { name: "checkout_opened" }>, "name">;
 
 /** The plan a subscription bills, as analytics reports it; monthly credits include own-key. */
@@ -197,8 +190,10 @@ export function createBillingService(deps: {
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
   analytics?: ProductAnalytics;
+  experiments?: Experiments;
 }): BillingService {
   const { prisma, provider } = deps;
+  const experiments = deps.experiments ?? createExperiments(undefined);
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
   /** A mobile checkout returns through the API either way, which hands back to the app. */
@@ -348,6 +343,7 @@ export function createBillingService(deps: {
         ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
         : { name: "trial_ended", ...terms, converted: live.status === "active" },
       { id: live.subscriptionId, at },
+      experiments.tags("plan-layout", previous.organizationId),
     );
   }
 
@@ -531,13 +527,12 @@ export function createBillingService(deps: {
         if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
         return session;
       });
-      deps.analytics?.capture(actor.userId, {
-        name: "checkout_opened",
-        plan: "own_key",
-        tier,
-        interval,
-        amountCents,
-      });
+      deps.analytics?.capture(
+        actor.userId,
+        { name: "checkout_opened", plan: "own_key", tier, interval, amountCents },
+        undefined,
+        experiments.tags("plan-layout", organizationId),
+      );
       return session;
     } catch (error) {
       if (!(error instanceof BillingCheckoutCompletedError)) throw error;
@@ -654,12 +649,17 @@ export function createBillingService(deps: {
           data: { pendingCreditCheckout: true },
         });
         if (input.monthly)
-          deps.analytics?.capture(actor.userId, {
-            name: "checkout_opened",
-            plan: "credits",
-            interval: "month",
-            amountCents: input.amountCents,
-          });
+          deps.analytics?.capture(
+            actor.userId,
+            {
+              name: "checkout_opened",
+              plan: "credits",
+              interval: "month",
+              amountCents: input.amountCents,
+            },
+            undefined,
+            experiments.tags("plan-layout", organizationId),
+          );
         return checkout;
       } catch (error) {
         if (error instanceof BillingCheckoutCompletedError)
@@ -731,8 +731,8 @@ export function createBillingService(deps: {
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),
           // New organizations only, so a returning subscriber's choice stays out of the comparison.
-          ...(offers.length > 1 && !account?.subscribedAt
-            ? { planLayout: planLayout(organizationId) }
+          ...(offers.length > 1 && !account?.subscribedAt && experiments.running("plan-layout")
+            ? { planLayout: experiments.variant("plan-layout", organizationId) }
             : {}),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,

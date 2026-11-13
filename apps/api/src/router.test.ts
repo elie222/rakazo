@@ -180,11 +180,19 @@ describe("account preferences", () => {
     await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
       ok: true,
     });
-    expect(capture).toHaveBeenCalledWith(actor.userId, {
-      name: "screen_viewed",
-      screen: "chat",
-      surface: "desktop",
-    });
+    expect(capture).toHaveBeenCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "chat", surface: "desktop" },
+      undefined,
+      undefined,
+    );
+    await client.analytics.screen({ screen: "plans", surface: "web", planLayout: "tiers" });
+    expect(capture).toHaveBeenLastCalledWith(
+      actor.userId,
+      { name: "screen_viewed", screen: "plans", surface: "web", planLayout: "tiers" },
+      undefined,
+      { "plan-layout": "tiers" },
+    );
     await expect(
       client.analytics.screen({
         screen: "chat",
@@ -196,7 +204,7 @@ describe("account preferences", () => {
     await expect(
       anonymous.analytics.screen({ screen: "chat", surface: "web" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -672,7 +680,7 @@ describe("billing", () => {
       code: "NOT_FOUND",
     });
     await expect(
-      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+      client.billing.purchaseCredits({ amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
       code: "NOT_FOUND",

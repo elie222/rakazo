@@ -1,12 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
-import type {
-  BillingStatus,
-  ByokInterval,
-  ByokTier,
-  HeldCreditAmount,
-  MODEL_CREDIT_AMOUNTS,
-} from "@rakazo/contracts";
+import type { BillingStatus, ByokInterval, ByokTier, HeldCreditAmount } from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
   ByokTierSchema,
@@ -18,6 +12,7 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
   isCancelledTrial,
+  MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import {
@@ -48,6 +43,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { cn } from "@rakazo/ui-web/lib/utils";
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -212,10 +208,13 @@ export function CreditAmountSelect({
   value,
   onChange,
   monthly = false,
+  compact = false,
 }: {
   value: HeldCreditAmount;
   onChange: (amount: HeldCreditAmount) => void;
   monthly?: boolean;
+  /** As tall as the buttons around it, for a row of controls. */
+  compact?: boolean;
 }) {
   const { t, i18n } = useLingui();
   const items = creditAmountChoices(value).map((amount) => ({
@@ -234,7 +233,10 @@ export function CreditAmountSelect({
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className="w-full rounded-xl pr-3 pl-4 text-body-lg data-[size=default]:h-12"
+        className={cn(
+          "w-full",
+          !compact && "rounded-xl pr-3 pl-4 text-body-lg data-[size=default]:h-12",
+        )}
       >
         <SelectValue />
       </SelectTrigger>
@@ -290,7 +292,7 @@ function TierPlans({
   const trialDays = status.trialDays;
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="-mt-4 flex flex-col items-center gap-6 text-center">
         <p className="text-body text-muted-foreground">
           <Trans>Works with your ChatGPT or Claude plan, or an API key.</Trans>
         </p>
@@ -381,6 +383,7 @@ function TierPlans({
           <div className="min-[640px]:w-44">
             <CreditAmountSelect
               monthly
+              compact
               value={amount}
               onChange={(next) => onAmountChange(ModelCreditAmountSchema.parse(next))}
             />
@@ -388,7 +391,6 @@ function TierPlans({
           <Button
             className="bg-background min-[640px]:w-32 dark:bg-transparent"
             variant="outline"
-            size="lg"
             disabled={pending || !status.canManage || !status.creditPurchasesEnabled}
             aria-label={t`Subscribe to credits`}
             onClick={() => choose(false)}
@@ -481,7 +483,7 @@ export function CreditChoice({
       {dismissible ? null : (
         <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       )}
-      <h1 className="text-heading1 font-medium">
+      <h1 className={cn("text-heading1 font-medium", tiers.length > 1 && "text-center")}>
         <Trans>Choose how to use Rakazo</Trans>
       </h1>
       {tiers.length > 1 ? (
@@ -637,7 +639,7 @@ export function ModelCreditsSettings({
     (recurring ? HeldCreditAmountSchema : ModelCreditAmountSchema)
       .catch(DEFAULT_MONTHLY_CREDIT_AMOUNT)
       .parse(status.monthlyAmountCents);
-  const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
+  const [topupAmount, setTopupAmount] = useState<CreditAmount>(MODEL_CREDIT_AMOUNTS[0]);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [endTrialOpen, setEndTrialOpen] = useState(false);
@@ -987,6 +989,7 @@ export function ModelCreditsSettings({
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <CreditAmountSelect
               monthly
+              compact
               value={amount}
               onChange={(next) =>
                 setChosenAmount(ModelCreditAmountSchema.safeParse(next).data ?? null)

@@ -58,7 +58,7 @@ dbTests("model credit billing service", () => {
       creditPurchasesEnabled: false,
     });
     await expect(
-      unavailable.purchaseCredits(actor, { amountCents: 1000, monthly: true }),
+      unavailable.purchaseCredits(actor, { amountCents: 2000, monthly: true }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(provider.creditCheckouts.size).toBe(0);
     expect(await billingAccountForOrganization(prisma, organizationId)).toBeNull();
@@ -84,7 +84,7 @@ dbTests("model credit billing service", () => {
     });
   });
   it("does not grant credits for checkout creation, grants a paid monthly invoice once", async () => {
-    await service.purchaseCredits(actor, { amountCents: 1000, monthly: true });
+    await service.purchaseCredits(actor, { amountCents: 2000, monthly: true });
     await expect(service.status(actor)).resolves.toMatchObject({ funding: null, balanceUsd: 0 });
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
     provider.completeCreditCheckout(customer);
@@ -92,8 +92,8 @@ dbTests("model credit billing service", () => {
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({
       funding: "credits",
-      balanceUsd: 10,
-      monthlyAmountCents: 1000,
+      balanceUsd: 20,
+      monthlyAmountCents: 2000,
       state: "active",
       trialAvailable: false,
     });
@@ -155,7 +155,7 @@ dbTests("model credit billing service", () => {
   it("refuses purchasing and changing plans without organization ownership", async () => {
     const other = { ...actor, userId: `non-member-${stamp}` };
     await expect(
-      service.purchaseCredits(other, { amountCents: 1000, monthly: false }),
+      service.purchaseCredits(other, { amountCents: 2000, monthly: false }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(service.setMonthlyCredits(other, 2000)).rejects.toMatchObject({
       code: "FORBIDDEN",

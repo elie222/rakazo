@@ -1,10 +1,11 @@
 import * as z from "zod";
 import type { ComputerSize } from "./computer.js";
 import { ComputerSizeSchema } from "./computer.js";
+import { EXPERIMENTS } from "./experiments.js";
 
-export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000] as const;
+export const MODEL_CREDIT_AMOUNTS = [2000, 3000, 5000, 10000, 20000] as const;
 /** Amounts no longer offered that existing purchases and subscriptions may still carry. */
-export const RETIRED_MODEL_CREDIT_AMOUNTS = [50000] as const;
+export const RETIRED_MODEL_CREDIT_AMOUNTS = [1000, 50000] as const;
 
 /**
  * What an hour of a billed computer counts against the allowance, $0.20, whatever its size: above
@@ -81,7 +82,7 @@ export const TRIAL_DAYS = 7;
  * How the plan choice is laid out: the own-key plan beside credits, or its tiers first with
  * credits below. Each organization keeps one, so its plans look the same everywhere.
  */
-export const PlanLayoutSchema = z.enum(["cards", "tiers"]);
+export const PlanLayoutSchema = z.enum(EXPERIMENTS["plan-layout"]);
 export type PlanLayout = z.infer<typeof PlanLayoutSchema>;
 
 export const ByokIntervalSchema = z.enum(["month", "year"]);
