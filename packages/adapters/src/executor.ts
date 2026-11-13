@@ -1345,6 +1345,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ownerStartedRun,
           messagingChannelRun: nonOwnerChatRun,
           sourceMessage,
+          ownerChatMessageBlocks: nonOwnerChatRun ? undefined : messagingSource?.blocks,
           connectedPlugins,
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and

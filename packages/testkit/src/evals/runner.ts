@@ -309,6 +309,12 @@ export async function runTrial(
       messaging.resetWitnesses();
       // Ask mode asks before any change, so the write stops at its approval card.
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
+      for (const tool of scenario.alwaysAllowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
     };
     await setupActor();
     if (scenario.computerFiles?.length) {

@@ -16,6 +16,7 @@ import {
   decisiveActionApprovalRules,
   displayName,
   humanizeToolName,
+  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -131,6 +132,7 @@ type ToolReview = {
   args: Record<string, unknown>;
   connectorKind: ReturnType<typeof connectorKindFromToolName>;
   newSite: boolean;
+  memoryWrite: boolean;
   fetchUrl: string | undefined;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
@@ -274,6 +276,9 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
+  // Current action authorization: automatic recall, saved notes and summaries never add a prompt,
+  // while fresh outside input, a resumed attempt or a run the owner didn't start do.
+  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
   const { purchase, cardUse } = request;
   // Typing a saved card is approved like a purchase: every time, by a person.
   const paying = Boolean(purchase) || Boolean(cardUse);
@@ -282,6 +287,7 @@ export async function gateToolCall(
     paying ||
     unattendedWatch ||
     siteGate === "new" ||
+    memoryWriteGated ||
     unidentifiedAction ||
     (!catalogControlRead &&
       approvalToolNames.some(
@@ -501,6 +507,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
+      memoryWrite: memoryWriteGated,
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
@@ -844,27 +851,29 @@ async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site is judged on the full URL and the owner's own words only: the task
-    // prompt of a webhook or bot-started run carries text someone else wrote.
-    const reviewRequest: AutoReviewRequest =
-      review.newSite && fetchUrl
-        ? {
-            toolName: name,
-            connectorKind,
-            args: { url: redactSecrets(fetchUrl, ctx.secrets) },
-            userTask: redactSecrets(await ctx.trust.loadOwnerWords(), ctx.secrets),
-            botDescription,
-            matchingRules: review.matchingRules,
-            newSite: true,
-          }
-        : {
-            toolName: name,
-            connectorKind,
-            args: redactToolArgsForReview(args, ctx.secrets),
-            userTask: redactSecrets(outsideRun ? ownerWords : ctx.task.prompt, ctx.secrets),
-            botDescription,
-            matchingRules: review.matchingRules,
-          };
+    // A new site or a memory save after outside content is judged on the owner's own words only:
+    // the task prompt of a webhook or bot-started run carries text someone else wrote.
+    const ownerWordsOnly = (review.newSite && fetchUrl) || review.memoryWrite;
+    const reviewRequest: AutoReviewRequest = {
+      toolName: name,
+      connectorKind,
+      args:
+        review.newSite && fetchUrl
+          ? { url: redactSecrets(fetchUrl, ctx.secrets) }
+          : redactToolArgsForReview(args, ctx.secrets),
+      userTask: redactSecrets(
+        outsideRun
+          ? ownerWords
+          : ownerWordsOnly
+            ? await ctx.trust.loadOwnerWords()
+            : ctx.task.prompt,
+        ctx.secrets,
+      ),
+      botDescription,
+      matchingRules: review.matchingRules,
+      ...(review.newSite && fetchUrl ? { newSite: true } : {}),
+      ...(review.memoryWrite ? { memoryWrite: true } : {}),
+    };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,
       traceId: `auto-review:${runId}`,
