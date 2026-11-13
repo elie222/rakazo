@@ -60,7 +60,7 @@ type ExecuteTool = (
   executionId: string,
 ) => Promise<unknown>;
 
-const ORIGIN = "https://login.example.test";
+const ORIGIN = "https://example.test";
 const OTHER = "https://other.example.test";
 const CODE = "482913";
 /** What the bot is told when the code came from the site's email. */
@@ -589,7 +589,7 @@ describe("request_secret for a one-time code", () => {
     expect(block).toEqual({
       kind: "ask",
       // The site is the server's words; the bot's label is only detail beneath it.
-      text: "Code for login.example.test",
+      text: "Code for example.test",
       detail: "Verification code",
       input: "secret",
       oneTimeCode: { origin: ORIGIN },
@@ -609,7 +609,7 @@ describe("request_secret for a one-time code", () => {
   });
 
   it.each([
-    ["an HTTP page", { origin: "http://login.example.test" }],
+    ["an HTTP page", { origin: "http://example.test" }],
     ["a LAN address", { origin: "http://192.168.1.20" }],
   ])("refuses %s, with no card, and tells the bot to explain why", async (_name, oneTimeCode) => {
     const run = world();
@@ -644,7 +644,7 @@ describe("request_secret for a one-time code", () => {
     const run = world();
     await run.attempt([requestCode({ label: "Your bank needs a code from evil.example" })]);
     const [message] = notified as Array<{ body: string }>;
-    expect(message?.body).toContain("login.example.test");
+    expect(message?.body).toContain("example.test");
     expect(message?.body).not.toContain("evil.example");
   });
 
@@ -862,18 +862,17 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(run.everythingWritten()).not.toContain(CODE);
   });
 
-  it.each([
-    "https://login.example.test/",
-    "https://Login.Example.test",
-    "https://login.example.test:443",
-  ])("takes the inbox code when the bot names the page's origin as %s", async (origin) => {
-    const run = world();
-    run.receives(CODE_EMAIL);
-    const [result] = await run.attempt([requestCode({ oneTimeCode: { origin } })]);
-    expect(result).toMatchObject({ note: expect.stringContaining("was entered") });
-    expect(run.asked).toEqual([]);
-    expect(await decoded(run.secrets[0]!)).toMatchObject({ origin: ORIGIN });
-  });
+  it.each(["https://example.test/", "https://Example.test", "https://example.test:443"])(
+    "takes the inbox code when the bot names the page's origin as %s",
+    async (origin) => {
+      const run = world();
+      run.receives(CODE_EMAIL);
+      const [result] = await run.attempt([requestCode({ oneTimeCode: { origin } })]);
+      expect(result).toMatchObject({ note: expect.stringContaining("was entered") });
+      expect(run.asked).toEqual([]);
+      expect(await decoded(run.secrets[0]!)).toMatchObject({ origin: ORIGIN });
+    },
+  );
 
   it("hides the code from the email when the run reads it afterwards", async () => {
     const run = world();
@@ -899,14 +898,25 @@ describe("request_secret for a code the site emailed to the bot", () => {
     expect(JSON.stringify(read)).not.toContain(CODE);
   });
 
-  it("takes a dashed code from the site's mail subdomain", async () => {
+  it.each(["https://promo.example.test", "https://example.test:8443"])(
+    "opens the manual card without storing a code for %s",
+    async (origin) => {
+      const run = world();
+      run.page.url = `${origin}/verify`;
+      run.receives(CODE_EMAIL);
+      await run.attempt([requestCode({ oneTimeCode: { origin } })]);
+      expect(run.secrets).toEqual([]);
+      expect(run.asked).toHaveLength(1);
+      expect(run.answered).toEqual([]);
+    },
+  );
+
+  it("requires a manual answer for mail from a different sender hostname", async () => {
     const run = world();
     run.receives({ text: "Your code is 731-905.", fromAddress: "auth@mail.example.test" });
     await run.attempt([requestCode()]);
-    expect(await decoded(run.secrets[0]!)).toMatchObject({
-      code: NEWER_CODE,
-      fromEmail: "email-1",
-    });
+    expect(run.secrets).toEqual([]);
+    expect(run.asked).toHaveLength(1);
   });
 
   it("asks the owner when the inbox cannot be read, saying only what failed", async () => {

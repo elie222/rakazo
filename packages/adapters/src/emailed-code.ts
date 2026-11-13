@@ -159,27 +159,32 @@ export const CONNECTED_MAIL_PAGE_LIMIT = 10;
 export const CONNECTED_MAIL_MAX_BYTES = 2 * 1024 * 1024;
 
 /**
- * The site a code may be filled for from mail: an HTTPS origin's, unless it is a public mailbox
- * domain, where anyone with an address can send mail signed by the site. For those the card is
+ * The exact hostname a code may be filled for from mail: standard HTTPS, unless it is a public
+ * mailbox domain, where anyone with an address can send mail signed by the site. For those the card is
  * always the owner's, and no mailbox is read.
  */
 function fillableSite(origin: string): string | undefined {
   const url = URL.canParse(origin) ? new URL(origin) : undefined;
-  const site = url?.protocol === "https:" ? hostSite(url.hostname) : undefined;
+  // Only the authenticated sender's exact HTTPS authority can receive its code.
+  // A parent/sibling domain and a non-default port need the owner's manual card answer.
+  const site = url?.protocol === "https:" && !url.port ? url.hostname : undefined;
   return site && !publicMailboxDomain(site) ? site : undefined;
 }
 
 function publicMailboxDomain(site: string): boolean {
-  return PUBLIC_MAILBOX_DOMAINS.some((domain) => hostSite(domain) === site);
+  return PUBLIC_MAILBOX_DOMAINS.some((domain) => hostSite(domain) === hostSite(site));
 }
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).toLowerCase();
-/** Whether an address is on the site: its domain's site is the site. */
-const onSite = (address: string, site: string) => hostSite(domainOf(address)) === site;
+/** Exact sender authority only; registrable-domain equality does not bind an origin. */
+const onSite = (address: string, site: string) => domainOf(address) === site;
 /** The site as the code requests of other runs are asked about it (codeAnsweredSince). */
 const codeSite = (site: string): CodeSite => ({
-  name: site,
-  holds: (origin) => fillableSite(origin) === site,
+  name: hostSite(site) ?? site,
+  holds: (origin) => {
+    const candidate = fillableSite(origin);
+    return candidate !== undefined && hostSite(candidate) === hostSite(site);
+  },
 });
 
 /** What delivery tells about an email that decides whether it may give any code at all. */
@@ -242,8 +247,8 @@ function arrivedIn(window: CodeWindow, receivedAt: Date): boolean {
 /**
  * Whether an email may answer a code request, by what the email itself says, from whichever
  * mailbox it was read, on every look: it arrived in the request's window, it may give a code at
- * all (mayGiveCode), it is signed by its From domain, which is the site's own (subdomains of a
- * shared hosting suffix are each their own site), not a public mailbox domain, not this server's,
+ * all (mayGiveCode), it is signed by its From domain, exactly the page's HTTPS hostname,
+ * not a public mailbox domain or this server's,
  * and, for a mailbox someone connected, was sent to that mailbox itself. What the database says
  * of it (no run took its code, no code request for the site was answered since it came, and no
  * other open request could take it) is decided when the code is taken, by claimEmailedCode.

@@ -30,7 +30,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
   const system = <T>(fn: () => Promise<T>) => runAsSystem("test fixture", fn);
   /** Someone who is not the bot's owner. */
   const stranger = `${id}-stranger`;
-  const origin = "https://login.example.test";
+  const origin = "https://example.test";
   let botId = "";
   let threadId = "";
   let runs: string[] = [];
@@ -482,7 +482,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
           blocks: [
             {
               kind: "ask",
-              text: "Code for login.example.test",
+              text: "Code for example.test",
               input: "secret",
               oneTimeCode: { origin },
               purpose: "otp",
@@ -1018,7 +1018,7 @@ postgres("emailed code claims (PostgreSQL)", () => {
           blocks: [
             {
               kind: "ask",
-              text: "Code for login.example.test",
+              text: "Code for example.test",
               input: "secret",
               oneTimeCode: { origin },
               purpose: "otp",

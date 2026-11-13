@@ -28,7 +28,7 @@ import {
 } from "./emailed-code.js";
 import { readInboundEmail } from "./inbound-email.js";
 
-const ORIGIN = "https://login.example.test";
+const ORIGIN = "https://example.test";
 const CODE = "482913";
 /** The claim on a message, by its key: the same for every copy of it, in whichever mailbox. */
 const digest = (text: string) => createHash("sha256").update(text).digest("base64url");
@@ -370,7 +370,10 @@ function inbox(
       runId,
     );
   /** A run asks for its code, as request_secret does: what it kept, or nothing. */
-  const ask = (runId: string, sources: { inbox?: boolean; connected?: boolean } = {}) =>
+  const ask = (
+    runId: string,
+    sources: { inbox?: boolean; connected?: boolean; origin?: string } = {},
+  ) =>
     takeEmailedCode(
       prisma as unknown as PrismaClient,
       {
@@ -379,7 +382,7 @@ function inbox(
         runId,
         requestId: `request-${runId}`,
         userId: bot.userId,
-        origin: ORIGIN,
+        origin: sources.origin ?? ORIGIN,
         // The run started ten minutes ago, as waitingRun says, and asks now.
         window: emailedCodeWindow(new Date(), ago(10 * 60 * 1000)),
         botEmailDomain: "bots.test",
@@ -687,6 +690,23 @@ describe("a code emailed to the bot while its run waits on the card", () => {
     expect(answerRunInput).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "https://promo.example.test",
+    "https://login.example.test",
+    "https://example.test:8443",
+  ])("requires the owner's card answer for an unbound origin %s", async (origin) => {
+    publishKeys();
+    const message = await connectedMail();
+    const { deliver, ask, answerRunInput } = inbox({
+      cards: { "run-1": codeCard(origin) },
+      connectedMailCodes: true,
+      connected: { recent: async () => ({ messages: [message] }) },
+    });
+    expect(await deliver("run-1")).toBe(0);
+    expect(await ask("run-1", { inbox: false, connected: true, origin })).toBeUndefined();
+    expect(answerRunInput).not.toHaveBeenCalled();
+  });
+
   it("leaves a card for a plain HTTP page alone", async () => {
     const { deliver, answerRunInput } = inbox({
       cards: { "run-1": codeCard("http://login.example.test") },
@@ -861,7 +881,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
   });
 
   it("narrows nothing for a site whose name can be written in two ways", async () => {
-    const page = "https://login.xn--bcher-kva.test";
+    const page = "https://xn--bcher-kva.test";
     const { deliver, prisma } = inbox({
       cards: { "run-1": codeCard(page) },
       emails: [codeEmail({ fromAddress: "no-reply@xn--bcher-kva.test" })],
@@ -1126,7 +1146,7 @@ describe("a code emailed to the bot while its run waits on the card", () => {
 
   it("takes mail from a site under a shared suffix for its own page", async () => {
     const { deliver, answerRunInput } = inbox({
-      cards: { "run-1": codeCard("https://login.victim.duckdns.org") },
+      cards: { "run-1": codeCard("https://victim.duckdns.org") },
       emails: [codeEmail({ fromAddress: "no-reply@victim.duckdns.org" })],
     });
     await deliver();
@@ -1220,7 +1240,7 @@ const ELIGIBILITY: [kind: string, gives: boolean, row: () => [Mail, World?]][] =
     true,
     () => [{ headers: ["Auto-Submitted: auto-generated", "X-Auto-Response-Suppress: All"] }],
   ],
-  ["mail from the site's mail subdomain", true, () => [{ from: "codes@mail.example.test" }]],
+  ["mail from the site's mail subdomain", false, () => [{ from: "codes@mail.example.test" }]],
   ["mail whose signature does not hold", false, () => [{ tampered: true }]],
   ["mail with no signature", false, () => [{ signed: false }]],
   ["an auto-reply", false, () => [{ headers: ["Auto-Submitted: auto-replied"] }]],
@@ -1532,7 +1552,7 @@ describe("emailMayAnswer", () => {
 
   it("takes signed mail from the site's domain to the mailbox itself", () => {
     expect(emailMayAnswer(ok, rule)).toBe(true);
-    expect(emailMayAnswer({ ...ok, fromAddress: "codes@mail.example.test" }, rule)).toBe(true);
+    expect(emailMayAnswer({ ...ok, fromAddress: "codes@mail.example.test" }, rule)).toBe(false);
     expect(
       emailMayAnswer({ ...ok, recipients: ["x@example.net", "owner@example.net"] }, rule),
     ).toBe(true);
