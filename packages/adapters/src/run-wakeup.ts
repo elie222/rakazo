@@ -3,6 +3,7 @@ import type {
   BackgroundJob,
   BackgroundJobHandlers,
   JobPublisher,
+  JobTransaction,
   JobWorkerHost,
   RealtimeFanout,
 } from "@rakazo/adapter-kit";
@@ -152,6 +153,14 @@ export class RunJobPublisher implements JobPublisher {
       data: { wakeAt: job.availableAt ?? new Date() },
     });
     this.starter.start(job.payload.runId, job.availableAt);
+  }
+
+  async enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void> {
+    await this.background.enqueueIn(tx, job);
+  }
+
+  async cancelIn(tx: JobTransaction, key: string): Promise<void> {
+    await this.background.cancelIn(tx, key);
   }
 
   async cancel(key: string): Promise<void> {

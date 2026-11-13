@@ -19,6 +19,24 @@ describe("search helpers", () => {
     ]);
   });
 
+  it.each(["`", "``", "```"])("excludes %s code delimiters and deduplicates links", (delimiter) => {
+    const url = "https://example.com/docs";
+    expect(extractLinksFromText(`${url} ${delimiter}${url}${delimiter}`)).toEqual([url]);
+  });
+
+  it("separates adjacent code links and preserves encoded backticks", () => {
+    expect(extractLinksFromText("`https://example.com/a``http://example.com/%60b`")).toEqual([
+      "https://example.com/a",
+      "http://example.com/%60b",
+    ]);
+  });
+
+  it("ignores a bare scheme before a code delimiter", () => {
+    expect(extractLinksFromText("`https://` https://example.com/a)https://`")).toEqual([
+      "https://example.com/a",
+    ]);
+  });
+
   it.each([
     "https://[2001:db8::1]/guide",
     "http://[::1]:8080/guide?q=search#part",

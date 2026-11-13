@@ -193,7 +193,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   const clauses: string[] = [];
   if (builtinOffered(disabled, "request_secret")) {
     const fill = builtinOffered(disabled, "browser_act")
-      ? "; fill it with browser_act fill_secret, which only works on the saved site"
+      ? "; fill it with browser_act fill_secret, which only works on its site and its alsoOn sites"
       : "";
     clauses.push(
       `Use request_secret with a credential destination to save reusable API credentials, or with auth type login when the user wants a website login saved${fill}. When your shell commands need a secret value, use request_secret with auth type command; it is exported as the environment variable that request_secret and list_secrets report.`,
@@ -201,7 +201,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a code a site texts or emails, even to your inbox, use request_secret oneTimeCode and browser_act fill_code, never chat.",
+      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat. A code a site emails to your own inbox is no different: request_secret oneTimeCode and fill_code, never ask the user for it.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {

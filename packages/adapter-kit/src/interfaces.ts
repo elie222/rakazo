@@ -73,9 +73,11 @@ import type {
   SecretPutOptions,
   SecretRecord,
   SemanticMemoryCapabilities,
+  SemanticMemoryConversationRequest,
   SemanticMemoryForgetRequest,
   SemanticMemoryPurgeHistoryRequest,
   SemanticMemoryRecallRequest,
+  SemanticMemoryReflectRequest,
   SemanticMemoryResponse,
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
@@ -336,6 +338,8 @@ export interface MemoryStore {
 
 /** Optional semantic memory. Durable Markdown memory remains owned by MemoryStore. */
 export interface SemanticMemoryProvider {
+  /** Required by retainConversation: an opaque version that changes with endpoint or credentials. */
+  readonly connectionIdentity?: string;
   describe(): AdapterDescriptor<SemanticMemoryCapabilities>;
   recall(
     request: SemanticMemoryRecallRequest,
@@ -354,6 +358,26 @@ export interface SemanticMemoryProvider {
     request: SemanticMemoryForgetRequest,
     context: AdapterContext,
   ): Promise<SemanticMemoryResponse<{ id: string; expired: boolean; reason: string | null }>>;
+  /**
+   * Optional: learn from one finished turn of a bot's conversation. Resolves once the turn is
+   * submitted. `pending` is an opaque token while the provider is still storing it: poll
+   * `retainedConversationSettled` with it until settled, so a purgeHistory after that removes the
+   * turn. A provider that can return `pending` must implement `retainedConversationSettled`.
+   */
+  retainConversation?(
+    request: SemanticMemoryConversationRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse<{ pending?: string }>>;
+  /** Optional: whether a turn `retainConversation` answered with `pending` is stored now. */
+  retainedConversationSettled?(
+    pending: string,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse<{ settled: boolean }>>;
+  /** Optional: answer a question by reasoning over the bot's memory. */
+  reflect?(
+    request: SemanticMemoryReflectRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse<string>>;
 }
 
 export interface AgentRuntime {
@@ -370,8 +394,17 @@ export interface ModelProvider {
   listModels(): Promise<Array<{ provider: string; id: string; label: string; billing: string }>>;
 }
 
+/** An open database transaction a job can be written in, so the job exists only if it commits. */
+export interface JobTransaction {
+  $executeRawUnsafe(query: string, ...values: unknown[]): PromiseLike<unknown>;
+}
+
 export interface JobPublisher {
   enqueue(job: BackgroundJob): Promise<void>;
+  /** Adds the job, or replaces the one with its key, as part of the caller's transaction. */
+  enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void>;
+  /** Removes the keyed job as part of the caller's transaction. */
+  cancelIn(tx: JobTransaction, key: string): Promise<void>;
   cancel(key: string): Promise<void>;
   close(): Promise<void>;
 }

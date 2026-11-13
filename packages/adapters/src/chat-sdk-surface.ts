@@ -94,6 +94,15 @@ export interface MessagingPlatform {
   redeliveryKeys?: (payload: unknown) => string[];
   /** Send errors that retrying cannot fix (unknown channel, blocked bot, revoked token). */
   isPermanentSendError?: (error: unknown) => boolean;
+  /**
+   * Posts with a key the vendor deduplicates on, for platforms whose API takes one, so a send
+   * repeated after a lost answer arrives once. `threadId` is the adapter's own.
+   */
+  postOnce?: (
+    threadId: string,
+    message: string | PostableMarkdown,
+    idempotencyKey: string,
+  ) => Promise<{ id: string }>;
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
   /**
@@ -256,12 +265,17 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return this.dispatchWebhook(mounted, request);
   }
 
+  /**
+   * No Chat SDK adapter's post takes an abort signal, so a post that has started runs to its end
+   * (Slack and Sendblue clients bound it themselves). The signal stops a post that has not.
+   */
   async sendToThread(
     request: MessagingSendRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<MessagingSendResult> {
     const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
+    context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
     // block; Photon's iMessage adapter renders it as native styled text. Keep
@@ -286,9 +300,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
         ? { markdown: request.body }
         : request.body;
     try {
-      const sent = await mounted.chat
-        .thread(toAdapterThreadId(mounted, request.threadId))
-        .post(message);
+      const threadId = toAdapterThreadId(mounted, request.threadId);
+      const postOnce = mounted.platform.postOnce;
+      const sent =
+        postOnce && request.idempotencyKey && !attachment
+          ? await postOnce(
+              threadId,
+              markdown ? { markdown: request.body } : request.body,
+              request.idempotencyKey,
+            )
+          : await mounted.chat.thread(threadId).post(message);
       const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
       return { handle };
     } catch (error) {

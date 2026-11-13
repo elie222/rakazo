@@ -1,7 +1,9 @@
 # Optional Infisical secret storage
 
 `SECRET_STORE` defaults to `encrypted`. Credentials remain in Postgres using the
-existing versioned encryption format. Keep `ENCRYPTION_KEY` available in both
+existing versioned encryption format (vault items move to the
+[content encryption](./content-encryption.md) keys after
+`content-encryption migrate`). Keep `ENCRYPTION_KEY` available in both
 modes: legacy credentials, one-time codes, and OAuth handshake sessions always
 use local encrypted storage. Authentication database tokens are unchanged.
 

@@ -189,6 +189,23 @@ export interface SendUserMessageInput {
     modelId: string;
     thinkingLevel: string | null;
   };
+  /**
+   * Runs in the send's transaction once its message and run exist. Returning false rolls the
+   * send back with SendClaimLostError, so a row the caller owns decides between two sends that
+   * must not both happen. A replayed send has already passed its claim and skips it.
+   */
+  claim?: (
+    tx: Prisma.TransactionClient,
+    sent: { messageId: string; runId: string | null },
+  ) => Promise<boolean>;
+}
+
+/** A send's claim was lost: another path already owns what it would have started. */
+export class SendClaimLostError extends Error {
+  override readonly name = "SendClaimLostError";
+  constructor() {
+    super("Another delivery already owns this message");
+  }
 }
 
 export interface SendUserMessageResult {
@@ -532,6 +549,11 @@ export async function sendUserMessage(
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
+      if (
+        input.claim &&
+        !(await input.claim(tx, { messageId: message.id, runId: run?.id ?? busy?.id ?? null }))
+      )
+        throw new SendClaimLostError();
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,

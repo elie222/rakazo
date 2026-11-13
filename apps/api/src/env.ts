@@ -131,7 +131,7 @@ export interface AppEnv {
   emailFrom: string | undefined;
   emailReplyTo?: string;
   /** Mail to bots' addresses, posted by a relay; off unless the domain and secret are both set. */
-  inboundEmail?: { domain: string; secret: string; relayArcDomain?: string };
+  inboundEmail?: { domain: string; secret: string };
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
@@ -452,8 +452,7 @@ function inboundEmailFromEnv(source: NodeJS.ProcessEnv): AppEnv["inboundEmail"] 
     throw new Error("INBOUND_EMAIL_DOMAIN must be a domain name such as bots.example.com");
   }
   if (secret.length < 32) throw new Error("INBOUND_EMAIL_SECRET must be at least 32 characters");
-  const relayArcDomain = optional(source.INBOUND_EMAIL_RELAY_ARC_DOMAIN)?.toLowerCase();
-  return { domain, secret, ...(relayArcDomain ? { relayArcDomain } : {}) };
+  return { domain, secret };
 }
 
 function optional(value: string | undefined): string | undefined {

@@ -27,7 +27,6 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   const screen = page.getByTitle("Bot screen").last();
   const take = chrome.getByRole("button", { name: "Take control", exact: true });
   const release = chrome.getByRole("button", { name: "Release control", exact: true });
-  const more = chrome.getByRole("button", { name: "More computer actions" });
   // The overlay covers the conversation header, which drags the desktop window.
   await expect(chrome).toHaveCSS("-webkit-app-region", "no-drag");
   const checkViewOnly = async () => {
@@ -35,10 +34,6 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
     await expect(release).toHaveCount(0);
     await expect(screen).toHaveAttribute("src", /view_only=true/);
     await expect(screen).toHaveCSS("pointer-events", "none");
-    await more.click();
-    await expect(page.getByRole("menuitem", { name: "Recover computer" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Reset computer" })).toBeVisible();
-    await more.click();
   };
   await checkViewOnly();
   expect(takeovers).toBe(0);
@@ -49,9 +44,6 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   await expect(screen).toHaveAttribute("src", /view_only=false/);
   await expect(screen).toHaveCSS("pointer-events", "auto");
   expect(takeovers).toBe(1);
-  await more.click();
-  await expect(page.getByRole("menuitem", { name: "Recover computer" })).toBeVisible();
-  await more.click();
   await captureScreenshot(page, testInfo, "computer-controlling");
   await release.click();
   await checkViewOnly();

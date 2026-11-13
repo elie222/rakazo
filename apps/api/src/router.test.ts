@@ -26,15 +26,18 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
+  BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
+  UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -1055,9 +1058,26 @@ describe("thread answer delivery", () => {
   });
 });
 
-describe("oversized one-time answer", () => {
-  it("says the answer is too long, without echoing it", async () => {
-    const answerRunInput = vi.fn().mockRejectedValue(new AnswerTooLongError());
+describe("answers the server can't save", () => {
+  it.each([
+    ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
+    // The person blocked bots from the item while the request waited.
+    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for an item chosen for other bots",
+      new Error(UNCHOSEN_ITEM_ANSWER),
+      UNCHOSEN_ITEM_ANSWER,
+      400,
+    ],
+    // The saved login it replaces can't be read for now: a retry may save it.
+    [
+      "held back by a saved login it can't read",
+      new Error(SAVED_LOGIN_UNREADABLE),
+      SAVED_LOGIN_UNREADABLE,
+      409,
+    ],
+  ])("says why one is %s, without echoing it", async (_, error, message, status) => {
+    const answerRunInput = vi.fn().mockRejectedValue(error);
     const enqueue = vi.fn();
     const prisma = {
       bot: {
@@ -1100,9 +1120,9 @@ describe("oversized one-time answer", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(status);
     const body = await response.text();
-    expect(body).toContain("This answer is too long.");
+    expect(body).toContain(message);
     expect(body).not.toContain("fake-code-");
     expect(enqueue).not.toHaveBeenCalled();
   });
@@ -9437,7 +9457,9 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
-      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [],
@@ -9448,7 +9470,9 @@ describe("groups.remove", () => {
         }),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
           calls.push("cancel run");
           return where.id.in.map((id) => ({ id }));
@@ -9487,6 +9511,7 @@ describe("groups.remove", () => {
       calls.push("expire lease");
     });
     const prisma = {
+      run: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       computerExecutionLease: { updateMany: leaseUpdate },
       computer: { updateMany: vi.fn() },
@@ -9498,8 +9523,18 @@ describe("groups.remove", () => {
       calls.push("cancel run work");
       return [];
     });
+    const purgeHistory = vi.fn(async (_request: { botId: string }) => ({
+      ok: true as const,
+      value: undefined,
+    }));
     const deps = {
       prisma,
+      memoryProviders: {
+        resolve: async () => ({
+          provider: { describe: () => ({ capabilities: { purgesByThread: true } }), purgeHistory },
+          defaultScope: "isolated",
+        }),
+      },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -9530,6 +9565,16 @@ describe("groups.remove", () => {
     );
 
     expect(response?.status).toBe(200);
+    expect(
+      purgeHistory.mock.calls.map(([request]) => (request as { botId: string }).botId).sort(),
+    ).toEqual(["bot-1", "past-bot"]);
+    expect(purgeHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-1", generations: [2, 3] }),
+      expect.any(Object),
+    );
+    expect(purgeHistory.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.chatGroup.delete.mock.invocationCallOrder[0]!,
+    );
     expect(releaseScreen).toHaveBeenCalledWith(
       expect.objectContaining({ id: "computer-1" }),
       expect.objectContaining({
@@ -9557,7 +9602,9 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
-      thread: { findUnique: vi.fn().mockResolvedValue({ id: "thread-1" }) },
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
@@ -9566,7 +9613,9 @@ describe("groups.remove", () => {
         delete: vi.fn(async () => undefined),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.map((id) => ({ id })),
         ),
@@ -9593,6 +9642,7 @@ describe("groups.remove", () => {
     const deleteSecret = vi.fn(async () => undefined);
     const deps = {
       prisma,
+      memoryProviders: { resolve: async () => null },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",

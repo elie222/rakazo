@@ -20,6 +20,7 @@ import type {
   McpConnector,
   McpOAuthBroker,
   MemoryProviderResolver,
+  MessagingDelivery,
   MessagingInstallations,
   PiOAuthLogins,
   PlanLimitsReader,
@@ -29,6 +30,7 @@ import type {
   PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
+  UserCloudAgents,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
@@ -73,6 +75,7 @@ export interface RouterDeps {
   notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
+  userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
   prisma: PrismaClient;
@@ -116,6 +119,8 @@ export interface RouterDeps {
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;
+  /** Sends replies to the chat apps people message from; absent without one. */
+  messagingDelivery?: MessagingDelivery;
   messaging?: {
     enabled: boolean;
     providers: string[];

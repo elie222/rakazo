@@ -2,8 +2,9 @@ import { z } from "zod";
 import { BILLING_CANCELLATION_REASONS } from "./billing.js";
 import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./domain.js";
 import { RUN_ERROR_KINDS, RunTriggerSchema } from "./runs.js";
+import { SignupAttribution } from "./signup-attribution.js";
 
-// No free-form properties: this is also the final allowlist at the external boundary.
+// Explicitly validated fields only: this is also the final allowlist at the external boundary.
 export const AnalyticsScreen = z.enum([
   "home",
   "chat",
@@ -58,7 +59,7 @@ const modelConnect = {
     .optional(),
 };
 export const AnalyticsEvent = z.discriminatedUnion("name", [
-  z.object({ name: z.literal("account_created") }).strict(),
+  SignupAttribution.extend({ name: z.literal("account_created") }).strict(),
   z.object({ name: z.literal("signed_in") }).strict(),
   z.object({ name: z.literal("screen_viewed"), ...AnalyticsScreenInput.shape }).strict(),
   z.object({ name: z.literal("message_sent"), trigger: AnalyticsTrigger }).strict(),

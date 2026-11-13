@@ -10,6 +10,7 @@ import { redactConnectorPayload } from "./connector-safety.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { argsError } from "./tool-args.js";
 
@@ -164,7 +165,7 @@ export const memoryTools: ToolHandlers = {
   async recall_memory(ctx, call) {
     const { bot, thread, context } = ctx;
     const { args } = call;
-    return ctx.memory.semantic!.recall(
+    const response = await ctx.memory.semantic!.recall(
       {
         query: String(args.query ?? ""),
         scope: ctx.memory.scope!,
@@ -176,6 +177,27 @@ export const memoryTools: ToolHandlers = {
       },
       context,
     );
+    // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
+    if (response.ok && response.value.length > 0) {
+      await markReadOutsideContent(ctx);
+    }
+    return response;
+  },
+  async reflect_memory(ctx, call) {
+    const { bot, context } = ctx;
+    const { args } = call;
+    if (!ctx.memory.semantic?.reflect) {
+      return { error: "This memory provider cannot answer questions from memory." };
+    }
+    const response = await ctx.memory.semantic.reflect(
+      { query: String(args.query ?? ""), botId: bot.id },
+      context,
+    );
+    if (!response.ok) return response;
+    const text = response.value.trim();
+    // Reflection is provider-generated prose; it cannot attest that its answer is clean.
+    if (text) await markReadOutsideContent(ctx);
+    return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,
   read_history: readHistoryTool,

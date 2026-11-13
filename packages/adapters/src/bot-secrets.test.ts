@@ -2,23 +2,32 @@ import type { BotSecretDestination } from "@rakazo/contracts";
 import { BOT_SECRET_ORIGIN_MISSING_MESSAGE, encodeLoginSecret } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { installAuditEventStore } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CODE_ALREADY_TYPED,
   credentialArgument,
   encodeRunCode,
   encodeRunLogin,
   forgetBotSecret,
+  LOGIN_CODE_REPEAT_WINDOW_MS,
+  LOGIN_CODE_TRIES,
+  LOGIN_CODES_USED_UP,
+  LOGIN_REMOVED,
+  LOGIN_VALUE_CHANGED,
   listBotSecrets,
   loadLoginPasswordRedactions,
   loadRunCodeHiding,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
+  loginCodeClaim,
   normalizeSecretDestination,
   oneTimeCodeArgument,
   oneTimeCodeRedactions,
   prepareBotSecret,
   RunCodeUnreadableError,
+  relabelVaultItem,
   requestWithBotSecret,
   resolveCodeFill,
   resolveLoginFill,
@@ -27,10 +36,18 @@ import {
   storeBotSecret,
 } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
+import { recordVaultUse } from "./run-context.js";
+import { secretTools } from "./run-tools-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
+// RFC 6238's test key, written in pieces so it never reads as a saved secret.
+const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
+const OTHER_TEST_KEY = "MFRGGZDF" + "MZTWQ2LK" + "NNWG23TP" + "OBYXE43U";
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
+  installAuditEventStore(undefined);
 });
 
 const scope = { userId: "user-1", spaceId: "space-1" };
@@ -82,6 +99,154 @@ async function fixture(auth = destination.auth) {
 }
 
 describe("authenticated secret requests", () => {
+  it("retries failed audit inserts before deduplicating a use", async () => {
+    const createMany = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ count: 1 });
+    installAuditEventStore({
+      auditEvent: { createMany },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: { findUnique: async () => ({ role: "owner" }) },
+    } as never);
+    const ctx = {
+      bot: { id: "bot-1", name: "Bot" },
+      run: { userId: "owner", spaceId: "space-1" },
+      runId: "run-1",
+      thread: { id: "thread-1" },
+      state: { vaultUses: new Set<string>() },
+    };
+    const item = { id: "item-1", name: "login", spaceId: null, kind: "login" };
+    await recordVaultUse(ctx as never, "browser_act", item, "https://example.test");
+    expect(ctx.state.vaultUses.size).toBe(0);
+    await recordVaultUse(ctx as never, "browser_act", item, "https://example.test");
+    await recordVaultUse(ctx as never, "browser_act", item, "https://example.test");
+    expect(createMany).toHaveBeenCalledTimes(2);
+    expect(ctx.state.vaultUses.size).toBe(1);
+    await recordVaultUse(ctx as never, "browser_act", item, "https://other.example.test");
+    expect(createMany).toHaveBeenCalledTimes(3);
+  });
+
+  it("records when the vault gives the run a saved key, once per attempt", async () => {
+    const { input, fetch } = await fixture();
+    const rows: Array<Record<string, unknown>> = [];
+    installAuditEventStore({
+      auditEvent: { createMany: async ({ data }: { data: typeof rows }) => rows.push(...data) },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: { findUnique: async () => ({ role: "owner" }) },
+    } as never);
+    const ctx = {
+      deps: { prisma: input.prisma, secretStore, secretHttp: input.remote },
+      run: { ...scope, id: "run-1" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Research bot" },
+      thread: { id: "thread-1" },
+      context: { signal: input.signal },
+      secrets: [] as string[],
+      state: {
+        vaultUses: new Set<string>(),
+        reply: { pendingProgress: "", redactor: { finish: () => "" } },
+      },
+    };
+    const send = (url = `${destination.origin}/v1/items`) =>
+      secretTools.secret_request!(
+        ctx as never,
+        {
+          name: "secret_request",
+          args: { name: destination.name, url },
+          finish: async (result: unknown) => result,
+        } as never,
+      );
+    // Another site never gets the key.
+    expect(await send("https://other.example.test/v1/items")).toHaveProperty("error");
+    expect(rows).toEqual([]);
+    // Nor does a site whose address is refused before anything is sent: the key never left.
+    const { resolveHostname } = input.remote;
+    input.remote.resolveHostname = async () => [{ address: "169.254.169.254", family: 4 }];
+    expect(await send()).toHaveProperty("error");
+    input.remote.resolveHostname = resolveHostname;
+    expect(rows).toEqual([]);
+    // Once the request went out it is a use, even with no answer back; a second request in the
+    // attempt isn't recorded again, and a new attempt is, even a redirect the request refuses.
+    fetch.mockRejectedValueOnce(new TypeError("fetch failed"));
+    expect(await send()).toHaveProperty("error");
+    expect(rows).toHaveLength(1);
+    expect(await send()).toMatchObject({ status: 200 });
+    expect(rows).toHaveLength(1);
+    ctx.state.vaultUses.clear();
+    fetch.mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/" } }));
+    expect(await send()).toHaveProperty("error");
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(rows).toEqual(
+      [1, 2].map(() =>
+        expect.objectContaining({
+          action: "credential.used",
+          actorType: "bot",
+          actorId: "bot-1",
+          targetType: "vault_credential",
+          targetId: "secret-1",
+          targetLabel: destination.name,
+          runId: "run-1",
+          threadId: "thread-1",
+          metadata: {
+            tool: "secret_request",
+            scope: "space",
+            name: destination.name,
+            kind: "bearer",
+            site: destination.origin,
+          },
+        }),
+      ),
+    );
+    expect(JSON.stringify(rows)).not.toContain(secret);
+  });
+
+  it("records a guest's use of a Space vault item only in the Space, unnamed", async () => {
+    const { input } = await fixture();
+    const rows: Array<Record<string, unknown>> = [];
+    // space-1 belongs to org-1 and keeps its own vault, where the run's person keeps the item.
+    // They are first its owner, then a guest whose own organization is org-2, which gets nothing
+    // of it. The audit-events table covers every actor, vault and event.
+    let role = "owner";
+    installAuditEventStore({
+      auditEvent: { createMany: async ({ data }: { data: typeof rows }) => rows.push(...data) },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: {
+        findUnique: async () => ({ role }),
+        findMany: async () => [{ organizationId: "org-2", role: "owner" }],
+      },
+    } as never);
+    for (const as of ["owner", "guest"]) {
+      role = as;
+      const ctx = {
+        deps: { prisma: input.prisma, secretStore, secretHttp: input.remote },
+        run: { ...scope, id: "run-1" },
+        runId: "run-1",
+        bot: { id: "bot-1", name: "Research bot" },
+        thread: { id: "thread-1" },
+        context: { signal: input.signal },
+        secrets: [] as string[],
+        state: {
+          vaultUses: new Set<string>(),
+          reply: { pendingProgress: "", redactor: { finish: () => "" } },
+        },
+      };
+      await secretTools.secret_request!(
+        ctx as never,
+        {
+          name: "secret_request",
+          args: { name: destination.name, url: `${destination.origin}/v1/items` },
+          finish: async (result: unknown) => result,
+        } as never,
+      );
+    }
+    expect(rows.map((row) => [row.organizationId, row.targetLabel])).toEqual([
+      ["org-1", destination.name],
+      ["org-1", null],
+    ]);
+    expect(JSON.stringify(rows[1])).not.toContain(destination.name);
+  });
+
   it("starts the request deadline before loading the credential", async () => {
     const { input, fetch } = await fixture();
     const timeout = vi.spyOn(AbortSignal, "timeout");
@@ -219,6 +384,120 @@ describe("authenticated secret requests", () => {
     controller.abort();
     expect(await pending).toMatchObject({ error: expect.any(String) });
     expect(cancel).toHaveBeenCalled();
+  });
+
+  it("records a key that may have left, once, and none refused before sending", async () => {
+    const { input, fetch } = await fixture();
+    const recordUse = vi.fn(async () => {});
+    // Cancelled while the destination is still being checked: nothing is sent, then or after.
+    const early = new AbortController();
+    let checked = (_addresses: { address: string; family: 4 }[]) => {};
+    const resolveHostname = vi.fn(
+      () => new Promise<{ address: string; family: 4 }[]>((resolve) => (checked = resolve)),
+    );
+    const checking = requestWithBotSecret({
+      ...input,
+      recordUse,
+      signal: early.signal,
+      remote: { ...input.remote, resolveHostname },
+    });
+    await vi.waitFor(() => expect(resolveHostname).toHaveBeenCalled());
+    early.abort();
+    expect(await checking).toHaveProperty("error");
+    checked([{ address: "203.0.113.10", family: 4 }]);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(recordUse).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    // Cancelled while the request is out, with no answer yet.
+    const controller = new AbortController();
+    fetch.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+        ),
+    );
+    const pending = requestWithBotSecret({ ...input, recordUse, signal: controller.signal });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    controller.abort();
+    expect(await pending).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledOnce();
+    // Answered, then cancelled while its body is read: still one use.
+    const stalled = new AbortController();
+    fetch.mockResolvedValueOnce(new Response(new ReadableStream()));
+    const reading = requestWithBotSecret({ ...input, recordUse, signal: stalled.signal });
+    await vi.waitFor(() => expect(recordUse).toHaveBeenCalledTimes(2));
+    stalled.abort();
+    expect(await reading).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledTimes(2);
+    // An owner's private destination: a redirect is its answer; one resolving publicly is
+    // refused before anything is sent.
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    const encrypted = await secretStore.put(
+      secret,
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { recordId: "secret-private" },
+    );
+    const row = {
+      ...scope,
+      name: "hive_api_token",
+      origin: "http://192.168.2.10:8080",
+      auth: { type: "bearer" as const },
+      ...encrypted,
+    };
+    const privateFetch = vi.fn<typeof globalThis.fetch>(
+      async () => new Response(null, { status: 302, headers: { location: "/" } }),
+    );
+    const privateInput = {
+      ...input,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst: vi.fn(async () => row) },
+      } as unknown as PrismaClient,
+      request: { name: row.name, url: `${row.origin}/v1/items` },
+      recordUse,
+      remote: {
+        fetch: privateFetch,
+        resolveHostname: async () => [{ address: "192.168.2.10", family: 4 as const }],
+      },
+    };
+    expect(await requestWithBotSecret(privateInput)).toHaveProperty("error");
+    expect(privateFetch).toHaveBeenCalledOnce();
+    expect(recordUse).toHaveBeenCalledTimes(3);
+    expect(recordUse).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "secret-private" }),
+      row.origin,
+    );
+    const refused = {
+      ...privateInput,
+      remote: {
+        fetch: privateFetch,
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      },
+    };
+    expect(await requestWithBotSecret(refused)).toHaveProperty("error");
+    expect(privateFetch).toHaveBeenCalledOnce();
+    expect(recordUse).toHaveBeenCalledTimes(3);
+  });
+
+  it("records no use for a connection never made, and one for a request cut off", async () => {
+    const { input, fetch } = await fixture();
+    const recordUse = vi.fn(async () => {});
+    const failed = (code: string, syscall?: string) =>
+      new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code, syscall }) });
+    fetch.mockRejectedValueOnce(failed("ECONNREFUSED", "connect"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    fetch.mockRejectedValueOnce(failed("CERT_HAS_EXPIRED"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    expect(recordUse).not.toHaveBeenCalled();
+    fetch.mockRejectedValueOnce(failed("UND_ERR_HEADERS_TIMEOUT"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledOnce();
+    // A bad TLS record or an unreachable error may come once the request is out.
+    fetch.mockRejectedValueOnce(failed("ERR_SSL_WRONG_VERSION_NUMBER"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    fetch.mockRejectedValueOnce(failed("EHOSTUNREACH", "read"));
+    expect(await requestWithBotSecret({ ...input, recordUse })).toHaveProperty("error");
+    expect(recordUse).toHaveBeenCalledTimes(3);
   });
 
   it("delivers plain-HTTP private destination requests directly when the owner opts in", async () => {
@@ -940,8 +1219,8 @@ describe("saved website logins", () => {
     }
   });
 
-  it("decrypts nothing for a bot without saved logins", async () => {
-    const { prisma } = await loginFixture("fake-user@example.test", { type: "bearer" });
+  it("decrypts nothing for a bot with only command variables", async () => {
+    const { prisma } = await loginFixture("fake-user@example.test", { type: "command" }, "");
     const load = vi.spyOn(secretStore, "load");
     try {
       expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
@@ -958,7 +1237,9 @@ describe("saved website logins", () => {
       text: "fake-password-1",
       hidden: true,
       origin: "https://login.example.test",
+      sites: ["https://login.example.test"],
       redactions: expect.arrayContaining(["fake-password-1", "fake-user@example.test"]),
+      used: expect.objectContaining({ name: "site_login", kind: "login" }),
     });
     expect(await resolveLoginFill({ runId: "run-1", ...input, field: "username" })).toMatchObject({
       text: "fake-user@example.test",
@@ -1117,7 +1398,7 @@ describe("logins kept for one run", () => {
     { label: "Password", value: "run pass!word+1", hidden: true },
   ];
 
-  async function runLoginFixture(origin = "https://login.example.test") {
+  async function runLoginFixture(origin = "https://login.example.test", otp?: string) {
     const encrypted = await secretStore.put(
       encodeRunLogin(origin, encodeLoginSecret({ fields })),
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -1133,6 +1414,7 @@ describe("logins kept for one run", () => {
     const saved = await secretStore.put(
       encodeLoginSecret({
         fields: [{ label: "Password", value: "saved-password-1", hidden: true }],
+        ...(otp ? { otp } : {}),
       }),
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
       { recordId: "saved-login" },
@@ -1156,6 +1438,25 @@ describe("logins kept for one run", () => {
     } as unknown as PrismaClient;
   }
 
+  it("gives no code for this run's own login, even when a saved one of its name has a key", async () => {
+    // The person chose a login for this run only; the saved key may be another account's.
+    const prisma = await runLoginFixture(undefined, TEST_KEY);
+    const input = {
+      prisma,
+      secretStore,
+      scope,
+      name: "site_login",
+      field: "",
+      code: true as const,
+    };
+    expect(await resolveLoginFill({ ...input, runId: "run-1" })).toEqual({
+      error: "This login has no authenticator key. Use request_secret with oneTimeCode.",
+    });
+    expect(await resolveLoginFill({ ...input, runId: "run-2" })).toMatchObject({
+      text: expect.stringMatching(/^\d{6}$/),
+    });
+  });
+
   it("fills this run's login before a saved one, only in this run", async () => {
     const prisma = await runLoginFixture();
     const input = { prisma, secretStore, scope, name: "site_login" };
@@ -1163,6 +1464,7 @@ describe("logins kept for one run", () => {
       text: "run pass!word+1",
       hidden: true,
       origin: "https://login.example.test",
+      sites: ["https://login.example.test"],
       redactions: expect.arrayContaining(["run pass!word+1", "run-user@example.test"]),
     });
     // Another run of the bot gets the saved login.
@@ -1354,7 +1656,8 @@ describe("resolveCodeFill", () => {
     const [first, second] = await Promise.all([resolveCodeFill(input), resolveCodeFill(input)]);
     if ("error" in first || "error" in second) throw new Error("both fills should resolve");
     const claims = await Promise.all([first.claim(), second.claim()]);
-    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.filter((refused) => refused === undefined)).toHaveLength(1);
+    expect(claims.filter((refused) => refused?.includes("No code is waiting"))).toHaveLength(1);
     expect(rows).toMatchObject([{ kind: "run-code-spent:run-1" }]);
     expect(await resolveCodeFill(input)).toEqual({
       error:
@@ -1367,7 +1670,7 @@ describe("resolveCodeFill", () => {
     const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
     const fill = await resolveCodeFill(input);
     if ("error" in fill) throw new Error(fill.error);
-    expect(await fill.claim()).toBe(true);
+    expect(await fill.claim()).toBeUndefined();
     await fill.restore();
     expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
     expect(await resolveCodeFill(input)).toMatchObject({ text: "123456" });
@@ -1440,6 +1743,268 @@ describe("resolveCodeFill", () => {
     } finally {
       logger.mockRestore();
     }
+  });
+});
+
+describe("loginCodeClaim", () => {
+  // What a site asking again looks like: the next code requested soon after one was typed.
+  const window = LOGIN_CODE_REPEAT_WINDOW_MS;
+  const login = {
+    name: "site_login",
+    origin: "https://login.example.test",
+    auth: { type: "login" as const },
+  };
+  const value = (otp: string) =>
+    encodeLoginSecret({
+      fields: [{ label: "Password", value: "saved-password-1", hidden: true }],
+      otp,
+    });
+  type Step =
+    // Claim a code at this time; `stopped` is the login's stop after it; `stale` claims with
+    // the value read before the owner's last save, as a fill that raced the save does.
+    | {
+        at: number;
+        run?: string;
+        stale?: true;
+        refused?:
+          | typeof LOGIN_CODES_USED_UP
+          | typeof CODE_ALREADY_TYPED
+          | typeof LOGIN_VALUE_CHANGED;
+        stopped?: boolean;
+        uncertain?: true;
+      }
+    // Give an earlier claim back (the page clearly never typed it), by its index in `steps`.
+    | { restore: number; stopped: boolean }
+    // The owner saves the login's value again, or only relabels it.
+    | { save: "value" | "label"; stopped: boolean };
+  const cases: { name: string; steps: Step[]; parallel?: number[] }[] = [
+    {
+      name: "three sign-ins far apart, as a working key gives, stop nothing",
+      steps: [
+        { at: 0, stopped: false },
+        { at: window + 1, stopped: false },
+        { at: 2 * (window + 1), stopped: false },
+        { at: 3 * (window + 1), stopped: false },
+      ],
+    },
+    {
+      name: "three quick repeats in one run stop the login with the third, and refuse another run with no fourth request",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { at: 90_000, run: "run-2", refused: LOGIN_CODES_USED_UP, stopped: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+      ],
+    },
+    {
+      name: "a repeat a moment inside the window counts, one a moment outside starts over",
+      steps: [
+        { at: 0, stopped: false },
+        { at: window, stopped: false },
+        { at: 2 * window + 1, stopped: false },
+        { at: 3 * window, stopped: false },
+        { at: 4 * window, stopped: true },
+      ],
+    },
+    {
+      name: "quick repeats split across two runs count for each run on its own",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, run: "run-2", stopped: false },
+        { at: 60_000, stopped: false },
+        { at: 90_000, run: "run-2", stopped: false },
+        { at: 120_000, stopped: true },
+      ],
+    },
+    {
+      name: "the same code is typed once per run, and a repeat refusal is no repeat",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 10_000, refused: CODE_ALREADY_TYPED, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+      ],
+    },
+    {
+      name: "a new key the owner saves starts the count again, and its codes are not stopped by the old key's",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { save: "value", stopped: false },
+        { at: 60_000, stopped: false },
+        { at: 90_000, stopped: false },
+        { at: 120_000, stopped: true },
+      ],
+    },
+    {
+      name: "codes from a replaced key are refused without spending an attempt or stopping the new key",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { save: "value", stopped: false },
+        { at: 60_000, stale: true, refused: LOGIN_VALUE_CHANGED, stopped: false },
+        { at: 90_000, stale: true, refused: LOGIN_VALUE_CHANGED, stopped: false },
+        { at: 90_000, stopped: false },
+      ],
+    },
+    {
+      name: "the owner's save clears a stop, a relabel alone does not",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { save: "label", stopped: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { save: "value", stopped: false },
+        { at: 120_000, stopped: false },
+      ],
+    },
+    {
+      name: "an uncertain third fill keeps the stop: two codes were asked for again",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true, uncertain: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+      ],
+    },
+    {
+      name: "a third code the page never typed gives its place back, and with it the stop",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { restore: 2, stopped: false },
+        { at: 61_000, stopped: true },
+      ],
+    },
+    {
+      name: "a refused claim given back changes nothing: three others still stand",
+      steps: [
+        { at: 0, stopped: false },
+        { at: 30_000, stopped: false },
+        { at: 60_000, stopped: true },
+        { at: 90_000, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { restore: 3, stopped: true },
+      ],
+    },
+    ...[0, 1, 2].map((index): (typeof cases)[number] => ({
+      name: `parallel claims count three at most, one writes the stop, and giving back the ${["first", "second", "third"][index]} of them lifts it`,
+      parallel: [0, 1, 2, 3, 4],
+      steps: [
+        { at: 0, stopped: true },
+        { at: 0, stopped: true },
+        { at: 0, stopped: true },
+        { at: 0, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { at: 0, refused: LOGIN_CODES_USED_UP, stopped: true },
+        { restore: index, stopped: false },
+        { at: 1_000, stopped: true },
+      ],
+    })),
+  ];
+  it.each(cases)("$name", async ({ steps, parallel }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const db = fakeDatabase();
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination: login,
+      plaintext: value(TEST_KEY),
+    });
+    const row = db.rows()[0]!;
+    const start = Date.now();
+    // What a fill reads before claiming: the login as saved then.
+    let read = { id: row.id, ciphertext: row.ciphertext };
+    let before = read;
+    const claims = new Map<number, ReturnType<typeof loginCodeClaim>>();
+    const claim = (index: number, step: Extract<Step, { at: number }>) => {
+      vi.setSystemTime(start + step.at);
+      const code = loginCodeClaim({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        runId: step.run ?? "run-1",
+        login: step.stale ? before : read,
+        origin: row.origin,
+        // Two codes of a step are the same code; three others of other steps.
+        code: index === 1 && step.refused === CODE_ALREADY_TYPED ? "000000" : `00000${index}`,
+      });
+      claims.set(index, code);
+      return code.claim();
+    };
+    const stopped = (index: number, step: Step) =>
+      expect
+        .soft(row.codesStoppedAt instanceof Date, `stop after step ${index}`)
+        .toBe(step.stopped ?? false);
+    const parallelResults = parallel
+      ? await Promise.all(
+          parallel.map((index) => claim(index, steps[index] as Extract<Step, { at: number }>)),
+        )
+      : [];
+    if (parallel) {
+      expect(parallelResults.filter((refused) => refused === undefined)).toHaveLength(
+        LOGIN_CODE_TRIES,
+      );
+      expect(parallelResults.filter((refused) => refused === LOGIN_CODES_USED_UP)).toHaveLength(
+        parallel.length - LOGIN_CODE_TRIES,
+      );
+      // Which of them the lock refused is not fixed, so the table's refusals are not matched.
+    }
+    for (const [index, step] of steps.entries()) {
+      if (parallel?.includes(index)) continue;
+      if ("restore" in step) {
+        await claims.get(step.restore)!.restore();
+      } else if ("save" in step) {
+        if (step.save === "value") {
+          before = read;
+          await storeBotSecret({
+            prisma: db.prisma,
+            secretStore,
+            scope,
+            destination: login,
+            plaintext: value(OTHER_TEST_KEY),
+          });
+          read = { id: row.id, ciphertext: row.ciphertext };
+        } else {
+          await relabelVaultItem(db.prisma, scope, login.name, { title: "Renamed" });
+        }
+      } else {
+        expect.soft(await claim(index, step), `claim ${index}`).toBe(step.refused);
+      }
+      stopped(index, step);
+    }
+    expect(db.secrets().filter((secret) => String(secret.id).startsWith("run-totp-"))).toHaveLength(
+      steps.filter((step, index) => {
+        if (!("at" in step) || step.refused) return false;
+        return !steps.some((later) => "restore" in later && later.restore === index);
+      }).length,
+    );
+  });
+
+  it("claims no code of a login the owner removed since the fill read it", async () => {
+    const db = fakeDatabase();
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination: login,
+      plaintext: value(TEST_KEY),
+    });
+    const row = db.rows()[0]!;
+    const code = loginCodeClaim({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      runId: "run-1",
+      login: { id: row.id, ciphertext: row.ciphertext },
+      origin: row.origin,
+      code: "000000",
+    });
+    db.rows().splice(0);
+    expect(await code.claim()).toBe(LOGIN_REMOVED);
+    expect(db.secrets().filter((secret) => String(secret.id).startsWith("run-totp-"))).toEqual([]);
   });
 });
 
@@ -1588,13 +2153,15 @@ describe("replacing a saved login's site", () => {
   it("keeps the site and value of the last of two cards replacing the same login", async () => {
     const db = fakeDatabase();
     const before = await save(db);
+    const other = login("https://other.example.test");
     const toLogin = await prepare(db, login(LOGIN), "fake-password-login", {
       replaces: before.id,
     });
-    const toOther = await prepare(db, login("https://other.example.test"), "fake-password-other", {
-      replaces: before.id,
-    });
-    await Promise.all([commit(db, toLogin), commit(db, toOther)]);
+    const toOther = await prepare(db, other, "fake-password-other", { replaces: before.id });
+    await commit(db, toLogin);
+    // It keeps whatever key is saved, so a value saved since sends it back to be prepared again.
+    await expect(commit(db, toOther)).rejects.toMatchObject({ code: "P2034" });
+    await commit(db, await prepare(db, other, "fake-password-other", { replaces: before.id }));
     expect(db.rows()).toHaveLength(1);
     const [row] = db.rows();
     expect(row).toMatchObject({ id: before.id, origin: "https://other.example.test" });

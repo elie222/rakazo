@@ -146,7 +146,7 @@ rows, plus the user's own account-level credentials. A query that leaves out its
 returns nothing from other Spaces. A background job that acts for one run, routine, computer,
 skill, thread or cloud agent runs as that row's Space and user, so agent tools get the same
 backstop. Security events are written and read only in system scope. Reconcilers, queue sweeps,
-the messaging outbox drain and webhooks run in a named system scope (`runAsSystem` in
+chat delivery and webhooks run in a named system scope (`runAsSystem` in
 `packages/db`). That scope also sends a key derived from the app login's password, which
 `pnpm db:migrate` registers, so SQL that runs for one Space cannot switch itself into system scope.
 An app login without a password in `DATABASE_URL` has no key, and `pnpm db:migrate` warns. The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
@@ -189,6 +189,12 @@ through Postgres and Caddy spreads requests across the API containers. The deplo
 new count on its next run, starting that many new containers before it stops the old ones, so
 leave memory for twice the count during a deploy. With more than one API container, give Telegram
 bots and iMessage projects a webhook secret: without one each API polls for the same messages.
+
+A deploy also briefly needs twice the database connections. Each API and worker container holds up
+to `DB_POOL_MAX` connections plus a few for live updates, and Postgres allows 100 in all by default;
+when twice the containers' total comes near that, run `ALTER SYSTEM SET max_connections = 200;` as
+the owner (`POSTGRES_USER`) and restart Postgres. Otherwise a deploy fails some requests with
+"too many clients".
 
 ## Postgres memory
 

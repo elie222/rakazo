@@ -12,7 +12,6 @@ import {
 import {
   BookOpen,
   Check,
-  ChevronRight,
   Download,
   FolderOpen,
   Gauge,
@@ -26,7 +25,6 @@ import {
   UserPlus,
   UserRound,
 } from "lucide-react";
-import type { ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Organization } from "../lib/organizations";
 import { useSidebarUpdate } from "./DesktopUpdates";
@@ -50,8 +48,6 @@ type Props = {
   onSettings: () => void;
   /** How much of the member's allowance is used; the Usage row shows only with one. */
   usage?: string | null;
-  /** The breakdown the Usage row opens beside the menu. */
-  usageDetails?: ReactNode;
   onUsage?: () => void;
   onInvite?: () => void;
   onLogOut: () => void;
@@ -84,7 +80,6 @@ export function SidebarFooter({
   onArtifacts,
   onSettings,
   usage,
-  usageDetails,
   onUsage,
   onInvite,
   onLogOut,
@@ -191,38 +186,17 @@ export function SidebarFooter({
               </Button>
             ) : null}
             {usage ? (
-              <Popover>
-                <PopoverTrigger
-                  openOnHover
-                  delay={80}
-                  closeDelay={150}
-                  className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
-                >
-                  <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-                  <Trans>Usage</Trans>
-                  <span className="ms-auto text-body-sm tabular-nums text-muted-foreground">
-                    {usage}
-                  </span>
-                  <ChevronRight className="text-muted-foreground" strokeWidth={1.75} />
-                </PopoverTrigger>
-                <PopoverContent
-                  data-testid="usage-menu"
-                  side="right"
-                  align="start"
-                  sideOffset={8}
-                  className="w-80 max-w-[calc(100vw-2rem)] gap-0 p-1"
-                >
-                  {usageDetails}
-                  <div className="my-1 border-t border-border" />
-                  <Button
-                    variant="ghost"
-                    className="h-9 w-full justify-start font-normal"
-                    onClick={onUsage}
-                  >
-                    <Trans>View usage</Trans>
-                  </Button>
-                </PopoverContent>
-              </Popover>
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onUsage}
+              >
+                <Gauge className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Usage</Trans>
+                <span className="ms-auto text-body-sm tabular-nums text-muted-foreground">
+                  {usage}
+                </span>
+              </Button>
             ) : null}
             <Button
               variant="ghost"

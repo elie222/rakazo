@@ -1202,6 +1202,7 @@ msgstr "將新增"
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1385,6 +1386,14 @@ msgstr "金額"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此供應商儲存的是 API 金鑰，不是訂閱登入。"
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr "外部記憶服務，用於在各個聊天之間儲存與回想脈絡。"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr "HTTPS 端點"
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "無法檢查匯入的 API 金鑰。請再試一次。"
@@ -1413,7 +1422,6 @@ msgstr "其他助理"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "回答"
 
@@ -1468,6 +1476,7 @@ msgstr "任何擁有連結的人"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2680,6 +2689,7 @@ msgstr "請確認此瀏覽器工作階段可以存取該 URL，然後重新測�
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2793,6 +2803,7 @@ msgstr "已連線。"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2886,14 +2897,14 @@ msgstr "透過 {name} 繼續"
 msgid "Control"
 msgstr "Ctrl"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "對話摘要、記憶、搜尋請求及機器人和空間 ID 會被傳送，用於儲存和檢索上下文。"
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "對話"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr "為了儲存與回想脈絡，會傳送對話、名稱、記憶、搜尋內容，以及機器人和空間 ID。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3871,11 +3882,6 @@ msgstr "無法開始登入"
 msgid "Could not start teaching"
 msgstr "無法開始教學"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "無法停止電腦"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "無法提交回答"
@@ -4749,10 +4755,6 @@ msgstr "編輯"
 msgid "Edit avatar"
 msgstr "編輯頭像"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "先編輯"
-
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
@@ -4877,6 +4879,10 @@ msgstr "請輸入金額"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "測試前請輸入 API 金鑰。"
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr "請輸入 HTTPS URL"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5108,12 +5114,8 @@ msgid "Failure handling"
 msgstr "失敗處理"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "標記變化的欄位"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "要比較的欄位，例如 id, modifiedTime（選填）"
+msgid "Fields to compare (optional)"
+msgstr "要比較的欄位（選填）"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5533,6 +5535,7 @@ msgstr "隱藏文字紀錄"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5601,6 +5604,10 @@ msgstr "你會如何使用 Rakazo？"
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr "HTTPS URL"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5936,6 +5943,10 @@ msgstr "上次檢查 {0}：無變化"
 msgid "Later"
 msgstr "稍後"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr "從對話中學習"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5964,10 +5975,6 @@ msgstr "向左"
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "允許機器人使用這部電腦"
-
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "讓機器人在 MEMORY.md 之外，依語意儲存和回想事實。"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6149,6 +6156,7 @@ msgstr "似乎包含金鑰"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6278,6 +6286,7 @@ msgid "MCP servers"
 msgstr "MCP 伺服器"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6571,11 +6580,6 @@ msgstr "更多"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "更多應用程式"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "更多電腦操作"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7749,8 +7753,8 @@ msgid "Plugins"
 msgstr "外掛"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "在聊天室中傳送「沒有變更」"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr "檢查未發現變化時發送一則聊天訊息。例行任務不會執行。"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7934,6 +7938,18 @@ msgstr "推理強度"
 msgid "Recall and write"
 msgstr "回想與寫入"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr "自動回想"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr "回想深度"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr "從記憶庫回想"
+
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "從此 peer 讀取；儲存至 Rakazo 自己的 peer。"
@@ -7991,14 +8007,12 @@ msgstr "錄製已開始，請重新整理畫面以繼續。"
 msgid "Recording: {0}"
 msgstr "錄製中：{0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "復原電腦"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "要復原電腦嗎？"
@@ -8031,17 +8045,11 @@ msgstr "復原失敗"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "上一次操作停止前，無法進行復原。"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "復原會還原上次儲存的工作空間，未儲存的工作可能會遺失。"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "重建無法正常工作的電腦。"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8344,6 +8352,10 @@ msgstr "已取消回覆"
 msgid "Replying to {0}"
 msgstr "正在回覆 {0}"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr "回報無變化的檢查"
+
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Request a new code"
@@ -8414,6 +8426,7 @@ msgstr "將於 {date} 重設。"
 msgid "Resets in {reset}"
 msgstr "{reset}後重設"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "正在重設…"
@@ -8448,11 +8461,6 @@ msgstr "還原"
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "還原 {name}"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "還原上次儲存的工作空間。"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -8723,11 +8731,6 @@ msgstr "儲存我的版本"
 msgid "Save section name"
 msgstr "儲存分組名稱"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "儲存工作空間並安裝最新軟體。"
-
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
@@ -8962,7 +8965,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "請在 10 分鐘內從 {linkApp} 將 <0>{linkCode}</0> 傳送到 <1>{linkAddress}</1>。"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "傳送回答"
 
@@ -8975,10 +8977,6 @@ msgstr "以檔案傳送"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "傳送刪除驗證碼"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "傳送"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -9375,6 +9373,10 @@ msgstr "跳過"
 msgid "Skip or deploy key"
 msgstr "跳過或使用部署金鑰"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr "略過無關記憶"
+
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
@@ -9634,11 +9636,6 @@ msgstr "步驟"
 msgid "Stop"
 msgstr "停止"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "停止電腦"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "停止聽寫"
@@ -9660,10 +9657,6 @@ msgstr "已停止"
 #: apps/web/src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "已停止。"
-
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "正在停止…"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
@@ -9716,6 +9709,14 @@ msgstr "使用自己的 AI 訂閱"
 #: apps/web/src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "需要訂閱"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr "摘要"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr "摘要與事實"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10543,7 +10544,6 @@ msgid "Type without recording"
 msgstr "輸入文字但不記錄內容"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "輸入你的回答"
 
@@ -10691,6 +10691,7 @@ msgstr "正在更新 {name} 的電腦"
 msgid "Updating Team Computer"
 msgstr "正在更新團隊電腦"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "正在更新…"
@@ -10926,10 +10927,6 @@ msgstr "檢視全部"
 msgid "View source"
 msgstr "檢視來源"
 
-#: apps/web/src/components/SidebarFooter.tsx
-msgid "View usage"
-msgstr "檢視用量"
-
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11064,6 +11061,10 @@ msgstr "每次執行時，這個例行任務應做什麼？"
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "這個機器人是做什麼的"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr "回想內容"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11298,6 +11299,11 @@ msgstr "今天將從你的卡中扣款 {price}，並抵扣本月未使用的部�
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "今天將從你的卡片扣除按比例計算的差額。"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr "你的卡片未被扣款"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
