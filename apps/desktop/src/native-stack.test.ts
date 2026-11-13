@@ -223,6 +223,26 @@ describe("choosePort", () => {
 });
 
 describe("NativeStackController", () => {
+  it("offers the stop item from the moment start begins, before Postgres is up", async () => {
+    const { deps } = harness({
+      hostComputer: { url: "http://host.docker.internal:47000", token: "host-token" },
+    });
+    // What the menu sees each time a phase change rebuilds it.
+    const seen: { phase: string; running: boolean }[] = [];
+    const controller: NativeStackController = new NativeStackController({
+      ...deps,
+      onState: (state) =>
+        seen.push({ phase: state.phase, running: controller.managedStackRunning() }),
+    });
+    await controller.start();
+    expect(seen.find((entry) => entry.phase === "starting")).toEqual({
+      phase: "starting",
+      running: true,
+    });
+    await controller.stop();
+    expect(controller.managedStackRunning()).toBe(false);
+  });
+
   it("brings up the database, migrations and the three services on loopback", async () => {
     const { deps, runs, byName } = harness({
       hostComputer: { url: "http://host.docker.internal:47000", token: "host-token" },
@@ -293,8 +313,11 @@ describe("NativeStackController", () => {
       "ghcr.io/elie222/rakazo/computer:v1.0.0",
     ]);
 
+    // Running services keep the menu's off-switch available after a server switch.
+    expect(controller.managedStackRunning()).toBe(true);
     await controller.stop();
     expect(controller.hasProcesses()).toBe(false);
+    expect(controller.managedStackRunning()).toBe(false);
     // The runtime CLI passes SIGINT on, so Postgres shuts down fast and cleanly.
     expect(byName(DATABASE_CONTAINER)[0]?.signals).toEqual(["SIGINT"]);
   });
@@ -546,6 +569,21 @@ describe("NativeStackController", () => {
     expect(state.output).toContain("api exited");
     expect(controller.hasProcesses()).toBe(false);
     await expect(controller.stop()).resolves.toMatchObject({ phase: "idle" });
+  });
+
+  it("keeps the stop item while every service waits to restart", async () => {
+    const { deps, children } = harness();
+    const controller = new NativeStackController(deps);
+    await controller.start();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    for (const child of children) child.exit();
+    await vi.advanceTimersByTimeAsync(0);
+    // Nothing runs during the backoff, but the stack is still up and will come back.
+    expect(controller.hasProcesses()).toBe(false);
+    expect(controller.managedStackRunning()).toBe(true);
+    vi.useRealTimers();
+    await controller.stop();
+    expect(controller.managedStackRunning()).toBe(false);
   });
 
   it("restarts a crashed service with growing delays once the stack is up", async () => {
