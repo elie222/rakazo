@@ -15,6 +15,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
+import * as BotSecrets from "./bot-secrets.js";
 import { builtinAgentTools, MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -5087,6 +5088,72 @@ it.each(
       expect(read).toHaveBeenCalledOnce();
       if (persist) expect(f.results.at(-1)).toEqual(expected);
       else expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    } finally {
+      read.mockRestore();
+    }
+  },
+);
+
+it.each([
+  { persist: true, claimRace: false },
+  { persist: true, claimRace: true },
+  { persist: false, claimRace: false },
+])(
+  "settles approved secret listings without storing previews, persistence: $persist, claim race: $claimRace",
+  async ({ persist, claimRace }) => {
+    const preview = [
+      {
+        name: "contact",
+        origin: "https://example.com",
+        auth: "contact",
+        contact: { email: "test@example.com" },
+      },
+    ];
+    const read = vi.spyOn(BotSecrets, "listBotSecrets").mockResolvedValue(preview as never);
+    try {
+      const f = fixture({
+        name: "list_secrets",
+        builtin: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "list_secrets" }],
+      });
+      f.setCalls([{ args: {}, executionId: "secret-list" }]);
+      await f.run();
+      expect(read).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      f.effects[0]!.status = "approved";
+      const update = f.prisma.externalEffect.updateMany;
+      const original = update.getMockImplementation()!;
+      if (!persist)
+        update.mockImplementation(async (args) =>
+          args.data.status === "completed" ? { count: 0 } : original(args),
+        );
+      await f.run();
+      expect(f.effects[0]?.result).not.toEqual(preview);
+      if (persist) {
+        expect(f.effects[0]).toMatchObject({ status: "completed", result: { ok: true } });
+        expect(f.results.at(-1)).toEqual(preview);
+        read.mockResolvedValue([]);
+      } else {
+        expect(read).not.toHaveBeenCalled();
+        expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+      }
+      update.mockImplementation(original);
+      if (claimRace) {
+        f.effects[0]!.status = "approved";
+        update.mockImplementation(async (input) => {
+          if (input.where.status === "approved" && input.data.status === "executing") {
+            f.effects[0]!.status = "completed";
+            return { count: 0 };
+          }
+          return original(input);
+        });
+      }
+      await f.run();
+      if (persist) {
+        expect(read).toHaveBeenCalledTimes(2);
+        expect(f.results.at(-1)).toEqual([]);
+      } else expect(f.results.at(-1)).toMatchObject({ uncertain: true });
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     } finally {
       read.mockRestore();

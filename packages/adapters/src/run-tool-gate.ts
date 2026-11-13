@@ -47,6 +47,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
+import { listBotSecrets } from "./bot-secrets.js";
 import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
@@ -600,7 +601,11 @@ export async function gateToolCall(
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
     if (gate.action === "return") {
-      if (applied.effect.status === "completed") trustSearchResult(ctx, name, gate.result);
+      if (applied.effect.status === "completed") {
+        if (name === "list_secrets")
+          return { result: await listBotSecrets(deps.prisma, deps.secretStore, run) };
+        trustSearchResult(ctx, name, gate.result);
+      }
       if (name === "request_secret") {
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
@@ -738,7 +743,11 @@ function createToolCall(
       if (current) {
         const retryGate = resolveDuplicateEffectGate(current, name);
         if (retryGate.action === "return") {
-          if (current.status === "completed") trustSearchResult(ctx, name, retryGate.result);
+          if (current.status === "completed") {
+            if (name === "list_secrets")
+              return listBotSecrets(deps.prisma, deps.secretStore, ctx.run);
+            trustSearchResult(ctx, name, retryGate.result);
+          }
           return retryGate.result;
         }
         if (retryGate.action === "uncertain") {

@@ -26,7 +26,8 @@ const completedSearchSchema = z.object({
     id: z.string().min(1).max(200),
     type: z.literal("web_search_call"),
     status: z.literal("completed"),
-    results: z.array(z.unknown()).optional(),
+    // Validate the envelope without copying entries that will be discarded below.
+    results: z.custom<unknown[]>(Array.isArray).optional(),
   }),
 });
 const imageResultSchema = z.object({

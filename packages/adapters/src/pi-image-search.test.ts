@@ -151,7 +151,7 @@ describe("Pi image search through the installed provider", () => {
     },
   );
 
-  it.each(["a", "error", "png", "401"])(
+  it.each(["a", "error", "png", "401", "confidential-project photos for test@example.com"])(
     "retains structured failure diagnostics when query %s is redacted",
     async (query) => {
       const sink = createTestSink();
@@ -309,6 +309,15 @@ describe("Pi image search through the installed provider", () => {
     expect((await requestBody(call)).tools[0].image_settings.max_results).toBe(
       Math.max(1, Math.min(10, requested)),
     );
+  });
+
+  it("bounds provider entries before validating image results", async () => {
+    const entries = [
+      ...Array.from({ length: 100 }, () => null),
+      ...Array.from({ length: 10000 }, () => image("beyond-limit")),
+    ];
+    const { host } = hostFor(fixtureFetch([searchItem(entries), terminal]));
+    await expect(executeImageSearch(host, { query: "photos" })).resolves.toEqual({ results: [] });
   });
 
   it("returns successful zero results for a completed empty search", async () => {

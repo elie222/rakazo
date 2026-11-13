@@ -42,8 +42,12 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
-  async list_secrets(ctx) {
+  async list_secrets(ctx, call) {
     const { deps, run } = ctx;
+    // Approval records acknowledge the read, never the decrypted vault previews.
+    const acknowledgement = { ok: true };
+    const settled = await call.finish(acknowledgement);
+    if (settled !== acknowledgement) return settled;
     return listBotSecrets(deps.prisma, deps.secretStore, run);
   },
   async forget_secret(ctx, call) {
