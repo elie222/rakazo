@@ -116,6 +116,21 @@ describe("routineSaveRequest", () => {
     ).toEqual({ error: "trigger" });
   });
 
+  it("preserves an HTTP watch when editing its routine from mobile", () => {
+    const watched: Routine = {
+      ...routine,
+      crons: [],
+      watch: { kind: "http", url: "https://example.com/status", everyMinutes: 5, loud: false },
+    };
+    const opened = draftFromRoutine(watched);
+    expect(routineSaveRequest({ ...opened, name: "Status" }, watched, "bot-1", "UTC")).toEqual({
+      update: { routineId: "routine-1", name: "Status" },
+    });
+    expect(routineSaveRequest({ ...opened, watch: null }, watched, "bot-1", "UTC")).toEqual({
+      error: "trigger",
+    });
+  });
+
   it("never rewrites a one-shot's schedule", () => {
     const once = { ...routine, crons: ["@once"] };
     const draft = { ...draftFromRoutine(once), name: "Call Dana" };

@@ -263,6 +263,22 @@ describe("Lark messaging conformance", () => {
     },
   );
 
+  it("sends with a dedupe id Lark honors, so a repeated send of one message arrives once", async () => {
+    const { surface } = createSurface();
+    const threadId = await surface.openDirectThread("lark", "ou-test", context);
+    const key = `msg:${"m".repeat(25)}:file:${"a".repeat(25)}`;
+    await surface.sendToThread({ threadId, body: "hello", idempotencyKey: key }, context);
+    await surface.sendToThread({ threadId, body: "hello", idempotencyKey: key }, context);
+
+    const uuids = request.mock.calls
+      .map(([config]) => (config as { data?: { uuid?: string } }).data?.uuid)
+      .filter(Boolean);
+    expect(uuids).toEqual([
+      createHash("sha256").update(key).digest("hex").slice(0, 32),
+      createHash("sha256").update(key).digest("hex").slice(0, 32),
+    ]);
+  });
+
   it("rejects an invalid encrypted signature", async () => {
     const { surface, events } = createSurface(true);
     expect((await surface.handleWebhook("lark", encryptedWebhook(message(), false)))?.status).toBe(

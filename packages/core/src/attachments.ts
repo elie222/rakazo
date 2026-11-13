@@ -165,7 +165,6 @@ export function promptTextForAttachments(
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
-const TOOL_STEPS_MARKER = "[tool calls this reply made]";
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
 const TOOL_STEP_MAX_LINES = 40;
 /** Tool names are at most 64 characters; only imported data could carry a longer label. */
@@ -201,19 +200,7 @@ export function toolStepsHistoryText(
   const hidden = valid.length - shown.length;
   if (hidden > 0) lines.push(`- …and ${hidden} more`);
   // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step.
-  return `${TOOL_STEPS_MARKER}\n${lines.join("\n")}`;
-}
-
-const COPIED_TOOL_STEPS =
-  /^[ \t]*\[tool calls this reply made\][ \t]*(?:\r?\n[ \t]*- [^\n]*)+\n?/gim;
-
-/**
- * Drops a step list a bot wrote out as reply text. Replies that copied the replayed list instead
- * of calling tools are stored that way, and replaying them would teach the next turn to copy it.
- */
-export function withoutCopiedToolSteps(text: string): string {
-  if (!text.toLowerCase().includes(TOOL_STEPS_MARKER)) return text;
-  return text.replace(COPIED_TOOL_STEPS, "").trim();
+  return `[tool calls this reply made]\n${lines.join("\n")}`;
 }
 
 const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
@@ -231,20 +218,13 @@ function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): strin
   return counts.map(({ outcome, count }) => `${count} ${outcome}`).join(", ");
 }
 
-/**
- * A message as history text. Tool steps are left out unless asked for: replayed inside the bot's
- * own turns, the step list reads as something it writes, and models copied it as their whole reply
- * instead of calling tools. Summaries and quoted messages can still include them. `fromBot` also
- * drops a list a bot wrote into its reply; a person's text is always kept as written.
- */
-export function blocksToAgentHistoryText(
-  blocks: MessageBlock[],
-  { toolSteps = false, fromBot = false }: { toolSteps?: boolean; fromBot?: boolean } = {},
-): string {
+export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
-      if (block.kind === "text") return fromBot ? withoutCopiedToolSteps(block.text) : block.text;
-      if (block.kind === "steps") return toolSteps ? toolStepsHistoryText(block.steps) : "";
+      if (block.kind === "text") return block.text;
+      // The tools a reply used, and what the bot wrote before each, are kept out of its text;
+      // without them a later turn cannot tell what it already did.
+      if (block.kind === "steps") return toolStepsHistoryText(block.steps);
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;

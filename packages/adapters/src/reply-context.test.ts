@@ -213,8 +213,7 @@ it("includes the server-derived first line and author role for an id-only reply"
 });
 
 describe("earlier turns' tool work", () => {
-  // Replayed in the bot's own turn, the step list was copied as whole replies instead of tool calls.
-  it("keeps tool steps, and step lists a reply copied, out of the bot's replayed turn", () => {
+  it("replays what an earlier reply did on the computer, not only its final text", () => {
     const install = messageToAgentHistoryText({
       id: "bot-install",
       threadId: "thread-1",
@@ -228,7 +227,7 @@ describe("earlier turns' tool work", () => {
           ],
           durationMs: 9_000,
         },
-        { kind: "text", text: "Done.\n[tool calls this reply made]\n- Shell (succeeded)" },
+        { kind: "text", text: "Done." },
       ],
     });
     const [, replayed] = toHistory(
@@ -241,42 +240,8 @@ describe("earlier turns' tool work", () => {
     );
     expect(replayed).toMatchObject({ role: "assistant" });
     const text = JSON.stringify(replayed);
+    expect(text).toContain("Shell ×2: Installing the password manager extension.");
+    expect(text).toContain("Computer screenshot");
     expect(text).toContain("Done.");
-    expect(text).not.toContain("tool calls this reply made");
-    expect(text).not.toContain("Shell");
-  });
-
-  it("quotes a copied step list as the message someone replied to", () => {
-    const text = messageToAgentHistoryText({
-      id: "reaction",
-      threadId: "thread-1",
-      role: "user",
-      blocks: [{ kind: "text", text: "👍" }],
-      replyToMessageId: "bot-copied",
-      replyTo: {
-        id: "bot-copied",
-        threadId: "thread-1",
-        role: "bot",
-        blocks: [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
-      },
-    });
-    expect(text).toContain("List files (succeeded)");
-  });
-
-  it("quotes the tool steps of a reply someone reacted to", () => {
-    const text = messageToAgentHistoryText({
-      id: "reaction",
-      threadId: "thread-1",
-      role: "user",
-      blocks: [{ kind: "text", text: "👍" }],
-      replyToMessageId: "bot-tools",
-      replyTo: {
-        id: "bot-tools",
-        threadId: "thread-1",
-        role: "bot",
-        blocks: [{ kind: "steps", steps: [{ label: "Shell", count: 1 }] }],
-      },
-    });
-    expect(text).toContain("Shell");
   });
 });

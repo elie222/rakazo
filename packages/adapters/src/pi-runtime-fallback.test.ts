@@ -70,6 +70,7 @@ import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
+import { sharedTokenPacer } from "./token-pacer.js";
 
 const primary = model("provider-a", "primary", 32_768);
 const backupA = model("provider-b", "backup-a", 8_192);
@@ -3121,4 +3122,61 @@ describe("Pi runtime reasoning efforts an endpoint refuses", () => {
       ]);
     },
   );
+});
+
+describe("Pi runtime token pacer hook", () => {
+  const local = model("local", "primary", 32_768);
+  const localRequest = () => {
+    const input = request();
+    input.model = {
+      provider: local.provider,
+      id: local.id,
+      apiKey: "fake-key",
+    } as typeof input.model;
+    providerState.models.set(
+      `${local.provider}/${local.id}`,
+      local as unknown as Record<string, unknown>,
+    );
+    return input;
+  };
+  const reply = () => stream(local, message(local, [{ type: "text", text: "Done." }], "stop"));
+
+  it("reserves the prompt before the call and settles it with the reported tokens", async () => {
+    vi.stubEnv("RAKAZO_LOCAL_TOKENS_PER_MINUTE", "123456");
+    const slot = { settle: vi.fn(), release: vi.fn() };
+    const acquire = vi.spyOn(sharedTokenPacer, "acquire").mockResolvedValue({ slot, waitedMs: 0 });
+    providerState.stream.mockImplementation(reply);
+    await run(localRequest());
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(acquire.mock.calls[0]?.[0]).toBe("local|https://models.invalid/v1");
+    expect(acquire.mock.calls[0]?.[2]).toBe(123_456);
+    expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
+      providerState.stream.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(slot.settle).toHaveBeenCalledWith(4);
+  });
+
+  it("does not pace when the limit is unset or the provider is not local", async () => {
+    const acquire = vi.spyOn(sharedTokenPacer, "acquire");
+    providerState.stream.mockImplementation(reply);
+    await run(localRequest());
+    vi.stubEnv("RAKAZO_LOCAL_TOKENS_PER_MINUTE", "123456");
+    providerState.stream.mockImplementation(() =>
+      stream(primary, message(primary, [{ type: "text", text: "Done." }], "stop")),
+    );
+    await run(request());
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it("frees the reservation when the call fails", async () => {
+    vi.stubEnv("RAKAZO_LOCAL_TOKENS_PER_MINUTE", "123456");
+    const slot = { settle: vi.fn(), release: vi.fn() };
+    vi.spyOn(sharedTokenPacer, "acquire").mockResolvedValue({ slot, waitedMs: 0 });
+    providerState.stream.mockImplementation(() =>
+      stream(local, message(local, [], "error", "boom")),
+    );
+    await run(localRequest()).catch(() => undefined);
+    expect(slot.release).toHaveBeenCalled();
+    expect(slot.settle).not.toHaveBeenCalled();
+  });
 });

@@ -67,6 +67,7 @@ import {
 } from "./mcp-package-installer.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
+import { mcpToolAllowed } from "./mcp-tool-permissions.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
@@ -506,11 +507,7 @@ export class McpConnector implements ConnectorProvider {
           );
           reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
-            .filter(
-              (tool) =>
-                assignment.allowAllTools ||
-                (assignment.allowedTools as unknown[]).includes(tool.name),
-            )
+            .filter((tool) => mcpToolAllowed(assignment, tool.name))
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
@@ -679,11 +676,7 @@ export class McpConnector implements ConnectorProvider {
       };
       return;
     }
-    if (
-      !assignment ||
-      (!assignment.allowAllTools &&
-        !(assignment.allowedTools as unknown[]).includes(call.route.toolName))
-    ) {
+    if (!assignment || !mcpToolAllowed(assignment, call.route.toolName)) {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
       return;
     }
