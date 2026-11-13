@@ -1,4 +1,5 @@
 import type { ModelCredential } from "@rakazo/contracts";
+import { modelRoutingForm } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { ConnectionFormDraft } from "./model-connection-form.js";
 import {
@@ -392,5 +393,52 @@ describe("modelConnectRequest", () => {
         credentialId: "credential-fixture",
       },
     });
+  });
+});
+
+describe("legacy project routing", () => {
+  const selected = {
+    provider: "project-provider",
+    id: "model",
+    routingFields: ["projectId", "region"] as const,
+  };
+  it("keeps key-only settings and key rotation editable without adding project routing", () => {
+    const saved = credential({ provider: selected.provider, modelId: selected.id });
+    for (const apiKey of ["", "replacement-fixture-key"]) {
+      const form = draft({ apiKey, projectId: "", region: "global", maxTokens: "4096" });
+      expect(modelRoutingForm(selected.routingFields, form, saved).routingReady).toBe(true);
+      const request = modelConnectRequest({
+        form,
+        selected: { ...selected, routingFields: [...selected.routingFields] },
+        credential: saved,
+        credentialId: saved.id,
+      });
+      expect(request.status).toBe("ready");
+      if (request.status !== "ready") throw new Error("Expected an editable legacy connection");
+      expect(request.input).not.toHaveProperty("projectId");
+      expect(request.input).not.toHaveProperty("region");
+    }
+  });
+  it("still requires complete routing for new or already project-scoped connections", () => {
+    const form = draft({ projectId: "", region: "global" });
+    expect(modelRoutingForm(selected.routingFields, form).routingReady).toBe(false);
+    expect(
+      modelRoutingForm(
+        selected.routingFields,
+        form,
+        credential({ projectId: "example-project", region: "global" }),
+      ).routingReady,
+    ).toBe(false);
+    expect(
+      modelRoutingForm(selected.routingFields, { ...form, region: "us-central1" }, credential())
+        .routingReady,
+    ).toBe(false);
+    expect(
+      modelRoutingForm(
+        selected.routingFields,
+        { ...form, projectId: "example-project" },
+        credential(),
+      ).routingReady,
+    ).toBe(true);
   });
 });

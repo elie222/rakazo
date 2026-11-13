@@ -281,6 +281,7 @@ export default function ModelConnection() {
       projectId,
       region,
     },
+    credential,
   );
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),

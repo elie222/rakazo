@@ -11,6 +11,7 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   ModelHeaderRowsSchema,
   modelHeadersInput,
+  modelRoutingFieldsForSave,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   parseModelContextWindow,
@@ -188,7 +189,7 @@ export function modelConnectRequest(input: {
     ModelCatalogEntry,
     "provider" | "providerName" | "id" | "thinkingLevels" | "routingFields"
   >;
-  credential?: Pick<ModelCredential, "modelId" | "thinkingLevel">;
+  credential?: Pick<ModelCredential, "modelId" | "thinkingLevel" | "projectId" | "region">;
   credentialId: string | null;
   settingsOnly?: boolean;
   makeDefault?: { makeDefault: boolean; scope: SettingsScope };
@@ -276,7 +277,9 @@ export function modelConnectRequest(input: {
       ...(newKey ? { apiKey: newKey } : {}),
       ...(selected.routingFields?.length
         ? Object.fromEntries(
-            selected.routingFields.map((field) => [field, (form[field] ?? "").trim()]),
+            (modelRoutingFieldsForSave(selected.routingFields, form, credential) ?? []).map(
+              (field) => [field, (form[field] ?? "").trim()],
+            ),
           )
         : {}),
       modelId: selected.id,

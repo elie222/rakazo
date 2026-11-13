@@ -185,16 +185,35 @@ export function modelRoutingReady(
   return (fields ?? []).every((field) => modelRoutingId(values[field]) !== undefined);
 }
 
+/** An existing key-only connection may keep its original route until a project is supplied. */
+export function modelRoutingFieldsForSave(
+  fields: readonly ModelRoutingField[] | undefined,
+  values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Pick<ModelCredential, "projectId" | "region">,
+): readonly ModelRoutingField[] | undefined {
+  if (
+    fields?.includes("projectId") &&
+    existing &&
+    !existing.projectId &&
+    !existing.region &&
+    !values.projectId?.trim() &&
+    (!values.region?.trim() || values.region.trim() === "global")
+  )
+    return fields.filter((field) => field !== "projectId" && field !== "region");
+  return fields;
+}
+
 /** What a connection form shows and requires for the routing ids a catalog entry names. */
 export function modelRoutingForm(
   fields: readonly ModelRoutingField[] | undefined,
   values: Partial<Record<ModelRoutingField, string>>,
+  existing?: Pick<ModelCredential, "projectId" | "region">,
 ): { needsRouting: boolean; needsGateway: boolean; needsProject: boolean; routingReady: boolean } {
   return {
     needsRouting: Boolean(fields?.length),
     needsGateway: Boolean(fields?.includes("gatewayId")),
     needsProject: Boolean(fields?.includes("projectId")),
-    routingReady: modelRoutingReady(fields, values),
+    routingReady: modelRoutingReady(modelRoutingFieldsForSave(fields, values, existing), values),
   };
 }
 

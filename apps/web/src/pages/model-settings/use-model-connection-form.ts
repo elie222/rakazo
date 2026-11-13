@@ -96,6 +96,7 @@ export function useModelConnectionForm({
       projectId,
       region,
     },
+    credential,
   );
 
   function applyFields(fields: ConnectionFormFields) {

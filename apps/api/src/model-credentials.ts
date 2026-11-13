@@ -344,8 +344,13 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           await verifyOpenAiCompatibleApiKey(saved, deps.modelConnectionFetch, signal);
         }
       }
-      if (input.apiKey?.trim() || input.projectId !== undefined || input.region !== undefined) {
-        const saved = parseModelSecret(plaintext);
+      const saved = parseModelSecret(plaintext);
+      const previous = previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
+      const routingChanged =
+        saved.kind === "api_key" &&
+        (saved.projectId !== (previous?.kind === "api_key" ? previous.projectId : undefined) ||
+          saved.region !== (previous?.kind === "api_key" ? previous.region : undefined));
+      if (input.apiKey?.trim() || routingChanged) {
         await verifyCatalogProviderApiKey(
           {
             provider: input.provider,
