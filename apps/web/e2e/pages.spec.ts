@@ -161,9 +161,12 @@ test("shared page contents jump below the header and copy fallback", async ({
   const target = frame.getByRole("heading", { name: "Details", exact: true });
   const jump = async () => {
     await frame.getByRole("link", { name: "Details", exact: true }).click();
+    const header = (await outside.locator("header").boundingBox())!;
+    // Nested-frame scrolling rounds fractional CSS coordinates. Allow one pixel, not an
+    // obscured heading (the original layout placed it at the top of the viewport).
     await expect
-      .poll(async () => (await target.boundingBox())?.y ?? -1)
-      .toBeGreaterThanOrEqual((await outside.locator("header").boundingBox())!.height);
+      .poll(async () => (await target.boundingBox())?.y ?? -Infinity)
+      .toBeGreaterThanOrEqual(header.y + header.height - 1);
     await expect.poll(async () => (await target.boundingBox())?.y ?? Infinity).toBeLessThan(300);
     expect(await outside.evaluate(() => window.scrollY)).toBe(0);
   };
@@ -183,7 +186,7 @@ test("shared page contents jump below the header and copy fallback", async ({
   await jump();
   const fallbackBox = (await fallback.boundingBox())!;
   expect((await target.boundingBox())!.y).toBeGreaterThanOrEqual(
-    fallbackBox.y + fallbackBox.height,
+    fallbackBox.y + fallbackBox.height - 1,
   );
   await captureScreenshot(outside, testInfo, "page-public-contents-copy-fallback");
   await outside.emulateMedia({ media: "print" });
