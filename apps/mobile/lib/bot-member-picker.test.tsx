@@ -187,6 +187,7 @@ it("loads members before mounting the collapsed picker and saves reversible edit
   expect(rpc).toHaveBeenCalledWith("groups/update", {
     groupId: "group-1",
     botIds: ["bot-1", "bot-2", "bot-3"],
+    expectedBotIds: ["bot-1", "bot-2"],
   });
   expect(back).toHaveBeenCalledOnce();
 });

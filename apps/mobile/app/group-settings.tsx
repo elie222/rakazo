@@ -53,7 +53,12 @@ export default function GroupSettingsScreen() {
             ? nextGroup.members.map((member) => member.botId)
             : [
                 ...new Set([
-                  ...previous.filter((id) => ids.has(id)),
+                  ...previous.filter(
+                    (id) =>
+                      ids.has(id) &&
+                      (!previousMembers.has(id) ||
+                        nextGroup.members.some((member) => member.botId === id)),
+                  ),
                   ...nextGroup.members
                     .filter((member) => !previousMembers.has(member.botId))
                     .map((member) => member.botId),
@@ -78,10 +83,18 @@ export default function GroupSettingsScreen() {
     setPending(true);
     setError(null);
     try {
-      const input: { groupId: string; name?: string; botIds?: string[] } = { groupId };
+      const input: {
+        groupId: string;
+        name?: string;
+        botIds?: string[];
+        expectedBotIds?: string[];
+      } = { groupId };
       if (name.trim() !== group.name) input.name = name.trim();
       const memberIds = group.members.map((member) => member.botId).join(",");
-      if (selected.join(",") !== memberIds) input.botIds = selected;
+      if (selected.join(",") !== memberIds) {
+        input.botIds = selected;
+        input.expectedBotIds = group.members.map((member) => member.botId);
+      }
       if (input.name || input.botIds) await rpc("groups/update", input);
       router.back();
     } catch (err) {

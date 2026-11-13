@@ -1,9 +1,10 @@
 import { i18n } from "@lingui/core";
 
+// Preserve the existing macro-generated catalog IDs without requiring macro compilation here.
 export function botRemovalWarning(groups: readonly { name: string }[] | null): string {
   if (groups === null)
     return i18n._({
-      id: "Groups left with fewer than two bots are deleted too, including their messages, files, and pages.",
+      id: "oHABLZ",
       message:
         "Groups left with fewer than two bots are deleted too, including their messages, files, and pages.",
     });
@@ -11,12 +12,12 @@ export function botRemovalWarning(groups: readonly { name: string }[] | null): s
   const names = groups.map((group) => group.name).join(", ");
   return groups.length === 1
     ? i18n._({
-        id: "The group {names} will be deleted too, including its messages, files, and pages.",
+        id: "TNdf-N",
         message: "The group {names} will be deleted too, including its messages, files, and pages.",
         values: { names },
       })
     : i18n._({
-        id: "The groups {names} will be deleted too, including their messages, files, and pages.",
+        id: "N8SrqH",
         message:
           "The groups {names} will be deleted too, including their messages, files, and pages.",
         values: { names },
