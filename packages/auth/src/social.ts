@@ -27,7 +27,6 @@ export interface AppleProviderConfig {
   teamId: string;
   keyId: string;
   privateKey: string;
-  /** iOS bundle id. When set, native identity tokens are accepted alongside the Services ID. */
 }
 
 export type BuiltinSocialProvider = GoogleProviderConfig | AppleProviderConfig;
@@ -49,8 +48,6 @@ export interface PublicSignInProvider {
   presentation?: SignInProvider["presentation"];
   id: string;
   name: string;
-  /** The server accepts a native identity token for this provider. */
-  native?: true;
 }
 
 const GOOGLE_TOGETHER = "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured together";

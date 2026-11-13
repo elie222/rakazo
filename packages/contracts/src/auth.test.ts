@@ -35,7 +35,7 @@ it("lists sign-in providers and falls back to the older SSO field", () => {
   ).toEqual([{ id: "oidc", name: "SSO" }]);
   const providers = [
     { id: "google", name: "Google" },
-    { id: "apple", name: "Apple", native: true },
+    { id: "apple", name: "Apple" },
   ];
   expect(signInProviders(authCapabilitiesSchema.parse({ ...base, providers }))).toEqual(providers);
   expect(

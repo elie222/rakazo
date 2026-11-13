@@ -20,8 +20,6 @@ export const signInProviderSchema = z.object({
         .optional(),
     })
     .optional(),
-  /** The server accepts a native identity token for this provider. */
-  native: z.boolean().optional(),
 });
 export type SignInProvider = z.infer<typeof signInProviderSchema>;
 

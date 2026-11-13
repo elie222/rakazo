@@ -265,7 +265,7 @@ it("offers native provider controls and uses browser OAuth for sign-in", async (
     sso: null,
     providers: [
       { id: "google", name: "Google" },
-      { id: "apple", name: "Apple", native: true },
+      { id: "apple", name: "Apple" },
     ],
   });
   vi.mocked(continueWithSso).mockResolvedValue(false);

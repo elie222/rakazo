@@ -8,12 +8,12 @@ const passwordOnly = {
   sso: null,
   passwordReset: true,
   resetUrl: "http://127.0.0.1:5173/reset-password",
-  providers: [] as { id: string; name: string; native?: boolean }[],
+  providers: [] as { id: string; name: string }[],
 };
 
 const both = [
   { id: "google", name: "Google", presentation: socialPresentation("google") },
-  { id: "apple", name: "Apple", native: true, presentation: socialPresentation("apple") },
+  { id: "apple", name: "Apple", presentation: socialPresentation("apple") },
 ];
 
 async function mockSignedOut(page: Page, providers: typeof both | []) {
@@ -30,7 +30,6 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await mockSignedOut(page, both);
   await page.goto("/sign-in");
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await expect(page.getByText("Sign in to continue to Rakazo")).toBeVisible();
   const google = page.getByRole("button", { name: "Continue with Google" });
   const apple = page.getByRole("button", { name: "Continue with Apple" });
   const emailChoice = page.getByRole("button", { name: "Continue with email" });
@@ -81,7 +80,6 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
 
   await page.goto("/sign-up");
   await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
-  await expect(page.getByText("Persistent AI teammates that do real work")).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Apple" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();

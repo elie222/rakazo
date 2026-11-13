@@ -177,7 +177,7 @@ it("shows a configured provider beside the password form and hides the rest", as
     sso: null,
     providers: [
       { id: "google", name: "Google", presentation: { variant: "outline", mark } },
-      { id: "apple", name: "Apple", native: true, presentation: { variant: "solid", mark } },
+      { id: "apple", name: "Apple", presentation: { variant: "solid", mark } },
     ],
   });
   await render();

@@ -919,7 +919,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });
             }
             const callbackAttribution = SignupAttribution.safeParse(
-              ctx && isOidcCallback(ctx)
+              ctx?.path === "/callback/:id"
                 ? (await getOAuthState())?.serverContext?.signupAttribution
                 : undefined,
             );

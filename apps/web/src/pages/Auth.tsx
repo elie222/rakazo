@@ -83,11 +83,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : (
       <Trans>Reset your password</Trans>
     );
-  const subtitle = !presented ? null : mode === "in" ? (
-    <Trans>Sign in to continue to Rakazo</Trans>
-  ) : (
-    <Trans>Persistent AI teammates that do real work</Trans>
-  );
 
   useEffect(() => {
     setEmailStep(false);
@@ -258,7 +253,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     <AuthFrame
       onSubmit={submit}
       title={title}
-      subtitle={subtitle}
       surface={presented}
       leading={
         presented && emailStep ? (
@@ -612,14 +606,12 @@ export function PasswordResetPage() {
 
 export function AuthFrame({
   title,
-  subtitle,
   surface = false,
   leading,
   onSubmit,
   children,
 }: {
   title: React.ReactNode;
-  subtitle?: React.ReactNode;
   surface?: boolean;
   leading?: React.ReactNode;
   onSubmit: (event: React.FormEvent) => void;
@@ -655,17 +647,12 @@ export function AuthFrame({
               aria-live="polite"
               className={
                 surface
-                  ? "mt-5 text-balance text-center text-display font-medium tracking-tight"
+                  ? "mt-5 mb-6 text-balance text-center text-display font-medium tracking-tight"
                   : "mt-7 mb-9 text-balance text-center text-display font-medium tracking-tight"
               }
             >
               {title}
             </h1>
-            {subtitle ? (
-              <p className="mt-2 mb-6 max-w-sm text-balance text-center text-body text-muted-foreground">
-                {subtitle}
-              </p>
-            ) : null}
           </div>
           {children}
         </form>

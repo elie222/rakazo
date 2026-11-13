@@ -2162,3 +2162,81 @@ describe.each(["google", "apple"] as const)("%s ordinary OAuth boundary", (provi
     expect((await callback(url)).headers.get("location")).toContain("error=");
   });
 });
+
+it.each([
+  ["google", "ios"],
+  ["apple", "android"],
+])(
+  "preserves %s signup attribution from the originating %s request",
+  async (providerId, surface) => {
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    setup({
+      social: {
+        providers: [
+          {
+            id: "google",
+            name: "Google",
+            clientId: "offline-client",
+            clientSecret: "offline-secret",
+          },
+          {
+            id: "apple",
+            name: "Apple",
+            clientId: "service",
+            teamId: "team",
+            keyId: "key",
+            privateKey: pem,
+          },
+        ],
+      },
+    });
+    const originalAttribution = encodeURIComponent(
+      JSON.stringify({ surface: "web", utmSource: "example", utmCampaign: "signup" }),
+    );
+    const initiation = await request(
+      "/sign-in/social",
+      {
+        provider: providerId,
+        callbackURL: `${origin}/app`,
+        additionalData: {
+          serverContext: { signupAttribution: { surface: "desktop", utmSource: "untrusted" } },
+        },
+      },
+      undefined,
+      {
+        "x-rakazo-signup-surface": surface,
+        cookie: `rakazo_signup_attribution=${originalAttribution}`,
+      },
+    );
+    const authorization = new URL(((await initiation.json()) as { url: string }).url);
+    const provider = (await auth.$context).socialProviders.find((item) => item.id === providerId)!;
+    if (!provider.idToken || !("jwks" in provider.idToken)) throw new Error("Missing verifier");
+    provider.idToken.jwks = async () => publicKey as never;
+    provider.validateAuthorizationCode = async () => ({
+      accessToken: "offline-token",
+      tokenType: "Bearer",
+      idToken: jwt({
+        sub: "new-subject",
+        email: providerId === "google" ? "new@gmail.com" : "new@icloud.com",
+        email_verified: true,
+        name: "Test",
+        iss: providerId === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+        aud: providerId === "google" ? "offline-client" : "service",
+        nonce: authorization.searchParams.get("nonce"),
+      }),
+    });
+    // The returning browser sends no native header or attribution cookie.
+    const response = await request(
+      `/callback/${providerId}?code=offline-code&state=${authorization.searchParams.get("state")}`,
+    );
+    expect(response.headers.get("location")).toBe(`${origin}/app`);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("user")[0]).toMatchObject({
+      signupSurface: surface,
+      signupUtmSource: "example",
+      signupUtmCampaign: "signup",
+    });
+  },
+);
