@@ -17,6 +17,44 @@ import {
 import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 
 describe("jsonSchemaParameters", () => {
+  it.each(["number", "integer"])("preserves %s bounds through SDK validation", (type) => {
+    const field = { type, minimum: 0, maximum: 20 };
+    const inputSchema = {
+      type: "object",
+      properties: {
+        limit: field,
+        nested: { type: "object", properties: { value: field }, required: ["value"] },
+        values: { type: "array", items: field },
+        optional: field,
+        unconstrained: { type },
+      },
+      required: ["limit", "nested", "values", "unconstrained"],
+    };
+    const original = structuredClone(inputSchema);
+    const tool = { name: "bounded_input", description: "Use bounded input", inputSchema };
+    const parameters = parametersFor(tool);
+    const wire = JSON.parse(JSON.stringify(parameters));
+    expect(wire.properties.limit).toEqual(field);
+    expect(wire.properties.nested.properties.value).toEqual(field);
+    expect(wire.properties.values.items).toEqual(field);
+    expect(wire.properties.unconstrained).toEqual({ type });
+    const valid = { limit: 0, nested: { value: 20 }, values: [0, 20], unconstrained: 1000 };
+    const validate = (args: ToolCall["arguments"]) =>
+      validateToolArguments(
+        { ...tool, parameters },
+        { type: "toolCall", id: "bounds-test", name: tool.name, arguments: args },
+      );
+    expect(validate(valid)).toEqual(valid);
+    expect(parseConnectorToolArgs(inputSchema, validate(valid))).toEqual(valid);
+    for (const value of [-1, 21]) {
+      expect(() => validate({ ...valid, limit: value })).toThrow();
+      expect(() => validate({ ...valid, nested: { value } })).toThrow();
+      expect(() => validate({ ...valid, values: [value] })).toThrow();
+      expect(() => validate({ ...valid, optional: value })).toThrow();
+    }
+    expect(inputSchema).toEqual(original);
+  });
+
   it.each([
     {
       field: { type: "string", minLength: 3, maxLength: 5 },
