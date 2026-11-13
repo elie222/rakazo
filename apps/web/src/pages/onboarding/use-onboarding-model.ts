@@ -19,6 +19,7 @@ import {
   connectionFormFields,
   pickCatalogModelId,
   popularModelProvidersFirst,
+  probedCacheCapabilities,
 } from "@rakazo/core";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
@@ -277,7 +278,9 @@ export function useOnboardingModel({
           return;
         }
         // Prompt-caching support the model listing published rides along with the connection.
-        const cached = probeInfoRef.current.get(modelId.trim());
+        const cacheCapabilitiesByModel = probedCacheCapabilities(probeInfoRef.current, [
+          modelId.trim(),
+        ]);
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
@@ -290,9 +293,7 @@ export function useOnboardingModel({
           contextWindow: parsedContextWindow,
           supportsImages,
           maxImagesPerPrompt: maxImagesPerPromptInput,
-          ...(cached
-            ? { cacheCapabilitiesByModel: { [modelId.trim()]: cached.cacheCapabilities ?? null } }
-            : {}),
+          ...(cacheCapabilitiesByModel ? { cacheCapabilitiesByModel } : {}),
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });

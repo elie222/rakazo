@@ -235,6 +235,81 @@ it("connects DeepInfra with a required key and the model's discovered capabiliti
   await act(async () => root.unmount());
 });
 
+it("does not carry one found model's reasoning effort over to another", async () => {
+  vi.mocked(rpc.models.list).mockResolvedValueOnce([
+    {
+      provider: "openai-compatible",
+      providerName: "OpenAI-compatible",
+      id: "",
+      label: "Custom",
+      billing: "API key",
+      endpointPresets: [{ name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" }],
+    },
+  ] as never);
+  vi.mocked(rpc.models.probeOpenAiCompatible).mockResolvedValueOnce({
+    models: ["think-a", "think-b"],
+    details: [
+      { id: "think-a", supportsImages: false, reasoning: true },
+      { id: "think-b", supportsImages: false, reasoning: true },
+    ],
+  });
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  await act(async () => document.querySelector<HTMLElement>('[aria-label="Provider"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent === "DeepInfra")!
+      .click(),
+  );
+  const key = document.querySelector<HTMLInputElement>('input[aria-label="API key"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      key,
+      "fake-fixture-key",
+    );
+    key.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const button = (text: string) =>
+    [...document.querySelectorAll("button")].find((entry) => entry.textContent === text)!;
+  const pickFound = async (index: number) => {
+    await act(async () =>
+      document.querySelector<HTMLElement>('[aria-label="Models from server"]')!.click(),
+    );
+    await act(async () => document.querySelectorAll<HTMLElement>("[cmdk-item]")[index]!.click());
+  };
+  await act(async () => button("Find models").click());
+  await pickFound(0);
+  await act(async () =>
+    document.querySelector<HTMLElement>('[aria-label="Reasoning effort"]')!.click(),
+  );
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent === "High")!
+      .click(),
+  );
+  expect(document.querySelector('[aria-label="Reasoning effort"]')?.textContent).toBe("High");
+  await pickFound(1);
+  await act(async () => button("Continue").click());
+  const sent = vi.mocked(rpc.models.connect).mock.lastCall?.[0] as {
+    modelId?: string;
+    thinkingLevel?: unknown;
+  };
+  expect(sent.modelId).toBe("think-b");
+  expect(sent.thinkingLevel ?? null).toBeNull();
+  await act(async () => root.unmount());
+});
+
 it("keeps Continue disabled for a hosted preset until its key is entered", async () => {
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(async () =>

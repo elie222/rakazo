@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   CacheCapabilitiesSchema,
+  connectionCacheCapabilities,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelApiProtocolSchema,
@@ -49,13 +50,14 @@ export function modelCacheCapabilities(
   secret: Exclude<StoredModelSecret, { kind: "oauth" }>,
   modelId: string,
 ): CacheCapabilities | undefined {
-  const own =
-    secret.kind === "openai_compatible" &&
-    secret.cacheCapabilitiesByModel !== undefined &&
-    Object.hasOwn(secret.cacheCapabilitiesByModel, modelId)
-      ? secret.cacheCapabilitiesByModel[modelId]
-      : undefined;
-  return own ?? secret.cacheCapabilities;
+  return connectionCacheCapabilities(
+    {
+      cacheCapabilities: secret.cacheCapabilities,
+      cacheCapabilitiesByModel:
+        secret.kind === "openai_compatible" ? secret.cacheCapabilitiesByModel : undefined,
+    },
+    modelId,
+  );
 }
 
 export type StoredModelSecret =

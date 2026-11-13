@@ -29,6 +29,7 @@ import {
   connectionMaxTokensField,
   createModelProbe,
   initialModelProbeState,
+  modelCapabilityHint,
   modelConnectRequest,
   pickedCompatibleModelFields,
   savedCompatibleModelIds,
@@ -537,6 +538,12 @@ export default function ModelConnection() {
       enabledModelIds={enabledModelIds}
       setEnabledModelIds={setEnabledModelIds}
       probeModels={probeModels}
+      modelHint={(id) =>
+        modelCapabilityHint(
+          probeDetails.find((info) => info.id === id),
+          { images: t`Images`, thinking: t`Thinking` },
+        )
+      }
       showAdvanced={showAdvanced}
       onToggleAdvanced={toggleAdvanced}
       reasoning={reasoning}

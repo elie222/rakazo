@@ -262,7 +262,7 @@ export type ConnectionFormInvalidField =
  * model that publishes none is sent as `null`, so a price saved for it earlier is cleared; a
  * model the listing did not describe is left out and keeps what it has.
  */
-function probedCacheCapabilities(
+export function probedCacheCapabilities(
   probedModels: ReadonlyMap<string, Pick<OpenAiCompatibleModelInfo, "cacheCapabilities">>,
   modelIds: readonly string[],
 ): Record<string, CacheCapabilities | null> | undefined {

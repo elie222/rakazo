@@ -1,10 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { OpenAiCompatibleModelInfo } from "@rakazo/contracts";
+import { modelCapabilityHint as capabilityHint } from "@rakazo/core";
 
 /** Short capability hints for a discovered model, such as "Images · Thinking". */
 export function modelCapabilityHint(info: OpenAiCompatibleModelInfo | undefined): string {
-  if (!info) return "";
-  return [info.supportsImages ? t`Images` : "", info.reasoning ? t`Thinking` : ""]
-    .filter(Boolean)
-    .join(" · ");
+  return capabilityHint(info, { images: t`Images`, thinking: t`Thinking` });
 }

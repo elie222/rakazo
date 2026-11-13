@@ -286,6 +286,13 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
     updateBaseUrl,
   } = model;
 
+  /** A different found model starts from its own published fields, not the last model's effort. */
+  function pickFoundModel(next: string) {
+    if (next !== modelId) setThinkingLevel(null);
+    setModelId(next);
+    applyProbedModelFields(next);
+  }
+
   return (
     <div className="mt-6 block text-body text-foreground">
       <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
@@ -323,8 +330,8 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onChange={(next) => {
               invalidatePreflight();
               setManualModelId(next === CUSTOM_MODEL_OPTION);
-              setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
-              if (next !== CUSTOM_MODEL_OPTION) applyProbedModelFields(next);
+              if (next === CUSTOM_MODEL_OPTION) setModelId("");
+              else pickFoundModel(next);
             }}
             otherValue={CUSTOM_MODEL_OPTION}
             hint={(id) => modelCapabilityHint(probeInfoById.get(id))}
@@ -349,8 +356,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             className="mt-2 px-0 text-muted-foreground"
             onClick={() => {
               setManualModelId(false);
-              setModelId(probeModels[0] ?? "");
-              applyProbedModelFields(probeModels[0] ?? "");
+              pickFoundModel(probeModels[0] ?? "");
               invalidatePreflight();
             }}
           >

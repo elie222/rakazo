@@ -13,10 +13,12 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/** The model's string tags, or undefined when the listing gives no usable tags to judge by. */
 function tagsOf(metadata: Record<string, unknown> | undefined): ReadonlySet<string> | undefined {
   const tags = metadata?.tags;
   if (!Array.isArray(tags) || tags.length > MAX_TAGS) return undefined;
-  return new Set(tags.filter((tag): tag is string => typeof tag === "string"));
+  const valid = new Set(tags.filter((tag): tag is string => typeof tag === "string"));
+  return valid.size > 0 ? valid : undefined;
 }
 
 function price(value: unknown): number | undefined {
@@ -77,7 +79,8 @@ function modelInfo(
 /**
  * DeepInfra's `/models` lists every model it hosts (image, speech, embedding, ...) and tags each
  * in `metadata`. Keeps the chat models and reads their capabilities from the tags. A model whose
- * metadata has no tags list is kept without details, since nothing says it is not a chat model.
+ * metadata has no usable tags (no list, an empty one, or no string tags) is kept without details,
+ * since nothing says it is not a chat model.
  * Each entry is judged by its own metadata, and an id listed more than once is offered once, with
  * the details of an entry that describes it.
  */

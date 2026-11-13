@@ -502,6 +502,17 @@ describe("DeepInfra capability prefill", () => {
     expect(connectInput()).not.toHaveProperty("cacheCapabilities");
   });
 
+  it("shows what the listing says each found model can do", async () => {
+    saved.probeDetails = [
+      { id: "found-0", supportsImages: true, reasoning: true },
+      { id: "found-1", supportsImages: false, reasoning: false },
+    ];
+    await openDeepInfra();
+    expect(document.body.textContent).toContain("found-0Images · Thinking");
+    expect(document.body.textContent).not.toContain("found-1Images");
+    expect(document.body.textContent).not.toContain("found-1Thinking");
+  });
+
   it("lets the person change a prefilled switch before connecting", async () => {
     saved.probeDetails = [
       { id: "found-0", supportsImages: true, reasoning: true, contextWindow: 65536 },

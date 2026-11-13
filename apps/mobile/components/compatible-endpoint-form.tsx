@@ -38,6 +38,8 @@ type CompatibleEndpointFormProps = {
   enabledModelIds: string[];
   setEnabledModelIds: Dispatch<SetStateAction<string[]>>;
   probeModels: string[];
+  /** What the listing says a found model can do, such as "Images · Thinking"; empty for none. */
+  modelHint: (modelId: string) => string;
   showAdvanced: boolean;
   onToggleAdvanced: () => void;
   reasoning: boolean;
@@ -77,6 +79,7 @@ export function CompatibleEndpointForm({
   enabledModelIds,
   setEnabledModelIds,
   probeModels,
+  modelHint,
   showAdvanced,
   onToggleAdvanced,
   reasoning,
@@ -187,7 +190,12 @@ export function CompatibleEndpointForm({
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.modelLabel}>{entry}</Text>
+                <View style={styles.modelChoiceText}>
+                  <Text style={styles.modelLabel}>{entry}</Text>
+                  {modelHint(entry) ? (
+                    <Text style={styles.modelHint}>{modelHint(entry)}</Text>
+                  ) : null}
+                </View>
                 {entry === modelId ? <Checkmark /> : null}
               </Pressable>
               <NativeSwitch

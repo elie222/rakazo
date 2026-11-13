@@ -153,4 +153,15 @@ describe("deepInfraModelList", () => {
       details: [{ id: "fixture/plain-chat", supportsImages: false, reasoning: false }],
     });
   });
+
+  it("keeps models whose tags list is empty or has no string tags, without details", () => {
+    const result = deepInfraModelList(
+      [
+        { id: "fixture/empty-tags", metadata: { tags: [], context_length: 8192 } },
+        { id: "fixture/junk-tags", metadata: { tags: [null, 7], context_length: 8192 } },
+      ],
+      ["fixture/empty-tags", "fixture/junk-tags"],
+    );
+    expect(result).toEqual({ models: ["fixture/empty-tags", "fixture/junk-tags"], details: [] });
+  });
 });
