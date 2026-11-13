@@ -4,7 +4,11 @@ import type {
   AgentImportWarning,
   McpServerConfigInput,
 } from "@rakazo/contracts";
-import { isValidTimeZone, McpServerConfigInput as McpServerConfigSchema } from "@rakazo/contracts";
+import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
+  isValidTimeZone,
+  McpServerConfigInput as McpServerConfigSchema,
+} from "@rakazo/contracts";
 import type { GrokBot } from "@rakazo/core";
 import {
   AGENT_IMPORT_PROVIDER_KEYS,
@@ -196,14 +200,21 @@ export function readGrokBotImportSettings(
     }
     const cron = grokRoutineCron(source);
     if (!cron) continue;
-    if ([source.name, source.instruction].some(looksLikeCredential)) {
+    if ([source.name, source.instruction, source.details, source.when].some(looksLikeCredential)) {
       skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
       continue;
     }
     const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
+    const instruction = [source.instruction, source.details, source.when]
+      .filter(Boolean)
+      .join("\n\n");
+    if (instruction.length > AGENT_IMPORT_MAX_FILE_LENGTH) {
+      skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
+      continue;
+    }
     const prompt = uses.length
-      ? `${source.instruction}\n\nUse these skills: ${uses.map((name) => `@${name}`).join(", ")}.`
-      : source.instruction;
+      ? `${instruction}\n\nUse these skills: ${uses.map((name) => `@${name}`).join(", ")}.`
+      : instruction;
     const result = routine({ name: source.name }, prompt, cron, source.timeZone, false, false);
     if ("reason" in result) {
       skipped.push({ path: `routines: ${safeLabel}`, reason: result.reason });

@@ -750,3 +750,32 @@ describe("Grok Bot export", () => {
     expect(settings.apiKeys).toEqual([]);
   });
 });
+
+it("keeps scheduled routine conditions and refuses oversized prompts", () => {
+  const read = (instruction: string) => {
+    const [bot] = parseGrokBotExport(
+      JSON.stringify({
+        bots: [
+          {
+            name: "Example",
+            routines: [
+              {
+                name: "Daily",
+                instruction,
+                cron: "0 8 * * *",
+                schedule_text: "Every morning",
+                trigger_details: "Only when a report is due",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    return readGrokBotImportSettings(bot!);
+  };
+  expect(read("Review reports").routines[0]?.prompt).toBe(
+    "Review reports\n\nOnly when a report is due\n\nEvery morning",
+  );
+  expect(read("x".repeat(100001)).routines).toEqual([]);
+  expect(read("x".repeat(100001)).skipped).toHaveLength(1);
+});
