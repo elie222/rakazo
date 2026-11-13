@@ -1,7 +1,8 @@
 import { ORPCError } from "@orpc/server";
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
-import type { TailnetCommandAccess, TailnetService } from "@rakazo/adapters";
+import type { TailnetCommandAccess, TailnetRoute, TailnetService } from "@rakazo/adapters";
 import {
+  botTailnetRoute,
   getTailnetConnection,
   removeTailnetConnection,
   saveTailnetConnection,
@@ -14,7 +15,7 @@ import type { RouterContext } from "./context.js";
 
 /** Tailnet access as the router needs it; absent turns the procedures into a refusal. */
 export type TailnetRouteDeps = {
-  service: Pick<TailnetService, "available" | "verify" | "disconnect">;
+  service: Pick<TailnetService, "available" | "verify" | "disconnect" | "dial">;
   /** This server's origin as bots' computers reach it; absent when they can't. */
   serverOrigin: string | undefined;
   /** Gives a computer's browsers their tailnet proxy when a member takes control of a screen. */
@@ -104,4 +105,34 @@ export async function tailnetStatus(
     unavailable: await unavailable(tailnet),
     connection: await getTailnetConnection(prisma, scope),
   };
+}
+
+/** Why a server on a tailnet can't be checked when adding it. */
+export const TAILNET_CHECK_NEEDS_BOT =
+  "Turn on tailnet access for a bot to add a server on your tailnet.";
+
+/**
+ * How to reach a tailnet MCP server while adding it: from one of the member's bots allowed on
+ * their tailnet in this Space, as runs will. Undefined for any other address or server.
+ */
+export async function tailnetCheckRoute(
+  deps: { prisma: Pick<PrismaClient, "tailnetConnection" | "bot">; tailnet?: TailnetRouteDeps },
+  actor: Actor,
+  isTailnetSource: boolean,
+): Promise<TailnetRoute | undefined> {
+  if (!isTailnetSource || !deps.tailnet?.service.available) return undefined;
+  const connection = await getTailnetConnection(deps.prisma, actor);
+  const bot = connection?.botIds.length
+    ? await deps.prisma.bot.findFirst({
+        where: { id: { in: connection.botIds }, spaceId: actor.spaceId },
+        select: { id: true },
+      })
+    : null;
+  if (!bot) throw new Error(TAILNET_CHECK_NEEDS_BOT);
+  return botTailnetRoute(
+    deps.tailnet.service,
+    deps.prisma,
+    { userId: actor.userId, spaceId: actor.spaceId, botId: bot.id },
+    "capabilities.install",
+  );
 }

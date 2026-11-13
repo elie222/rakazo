@@ -11,6 +11,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { TailnetScope } from "./tailnet-connections.js";
 import { resolveRunTailnet } from "./tailnet-connections.js";
+import type { TailnetRoute } from "./tailnet-fetch.js";
 import type { TailnetNodeHost } from "./tailscale-network.js";
 import { TailscaleApi, TailscaleNetwork } from "./tailscale-network.js";
 import { TailscaledNodeHost } from "./tailscaled-node-host.js";
@@ -214,6 +215,38 @@ function clientKey(config: TailnetConnectionConfig): string {
   return createHash("sha256")
     .update(JSON.stringify([config.clientId, config.clientSecret, config.tag]))
     .digest("hex");
+}
+
+/**
+ * HTTP to tailnet hosts from this run's bot device, for MCP servers on its member's tailnet.
+ * Undefined without a bot or tailnet devices here. Each new connection checks again that the
+ * member still lets the bot on, and the dial never carries a run's signal, as sessions outlive it.
+ */
+export function botTailnetRoute(
+  tailnet: Pick<TailnetService, "available" | "dial"> | undefined,
+  prisma: Pick<PrismaClient, "bot">,
+  member: { userId: string; spaceId: string; botId?: string },
+  operationId: string,
+): TailnetRoute | undefined {
+  const { botId, userId, spaceId } = member;
+  if (!tailnet?.available || !botId) return undefined;
+  return {
+    async dial(destination, signal) {
+      const bot = await prisma.bot.findFirst({
+        where: { id: botId, spaceId },
+        select: { name: true },
+      });
+      if (!bot) throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
+      return tailnet.dial({ userId, spaceId, botId, botName: bot.name }, destination, {
+        operationId,
+        traceId: operationId,
+        spaceId,
+        userId,
+        botId,
+        signal,
+      });
+    },
+  };
 }
 
 /** Nodes are per member, Space and bot. */
