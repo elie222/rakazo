@@ -135,3 +135,49 @@ describe("safeName", () => {
     }
   });
 });
+
+describe("long performance report labels", () => {
+  it.each(["基".repeat(100), "𠮷".repeat(100), "a".repeat(300)])(
+    "keeps report filenames within the byte limit",
+    async (label) => {
+      const directory = await mkdtemp(path.join(tmpdir(), "performance-long-label-"));
+      try {
+        const stem = safeName(label);
+        expect(stem).toBe(safeName(label));
+        expect(Buffer.from(stem).toString("utf8")).toBe(stem);
+        for (const filename of [`${stem}.json`, `${stem}.md`, `web-chat-${stem}.json`]) {
+          await writeFile(path.join(directory, filename), "report");
+          expect(Buffer.byteLength(filename)).toBeLessThanOrEqual(255);
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("preserves the largest short label and bounds the next byte", () => {
+    const boundary = `${"基".repeat(80)}a`;
+    expect(Buffer.byteLength(boundary)).toBe(241);
+    expect(safeName(boundary)).toBe(boundary);
+    expect(Buffer.byteLength(safeName(`${boundary}b`))).toBeLessThanOrEqual(241);
+  });
+
+  it("distinguishes long labels that differ only beyond the retained prefix", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "performance-long-label-"));
+    const labels = [`${"基".repeat(100)}前`, `${"基".repeat(100)}后`] as const;
+    try {
+      expect(safeName(labels[0])).not.toBe(safeName(labels[1]));
+      for (const label of labels) {
+        await writeFile(path.join(directory, `web-chat-${safeName(label)}.json`), label);
+      }
+      expect(await readdir(directory)).toHaveLength(2);
+      for (const label of labels) {
+        expect(
+          await readFile(path.join(directory, `web-chat-${safeName(label)}.json`), "utf8"),
+        ).toBe(label);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});

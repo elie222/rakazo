@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { execFileSync, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { CDPSession } from "@playwright/test";
 import { abortableDelay } from "@rakazo/core";
@@ -175,5 +175,20 @@ export function positiveInteger(value: string) {
 }
 
 export function safeName(value: string) {
-  return value.toLowerCase().replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-");
+  const name = value.toLowerCase().replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-");
+  // Leave room for the longest report wrapper: web-chat-<name>.json.
+  const maxBytes = 255 - Buffer.byteLength("web-chat-.json");
+  if (Buffer.byteLength(name) <= maxBytes) return name;
+
+  const suffix = `-${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+  const prefixBudget = maxBytes - Buffer.byteLength(suffix);
+  let prefix = "";
+  let bytes = 0;
+  for (const character of name) {
+    const size = Buffer.byteLength(character);
+    if (bytes + size > prefixBudget) break;
+    prefix += character;
+    bytes += size;
+  }
+  return prefix + suffix;
 }
