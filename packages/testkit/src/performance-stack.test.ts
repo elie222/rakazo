@@ -154,6 +154,13 @@ describe("safeName", () => {
 });
 
 describe("long performance report labels", () => {
+  it("reserves hash-suffixed names for transformed labels", () => {
+    const longLabel = "a".repeat(242);
+    const shortLabel = safeName(longLabel);
+    expect(safeName(shortLabel)).not.toBe(safeName(longLabel));
+    expect(Buffer.byteLength(safeName(shortLabel))).toBeLessThanOrEqual(241);
+  });
+
   it.each(["基".repeat(100), "𠮷".repeat(100), "a".repeat(300)])(
     "keeps report filenames within the byte limit",
     async (label) => {
