@@ -315,6 +315,27 @@ it("rejects oversized collections before allocating import names", () => {
   ).toThrow(GrokBotExportError);
 });
 
+it("keeps skill names in any script", () => {
+  const [bot] = parseGrokBotExport(
+    JSON.stringify({
+      bots: [
+        {
+          name: "Example",
+          skills: [
+            { name: "日报", description: "Daily report", instructions: "Write it." },
+            { name: "Отчёт", description: "Weekly report", instructions: "Write it." },
+          ],
+        },
+      ],
+    }),
+  );
+  const parsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+  ]);
+  if ("error" in parsed) throw new Error(parsed.error);
+  expect(parsed.skills.map((skill) => skill.name)).toEqual(["日报", "отчет"]);
+});
+
 it("rejects explicit unrelated formats and newer string versions", () => {
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ format: "other", bots: [{ name: "Example" }] })),
