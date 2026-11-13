@@ -510,3 +510,71 @@ it("still needs a whole key to replace a key saved for a model-connection provid
   await typeInto("API key", "a-whole-key");
   expect(button("Replace key").disabled).toBe(false);
 });
+
+it("keeps a successful connection when the following settings read fails", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null);
+  await render();
+  await click("Linked");
+  const original = state.rpc.getMockImplementation()!;
+  let connected = false;
+  state.rpc.mockImplementation(async (proc, args) => {
+    if (connected && proc === "voice/status") throw new Error();
+    const result = await original(proc, args);
+    if (proc === "voice/connect") connected = true;
+    return result;
+  });
+  await click("Connect");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Could not connect");
+  expect(button("Disconnect")).toBeDefined();
+  expect(container.querySelector('input[aria-label="API key"]')).toBeNull();
+});
+
+it("reports a read failure separately after saving a voice", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const original = state.rpc.getMockImplementation()!;
+  let saved = false;
+  state.rpc.mockImplementation(async (proc, args) => {
+    if (saved && proc === "voice/status") throw new Error();
+    const result = await original(proc, args);
+    if (proc === "voice/setVoice") saved = true;
+    return result;
+  });
+  await click("fish-audio voice");
+  expect(container.textContent).toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Could not save that voice");
+});
+
+it("still reports a failed connection without pretending it was saved", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null);
+  await render();
+  await click("Linked");
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc, args) => {
+    if (proc === "voice/connect") throw new Error();
+    return original(proc, args);
+  });
+  await click("Connect");
+  expect(container.textContent).toContain("Could not connect");
+  expect(container.textContent).not.toContain("Could not load voice settings");
+  expect(container.textContent).not.toContain("Disconnect");
+});
+
+it("still reports a failed voice save and clears it on a successful retry", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc, args) => {
+    if (proc === "voice/setVoice") throw new Error();
+    return original(proc, args);
+  });
+  await click("fish-audio voice");
+  expect(container.textContent).toContain("Could not save that voice");
+  expect(container.textContent).not.toContain("Could not load voice settings");
+  state.rpc.mockImplementation(original);
+  await click("fish-audio voice");
+  expect(container.textContent).not.toContain("Could not save that voice");
+});
