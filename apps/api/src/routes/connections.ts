@@ -196,27 +196,22 @@ export function connectionsRoutes(ctx: RouterContext) {
         });
         if (!row) return [];
         try {
-          const adapterContext = connectionContext(
-            context.actor,
-            "connections.tools",
-            context.signal,
-          );
-          // A provider that runs apps through generic session tools lists the app's own actions.
+          const adapterContext = {
+            ...connectionContext(context.actor, "connections.tools", context.signal),
+            connectedConnections: [
+              {
+                id: row.id,
+                connectorId: input.connectorId,
+                externalId: input.provider,
+                displayName: row.displayName,
+                providerRef: row.providerRef ?? undefined,
+              },
+            ],
+            connectedProviders: [input.provider],
+          };
           const tools = connector.listAppTools
             ? await connector.listAppTools(adapterContext, input.provider)
-            : await connector.discoverTools({
-                ...adapterContext,
-                connectedConnections: [
-                  {
-                    id: row.id,
-                    connectorId: input.connectorId,
-                    externalId: input.provider,
-                    displayName: row.displayName,
-                    providerRef: row.providerRef ?? undefined,
-                  },
-                ],
-                connectedProviders: [input.provider],
-              });
+            : await connector.discoverTools(adapterContext);
           return tools.map((tool) => ({
             name: tool.name,
             description: tool.description,
