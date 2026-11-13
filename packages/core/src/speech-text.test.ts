@@ -64,6 +64,17 @@ describe("speakable", () => {
     expect(speakable("**Done** ✅ — [x] shipped the _thing_")).toBe("Done — shipped the thing");
   });
 
+  it("drops a horizontal rule however it is spaced", () => {
+    for (const rule of ["---", "***", "___", "* * *", "- - -", "_ _ _", "  ***  ", "-----"]) {
+      expect(speakable(`Intro\n\n${rule}\n\nBody`)).toBe("Intro. Body");
+    }
+  });
+
+  it("keeps a bullet list that has a rule-like first item", () => {
+    expect(speakable("- one\n- two")).toBe("one. two");
+    expect(speakable("* one\n* two")).toBe("one. two");
+  });
+
   it("gives a heading a full stop so the voice breathes", () => {
     expect(speakable("## Results\nAll green")).toBe("Results. All green");
   });
