@@ -264,6 +264,7 @@ it("offers native provider controls and uses browser OAuth for sign-in", async (
     ...capabilities,
     sso: null,
     providers: [
+      { id: "oidc", name: "Company" },
       { id: "google", name: "Google" },
       { id: "apple", name: "Apple" },
     ],
@@ -275,6 +276,12 @@ it("offers native provider controls and uses browser OAuth for sign-in", async (
   expect(button("Continue with Apple")).toBeDefined();
   expect(host.querySelector("[data-native-provider]")).not.toBeNull();
   expect(button("Continue with email")).toBeDefined();
+  expect(
+    button("Continue with email")!.compareDocumentPosition(button("Continue with Company")!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await press("Continue with Company");
+  expect(continueWithSso).toHaveBeenCalledWith("sign-in", "oidc");
   await press("Continue with Google");
   expect(continueWithSso).toHaveBeenCalledWith("sign-in", "google");
   await press("Continue with Apple");

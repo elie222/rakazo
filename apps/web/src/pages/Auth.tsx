@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { signInProviders } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, signInProviders } from "@rakazo/contracts";
 import {
   credentialIssue,
   MAX_PASSWORD_LENGTH,
@@ -7,7 +7,15 @@ import {
   signupRequiresEmailVerification,
   suggestEmailCorrection,
 } from "@rakazo/core";
-import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import {
+  Button,
+  Input,
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+  Label,
+  LogoAvatar,
+} from "@rakazo/ui-web";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -302,7 +310,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             />
           ) : null}
           {error && !reset?.passwordAuth ? (
-            <p role="alert" className="mt-3 text-body text-destructive">
+            <p
+              role="alert"
+              className="mx-auto mt-4 w-full max-w-sm text-center text-body-sm text-destructive"
+            >
               {error}
             </p>
           ) : null}
@@ -318,7 +329,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 }}
               />
               {error ? (
-                <p role="alert" className="mt-3 w-full text-body text-destructive">
+                <p
+                  role="alert"
+                  className="mx-auto mt-4 w-full max-w-sm text-center text-body-sm text-destructive"
+                >
                   {error}
                 </p>
               ) : null}
@@ -637,12 +651,11 @@ export function AuthFrame({
         >
           {leading ? <div className="mb-4 self-start">{leading}</div> : null}
           <div className={surface ? "flex w-full flex-col items-center" : "contents"}>
-            <div
-              className={`flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full ${surface ? "bg-background" : "bg-muted"}`}
-            >
-              <span className="h-5 w-[9px] rounded-full bg-primary" />
-              <span className="h-5 w-[9px] rounded-full bg-primary" />
-            </div>
+            <LogoAvatar
+              size={74}
+              avatarValue={BOT_COLOR_LIST.find((color) => color.id === "orange")?.hex}
+              motion={false}
+            />
             <h1
               aria-live="polite"
               className={
