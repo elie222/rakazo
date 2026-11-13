@@ -6,6 +6,7 @@ import {
   clampCatalogThinkingLevel,
   compatibleModelRows,
   connectedModelChoices,
+  connectionForModelChoice,
   credentialForModel,
   filterModelChoices,
   groupModelChoices,
@@ -562,4 +563,20 @@ it("offers managed models without a personal key and hides unconnected providers
     "hosted::large",
   ]);
   expect(connectedModelChoices([{ provider: "hosted", label: "Hosted" }], catalog)).toHaveLength(2);
+});
+
+describe("connectionForModelChoice", () => {
+  const connections = [
+    { id: "newest", provider: "zai", label: "Newest" },
+    { id: "preferred", provider: "zai", label: "Preferred", preferenceRank: 0, modelId: "glm-5.3" },
+    { id: "matching", provider: "zai", label: "Matching", preferenceRank: 1, modelId: "glm-flash" },
+  ];
+
+  it("picks the connection runs would use for an unpinned row", () => {
+    const pick = (modelId: string, credentialId?: string) =>
+      connectionForModelChoice(connections, { provider: "zai", modelId, credentialId })?.id;
+    expect(pick("glm-flash")).toBe("matching");
+    expect(pick("glm-other")).toBe("preferred");
+    expect(pick("glm-flash", "newest")).toBe("newest");
+  });
 });

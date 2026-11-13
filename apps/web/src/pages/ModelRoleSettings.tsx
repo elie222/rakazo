@@ -8,14 +8,10 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import {
-  canonicalPiProviderId,
-  connectedBackupOptions,
-  MAX_MODEL_BACKUPS,
-  modelRoleChoiceKey,
-} from "@rakazo/contracts";
+import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
 import {
   catalogEntryFor,
+  connectionForModelChoice,
   createModelRoleSettings,
   modelRoleListPatch,
   modelThinkingLevels,
@@ -197,13 +193,7 @@ export function ModelRoleSettings({
     ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
   }));
   // A pinned row runs on its connection; others on the provider's newest.
-  const connectionFor = (choice: ModelRoleChoice) =>
-    choice.credentialId
-      ? credentials.find((entry) => entry.id === choice.credentialId)
-      : credentials.find(
-          (entry) =>
-            canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
-        );
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
   const thinkingLevels =
     thinking && primary
       ? modelThinkingLevels(connectionFor(primary), entryFor(primary), primary.modelId).filter(

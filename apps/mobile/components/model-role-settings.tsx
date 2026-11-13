@@ -15,7 +15,6 @@ import type {
 } from "@rakazo/contracts";
 import {
   backupChoiceKey,
-  canonicalPiProviderId,
   connectedBackupOptions,
   connectionDisplayName,
   MAX_MODEL_BACKUPS,
@@ -24,6 +23,7 @@ import {
 } from "@rakazo/contracts";
 import {
   catalogEntryFor,
+  connectionForModelChoice,
   createModelRoleSettings,
   modelRoleListPatch,
   modelThinkingLevels,
@@ -150,13 +150,7 @@ export function ModelRoleSettings({
   const deployment = state.settings?.deploymentPrimary ?? null;
   const deploymentName = deployment ? modelLabel(deployment) : null;
   /** The row's own connection, or the provider's newest for rows that name none. */
-  const connectionFor = (choice: ModelRoleChoice) =>
-    choice.credentialId
-      ? credentials.find((entry) => entry.id === choice.credentialId)
-      : credentials.find(
-          (entry) =>
-            canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
-        );
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
   const connectionName = (choice: ModelRoleChoice) => {
     const connection = choice.credentialId ? connectionFor(choice) : undefined;
     return connection

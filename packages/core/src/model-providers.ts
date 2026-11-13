@@ -288,6 +288,26 @@ export function credentialForModel<C extends CredentialModelRef>(
 }
 
 /**
+ * The connection a model row runs on, in the order runs choose it: its pinned connection, else
+ * one whose saved model is this one, else the most preferred connection for its provider.
+ */
+export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
+  credentials: readonly C[],
+  choice: { provider: string; modelId: string; credentialId?: string | null },
+): C | undefined {
+  if (choice.credentialId) return credentials.find((entry) => entry.id === choice.credentialId);
+  const provider = credentials.filter(
+    (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
+  );
+  return (
+    provider.find((entry) => entry.modelId === choice.modelId) ??
+    [...provider].sort(
+      (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
+    )[0]
+  );
+}
+
+/**
  * Models a connected provider can run. Catalog entries submit their API ids.
  * A saved display label expands to those ids instead of becoming the only choice.
  * A custom id that is not a catalog label stays a single free-form option.
