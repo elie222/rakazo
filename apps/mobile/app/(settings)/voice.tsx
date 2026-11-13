@@ -384,11 +384,25 @@ export default function VoiceSettings() {
         current.some((entry) => entry.provider === connected.provider)
           ? current.map((entry) => (entry.provider === connected.provider ? connected : entry))
           : [...current, connected];
+      const savedStatus: VoiceStatus = {
+        configured: true,
+        ready: Boolean(connected.voiceId),
+        transcribe: Boolean(selected.transcribe),
+        provider: connected.provider,
+        voiceId: connected.voiceId ?? "",
+      };
+      setStatus(savedStatus);
+      // A replacement server or model can have a different set of voices.
+      setVoices([]);
       setCredentials(merge);
       setVoiceId(connected.voiceId ?? "");
       edited.current.delete("voiceId");
       setApiKey("");
-      await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
+      await Promise.all([
+        writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge),
+        writeSaved(queryClient, voiceReads(target).status.queryKey, () => savedStatus),
+        writeSaved(queryClient, voicesRead(target, connected.provider).queryKey, () => []),
+      ]);
       await load(selected.id).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
@@ -460,7 +474,16 @@ export default function VoiceSettings() {
         scope,
       });
       setStatus(saved);
-      await writeSaved(queryClient, voiceReads(target).status.queryKey, () => saved);
+      // A cached revisit initializes the picker from credentials, not status.
+      const merge = (current: VoiceCredential[] = []) =>
+        current.map((entry) =>
+          entry.provider === saved.provider ? { ...entry, voiceId: saved.voiceId } : entry,
+        );
+      setCredentials(merge);
+      await Promise.all([
+        writeSaved(queryClient, voiceReads(target).status.queryKey, () => saved),
+        writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge),
+      ]);
       await load(selected?.id).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );

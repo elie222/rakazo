@@ -578,3 +578,81 @@ it("still reports a failed voice save and clears it on a successful retry", asyn
   await click("fish-audio voice");
   expect(container.textContent).not.toContain("Could not save that voice");
 });
+
+it.each(["voice/status", "voice/voices"])(
+  "discards old voice options after reconnect when %s fails, including on revisit",
+  async (failedRead) => {
+    state.load.mockResolvedValue(false);
+    await render();
+    expect(container.textContent).toContain("fish-audio voice");
+    const original = state.rpc.getMockImplementation()!;
+    let connected = false;
+    state.rpc.mockImplementation((proc, args) => {
+      if (proc === "voice/connect") {
+        connected = true;
+        return { ...credentials[0], voiceId: "replacement-voice" };
+      }
+      if (connected && proc === failedRead) throw new Error();
+      if (connected && proc === "voice/credentials")
+        return [{ ...credentials[0], voiceId: "replacement-voice" }];
+      return original(proc, args);
+    });
+    await typeInto("API key", "replacement-key");
+    await click("Replace key");
+    expect(container.textContent).not.toContain("fish-audio voice");
+    state.rpc.mockRejectedValue(new Error());
+    await act(async () => root.render(null));
+    await render();
+    expect(container.textContent).not.toContain("fish-audio voice");
+  },
+);
+
+it("keeps a newly connected voice ready for samples across a failed refresh and revisit", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null);
+  const original = state.rpc.getMockImplementation()!;
+  let connected = false;
+  state.rpc.mockImplementation((proc, args) => {
+    if (proc === "voice/connect") {
+      connected = true;
+      return { id: "linked", provider: "linked", voiceId: "new-voice", hasKey: false };
+    }
+    if (connected) throw new Error();
+    if (proc === "voice/status") return { configured: false, ready: false, provider: null };
+    return original(proc, args);
+  });
+  await render();
+  await click("Linked");
+  expect(container.textContent).not.toContain("Hear a sample");
+  await click("Connect");
+  expect(container.textContent).toContain("Hear a sample");
+  await act(async () => root.render(null));
+  await render();
+  selected("Linked");
+  expect(container.textContent).toContain("Hear a sample");
+});
+
+it("keeps the saved voice selected on revisit when the follow-up reads fail", async () => {
+  state.load.mockResolvedValue(false);
+  const original = state.rpc.getMockImplementation()!;
+  let saved = false;
+  state.rpc.mockImplementation((proc, args) => {
+    if (proc === "voice/setVoice") {
+      saved = true;
+      return { configured: true, ready: true, provider: "fish-audio", voiceId: "new-voice" };
+    }
+    if (saved) throw new Error();
+    if (proc === "voice/voices")
+      return [
+        { id: "fish-voice", label: "Old voice" },
+        { id: "new-voice", label: "New voice" },
+      ];
+    return original(proc, args);
+  });
+  await render();
+  await click("New voice");
+  await act(async () => root.render(null));
+  await render();
+  selected("New voice");
+  unselected("Old voice");
+});
