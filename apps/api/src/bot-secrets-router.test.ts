@@ -578,6 +578,61 @@ describe("vault router", () => {
     expect(key.status).toBe(400);
   });
 
+  it.each(["before the save lock", "between rows"])(
+    "stops a default-vault import when its selection changes %s",
+    async (when) => {
+      const { prisma, secrets, rows, call } = botSecretDeps();
+      const changeVault = () =>
+        prisma.spaceSettingOverride.findUnique.mockResolvedValue({ setting: "credentials" });
+      if (when === "before the save lock") {
+        const put = secrets.put.getMockImplementation()!;
+        secrets.put.mockImplementationOnce(async (...args) => {
+          const value = await put(...args);
+          changeVault();
+          return value;
+        });
+      } else {
+        const create = prisma.vaultCredential.create.getMockImplementation()!;
+        prisma.vaultCredential.create.mockImplementationOnce(async (...args) => {
+          const value = await create(...args);
+          changeVault();
+          return value;
+        });
+      }
+      events.record.mockClear();
+      const result = await call("vault/import", {
+        rows: ["alice", "bob"].map((username) => ({
+          title: username,
+          origin: "https://shop.example.test",
+          username,
+          password: FAKE_VALUE,
+        })),
+      });
+      expect(result.status).toBe(409);
+      expect(rows).toHaveLength(when === "before the save lock" ? 0 : 1);
+      expect(events.record).toHaveBeenCalledTimes(rows.length);
+      if (rows.length) {
+        expect(rows[0]?.spaceId).toBeNull();
+        expect(events.record).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: expect.objectContaining({ scope: "account" }) }),
+        );
+      }
+    },
+  );
+
+  it("lets an explicitly selected account vault import while the Space uses its own", async () => {
+    const { prisma, rows, call } = botSecretDeps();
+    prisma.spaceSettingOverride.findUnique.mockResolvedValue({ setting: "credentials" });
+    const result = await call("vault/import", {
+      scope: "account",
+      rows: [
+        { title: "Shop", origin: "https://shop.example.test", username: "", password: FAKE_VALUE },
+      ],
+    });
+    expect(result.body.json).toMatchObject({ added: 1 });
+    expect(rows[0]?.spaceId).toBeNull();
+  });
+
   it("imports new logins one by one and counts every row it skips", async () => {
     const { prisma, rows, call } = botSecretDeps();
     const origin = "https://shop.example.test";

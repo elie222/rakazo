@@ -97,6 +97,7 @@ async function lockVault(tx: Pick<Prisma.TransactionClient, "$queryRaw">, scope:
 }
 
 export const SPACE_VAULT_NOT_IN_USE = "This Space uses the account vault";
+export const VAULT_CHANGED = "Vault changed while saving; retry";
 
 /**
  * A write aimed at a Space's own vault is refused once the Space stops customizing credentials,
@@ -769,6 +770,8 @@ export async function prepareBotSecret(input: {
    * each saved login's username as read, by row and value, so one import reads each login once.
    */
   newLoginOnly?: Map<string, string>;
+  /** An import using the default vault stops if that selection changes between rows. */
+  expectedDefaultVault?: SettingsScope;
   alsoOn?: readonly string[];
 }) {
   const { prisma, secretStore, scope } = input;
@@ -852,6 +855,11 @@ export async function prepareBotSecret(input: {
     ciphertext: stored.ciphertext,
     async store(tx: Prisma.TransactionClient) {
       await lockVault(tx, scope);
+      if (
+        input.expectedDefaultVault !== undefined &&
+        (await settingsTarget(tx, scope, "credentials")) !== input.expectedDefaultVault
+      )
+        throw new Error(VAULT_CHANGED);
       await assertVaultInUse(tx, scope);
       // First under the lock, so an item blocked while the request waited is never replaced.
       const current = await tx.vaultCredential.findFirst({

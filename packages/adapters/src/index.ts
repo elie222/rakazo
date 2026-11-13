@@ -44,6 +44,7 @@ export {
   storeBotSecret,
   UNKNOWN_BOTS,
   UNSUPPORTED_ACCESS,
+  VAULT_CHANGED,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";

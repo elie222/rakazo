@@ -25,6 +25,7 @@ import {
   toComputerRef,
   UNKNOWN_BOTS,
   UNSUPPORTED_ACCESS,
+  VAULT_CHANGED,
   validateBotModelChange,
 } from "@rakazo/adapters";
 import type {
@@ -110,8 +111,11 @@ const BOT_SECRET_INPUT_ERRORS = [
 /** A credential the user typed that cannot be stored, as a bad request, or a retry. Never echoes it. */
 export function mapBotSecretInputError(error: unknown): unknown {
   // Read again on a retry, so it is a conflict to retry, not a mistake in the request.
-  if (error instanceof Error && error.message === SAVED_LOGIN_UNREADABLE)
-    return new ORPCError("CONFLICT", { message: SAVED_LOGIN_UNREADABLE });
+  if (
+    error instanceof Error &&
+    (error.message === SAVED_LOGIN_UNREADABLE || error.message === VAULT_CHANGED)
+  )
+    return new ORPCError("CONFLICT", { message: error.message });
   if (
     error instanceof Error &&
     BOT_SECRET_INPUT_ERRORS.some((prefix) => error.message.startsWith(prefix))
@@ -274,6 +278,7 @@ async function importVaultLogins(
             title: row.title,
             createOnly: true,
             newLoginOnly: usernames,
+            expectedDefaultVault: input.scope === undefined ? vault : undefined,
           }),
         );
         added++;
@@ -291,7 +296,11 @@ async function importVaultLogins(
           skip(index, "limit");
         }
         // A saved login that can't be read for now may be this one: stop, as a retry is safe.
-        else if (message === SPACE_VAULT_NOT_IN_USE || message === SAVED_LOGIN_UNREADABLE)
+        else if (
+          message === SPACE_VAULT_NOT_IN_USE ||
+          message === SAVED_LOGIN_UNREADABLE ||
+          message === VAULT_CHANGED
+        )
           throw mapBotSecretStoreError(error);
         else if (mapBotSecretStoreError(error) instanceof ORPCError) skip(index, "invalid");
         else throw error;
