@@ -59,7 +59,8 @@ export function credentialIssueText(field: CredentialField): string {
 export function authErrorText(body: unknown, fallback: string): string {
   const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
   if (code === "SSO_UNAVAILABLE") return t`SSO is temporarily unavailable. Try again.`;
-  if (code === "account_not_linked") return t`Sign in to your existing account to link SSO`;
+  if (code === "account_not_linked")
+    return t`Sign in to your account, then link this provider in settings`;
   if (code === "email_does_not_match") return t`Use an account with the same email address`;
   if (code === "ACCOUNT_DEACTIVATED") return t`This account is deactivated`;
   if (code === "REGISTRATION_CLOSED") return t`Registration is closed`;
