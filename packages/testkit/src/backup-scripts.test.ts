@@ -62,7 +62,32 @@ function fixture() {
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.COMMAND_LOG, JSON.stringify(args) + "\\n");
-if (args[0] === "inspect") {
+if (args[0] === "volume" && args[1] === "inspect") {
+  process.exit(process.env.FAKE_VOLUME ? 0 : 1);
+} else if (args[0] === "ps" && process.env.FAKE_VOLUME) {
+  console.log("bot-computer");
+} else if (args[0] === "stop" && process.env.FAKE_VOLUME) {
+  if (process.env.FAIL_COMPUTER_STOP) process.exit(25);
+} else if (args[0] === "run" && process.env.FAKE_VOLUME) {
+  const { spawnSync } = require("node:child_process");
+  const mounts = args.flatMap((arg, index) => arg === "-v" ? [args[index + 1]] : []);
+  const source = mounts.find((mount) => mount.includes(":/src:"))?.split(":/src:")[0];
+  const output = mounts.find((mount) => mount.endsWith(":/out"))?.slice(0, -5);
+  if (args.includes("tar")) {
+    const path = require("node:path");
+    const result = spawnSync("/usr/bin/tar", [
+      "-czf", path.join(output, ".homes.tgz.tmp"), "-C", path.dirname(process.env.FAKE_VOLUME), "data",
+    ], { stdio: "inherit" });
+    process.exit(result.status ?? 1);
+  }
+  let script = args.at(-1).replaceAll("/data/", process.env.FAKE_VOLUME + "/").replaceAll(" /data ", " " + process.env.FAKE_VOLUME + " ");
+  if (source) script = script.replaceAll("/src", JSON.stringify(source));
+  if (output) script = script.replaceAll("/out", JSON.stringify(output));
+  if (process.env.FAIL_COPY && source) process.exit(26);
+  if (process.env.FAIL_ROLLBACK && output) process.exit(27);
+  const result = spawnSync("/bin/sh", ["-eu", "-c", script], { stdio: "inherit" });
+  process.exit(result.status ?? 1);
+} else if (args[0] === "inspect") {
   console.log(process.env.FAKE_APPDATA);
 } else if (args[0] !== "compose") {
   process.exit(90);
@@ -431,6 +456,42 @@ describe("development backup failures", () => {
     expect(f.commands()).toEqual([]);
   });
 
+  it.each([".rakazo.sql.tmp", ".rakazo.dump.tmp", ".homes.tgz.tmp", ".artifact-rows", "MANIFEST"])(
+    "does not open preplanted staging symlink %s",
+    (name) => {
+      const f = fixture();
+      write(path.join(f.checkout, "data/home.txt"), "home");
+      const output = path.join(f.checkout, "backups/example");
+      mkdirSync(output, { recursive: true });
+      const target = path.join(f.root, "outside");
+      write(target, "do not overwrite");
+      symlinkSync(target, path.join(output, name));
+      const result = f.run("scripts/backup.sh", ["example"]);
+      expect(readFileSync(target, "utf8")).toBe("do not overwrite");
+      expect(result.status, result.stderr).toBe(name === "MANIFEST" ? 1 : 0);
+      expect(readdirSync(path.dirname(output)).some((entry) => entry.startsWith(".backup."))).toBe(
+        false,
+      );
+    },
+  );
+
+  it("stages and verifies a named volume backup with artifact blobs", () => {
+    const f = fixture();
+    const volume = path.join(f.root, "data");
+    write(path.join(volume, "artifacts/space-1/blob-1"), "artifact bytes");
+    const result = f.run("scripts/backup.sh", ["volume"], {
+      RAKAZO_BACKUP_DATA_SOURCE: "example-volume",
+      FAKE_VOLUME: volume,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(contents(path.join(f.checkout, "backups/volume/homes.tgz"))).toContain(
+      "data/artifacts/space-1/blob-1",
+    );
+    expect(readFileSync(path.join(f.checkout, "backups/volume/MANIFEST"), "utf8")).toContain(
+      "artifact-blob-files-on-disk: 1",
+    );
+  });
+
   it("fails loudly when the data directory is absent", () => {
     // A backup that cannot archive the data directory used to write an EMPTY
     // homes.tgz and report success. On 2026-11-05 a restore from such a set
@@ -497,6 +558,65 @@ describe("development restore failures", () => {
     write(path.join(f.checkout, "data/home.txt"), "current home");
     return f;
   }
+
+  it.each(["success", "copy", "rollback", "stop"])(
+    "restores a volume without following tenant destination symlinks: %s",
+    (failure) => {
+      const f = restoreFixture();
+      const volume = path.join(f.root, "volume");
+      const snapshot = path.join(f.checkout, "backups/example");
+      const source = path.join(f.root, "snapshot-source");
+      write(path.join(source, "data/tenant/home.txt"), "snapshot home");
+      write(path.join(source, "data/tenant-dir/home.txt"), "snapshot directory");
+      write(path.join(source, "data/..hidden"), "snapshot hidden");
+      writeFileSync(
+        path.join(snapshot, "homes.tgz"),
+        execFileSync("/usr/bin/tar", ["-czf", "-", "-C", source, "data"]),
+      );
+      write(path.join(volume, "victim/home.txt"), "victim home");
+      mkdirSync(path.join(volume, "tenant"), { recursive: true });
+      symlinkSync("../victim/home.txt", path.join(volume, "tenant/home.txt"));
+      symlinkSync("victim", path.join(volume, "tenant-dir"));
+      write(path.join(volume, "..stale"), "stale hidden");
+      const outside = path.join(f.root, "outside");
+      write(outside, "outside home");
+      symlinkSync(outside, path.join(volume, "..hidden"));
+      const result = f.run("scripts/restore.sh", [snapshot], {
+        RAKAZO_RESTORE_DATA_SOURCE: "example-volume",
+        RAKAZO_BACKUP_HELPER_IMAGE: "custom-helper",
+        FAKE_VOLUME: volume,
+        ...(failure === "copy" ? { FAIL_COPY: "1" } : {}),
+        ...(failure === "rollback" ? { FAIL_ROLLBACK: "1" } : {}),
+        ...(failure === "stop" ? { FAIL_COMPUTER_STOP: "1" } : {}),
+      });
+      expect(readFileSync(outside, "utf8")).toBe("outside home");
+      if (failure === "success") {
+        expect(result.status, result.stderr).toBe(0);
+        expect(readFileSync(path.join(volume, "tenant/home.txt"), "utf8")).toBe("snapshot home");
+        expect(readFileSync(path.join(volume, "tenant-dir/home.txt"), "utf8")).toBe(
+          "snapshot directory",
+        );
+        expect(readFileSync(path.join(volume, "..hidden"), "utf8")).toBe("snapshot hidden");
+        expect(existsSync(path.join(volume, "..stale"))).toBe(false);
+        const rollback = readdirSync(f.checkout).find((entry) =>
+          entry.startsWith("data.rollback."),
+        );
+        expect(rollback).toBeDefined();
+        expect(contents(path.join(f.checkout, rollback!, "data-previous.tgz"))).toContain(
+          "victim/home.txt",
+        );
+        const calls = f.commands();
+        expect(calls.findIndex((args) => args[0] === "stop")).toBeLessThan(
+          calls.findIndex((args) => args[0] === "run"),
+        );
+      } else {
+        expect(result.status).not.toBe(0);
+        expect(readFileSync(path.join(volume, "victim/home.txt"), "utf8")).toBe("victim home");
+        expect(f.serviceStates()).toEqual(stoppedWriters);
+        expect(result.stdout).not.toContain("Restore complete");
+      }
+    },
+  );
 
   it.each([false, true])(
     "restores files and starts services only after SQL succeeds: %s",

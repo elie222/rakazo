@@ -55,8 +55,12 @@ source "$ROOT/scripts/lib/data-source.sh"
 # A backup directory may already exist: the artifacts in it are replaced by
 # this run, and the previous ones survive a failed run because the archive is
 # written to a temporary file and renamed only after it is complete.
+mkdir -p "$ROOT/backups"
+[[ -O "$ROOT/backups" ]] || die "backup root must be owned by the current user"
+chmod 700 "$ROOT/backups"
 mkdir -p "$OUT"
-chmod 700 "$ROOT/backups" "$OUT"
+[[ -O "$OUT" ]] || die "backup directory must be owned by the current user"
+chmod 700 "$OUT"
 for artifact in "$OUT/rakazo.sql" "$OUT/rakazo.dump" "$OUT/homes.tgz" "$OUT/MANIFEST"; do
   [[ ! -L "$artifact" ]] || { echo "backup artifact must not be a symlink" >&2; exit 1; }
   if [[ -e "$artifact" ]]; then
@@ -64,6 +68,14 @@ for artifact in "$OUT/rakazo.sql" "$OUT/rakazo.dump" "$OUT/homes.tgz" "$OUT/MANI
     chmod 600 "$artifact"
   fi
 done
+
+# Never open preexisting temporary paths in a reused backup directory.
+DEST="$OUT"
+OUT="$(mktemp -d "$ROOT/backups/.backup.XXXXXX")"
+trap 'rm -rf -- "$OUT"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # ------------------------------------------------------------- 1. pg dump
 # The plain SQL dump keeps restore.sh working; the custom-format dump is the
@@ -125,8 +137,7 @@ chmod 600 "$OUT/homes.tgz"
 log "verifying the backup"
 
 # 3a. The dump must be non-empty and readable by pg_restore.
-dump_toc="$(mktemp)"
-trap 'rm -f "$dump_toc"' EXIT
+dump_toc="$OUT/dump-toc"
 if ! "${compose[@]}" exec -T postgres sh -c \
   'cat > /tmp/rakazo_verify.dump && pg_restore --list /tmp/rakazo_verify.dump && rm -f /tmp/rakazo_verify.dump' \
   < "$OUT/rakazo.dump" > "$dump_toc"; then
@@ -149,7 +160,7 @@ if [[ "$SKIPPED_DATA" != "1" ]]; then
     DISK_BLOBS="$( { find "$SRC_PATH/artifacts" -type f 2>/dev/null || true; } | wc -l | tr -d '[:space:]')"
   else
     DISK_BLOBS="$(docker run --rm -v "${SRC_PATH}:/data:ro" "$HELPER_IMAGE" \
-      sh -c 'find /data/artifacts -type f 2>/dev/null || true; ' | tr -d '[:space:]')"
+      sh -c 'find /data/artifacts -type f 2>/dev/null || true' | wc -l | tr -d '[:space:]')"
   fi
   [[ "$DISK_BLOBS" =~ ^[0-9]+$ ]] || die "could not count the artifact blobs on disk"
   if [[ "$ARCHIVE_BLOBS" != "$DISK_BLOBS" ]]; then
@@ -171,8 +182,8 @@ if [[ "$SKIPPED_DATA" != "1" && "$ART_ROWS" =~ ^[0-9]+$ && "$ART_ROWS" -gt 0 && 
 fi
 if [[ "$SKIPPED_DATA" != "1" && "$ART_ROWS" =~ ^[0-9]+$ ]]; then
   # An artifact row points at its blob through artifacts/<spaceId>/<storageKey>.
-  row_keys="$(mktemp)"
-  archive_keys="$(mktemp)"
+  row_keys="$OUT/row-keys"
+  archive_keys="$OUT/archive-keys"
   "${compose[@]}" exec -T postgres psql -U rakazo -d rakazo -tAc \
     'select "spaceId" || chr(47) || "storageKey" from artifacts' 2>/dev/null \
     | awk 'NF {print $1}' | sort -u > "$row_keys" || true
@@ -221,5 +232,8 @@ TGZ_SHA="$(sha256sum "$OUT/homes.tgz" | awk '{print $1}')"
 } > "$OUT/MANIFEST"
 chmod 600 "$OUT/MANIFEST"
 
-log "backup verified and written to $OUT"
-echo "Backup written to $OUT"
+for artifact in rakazo.sql rakazo.dump homes.tgz MANIFEST; do
+  mv -f "$OUT/$artifact" "$DEST/$artifact"
+done
+log "backup verified and written to $DEST"
+echo "Backup written to $DEST"

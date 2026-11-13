@@ -83,6 +83,13 @@ if [[ -e "$SRC/homes.tgz" || -L "$SRC/homes.tgz" ]]; then
 fi
 STOP_ON_FAILURE=1
 "${compose[@]}" stop api worker supervisor
+if [[ "$DATA_KIND" == "volume" && -n "$STAGE" && -d "$STAGE/data" ]]; then
+  # Stopping the supervisor leaves already-running bot computers alive.
+  writers="$(docker ps -q --filter "volume=$DATA_PATH")"
+  while IFS= read -r container; do
+    [[ -z "$container" ]] || docker stop "$container"
+  done <<< "$writers"
+fi
 "${compose[@]}" up -d postgres
 until "${compose[@]}" exec -T postgres pg_isready -U rakazo >/dev/null 2>&1; do
   sleep 1
@@ -111,16 +118,24 @@ if [[ -n "$STAGE" && -d "$STAGE/data" ]]; then
     # because a volume cannot be moved aside the way a directory can.
     ROLLBACK="$(mktemp -d "$ROOT/data.rollback.XXXXXX")"
     docker run --rm -v "${DATA_PATH}:/data:ro" -v "${ROLLBACK}:/out" "$HELPER_IMAGE" \
-      sh -c 'tar -czf /out/data-previous.tgz -C /data . 2>/dev/null || true'
+      sh -c 'tar -czf /out/data-previous.tgz -C /data .'
     echo "Previous volume contents preserved at $ROLLBACK/data-previous.tgz"
-    # Copy the restored tree in first, then remove what the backup did not
-    # contain, so the volume is never left empty if the copy fails.
+    # Copy into a private clean tree before unlinking old entries. Neither cp
+    # nor mv ever writes through an existing tenant-controlled destination.
     docker run --rm -v "${DATA_PATH}:/data" -v "${STAGE}/data:/src:ro" "$HELPER_IMAGE" \
-      sh -c 'cp -a /src/. /data/ && for entry in /data/* /data/.[!.]*; do
-               [ -e "$entry" ] || continue
-               name=$(basename "$entry")
-               [ -e "/src/$name" ] || rm -rf "$entry"
-             done'
+      sh -eu -c 'umask 077
+        stage=$(mktemp -d /data/.restore.XXXXXX)
+        trap "rm -rf -- \"$stage\"" EXIT
+        cp -a /src/. "$stage/"
+        for entry in /data/* /data/.[!.]* /data/..?*; do
+          [ "$entry" != "$stage" ] || continue
+          [ -e "$entry" ] || [ -L "$entry" ] || continue
+          rm -rf -- "$entry"
+        done
+        for entry in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
+          [ -e "$entry" ] || [ -L "$entry" ] || continue
+          mv -- "$entry" /data/
+        done'
   fi
 fi
 "${compose[@]}" up -d
