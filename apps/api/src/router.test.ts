@@ -4393,6 +4393,22 @@ describe("computer screen url", () => {
     expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
+  it("returns the team screen limit without private provider details", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        new Error("cannot allocate another screen (limit 4): private provider detail"),
+      ),
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)",
+      }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("keeps a transport blip an error and leaves the row alone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
@@ -4403,11 +4419,7 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(
-        new ComputerScreenUnavailableError(
-          "cannot allocate another screen: private provider detail",
-        ),
-      ),
+      Promise.reject(new ComputerScreenUnavailableError("private provider detail")),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
