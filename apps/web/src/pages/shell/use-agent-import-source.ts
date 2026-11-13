@@ -154,6 +154,7 @@ export function useAgentImportSource() {
   /** Only the files an import uses leave the device; `.env`/`auth.json` are not read. */
   async function loadSource(next: AgentImportReader, read = ++latestRead.current) {
     setError(null);
+    setGrokBots([]);
     setBusy(true);
     try {
       const chosen = await chooseAgentImportFiles(next.paths, next.read, {
@@ -222,6 +223,8 @@ export function useAgentImportSource() {
   /** Unpacked on this device, one file at a time. */
   async function pickArchive(file: File | undefined) {
     const read = ++latestRead.current;
+    // Another source replaces any Bot choices an earlier reply left.
+    setGrokBots([]);
     if (!file) {
       setBusy(false);
       return;
@@ -323,6 +326,7 @@ export function useAgentImportSource() {
 
   async function pickDocument(list: FileList | null) {
     const read = ++latestRead.current;
+    setGrokBots([]);
     const file = list?.[0];
     if (!file) {
       setBusy(false);

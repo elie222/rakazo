@@ -697,6 +697,7 @@ describe("Grok Bot export", () => {
               headers: { Authorization: "" },
             },
             { name: "Plain", mcp_url: "http://mcp.example.com/mcp" },
+            { name: "Signed", mcp_url: "https://mcp.example.com/mcp?sig=abc123" },
             { name: "Keyed", mcp_url: "https://mcp.example.com/a1b2c3d4e5f6g7h8i9j0k1l2m3" },
             { name: "Gmail" },
             // Built from parts so no scanner mistakes this file for a leak.
@@ -734,9 +735,10 @@ describe("Grok Bot export", () => {
     expect(settings.skipped).toEqual([
       { path: "routines: Unread", reason: "unsupported" },
       { path: "apps: Plain", reason: "unsupported" },
+      { path: "apps: Signed", reason: "unsupported" },
       { path: "apps: Keyed", reason: "unsupported" },
       { path: "apps: Gmail", reason: "reconnect" },
-      { path: "apps: 5", reason: "unsupported" },
+      { path: "apps: 6", reason: "unsupported" },
     ]);
     expect(settings.model).toBeNull();
     expect(settings.apiKeys).toEqual([]);

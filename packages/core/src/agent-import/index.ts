@@ -19,7 +19,7 @@ import {
 import { looksLikeCredential } from "./credentials.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
 import type { GrokBot } from "./grok-bot.js";
-import { parseGrokBot, parseGrokBotExport } from "./grok-bot.js";
+import { parseGrokBot, readGrokBotExportJson } from "./grok-bot.js";
 import {
   BUNDLED_MANIFEST,
   bundledSkillNames,
@@ -58,16 +58,16 @@ export {
 } from "./config.js";
 export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
+export type { GrokBot, GrokBotExportErrorCode } from "./grok-bot.js";
 export {
   GROK_BOT_EXPORT_PROMPT,
   GROK_BOT_REPLY_MAX_LENGTH,
-  type GrokBot,
   GrokBotExportError,
-  type GrokBotExportErrorCode,
   grokBotExportJson,
   grokRoutineCron,
   grokSkillNames,
   parseGrokBotExport,
+  readGrokBotExportJson,
 } from "./grok-bot.js";
 export { bundledSkillNames } from "./hermes.js";
 export type { AgentImportReader, SkillFiles } from "./shared.js";
@@ -305,7 +305,7 @@ export function parseAgentImport(
   if (only?.path === GROK_BOT_EXPORT_PATH) {
     let bots: GrokBot[];
     try {
-      bots = parseGrokBotExport(only.content);
+      bots = readGrokBotExportJson(only.content);
     } catch {
       return { error: AGENT_IMPORT_NOT_FOUND };
     }

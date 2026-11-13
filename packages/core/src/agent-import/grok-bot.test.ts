@@ -9,6 +9,7 @@ import {
   grokSkillNames,
   parseAgentImport,
   parseGrokBotExport,
+  readGrokBotExportJson,
 } from "./index.js";
 
 const bramble = {
@@ -93,6 +94,12 @@ describe("reading a Grok Bot's reply", () => {
     expect(bots).toHaveLength(1);
     expect(bots[0]!.name).toBe("Bramble");
     expect(bots[0]!.instructions).toBe("Rule one.\n\nRule two.");
+    // A later, fuller part replaces the earlier one it contains.
+    const fuller = exportOf({ name: "Bramble", instructions: "Rule one.\n\nRule two." });
+    const [whole] = parseGrokBotExport(
+      `${exportOf({ name: "Bramble", instructions: "Rule two." })}\n${fuller}`,
+    );
+    expect(whole!.instructions).toBe("Rule one.\n\nRule two.");
     expect(bots[0]!.memories).toEqual(["A", "B"]);
     expect(bots[0]!.routines.map((routine) => routine.name)).toEqual([
       "Monday review",
@@ -119,9 +126,14 @@ describe("reading a Grok Bot's reply", () => {
     expect(errorCode("x".repeat(4_000_001))).toBe("too_large");
   });
 
-  it("reads back the document it writes for one Bot", () => {
+  it("reads back the document it writes for one Bot, strictly on the server", () => {
     const [bot] = parseGrokBotExport(exportOf(bramble));
     expect(parseGrokBotExport(grokBotExportJson(bot!))).toEqual([bot]);
+    expect(readGrokBotExportJson(grokBotExportJson(bot!))).toEqual([bot]);
+    // The server never searches or repairs: only the exact document is read.
+    expect(() => readGrokBotExportJson(`Here it is: ${grokBotExportJson(bot!)}`)).toThrow(
+      GrokBotExportError,
+    );
   });
 
   it("asks for the fields it reads", () => {

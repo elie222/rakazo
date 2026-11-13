@@ -538,3 +538,46 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
   });
 });
+
+describe("a Grok Bot reply with several Bots", () => {
+  it("asks which Bot, and forgets the choice when another source is read", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        JSON.stringify({
+          bots: [
+            { name: "Bramble", memories: ["A"] },
+            { name: "Wren", memories: ["B"] },
+          ],
+        }),
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      [...grok.querySelectorAll("button")].find((item) => item.textContent === "Continue")!.click(),
+    );
+    expect(grok.textContent).toContain("Which Bot?");
+    expect(importPreview).not.toHaveBeenCalled();
+
+    const archive = container.querySelector<HTMLInputElement>(
+      '[data-testid="agent-import-archive"]',
+    )!;
+    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: () => Promise.reject(new Error("unreadable")),
+    });
+    await act(async () => {
+      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
+      archive.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(grok.textContent).not.toContain("Which Bot?");
+  });
+});

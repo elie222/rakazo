@@ -326,7 +326,9 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
             description: bot.description || into.description,
             instructions: into.instructions.includes(bot.instructions)
               ? into.instructions
-              : [into.instructions, bot.instructions].filter(Boolean).join("\n\n"),
+              : bot.instructions.includes(into.instructions)
+                ? bot.instructions
+                : `${into.instructions}\n\n${bot.instructions}`,
             memories: union(into.memories, bot.memories),
             userFacts: union(into.userFacts, bot.userFacts),
             skills: union(into.skills, bot.skills),
@@ -339,17 +341,8 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   return [...merged.values()];
 }
 
-/**
- * The Bots in a reply or file: a bare document, a fenced one, or several with chat text
- * around them. A document with credential-shaped keys is refused whole.
- */
-export function parseGrokBotExport(source: string): GrokBot[] {
-  if (source.length > GROK_BOT_REPLY_MAX_LENGTH) throw new GrokBotExportError("too_large");
-  const documents = documentsIn(source.replace(/^\uFEFF/, ""));
-  if (documents.length === 0) {
-    const cutOff = source.split("{").length > source.split("}").length;
-    throw new GrokBotExportError(cutOff ? "cut_off" : "not_export");
-  }
+/** Refuses credential-shaped keys and newer formats, then joins the Bots by name. */
+function botsIn(documents: readonly Json[]): GrokBot[] {
   if (documents.some((document) => hasCredentialKey(document))) {
     throw new GrokBotExportError("credentials");
   }
@@ -364,7 +357,33 @@ export function parseGrokBotExport(source: string): GrokBot[] {
   return bots;
 }
 
-/** One Bot as an export document; `parseGrokBotExport` reads it back unchanged. */
+/**
+ * The Bots in a reply or file: a bare document, a fenced one, or several with chat text
+ * around them. A document with credential-shaped keys is refused whole.
+ */
+export function parseGrokBotExport(source: string): GrokBot[] {
+  if (source.length > GROK_BOT_REPLY_MAX_LENGTH) throw new GrokBotExportError("too_large");
+  const documents = documentsIn(source.replace(/^\uFEFF/, ""));
+  if (documents.length === 0) {
+    const cutOff = source.split("{").length > source.split("}").length;
+    throw new GrokBotExportError(cutOff ? "cut_off" : "not_export");
+  }
+  return botsIn(documents);
+}
+
+/** The one document `grokBotExportJson` writes, read strictly: no repairs, no searching. */
+export function readGrokBotExportJson(source: string): GrokBot[] {
+  let document: unknown;
+  try {
+    document = JSON.parse(source);
+  } catch {
+    throw new GrokBotExportError("not_export");
+  }
+  if (!isExportDocument(document)) throw new GrokBotExportError("not_export");
+  return botsIn([document]);
+}
+
+/** One Bot as an export document; both readers read it back unchanged. */
 export function grokBotExportJson(bot: GrokBot): string {
   return JSON.stringify({
     format: GROK_BOT_EXPORT_FORMAT,

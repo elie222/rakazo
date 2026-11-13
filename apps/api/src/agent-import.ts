@@ -34,8 +34,8 @@ import type { SkillFiles } from "@rakazo/core";
 import {
   combineImportedInstructions,
   parseAgentImport,
-  parseGrokBotExport,
   readAgentImportFolder,
+  readGrokBotExportJson,
   renameRoutineSkillMentions,
   resolveAgentImportNames,
 } from "@rakazo/core";
@@ -187,7 +187,7 @@ async function buildPlan(
   let settings: Built["settings"];
   if (base.source === "grok_bot") {
     // parsePlan has checked that this file holds exactly one Bot.
-    const [bot] = parseGrokBotExport(files[0]?.content ?? "");
+    const [bot] = readGrokBotExportJson(files[0]?.content ?? "");
     settings = bot ? readGrokBotImportSettings(bot) : null;
   } else {
     const folder =
