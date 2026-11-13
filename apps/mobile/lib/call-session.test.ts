@@ -1,7 +1,10 @@
+import type { AiConsentStatus } from "@rakazo/contracts";
+import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import {
   AiConsentBlocked,
   CALL_FAREWELL_TIMEOUT_MS,
   callIdFromClientNonce,
+  ensureAiDataConsent,
   INTERIM_BARGE_IN_MS,
 } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -720,6 +723,115 @@ describe("mobile call session", () => {
       vi.unstubAllGlobals();
       await saveServerHeaders(server, {});
     }
+  });
+
+  describe("voice consent before a recorded clip is uploaded", () => {
+    const server = "https://api.example.test";
+    let allowed = false;
+    const prompt = vi.fn<(...args: unknown[]) => Promise<boolean>>();
+    const allow = vi.fn(async () => {
+      allowed = true;
+    });
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ text: "transcribed words" })),
+    );
+
+    beforeEach(() => {
+      allowed = false;
+      prompt.mockReset();
+      allow.mockClear();
+      fetchImpl.mockClear();
+      vi.mocked(reportMobileError).mockClear();
+      vi.stubGlobal("fetch", fetchImpl);
+      // The real disclosure flow, with the server's status and the user's answer faked.
+      vi.mocked(ensureVoiceConsent).mockImplementation(() =>
+        ensureAiDataConsent({
+          uses: ["voice"],
+          status: async (): Promise<AiConsentStatus> => ({
+            scope: "space",
+            version: "v1",
+            recipients: [{ key: "voice", name: "Voice", use: "voice", detail: "Audio", allowed }],
+          }),
+          prompt,
+          allow,
+        }),
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.mocked(ensureVoiceConsent).mockReset();
+    });
+
+    function ungreetedCall() {
+      const fake = fakes();
+      const { transcribe: _transcribe, ...deps } = fake.deps;
+      startCall(
+        {
+          botId: "bot-1",
+          botName: "Ada",
+          requestContext: {
+            apiBase: server,
+            headers: { authorization: "Bearer token" },
+            sessionGeneration: currentSessionGeneration(),
+          },
+        },
+        deps,
+      );
+      return fake;
+    }
+
+    it("holds the upload until the caller allows the recipient", async () => {
+      const answer = deferred<boolean>();
+      prompt.mockReturnValueOnce(answer.promise);
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+
+      expect(prompt).toHaveBeenCalledOnce();
+      expect(fetchImpl).not.toHaveBeenCalled();
+
+      answer.resolve(true);
+      await flush();
+      await flush();
+      expect(allow).toHaveBeenCalledOnce();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+    });
+
+    it("mutes without uploading when the caller refuses, as for speech", async () => {
+      prompt.mockResolvedValueOnce(false);
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      await flush();
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.recordings).toHaveLength(1);
+      expect(reportMobileError).not.toHaveBeenCalled();
+      expect(getSnapshot()).toMatchObject({
+        phase: "listening",
+        muted: true,
+        caption: AI_CONSENT_REQUIRED,
+      });
+    });
+
+    it("uploads without asking again once the recipient is allowed", async () => {
+      allowed = true;
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      await flush();
+
+      expect(prompt).not.toHaveBeenCalled();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+    });
   });
 
   it("mutes after a consent refusal instead of reopening the microphone or resending", async () => {
