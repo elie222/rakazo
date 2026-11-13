@@ -10,7 +10,7 @@ import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { revokeScreenControl } from "./computer-control.js";
+import { endTeachingWithLease, revokeScreenControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
@@ -22,7 +22,7 @@ import {
 type Deps = Parameters<typeof replaceComputer>[0];
 type QueueDeps = Pick<Deps, "prisma" | "jobs"> &
   Partial<Pick<Deps, "sandbox">> & {
-    events?: Pick<ThreadEvents, "append">;
+    events?: Pick<ThreadEvents, "append" | "draftRecordingsOfLease">;
   };
 const STALE_MS = 10 * 60_000;
 // Far longer than any provider call should run. Past it, reconciliation assumes an
@@ -212,6 +212,13 @@ export async function queueComputerUpdate(
             .catch((error) => {
               getLogger().error("computer control expiry cancellation", error);
             });
+          if (deps.events) {
+            await endTeachingWithLease(
+              { events: deps.events, jobs: deps.jobs },
+              prepared.handback.spaceId,
+              prepared.handback.leaseId,
+            ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));
+          }
         }
         throw new ComputerBusyError();
       }
@@ -245,6 +252,13 @@ export async function queueComputerUpdate(
         await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
       }
       throw new ComputerBusyError();
+    }
+    if (deps.events) {
+      await endTeachingWithLease(
+        { events: deps.events, jobs: deps.jobs },
+        prepared.handback.spaceId,
+        prepared.handback.leaseId,
+      ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));
     }
     const queued = await deps.prisma.computerUpdate.updateMany({
       where: { id: prepared.row.id, status: prepared.row.status },

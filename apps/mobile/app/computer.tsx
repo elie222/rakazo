@@ -97,6 +97,7 @@ export default function Computer() {
     setBootFailed,
     refreshController,
     bootComputer,
+    takenLeases,
   } = useComputerBoot(botId);
   const [cleaningUp, setCleaningUp] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -329,11 +330,13 @@ export default function Computer() {
   }, [botId, computer?.state, foreground, hasControl]);
 
   // Control ends with the screen: closing it, switching bots, or leaving hands it back.
+  // Only the lease this screen took: a late hand back never ends newer control.
   const heldBotId = hasControl && computerOpen ? botId : undefined;
   useEffect(() => {
-    if (!heldBotId) return;
+    const leaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
+    if (!heldBotId || !leaseId) return;
     return () => {
-      void rpc("computer/release", { botId: heldBotId }).catch(() => undefined);
+      void rpc("computer/release", { botId: heldBotId, leaseId }).catch(() => undefined);
     };
   }, [heldBotId]);
 
@@ -380,7 +383,7 @@ export default function Computer() {
     const action = refreshController.beginAction();
     setReleasing(true);
     try {
-      await rpc("computer/release", { botId, reason });
+      await rpc("computer/release", { botId, reason, leaseId: takenLeases.current.get(botId) });
       if (!action.isActive()) return;
       setComputerOpen(false);
       await action.refresh().catch(() => undefined);

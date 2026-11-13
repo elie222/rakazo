@@ -605,6 +605,8 @@ export function useComputerControls({
     setScreenLoadError(null);
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
+  /** The lease this page took for each bot's screen. */
+  const takenLeases = useRef(new Map<string, string>());
   const autoBooted = useRef<string | null>(null);
 
   async function bootComputer({
@@ -643,7 +645,8 @@ export function useComputerControls({
         }
       }
       if (takeControl) {
-        await rpc.computer.takeover({ botId: targetBotId });
+        const { leaseId } = await rpc.computer.takeover({ botId: targetBotId });
+        takenLeases.current.set(targetBotId, leaseId);
         if (!stillThisBoot() || !stillThisBot()) return;
       }
       await refreshComputerFor(targetBotId);
@@ -767,12 +770,14 @@ export function useComputerControls({
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
+  // Only the lease this page took: a late hand back from an old page never ends newer control.
   const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
   useEffect(() => {
-    if (!heldBotId) return;
+    const leaseId = heldBotId ? takenLeases.current.get(heldBotId) : undefined;
+    if (!heldBotId || !leaseId) return;
     const handBack = () =>
       void rpc.computer
-        .release({ botId: heldBotId }, { context: { keepalive: true } })
+        .release({ botId: heldBotId, leaseId }, { context: { keepalive: true } })
         .catch(() => undefined);
     window.addEventListener("pagehide", handBack);
     return () => {
@@ -839,7 +844,7 @@ export function useComputerControls({
       });
     }
     try {
-      await rpc.computer.release({ botId, reason });
+      await rpc.computer.release({ botId, reason, leaseId: takenLeases.current.get(botId) });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
       await refreshComputerFor(botId).catch(() => undefined);
       const groupId = activeGroupId.current;

@@ -4553,6 +4553,18 @@ describe("computer terminal and file transfer", () => {
     expect(prisma.computer.updateMany).not.toHaveBeenCalled();
   });
 
+  it("leaves newer control alone when a late hand back names an older lease", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { leaseId: "old-lease" })).resolves.toMatchObject({
+      status: 200,
+    });
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+    await expect(call("release", { leaseId: "lease-1" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+  });
+
   it("hands control back on I'm done even when nothing is waiting any more", async () => {
     const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
     await expect(call("release", { reason: "done" })).resolves.toMatchObject({ status: 200 });

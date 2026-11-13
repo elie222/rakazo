@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { rpc } from "./api";
 import type { ComputerStatus } from "./computer";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS, readScreenUrl, SCREEN_URL_OPEN_ATTEMPTS } from "./computer";
@@ -8,6 +8,8 @@ import { computerBootErrorDetail, errorText } from "./user-error";
 
 /** A bot's computer status and screen link, kept fresh, and the boot that starts it. */
 export function useComputerBoot(botId: string | undefined) {
+  /** The lease this screen took for each bot, so a late hand back never ends newer control. */
+  const takenLeases = useRef(new Map<string, string>());
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
@@ -75,7 +77,7 @@ export function useComputerBoot(botId: string | undefined) {
       starting = false;
       if (!action.isActive()) return false;
       if (takeControl) {
-        await rpc("computer/takeover", { botId }).catch(async (err: unknown) => {
+        const taken = await rpc("computer/takeover", { botId }).catch(async (err: unknown) => {
           if (!(err instanceof Error && err.name === "TimeoutError")) throw err;
           // The server may have granted control after the app stopped waiting: ask what it holds.
           const status = await rpc("computer/status", { botId });
@@ -84,7 +86,9 @@ export function useComputerBoot(botId: string | undefined) {
             status.controlBotId === botId &&
             !status.controlledByOther;
           if (!held) throw err;
+          return null;
         });
+        if (taken) takenLeases.current.set(botId, taken.leaseId);
       }
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
@@ -123,5 +127,6 @@ export function useComputerBoot(botId: string | undefined) {
     setBootFailed,
     refreshController,
     bootComputer,
+    takenLeases,
   };
 }

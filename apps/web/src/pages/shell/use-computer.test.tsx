@@ -490,11 +490,27 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
   expect(state.computerOpen).toBe(false);
 });
 
-it("hands control back when the computer closes, and keeps it while open", async () => {
+/** Renders the computer controls for bot-1 with a running computer this page can take. */
+async function renderTakingControl() {
+  const held = {
+    botId: "bot-1",
+    state: "running",
+    controlHolder: "user",
+    controlBotId: "bot-1",
+  } as never;
   const release = vi.fn(async () => ({ ok: true }));
   const heartbeat = vi.fn(async () => ({ ok: true }));
-  const rpc = { computer: { release, heartbeat } } as never;
+  const rpc = {
+    computer: {
+      release,
+      heartbeat,
+      boot: vi.fn(async () => held),
+      takeover: vi.fn(async () => ({ leaseId: "lease-1", expiresAt: "" })),
+      screenUrl: vi.fn(async () => ({ url: null })),
+    },
+  } as never;
   const bot = { id: "bot-1" } as never;
+  let controls!: ReturnType<typeof useComputerControls>;
   function Controls() {
     state = useComputerState({
       rpc,
@@ -502,7 +518,7 @@ it("hands control back when the computer closes, and keeps it while open", async
       activeId: "bot-1",
       activeBotId: { current: "bot-1" },
     });
-    useComputerControls({
+    controls = useComputerControls({
       rpc,
       state,
       panel: null,
@@ -513,57 +529,47 @@ it("hands control back when the computer closes, and keeps it while open", async
       activeGroupId: { current: undefined },
       runStatus: undefined,
       sandboxProvider: undefined,
-      refreshThread: vi.fn(),
+      refreshThread: vi.fn(async () => {
+        state.commitComputer(held);
+        return {} as never;
+      }),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
     });
     return null;
   }
   await act(async () => root.render(<Controls />));
+  return { release, heartbeat, takeControl: () => controls.openComputer("bot-1", true) };
+}
+
+it("hands its lease back when the computer closes, and keeps it while open", async () => {
+  const { release, heartbeat, takeControl } = await renderTakingControl();
   await act(async () => {
-    state.commitComputer({
-      botId: "bot-1",
-      state: "running",
-      controlHolder: "user",
-      controlBotId: "bot-1",
-    } as never);
-    state.setComputerOpen(true);
+    await takeControl();
   });
   expect(heartbeat).toHaveBeenCalledWith({ botId: "bot-1" });
   expect(release).not.toHaveBeenCalled();
   await act(async () => state.setComputerOpen(false));
-  expect(release).toHaveBeenCalledWith({ botId: "bot-1" }, { context: { keepalive: true } });
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
 });
 
-it("hands control back when the app leaves an open computer", async () => {
-  const release = vi.fn(async () => ({ ok: true }));
-  const rpc = { computer: { release, heartbeat: vi.fn(async () => ({ ok: true })) } } as never;
-  const bot = { id: "bot-1" } as never;
-  function Controls() {
-    state = useComputerState({
-      rpc,
-      panel: null,
-      activeId: "bot-1",
-      activeBotId: { current: "bot-1" },
-    });
-    useComputerControls({
-      rpc,
-      state,
-      panel: null,
-      active: bot,
-      bots: [bot],
-      botsRef: { current: [bot] },
-      activeBotId: { current: "bot-1" },
-      activeGroupId: { current: undefined },
-      runStatus: undefined,
-      sandboxProvider: undefined,
-      refreshThread: vi.fn(),
-      refreshGroupThread: vi.fn(),
-      onUpgrade: vi.fn(),
-    });
-    return null;
-  }
-  await act(async () => root.render(<Controls />));
+it("hands its lease back when the app leaves an open computer", async () => {
+  const { release, takeControl } = await renderTakingControl();
+  await act(async () => {
+    await takeControl();
+  });
+  await act(async () => root.render(null));
+  expect(release).toHaveBeenCalledWith(
+    { botId: "bot-1", leaseId: "lease-1" },
+    { context: { keepalive: true } },
+  );
+});
+
+it("never ends control this page did not take, such as a newer tab's", async () => {
+  const { release } = await renderTakingControl();
   await act(async () => {
     state.commitComputer({
       botId: "bot-1",
@@ -573,8 +579,8 @@ it("hands control back when the app leaves an open computer", async () => {
     } as never);
     state.setComputerOpen(true);
   });
-  await act(async () => root.render(<></>));
-  expect(release).toHaveBeenCalledWith({ botId: "bot-1" }, { context: { keepalive: true } });
+  await act(async () => state.setComputerOpen(false));
+  expect(release).not.toHaveBeenCalled();
 });
 
 it("offers Upgrade instead of a retry once the computer hours are spent", async () => {

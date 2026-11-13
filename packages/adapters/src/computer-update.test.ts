@@ -306,6 +306,11 @@ describe("background computer maintenance", () => {
       expect.anything(),
       "lease-1",
     );
+    // The teaching recording made under the handed-back lease is saved as a draft.
+    expect(harness.events.draftRecordingsOfLease).toHaveBeenCalledWith({
+      spaceId: expect.any(String),
+      leaseId: "lease-1",
+    });
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
@@ -791,7 +796,10 @@ function takeoverQueue(
   };
   const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn(async () => {}) };
   const setScreenControl = vi.fn(async () => {});
-  const events = { append: vi.fn(async () => ({ threadId: "thread-1", seq: 1 })) };
+  const events = {
+    append: vi.fn(async () => ({ threadId: "thread-1", seq: 1 })),
+    draftRecordingsOfLease: vi.fn(async (): Promise<string[]> => []),
+  };
   const deps = { prisma, jobs, sandbox: { setScreenControl }, events } as unknown as Parameters<
     typeof queueComputerUpdate
   >[0];

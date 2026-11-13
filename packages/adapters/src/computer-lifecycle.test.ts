@@ -3618,19 +3618,16 @@ describe("computer replacement", () => {
       run: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
 
+    const deps = replaceDeps(prisma, { setScreenControl, destroy });
     await expect(
-      replaceComputer(
-        replaceDeps(prisma, { setScreenControl, destroy }),
-        "computer-1",
-        "reset",
-        context,
-        "none",
-        undefined,
-        { handBackIdleTakeover: true },
-      ),
+      replaceComputer(deps, "computer-1", "reset", context, "none", undefined, {
+        handBackIdleTakeover: true,
+      }),
     ).rejects.toBeInstanceOf(ComputerBusyError);
 
     expect(destroy).not.toHaveBeenCalled();
+    // The hand back rolled back, so the person's control and its recording stay.
+    expect(deps.events.draftRecordingsOfLease).not.toHaveBeenCalled();
     expect(updateMany).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -4175,7 +4172,10 @@ function replaceDeps(
     sandbox: sandbox as unknown as SandboxProvider,
     home: {} as AgentHomeStore,
     jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
-    events: { append: vi.fn() } as unknown as ThreadEvents,
+    events: {
+      append: vi.fn(),
+      draftRecordingsOfLease: vi.fn().mockResolvedValue([]),
+    } as unknown as ThreadEvents,
   };
 }
 

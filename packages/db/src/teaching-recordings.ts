@@ -1,6 +1,8 @@
+import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { TeachRecordingEvent, TeachSnapshot } from "@rakazo/core";
 import { buildPlaybookFromRecording } from "@rakazo/core";
-import type { Prisma } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
+import { notifyRealtime } from "./event-stream.js";
 import { appendEventInTransaction } from "./events.js";
 
 type TaughtSkillRow = Prisma.TaughtSkillGetPayload<Record<string, never>>;
@@ -80,4 +82,17 @@ export async function draftRecordingsOfLeaseInTransaction(
     ended.push(stopped ? { skillId: id, ...stopped } : { skillId: id });
   }
   return ended;
+}
+
+/** End the recordings of a lease that maintenance cleared on its own, outside a release. */
+export async function draftRecordingsOfLease(
+  prisma: PrismaClient,
+  input: { spaceId: string; leaseId: string },
+  realtime?: RealtimeFanout,
+): Promise<string[]> {
+  const drafted = await prisma.$transaction((tx) => draftRecordingsOfLeaseInTransaction(tx, input));
+  for (const ended of drafted) {
+    if ("seq" in ended) await notifyRealtime(realtime, ended.threadId, ended.seq);
+  }
+  return drafted.map((ended) => ended.skillId);
 }

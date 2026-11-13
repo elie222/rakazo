@@ -346,7 +346,16 @@ export function computerRoutes(ctx: RouterContext) {
         // Handing back also ends a teaching recording made under this control, saved as a draft.
         const handBack = async () => {
           const bot = await repos.getBot(context.actor, input.botId);
-          if (bot.computer) await releaseComputerControl(deps, context.actor, bot.computer, bot.id);
+          if (bot.computer) {
+            await releaseComputerControl(
+              deps,
+              context.actor,
+              bot.computer,
+              bot.id,
+              "released",
+              input.leaseId,
+            );
+          }
         };
         if (input.reason === undefined && input.runId === undefined) {
           await handBack();

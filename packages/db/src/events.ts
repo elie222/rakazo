@@ -51,6 +51,7 @@ import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
+import { draftRecordingsOfLease } from "./teaching-recordings.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
 import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
 import { clearThreadReads } from "./thread-reads.js";
@@ -116,6 +117,7 @@ export interface ThreadEvents {
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
   clearThread(input: ClearThreadInput): Promise<ClearThreadResult>;
   answerTakeoverRequest(input: AnswerTakeoverRequestInput): Promise<boolean>;
+  draftRecordingsOfLease(input: { spaceId: string; leaseId: string }): Promise<string[]>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   releaseUserControl(input: ReleaseUserControlInput): Promise<ReleaseUserControlResult | false>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
@@ -246,6 +248,7 @@ export function createThreadEvents(
     claimSteering: (input) => claimSteering(prisma, input),
     clearThread: (input) => clearThread(prisma, input, realtime),
     answerTakeoverRequest: (input) => answerTakeoverRequest(prisma, input, realtime),
+    draftRecordingsOfLease: (input) => draftRecordingsOfLease(prisma, input, realtime),
     releaseUserControl: (input) => releaseUserControl(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime, options.analytics),
     notify: (threadId, seq, firstResponseRunId) =>

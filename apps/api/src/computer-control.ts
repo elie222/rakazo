@@ -123,11 +123,13 @@ export async function releaseComputerControl(
   computer: NonNullable<Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>["computer"]>,
   botId: string,
   reason: "released" | "done" | "skipped" = "released",
+  expectedLeaseId?: string,
 ): Promise<boolean> {
   const leaseId = computer.controlLeaseId;
   if (computer.controlHolder !== "user" || !leaseId || computer.controlBotId !== botId) {
     return false;
   }
+  if (expectedLeaseId !== undefined && expectedLeaseId !== leaseId) return false;
   if (!holdsUserControl(computer, actor.userId)) return false;
   const released = await releaseComputerControlLease(
     deps,

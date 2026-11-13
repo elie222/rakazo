@@ -825,13 +825,35 @@ describe("computer screen", () => {
     expect(bar()?.dataset.active).toBe("true");
   });
 
-  it("hands control back when the full window closes, and checks in often while holding it", async () => {
+  /** Control this screen takes with Take control, under lease "lease-1". */
+  function respondTakingControl() {
+    let held = false;
+    rpc.mockImplementation(async (method: string) => {
+      if (method === "computer/takeover") {
+        held = true;
+        return { leaseId: "lease-1", expiresAt: new Date().toISOString() };
+      }
+      if (method === "computer/status") {
+        return held
+          ? { ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null }
+          : { ...botWorking, busyBotName: null };
+      }
+      if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+      return {};
+    });
+  }
+
+  async function takeControl(view: HTMLElement) {
+    await act(async () => takeControlButtons(view)[0]?.click());
+    await settle();
+  }
+
+  it("hands its lease back when the full window closes, and checks in often while holding it", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
-      respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+      respondTakingControl();
       const view = await render();
-      await act(async () => preview(view).click());
-      await settle();
+      await takeControl(view);
       const beats = calls("computer/heartbeat").length;
       await act(async () => vi.advanceTimersByTime(15_000));
       expect(calls("computer/heartbeat").length).toBeGreaterThan(beats);
@@ -841,21 +863,33 @@ describe("computer screen", () => {
         view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
       );
       await settle();
-      expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
+      expect(calls("computer/release")).toEqual([
+        ["computer/release", { botId: "bot-1", leaseId: "lease-1" }],
+      ]);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("hands control back when the computer screen goes away while open", async () => {
+  it("hands its lease back when the computer screen goes away while open", async () => {
+    respondTakingControl();
+    const view = await render();
+    await takeControl(view);
+    act(() => root?.unmount());
+    root = undefined;
+    expect(calls("computer/release")).toEqual([
+      ["computer/release", { botId: "bot-1", leaseId: "lease-1" }],
+    ]);
+  });
+
+  it("never ends control it did not take, such as a newer page's", async () => {
     respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
     const view = await render();
     await act(async () => preview(view).click());
     await settle();
-    expect(calls("computer/release")).toHaveLength(0);
     act(() => root?.unmount());
     root = undefined;
-    expect(calls("computer/release")).toEqual([["computer/release", { botId: "bot-1" }]]);
+    expect(calls("computer/release")).toEqual([]);
   });
 
   it("loads the screen again when the app returns from the background", async () => {

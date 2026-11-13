@@ -37,6 +37,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import {
   clearInactiveUserComputerControl,
+  endTeachingWithLease,
   expireComputerControl,
   hasActiveComputerControl,
   holdsUserControl,
@@ -1233,6 +1234,10 @@ export async function replaceComputer(
       });
   }
   if (previousControl) {
+    // The hand back is final now; a teaching recording made under it ends with it.
+    await endTeachingWithLease(deps, existing.spaceId, previousControl.controlLeaseId).catch(
+      (error) => getLogger().error("end teaching with maintenance hand back", error),
+    );
     try {
       const bot = await deps.prisma.bot.findFirst({
         where: { id: botId },

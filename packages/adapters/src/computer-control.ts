@@ -134,13 +134,33 @@ export async function releaseComputerControlLease(
   await deps.jobs
     .cancel(computerControlExpireJobKey(computer.id, leaseId))
     .catch((error) => getLogger().error("computer control expiry cancellation", error));
-  // A recording made under this lease is now a draft; its job posts the draft to the chat.
-  for (const skillId of released.draftedSkillIds) {
-    await deps.jobs
+  await publishTeachingDrafts(deps.jobs, released.draftedSkillIds);
+  return true;
+}
+
+/** A recording that ended with its control is a draft now; its job posts the draft to the chat. */
+async function publishTeachingDrafts(jobs: JobPublisher, skillIds: string[]): Promise<void> {
+  for (const skillId of skillIds) {
+    await jobs
       .enqueue(skillTeachingExpireJob(skillId, new Date()))
       .catch((error) => getLogger().error("teaching draft publish enqueue", error));
   }
-  return true;
+}
+
+/**
+ * Maintenance that clears a person's control itself ends the teaching recording made under it,
+ * as every other way of ending control does.
+ */
+export async function endTeachingWithLease(
+  deps: { events: Pick<ThreadEvents, "draftRecordingsOfLease">; jobs: JobPublisher },
+  spaceId: string,
+  leaseId: string | null,
+): Promise<void> {
+  if (!leaseId) return;
+  await publishTeachingDrafts(
+    deps.jobs,
+    await deps.events.draftRecordingsOfLease({ spaceId, leaseId }),
+  );
 }
 
 /** Ends a lease its page stopped renewing; a renewed one is checked again when it would lapse. */
