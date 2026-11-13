@@ -208,7 +208,7 @@ export function parseModelFallbackFailure(
  * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request triggered cyber-related safeguards\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -547,6 +547,21 @@ export function normalizeRunError(
     )
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
+  } else if (
+    status === 400 &&
+    payload.type === "invalid_request_error" &&
+    /^Invalid effort level\b/i.test(message)
+  ) {
+    // The organization caps the thinking effort below the one chosen for this model.
+    recovery = "model";
+  } else if (
+    status === 400 &&
+    message === "Provider returned error" &&
+    typeof metadata.provider_name === "string" &&
+    metadata.provider_name.trim() !== ""
+  ) {
+    // A gateway's named upstream refused the request; another model avoids that upstream.
+    recovery = "model";
   } else if (MODEL_OUTPUT_LIMIT_REACHED.test(message)) {
     recovery = "model";
     kind = "output";
