@@ -19,6 +19,7 @@ import { promptAiConsent } from "./ai-consent";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { identityLabels } from "./identity-display";
+import { resumeLiveNotifications } from "./live-notifications";
 import {
   newMobileAvatarSnapshotRequest,
   rememberMobileAvatarSnapshot,
@@ -788,6 +789,12 @@ async function request(
           if (!selectedSpaceId()) {
             cachedSpaceId = previousSpaceId;
             bumpSpaceSelectionGeneration();
+            if (requestSessionGeneration === currentSessionGeneration()) {
+              await resumeSelectedSpaceNotifications(
+                previousSpaceId,
+                spaceSelectionGeneration,
+              ).catch(() => undefined);
+            }
           }
           throw retryError;
         }
@@ -848,6 +855,22 @@ export function httpError(message: string, res: Response, code?: string): Error 
     retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
   });
 }
+export async function resumeSelectedSpaceNotifications(
+  id: string,
+  generation: number,
+): Promise<void> {
+  const apiBase = currentApiBase();
+  const sessionGeneration = currentSessionGeneration();
+  const token = await loadSessionToken();
+  if (
+    generation !== currentSpaceSelectionGeneration() ||
+    sessionGeneration !== currentSessionGeneration() ||
+    apiBase !== currentApiBase()
+  )
+    return;
+  await resumeLiveNotifications(apiBase, token, id).catch(() => undefined);
+}
+
 /** Claims the in-memory Space selection ("" clears it) and starts a new selection epoch. */
 export function setSelectedSpace(id: string): void {
   cachedSpaceId = id;

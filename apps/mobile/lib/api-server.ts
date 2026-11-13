@@ -11,6 +11,7 @@ import {
   queueEndpointChange,
   rawSelectedSpaceId,
   removePendingSignOut,
+  resumeSelectedSpaceNotifications,
   SPACE_KEY,
   SPACE_ROLLBACK_KEY,
   savePendingSignOut,
@@ -28,7 +29,6 @@ import { loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-he
 import {
   clearSessionToken,
   currentSessionGeneration,
-  loadSessionToken,
   restoreSessionToken,
   sessionSaveInProgress,
   snapshotSessionToken,
@@ -123,18 +123,6 @@ export async function selectSpace(id: string) {
   pendingFallbackSwitchFrom = null;
   await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
-}
-async function resumeSelectedSpaceNotifications(id: string, generation: number): Promise<void> {
-  const apiBase = currentApiBase();
-  const sessionGeneration = currentSessionGeneration();
-  const token = await loadSessionToken();
-  if (
-    generation !== currentSpaceSelectionGeneration() ||
-    sessionGeneration !== currentSessionGeneration() ||
-    apiBase !== currentApiBase()
-  )
-    return;
-  await resumeLiveNotifications(apiBase, token, id).catch(() => undefined);
 }
 /** Keep requests usable after the server deleted the selected Space but native
  * storage could not replace it. Neutralize any same-endpoint rollback before
