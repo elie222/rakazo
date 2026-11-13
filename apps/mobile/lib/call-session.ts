@@ -833,10 +833,10 @@ function speakAndListen(text: string): void {
     .finally(() => {
       if (superseded()) return;
       if (blockedByConsent) return;
-      // Keep the echo memory anchored to when audio ended so long replies stay covered.
-      spokenMemory.remember(text);
       // The caller cut in: the microphone is already theirs and their turn is on its way.
       if (bargedIn) return;
+      // Keep the echo memory anchored to when audio ended so long replies stay covered.
+      spokenMemory.remember(text);
       if (hangUpAfterReply || Platform.OS !== "android") {
         void listen();
         return;

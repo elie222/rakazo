@@ -108,17 +108,14 @@ function hasCompactInOrderMatch(
     const word = spokenWords[i];
     if (word) addWord(word);
   }
-  const step = Math.max(1, Math.floor(heardWords.length / 4));
-  let nextLcsAt = 0;
   const maxStart = spokenWords.length - windowSize;
   for (let start = 0; start <= maxStart; start += 1) {
-    if (overlap >= required && start >= nextLcsAt) {
+    if (overlap >= required) {
       if (
         lcsLengthInWindow(heardWords, spokenWords, start, start + windowSize, required) >= required
       ) {
         return true;
       }
-      nextLcsAt = start + step;
     }
     if (start < maxStart) {
       const leaving = spokenWords[start];

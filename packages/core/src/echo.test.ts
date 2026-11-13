@@ -98,6 +98,12 @@ describe("isEchoOfSpeech", () => {
     ).toBe(false);
   });
 
+  it("checks the next window after an overlapping window fails", () => {
+    const heard = "B C D E F G H A X1 X2 X3 X4 X5";
+    const spoken = `A B C D E F G H ${Array.from({ length: 12 }, (_, i) => `N${i + 1}`).join(" ")} A N13 N14`;
+    expect(isEchoOfSpeech(heard, spoken)).toBe(true);
+  });
+
   it("handles repetitive long transcripts and replies without stalling", () => {
     const repeatedReply = Array.from({ length: 150 }, (_, i) =>
       i % 2 === 0 ? "yeah" : "okay",
