@@ -133,6 +133,7 @@ afterEach(() => {
   container.remove();
   vi.useRealTimers();
   vi.clearAllMocks();
+  api.bots.list.mockResolvedValue([{ id: "bot-1", name: "Chief" }]);
   messaging.status.mockReset();
   messaging.channels.list.mockReset();
   messaging.channels.list.mockResolvedValue([]);
@@ -547,4 +548,86 @@ it("keeps a teammate's DM link next to the user's own workspace elsewhere", asyn
   expect(links).toHaveLength(2);
   await act(async () => links[1]!.click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+});
+
+it.each(["resolve", "reject"] as const)(
+  "ignores a late code %s after switching bots",
+  async (outcome) => {
+    messaging.status.mockResolvedValue(statusWith([]));
+    api.bots.list.mockResolvedValue([
+      { id: "bot-1", name: "Chief" },
+      { id: "bot-2", name: "Team" },
+    ]);
+    let resolve!: (value: { code: string; expiresAt: string }) => void;
+    let reject!: (error: Error) => void;
+    messaging.link.start.mockImplementationOnce(
+      () =>
+        new Promise((yes, no) => {
+          resolve = yes;
+          reject = no;
+        }),
+    );
+    await renderOverlay();
+    await act(async () => {
+      telegramItem()?.click();
+    });
+    expect(messaging.link.start).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      const select = container.querySelector("select")!;
+      select.value = "bot-2";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      if (outcome === "resolve")
+        resolve({ code: "OLD-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() });
+      else reject(new Error("old request failed"));
+    });
+    expect(container.textContent).not.toContain("OLD-CODE");
+    expect(container.textContent).not.toContain("Couldn't update messaging settings");
+    await act(async () => telegramItem()?.click());
+    expect(messaging.link.start).toHaveBeenLastCalledWith({ botId: "bot-2" });
+    expect(container.textContent).toContain("ABCD-2345");
+  },
+);
+
+it("does not issue another code while one request is in flight", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  let resolve!: (value: { code: string; expiresAt: string }) => void;
+  messaging.link.start.mockImplementationOnce(
+    () =>
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+  );
+  await renderOverlay();
+  await act(async () => {
+    telegramItem()?.click();
+    telegramItem()?.click();
+  });
+  expect(messaging.link.start).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).toContain("ONE-CODE");
+});
+
+it("ignores a code that arrives after the panel closes", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  let resolve!: (value: { code: string; expiresAt: string }) => void;
+  messaging.link.start.mockImplementationOnce(
+    () =>
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+  );
+  await renderOverlay();
+  await act(async () => telegramItem()?.click());
+  const reads = messaging.status.mock.calls.length;
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () =>
+    resolve({ code: "CLOSED-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(messaging.status).toHaveBeenCalledTimes(reads);
+  expect(container.textContent).toBe("");
 });

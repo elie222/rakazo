@@ -419,3 +419,90 @@ it("keeps a failed action's error when a refresh that was pending then succeeds"
   await act(async () => finishRefresh());
   expect(container.textContent).toContain("Something went wrong. Try again.");
 });
+
+it.each(["resolve", "reject"] as const)(
+  "ignores a late code %s after switching bots",
+  async (outcome) => {
+    responses["bots/list"] = [
+      { id: "bot-1", name: "Chief" },
+      { id: "bot-2", name: "Team" },
+    ];
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    responses["messaging/link/start"] = pending;
+    await act(async () => root.render(<MessagingSettings />));
+    const click = (text: string) =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === text)!
+        .click();
+    await act(async () => {
+      click("iMessage");
+    });
+    expect(
+      vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+    ).toHaveLength(1);
+    await act(async () => click("Team"));
+    await act(async () => {
+      if (outcome === "resolve")
+        resolve({ code: "OLD-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() });
+      else reject(new Error("old request failed"));
+    });
+    expect(container.textContent).not.toContain("OLD-CODE");
+    expect(container.textContent).not.toContain("Something went wrong");
+    responses["messaging/link/start"] = {
+      code: "NEW-CODE",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    };
+    await act(async () => click("iMessage"));
+    expect(rpc).toHaveBeenLastCalledWith("spaces/list");
+    expect(container.textContent).toContain("NEW-CODE");
+    expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+  },
+);
+
+it("does not issue another code while one request is in flight", async () => {
+  let resolve!: (value: unknown) => void;
+  responses["messaging/link/start"] = new Promise((yes) => {
+    resolve = yes;
+  });
+  await act(async () => root.render(<MessagingSettings />));
+  const button = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "iMessage",
+  )!;
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(
+    vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/link/start"),
+  ).toHaveLength(1);
+  await act(async () =>
+    resolve({ code: "ONE-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(container.textContent).toContain("ONE-CODE");
+});
+
+it("ignores a code that arrives after leaving settings", async () => {
+  let resolve!: (value: unknown) => void;
+  responses["messaging/link/start"] = new Promise((yes) => {
+    resolve = yes;
+  });
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "iMessage")!
+      .click(),
+  );
+  const reads = listCalls();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () =>
+    resolve({ code: "CLOSED-CODE", expiresAt: new Date(Date.now() + 20_000).toISOString() }),
+  );
+  expect(listCalls()).toBe(reads);
+  expect(container.textContent).toBe("");
+});

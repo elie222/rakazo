@@ -15,7 +15,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
@@ -43,6 +43,9 @@ export function MessagingSettingsPanel() {
   const { t } = useLingui();
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
+  const linkGeneration = useRef(0);
+  const linkPending = useRef(false);
+  const [issuingLink, setIssuingLink] = useState(false);
   const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
@@ -144,6 +147,7 @@ export function MessagingSettingsPanel() {
   }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {
+    linkGeneration.current++;
     setError(null);
     // A displayed code must always match the current selection and link
     // state; the link action re-sets it after issuing.
@@ -165,6 +169,13 @@ export function MessagingSettingsPanel() {
 
   // A selection archived elsewhere drops out of the list; fall back to the first bot.
   const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
+  useEffect(() => {
+    linkGeneration.current++;
+    setLinkRequest(null);
+    return () => {
+      linkGeneration.current++;
+    };
+  }, [linkBotId]);
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
   // Only meaningful once a second chat app is linked: the same group can then
   // hold two of the caller's memberships, one per agent.
@@ -210,11 +221,24 @@ export function MessagingSettingsPanel() {
   const linkApp = linkRequest ? providerLabel(linkRequest.provider) : "";
   const linkAddress = linkRequest ? status?.addresses?.[linkRequest.provider] : undefined;
 
-  function startLink(provider: string, botId: string) {
-    void act(async () => {
+  async function startLink(provider: string, botId: string) {
+    if (linkPending.current) return;
+    linkPending.current = true;
+    setIssuingLink(true);
+    const generation = ++linkGeneration.current;
+    setError(null);
+    setLinkRequest(null);
+    try {
       const issued = await rpc.messaging.link.start({ botId });
+      if (generation !== linkGeneration.current) return;
       setLinkRequest({ ...issued, botId, provider });
-    });
+      await refresh();
+    } catch {
+      if (generation === linkGeneration.current) setError(t`Couldn't update messaging settings`);
+    } finally {
+      linkPending.current = false;
+      setIssuingLink(false);
+    }
   }
 
   function installSlack() {
@@ -238,6 +262,7 @@ export function MessagingSettingsPanel() {
         aria-label={t`Bot`}
         value={linkBotId}
         onChange={(event) => {
+          linkGeneration.current++;
           setSelectedBotId(event.target.value);
           setLinkRequest(null);
         }}
@@ -256,7 +281,7 @@ export function MessagingSettingsPanel() {
       <Button
         size="sm"
         variant="ghost"
-        disabled={!linkBotId}
+        disabled={issuingLink || !linkBotId}
         onClick={() => startLink("slack", linkBotId)}
       >
         <Trans>Link DMs</Trans>
@@ -357,7 +382,8 @@ export function MessagingSettingsPanel() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => startLink(installation.provider, installation.botId)}
+                        disabled={issuingLink}
+                        onClick={() => void startLink(installation.provider, installation.botId)}
                       >
                         <Trans>Link DMs</Trans>
                       </Button>
@@ -422,7 +448,10 @@ export function MessagingSettingsPanel() {
           <div className="flex flex-wrap items-center gap-2">
             {memberLink ? null : botPicker}
             <DropdownMenu>
-              <DropdownMenuTrigger disabled={!linkBotId} render={<Button variant="outline" />}>
+              <DropdownMenuTrigger
+                disabled={issuingLink || !linkBotId}
+                render={<Button variant="outline" />}
+              >
                 <Trans>Connect a chat app</Trans>
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>
