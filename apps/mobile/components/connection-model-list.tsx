@@ -1,5 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ConnectionModel } from "@rakazo/core";
+import { useEffect } from "react";
+import { AccessibilityInfo } from "react-native";
 import { useListSearch } from "../lib/use-list-search";
 import { ListSearchInput } from "./list-search-input";
 import { SettingsGroup, SettingsRow } from "./settings-group";
@@ -17,6 +19,12 @@ export function ConnectionModelList({
     text: (model) => `${model.label} ${model.id}`,
     id: (model) => model.id,
   });
+  const noMatches = models.length > 0 && search.visible.length === 0;
+  const noMatchesMessage = t`No matching models`;
+  // The search field keeps focus, so tell screen readers once when the results run out.
+  useEffect(() => {
+    if (noMatches) AccessibilityInfo.announceForAccessibility(noMatchesMessage);
+  }, [noMatches, noMatchesMessage]);
   if (models.length === 0) return null;
   return (
     <>
@@ -33,6 +41,7 @@ export function ConnectionModelList({
             onPress={() => onOpen(model.id)}
           />
         ))}
+        {noMatches ? <SettingsRow title={noMatchesMessage} dimmed /> : null}
       </SettingsGroup>
     </>
   );

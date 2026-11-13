@@ -50,7 +50,7 @@ describe("team chat engagement judge", () => {
     expect(parseTeamChatEngagementDecision("not json")).toEqual({ act: false });
   });
 
-  it("redacts compatible header values from failed judge diagnostics", async () => {
+  it("runs a compatible model with its own settings and redacts its header values from failures", async () => {
     const sink = createTestSink();
     const previousLogger = getLogger();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
@@ -92,6 +92,7 @@ describe("team chat engagement judge", () => {
               "x-boundary": "12345678",
               "x-region": "us",
             },
+            models: { "model-fixture": { reasoning: true } },
           }),
       } as never,
       deploymentProvider: "openai-compatible",
@@ -117,6 +118,7 @@ describe("team chat engagement judge", () => {
       expect(run.mock.calls[0]?.[0]).toMatchObject({
         model: {
           headers: { "x-route": "route-value-fixture", "x-boundary": "12345678", "x-region": "us" },
+          reasoning: true,
         },
       });
       expect(sink.events).toHaveLength(1);

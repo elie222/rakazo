@@ -289,6 +289,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       ...(modelSettings.contextWindow !== undefined
         ? { contextWindow: modelSettings.contextWindow }
         : {}),
+      ...(modelSettings.reasoning !== undefined ? { reasoning: modelSettings.reasoning } : {}),
     };
     const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
     if (parsed.kind === "oauth") {
