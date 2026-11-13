@@ -731,6 +731,10 @@ private fun takeFencedCode(
 
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. Mirrors htmlTagClose. */
 private fun htmlTagClose(text: String, open: Int): Int {
+  if (text.startsWith("<!--", open)) {
+    val close = text.indexOf("-->", open + 4)
+    return if (close == -1) text.length - 1 else close + 2
+  }
   var quote: Char? = null
   var gtInOpenQuote = -1
   for (i in open + 1 until text.length) {

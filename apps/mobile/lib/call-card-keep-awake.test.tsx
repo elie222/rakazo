@@ -116,11 +116,6 @@ vi.mock("./session", () => ({
     return () => sessionChange.listeners.delete(listener);
   },
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({ t: (text: string) => text }),
-  t: (text: string) => text,
-  getActiveUiLocale: () => "en",
-}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
@@ -129,7 +124,8 @@ vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
-  setVoiceBackgroundPlayback: vi.fn(),
+  setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
 }));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({
@@ -151,6 +147,7 @@ const deps: CallDeps = {
   speak: async () => undefined,
   watch: () => vi.fn(),
   stopSpeaking: vi.fn(),
+  audio: async () => undefined,
   cue: async () => undefined,
   waitSound: vi.fn(),
 };

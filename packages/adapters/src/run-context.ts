@@ -10,6 +10,7 @@ import type {
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -43,6 +44,8 @@ import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
+import type { ToolRefusal } from "./tool-refusal.js";
+import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
@@ -118,6 +121,10 @@ export interface ReplyState {
    * sentence boundary, so the step chips never render in the middle of a clause.
    */
   pendingToolNames: string[];
+  /** Every step label a call made, in call order, so its outcome can be saved on its step. */
+  toolCalls: { label: string; executionId: string }[];
+  /** How each finished call ended, by execution id. */
+  toolOutcomes: Map<string, ToolStepOutcome>;
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;
@@ -171,6 +178,8 @@ export interface RunState {
   toolCallStreak: LoopGuardStreak;
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
+  /** Calls refused before their tool ran, by execution id, for the log of a loop one causes. */
+  toolRefusals?: Map<string, ToolRefusal>;
   /** Consecutive `computer_act`/`browser_act` batches over the action limit, this one included. */
   overLimitActionCalls: number;
   /**
@@ -372,7 +381,7 @@ export function refuseOwnerSettingsChange(
     return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
   }
   ctx.state.ownerSettingsRefused = true;
-  return { error };
+  return refusal("outside_content_blocks_owner_settings", error);
 }
 
 export async function isRunTainted(ctx: RunContext) {
@@ -384,6 +393,11 @@ export async function isRunTainted(ctx: RunContext) {
   if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage()))
     state.tainted = true;
   return state.tainted;
+}
+
+/** Fresh outside input applies the existing action protections for this run. */
+export async function markReadOutsideContent(ctx: RunContext) {
+  ctx.state.tainted = true;
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */

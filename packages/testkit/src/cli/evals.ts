@@ -7,6 +7,12 @@ import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import {
+  APPS_EVAL_CASES,
+  APPS_FIXTURE_VERSION,
+  APPS_JUDGE_CALIBRATION,
+  APPS_JUDGE_VERSION,
+} from "../evals/apps.js";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
 import { EVAL_CASES, HISTORY_EVAL_CASES, wakesRoutines } from "../evals/cases.js";
@@ -43,6 +49,7 @@ import {
   MEMORY_JUDGE_VERSION,
 } from "../evals/memory.js";
 import {
+  loadRecallCases,
   RECALL_EVAL_CASES,
   RECALL_FIXTURE_VERSION,
   RECALL_JUDGE_CALIBRATION,
@@ -95,8 +102,8 @@ async function main() {
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
-  if (values["cases-file"] && values.suite !== "tool-choice")
-    throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  if (values["cases-file"] && values.suite !== "tool-choice" && values.suite !== "recall")
+    throw new Error("--cases-file adds tool-choice or recall cases; use one of those suites");
   const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
   if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
   if (values["reply-mode"] && values.suite === "approval")
@@ -153,14 +160,21 @@ async function main() {
     },
     "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
+    apps: {
+      cases: APPS_EVAL_CASES,
+      fixtureVersion: APPS_FIXTURE_VERSION,
+      judge: { version: APPS_JUDGE_VERSION, calibration: APPS_JUDGE_CALIBRATION },
+    },
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, or approval",
+      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, apps, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;
-  const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
+  const extraCases = values["cases-file"]
+    ? (values.suite === "recall" ? loadRecallCases : loadToolChoiceCases)(values["cases-file"])
+    : [];
   const cases = [...suite.cases, ...extraCases];
   const fixtureVersion = extraCases.length
     ? `${suite.fixtureVersion}+${extraCases.length}-local`
@@ -198,7 +212,15 @@ async function main() {
         }),
       ),
     )
-    .flat();
+    .flat()
+    // Only the current strategy compacts, so a compaction case under another one cannot run.
+    .filter(
+      (trial) =>
+        trial.strategy === "current" ||
+        !selected.find((c) => c.id === trial.caseId)?.history?.compact,
+    );
+  if (!trials.length)
+    throw new Error("Compaction cases run only under the current strategy; add --strategy current");
   const output = path.resolve(values.output!);
   let budget: SpendBudget | undefined;
   let probeTotals: { costUsd: number | null; modelCalls: number } | undefined;
@@ -549,6 +571,7 @@ async function main() {
       PIPEDREAM_CLIENT_SECRET: "",
       PIPEDREAM_PROJECT_ID: "",
       SMTP_URL: "",
+      BOT_EMAIL_SMTP_URL: "",
       EMAIL_PROVIDER: "none",
       EMAIL_API_KEY: "",
       SLACK_BOT_TOKEN: "",
@@ -606,7 +629,7 @@ async function main() {
           pricing,
           judge,
           createApp: async (composio, messaging, witnesses) => {
-            const sandbox = new EvalSandboxProvider();
+            const sandbox = new EvalSandboxProvider(scenario.computer);
             let acceptingCalls = true;
             const cacheDecisions: CacheDecisionMeasurement[] = [];
             const runtime = new PiAgentRuntime({

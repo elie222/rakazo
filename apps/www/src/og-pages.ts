@@ -1,4 +1,5 @@
 import { ALTERNATIVES, ALTERNATIVES_HUB } from "./alternatives";
+import { ENTERPRISE_H1 } from "./enterprise";
 import { GROK_ALTERNATIVE_H1 } from "./grok-alternative";
 import { OPENCLAW_H1 } from "./guide";
 import { INTEGRATION_PLATFORMS, INTEGRATION_PLATFORMS_HUB } from "./integration-platforms";
@@ -50,6 +51,7 @@ export function ogPages(): OgPage[] {
       kicker: "Guide",
       title: "Self-hosted AI agent",
     },
+    { id: "enterprise", kicker: "Enterprise", title: ENTERPRISE_H1 },
     { id: "sandboxes", kicker: "Comparison", title: SANDBOXES_HUB.h1 },
     ...SANDBOXES.map((sandbox) => ({
       id: `sandbox-${sandbox.slug}`,

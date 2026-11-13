@@ -15,7 +15,7 @@ vi.mock("expo-notifications", () => ({
   dismissAllNotificationsAsync: vi.fn(),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
-vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
+vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de" }));
 const store = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => store.get(key) ?? null,

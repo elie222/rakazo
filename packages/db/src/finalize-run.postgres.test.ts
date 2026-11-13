@@ -9,7 +9,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 // Longer than Prisma's default five-second interactive transaction.
 const THREAD_LOCK_HOLD_MS = 6_000;

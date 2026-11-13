@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { TICKET_STATUSES } from "@rakazo/contracts";
 
@@ -19,19 +20,19 @@ export function boardSections(tickets: readonly Ticket[]): BoardSection[] {
 }
 
 /** A ticket's status as the board names it, matching the web board's wording. */
-export function ticketStatusLabel(status: TicketStatus, t: (message: string) => string): string {
+export function ticketStatusLabel(status: TicketStatus): string {
   switch (status) {
     case "todo":
-      return t("To do");
+      return t`To do`;
     case "doing":
-      return t("In progress");
+      return t`In progress`;
     case "review":
-      return t("In review");
+      return t`In review`;
     case "blocked":
-      return t("Blocked");
+      return t`Blocked`;
     case "done":
-      return t("Done");
+      return t`Done`;
     case "closed":
-      return t("Won't do");
+      return t`Won't do`;
   }
 }

@@ -5,12 +5,13 @@ import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contrac
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
+  isQuestionAskBlock,
   isSecretAskBlock,
   receiptItems,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
-import { Button, Input, Textarea } from "@rakazo/ui-web";
+import { Button, cn, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import type { RpcClient } from "../lib/rpc";
@@ -118,6 +119,7 @@ function approvalActionLabel(
 export type AskCardProps = {
   block: AskBlock;
   canAnswer: boolean;
+  answerIsSeparate?: boolean;
   canDismiss: boolean;
   /** A login card answers with its fields and an empty `text`; `remember` false uses it once. */
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
@@ -136,7 +138,13 @@ export function AskCard(props: AskCardProps) {
   );
 }
 
-function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: AskCardProps) {
+function PromptAskCard({
+  block,
+  canAnswer,
+  answerIsSeparate,
+  onAnswer,
+  rpc = selectedSpaceRpc,
+}: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
@@ -146,6 +154,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
   const answered = block.status === "answered" || acceptedAnswer !== undefined;
+  const answeredQuestion = answered && isQuestionAskBlock(block);
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
@@ -158,8 +167,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
     !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
-  // An edited draft is shown in the user's words, so the card reads as answered. A typed reply to
-  // options already shows as the user's message, so it only dims them.
+  // Typed replies already have their own message; the question must not repeat them.
   const typedAnswer =
     answered &&
     !optionQuestion &&
@@ -236,8 +244,17 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
 
   return (
     <BuiCard
-      data-testid={block.instructionUpdate ? "instruction-approval-card" : undefined}
-      className="w-full min-w-0 max-w-xl px-5 py-4"
+      data-testid={
+        block.instructionUpdate
+          ? "instruction-approval-card"
+          : isQuestionAskBlock(block)
+            ? "question-card"
+            : undefined
+      }
+      className={cn(
+        "w-full min-w-0 max-w-xl px-5 py-4",
+        answeredQuestion && "opacity-50 [&_button:disabled]:opacity-100",
+      )}
     >
       <div className="text-body-lg leading-[1.5] text-foreground">
         {block.instructionUpdate ? (
@@ -297,12 +314,14 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
           ))}
         </div>
       ) : typedAnswer ? (
-        <blockquote
-          data-testid="ask-answer"
-          className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-body-lg leading-[1.5] text-muted-foreground"
-        >
-          {typedAnswer}
-        </blockquote>
+        answerIsSeparate ? null : (
+          <blockquote
+            data-testid="ask-answer"
+            className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-body-lg leading-[1.5] text-muted-foreground"
+          >
+            {typedAnswer}
+          </blockquote>
+        )
       ) : answered ? (
         <div className="mt-3.5 flex items-center gap-1.5 text-body font-medium text-muted-foreground">
           {displayedAnswer === "deny" ||
@@ -356,46 +375,8 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
             </Button>
           ))}
         </div>
-      ) : editing ? (
-        <form
-          className="mt-3.5 flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitAnswer(answer);
-          }}
-        >
-          <Input
-            aria-label={t`Answer`}
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder={t`Type your answer`}
-          />
-          <div className="flex gap-2">
-            <Button type="submit" disabled={!answer.trim() || submitting}>
-              {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={submitting}
-              onClick={() => {
-                setAnswer("");
-                setEditing(false);
-              }}
-            >
-              <Trans>Cancel</Trans>
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <div className="mt-3.5 flex gap-2">
-          <Button disabled={submitting} onClick={() => void submitAnswer("approved")}>
-            {submitting ? <Trans>Sending…</Trans> : <Trans>Send it</Trans>}
-          </Button>
-          <Button variant="outline" disabled={submitting} onClick={() => setEditing(true)}>
-            <Trans>Edit first</Trans>
-          </Button>
-        </div>
-      )}
+      ) : null}
+
       {error ? <p className="mt-3 text-body-sm text-destructive">{error}</p> : null}
     </BuiCard>
   );

@@ -1,5 +1,1 @@
-
-# Lingui compiled catalogs (Vite plugin compiles .po on the fly)
-src/locales/**/*.mjs
-src/locales/**/*.js
 scripts/msgids.json

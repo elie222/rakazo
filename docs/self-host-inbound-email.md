@@ -131,28 +131,87 @@ channel, and what it reads counts as outside data.
 
 ## Sending
 
-Bots send from their own address through the same provider as account email (`EMAIL_PROVIDER`
-and its settings), so set those on the worker as well as the API. The provider must be allowed to
-send as the bot domain:
+Bots send through a separate TLS SMTP connection, configured on both API and worker:
 
-- **Resend:** add the domain under **Domains** and publish the DNS records it shows. They sit on
-  a `send` subdomain and the domain's DKIM selector, so they don't clash with the MX records that
-  receive mail.
-- **SMTP:** the relay must accept a From address on the domain and sign it with DKIM, or
-  recipients will mark the mail as spam.
+```bash
+BOT_EMAIL_SMTP_URL=smtps://username:password@smtp.example.com:465
+```
 
-Replies go to the bot's address and land in its inbox. Each send follows the bot's usual
-[approval](./approvals.md) settings. A bot sends at most 50 emails a day, and one owner's bots 200
-between them, each to at most 10 people, and never includes a secret the run has used. What it sends stays in its inbox, and deleting mail never removes it.
+The relay must accept and DKIM-sign mail from `INBOUND_EMAIL_DOMAIN`. Keep its credentials
+separate from account email. Leaving this unset disables bot sending; it never falls back to
+`EMAIL_PROVIDER` or `SMTP_URL`. Existing receiving and account email settings keep working.
+The bot supplies its own From and Reply-To address, so replies return to its inbox.
+
+Each account starts with ten recipient deliveries per rolling 24 hours, shared by every bot
+and Space. CC recipients and failed delivery attempts count too. Deleting mail or a bot never
+resets usage. Reservations from before recipient accounting, including overlapping older
+workers, count as ten deliveries until they leave the rolling window because their recipient
+counts are unknown. An account must have a verified email and be active. By default bots can
+send only to that verified owner address, including scheduled reports.
+When upgrading, drain previous-release workers before enabling bot sending; they still enforce
+their previous policy until they finish.
+
+An operator can enable replies to authenticated incoming senders and raise the allowance using
+the API container's CLI:
+
+```bash
+node dist/cli/bot-email-policy.js status owner@example.test
+node dist/cli/bot-email-policy.js limit owner@example.test 20
+node dist/cli/bot-email-policy.js replies owner@example.test on
+node dist/cli/bot-email-policy.js allow owner@example.test reports@example.test
+node dist/cli/bot-email-policy.js deny owner@example.test reports@example.test
+node dist/cli/bot-email-policy.js limit owner@example.test 0
+```
+
+`status` lists the approved addresses; mutating commands print only their count.
+Zero pauses all bot sending. Changes are recorded in the security audit log, including whether
+anything changed and the canonical recipient for `allow` and `deny`. These recipient identifiers
+remain in the protected database audit and follow its retention policy. No user or bot tool
+can raise the allowance or enable external replies. This is an account-wide operator policy;
+changes are not copied into organization audit logs, where unrelated organization admins could
+read them. Reply access permits only the authenticated From address of an incoming message
+received in the last 30 days, identified by `inReplyTo`.
+It does not permit arbitrary recipients, reply-all, or recipients from a Reply-To header.
+Use `allow` only for recipients whose consent has been reviewed, such as a report destination
+that differs from the account login. `deny` removes that exception.
+The bot's usual action approvals still apply inside these limits, and known secrets are removed.
+
+Before enabling external replies on a hosted deployment, configure the sending service's hard
+bounce and complaint suppression and operational alerts. Review the workflow and recipient
+consent; a paid subscription alone is not authorization for external sending.
+
+### Monitoring operator changes
+
+The CLI commits its security event in the same transaction as the policy change. Its output
+from `docker exec` is not part of the API process's structured log stream. Monitor committed
+`bot_email.policy.changed` rows in `security_events` directly, using an operator database
+connection. For example:
+
+```sql
+SELECT id, "createdAt", "userId", metadata
+FROM security_events
+WHERE type = 'bot_email.policy.changed'
+  AND "createdAt" > NOW() - INTERVAL '15 minutes'
+ORDER BY "createdAt", id;
+```
+
+Configure database-backed alerts on newly observed event IDs, including permission grants and
+allowance increases; API log-sink alerts alone do not cover this CLI. Treat `metadata.recipient`
+as account data and restrict access to operators. See [security events](./self-host-observability.md#security-events)
+for database access and retention.
 
 ## Who can start work
 
-Rakazo checks each message's DKIM signature itself and does not trust results a relay added. A
-message is verified only when it is signed by the domain in its **From** address and that
-signature covers its **To** and **Cc**. Many services sign with another domain, so their mail is
-saved as unverified: the bot can still read it but is told its sender could be forged. Signed
-mail that doesn't name the bot in **To** or **Cc**, such as a BCC or a message replayed from
-someone else's inbox, is saved as unverified too, without its files.
+Rakazo checks each message's DKIM signature itself. A message is verified only when it is signed
+by the domain in its **From** address and that signature covers its **To** and **Cc**. Many
+services sign with another domain, so their mail is saved as unverified: the bot can still read
+it but is told its sender could be forged. Signed mail that doesn't name the bot in **To** or
+**Cc**, such as a BCC or a message replayed from someone else's inbox, is saved as unverified
+too, without its files.
+
+Mail whose signature leaves **To** or **Cc** unsigned stays unverified, even when a trusted
+relay reports an aligned SPF pass. SPF authorizes a sending server, not the message's intended
+recipient, so it cannot prevent replay through a same-domain forwarder.
 
 Only verified mail that names the bot in **To** or **Cc** starts anything, and never an automatic
 reply or mailing-list mail. The owner's own mail sent **To** the bot starts it in its chat, once
@@ -162,7 +221,7 @@ starts its routine for the owner's own address, or for anyone at the owner's ema
 the routine allows it. Mail that claims the owner's address but fails the check posts a
 note in the bot's chat, at most once a day, without any of its content. That usually means the
 owner's domain does not sign its own mail: Google Workspace and Microsoft 365 need DKIM turned on
-for a custom domain.
+for a custom domain. Mail services that do not sign recipients cannot start work by email.
 
 A routine's mail reaches the bot as outside data, never as instructions. In the owner's own mail,
 the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started

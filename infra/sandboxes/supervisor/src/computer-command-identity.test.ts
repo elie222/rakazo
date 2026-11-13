@@ -78,6 +78,76 @@ describe("computer command identity", () => {
     expectContainerUser();
   });
 
+  it("keeps a silent command's response alive until it exits", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish = (_code: number) => {};
+      const exited = new Promise<number>((resolve) => {
+        finish = resolve;
+      });
+      mock.exec.mockImplementation(async () => ({
+        start: async () => {
+          const output = new Readable({ read() {} });
+          void exited.then(() => output.push(null));
+          return Duplex.from({
+            readable: output,
+            writable: new Writable({
+              write(_chunk, _encoding, callback) {
+                callback();
+              },
+            }),
+          });
+        },
+        inspect: async () => ({ ExitCode: await exited }),
+      }));
+      const response = await post("/computers/computer-exec/exec", { argv: ["sleep", "600"] });
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(decoder.decode((await reader?.read())?.value)).toBe("\n");
+      finish(0);
+      let rest = "";
+      for (;;) {
+        const chunk = await reader?.read();
+        if (!chunk || chunk.done) break;
+        rest += decoder.decode(chunk.value);
+      }
+      expect(rest.trim().split("\n").at(-1)).toBe(JSON.stringify({ type: "exit", code: 0 }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the keep-alive when the caller cancels a command that never exits", async () => {
+    vi.useFakeTimers();
+    const clear = vi.spyOn(globalThis, "clearInterval");
+    try {
+      mock.exec.mockImplementation(async () => ({
+        start: async () =>
+          Duplex.from({
+            readable: new Readable({ read() {} }),
+            writable: new Writable({
+              write(_chunk, _encoding, callback) {
+                callback();
+              },
+            }),
+          }),
+        inspect: async () => ({ ExitCode: 0 }),
+      }));
+      const response = await post("/computers/computer-exec/exec", { argv: ["sleep", "600"] });
+      const reader = response.body?.getReader();
+      await vi.advanceTimersByTimeAsync(15_000);
+      await reader?.read();
+      const before = vi.getTimerCount();
+      await reader?.cancel();
+      expect(clear).toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(before - 1);
+    } finally {
+      clear.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("starts the user's terminal with the same environment and user as the bot's shell", async () => {
     mock.failWhen = (options) => options.Cmd.join(" ").includes("terminal-fixture-token");
     const response = await post("/computers/computer-terminal/terminal", {

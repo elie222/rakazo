@@ -91,7 +91,7 @@ Gmail、Slack、GitHub、Notion、Linear など数千のアプリに加え、自
 
 ### すべてのデバイスで
 
-Web、デスクトップ、iPhone、Android が同じサーバーにつながります。
+Web、デスクトップ、iPhone、iPad、Android が同じサーバーにつながります。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone のボット一覧とチャット" width="100%">
 
@@ -145,8 +145,8 @@ bash install-images.sh
 
 ## ローカル開発（ソースから実行）
 
-Node.js 22.x 系の 22.22.2 以降、Node.js 24.x、または Node.js 26 以降と、
-pnpm 12、Docker が必要です。Node.js 23.x と 25.x はサポートしていません。
+Node.js 24.x 系の 24.15.0 以降、または Node.js 26 以降と、
+pnpm 12、Docker が必要です。Node.js 25.x はサポートしていません。
 
 ```bash
 git clone https://github.com/elie222/rakazo.git

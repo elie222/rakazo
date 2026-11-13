@@ -8,11 +8,11 @@ import {
   reserveModelCredits,
   settleModelCredits,
   settleModelCreditsTx,
+  unexpiredCreditAccount,
 } from "./model-credits.js";
 import { asSystem } from "./row-security.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("model credits ledger", () => {
   let organizationId: string;
   let db: ReturnType<typeof createDb>;
@@ -150,6 +150,34 @@ dbTests("model credits ledger", () => {
       where: { organizationId, expiresAt: null },
     });
     expect(topup.availableMicros).toBe(20_000_000n);
+  });
+  it("leaves lapsed credits out of a read without expiring them", async () => {
+    await grant("topup", 2000);
+    await grant("monthly", 1000, renewal);
+    const call = await reserve(5);
+    await settleModelCredits(prisma, call, 3, beforeRenewal);
+    const read = await unexpiredCreditAccount(prisma, organizationId, renewal);
+    expect(read.balanceMicros).toBe(20_000_000n);
+    expect(await balance()).toBe(27_000_000n);
+    expect(
+      await prisma.modelCreditEntry.count({
+        where: { organizationId, source: { startsWith: "expiry:" } },
+      }),
+    ).toBe(0);
+    await expireModelCredits(prisma, organizationId, renewal);
+    expect(await balance()).toBe(read.balanceMicros);
+  });
+  it("reads the balance the expiry leaves when spending outran the credit lots", async () => {
+    await grant("topup", 2000);
+    await grant("monthly", 1000, renewal);
+    await prisma.modelCreditAccount.update({
+      where: { organizationId },
+      data: { balanceMicros: { decrement: 5_000_000n } },
+    });
+    const read = await unexpiredCreditAccount(prisma, organizationId, renewal);
+    expect(read.balanceMicros).toBe(20_000_000n);
+    await expireModelCredits(prisma, organizationId, renewal);
+    expect(await balance()).toBe(read.balanceMicros);
   });
   it("renews without accumulating old monthly credits or refilling an expired invoice replay", async () => {
     await grant("monthly", 1000, renewal);

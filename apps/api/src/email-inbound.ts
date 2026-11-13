@@ -100,7 +100,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
 
   let email: InboundEmail;
   try {
-    email = await (deps.readEmail ?? readInboundEmail)(raw);
+    email = deps.readEmail ? await deps.readEmail(raw) : await readInboundEmail(raw);
   } catch (error) {
     getLogger().warn("inbound email was unreadable", {
       reason: error instanceof Error ? error.message : String(error),
@@ -190,6 +190,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     }
     getLogger().info("inbound email saved without a run", {
       reason: ineligible ?? "sender not allowed",
+      ...(email.unauthenticatedReason
+        ? { unauthenticatedReason: email.unauthenticatedReason }
+        : {}),
       ...dropped,
     });
     return { ok: true as const, saved: true, skipped: ineligible ?? "sender not allowed" };

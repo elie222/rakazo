@@ -47,6 +47,8 @@
   --violet-soft: #ece3fd;
   --rose: #e0457b;
   --rose-soft: #fce1ea;
+  --teal: #0e8a96;
+  --teal-soft: #d2f1f3;
   --shadow-soft: 0 2px 16px rgba(0, 0, 0, 0.03);
   --shadow-demo: 0 30px 80px -30px rgba(0, 0, 0, 0.35);
   --radius-card: 20px;
@@ -153,6 +155,7 @@ button {
 }
 
 .site-header__left {
+  align-items: baseline;
   gap: 28px;
 }
 
@@ -176,12 +179,15 @@ button {
 }
 
 .brand-lockup {
+  /* The wordmark's line box matches the mark's height, so it reads as centered
+     while giving the lockup a text baseline the nav links can align to. */
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 9px;
 }
 
 .brand-lockup__mark {
+  align-self: center;
   width: 36px;
   height: 36px;
   flex: none;
@@ -192,6 +198,7 @@ button {
   font-family: Aeonik, Geist, ui-sans-serif, system-ui, sans-serif;
   font-size: 21px;
   font-weight: 500;
+  line-height: 36px;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
@@ -2607,6 +2614,41 @@ button.product-demo__dock-icon {
   color: var(--blue);
 }
 
+.enterprise {
+  padding: 72px 0 110px;
+  text-align: center;
+}
+
+.enterprise__features {
+  margin-top: 64px;
+  text-align: left;
+}
+
+.enterprise__features .feature-card {
+  position: relative;
+  transition: border-color 180ms ease;
+}
+
+.enterprise__features .feature-card:hover,
+.enterprise__features .feature-card:focus-within {
+  border-color: var(--line-2);
+}
+
+.enterprise__features h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: Aeonik, Geist, ui-sans-serif, system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.enterprise__features h2 a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
 .pricing {
   padding: 72px 0 110px;
   text-align: center;
@@ -2873,6 +2915,12 @@ td:last-child .pricing-hint__tip {
   border-bottom: 1px solid var(--line);
   color: var(--ink);
   font-size: 18px;
+}
+
+.platform-list .button {
+  flex: none;
+  width: 140px;
+  white-space: nowrap;
 }
 
 .brand-kit__logos {
@@ -3678,10 +3726,6 @@ td:last-child .pricing-hint__tip {
   .button--small,
   .setup-copy {
     width: 100%;
-  }
-
-  .platform-list .button {
-    width: auto;
   }
 
   .card-grid-3,
@@ -4623,6 +4667,7 @@ td:last-child .pricing-hint__tip {
 
 .docs-topbar .brand-lockup__word {
   font-size: 19px;
+  line-height: 30px;
 }
 
 .docs-topbar .star-pill,

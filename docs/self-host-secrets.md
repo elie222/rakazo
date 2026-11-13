@@ -10,14 +10,14 @@ overwrite an existing `.env` without an explicit backup and operator consent.**
 `bash install-images.sh` (without a pre-existing `.env`) copies
 `.env.images.example` and fills empty required keys with `openssl`:
 
-| Key | Installer fill | Role |
-| --- | --- | --- |
-| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | Postgres owner password inside Compose (migrations) |
-| `POSTGRES_APP_PASSWORD` | `openssl rand -hex 16` | Password of the app's `rakazo_app` login, which row-level security applies to |
-| `BETTER_AUTH_SECRET` | `openssl rand -hex 32` | Auth/session signing |
-| `ENCRYPTION_KEY` | `openssl rand -hex 32` | Encrypts stored credentials at rest |
-| `SCREEN_PROXY_SECRET` | `openssl rand -hex 32` | Signs short-lived `/novnc/*` screen capabilities |
-| `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` | API ↔ sandbox supervisor auth |
+| Key                        | Installer fill         | Role                                                                          |
+| -------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`        | `openssl rand -hex 16` | Postgres owner password inside Compose (migrations)                           |
+| `POSTGRES_APP_PASSWORD`    | `openssl rand -hex 16` | Password of the app's `rakazo_app` login, which row-level security applies to |
+| `BETTER_AUTH_SECRET`       | `openssl rand -hex 32` | Auth/session signing                                                          |
+| `ENCRYPTION_KEY`           | `openssl rand -hex 32` | Encrypts stored credentials at rest                                           |
+| `SCREEN_PROXY_SECRET`      | `openssl rand -hex 32` | Signs short-lived `/novnc/*` screen capabilities                              |
+| `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` | API ↔ sandbox supervisor auth                                                 |
 
 Re-runs **preserve** an existing `.env` (they do not rotate secrets); they only append
 `POSTGRES_APP_PASSWORD` when an older `.env` lacks it. Empty
@@ -80,15 +80,16 @@ plaintext ([wrapped settings](content-encryption.md#wrapped-settings)).
 
 From `.env.images.example` (images installer). Leave blank if unused:
 
-| Key(s) | When needed |
-| --- | --- |
-| `OPENROUTER_API_KEY` | Deployment-wide OpenRouter models |
-| `TYPESAFE_API_KEY` | Optional TypeSafe Jev Auto Review verifier (`RAKAZO_AUTO_REVIEW_PROVIDER=jev`) |
-| `COMPOSIO_API_KEY` | Composio managed catalog |
-| `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY` | Remote computers when `SANDBOX_PROVIDER` is not `docker` |
-| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | Optional account email via Resend API or SMTP |
-| `EXPO_ACCESS_TOKEN` | Mobile push when the Expo project enables enhanced push security |
-| Messaging tokens (Slack, Telegram, …) | Only if you enable those surfaces |
+| Key(s)                                                         | When needed                                                                                         |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`                                           | Deployment-wide OpenRouter models                                                                   |
+| `TYPESAFE_API_KEY`                                             | Optional TypeSafe Jev Auto Review verifier (`RAKAZO_AUTO_REVIEW_PROVIDER=jev`)                      |
+| `COMPOSIO_API_KEY`                                             | Composio managed catalog                                                                            |
+| `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY`             | Remote computers when `SANDBOX_PROVIDER` is not `docker`                                            |
+| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | Optional account email via Resend API or SMTP                                                       |
+| `BOT_EMAIL_SMTP_URL`                                           | Separate TLS SMTP connection for bot sending; see [bot email](./self-host-inbound-email.md#sending) |
+| `EXPO_ACCESS_TOKEN`                                            | Mobile push when the Expo project enables enhanced push security                                    |
+| Messaging tokens (Slack, Telegram, …)                          | Only if you enable those surfaces                                                                   |
 
 Optional `APNS_VOIP_KEY_ID`, `APNS_VOIP_TEAM_ID`, and `APNS_VOIP_PRIVATE_KEY` enable
 [iOS VoIP ringing](./self-host-clients.md#mobile-incoming-calls). Keep the `.p8` contents in the secret manager.

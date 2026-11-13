@@ -1,5 +1,5 @@
-import { messagingProgressJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import {
   appendTextSegment,
   appendToolCallSegment,
@@ -10,9 +10,9 @@ import {
   noteLastToolStep,
   redactSecrets,
   redactSecretsAfter,
+  withToolStepOutcomes,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
@@ -64,6 +64,8 @@ export async function createReplyState(
     narrationSoFar: "",
     narrationStatusShowing: false,
     pendingToolNames: [],
+    toolCalls: [],
+    toolOutcomes: new Map(),
     pendingProgress: "",
     lastProgressAt: 0,
     hasStreamedText: false,
@@ -152,8 +154,10 @@ export async function publishInterimMessage(ctx: RunContext, text: string, markU
   reply.midTurnUserTexts.push(text);
   reply.publishedMidTurnUserMessage = true;
   if (run.trigger === "messaging" && !ctx.source.channelId) {
-    await deps.jobs.enqueue(messagingProgressJob(run.id)).catch((error) => {
-      getLogger().error("messaging progress enqueue error", error);
+    // Sent from here while the turn carries on; its rows' backup jobs cover a failed send.
+    const delivery = deps.messagingDelivery;
+    void delivery?.deliverRun(run.id, { progress: true }).catch((error) => {
+      delivery.reportFailure("messaging progress delivery error", error);
     });
   }
 }
@@ -176,6 +180,23 @@ export function flushPendingTools(reply: ReplyState) {
     reply.messageSegments = appendToolCallSegment(reply.messageSegments, name);
   }
   reply.pendingToolNames = [];
+}
+
+/**
+ * The reply's steps with how each call ended. Calls with no result yet count as `unfinished`
+ * when given (a stopped run), otherwise they carry no outcome.
+ */
+export function withReplyToolOutcomes(
+  reply: ReplyState,
+  unfinished?: ToolStepOutcome,
+): MessageBlock[] {
+  return withToolStepOutcomes(
+    reply.messageSegments,
+    reply.toolCalls.map(({ label, executionId }) => ({
+      label,
+      outcome: reply.toolOutcomes.get(executionId) ?? unfinished,
+    })),
+  );
 }
 
 export function tryFlushPendingTools(reply: ReplyState) {
