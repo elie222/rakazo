@@ -10646,3 +10646,57 @@ describe("quarantined computer stop", () => {
     },
   );
 });
+
+describe("connection tool listing", () => {
+  it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
+    const findFirst = vi.fn(async () => ({
+      id: "connection-1",
+      displayName: "Example",
+      providerRef: "account-1",
+    }));
+    const tools = [{ name: "example_action", description: "An action" }];
+    const listAppTools = vi.fn(async () => tools);
+    const discoverTools = vi.fn(async () => tools);
+    const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst } },
+        connectors: { managed: () => connector },
+      } as unknown as RouterDeps),
+      {
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      tools,
+    );
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        connectorId: "example",
+        provider: "example",
+        status: "connected",
+      },
+    });
+    if (hasCatalog) {
+      expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
+      expect(discoverTools).not.toHaveBeenCalled();
+    } else {
+      expect(discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectedConnections: [
+            {
+              id: "connection-1",
+              connectorId: "example",
+              externalId: "example",
+              displayName: "Example",
+              providerRef: "account-1",
+            },
+          ],
+          connectedProviders: ["example"],
+        }),
+      );
+    }
+  });
+});
