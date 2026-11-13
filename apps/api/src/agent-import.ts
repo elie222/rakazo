@@ -234,6 +234,14 @@ async function buildPlan(
     };
   });
 
+  const originalSkillNames = new Map(base.skills.map((skill) => [skill.id, skill.name]));
+  const previewSkillNames = new Map<string, string>([
+    ...taken.skillNames.map((name): [string, string] => [name, name]),
+    ...plan.skills.flatMap((skill): [string, string][] => {
+      const original = originalSkillNames.get(skill.id);
+      return original ? [[original, skill.name]] : [];
+    }),
+  ]);
   const fallbackZone = await savedTimeZone(services.prisma, actor);
   const routines = settings.routines.flatMap((routine) => {
     const timezone = routine.timezone ?? fallbackZone;
@@ -256,7 +264,7 @@ async function buildPlan(
       {
         id: routine.id,
         title: routine.title,
-        content: `${routine.cron} (${timezone})\n\n${routine.prompt}`,
+        content: `${routine.cron} (${timezone})\n\n${renameRoutineSkillMentions(routine.prompt, previewSkillNames)}`,
         warnings: routine.warnings,
         status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
       },
