@@ -33,6 +33,10 @@ export type TrialResult = {
   reason: string | null;
   criteria: Criterion[];
   judgment?: Judgment;
+  /** What the trial was graded on, so a new rubric can grade it again without running the bot. */
+  evidence?: unknown;
+  /** Whether this run ran the trial, or took it from a stored run with the same fingerprint. */
+  origin?: { kind: "reused" | "regraded"; fingerprint: string; startedAt: string };
   /** Recorded behaviour; `present` is null when the judge could not grade it. */
   observations?: Record<string, { present: boolean | null; reason?: string }>;
   assisted: false;
@@ -115,6 +119,12 @@ export function summarize(results: readonly TrialResult[]) {
       ),
       planned: trials.length,
       attempted: attempted.length,
+      /** Trials this run ran, took unchanged from the store, or took and graded again. */
+      origin: {
+        run: attempted.filter((r) => !r.origin).length,
+        reused: attempted.filter((r) => r.origin?.kind === "reused").length,
+        regraded: attempted.filter((r) => r.origin?.kind === "regraded").length,
+      },
       passed,
       failed: trials.filter((r) => r.status === "failed").length,
       notRun: trials.filter((r) => r.status === "not-run").length,
@@ -156,6 +166,16 @@ export function redact(text: string, secrets: readonly string[] = []): string {
       /((?:api[_-]?key|access[_-]?token|password|secret|authorization)["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:(?:bearer|basic|token)\s+)?[^\s"',;&]+)/gi,
       "$1[redacted]",
     );
+}
+
+/** A JSON copy with configured secrets removed from every string, like the tool-calls artifact. */
+export function withoutSecrets(value: unknown, secrets: readonly string[]): unknown {
+  const sorted = secrets.filter(Boolean).sort((a, b) => b.length - a.length);
+  return JSON.parse(JSON.stringify(value), (_, v) =>
+    typeof v === "string"
+      ? sorted.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), v)
+      : v,
+  );
 }
 
 export function emptyTrial(caseId: string, trial: number): TrialResult {
