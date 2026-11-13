@@ -5,7 +5,9 @@ import {
   McpOAuthClientRequiredError,
   persistPreparedSecret,
   recordMcpServerHealth,
+  tailnetEndpoint,
 } from "@rakazo/adapters";
+import type { Actor } from "@rakazo/contracts";
 import { MCP_OAUTH_REDIRECT_MISMATCH } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -39,6 +41,7 @@ import {
 } from "../mcp-servers.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
+import { tailnetCheckRoute } from "./tailnet.js";
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
@@ -54,6 +57,9 @@ export function mcpRoutes(ctx: RouterContext) {
     announceMcpServer,
     authed,
   } = ctx;
+  /** Signing in to a server on the member's tailnet goes through one of their bots' nodes. */
+  const oauthTailnet = (actor: Actor) => (target: string) =>
+    tailnetCheckRoute(deps, actor, Boolean(tailnetEndpoint(target)));
   return {
     mcp: {
       servers: {
@@ -600,6 +606,7 @@ export function mcpRoutes(ctx: RouterContext) {
               redirectUri: expectedRedirect,
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
+              tailnet: oauthTailnet(context.actor),
             });
           } catch (error) {
             if (error instanceof ORPCError) throw error;
@@ -623,6 +630,7 @@ export function mcpRoutes(ctx: RouterContext) {
               ...input,
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
+              tailnet: oauthTailnet(context.actor),
             });
             // A check from before the sign-in would otherwise still read as failing. Only this
             // sign-in's revision: an edit since then has its own health and its own check.

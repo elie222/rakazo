@@ -1249,7 +1249,7 @@ export class McpConnector implements ConnectorProvider {
         let values: Partial<Record<McpOAuthEnvField, string>> = {};
         if (references.some((fields) => fields.length > 0)) {
           // The host holds the OAuth grant; the process only sees the values it asks for.
-          const provider = await this.oauth?.providerFor(server, context, loaded, onPersisted);
+          const provider = await this.oauth?.providerFor(server, context, loaded, { onPersisted });
           const tokens = await provider?.tokens();
           const expiresAt = accessTokenExpiresAt(material.oauth);
           if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
@@ -1322,9 +1322,15 @@ export class McpConnector implements ConnectorProvider {
         const localHttp =
           endpoint.protocol === "http:" && isLocalhostOrLoopbackIp(endpoint.hostname);
         const allowPrivateEndpoint = this.options.allowPrivateEndpoint === true;
+        const network = this.viaTailnet(server)
+          ? await this.tailnetNetwork(server, context)
+          : this.options.network;
         const authProvider =
           !localHttp && this.oauth
-            ? await this.oauth.providerFor(server, context, loaded, onPersisted)
+            ? await this.oauth.providerFor(server, context, loaded, {
+                onPersisted,
+                tailnet: network?.tailnet,
+              })
             : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
@@ -1335,9 +1341,6 @@ export class McpConnector implements ConnectorProvider {
           ...(material.headers ?? {}),
           ...(staticToken ? { Authorization: staticToken } : {}),
         };
-        const network = this.viaTailnet(server)
-          ? await this.tailnetNetwork(server, context)
-          : this.options.network;
         const connect = () =>
           session.connectRemote({
             url,
