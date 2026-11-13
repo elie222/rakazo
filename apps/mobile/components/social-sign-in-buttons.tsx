@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SignInProvider } from "@rakazo/contracts";
+import { signInProviderGroups } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
@@ -23,13 +24,14 @@ export function SocialSignInButtons({
   const scheme = useResolvedAppearance();
   const { width } = useWindowDimensions();
   if (providers.length === 0 && !onEmail) return null;
-  const row = providers.length > 1 && width >= 720;
+  const { primary, secondary } = signInProviderGroups(providers);
+  const row = primary.length > 1 && width >= 720;
   const dark = scheme === "dark";
   return (
     <View style={{ marginTop: 8, gap: 0 }}>
-      {providers.length > 0 ? (
+      {primary.length > 0 ? (
         <View style={{ flexDirection: row ? "row" : "column", gap: 12 }}>
-          {providers.map((provider) => (
+          {primary.map((provider) => (
             <NativeProviderButton
               key={provider.id}
               provider={provider}
@@ -95,6 +97,34 @@ export function SocialSignInButtons({
           </Pressable>
         </>
       ) : null}
+      {secondary.map((provider) => (
+        <Pressable
+          key={provider.id}
+          accessibilityRole="button"
+          disabled={disabled}
+          onPress={() => onPress(provider.id)}
+          style={{
+            alignSelf: "center",
+            maxWidth: "100%",
+            minHeight: 44,
+            justifyContent: "center",
+            marginTop: 8,
+            opacity: disabled ? 0.45 : 1,
+          }}
+        >
+          <Text
+            numberOfLines={1}
+            style={{
+              flexShrink: 1,
+              color: tokens.mutedForeground,
+              fontSize: 14,
+              fontWeight: "500",
+            }}
+          >
+            {t`Continue with ${ph({ name: provider.name })}`}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }

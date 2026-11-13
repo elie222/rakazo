@@ -4,6 +4,7 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { BoardList } from "../components/board-list";
+import { LoadFailure } from "../components/load-failure";
 import { rpc } from "../lib/api";
 import { boardSections } from "../lib/board";
 import { native, useThemedStyles } from "../lib/native";
@@ -71,8 +72,16 @@ export default function BoardScreen() {
       <View style={[styles.centered, sideInsets]}>
         {loading ? (
           <ActivityIndicator color={native.secondaryLabel} />
+        ) : error ? (
+          <LoadFailure
+            message={error}
+            onRetry={() => {
+              setLoading(true);
+              void load();
+            }}
+          />
         ) : (
-          <Text style={styles.message}>{error || t`No tickets yet.`}</Text>
+          <Text style={styles.message}>{t`No tickets yet.`}</Text>
         )}
       </View>
     );
