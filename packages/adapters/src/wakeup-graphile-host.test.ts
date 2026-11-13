@@ -1244,47 +1244,22 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     return { host, answers, returned, sendReturn };
   }
 
-  it("keeps a newer claim's write owed when a retry of an earlier write lands", async () => {
+  it("lets a newer claim's write end the stop after an earlier write's response failed", async () => {
     vi.useFakeTimers();
     const { host, answers, returned, sendReturn } = await returningHost();
     try {
       returned({ jobs: [{ id: "job-again" }] });
-      // The earlier return commits, which unlocks the job, but its response fails.
+      // The return commits, which unlocks the job, but its response fails.
       const earlier = await sendReturn("job-again");
       answers[0]!.reject();
       await earlier.sent.catch(() => undefined);
-      // The job is claimed and returned again before Graphile retries the earlier write.
+      // The job is claimed and returned again; that claim's own write lands.
       returned({ jobs: [{ id: "job-again" }] });
       const stopped = settles(host.stop());
-      // The retry lands; it settles the earlier claim, not the newer one.
-      const retry = await sendReturn("job-again");
+      const newer = await sendReturn("job-again");
       answers[1]!.resolve();
-      await retry.sent;
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(stopped.settled).toBe(false);
-    } finally {
-      for (const answer of answers) answer.resolve();
-      const last = host.stop();
-      await vi.advanceTimersByTimeAsync(DRAIN_MS + IDLE_MS);
-      await last;
-    }
-  });
-
-  it("clears a write once its retry lands after a failed response", async () => {
-    vi.useFakeTimers();
-    const { host, answers, returned, sendReturn } = await returningHost();
-    try {
-      returned({ jobs: [{ id: "job-once" }] });
-      const first = await sendReturn("job-once");
-      answers[0]!.reject();
-      await first.sent.catch(() => undefined);
-      const stopped = settles(host.stop());
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(stopped.settled).toBe(false);
-      // No newer claim exists, so the retry landing settles the only write owed.
-      const retry = await sendReturn("job-once");
-      answers[1]!.resolve();
-      await retry.sent;
+      await newer.sent;
+      // Nothing is owed any more, so the stop takes the idle bound, not the drain.
       await vi.advanceTimersByTimeAsync(IDLE_MS + WRITE_ALLOWANCE_MS);
       expect(stopped.settled).toBe(true);
     } finally {

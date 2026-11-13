@@ -348,13 +348,13 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
  * The pool the runner gets, so the host learns the moment Graphile's job writes
  * become durable: a write's statement resolving through a checked-out client
  * means the jobs it carries have settled in the database. `onWriteSent` sees each
- * statement as it goes out and returns what to call once it lands or fails. Everything else,
+ * statement as it goes out and returns what to call once it lands. Everything else,
  * including pg-pool's internal callback-form checkouts (pool.query, the notify
  * listener), passes through untouched.
  */
 function poolObservingJobWrites(
   pool: Pool,
-  onWriteSent: (ids: readonly string[]) => (landed: boolean) => void,
+  onWriteSent: (ids: readonly string[]) => () => void,
 ): Pool {
   return new Proxy(pool, {
     get(target, property) {
@@ -374,23 +374,20 @@ function poolObservingJobWrites(
 
 function clientObservingJobWrites(
   client: PoolClient,
-  onWriteSent: (ids: readonly string[]) => (landed: boolean) => void,
+  onWriteSent: (ids: readonly string[]) => () => void,
 ): PoolClient {
   return new Proxy(client, {
     get(target, property) {
       if (property === "query") {
         return (config: unknown, ...rest: unknown[]) => {
           const ids = jobWriteJobIds(config);
-          const settled = ids && onWriteSent(ids);
+          const landed = ids && onWriteSent(ids);
           const query = target.query.bind(target) as (...args: unknown[]) => unknown;
           const result = query(config, ...rest);
-          // Only a resolved statement has landed; a failed one may retry, and its
+          // Only a resolved statement has landed; a failed one retries, and its
           // ids must stay owed until a retry succeeds.
-          if (settled && isPromiseLike(result)) {
-            void Promise.resolve(result).then(
-              () => settled(true),
-              () => settled(false),
-            );
+          if (landed && isPromiseLike(result)) {
+            void Promise.resolve(result).then(landed, () => undefined);
           }
           return result;
         };
@@ -443,12 +440,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
    * claim's write.
    */
   private readonly owedWrites = new Map<string, object>();
-  /**
-   * The claim token of a job write whose response failed. The write may have committed, so a
-   * newer claim can owe its own write by the time Graphile retries this one; every later
-   * statement for the job is bound to this token, so none can clear the newer claim's write.
-   */
-  private readonly retriedWrites = new Map<string, object>();
   /** Set while stopping: re-arms the stop deadline when outstanding work changes. */
   private rearmStopDeadline: (() => void) | undefined;
   /** Rejects once the drain deadline passes, failing every job still running. */
@@ -489,7 +480,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.executions.start();
     this.abandoned = abandonment();
     this.owedWrites.clear();
-    this.retriedWrites.clear();
     this.handlers = handlers;
     await this.launchRunner();
     // run() resolves once the runner is up; runner.promise can still reject later
@@ -602,25 +592,15 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
 
   /**
    * A job write leaves for the database. It belongs to the claims that owe a write for its
-   * jobs now: a newer claim can only follow once this write committed. A retry belongs to the
-   * claim of the send whose response failed. The host cannot tell a retry from a newer claim's
-   * write, so after a failed response a newer claim's write stays owed, bounded by the drain.
+   * jobs now: a newer claim can only follow once this write committed.
    */
-  private noteWriteSent(ids: readonly string[]): (landed: boolean) => void {
-    const claims = ids.map(
-      (id) => [id, this.retriedWrites.get(id) ?? this.owedWrites.get(id)] as const,
-    );
-    return (landed) => {
+  private noteWriteSent(ids: readonly string[]): () => void {
+    const claims = ids.map((id) => [id, this.owedWrites.get(id)] as const);
+    return () => {
       let removed = false;
       for (const [id, claim] of claims) {
-        if (claim === undefined) continue;
-        if (!landed) {
-          this.retriedWrites.set(id, claim);
-          continue;
-        }
-        if (this.owedWrites.get(id) !== claim) continue;
+        if (claim === undefined || this.owedWrites.get(id) !== claim) continue;
         this.owedWrites.delete(id);
-        this.retriedWrites.delete(id);
         removed = true;
       }
       if (removed) this.rearmStopDeadline?.();
