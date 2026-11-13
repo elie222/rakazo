@@ -405,6 +405,66 @@ describePostgres("team chat engagement through Graphile jobs (PostgreSQL)", () =
     expect(sent.map((post) => post.body)).toEqual(["Not posted yet.", "Ended after the drop."]);
   });
 
+  it("decides a person's message on the next pass behind a full batch of digests not yet due", async () => {
+    const conversationKey = `channel:digests-${randomUUID()}`;
+    const judge = {
+      decide: vi.fn(async (_input: { messages: Array<{ content: string }> }) => ({
+        act: false,
+        reason: "Nothing to add.",
+      })),
+    };
+    await system.bot.update({
+      where: { id: identity.botId },
+      data: { teamChatAmbientEnabled: true },
+    });
+    const chat = teamChat(judge);
+    const person = await runAsSystem("teamchat ambient", () =>
+      bridge(chat).receive(message({ kind: "ambient", conversationKey, content: "Any update?" })),
+    );
+    const { externalConversationId } = await row(person.externalMessageId);
+    await system.externalConversation.update({
+      where: { id: externalConversationId },
+      data: {
+        automatedSenderPolicies: { "B-digest": { name: "Digest", mode: "rollup", rollupHours: 6 } },
+      },
+    });
+    const judgedAt = new Date(Date.now() - 60 * 60 * 1000);
+    const digest = (index: number, fields: object) => ({
+      externalConversationId,
+      providerEventId: `Ev-digest-${randomUUID()}`,
+      kind: "ambient",
+      senderId: "B-digest",
+      senderName: "Digest",
+      senderIsBot: true,
+      content: `Build ${index} passed`,
+      createdAt: new Date(Date.now() - 10 * 60 * 1000 + index),
+      ...fields,
+    });
+    // Its last digest was decided an hour ago; 120 more wait for the period, all older than the person.
+    await system.externalMessage.createMany({
+      data: [
+        digest(0, { status: "ignored", judgedAt }),
+        ...Array.from({ length: 120 }, (_, index) => digest(index + 1, { status: "observed" })),
+      ],
+    });
+
+    await chat.ambientJob(externalConversationId);
+
+    expect(judge.decide).toHaveBeenCalledOnce();
+    expect(judge.decide.mock.calls[0]![0].messages.map((m) => m.content)).toEqual(["Any update?"]);
+    expect((await row(person.externalMessageId)).status).toBe("ignored");
+    expect(
+      await system.externalMessage.count({
+        where: { externalConversationId, senderId: "B-digest", status: "observed" },
+      }),
+    ).toBe(120);
+    const next = await owner.query<{ run_at: Date }>(
+      `select run_at from graphile_worker._private_jobs where key = $1`,
+      [`team_chat.ambient:${externalConversationId}`],
+    );
+    expect(next.rows[0]?.run_at.getTime()).toBe(judgedAt.getTime() + 6 * 60 * 60 * 1000);
+  });
+
   it("decides a quiet conversation's ambient messages in one queued job", async () => {
     const conversationKey = `channel:ambient-${randomUUID()}`;
     const judge = { decide: vi.fn(async () => ({ act: true, reason: "Asked about a date." })) };
