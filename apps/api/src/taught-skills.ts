@@ -564,8 +564,10 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       if (skill.status === "recording" && skill.userId !== actor.userId) {
         throw new ORPCError("CONFLICT", { message: "Someone else is teaching this skill" });
       }
+      await deps.prisma.taughtSkill.delete({ where: { id: skill.id } });
       if (skill.status === "recording") {
         await deps.jobs.cancel(skillTeachingExpireJobKey(skill.id));
+        // Deleted first, so ending control finds no recording to post a draft card for.
         await releaseTeachingComputerControlForBot(
           deps,
           actor,
@@ -573,7 +575,6 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           parseRecording(skill.recording).controlLeaseId,
         );
       }
-      await deps.prisma.taughtSkill.delete({ where: { id: skill.id } });
       return { ok: true as const };
     },
 
