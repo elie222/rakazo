@@ -12,7 +12,17 @@ const PATTERN_PREVIEW_CHARS = 160;
 const REASON_PREVIEW_CHARS = 300;
 const MAX_LOGGED_PATTERNS = 8;
 const LITERAL_KEYWORDS = new Set(["const", "enum", "default", "examples", "example"]);
-const SCHEMA_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
+// Keys of these maps are names, so an entry called `const` is still a schema.
+const SCHEMA_MAP_KEYWORDS = new Set([
+  "properties",
+  "patternProperties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "dependencies",
+]);
+// A backslash before one of these is significant in a unicode regular expression.
+const REGEX_SYNTAX = new Set("\\^$.*+?()[]{}|".split(""));
 
 /**
  * Compiler for MCP tool output schemas.
@@ -95,8 +105,11 @@ function skipOutputValidation<T>(error: unknown): JsonSchemaValidator<T> {
   });
 }
 
-/** A copy of `schema` with `pattern` values and `patternProperties` keys that
- * `new RegExp(pattern, "u")` rejects removed. The original is left unchanged. */
+/** A copy of `schema` with `pattern` values that `new RegExp(pattern, "u")` rejects
+ * removed. A `patternProperties` key is rewritten when dropping unnecessary identity
+ * escapes leaves an equivalent unicode pattern; a key that cannot be kept is removed
+ * and `additionalProperties: false` is removed with it so those names are not rejected.
+ * The original is left unchanged. */
 function withoutInvalidUnicodePatterns(schema: JsonSchemaType, dropped: string[]): JsonSchemaType {
   const copy = structuredClone(schema);
   stripInvalidUnicodePatterns(copy, dropped);
@@ -114,15 +127,7 @@ function stripInvalidUnicodePatterns(value: unknown, dropped: string[]): void {
     dropped.push(record.pattern);
     delete record.pattern;
   }
-  const properties = record.patternProperties;
-  if (isRecord(properties)) {
-    for (const key of Object.keys(properties)) {
-      if (!compilesWithUnicodeFlag(key)) {
-        dropped.push(key);
-        delete properties[key];
-      }
-    }
-  }
+  repairPatternProperties(record, dropped);
   for (const [key, child] of Object.entries(record)) {
     if (LITERAL_KEYWORDS.has(key)) continue;
     if (SCHEMA_MAP_KEYWORDS.has(key) && isRecord(child)) {
@@ -131,6 +136,82 @@ function stripInvalidUnicodePatterns(value: unknown, dropped: string[]): void {
       stripInvalidUnicodePatterns(child, dropped);
     }
   }
+}
+
+/** Keeps a `patternProperties` entry when its key can be an equivalent unicode pattern. */
+function repairPatternProperties(record: Record<string, unknown>, dropped: string[]): void {
+  const properties = record.patternProperties;
+  if (!isRecord(properties)) return;
+  let droppedKey = false;
+  for (const key of Object.keys(properties)) {
+    const normalized = unicodeCompatiblePattern(key);
+    if (normalized == null) {
+      dropped.push(key);
+      delete properties[key];
+      droppedKey = true;
+      continue;
+    }
+    if (normalized === key) continue;
+    const schema = properties[key];
+    delete properties[key];
+    if (Object.hasOwn(properties, normalized)) {
+      dropped.push(key);
+      droppedKey = true;
+      continue;
+    }
+    properties[normalized] = schema;
+  }
+  if (Object.keys(properties).length === 0) delete record.patternProperties;
+  if (droppedKey && record.additionalProperties === false) delete record.additionalProperties;
+}
+
+/** `pattern` when it compiles with the unicode flag, or with identity escapes removed. */
+function unicodeCompatiblePattern(pattern: string): string | undefined {
+  if (compilesWithUnicodeFlag(pattern)) return pattern;
+  const normalized = withoutUnnecessaryIdentityEscapes(pattern);
+  if (normalized != null && normalized !== pattern && compilesWithUnicodeFlag(normalized)) {
+    return normalized;
+  }
+  return undefined;
+}
+
+/** Drops backslashes that only quote a non-syntax character (`\:`, `\/`, `\-` outside a class). */
+function withoutUnnecessaryIdentityEscapes(pattern: string): string | undefined {
+  let normalized = "";
+  let inClass = false;
+  // The next character is the first member, where `^` negates and `]` is literal.
+  let atClassStart = false;
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern.charAt(index);
+    if (char === "\\") {
+      if (index + 1 >= pattern.length) return undefined;
+      const escaped = pattern.charAt(index + 1);
+      normalized += identityEscape(escaped, inClass) ? escaped : `\\${escaped}`;
+      index += 1;
+      atClassStart = false;
+      continue;
+    }
+    if (char === "[" && !inClass) {
+      normalized += char;
+      inClass = true;
+      atClassStart = true;
+      continue;
+    }
+    if (inClass && atClassStart) {
+      const negation = char === "^" && normalized.endsWith("[");
+      normalized += char;
+      atClassStart = negation;
+      continue;
+    }
+    normalized += char;
+    if (inClass && char === "]") inClass = false;
+  }
+  return normalized;
+}
+
+function identityEscape(char: string, inClass: boolean): boolean {
+  if (REGEX_SYNTAX.has(char) || (inClass && char === "-")) return false;
+  return !/^[0-9A-Za-z]$/.test(char);
 }
 
 function compilesWithUnicodeFlag(pattern: string): boolean {
