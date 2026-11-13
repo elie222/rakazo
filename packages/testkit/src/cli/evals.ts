@@ -27,6 +27,13 @@ import {
   DELIBERATION_JUDGE_VERSION,
 } from "../evals/deliberation.js";
 import {
+  caseFingerprint,
+  caseKey,
+  firstRequestFetch,
+  runFingerprint,
+} from "../evals/fingerprint.js";
+import { regradeTrial } from "../evals/grading.js";
+import {
   GROUP_EVAL_CASES,
   GROUP_FIXTURE_VERSION,
   GROUP_JUDGE_CALIBRATION,
@@ -59,7 +66,10 @@ import {
   RECALL_JUDGE_CALIBRATION,
   RECALL_JUDGE_VERSION,
 } from "../evals/recall.js";
+import type { TrialResult } from "../evals/report.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
+import type { CasePlan } from "../evals/run-store.js";
+import { judgeIdentity, RunStore } from "../evals/run-store.js";
 import {
   SILENCE_EVAL_CASES,
   SILENCE_FIXTURE_VERSION,
@@ -104,8 +114,25 @@ async function main() {
       "max-tool-calls": { type: "string", default: "30" },
       "reply-mode": { type: "string" },
       output: { type: "string", default: "test-report/evals/report.json" },
+      /** A private folder of finished runs; reuses stored trials whose fingerprint matches. */
+      store: { type: "string" },
+      fresh: { type: "boolean", default: false },
+      /** Adds an existing report file to the store, without running anything. */
+      import: { type: "string" },
+      label: { type: "string" },
     },
   });
+  const storeDir = values.store ?? process.env.EVAL_RUN_STORE;
+  const store = storeDir ? new RunStore(path.resolve(storeDir)) : undefined;
+  if (values.import) {
+    if (!store) throw new Error("--import needs --store or EVAL_RUN_STORE");
+    const entry = store.save(JSON.parse(readFileSync(values.import, "utf8")), {
+      label: values.label,
+    });
+    console.log(`Stored ${entry.legacy ? "legacy " : ""}run ${entry.fingerprint}`);
+    return;
+  }
+  if (values.fresh && !store) throw new Error("--fresh only applies with --store");
   if (values["cases-file"] && values.suite !== "tool-choice" && values.suite !== "recall")
     throw new Error("--cases-file adds tool-choice or recall cases; use one of those suites");
   const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
@@ -228,10 +255,12 @@ async function main() {
   const output = path.resolve(values.output!);
   let budget: SpendBudget | undefined;
   let probeTotals: { costUsd: number | null; modelCalls: number } | undefined;
+  const standIns: TrialResult[] = [];
   const judgeCalls = new Map<string, MeasuredCall>();
   const report = {
     version: 2,
     kind: "real-model-product-eval",
+    suite: values.suite!,
     startedAt: new Date().toISOString(),
     model: values.model ?? process.env.PI_DEFAULT_MODEL ?? null,
     provider: values.provider ?? null,
@@ -255,6 +284,15 @@ async function main() {
     ),
     codeRevision: codeRevision(),
     workingDiffHash: workingDiffHash(),
+    /**
+     * Per case and strategy: a hash of the first model request as sent (ids and dates
+     * normalized), the model settings, the case's fixture version and data, and the trial
+     * controls. The run's combines them. The judge is separate, so a new rubric regrades.
+     */
+    fingerprint: {
+      run: null as string | null,
+      cases: {} as Record<string, string | null>,
+    },
     promptOrder: "stable guidance before changing context",
     pricing: null as EvalPricing | null,
     judge: null as null | {
@@ -289,13 +327,20 @@ async function main() {
     summary: summarize(trials),
   };
   const save = () => {
+    report.fingerprint.run = runFingerprint(report.fingerprint.cases);
     report.summary = summarize(report.trials);
     if (report.judge) {
       const measured = measureCalls([...judgeCalls.values()], report.judge.pricing);
       report.judge.modelCalls = measured.modelCalls;
       report.judge.costUsd = measured.costUsd;
     }
-    const attempted = trials.filter((trial) => trial.status !== "not-run");
+    // Only new spend: trials taken from the store were paid for by the run that made them.
+    // A stand-in run stopped for stored trials still paid for any call before its first turn;
+    // the calls it stopped were refused before reaching the provider and cost nothing.
+    const attempted = [
+      ...trials.filter((trial) => trial.status !== "not-run" && !trial.origin),
+      ...standIns.filter((trial) => (trial.costUsd ?? 0) > 0),
+    ];
     const costs = [
       ...attempted.map((trial) => trial.costUsd),
       ...(probeTotals ? [probeTotals.costUsd] : []),
@@ -304,7 +349,8 @@ async function main() {
       modelCalls:
         attempted.reduce((n, trial) => n + trial.modelCalls, 0) + (probeTotals?.modelCalls ?? 0),
       costUsd:
-        costs.length && costs.every((cost) => cost !== null)
+        (costs.length || trials.some((trial) => trial.origin)) &&
+        costs.every((cost) => cost !== null)
           ? costs.reduce<number>((n, cost) => n + cost!, 0)
           : null,
     };
@@ -609,6 +655,32 @@ async function main() {
     const { dispatcherFetch, PiAgentRuntime } = await import("@rakazo/adapters");
     const { EvalSandboxProvider } = await import("../evals/sandbox.js");
     const { observeToolCalls } = await import("../evals/tool-calls.js");
+    type StoredPlan = Exclude<CasePlan, { kind: "run" }>;
+    const plans = new Map<string, CasePlan>();
+    const fromStore = async (
+      plan: StoredPlan,
+      trial: number,
+      scenario: EvalCase,
+    ): Promise<TrialResult> => {
+      const source = plan.trials.find((t) => t.trial === trial)!;
+      const origin = {
+        kind: plan.kind === "reuse" ? ("reused" as const) : ("regraded" as const),
+        fingerprint: plan.from.fingerprint,
+        startedAt: plan.from.startedAt,
+      };
+      if (plan.kind === "regrade")
+        return {
+          ...(await regradeTrial(scenario, source, judge, controls.timeoutMs)),
+          trial,
+          origin,
+        };
+      // A trial reused again still names the run that paid for it.
+      return {
+        ...structuredClone(source),
+        trial,
+        origin: source.origin?.kind === "reused" ? source.origin : origin,
+      };
+    };
     for (let i = 0; i < trials.length; i++) {
       if (stopRequested) {
         for (const remaining of trials.slice(i))
@@ -626,145 +698,199 @@ async function main() {
         values["wire-diagnostics"] &&
         (scenario.id === "history-1000-long-tool-loop" ||
           scenario.id === "history-10000-long-tool-loop");
-      const modelFetch = observeWire
-        ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
-        : undefined;
-      trials[i] = {
-        ...(await runTrial(scenario, planned.trial, {
-          ...controls,
-          replyMode: replyMode.data,
-          connection,
-          pricing,
-          judge,
-          createApp: async (composio, messaging, witnesses) => {
-            const sandbox = new EvalSandboxProvider(scenario.computer);
-            let acceptingCalls = true;
-            const cacheDecisions: CacheDecisionMeasurement[] = [];
-            const runtime = new PiAgentRuntime({
-              modelFetch,
-              onContextDecision: (decision) => {
-                const measured = measureCalls([{ id: "call", ...decision.usage }], pricing);
-                cacheDecisions.push({
-                  predictedCache: decision.predictedCache,
-                  observedReuse: decision.observedReuse,
-                  estimatedInputTokens: decision.estimatedInputTokens,
-                  droppedMessages: decision.droppedMessages,
-                  truncatedToolResults: decision.truncatedToolResults,
-                  costUsd: measured.costUsd,
-                  cacheReadTokens: decision.usage.cacheReadTokens ?? null,
-                });
-              },
-              modelCallObserver: {
-                // Other models the product calls, such as the Auto Review checker, run too, but
-                // only ever at their own pricing: the eval model's rates would undercharge them
-                // whenever their provider reports no cost.
-                beforeCall: ({
-                  inputTokensEstimate,
-                  maxOutputTokens,
-                  provider,
-                  modelId,
-                  cacheWriteRetention,
-                  maxCostUsd,
-                }) => {
-                  if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
-                  if (provider === connection.provider && modelId === connection.modelId)
-                    return liveBudget.reserve(
-                      inputTokensEstimate,
-                      maxOutputTokens,
-                      cacheWriteRetention,
-                    );
-                  if (typeof maxCostUsd !== "number")
-                    throw new Error("Other model has no configured pricing");
-                  return liveBudget.reserveCostBound(maxCostUsd);
+      const key = caseKey(scenario.id, planned.strategy);
+      const known = plans.get(key);
+      // Set when this trial's first request matches a stored run: the run stops before it is sent.
+      const stored: { plan?: StoredPlan } =
+        known && known.kind !== "run" && known.trials.some((t) => t.trial === planned.trial)
+          ? { plan: known }
+          : {};
+      const modelFetch = firstRequestFetch(
+        observeWire
+          ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
+          : dispatcherFetch,
+        connection.modelId!,
+        (body) => {
+          const fingerprint = caseFingerprint({
+            request: body,
+            connection,
+            caseVersion: report.caseFixtureVersions[scenario.id] ?? fixtureVersion,
+            scenario,
+            strategy: planned.strategy!,
+            replyMode: replyMode.data,
+            maxToolCalls: controls.maxToolCalls,
+          });
+          const seen = report.fingerprint.cases[key];
+          // A case whose first request differs between trials has no stable fingerprint.
+          report.fingerprint.cases[key] =
+            seen === undefined || seen === fingerprint ? fingerprint : null;
+          if (plans.has(key)) return true;
+          const plan: CasePlan =
+            store && !values.fresh
+              ? store.plan({
+                  scenario,
+                  trials: controls.trials,
+                  strategy: planned.strategy!,
+                  fingerprint,
+                  judge: judgeIdentity(report.judge),
+                })
+              : { kind: "run" };
+          plans.set(key, plan);
+          if (plan.kind === "run" || !plan.trials.some((t) => t.trial === planned.trial))
+            return true;
+          stored.plan = plan;
+          return false;
+        },
+        scenario,
+      );
+      if (!stored.plan) {
+        const ran = {
+          ...(await runTrial(scenario, planned.trial, {
+            ...controls,
+            replyMode: replyMode.data,
+            connection,
+            pricing,
+            judge,
+            createApp: async (composio, messaging, witnesses) => {
+              const sandbox = new EvalSandboxProvider(scenario.computer);
+              let acceptingCalls = true;
+              const cacheDecisions: CacheDecisionMeasurement[] = [];
+              const runtime = new PiAgentRuntime({
+                modelFetch,
+                onContextDecision: (decision) => {
+                  const measured = measureCalls([{ id: "call", ...decision.usage }], pricing);
+                  cacheDecisions.push({
+                    predictedCache: decision.predictedCache,
+                    observedReuse: decision.observedReuse,
+                    estimatedInputTokens: decision.estimatedInputTokens,
+                    droppedMessages: decision.droppedMessages,
+                    truncatedToolResults: decision.truncatedToolResults,
+                    costUsd: measured.costUsd,
+                    cacheReadTokens: decision.usage.cacheReadTokens ?? null,
+                  });
                 },
-                afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
-              },
-            });
-            const historyDiagnostics: HistoryDiagnostic[] = [];
-            const toolLoopDiagnostics: DiagnosticToolObservation[] = [];
-            const observedRuntime = observeSyntheticHistory(
-              runtime,
-              historyDiagnostics,
-              [connection.apiKey ?? "", connection.baseUrl ?? ""],
-              toolLoopDiagnostics,
-            );
-            const toolCallObservations: ObservedToolCall[] = [];
-            const toolLists: ObservedToolList[] = [];
-            const handles = await createApp({
-              runtime: observeToolCalls(observedRuntime, toolCallObservations, toolLists),
-              contextStrategy: planned.strategy as
-                | "current"
-                | "retrieval"
-                | "snapshots"
-                | "cache-aware",
-              sandbox,
-              databaseUrl,
-              realtimeDatabaseUrl: databaseUrl,
-              dataDir: path.join(dataDir, `${scenario.id}-${planned.strategy}-${planned.trial}`),
-              sandboxProvider: "fake",
-              agentRuntime: "pi",
-              wakeupDriver: "memory",
-              composio,
-              messaging,
-              ...(wakesRoutines(scenario) ? witnesses : {}),
-              messagingOpenSignup: false,
-              defaultProvider: connection.provider,
-              defaultModel: connection.modelId!,
-              deploymentModelKey: undefined,
-              composioApiKey: undefined,
-              cursorApiKey: undefined,
-              cloudAgentProvider: "none",
-              signupsEnabled: "true",
-              signupAllowlist: "",
-              // The operator runs evals against the model server they chose, often on loopback.
-              mcpAllowPrivateEndpoint: true,
-              emailEmulator: true,
-              pipedreamClientId: undefined,
-              pipedreamClientSecret: undefined,
-              pipedreamProjectId: undefined,
-              smtpUrl: undefined,
-              emailProvider: "none",
-              emailApiKey: undefined,
-              emailFrom: undefined,
-              sendblueApiKeyId: undefined,
-              sendblueApiSecret: undefined,
-              slackBotToken: undefined,
-              whatsappAccessToken: undefined,
-              telegramBotToken: undefined,
-              larkAppId: undefined,
-              mcpStdioEnabled: false,
-              mcpStdioAllowedCommands: [],
-            });
-            return {
-              ...handles,
-              harnessIssues: sandbox.harnessIssues,
-              cacheDecisions,
-              historyDiagnostics,
-              toolLoopDiagnostics,
-              toolCallObservations,
-              toolLists,
-              finalizeBackground: async () => {
-                acceptingCalls = false;
-                await handles.jobs.close();
-              },
-              stop: async () => {
-                acceptingCalls = false;
-                await handles.stop();
-              },
-              awaitIdle: async () => {
-                if (!handles.awaitIdle) throw new Error("Eval queue cannot await idle");
-                await handles.awaitIdle();
-              },
-            };
-          },
-        })),
-        strategy: planned.strategy,
-        ...(observeWire ? { wireDiagnostics } : {}),
-      };
+                modelCallObserver: {
+                  // Other models the product calls, such as the Auto Review checker, run too, but
+                  // only ever at their own pricing: the eval model's rates would undercharge them
+                  // whenever their provider reports no cost.
+                  beforeCall: ({
+                    inputTokensEstimate,
+                    maxOutputTokens,
+                    provider,
+                    modelId,
+                    cacheWriteRetention,
+                    maxCostUsd,
+                  }) => {
+                    if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
+                    if (provider === connection.provider && modelId === connection.modelId)
+                      return liveBudget.reserve(
+                        inputTokensEstimate,
+                        maxOutputTokens,
+                        cacheWriteRetention,
+                      );
+                    if (typeof maxCostUsd !== "number")
+                      throw new Error("Other model has no configured pricing");
+                    return liveBudget.reserveCostBound(maxCostUsd);
+                  },
+                  afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
+                },
+              });
+              const historyDiagnostics: HistoryDiagnostic[] = [];
+              const toolLoopDiagnostics: DiagnosticToolObservation[] = [];
+              const observedRuntime = observeSyntheticHistory(
+                runtime,
+                historyDiagnostics,
+                [connection.apiKey ?? "", connection.baseUrl ?? ""],
+                toolLoopDiagnostics,
+              );
+              const toolCallObservations: ObservedToolCall[] = [];
+              const toolLists: ObservedToolList[] = [];
+              const handles = await createApp({
+                runtime: observeToolCalls(observedRuntime, toolCallObservations, toolLists),
+                contextStrategy: planned.strategy as
+                  | "current"
+                  | "retrieval"
+                  | "snapshots"
+                  | "cache-aware",
+                sandbox,
+                databaseUrl,
+                realtimeDatabaseUrl: databaseUrl,
+                dataDir: path.join(dataDir, `${scenario.id}-${planned.strategy}-${planned.trial}`),
+                sandboxProvider: "fake",
+                agentRuntime: "pi",
+                wakeupDriver: "memory",
+                composio,
+                messaging,
+                ...(wakesRoutines(scenario) ? witnesses : {}),
+                messagingOpenSignup: false,
+                defaultProvider: connection.provider,
+                defaultModel: connection.modelId!,
+                deploymentModelKey: undefined,
+                composioApiKey: undefined,
+                cursorApiKey: undefined,
+                cloudAgentProvider: "none",
+                signupsEnabled: "true",
+                signupAllowlist: "",
+                // The operator runs evals against the model server they chose, often on loopback.
+                mcpAllowPrivateEndpoint: true,
+                emailEmulator: true,
+                pipedreamClientId: undefined,
+                pipedreamClientSecret: undefined,
+                pipedreamProjectId: undefined,
+                smtpUrl: undefined,
+                emailProvider: "none",
+                emailApiKey: undefined,
+                emailFrom: undefined,
+                sendblueApiKeyId: undefined,
+                sendblueApiSecret: undefined,
+                slackBotToken: undefined,
+                whatsappAccessToken: undefined,
+                telegramBotToken: undefined,
+                larkAppId: undefined,
+                mcpStdioEnabled: false,
+                mcpStdioAllowedCommands: [],
+              });
+              return {
+                ...handles,
+                harnessIssues: sandbox.harnessIssues,
+                cacheDecisions,
+                historyDiagnostics,
+                toolLoopDiagnostics,
+                toolCallObservations,
+                toolLists,
+                finalizeBackground: async () => {
+                  acceptingCalls = false;
+                  await handles.jobs.close();
+                },
+                stop: async () => {
+                  acceptingCalls = false;
+                  await handles.stop();
+                },
+                awaitIdle: async () => {
+                  if (!handles.awaitIdle) throw new Error("Eval queue cannot await idle");
+                  await handles.awaitIdle();
+                },
+              };
+            },
+          })),
+          strategy: planned.strategy,
+          ...(observeWire ? { wireDiagnostics } : {}),
+        };
+        // A stand-in whose cleanup failed is kept, so the checks below stop the run.
+        if (!stored.plan || ran.cleanupFailed) {
+          trials[i] = ran;
+          stored.plan = undefined;
+        } else standIns.push(ran);
+      }
+      if (stored.plan)
+        trials[i] = {
+          ...(await fromStore(stored.plan, planned.trial, scenario)),
+          strategy: planned.strategy,
+        };
       save();
       const result = trials[i]!;
       console.log(
-        `${result.caseId} ${result.strategy} trial ${result.trial}: ${result.status}${result.category ? ` (${result.category})` : ""}; ${result.toolCalls} tool calls; ${result.latencyMs}ms`,
+        `${result.caseId} ${result.strategy} trial ${result.trial}: ${result.origin ? `${result.origin.kind} ` : ""}${result.status}${result.category ? ` (${result.category})` : ""}; ${result.toolCalls} tool calls; ${result.latencyMs}ms`,
       );
       if (values["stop-on-failure"] && result.status === "failed") {
         for (const remaining of trials.slice(i + 1))
@@ -784,6 +910,13 @@ async function main() {
       }
     }
     if (trials.some((r) => r.status !== "passed")) process.exitCode = 1;
+    if (store) {
+      const fresh = trials.filter((t) => t.status !== "not-run" && t.origin?.kind !== "reused");
+      if (fresh.length) {
+        const entry = store.save(report);
+        console.log(`Stored run ${entry.fingerprint} (${entry.path})`);
+      } else console.log("Every trial came from the store; nothing new to save");
+    }
   } finally {
     process.off("SIGINT", requestStop);
     process.off("SIGTERM", requestStop);
