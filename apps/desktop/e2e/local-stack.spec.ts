@@ -32,6 +32,7 @@ let server: Server;
 let serverUrl: string;
 let userData: string;
 let app: ElectronApplication | undefined;
+let stackProbes = 0;
 
 // The fake docker is a POSIX shell script; Windows desktop e2e does not run in CI.
 test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
@@ -39,6 +40,7 @@ test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
 test.beforeAll(async () => {
   server = createServer(async (request, response) => {
     if (request.url === STACK_PROBE_PATH && request.method === "GET") {
+      stackProbes += 1;
       const expected = await readFile(path.join(userData, "stack", ".desktop-stack-token"), "utf8")
         .then((value) => value.trim())
         .catch(() => null);
@@ -77,6 +79,7 @@ test.beforeEach(async () => {
   userData = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-desktop-stack-")));
   // Setup otherwise follows the machine's language; these specs read its English text.
   await writeFile(path.join(userData, "ui-locale.txt"), "en\n");
+  stackProbes = 0;
 });
 
 test.afterEach(async () => {
@@ -422,6 +425,34 @@ test("a saved local stack is reused only after its private identity matches", as
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
   expect(await readLog()).toEqual([]);
 });
+
+for (const hasStackFiles of [false, true]) {
+  test(`a saved external server does not discover local services (${hasStackFiles ? "retained" : "absent"} stack files)`, async () => {
+    if (hasStackFiles) {
+      const stackDir = path.join(userData, "stack");
+      await mkdir(stackDir, { recursive: true });
+      await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+    await writeFile(
+      path.join(userData, "setup.json"),
+      `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    app = await launch("ok");
+    const appWindow = await app.firstWindow();
+    await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+    expect(stackProbes).toBe(0);
+    expect(await readLog()).toEqual([]);
+    expect(
+      await app.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible,
+      ),
+    ).toBe(false);
+  });
+}
 
 test("a saved local target is the exact origin authenticated before reuse", async () => {
   const uncheckedServer = createServer((request, response) => {
