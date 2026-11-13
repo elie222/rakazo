@@ -758,8 +758,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 speakers ? neutralizeSpeakerLabels(value) : value;
               const text = neutral(messageToAgentHistoryText(m));
               const partial = isPartialReplyClientNonce(m.clientNonce);
+              // A run for someone other than the owner (a channel, or another person in a team
+              // chat) replays the bot's earlier replies as everyone saw them, never what its
+              // tools returned.
               const segments =
-                m.role === "user" || m.role === "system" || speaker
+                m.role === "user" || m.role === "system" || speaker || nonOwnerChatRun
                   ? undefined
                   : messageToAgentHistorySegments(m)?.map((segment) =>
                       "text" in segment
