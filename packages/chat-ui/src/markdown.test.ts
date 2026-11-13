@@ -475,6 +475,17 @@ describe("withMentions", () => {
     ]);
   });
 
+  it("strips a model mention wrapper while preserving inline code in its label", () => {
+    expect(withMentions(["[Use `Planner`](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
+      `${link} Use \`Planner\` is ready.`,
+    ]);
+  });
+
+  it("preserves deeply nested Markdown when preprocessing cannot parse it", () => {
+    const text = `${"> ".repeat(10000)}Planner`;
+    expect(withMentions([text], [planner])).toEqual([text]);
+  });
+
   it("keeps a mention link already in the text as its name", () => {
     expect(withMentions(["[Planner](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
       `${link} is ready.`,

@@ -58,6 +58,7 @@ function rewriteOutsideCode(
   let offset = 0;
   function visit(node: typeof tree | (typeof tree.children)[number]) {
     if (
+      node.type === "link" ||
       node.type === "code" ||
       node.type === "inlineCode" ||
       (skipLinks &&
@@ -66,7 +67,10 @@ function rewriteOutsideCode(
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
       if (start !== undefined && end !== undefined) {
-        result += rewrite(text.slice(offset, start)) + text.slice(start, end);
+        const source = text.slice(start, end);
+        result +=
+          rewrite(text.slice(offset, start)) +
+          (!skipLinks && node.type === "link" ? rewrite(source) : source);
         offset = end;
       }
       return;
@@ -111,26 +115,30 @@ export function withMentions(
   texts: readonly string[],
   mentions: readonly { id: string; name: string }[],
 ): string[] {
-  const trees: MentionTrees = new Map();
-  // Only links placed here draw as mentions; ones already in the text keep just their name.
-  const result = texts.map((text) =>
-    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
-  );
-  if (result.length === 0) return result;
-  for (const mention of mentions) {
-    const name = mention.name.trim();
-    if (!name) continue;
-    const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
-    const placed = result.some((text, index) => {
-      const linked = linkFirstName(text, name, link, trees);
-      if (linked !== undefined) result[index] = linked;
-      return linked !== undefined;
-    });
-    if (placed) continue;
-    const first = result[0]!;
-    result[0] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+  try {
+    const trees: MentionTrees = new Map();
+    // Only links placed here draw as mentions; ones already in the text keep just their name.
+    const result = texts.map((text) =>
+      rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
+    );
+    if (result.length === 0) return result;
+    for (const mention of mentions) {
+      const name = mention.name.trim();
+      if (!name) continue;
+      const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
+      const placed = result.some((text, index) => {
+        const linked = linkFirstName(text, name, link, trees);
+        if (linked !== undefined) result[index] = linked;
+        return linked !== undefined;
+      });
+      if (placed) continue;
+      const first = result[0]!;
+      result[0] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+    }
+    return result;
+  } catch {
+    return [...texts];
   }
-  return result;
 }
 
 /** Message blocks whose prose names each entry once as a mention link. Tool activity is left alone. */
