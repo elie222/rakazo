@@ -130,6 +130,22 @@ interface OriginalMetadata {
   rakazoMessageId?: string;
   rakazoCreatedAt?: string;
 }
+/**
+ * Where the last `count` stored messages start. A reply replayed with its tool calls is several
+ * messages sharing one id, and a window that starts inside it would orphan a tool result.
+ */
+function storedMessagesStart(messages: Message[], count: number): number {
+  const id = (message: Message | undefined) =>
+    (message as (Message & OriginalMetadata) | undefined)?.rakazoMessageId;
+  let seen = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const current = id(messages[index]);
+    if (current && current === id(messages[index - 1])) continue;
+    seen += 1;
+    if (seen === count) return index;
+  }
+  return 0;
+}
 function text(message: Message): string {
   if (typeof message.content === "string") return message.content;
   return message.content
@@ -372,6 +388,7 @@ export function createRuntimeContextPolicy(
     if (currentIndex < 0)
       currentIndex = messages.findLastIndex((message) => message.role === "user");
     if (currentIndex < 0) currentIndex = 0;
+    const currentMessage = messages[currentIndex];
     // Steering, follow-ups and finished shells arrive as user messages during the
     // run. Give each its own exchange so it does not push older history out:
     // a moved first message rewrites the provider's whole cached prefix.
@@ -415,7 +432,8 @@ export function createRuntimeContextPolicy(
         options.imageTokens,
       ) <= shortHistoryAllowance;
     if (useSnapshots && !retainShortHistory) {
-      const old = historical.slice(0, Math.max(0, historical.length - SNAPSHOT_RECENT_MESSAGES));
+      const recentStart = storedMessagesStart(historical, SNAPSHOT_RECENT_MESSAGES);
+      const old = historical.slice(0, recentStart);
       let catalog = "";
       const maximum = Math.min(
         SNAPSHOT_CATALOG_MAX_BYTES,
@@ -424,13 +442,13 @@ export function createRuntimeContextPolicy(
       catalogIds = [];
       for (const message of old.slice(-SNAPSHOT_CATALOG_MAX_ENTRIES).reverse()) {
         const stored = original(message);
-        if (!stored?.id) continue;
+        // A reply replayed with its tool calls spans several messages; list it once.
+        if (!stored?.id || catalogIds.includes(stored.id)) continue;
         const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
         if (Buffer.byteLength(entry + catalog, "utf8") > maximum) break;
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);
       }
-      const recentStart = Math.max(0, historical.length - SNAPSHOT_RECENT_MESSAGES);
       const earlierSystem = historical
         .slice(0, recentStart)
         .filter((message) => message.role === "system");
@@ -441,8 +459,7 @@ export function createRuntimeContextPolicy(
       ];
       protectedIndexes = messages.flatMap((message, index) =>
         message.role === "system" ||
-        (index >= earlierSystem.length + Math.min(SNAPSHOT_RECENT_MESSAGES, historical.length) &&
-          message.role === "user")
+        (index >= earlierSystem.length + historical.length - recentStart && message.role === "user")
           ? [index]
           : [],
       );
@@ -561,19 +578,7 @@ export function createRuntimeContextPolicy(
           ],
         };
       });
-    const retained = shortenOlderResults(true);
-    // Fall back before selection can discard older progress to make room for whole results.
-    const retainedTokens = retained.reduce(
-      (total, message) =>
-        total +
-        estimateContextTokens(
-          providerContextPrefix("", [], [message]).messages[0],
-          options.imageTokens,
-        ),
-      fixed,
-    );
-    messages = retainedTokens <= contextWindow - reserve ? retained : shortenOlderResults(false);
-    const selected = selectContext(messages, {
+    const selectionOptions = {
       budget,
       strategy,
       protectedIndexes,
@@ -586,7 +591,35 @@ export function createRuntimeContextPolicy(
       ...(strategy === "retrieval"
         ? { earlier: { before: currentIndex, tokens: shortHistoryAllowance } }
         : {}),
-    });
+    };
+    const retained = shortenOlderResults(true);
+    let selected: ReturnType<typeof selectContext<Message>> | undefined;
+    try {
+      // Measure the context selection actually keeps, not history it will discard.
+      // Whole recent results must not crowd out any progress from the current run.
+      const candidate = selectContext(retained, {
+        ...selectionOptions,
+        truncateToolResults: false,
+      });
+      const kept = new Set(candidate.messages);
+      const activeStart = currentMessage ? retained.indexOf(currentMessage) : 0;
+      if (retained.slice(activeStart).every((message) => kept.has(message))) {
+        selected = candidate;
+        if (sent) {
+          const fallback = selectContext(shortenOlderResults(false), selectionOptions);
+          // Whole results must not evict an otherwise stable prefix: signed thinking
+          // before the first shortened result still depends on that history.
+          if (
+            firstChange(sent.messages, candidate.messages) <
+            firstChange(sent.messages, fallback.messages)
+          )
+            selected = fallback;
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof ContextBudgetError)) throw error;
+    }
+    selected ??= selectContext(shortenOlderResults(false), selectionOptions);
     const shortenedStructuredResults = selected.messages.filter((message) => {
       if (message.role !== "toolResult") return false;
       try {
