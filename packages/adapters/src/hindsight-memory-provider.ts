@@ -171,8 +171,8 @@ function parseHindsightConnection(
   const mode = settings.mode ?? "cloud";
   if (mode !== "cloud" && mode !== "local") throw new Error("mode must be cloud or local");
   const local = mode === "local";
-  // One spelling per server: the saved setting, requests and the connection identity agree.
-  const baseUrl = local ? settings.baseUrl?.trim().replace(/\/+$/, "") : HINDSIGHT_CLOUD_BASE_URL;
+  // Preserve the stored URL spelling: queued erasures hash it into their connection identity.
+  const baseUrl = local ? settings.baseUrl?.trim() : HINDSIGHT_CLOUD_BASE_URL;
   if (!baseUrl) throw new Error("baseUrl is required");
   if (local) {
     // The cloud origin takes the unpinned cloud transport, so it cannot be a local endpoint.

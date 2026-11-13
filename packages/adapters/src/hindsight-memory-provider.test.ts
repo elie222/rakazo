@@ -218,14 +218,18 @@ it("uses a supplied connection version rather than deriving identity from the AP
     "test-connection",
   );
   expect(local.connectionIdentity).not.toBe(original);
-  // A trailing slash names the same server, so pending work bound to it survives the edit.
+  // Pre-upgrade queued cleanup hashes the original saved URL, including its slash.
   expect(
     createHindsightProvider(
       { mode: "local", baseUrl: "http://127.0.0.1:8888/" },
       { apiKey: "hsk-test-key" },
       "test-connection",
     ).connectionIdentity,
-  ).toBe(local.connectionIdentity);
+  ).toBe(
+    createHash("sha256")
+      .update(JSON.stringify(["test-connection", "http://127.0.0.1:8888/"]))
+      .digest("hex"),
+  );
 });
 
 const writes = (requests: RecordedRequest[]) =>
