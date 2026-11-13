@@ -138,17 +138,22 @@ export default function ArchivedBots() {
     const confirmation = beginDelete();
     if (!confirmation) return;
     const generation = focusGeneration.current;
+    setPending(true);
+    const finished = () => {
+      confirmation.finish();
+      if (generation === focusGeneration.current) setPending(false);
+    };
     let options: Awaited<ReturnType<typeof requestOptions>>;
     try {
       options = await requestOptions(bot.spaceId);
     } catch (cause) {
       if (confirmation.current())
         Alert.alert(t`Could not delete bot`, errorText(cause, t`Try again.`));
-      confirmation.finish();
+      finished();
       return;
     }
     if (!confirmation.current()) {
-      confirmation.finish();
+      finished();
       return;
     }
     void confirmDeleteBot(
@@ -156,7 +161,7 @@ export default function ArchivedBots() {
       () => removed(generation, withoutBot(bot.id)),
       () => confirmation.current() && generation === focusGeneration.current,
       options.requestContext,
-      confirmation.finish,
+      finished,
     );
   }
 
