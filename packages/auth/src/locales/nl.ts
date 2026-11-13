@@ -24,15 +24,19 @@ export const NL_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Voer deze code in Rakazo in om te bevestigen dat jij het bent:",
   "Welcome to Rakazo": "Welkom bij Rakazo",
-  "Thanks for signing up for Rakazo.": "Bedankt voor je aanmelding bij Rakazo.",
-  "Rakazo also has apps for": "Rakazo heeft ook apps voor",
-  "Questions or ideas?": "Vragen of ideeën?",
-  "Join us on Discord": "Kom erbij op Discord",
-  "Rakazo is open source. If you like it,": "Rakazo is open source. Vind je het fijn?",
-  "a star on GitHub": "Een ster op GitHub",
-  "helps others find it.": "helpt anderen het te vinden.",
-  "Want to run it on your own servers?": "Wil je het op je eigen servers draaien?",
-  "Self-host Rakazo": "Rakazo zelf hosten",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Welkom bij Rakazo. Wie er het meest uit haalt, doet drie dingen:",
+  "Get the apps": "Download de apps",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo werkt op {platforms}, zodat je bots je overal kunnen bereiken.",
+  "Join the community": "Word lid van de community",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Zie wat anderen bouwen, krijg snel hulp en vertel ons op {discord} wat we hierna moeten bouwen.",
+  "Star us on GitHub": "Geef ons een ster op GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo is open source. {star} helpt meer mensen het te vinden.",
+  "A star on GitHub": "Een ster op GitHub",
+  "Questions? Just reply. I read every one.": "Vragen? Antwoord gewoon. Ik lees elk bericht.",
   "Have any questions? Reply to this email.": "Vragen? Beantwoord deze e-mail.",
   Unsubscribe: "Afmelden",
   "Invite a friend": "Nodig een vriend uit",
