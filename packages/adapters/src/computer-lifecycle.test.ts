@@ -2324,6 +2324,34 @@ describe("Team Computer wake", () => {
       expect.objectContaining({ message: "team bot folder cleanup" }),
     );
   });
+
+  it("still reports an unrelated cleanup failure during a cancelled run", async () => {
+    const run = new AbortController();
+    const harness = wakeHarness("stopped");
+    harness.execute.mockImplementation(async function* (_computer, request) {
+      if (isFolderListing(request)) {
+        run.abort();
+        throw new Error("database unavailable");
+      }
+      yield { type: "exit" as const, code: 0 };
+    });
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      await boot(harness, { ...context, signal: run.signal }).catch(() => undefined);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+
+    expect(harness.execute).toHaveBeenCalledWith(
+      harness.ref,
+      expect.objectContaining({ argv: expect.arrayContaining(["bash"]) }),
+      expect.anything(),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "error", message: "team bot folder cleanup" }),
+    );
+  });
 });
 
 describe("computer execution leases", () => {

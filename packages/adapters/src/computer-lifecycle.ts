@@ -558,8 +558,8 @@ export async function provisionComputer(
     // Skip only plain reconnects; a provider may start or replace the computer during one.
     if (existing.scope === "team" && (!reconnecting || replacement || ref.started === true)) {
       await removeDeletedBotWorkspaces(deps, ref, existing.spaceId, context).catch((error) => {
-        // The run was cancelled; the next boot retries the cleanup.
-        if (context.signal.aborted) return;
+        // The run's cancellation cut it short; the next boot retries the cleanup.
+        if (context.signal.aborted && isCancellation(error, context.signal)) return;
         getLogger().error("team bot folder cleanup", error);
       });
     }
@@ -1365,4 +1365,11 @@ export async function replaceComputer(
       .catch(() => undefined);
     throw error;
   }
+}
+
+function isCancellation(error: unknown, signal: AbortSignal) {
+  return (
+    error === signal.reason ||
+    (error instanceof Error && (error.name === "AbortError" || error.message === "command aborted"))
+  );
 }
