@@ -523,6 +523,7 @@ describe("normalizeRunError", () => {
       '400: {"message":"Unsupported model parameter: fixture_option"}',
       '400: {"message":"Unknown model setting: fixture_option"}',
       "TypeError: Cannot read properties of undefined (reading 'content')",
+      '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{}","provider_name":""}}',
     ])("leaves requests we built and unknown shapes unattributed: %s", (details) => {
       expect(normalizeRunError(details).kind).toBeUndefined();
     });

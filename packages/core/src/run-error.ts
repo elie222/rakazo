@@ -552,7 +552,8 @@ export function normalizeRunError(
   } else if (
     status === 400 &&
     message === "Provider returned error" &&
-    typeof metadata.provider_name === "string"
+    typeof metadata.provider_name === "string" &&
+    metadata.provider_name.trim() !== ""
   ) {
     // A gateway's named upstream refused the request; another model avoids that upstream.
     recovery = "model";

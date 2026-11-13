@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isModelCredentialRejected,
   isRetryableProviderUnavailable,
+  isSignInRetryRequest,
   isTransientModelError,
 } from "./model-errors.js";
 
@@ -40,12 +41,6 @@ describe("transient model errors", () => {
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
     ["stream ended before its stop event", new Error("Anthropic stream ended before message_stop")],
     ["error injected into the stream", new Error("JSON error injected into SSE stream")],
-    [
-      "sign-in service asking for a retry",
-      new Error(
-        '400 Bad Request: {"error":"request_failed","error_description":"The request failed to be processed, please try again"}',
-      ),
-    ],
     ["dropped fetch body", new TypeError("terminated")],
     [
       "interrupted upstream stream",
@@ -506,5 +501,15 @@ describe("postfixed credential failures", () => {
         message: "credential expired; quota exhausted",
       }),
     ).toBe(false);
+  });
+});
+
+describe("sign-in retry requests", () => {
+  it("recognises a sign-in service asking for a retry", () => {
+    const error = new Error(
+      '400 Bad Request: {"error":"request_failed","error_description":"The request failed to be processed, please try again"}',
+    );
+    expect(isSignInRetryRequest(error)).toBe(true);
+    expect(isTransientModelError(error)).toBe(false);
   });
 });

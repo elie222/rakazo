@@ -1,5 +1,9 @@
 import { ORPCError } from "@orpc/server";
-import { isTransientModelError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import {
+  isSignInRetryRequest,
+  isTransientModelError,
+  SecretStoreUnavailableError,
+} from "@rakazo/adapter-kit";
 import type { PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
@@ -363,7 +367,7 @@ export function modelsRoutes(ctx: RouterContext) {
           .catch((error: unknown) => {
             record(input.provider, { name: "model_connect_failed", error });
             // The provider's sign-in service is down or overloaded; the user tries again later.
-            if (isTransientModelError(error)) {
+            if (isTransientModelError(error) || isSignInRetryRequest(error)) {
               getLogger().warn("rpc models/beginOAuth provider unavailable", {
                 reason: error instanceof Error ? error.message : String(error),
               });

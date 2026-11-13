@@ -104,6 +104,13 @@ export function isModelCredentialRejected(error: unknown): boolean {
   );
 }
 
+/** A provider's sign-in service answers 400 `request_failed` when it asks the client to retry. */
+export function isSignInRetryRequest(error: unknown): boolean {
+  return /"error"\s*:\s*"request_failed"/.test(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
@@ -116,8 +123,6 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
     )
   )
     return true;
-  // A device sign-in service reports a failure it asks the client to retry as a 400.
-  if (/"error"\s*:\s*"request_failed"/.test(text)) return true;
   if (statuses.has(400)) return false;
   // The ChatGPT subscription (Codex) runtime reports an exhausted usage window without a status.
   if (/you have hit your chatgpt usage limit/.test(text)) return true;
