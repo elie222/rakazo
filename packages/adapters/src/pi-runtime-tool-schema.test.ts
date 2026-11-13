@@ -51,19 +51,19 @@ describe("jsonSchemaParameters", () => {
           { name: tool.name, description: tool.description, parameters },
           { type: "toolCall", id: "test-call", name: tool.name, arguments: args },
         );
+      const invalidObjects: ToolCall["arguments"][] = [
+        { name: "sample" },
+        { count: 2 },
+        { name: "sample", count: 0 },
+      ];
       expect(validate(valid)).toEqual(valid);
       for (const schema of [inputSchema, wire]) {
         expect(parseConnectorToolArgs(schema, valid)).toEqual(valid);
-        for (const invalid of [
-          { name: "sample" },
-          { count: 2 },
-          { name: "sample", count: 0 },
-          "text",
-        ]) {
+        for (const invalid of [...invalidObjects, "text"]) {
           expect(() => parseConnectorToolArgs(schema, wrap(invalid))).toThrow();
         }
       }
-      for (const invalid of [{ name: "sample" }, { count: 2 }, { name: "sample", count: 0 }]) {
+      for (const invalid of invalidObjects) {
         expect(() => validate(wrap(invalid))).toThrow();
       }
       expect(inputSchema).toEqual(original);
