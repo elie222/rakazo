@@ -75,8 +75,9 @@ export async function executeCloudAgentTool(
   name: string,
   args: Record<string, unknown>,
 ) {
-  const connection = deps.cloudAgent;
-  if (!connection || !cloudAgentsEnabled(connection, context.spaceId)) {
+  const connection = cloudAgentsEnabled(deps.cloudAgent, context.spaceId) ? deps.cloudAgent : null;
+  const cleanup = name === "cloud_agent_status" || name === "cloud_agent_cancel";
+  if (!connection && !cleanup) {
     return { error: "Cloud agents are not configured for this space." };
   }
   let agent: CloudAgent;
@@ -102,7 +103,7 @@ export async function executeCloudAgentTool(
       const created = await tx.cloudAgent.create({
         data: {
           operationKey: context.operationId,
-          providerKey: connection.key,
+          providerKey: connection!.key,
           spaceId: context.spaceId,
           userId: context.userId,
           botId: context.botId,
@@ -150,7 +151,7 @@ export async function executeCloudAgentTool(
         id: String(args.id).trim(),
         // The actor's agents wherever they run, not only where new agents go.
         OR: [
-          { providerKey: connection.key },
+          ...(connection ? [{ providerKey: connection.key }] : []),
           { providerKey: { startsWith: USER_CLOUD_AGENT_KEY_PREFIX } },
           ...(deps.deployment && cloudAgentsEnabled(deps.deployment, context.spaceId)
             ? [{ providerKey: deps.deployment.key }]
@@ -163,6 +164,19 @@ export async function executeCloudAgentTool(
     if (!owned) return { error: "Unknown cloud agent." };
     agent = owned;
     if (name === "cloud_agent_reply") {
+      if (agent.providerKey.startsWith(USER_CLOUD_AGENT_KEY_PREFIX)) {
+        // A follow-up stays with the bot whose identity the worker will reauthorize.
+        if (
+          agent.botId !== context.botId ||
+          !(await deps.userCloudAgents?.forKey(agent.providerKey, {
+            spaceId: context.spaceId,
+            userId: context.userId,
+            botIds: [context.botId],
+          }))
+        )
+          return { error: "Unknown cloud agent." };
+      }
+
       if (
         agent.status === "running" ||
         agent.followup ||

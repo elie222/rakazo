@@ -3,7 +3,7 @@ import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
-import { cloudAgentForActor } from "./cloud-agent-service.js";
+import { cloudAgentForActor, executeCloudAgentTool } from "./cloud-agent-service.js";
 import type { McpOAuthBroker } from "./mcp-oauth.js";
 import { T3CodeConnections } from "./t3code-connections.js";
 import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
@@ -14,6 +14,7 @@ const ctx: AdapterContext = {
   operationId: "operation",
   traceId: "trace",
   ...actor,
+  botId: "bot-1",
   signal: new AbortController().signal,
 };
 
@@ -26,6 +27,8 @@ type Row = Pick<McpServer, "id" | "userId" | "enabled" | "endpoint" | "secretId"
   revision?: number;
   issuer?: string;
   scopesSupported?: string[];
+  allBots?: boolean;
+  assignments?: { botId: string; allowAllTools: boolean; allowedTools: string[] }[];
 };
 
 function server(id: string, overrides: Partial<Row> & { name?: string } = {}): Row {
@@ -36,6 +39,8 @@ function server(id: string, overrides: Partial<Row> & { name?: string } = {}): R
     endpoint: `https://${id}.example.test/mcp`,
     secretId: `secret-${id}`,
     name: "T3 Code",
+    allBots: true,
+    assignments: [],
     token: T3_TOKEN,
     scope: OPERATE,
     ...overrides,
@@ -335,6 +340,113 @@ describe("T3 Code environments connected as MCP servers", () => {
     }
   });
 
+  it("honors explicit allowlists even on an all-bots server", async () => {
+    const row = server("t3", {
+      assignments: [{ botId: "bot-1", allowAllTools: false, allowedTools: ["t3_thread_read"] }],
+    });
+    const f = fakes([row]);
+    const connections = new T3CodeConnections(f.prisma, f.oauth, f.transport);
+    expect(await connections.forActor({ ...actor, botIds: ["bot-1"] })).toBeNull();
+    expect(await connections.forKey("mcp:t3", { ...actor, botIds: ["bot-1"] })).toBeNull();
+    expect(await connections.forActor({ ...actor, botIds: ["bot-2"] })).not.toBeNull();
+    row.assignments![0]!.allowAllTools = true;
+    expect(await connections.forActor({ ...actor, botIds: ["bot-1"] })).not.toBeNull();
+    row.assignments![0]!.allowAllTools = false;
+    row.assignments![0]!.allowedTools = [
+      "t3_project_list",
+      "t3_thread_launch",
+      "t3_thread_read",
+      "t3_thread_send",
+      "t3_thread_interrupt",
+      "t3_queue",
+      "orchestrator_capabilities",
+    ];
+    expect(await connections.forActor({ ...actor, botIds: ["bot-1"] })).not.toBeNull();
+  });
+
+  it("rechecks assignment revocation before launches and follow-ups without preventing cleanup", async () => {
+    const row = server("t3", {
+      allBots: false,
+      assignments: [{ botId: "bot-1", allowAllTools: true, allowedTools: [] }],
+    });
+    const f = fakes([row]);
+    const m = new T3McpEmulator();
+    const connections = new T3CodeConnections(f.prisma, f.oauth, {
+      ...f.transport,
+      fetch: m.fetch,
+    });
+    const connection = (await connections.forActor({ ...actor, botIds: ["bot-1"] }))!;
+    const launched = await connection.provider.launch(
+      { prompt: "Task", idempotencyKey: "first" },
+      ctx,
+    );
+    m.complete(launched.id);
+    row.assignments = [];
+    expect(await connections.forActor({ ...actor, botIds: ["bot-1"] })).toBeNull();
+    expect(await connections.forKey("mcp:t3", { ...actor, botIds: ["bot-1"] })).toBeNull();
+    const recovered = (await connections.forKey("mcp:t3", actor))!;
+    const mutations = m.calls.filter((call) =>
+      ["t3_thread_launch", "t3_thread_send"].includes(call.tool),
+    ).length;
+    for (const provider of [connection.provider, recovered.provider]) {
+      await expect(
+        provider.launch({ prompt: "Task", idempotencyKey: "second" }, ctx),
+      ).rejects.toMatchObject({ reason: "expired" });
+      await expect(provider.reply(launched.id, { prompt: "Follow up" }, ctx)).rejects.toMatchObject(
+        { reason: "expired" },
+      );
+      expect((await provider.get(launched.id, ctx)).status).toBe("finished");
+      await provider.cancel(launched.id, ctx);
+    }
+    expect(
+      m.calls.filter((call) => ["t3_thread_launch", "t3_thread_send"].includes(call.tool)),
+    ).toHaveLength(mutations);
+  });
+
+  it.each([
+    { allowedBots: [] },
+    { allowedBots: ["bot-1"] },
+    { allowedBots: ["bot-2"] },
+    { allowedBots: ["bot-1", "bot-2"] },
+  ])("refuses cross-bot follow-ups with permissions $allowedBots", async ({ allowedBots }) => {
+    const row = server("t3", {
+      allBots: false,
+      assignments: allowedBots.map((botId) => ({ botId, allowAllTools: true, allowedTools: [] })),
+    });
+    const f = fakes([row]);
+    const updateMany = vi.fn();
+    const prisma = {
+      ...f.prisma,
+      cloudAgent: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "agent",
+          providerKey: "mcp:t3",
+          botId: "bot-1",
+          status: "finished",
+          remoteId: "remote",
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn();
+    const result = await executeCloudAgentTool(
+      {
+        prisma,
+        jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
+        events: { notify: vi.fn() },
+        cloudAgent: { key: "deployment", spaceId: actor.spaceId } as CloudAgentConnection,
+        userCloudAgents: new T3CodeConnections(prisma, f.oauth, f.transport),
+      },
+      { ...ctx, botId: "bot-2" },
+      { id: "run", threadId: "chat" },
+      "cloud_agent_reply",
+      { id: "agent", prompt: "Follow up" },
+    );
+    expect(result).toEqual({ error: "Unknown cloud agent." });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it("drops a rejected token so the server asks for a reconnect", async () => {
     const emulator = new T3McpEmulator();
     const rows = [server("t3")];
@@ -350,6 +462,15 @@ describe("T3 Code environments connected as MCP servers", () => {
     expect(dropped).toEqual(["t3"]);
     // Without a token the server is no longer offered for new agents.
     expect(await connections.forActor(actor)).toBeNull();
+  });
+
+  it("skips only the server whose permission read fails", async () => {
+    const f = fakes([server("unreadable"), server("t3")]);
+    vi.spyOn(f.prisma.mcpServer, "findFirst").mockRejectedValueOnce(
+      new Error("permission read failed"),
+    );
+    const connections = new T3CodeConnections(f.prisma, f.oauth, f.transport);
+    expect((await connections.forActor({ ...actor, botIds: ["bot-1"] }))?.key).toBe("mcp:t3");
   });
 
   it("skips an unreadable server and keeps the deployment's provider when none can be read", async () => {

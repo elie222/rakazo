@@ -112,6 +112,7 @@ export function selectBuiltinToolsForRun(options: {
   /** The configured provider can answer a question from many memories. */
   semanticMemoryReflects?: boolean;
   cloudAgentEnabled?: boolean;
+  cloudAgentCleanupEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
@@ -164,6 +165,7 @@ export function selectBuiltinToolsForRun(options: {
       Boolean(options.semanticMemoryReflects),
     ),
     Boolean(options.cloudAgentEnabled),
+    Boolean(options.cloudAgentCleanupEnabled),
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
