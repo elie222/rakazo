@@ -40,6 +40,7 @@ import {
   withPinnedDnsLookup,
 } from "./network-address.js";
 import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
+import type { TailnetRoute } from "./tailnet-fetch.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_MAX_MCP_TOOLS = 250;
@@ -57,6 +58,8 @@ export interface RemoteUrlPolicy {
 export interface RemoteTransportDependencies {
   fetch?: typeof globalThis.fetch;
   resolveHostname?: ResolveHostname;
+  /** Reach tailnet hosts through this bot's node; without it they are private hosts like any. */
+  tailnet?: TailnetRoute;
 }
 
 export interface RemoteMcpOptions extends RemoteTransportDependencies, RemoteUrlPolicy {

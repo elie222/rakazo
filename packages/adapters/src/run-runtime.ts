@@ -43,6 +43,7 @@ import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
 import { T3CodeConnections } from "./t3code-connections.js";
 import { TeamChat } from "./team-chat.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
+import type { TailnetService } from "./tailnet-service.js";
 import { tailscaledInstalled } from "./tailnet-service.js";
 import { createTailnetCommandAccess, tailnetServerOrigin } from "./tailnet-tunnel.js";
 import { createWebProvider } from "./web-provider-factory.js";
@@ -123,7 +124,13 @@ export interface ConnectorRuntimeOverrides {
 /** MCP, installed and integration connectors, in the one registry runs use. */
 export function createConnectorRuntime(
   env: RunRuntimeEnv,
-  deps: { prisma: PrismaClient; secrets: SecretStore; events: ThreadEvents },
+  deps: {
+    prisma: PrismaClient;
+    secrets: SecretStore;
+    events: ThreadEvents;
+    /** This process's bot nodes, for MCP servers on members' tailnets. */
+    tailnet?: TailnetService;
+  },
   overrides: ConnectorRuntimeOverrides = {},
 ) {
   const { prisma, secrets } = deps;
@@ -139,6 +146,7 @@ export function createConnectorRuntime(
       network,
       events: deps.events,
       allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+      tailnet: deps.tailnet,
     },
     mcpOAuth,
   );

@@ -154,7 +154,7 @@ export function mcpRoutes(ctx: RouterContext) {
             }
             const nextEndpoint = "endpoint" in config ? config.endpoint : null;
             if (existing.endpoint !== nextEndpoint) {
-              await assertMcpRemoteEndpoint(nextEndpoint, deps);
+              await assertMcpRemoteEndpoint(nextEndpoint, deps, { server: true });
             }
             if (config.transport === "stdio") {
               await assertMcpStdioCommand(config.command, context.actor, deps);

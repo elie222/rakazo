@@ -134,6 +134,26 @@ describe("TailnetService", () => {
     expect(emulator.devices.size).toBe(0);
   });
 
+  it("takes a node off in every process once its bot is turned off", async () => {
+    const { db, emulator, nodes, service } = await setup();
+    // Another process (a worker) with its own node for the same bot.
+    const worker = new TailnetService({
+      prisma: db.prisma,
+      secretStore,
+      nodeHost: nodes,
+      fetch: emulator.fetch,
+      sweepMs: 0,
+    });
+    const elsewhere = await worker.dial(RUN, NAS, context());
+    await service.tidy();
+    expect(elsewhere.destroyed).toBe(false);
+    // The member turns the bot off; the API takes its own nodes off, never the worker's.
+    await setTailnetBotAccess({ prisma: db.prisma, scope: ALICE, botId: "helper", enabled: false });
+    await worker.tidy();
+    expect(elsewhere.destroyed).toBe(true);
+    expect(emulator.devices.size).toBe(0);
+  });
+
   it("leaves idle nodes and rejoins on the next dial", async () => {
     const { emulator, service, advance } = await setup();
     (await service.dial(RUN, NAS, context())).destroy();

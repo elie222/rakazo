@@ -227,6 +227,7 @@ export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export { T3CodeConnections } from "./t3code-connections.js";
 export * from "./tailnet-connections.js";
 export * from "./tailnet-emulator.js";
+export * from "./tailnet-fetch.js";
 export * from "./tailnet-service.js";
 export * from "./tailnet-tunnel.js";
 export * from "./tailscale-network.js";

@@ -216,7 +216,11 @@ describe("tailnet settings for shell commands", () => {
   it("gives an allowed bot's run the tunnel and a token naming the run", async () => {
     const settings = await access().environment(run);
     expect(settings?.RAKAZO_NET_URL).toBe("https://rakazo.example.test/api/tailnet/connect");
-    const claims = openTailnetTunnelToken(settings?.RAKAZO_NET_TOKEN ?? "", KEY, Date.now());
+    const claims = openTailnetTunnelToken(
+      settings?.RAKAZO_NET_TOKEN ?? "",
+      KEY,
+      Date.parse("2026-11-12T10:20:00Z"),
+    );
     expect(claims).toEqual({ ...run, expiresAt: Date.parse("2026-11-12T23:00:00Z") });
   });
 

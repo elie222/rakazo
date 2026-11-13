@@ -4,6 +4,7 @@ import {
   assertNoMcpEndpointCredential,
   assertSafeRemoteUrl,
   buildMcpCredentialBlob,
+  isTailnetUrl,
   mcpServerHealthDto,
   mcpStdioRefusal,
   recordMcpServerHealth,
@@ -120,21 +121,47 @@ export async function assertMcpStdioCommand(
   await assertMcpStdioAdmin(actor, deps);
 }
 
+/**
+ * `server` marks a member's own MCP server URL, which may be on their tailnet when this server
+ * can put bots there: runs reach it from the bot's node, never from this server's network.
+ */
 export async function assertMcpRemoteEndpoint(
   endpoint: string | null | undefined,
-  deps: Pick<RouterDeps, "remoteConnectors" | "env">,
+  deps: Pick<RouterDeps, "remoteConnectors" | "env" | "tailnet">,
+  options: { server?: boolean } = {},
 ): Promise<void> {
   if (!endpoint) return;
   try {
-    await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
-      allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-    });
+    if (options.server && deps.tailnet?.service.available && onTailnet(endpoint)) {
+      assertTailnetEndpoint(endpoint);
+    } else {
+      await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
+        allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
+      });
+    }
     assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "MCP endpoint is invalid",
     });
   }
+}
+
+function onTailnet(endpoint: string): boolean {
+  try {
+    return isTailnetUrl(new URL(endpoint));
+  } catch {
+    return false;
+  }
+}
+
+function assertTailnetEndpoint(endpoint: string): void {
+  const url = new URL(endpoint);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Connector URL must use HTTP or HTTPS");
+  }
+  if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
+  if (url.hash) throw new Error("Connector URL must not contain a fragment");
 }
 
 /** A stdio server gets its OAuth grant through `{{oauth.*}}` references in env
@@ -292,7 +319,9 @@ export function createMcpServers(
     return painted;
   };
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
-    await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
+    await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps, {
+      server: true,
+    });
     if (input.transport === "stdio") {
       await assertMcpStdioCommand(input.command, actor, deps);
       assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));

@@ -71,6 +71,8 @@ import { mcpToolAllowed } from "./mcp-tool-permissions.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
+import { isTailnetUrl } from "./tailnet-fetch.js";
+import type { TailnetService } from "./tailnet-service.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -253,7 +255,13 @@ export type McpConnectorOptions = {
   credentialTempRoot?: string;
   /** How long a run waits for one server's tool list; 0 waits for the transport's own timeouts. */
   discoveryTimeoutMs?: number;
+  /** Reaches servers on the run's member's tailnet from the bot's own node. */
+  tailnet?: Pick<TailnetService, "available" | "dial">;
 };
+
+/** Health of a tailnet server is checked from one of its member's bots that may reach it. */
+export const MCP_TAILNET_NO_BOT_MESSAGE =
+  "Turn on tailnet access for a bot that uses this server to check it.";
 
 function positiveInteger(value: string | undefined, allowZero = false): number | undefined {
   if (!value?.trim()) return undefined;
@@ -759,6 +767,48 @@ export class McpConnector implements ConnectorProvider {
       userId: context.userId,
       signal: combineSignals(context.signal, AbortSignal.timeout(timeoutMs)),
     };
+    if (this.viaTailnet(server)) return this.probeFromTailnetBot(server, adapterContext);
+    return this.probeAs(server, adapterContext);
+  }
+
+  /** A tailnet server is reached only from a bot's node, so the check borrows one such bot. */
+  private async probeFromTailnetBot(
+    server: McpServer,
+    context: AdapterContext,
+  ): Promise<McpServerHealthUpdate> {
+    const scope = { spaceId: context.spaceId, userId: context.userId };
+    const connection = await this.prisma.tailnetConnection.findUnique({
+      where: { spaceId_userId: scope },
+      select: { botIds: true },
+    });
+    const botIds = connection?.botIds ?? [];
+    const botId = !botIds.length
+      ? undefined
+      : server.allBots
+        ? (
+            await this.prisma.bot.findFirst({
+              where: { id: { in: botIds }, spaceId: scope.spaceId },
+              select: { id: true },
+            })
+          )?.id
+        : (
+            await this.prisma.botMcpServer.findFirst({
+              where: { serverId: server.id, ...scope, botId: { in: botIds } },
+              select: { botId: true },
+            })
+          )?.botId;
+    if (!botId) {
+      const update = { status: "error" as const, message: MCP_TAILNET_NO_BOT_MESSAGE };
+      await this.recordHealth(server.id, update, { force: true, revision: server.revision });
+      return update;
+    }
+    return this.probeAs(server, { ...context, botId });
+  }
+
+  private probeAs(
+    server: McpServer,
+    adapterContext: AdapterContext,
+  ): Promise<McpServerHealthUpdate> {
     const key = this.sessionKey(server, adapterContext);
     const probeKey = `${key} ${server.revision}`;
     const pending = this.probes.get(probeKey);
@@ -862,7 +912,56 @@ export class McpConnector implements ConnectorProvider {
   private sessionKey(server: McpServer, context: AdapterContext): string {
     // Identity headers are applied once, at connect time, so a session is only
     // valid for the identity it connected as. The key has to carry that identity.
-    return `${server.id} ${context.spaceId} ${context.userId}`;
+    const key = `${server.id} ${context.spaceId} ${context.userId}`;
+    // A tailnet server is reached from each bot's own node, which the tailnet's rules may treat
+    // differently, so every bot connects for itself.
+    return this.viaTailnet(server) ? `${key} ${context.botId ?? ""}` : key;
+  }
+
+  /** A remote server on a tailnet, reached through bots' nodes when this server can run them. */
+  private viaTailnet(server: McpServer): boolean {
+    if (!this.options.tailnet?.available || server.transport === "stdio" || !server.endpoint)
+      return false;
+    try {
+      return isTailnetUrl(new URL(server.endpoint));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The network for this run's bot: tailnet hosts through its node, joined from the run's member's
+   * own connection and only while they allow this bot. Each new connection checks that again.
+   */
+  private async tailnetNetwork(
+    server: McpServer,
+    context: AdapterContext,
+  ): Promise<RemoteTransportDependencies> {
+    const tailnet = this.options.tailnet;
+    const botId = context.botId;
+    const bot = botId
+      ? await this.prisma.bot.findFirst({
+          where: { id: botId, spaceId: context.spaceId },
+          select: { name: true },
+        })
+      : null;
+    if (!tailnet || !botId || !bot) throw new Error(MCP_TAILNET_NO_BOT_MESSAGE);
+    const run = { userId: context.userId, spaceId: context.spaceId, botId, botName: bot.name };
+    return {
+      ...this.options.network,
+      tailnet: {
+        // The session outlives this run, so a later connection must not carry its signal.
+        dial: (destination, signal) =>
+          tailnet.dial(run, destination, {
+            operationId: `mcp-tailnet-${server.id}`,
+            traceId: `mcp-tailnet-${server.id}`,
+            spaceId: run.spaceId,
+            userId: run.userId,
+            botId,
+            signal,
+          }),
+      },
+    };
   }
 
   /** Stop stdio processes nobody used for `idleMs`. Returns how many were stopped. */
@@ -1252,6 +1351,9 @@ export class McpConnector implements ConnectorProvider {
           ...(material.headers ?? {}),
           ...(staticToken ? { Authorization: staticToken } : {}),
         };
+        const network = this.viaTailnet(server)
+          ? await this.tailnetNetwork(server, context)
+          : this.options.network;
         const connect = () =>
           session.connectRemote({
             url,
@@ -1265,7 +1367,7 @@ export class McpConnector implements ConnectorProvider {
             headerPolicy: { headers },
             fallbackToSse: false,
             authProvider,
-            network: this.options.network,
+            network,
             signal: context.signal,
           });
         try {
