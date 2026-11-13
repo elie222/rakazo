@@ -206,7 +206,8 @@ export class FakeTailnetNodeHost implements TailnetNodeHost {
       socket.once("close", () => node.sockets.delete(socket));
     }
     service(server, node.device);
-    return client;
+    // Paused, as a real node's SOCKS connection is handed over.
+    return client.pause();
   }
 
   async stop(nodeId: string): Promise<void> {

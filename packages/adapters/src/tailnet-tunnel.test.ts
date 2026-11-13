@@ -122,6 +122,21 @@ describe("TailnetTunnelGateway", () => {
     });
   });
 
+  it("relays a server that speaks first over a connection handed over paused", async () => {
+    const { connect } = await gateway({
+      // As a real node dials: paused, with SSH's banner already waiting.
+      dial: async () => {
+        const [client, service] = duplexPair();
+        service.write("SSH-2.0-OpenSSH_test\r\n");
+        return client.pause();
+      },
+    });
+    const socket = connect();
+    const [banner] = await once(socket, "message");
+    expect(String(banner)).toBe("SSH-2.0-OpenSSH_test\r\n");
+    socket.close();
+  });
+
   it("refuses a missing, forged or expired token, and a run that has ended", async () => {
     const { connect } = await gateway();
     for (const token of [
