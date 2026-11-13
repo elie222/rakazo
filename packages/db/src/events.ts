@@ -55,7 +55,11 @@ import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
 import { draftRecordingsOfLease } from "./teaching-recordings.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
-import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
+import {
+  answerRunInput,
+  answerWaitingRunWithTextInTransaction,
+  pauseRunForInput,
+} from "./thread-ask.js";
 import { clearThreadReads } from "./thread-reads.js";
 import type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 import {
@@ -193,6 +197,12 @@ export interface SendUserMessageInput {
   createRun?: boolean;
   /** When true, start a new run even if the bot is already busy (team-chat delivery). */
   allowParallelRun?: boolean;
+  /**
+   * The waiting question this message replies to, and what it answers. While that question is
+   * still the newest message before this one, the message answers it and resumes its run, as a
+   * composer reply does, instead of waiting behind it.
+   */
+  answers?: { runId: string; messageId: string; answer: string };
   /** Model every routine in an inbound delivery agreed on. */
   modelPin?: {
     modelProvider: string;
@@ -471,7 +481,10 @@ export async function sendUserMessage(
         throw new CrossSpaceCommunicationBlockedError();
       }
       const author = await loadMessageAuthor(tx, input.authorUserId);
-      const createRun = input.createRun !== false;
+      const answered = input.answers
+        ? await answerQuestion(tx, input, input.answers, message)
+        : null;
+      const createRun = input.createRun !== false && !answered;
       // Include the creation intro. It has no tools, so it must not absorb the message, and a
       // second run would overlap it on a dedicated computer. Pending steering waits for the
       // continuation that starts when the intro finishes.
@@ -577,17 +590,15 @@ export async function sendUserMessage(
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
-      if (
-        input.claim &&
-        !(await input.claim(tx, { messageId: message.id, runId: run?.id ?? busy?.id ?? null }))
-      )
+      const runId = answered ?? run?.id ?? busy?.id ?? null;
+      if (input.claim && !(await input.claim(tx, { messageId: message.id, runId })))
         throw new SendClaimLostError();
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,
         botId: input.botId,
         type: "thread.message.created",
-        runId: run?.id ?? busy?.id,
+        runId: runId ?? undefined,
         payload: {
           messageId: message.id,
           role: "user",
@@ -598,7 +609,7 @@ export async function sendUserMessage(
           callId: callIdFromClientNonce(message.clientNonce),
         },
       });
-      return { message, task, run, busy, event };
+      return { message, task, runId, event };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
   const committed = await commit().catch(async (error) => {
     const winner = await replay();
@@ -619,8 +630,36 @@ export async function sendUserMessage(
     messageId: committed.message.id,
     seq: committed.message.seq,
     taskId: committed.task?.id ?? null,
-    runId: committed.run?.id ?? committed.busy?.id ?? null,
+    runId: committed.runId,
   };
+}
+
+/**
+ * Answers `input.answers` with this message when that question is still the one a reply answers,
+ * checked under the thread lock with the composer's rule. Returns the resumed run, whose delivery
+ * mark is cleared so the reply it is about to write counts as undelivered.
+ */
+async function answerQuestion(
+  tx: Prisma.TransactionClient,
+  input: SendUserMessageInput,
+  answers: NonNullable<SendUserMessageInput["answers"]>,
+  message: { id: string; seq: number },
+): Promise<string | null> {
+  const answered = await answerWaitingRunWithTextInTransaction(tx, {
+    spaceId: input.spaceId,
+    threadId: input.threadId,
+    runId: answers.runId,
+    answeredByUserId: input.userId,
+    answer: answers.answer,
+    beforeMessageSeq: message.seq,
+    answerMessageId: message.id,
+    // The answer was worked out against this question; a different one gets an ordinary message.
+    questionMessageId: answers.messageId,
+  });
+  if (!answered) return null;
+  await tx.message.update({ where: { id: message.id }, data: { runId: answers.runId } });
+  await tx.run.update({ where: { id: answers.runId }, data: { messagingMirroredAt: null } });
+  return answers.runId;
 }
 
 export async function appendEvent(

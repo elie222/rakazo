@@ -5,6 +5,7 @@ import {
   messagingWakeIdempotencyKey,
 } from "@rakazo/adapters";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import type * as Db from "@rakazo/db";
 import { SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
@@ -14,6 +15,24 @@ import {
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
+
+// The composer's answer rule, which db tests cover: the question is the thread's newest message.
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  eligibleWaitingTextAnswer: vi.fn(
+    async (
+      prisma: { message: { findFirst(args: object): Promise<unknown> } },
+      input: { runId: string },
+    ) => {
+      const latest = (await prisma.message.findFirst({})) as {
+        id: string;
+        role: string;
+        runId: string | null;
+      } | null;
+      return latest?.role === "bot" && latest.runId === input.runId ? latest.id : null;
+    },
+  ),
+}));
 
 const signupPolicy = { signupsEnabled: undefined, signupAllowlist: undefined };
 
@@ -28,6 +47,10 @@ function createDeps(
     routines?: Array<{ id: string; name: string; prompt: string }>;
     storeAttachment?: MessagingInboundDeps["storeAttachment"];
     transcribe?: MessagingInboundDeps["transcribe"];
+    /** The thread's newest message, as a reply to a question reads it. */
+    latestMessage?: { id: string; role: string; runId: string | null; blocks: unknown[] };
+    /** A message this handle already delivered to the bot. */
+    delivered?: boolean;
   } = {},
 ) {
   const identity =
@@ -165,13 +188,34 @@ function createDeps(
     bot: { findUnique: vi.fn(async () => ({ name: "Chief" })) },
     run: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => runs.get(where.id) ?? null),
+      findMany: vi.fn(async ({ where }: { where: { userId: string; status: string } }) =>
+        [...runs]
+          .filter(([, run]) => {
+            const owned = run as { status: string; userId?: string };
+            return owned.status === where.status && owned.userId === where.userId;
+          })
+          .map(([id]) => ({ id })),
+      ),
     },
     message: {
       findMany: vi.fn(async ({ where }: { where: { runId: string } }) =>
         botReplies.filter((reply) => reply.runId === where.runId).map(({ id }) => ({ id })),
       ),
+      findFirst: vi.fn(async () => overrides.latestMessage ?? null),
+      findUnique: vi.fn(async ({ where }: { where: { id?: string } }) =>
+        where.id
+          ? overrides.latestMessage?.id === where.id
+            ? overrides.latestMessage
+            : null
+          : overrides.delivered
+            ? { id: "msg-0" }
+            : null,
+      ),
     },
-    routine: { findMany: vi.fn(async () => overrides.routines ?? []) },
+    routine: {
+      findMany: vi.fn(async () => overrides.routines ?? []),
+      count: vi.fn(async () => (overrides.routines ?? []).length),
+    },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
     messagingChannel: {
       findMany: vi.fn(async () => [{ id: channel.id }]),
@@ -274,6 +318,13 @@ function createDeps(
       ),
     },
     messagingOutbound: {
+      findMany: vi.fn(
+        async ({ where }: { where: { identityId: string; sourceMessageId: string } }) =>
+          outboundRows.filter(
+            (row) =>
+              row.identityId === where.identityId && row.sourceMessageId === where.sourceMessageId,
+          ),
+      ),
       // Rows not out yet: anything but sent, or sent with no handle yet (claimed).
       count: vi.fn(
         async ({ where }: { where: { sourceMessageId: { in: string[] } } }) =>
@@ -1246,6 +1297,158 @@ describe("createMessagingInboundHandler DM routing", () => {
     await handle(dmEvent);
 
     expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("createMessagingInboundHandler replies to a question", () => {
+  const question = {
+    id: "ask-1",
+    role: "bot",
+    runId: "run-ask",
+    blocks: [
+      {
+        kind: "ask",
+        text: "Which city?",
+        status: "pending",
+        actions: [
+          { id: "choice-1", label: "Berlin" },
+          { id: "choice-2", label: "Paris" },
+        ],
+      },
+    ],
+  };
+  const sentQuestion = (deps: ReturnType<typeof createDeps>, providerHandle: string | null) =>
+    deps.outboundRows.push({
+      identityId: "mi-1",
+      sourceMessageId: "ask-1",
+      status: "sent",
+      providerHandle,
+    });
+  const waiting = (deps: ReturnType<typeof createDeps>, userId = "user-1") =>
+    deps.runs.set("run-ask", {
+      status: "waiting_input",
+      userId,
+      messagingMirroredAt: new Date(),
+    } as never);
+
+  it("answers the question the chat was sent, by option number, before any routine", async () => {
+    const deps = createDeps({
+      latestMessage: question,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+      sendResult: { messageId: "msg-1", runId: "run-ask", seq: 5 },
+    });
+    waiting(deps);
+    sentQuestion(deps, "handle-ask");
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "２" });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        trigger: "messaging",
+        clientNonce: "messaging:sendblue:handle-1",
+        answers: { runId: "run-ask", messageId: "ask-1", answer: "choice-2" },
+      }),
+    );
+    expect(deps.prisma.routine.findMany).not.toHaveBeenCalled();
+    expect(deps.enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("hands a reply whose answer misses under the thread lock to the routines", async () => {
+    const deps = createDeps({
+      latestMessage: question,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+      sendResult: { messageId: "msg-1", runId: null, seq: 5 },
+    });
+    waiting(deps);
+    sentQuestion(deps, "handle-ask");
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "2" });
+
+    // The message starts no run of its own, so the routines own it as any other message.
+    expect(deps.sendUserMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ createRun: false, answers: expect.any(Object) }),
+    );
+    expect(deps.sendUserMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ trigger: "webhook" }),
+    );
+    expect(deps.enqueue).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue" }),
+    );
+  });
+
+  it("starts a run as usual when an answer misses and no routine takes messages", async () => {
+    const deps = createDeps({ latestMessage: question });
+    waiting(deps);
+    sentQuestion(deps, "handle-ask");
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "2" });
+
+    expect(deps.sendUserMessage.mock.calls[0]![0]).not.toHaveProperty("createRun");
+  });
+
+  it.each([
+    ["the question has not reached the chat yet", { handle: null }],
+    ["the question was never sent to the chat", { unsent: true }],
+    ["the question is another person's", { userId: "user-2" }],
+    ["the question no longer waits", { status: "queued" }],
+  ])("sends an ordinary message when %s", async (_case, setting) => {
+    const deps = createDeps({ latestMessage: question });
+    if ("status" in setting)
+      deps.runs.set("run-ask", { status: setting.status, userId: "user-1" } as never);
+    else waiting(deps, "userId" in setting ? setting.userId : undefined);
+    if (!("unsent" in setting)) sentQuestion(deps, "handle" in setting ? null : "handle-ask");
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "2" });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expect(deps.sendUserMessage.mock.calls[0]![0]).not.toHaveProperty("answers");
+  });
+
+  it("sends an ordinary message once something newer than the question is in the thread", async () => {
+    const deps = createDeps({
+      latestMessage: { id: "msg-9", role: "user", runId: null, blocks: [] },
+    });
+    waiting(deps);
+    sentQuestion(deps, "handle-ask");
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "2" });
+
+    expect(deps.sendUserMessage.mock.calls[0]![0]).not.toHaveProperty("answers");
+  });
+
+  it("leaves an approval to its card", async () => {
+    const deps = createDeps({
+      latestMessage: {
+        ...question,
+        blocks: [
+          {
+            kind: "ask",
+            text: "Send it?",
+            status: "pending",
+            approvalEffectId: "effect-1",
+            actions: [
+              { id: "allow", label: "Allow" },
+              { id: "deny", label: "Deny" },
+            ],
+          },
+        ],
+      },
+    });
+    waiting(deps);
+    sentQuestion(deps, "handle-ask");
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "1" });
+
+    expect(deps.sendUserMessage.mock.calls[0]![0]).not.toHaveProperty("answers");
+  });
+
+  it("does not hand a redelivered message that already reached the bot to a routine", async () => {
+    const deps = createDeps({
+      delivered: true,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    await createMessagingInboundHandler(deps)({ ...dmEvent, content: "2" });
+
+    expect(deps.prisma.routine.findMany).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ trigger: "messaging", clientNonce: "messaging:sendblue:handle-1" }),
+    );
   });
 });
 
