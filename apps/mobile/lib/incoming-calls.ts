@@ -338,30 +338,33 @@ async function drainNative() {
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
   if (!state || !running || generation !== currentSessionGeneration()) return;
-  // Registration is bookkeeping. An answer expires with its ring, so it must not wait on it.
-  if (state.token) void registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
-  // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
-  for (const action of state.actions) {
-    if (action.action === "end") {
-      nativeEnded.add(action.callId);
-      if (activeNativeCall === action.callId) endCall();
-      continue;
+  try {
+    // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
+    for (const action of state.actions) {
+      if (action.action === "end") {
+        nativeEnded.add(action.callId);
+        if (activeNativeCall === action.callId) endCall();
+        continue;
+      }
+      if (!callIsRinging(action)) {
+        await native?.finishAnswer(action.callId, false);
+        continue;
+      }
+      const bot = await callerFor(action.botId, action.callId).catch(() => null);
+      // A stale lookup answers nothing and completes no native action: a newer feed owns it.
+      if (bot === undefined) continue;
+      if (!bot) {
+        await native?.finishAnswer(action.callId, false);
+        continue;
+      }
+      await respondToMobileCall(
+        { ...bot, incomingCall: { ...action, reason: "", opening: "" } },
+        "answer",
+      ).catch(() => undefined);
     }
-    if (!callIsRinging(action)) {
-      await native?.finishAnswer(action.callId, false);
-      continue;
-    }
-    const bot = await callerFor(action.botId, action.callId).catch(() => null);
-    // A stale lookup answers nothing and completes no native action: a newer feed owns it.
-    if (bot === undefined) continue;
-    if (!bot) {
-      await native?.finishAnswer(action.callId, false);
-      continue;
-    }
-    await respondToMobileCall(
-      { ...bot, incomingCall: { ...action, reason: "", opening: "" } },
-      "answer",
-    ).catch(() => undefined);
+  } finally {
+    if (state.token && running && generation === currentSessionGeneration())
+      void registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
   }
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
