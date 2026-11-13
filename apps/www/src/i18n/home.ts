@@ -6,10 +6,11 @@ import type { Locale } from "./locales";
 export const HOME_MODEL_PROVIDERS = ["Claude", "ChatGPT", "OpenRouter", "Grok", "Ollama", "LM Studio"];
 
 export const HOME_CHANNELS = [
-  { id: "slack", name: "Slack", selfHosted: false },
-  { id: "imessage", name: "iMessage & SMS", selfHosted: true },
-  { id: "whatsapp", name: "WhatsApp", selfHosted: true },
-  { id: "telegram", name: "Telegram", selfHosted: true },
+  { id: "slack", name: "Slack", selfHosted: false, docsAnchor: "slack" },
+  { id: "teams", name: "Microsoft Teams", selfHosted: false, docsAnchor: "microsoft-teams" },
+  { id: "imessage", name: "iMessage & SMS", selfHosted: true, docsAnchor: "imessage-and-sms" },
+  { id: "whatsapp", name: "WhatsApp", selfHosted: true, docsAnchor: "whatsapp" },
+  { id: "telegram", name: "Telegram", selfHosted: true, docsAnchor: "telegram" },
 ] as const;
 
 export const HOME_FEATURE_KINDS = ["apps", "teach", "memory", "triggers", "team", "call"] as const;
