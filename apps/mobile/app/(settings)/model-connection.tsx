@@ -229,14 +229,25 @@ export default function ModelConnection() {
 
   useFocusEffect(
     useCallback(() => {
-      void load()
-        .catch((err: unknown) =>
-          publishFeedback("connection", {
-            error: errorText(err, t`Could not load model settings`),
-          }),
-        )
-        .finally(() => setLoading(false));
-      return cancelInFlightWork;
+      let active = true;
+      const pendingLoad = load();
+      const generation = loadGeneration.current;
+      const isCurrent = () => active && generation === loadGeneration.current;
+      void pendingLoad
+        .catch((err: unknown) => {
+          if (isCurrent()) {
+            publishFeedback("connection", {
+              error: errorText(err, t`Could not load model settings`),
+            });
+          }
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        });
+      return () => {
+        active = false;
+        cancelInFlightWork();
+      };
     }, [cancelInFlightWork, load]),
   );
 
