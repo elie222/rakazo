@@ -207,6 +207,7 @@ export class RunStore {
           .trials.filter(
             (t) =>
               t.caseId === input.scenario.id &&
+              t.trial <= input.trials &&
               (t.strategy ?? "current") === input.strategy &&
               usable(t) &&
               regradable(input.scenario, t),

@@ -251,6 +251,7 @@ async function main() {
   const output = path.resolve(values.output!);
   let budget: SpendBudget | undefined;
   let probeTotals: { costUsd: number | null; modelCalls: number } | undefined;
+  const standIns: TrialResult[] = [];
   const judgeCalls = new Map<string, MeasuredCall>();
   const report = {
     version: 2,
@@ -330,7 +331,12 @@ async function main() {
       report.judge.costUsd = measured.costUsd;
     }
     // Only new spend: trials taken from the store were paid for by the run that made them.
-    const attempted = trials.filter((trial) => trial.status !== "not-run" && !trial.origin);
+    // A stand-in run stopped for stored trials still paid for any call before its first turn;
+    // the calls it stopped were refused before reaching the provider and cost nothing.
+    const attempted = [
+      ...trials.filter((trial) => trial.status !== "not-run" && !trial.origin),
+      ...standIns.filter((trial) => (trial.costUsd ?? 0) > 0),
+    ];
     const costs = [
       ...attempted.map((trial) => trial.costUsd),
       ...(probeTotals ? [probeTotals.costUsd] : []),
@@ -862,7 +868,11 @@ async function main() {
           strategy: planned.strategy,
           ...(observeWire ? { wireDiagnostics } : {}),
         };
-        if (!stored.plan) trials[i] = ran;
+        // A stand-in whose cleanup failed is kept, so the checks below stop the run.
+        if (!stored.plan || ran.cleanupFailed) {
+          trials[i] = ran;
+          stored.plan = undefined;
+        } else standIns.push(ran);
       }
       if (stored.plan)
         trials[i] = {

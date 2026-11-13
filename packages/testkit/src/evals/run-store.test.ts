@@ -271,6 +271,9 @@ describe("run store", () => {
     const s = store();
     s.save(report([trial(1, { status: "failed", category: "provider" }), trial(2)]));
     expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 2 }] });
+    // Trials past the number wanted do not make a run a better source.
+    s.save(report([trial(4), trial(5), trial(6)]));
+    expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 2 }] });
   });
 
   it("prefers the current judge once a run has the trials wanted", () => {
