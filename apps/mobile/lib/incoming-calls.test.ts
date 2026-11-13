@@ -277,7 +277,7 @@ describe("mobile incoming calls", () => {
     );
     expect(registerCallPushToken).toHaveBeenCalledWith({ voipToken: "voip-token" });
     expect(fake.rpc.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(registerCallPushToken).mock.invocationCallOrder[0],
+      vi.mocked(registerCallPushToken).mock.invocationCallOrder[0] ?? 0,
     );
     expect(settled).toBe(false);
     releaseRegistration();
