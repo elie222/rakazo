@@ -97,7 +97,7 @@ describe("reading a Grok Bot's reply", () => {
     expect(bots).toHaveLength(1);
     expect(bots[0]!.name).toBe("Bramble");
     expect(bots[0]!.instructions).toBe("Rule one.\n\nRule two.");
-    // A later, fuller part replaces the earlier one it contains.
+    // Overlapping text is preserved: containment does not prove equal meaning.
     const fuller = exportOf({
       export_id: "bramble",
       name: "Bramble",
@@ -106,7 +106,7 @@ describe("reading a Grok Bot's reply", () => {
     const [whole] = parseGrokBotExport(
       `${exportOf({ export_id: "bramble", name: "Bramble", instructions: "Rule two." })}\n${fuller}`,
     );
-    expect(whole!.instructions).toBe("Rule one.\n\nRule two.");
+    expect(whole!.instructions).toBe("Rule two.\n\nRule one.\n\nRule two.");
     expect(bots[0]!.memories).toEqual(["A", "B"]);
     expect(bots[0]!.routines.map((routine) => routine.name)).toEqual([
       "Monday review",

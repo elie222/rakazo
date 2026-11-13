@@ -293,7 +293,10 @@ function readBot(bot: Json): GrokBot {
         {
           name: oneLine(first(skill.name, skill.title)),
           description: first(skill.description, skill.summary),
-          instructions: first(skill.instructions, skill.body, skill.content, skill.text),
+          instructions:
+            [skill.instructions, skill.body, skill.content, skill.text].find(
+              (value): value is string => typeof value === "string" && Boolean(value.trim()),
+            ) ?? "",
         },
       ];
     }),
@@ -318,14 +321,20 @@ function readBot(bot: Json): GrokBot {
           ]
         : [],
     ),
-    apps: [...list(bot.apps), ...list(bot.plugins), ...list(bot.integrations)].flatMap(readApp),
+    apps: [
+      ...new Map(
+        [...list(bot.apps), ...list(bot.plugins), ...list(bot.integrations)]
+          .flatMap(readApp)
+          .map((app) => [JSON.stringify(app), app]),
+      ).values(),
+    ],
   };
 }
 
 /** Two parts of one text: the fuller part when one holds the other, else both in order. */
 function joinParts(earlier: string, later: string): string {
-  if (earlier.includes(later)) return earlier;
-  if (later.includes(earlier)) return later;
+  if (!later || earlier === later) return earlier;
+  if (!earlier) return later;
   return `${earlier}\n\n${later}`;
 }
 
@@ -365,9 +374,14 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
     return skills;
   };
   const merged = new Map<string | symbol, GrokBot>();
+  const instructionParts = new Map<string | symbol, Set<string>>();
   for (const bot of bots) {
     const key = bot.exportId || Symbol();
     const into = merged.get(key);
+    const parts = instructionParts.get(key) ?? new Set<string>();
+    const repeated = parts.has(bot.instructions);
+    parts.add(bot.instructions);
+    instructionParts.set(key, parts);
     merged.set(
       key,
       into
@@ -376,7 +390,9 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
             name: into.name,
             title: bot.title || into.title,
             description: bot.description || into.description,
-            instructions: joinParts(into.instructions, bot.instructions),
+            instructions: repeated
+              ? into.instructions
+              : joinParts(into.instructions, bot.instructions),
             memories: union(into.memories, bot.memories),
             userFacts: union(into.userFacts, bot.userFacts),
             skills: joinSkills(into.skills, bot.skills),
@@ -423,7 +439,7 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
   )
     throw new GrokBotExportError("too_large");
   const parsed = raw.map(readBot).filter((bot) => bot.name);
-  const bots = documents.length === 1 ? parsed : mergeBots(parsed);
+  const bots = mergeBots(parsed);
   if (bots.length === 0) throw new GrokBotExportError("not_export");
   return bots;
 }
@@ -527,7 +543,7 @@ function grokSkills(bot: GrokBot) {
     const unsafeName = looksLikeCredential(skill.name);
     const path = `skills/${unsafeName ? index + 1 : skill.name || index + 1}`;
     if (unsafeName) return { source: skill, path, item: null };
-    const body = skill.instructions.replace(FRONTMATTER, "").trim();
+    const body = skill.instructions.replace(FRONTMATTER, "").trimEnd();
     const parsed = FRONTMATTER.test(skill.instructions) ? parseSkillMd(skill.instructions) : null;
     const front = parsed && !("error" in parsed) ? parsed : null;
     if (!body && !front) return { source: skill, path, item: null };
