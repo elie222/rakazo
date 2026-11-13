@@ -21,29 +21,33 @@ export default function ShareRoute() {
   const navigation = useNavigation();
   const share = useSyncExternalStore(subscribeIncomingShare, getIncomingShare);
   const leaving = useRef(false);
-  const [guarded, setGuarded] = useState(true);
+  const [onLeave, setOnLeave] = useState<(() => void) | null>(null);
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const { t } = useLingui();
-  const allowRemoval = usePreventRemove(guarded, ({ data, repeat }) => {
+  const allowRemoval = usePreventRemove(!onLeave, ({ data, repeat }) => {
     const payload = data.action.payload;
     // Authentication temporarily replaces the picker; sign-in returns here with the share.
     if (payload && "name" in payload && payload.name === "sign-in") {
-      leave();
-      repeat();
+      leave(repeat);
       return;
     }
     close();
   });
-  const leave = () => {
+  const leave = (navigate: () => void) => {
+    if (leaving.current) return;
     leaving.current = true;
-    setGuarded(false);
+    setOnLeave(() => navigate);
     allowRemoval();
   };
+  // The prevention registry is React state too: same-tick navigation still sees the guard.
+  useEffect(() => {
+    onLeave?.();
+  }, [onLeave]);
   const close = () => {
-    leave();
+    if (leaving.current) return;
     cancelIncomingShare();
-    router.dismissTo("/");
+    leave(() => router.dismissTo("/"));
   };
   const closeOnce = useEffectEvent(() => {
     if (!leaving.current) close();
@@ -56,14 +60,18 @@ export default function ShareRoute() {
   const open = (bot: Pick<MobileBot, "id" | "name">) => {
     // Removal must preserve the share for thread.tsx to claim it.
     if (!getIncomingShare()) return;
-    leave();
-    navigation.dispatch({
-      type: "RESET",
-      payload: {
-        index: 1,
-        routes: [{ name: "index" }, { name: "thread", params: { botId: bot.id, name: bot.name } }],
-      },
-    });
+    leave(() =>
+      navigation.dispatch({
+        type: "RESET",
+        payload: {
+          index: 1,
+          routes: [
+            { name: "index" },
+            { name: "thread", params: { botId: bot.id, name: bot.name } },
+          ],
+        },
+      }),
+    );
   };
   const preview = share ? sharePreview(share) : null;
 

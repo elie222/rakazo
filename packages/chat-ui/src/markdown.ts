@@ -601,7 +601,7 @@ export function useLinkFavicon(href: string): { icon: string | null; unusable: (
 export function closeUnterminatedFence(markdown: string): string {
   let openFence: { marker: "`" | "~"; length: number } | undefined;
 
-  for (const line of markdown.split("\n")) {
+  for (const line of markdown.split(/\r\n|\r|\n/)) {
     const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (!match?.[1]) continue;
 

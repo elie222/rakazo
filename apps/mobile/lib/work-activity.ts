@@ -82,7 +82,8 @@ export function startWorkActivities(): () => void {
 
 /**
  * Shows the user's bots at work on the Lock Screen and in the Dynamic Island, starting with the
- * one just sent a message. iOS hides it while the app is open.
+ * one just sent a message. iOS hides it while the app is open. Check server support first:
+ * a card cannot be followed until iOS supplies its token, after it has already appeared.
  */
 export function startWorkActivity(input: {
   title: string;
@@ -91,7 +92,12 @@ export function startWorkActivity(input: {
 }): void {
   if (!activities) return;
   const { botId = null, groupId = null } = input.target as { botId?: string; groupId?: string };
-  void activities
-    .startWorkActivity(input.title, input.spaceId, botId, groupId)
+  const generation = currentSessionGeneration();
+  void rpc("notifications/followWorkActivity", {})
+    .then(({ following }) => {
+      if (!following || generation !== currentSessionGeneration()) return;
+      return activities.startWorkActivity(input.title, input.spaceId, botId, groupId);
+    })
+    // An older server without the preflight, or an unreachable one, cannot confirm support.
     .catch(() => undefined);
 }
