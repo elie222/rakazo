@@ -68,6 +68,7 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
+  EXECUTION_LEASE_MS,
   provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
@@ -267,6 +268,8 @@ async function verbatimMcpServersForRun(
   if (!servers?.length) return undefined;
   return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
 }
+
+const RUN_HEARTBEAT_MS = 60_000;
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
@@ -473,6 +476,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         completed: false,
         lastCheckAt: 0,
         retainComputer: false,
+        renewedAt: Date.now(),
+        handedBack: false,
       };
       const computerUse: RunComputerUseState = {
         reason: "none",
@@ -492,18 +497,26 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         ])
           .then(([runRenewed, computerRenewed]) => {
             if (lease.completed) return;
-            if (!runRenewed || !computerRenewed) {
-              lease.valid = false;
-              runAbortController?.abort();
+            if (runRenewed && computerRenewed) {
+              lease.renewedAt = Date.now();
+              return;
             }
+            lease.valid = false;
+            runAbortController?.abort();
           })
           .catch((error) => {
-            // The lease outlasts a failover; the next beat renews it.
-            if (lease.completed || databaseOutage.failed(error, "run lease renewal")) return;
+            if (lease.completed) return;
+            // Both leases outlast a short failover; the next beat renews them. Once they could
+            // have expired, another worker may claim the run, so this attempt stops.
+            if (
+              databaseOutage.failed(error, "run lease renewal") &&
+              Date.now() < lease.renewedAt + EXECUTION_LEASE_MS - RUN_HEARTBEAT_MS
+            )
+              return;
             lease.valid = false;
             runAbortController?.abort();
           });
-      }, 60_000);
+      }, RUN_HEARTBEAT_MS);
       heartbeat.unref?.();
       const stopHeartbeatAfterCompletion = () => {
         lease.completed = true;

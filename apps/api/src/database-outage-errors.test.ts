@@ -1,12 +1,13 @@
 import { ORPCError } from "@orpc/server";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import { databaseOutage } from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { createLogger, createTestSink, installLogger, runWithLogContext } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { authLibraryLogger } from "./app.js";
-import { handleHttpError, handleRpcError } from "./rpc-errors.js";
+import { handleHttpError, handleRpcError, requestHitDatabaseOutage } from "./rpc-errors.js";
 
 let sink: TestSink;
 beforeEach(() => {
@@ -67,14 +68,23 @@ describe("a request during a database outage", () => {
     expect(logged()).toEqual(["error:http.request.failed"]);
   });
 
-  it("answers an RPC procedure that hit it as unavailable", () => {
-    let thrown: unknown;
-    try {
-      handleRpcError(unreachable(), ["threads", "send"]);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(ORPCError);
-    expect(thrown).toMatchObject({ code: "SERVICE_UNAVAILABLE", status: 503 });
+  it("answers an RPC procedure that hit it as unavailable, and only that 503 asks for a retry", () => {
+    const rpcFailure = (error: unknown) =>
+      runWithLogContext({}, () => {
+        let thrown: unknown;
+        try {
+          handleRpcError(error, ["threads", "send"]);
+        } catch (caught) {
+          thrown = caught;
+        }
+        return { thrown, retry: requestHitDatabaseOutage() };
+      });
+    const outage = rpcFailure(unreachable());
+    expect(outage.thrown).toBeInstanceOf(ORPCError);
+    expect(outage.thrown).toMatchObject({ code: "SERVICE_UNAVAILABLE", status: 503 });
+    expect(outage.retry).toBe(true);
+    const provider = rpcFailure(new SandboxUnavailableError());
+    expect(provider.thrown).toMatchObject({ status: 503 });
+    expect(provider.retry).toBe(false);
   });
 });

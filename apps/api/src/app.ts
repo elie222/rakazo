@@ -160,7 +160,12 @@ import { pluginSubmissionRoutes } from "./plugin-submissions.js";
 import { sendReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
-import { DATABASE_RETRY_AFTER_SECONDS, handleHttpError, handleRpcError } from "./rpc-errors.js";
+import {
+  DATABASE_RETRY_AFTER_SECONDS,
+  handleHttpError,
+  handleRpcError,
+  requestHitDatabaseOutage,
+} from "./rpc-errors.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
@@ -1040,11 +1045,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       },
     });
     if (!matched) return next();
-    // The session lookup above reached the database, so any outage is over.
-    if (actor) databaseOutage.succeeded();
     const reply = c.newResponse(response.body, response);
-    if (reply.status === 503)
+    if (requestHitDatabaseOutage())
       reply.headers.set("Retry-After", String(DATABASE_RETRY_AFTER_SECONDS));
+    // A signed-in request that went through reached the database, so any outage is over.
+    else if (actor && reply.status < 500) databaseOutage.succeeded();
     return reply;
   });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });

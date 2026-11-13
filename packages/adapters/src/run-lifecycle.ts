@@ -318,6 +318,7 @@ export async function requeueInterruptedRun(
   runId: string,
   workerId: string,
   fence: number,
+  wakeAt = new Date(),
 ): Promise<boolean> {
   const released = await deps.prisma.run.updateMany({
     where: {
@@ -331,13 +332,13 @@ export async function requeueInterruptedRun(
       error: null,
       leaseOwner: null,
       leaseExpiresAt: null,
-      // Due now. Left unset, the legacy retry trigger would hold it back as a failed setup.
-      wakeAt: new Date(),
+      // Set, so the legacy retry trigger does not hold it back as a failed setup.
+      wakeAt,
     },
   });
   if (released.count !== 1) return false;
   await deps.jobs
-    .enqueue(runContinueJob(runId))
+    .enqueue({ ...runContinueJob(runId), availableAt: wakeAt })
     .catch((error) => getLogger().error("run requeue", error));
   return true;
 }
@@ -586,8 +587,9 @@ export async function finishRunAttempt(
         .catch(() => undefined);
     }
     await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
-    // A stopping process requeues this run instead, which must keep its turn.
-    if (!deps.shutdownSignal?.aborted) {
+    // A stopping process requeues this run instead, and a run handed back after a database
+    // outage resumes here; either must keep its turn.
+    if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
       await startNextWaitingRun(deps, run.botId, runId).catch((error) =>
         getLogger().error("start next waiting run", error),
       );

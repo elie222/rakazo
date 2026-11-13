@@ -15,7 +15,7 @@ import {
   SpaceDeletionInProgressError,
   SpaceOwnerRequiredError,
 } from "@rakazo/db";
-import { getLogContext, getLogger } from "@rakazo/logging";
+import { enrichLogContext, getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -23,6 +23,7 @@ import { voiceAccountErrorStatus } from "./voice.js";
 
 /** How long a client waits before asking again while the database fails over. */
 export const DATABASE_RETRY_AFTER_SECONDS = 5;
+const DATABASE_UNAVAILABLE = "db.unavailable";
 
 /**
  * Whether a request failed because the database is unavailable. The outage logs it once for
@@ -31,7 +32,13 @@ export const DATABASE_RETRY_AFTER_SECONDS = 5;
 export function failedOnDatabaseOutage(error: unknown): boolean {
   if (!databaseOutage.failed(error, "api request")) return false;
   markExpectedFailure();
+  enrichLogContext({ [DATABASE_UNAVAILABLE]: true });
   return true;
+}
+
+/** Whether this request failed on a database outage, so its 503 asks the client to retry soon. */
+export function requestHitDatabaseOutage(): boolean {
+  return getLogContext()[DATABASE_UNAVAILABLE] === true;
 }
 
 /**
