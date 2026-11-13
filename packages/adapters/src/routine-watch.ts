@@ -28,7 +28,11 @@ import {
   parseComputerMode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { loadLoginPasswordRedactions, shellCommandEnvironment } from "./bot-secrets.js";
+import {
+  loadLoginPasswordRedactions,
+  shellCommandEnvironment,
+  VaultKeyUnavailableError,
+} from "./bot-secrets.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
@@ -528,6 +532,26 @@ async function readComputer(
       );
     }
   }
+  // Loaded before the computer wakes, so a key manager outage defers the check without waking it.
+  const secrets = new Set<string>();
+  const secretStore = watch.kind === "command" ? deps.secretStore : undefined;
+  const [commandEnvironment, loginRedactions, purchaseRedactions] = secretStore
+    ? await Promise.all([
+        shellCommandEnvironment({
+          prisma: deps.prisma,
+          secretStore,
+          scope: { spaceId: routine.spaceId, userId: routine.userId, botId: bot.id },
+          registerRedactions: (values) => {
+            for (const value of values) secrets.add(value);
+          },
+        }),
+        loadLoginPasswordRedactions(deps.prisma, secretStore, routine),
+        deps.paymentWallet
+          ? loadPurchaseRedactions({ prisma: deps.prisma, secretStore }, routine)
+          : [],
+      ])
+    : [undefined, [], []];
+  for (const value of [...loginRedactions, ...purchaseRedactions]) secrets.add(value);
   const ctx = context(routine);
   const computerId = bot.computer.id;
   let computer: Awaited<ReturnType<typeof provisionComputer>>;
@@ -556,25 +580,6 @@ async function readComputer(
   if (watch.kind === "command") {
     // Runs this shell command on the bot's computer every interval, in its folder,
     // without a model or per-run approval: equivalent to the bot running it itself.
-    const secrets = new Set<string>();
-    const secretStore = deps.secretStore;
-    const [commandEnvironment, loginRedactions, purchaseRedactions] = secretStore
-      ? await Promise.all([
-          shellCommandEnvironment({
-            prisma: deps.prisma,
-            secretStore,
-            scope: { spaceId: routine.spaceId, userId: routine.userId, botId: bot.id },
-            registerRedactions: (values) => {
-              for (const value of values) secrets.add(value);
-            },
-          }),
-          loadLoginPasswordRedactions(deps.prisma, secretStore, routine),
-          deps.paymentWallet
-            ? loadPurchaseRedactions({ prisma: deps.prisma, secretStore }, routine)
-            : [],
-        ])
-      : [undefined, [], []];
-    for (const value of [...loginRedactions, ...purchaseRedactions]) secrets.add(value);
     const shellEnvironment = usesNativeShell(bot.computer.kind)
       ? await deps.sandbox.environment?.(computer, ctx)
       : undefined;
@@ -853,7 +858,10 @@ export async function tickRoutineWatch(
     if (!watch) throw new RoutineWatchError("The change trigger's settings are not valid.");
     outcome = await checkRoutineWatch(deps, routine, now);
   } catch (error) {
-    if (error instanceof RoutineWatchRetry) {
+    // Defer a key outage instead of pausing the routine.
+    if (error instanceof RoutineWatchRetry || error instanceof VaultKeyUnavailableError) {
+      if (error instanceof VaultKeyUnavailableError)
+        getLogger().warn("routine.watch_deferred", { "routine.id": routine.id, error });
       const retryAt =
         watch?.kind === "http"
           ? nextRoutineWatchAt(watch, now)

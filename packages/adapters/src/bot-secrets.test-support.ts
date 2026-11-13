@@ -73,6 +73,9 @@ function matches<T extends object>(
       );
     }
     const field = row[key as keyof T] as unknown;
+    if (field instanceof Date && value instanceof Date) return field.getTime() === value.getTime();
+    if (value && typeof value === "object" && "gt" in value)
+      return String(field) > String(value.gt);
     if (value && typeof value === "object" && "in" in value)
       return (value.in as unknown[]).includes(field);
     if (value && typeof value === "object" && "notIn" in value)
@@ -128,11 +131,25 @@ export function fakeDatabase() {
         return row ? { ...row } : null;
       },
     ),
-    findMany: vi.fn(async ({ where, take }: { where: Where; take?: number }) =>
-      rows
-        .filter((row) => matches(row, where, scoping()))
-        .sort((left, right) => left.name.localeCompare(right.name))
-        .slice(0, take ?? rows.length),
+    findMany: vi.fn(
+      async ({
+        where,
+        take,
+        orderBy,
+      }: {
+        where: Where;
+        take?: number;
+        orderBy?: { id?: "asc"; name?: "asc" };
+      }) =>
+        rows
+          .filter((row) => matches(row, where, scoping()))
+          .sort((left, right) =>
+            orderBy?.id
+              ? Number(left.id > right.id) - Number(left.id < right.id)
+              : left.name.localeCompare(right.name),
+          )
+          .slice(0, take ?? rows.length)
+          .map((row) => ({ ...row })),
     ),
     count: vi.fn(
       async ({ where }: { where: Where }) =>

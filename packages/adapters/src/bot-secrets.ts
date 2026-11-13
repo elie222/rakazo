@@ -48,6 +48,8 @@ import {
 import { resolveEncryptionKey } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
+  ContentDecryptionError,
+  ciphertextKeyId,
   currentDbContext,
   lockSpaceSettings,
   runCodeKind,
@@ -72,6 +74,7 @@ import { isPermanentDecryptFailure } from "./secrets.js";
 import { totpCode, totpCodeEnd } from "./totp.js";
 import type { VaultLoginUse } from "./vault-card-use.js";
 import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
+import { openVaultValue, sealVaultValue } from "./vault-values.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 /**
@@ -218,6 +221,8 @@ async function hiddenFromBot(
 const metadata = { name: true, origin: true, auth: true } as const;
 // What people see of an item besides its destination.
 const labels = { title: true, note: true } as const;
+// What reading an item's value needs: the vault it is in is part of its encryption.
+const vaultRow = { id: true, userId: true, spaceId: true, ciphertext: true } as const;
 
 const SECRET_ALREADY_SAVED = "A credential with this name is already saved";
 
@@ -317,6 +322,7 @@ export function botSecretToolView(row: { name: string; origin: string; auth: unk
 }
 
 const commandRowFields = {
+  userId: true,
   id: true,
   name: true,
   spaceId: true,
@@ -326,8 +332,10 @@ const commandRowFields = {
 
 /** Each command variable of these rows, decrypted once; one that can't be read has no value. */
 async function readCommandVariables(
+  prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
-  rows: { id: string; name: string; spaceId: string | null; auth: unknown; ciphertext: string }[],
+  rows: (Parameters<typeof openVaultValue>[2] & { name: string; auth: unknown })[],
+  keyOutage: "throw" | "unset",
 ) {
   const variables: { item: VaultItemUse; variable: string; value?: string }[] = [];
   for (const row of rows) {
@@ -336,8 +344,9 @@ async function readCommandVariables(
     if (commandVariableProblem(variable)) continue;
     const item = { id: row.id, name: row.name, spaceId: row.spaceId, kind: "command" };
     try {
-      variables.push({ item, variable, value: await secretStore.load(row.ciphertext, row.id) });
-    } catch {
+      variables.push({ item, variable, value: await openForRedaction(prisma, secretStore, row) });
+    } catch (error) {
+      if (error instanceof VaultKeyUnavailableError && keyOutage === "throw") throw error;
       // One unreadable value must not stop every shell command; the variable is left unset.
       variables.push({ item, variable });
     }
@@ -376,6 +385,7 @@ export async function loadCommandVariables(
   secretStore: Pick<SecretStore, "load">,
   scope: BotSecretScope,
   unsetVariables?: Set<string>,
+  keyOutage: "throw" | "unset" = "throw",
 ): Promise<{ env: Record<string, string>; used: VaultItemUse[]; redactions: string[] }> {
   const { botId: _, ...owner } = scope;
   const [usable, rows] = await Promise.all([
@@ -391,10 +401,12 @@ export async function loadCommandVariables(
     }),
   ]);
   const read = new Set(usable.map((row) => `${row.id}\0${row.ciphertext}`));
-  const exported = await readCommandVariables(secretStore, usable);
+  const exported = await readCommandVariables(prisma, secretStore, usable, keyOutage);
   const others = await readCommandVariables(
+    prisma,
     secretStore,
     rows.filter((row) => !read.has(`${row.id}\0${row.ciphertext}`)),
+    keyOutage,
   );
   return {
     ...commandEnvironment(exported, unsetVariables),
@@ -421,6 +433,7 @@ export async function shellCommandEnvironment(input: {
   secretStore: Pick<SecretStore, "load">;
   scope: BotSecretScope;
   registerRedactions: (values: string[]) => void;
+  keyOutage?: "throw" | "unset";
 }): Promise<{ env: Record<string, string>; unsetEnv: string[]; used: VaultItemUse[] }> {
   const unsetVariables = new Set<string>();
   const { env, used, redactions } = await loadCommandVariables(
@@ -428,6 +441,7 @@ export async function shellCommandEnvironment(input: {
     input.secretStore,
     input.scope,
     unsetVariables,
+    input.keyOutage,
   );
   input.registerRedactions(redactions);
   return { env, unsetEnv: [...unsetVariables], used };
@@ -831,28 +845,24 @@ export async function prepareBotSecret(input: {
   // An import's login already saved is that, also in a full vault.
   const usernames = input.newLoginOnly;
   const repeats = (tx: Pick<Prisma.TransactionClient, "vaultCredential">) =>
-    usernames && loginSaved(tx, secretStore, vault, destination, plaintext, usernames);
+    usernames && loginSaved(prisma, tx, secretStore, vault, destination, plaintext, usernames);
   if (await repeats(prisma)) throw new Error(LOGIN_ALREADY_SAVED);
   validate(existing, await prisma.vaultCredential.count({ where: vault }));
   if (keepsKey) {
-    const otp = await savedLoginKey(secretStore, existing);
+    const otp = await savedLoginKey(prisma, secretStore, existing);
     if (otp) plaintext = encodeLoginSecret({ ...decodeLoginSecret(plaintext), otp });
   }
   const id = existing?.id ?? randomBytes(12).toString("hex");
-  const stored = await secretStore.put(
-    plaintext,
-    {
-      operationId: id,
-      traceId: id,
-      userId: scope.userId,
-      spaceId: scope.spaceId,
-      signal: new AbortController().signal,
-    },
-    { recordId: id },
-  );
+  const ciphertext = await sealVaultValue(prisma, secretStore, { id, ...vault }, plaintext, {
+    operationId: id,
+    traceId: id,
+    userId: scope.userId,
+    spaceId: scope.spaceId,
+    signal: new AbortController().signal,
+  });
   return {
     id,
-    ciphertext: stored.ciphertext,
+    ciphertext,
     async store(tx: Prisma.TransactionClient) {
       await lockVault(tx, scope);
       if (
@@ -860,6 +870,8 @@ export async function prepareBotSecret(input: {
         (await settingsTarget(tx, scope, "credentials")) !== input.expectedDefaultVault
       )
         throw new Error(VAULT_CHANGED);
+      if (existing)
+        await tx.$queryRaw`SELECT id FROM vault_credentials WHERE id = ${existing.id} FOR UPDATE`;
       await assertVaultInUse(tx, scope);
       // First under the lock, so an item blocked while the request waited is never replaced.
       const current = await tx.vaultCredential.findFirst({
@@ -881,7 +893,8 @@ export async function prepareBotSecret(input: {
       // The kept key was read before the lock, so a value saved since then is read again.
       if (
         current?.id !== existing?.id ||
-        (keepsKey && current?.ciphertext !== existing?.ciphertext)
+        (keepsKey && current?.ciphertext !== existing?.ciphertext) ||
+        (current && ciphertextKeyId(current.ciphertext) !== ciphertextKeyId(existing!.ciphertext))
       )
         throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
       const labelled = {
@@ -904,15 +917,15 @@ export async function prepareBotSecret(input: {
       if (current)
         await tx.vaultCredential.update({
           where: { id },
-          data: { origin: destination.origin, ciphertext: stored.ciphertext, ...labelled },
+          data: { origin: destination.origin, ciphertext, ...labelled },
         });
       else
         await tx.vaultCredential.create({
-          data: { id, ...vault, ...destination, ...labelled, ciphertext: stored.ciphertext },
+          data: { id, ...vault, ...destination, ...labelled, ciphertext },
         });
       await saveItemBots(tx, scope, id, input.bots);
       if (usernames && destination.auth.type === "login")
-        usernames.set(`${id}:${stored.ciphertext}`, loginUsername(plaintext));
+        usernames.set(`${id}:${ciphertext}`, loginUsername(plaintext));
     },
   };
 }
@@ -925,13 +938,15 @@ export const SAVED_LOGIN_UNREADABLE = "The saved login could not be read. Try ag
  * hide the value, so it throws, never quoting the value.
  */
 async function loadSavedValue(
+  prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
-  row: { id: string; ciphertext: string },
+  row: Parameters<typeof openVaultValue>[2],
 ): Promise<string | undefined> {
   try {
-    return await secretStore.load(row.ciphertext, row.id);
+    return await openVaultValue(prisma, secretStore, row);
   } catch (error) {
     const unreadable =
+      error instanceof ContentDecryptionError ||
       error instanceof SecretNotFoundError ||
       (!(error instanceof SecretStoreUnavailableError) && isPermanentDecryptFailure(error));
     if (!unreadable) throw new Error(SAVED_LOGIN_UNREADABLE);
@@ -940,12 +955,13 @@ async function loadSavedValue(
 }
 
 async function savedLoginKey(
+  prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
-  row: { id: string; ciphertext: string; auth: unknown },
+  row: Parameters<typeof openVaultValue>[2] & { auth: unknown },
 ) {
   if (BotSecretAuth.safeParse(row.auth).data?.type !== "login") return undefined;
   // Only a value no one can read holds no key, so the save replaces it.
-  const plaintext = await loadSavedValue(secretStore, row);
+  const plaintext = await loadSavedValue(prisma, secretStore, row);
   try {
     return plaintext === undefined ? undefined : decodeLoginSecret(plaintext).otp;
   } catch {
@@ -961,6 +977,7 @@ function loginUsername(plaintext: string): string {
 }
 
 async function loginSaved(
+  prisma: PrismaClient,
   tx: Pick<Prisma.TransactionClient, "vaultCredential">,
   secretStore: Pick<SecretStore, "load">,
   vault: { userId: string; spaceId: string | null },
@@ -976,7 +993,7 @@ async function loginSaved(
       ...vault,
       OR: [{ origin: destination.origin }, { alsoOn: { has: destination.origin } }],
     },
-    select: { id: true, ciphertext: true, auth: true },
+    select: { ...vaultRow, auth: true },
   });
   for (const row of rows) {
     if (BotSecretAuth.safeParse(row.auth).data?.type !== "login") continue;
@@ -985,7 +1002,7 @@ async function loginSaved(
     if (saved === undefined) {
       // One no one can read can't be told apart from this login, so it doesn't count; one that
       // can't be read for now may be this login, so the import stops.
-      const plaintext = await loadSavedValue(secretStore, row);
+      const plaintext = await loadSavedValue(prisma, secretStore, row);
       if (plaintext === undefined) continue;
       try {
         saved = loginUsername(plaintext);
@@ -1134,12 +1151,18 @@ export async function listBotSecrets(
 ) {
   const rows = await prisma.vaultCredential.findMany({
     where: await usableVaultFields(prisma, scope),
-    select: { ...metadata, ...labels, id: true, ciphertext: true, alsoOn: true },
+    select: { ...metadata, ...labels, ...vaultRow, alsoOn: true },
     orderBy: { name: "asc" },
   });
   return Promise.all(
-    rows.map(async ({ id, ciphertext, title, note, alsoOn, ...row }) => {
-      const preview = await itemPreview(secretStore, { id, ciphertext, auth: row.auth });
+    rows.map(async ({ id, userId, spaceId, ciphertext, title, note, alsoOn, ...row }) => {
+      const preview = await itemPreview(prisma, secretStore, {
+        id,
+        userId,
+        spaceId,
+        ciphertext,
+        auth: row.auth,
+      });
       const view = botSecretToolView({ name: row.name, origin: row.origin, auth: row.auth });
       return {
         ...view,
@@ -1173,9 +1196,9 @@ export async function loginToolHints(
 ) {
   const row = await prisma.vaultCredential.findFirst({
     where: { ...(await usableVaultFields(prisma, scope)), name },
-    select: { id: true, ciphertext: true, auth: true, alsoOn: true },
+    select: { ...vaultRow, auth: true, alsoOn: true },
   });
-  return row ? loginHints(row.alsoOn, await itemPreview(secretStore, row)) : {};
+  return row ? loginHints(row.alsoOn, await itemPreview(prisma, secretStore, row)) : {};
 }
 
 // Owner-facing view: destination, labels and timestamps only, never the row id or ciphertext.
@@ -1194,13 +1217,14 @@ export async function listBotSecretMetadata(prisma: PrismaClient, scope: BotSecr
  * a contact. Nothing for other kinds, whose value is the secret itself, or a value that can't be read.
  */
 async function itemPreview(
+  prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
-  row: { id: string; ciphertext: string; auth: unknown },
+  row: Parameters<typeof openVaultValue>[2] & { auth: unknown },
 ): Promise<VaultPreview | undefined> {
   const type = BotSecretAuth.safeParse(row.auth).data?.type;
   if (type !== "login" && type !== "card" && type !== "contact") return undefined;
   try {
-    const plaintext = await secretStore.load(row.ciphertext, row.id);
+    const plaintext = await openVaultValue(prisma, secretStore, row);
     if (type === "card") return { card: cardSummary(decodeCardSecret(plaintext)) };
     if (type === "contact") return { contact: decodeContactSecret(plaintext) };
     const { fields, otp } = decodeLoginSecret(plaintext);
@@ -1255,7 +1279,7 @@ export async function listVaultItems(
 ) {
   const rows = await prisma.vaultCredential.findMany({
     where: { ...(await usableVaultFields(prisma, scope)), ...(name !== undefined ? { name } : {}) },
-    select: { ...ownerMetadata, id: true, ciphertext: true, policy: true, alsoOn: true },
+    select: { ...ownerMetadata, ...vaultRow, policy: true, alsoOn: true },
     orderBy: { name: "asc" },
   });
   // Whether each is limited in this Space, and the bots chosen here.
@@ -1272,9 +1296,15 @@ export async function listVaultItems(
     }),
   ]);
   return Promise.all(
-    rows.map(async ({ id, ciphertext, ...row }) => {
+    rows.map(async ({ id, userId, spaceId, ciphertext, ...row }) => {
       const preview = withPreview
-        ? await itemPreview(secretStore, { id, ciphertext, auth: row.auth })
+        ? await itemPreview(prisma, secretStore, {
+            id,
+            userId,
+            spaceId,
+            ciphertext,
+            auth: row.auth,
+          })
         : undefined;
       // A choice exists only while the item is limited: one left behind by an earlier save is none.
       const allBots = !limited.some((entry) => entry.credentialId === id);
@@ -1417,7 +1447,7 @@ export async function revealBotSecret(input: {
     where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
   });
   if (!row) return null;
-  const plaintext = await input.secretStore.load(row.ciphertext, row.id);
+  const plaintext = await openVaultValue(input.prisma, input.secretStore, row);
   const type = BotSecretAuth.safeParse(row.auth).data?.type;
   if (type === "login") return decodeLoginSecret(plaintext);
   if (type === "card") return { card: decodeCardSecret(plaintext) };
@@ -1476,10 +1506,7 @@ export async function requestWithBotSecret(input: {
   }
   const controller = new AbortController();
   const signal = combineSignals(input.signal, controller.signal, AbortSignal.timeout(30_000));
-  const plaintext = await input.secretStore.load(row.ciphertext, {
-    recordId: row.id,
-    signal,
-  });
+  const plaintext = await openVaultValue(input.prisma, input.secretStore, row, signal);
   const headers = new Headers({ accept: "application/json", "content-type": request.contentType });
   const { name: headerName, value: headerValue } = credentialHeader(destination, plaintext);
   const redactions = apiKeyRedactionForms(destination, plaintext);
@@ -1614,6 +1641,32 @@ export function cardRedactionForms(number: string): string[] {
   return [...new Set([number, digits, grouped, hyphenated].filter(Boolean))];
 }
 
+export class VaultKeyUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("A vault key could not be loaded from the key manager", { cause });
+    this.name = "VaultKeyUnavailableError";
+  }
+}
+
+/**
+ * A value to hide in every run. When the key manager can't provide its vault's key, the run must
+ * not start without hiding it, as content reads fail then too; an item whose own stored data
+ * doesn't open is skipped like any other unreadable item.
+ */
+async function openForRedaction(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  row: Parameters<typeof openVaultValue>[2],
+): Promise<string> {
+  try {
+    return await openVaultValue(prisma, secretStore, row);
+  } catch (error) {
+    if (ciphertextKeyId(row.ciphertext) !== undefined && !(error instanceof ContentDecryptionError))
+      throw new VaultKeyUnavailableError(error);
+    throw error;
+  }
+}
+
 /**
  * Redaction forms of every saved login's hidden fields, card number and API key in the vault the
  * run uses. A filled login or card stays on its page after the run that filled it, so each run
@@ -1634,42 +1687,45 @@ export async function loadLoginPasswordRedactions(
         auth: { path: ["type"], equals: type },
       })),
     },
-    select: { id: true, name: true, origin: true, auth: true, ciphertext: true },
+    select: { ...vaultRow, name: true, origin: true, auth: true },
   });
   const forms = new Set<string>();
   for (const row of rows) {
     const type = BotSecretAuth.safeParse(row.auth).data?.type;
     if (type === "card") {
       try {
-        const card = decodeCardSecret(await secretStore.load(row.ciphertext, row.id));
+        const card = decodeCardSecret(await openForRedaction(prisma, secretStore, row));
         for (const form of cardRedactionForms(card.number)) forms.add(form);
-      } catch {
+      } catch (error) {
+        if (error instanceof VaultKeyUnavailableError) throw error;
         getLogger().warn("saved card could not be loaded for redaction", { cardId: row.id });
       }
       continue;
     }
     if (type === "bearer" || type === "header" || type === "basic") {
       try {
-        const plaintext = await secretStore.load(row.ciphertext, row.id);
+        const plaintext = await openForRedaction(prisma, secretStore, row);
         // A short value would mangle unrelated text in every run; the run that sends it hides it.
         if (plaintext.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;
         const auth = BotSecretAuth.parse(row.auth);
         for (const form of apiKeyRedactionForms({ ...row, auth }, plaintext)) forms.add(form);
-      } catch {
+      } catch (error) {
+        if (error instanceof VaultKeyUnavailableError) throw error;
         getLogger().warn("saved API key could not be loaded for redaction", { keyId: row.id });
       }
       continue;
     }
     if (type !== "login") continue;
     try {
-      const { fields, otp } = decodeLoginSecret(await secretStore.load(row.ciphertext, row.id));
+      const { fields, otp } = decodeLoginSecret(await openForRedaction(prisma, secretStore, row));
       for (const form of otp ? authenticatorKeyRedactionForms(otp) : []) forms.add(form);
       for (const field of fields) {
         // Every run would mangle each occurrence of a short value; the filling run still hides it.
         if (!field.hidden || field.value.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;
         for (const form of passwordRedactionForms(field.value)) forms.add(form);
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof VaultKeyUnavailableError) throw error;
       // Like an unreadable command variable, it must not stop every computer tool. The id only:
       // an operator can see which login is no longer hidden. Not under a "secret" key, which
       // the logger scrubs.
@@ -1913,7 +1969,7 @@ export async function resolveLoginFill(input: {
       };
   }
   const { fields, otp } =
-    runLogin ?? decodeLoginSecret(await input.secretStore.load(row!.ciphertext, row!.id));
+    runLogin ?? decodeLoginSecret(await openVaultValue(input.prisma, input.secretStore, row!));
   const key = input.code && otp ? authenticatorKey(otp) : undefined;
   if (input.code && !key)
     return { error: "This login has no authenticator key. Use request_secret with oneTimeCode." };
@@ -2243,7 +2299,7 @@ export async function resolveVaultCardFill(input: {
         "This card changed after the user approved it, so nothing was typed. Call browser_act again to ask them.",
     };
   }
-  const card = decodeCardSecret(await input.secretStore.load(row.ciphertext, row.id));
+  const card = decodeCardSecret(await openVaultValue(input.prisma, input.secretStore, row));
   const fill = {
     origin: new URL(target.data.origin).origin,
     redactions: cardRedactionForms(card.number),
@@ -2263,7 +2319,8 @@ export async function resolveVaultCardFill(input: {
     : null;
   const postalCode =
     billing && BotSecretAuth.safeParse(billing.auth).data?.type === "contact"
-      ? decodeContactSecret(await input.secretStore.load(billing.ciphertext, billing.id)).postalCode
+      ? decodeContactSecret(await openVaultValue(input.prisma, input.secretStore, billing))
+          .postalCode
       : undefined;
   // A billing contact the bot can't use, or one removed, is withheld, not left for it to guess.
   if (card.billing && !billing)
