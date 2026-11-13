@@ -423,7 +423,7 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
     }
   });
 
-  it("counts items a process saved under its cached key version after a rotation, until reencrypt moves them", async () => {
+  it("saves with the newest key after another process rotates a cached vault", async () => {
     const windowAddress = `vault-window-${randomUUID()}@rakazo.test`;
     const member = await runAsSystem("vault key window fixture", () =>
       provisionMessagingIdentity(
@@ -465,12 +465,12 @@ describePostgres("vault values under the content keys (PostgreSQL)", () => {
       const later = await system.vaultCredential.findFirstOrThrow({
         where: { userId: member.userId, name: "later" },
       });
-      const [first] = await system.spaceKey.findMany({
+      const [newest] = await system.spaceKey.findMany({
         where: { spaceId: `user:${member.userId}` },
-        orderBy: { version: "asc" },
+        orderBy: { version: "desc" },
       });
-      expect(ciphertextKeyId(later.ciphertext)).toBe(first!.id);
-      expect(await olderKeys()).toBe(settled + 1);
+      expect(ciphertextKeyId(later.ciphertext)).toBe(newest!.id);
+      expect(await olderKeys()).toBe(settled);
       await reencrypt();
       expect(await olderKeys()).toBe(settled);
     } finally {
