@@ -127,10 +127,12 @@ function oneLine(value: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-/** Failed brace matches before a reply stops being searched: each one scans to its end. */
 const BOT_FIELDS = ["instructions", "memories", "user_facts", "skills", "routines", "apps"];
-/** The start of an export document; one left unclosed means the reply was cut off. */
-const EXPORT_START = /^\{\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/;
+/**
+ * The first property of an export document, after any whitespace following its `{`. Sticky,
+ * so each brace reads only its own whitespace run and the scan stays linear.
+ */
+const EXPORT_START = /\s*["'“‘]?(?:format|version|bots)["'“”‘’]?\s*:/y;
 
 /** Tolerates JSON5 syntax in pasted replies. Uploaded normalized documents use strict JSON. */
 function looseJson(source: string): unknown {
@@ -150,22 +152,29 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
   const starts: { index: number; export: boolean }[] = [];
   let quote: string | null = null;
   let candidates = 0;
+  // Quotes delimit strings only inside an export: a brace in chat text (`{Sam's bot}`) is prose.
+  let openExports = 0;
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index];
     if (quote) {
       if (char === "\\") index += 1;
       else if (char === quote) quote = null;
-    } else if (starts.length && (char === '"' || char === "'")) quote = char;
+    } else if (openExports > 0 && (char === '"' || char === "'")) quote = char;
     else if (char === "{") {
-      const candidate = EXPORT_START.test(source.slice(index, index + 80));
+      EXPORT_START.lastIndex = index + 1;
+      const candidate = EXPORT_START.test(source);
       if (candidate && ++candidates > 100) throw new GrokBotExportError("too_large");
+      if (candidate) openExports += 1;
       starts.push({ index, export: candidate });
     } else if (char === "}") {
       const start = starts.pop();
-      if (start?.export) found.push(source.slice(start.index, index + 1));
+      if (start?.export) {
+        openExports -= 1;
+        found.push(source.slice(start.index, index + 1));
+      }
     }
   }
-  return { found, cutOff: starts.some((start) => start.export) };
+  return { found, cutOff: openExports > 0 };
 }
 
 const isExportDocument = (value: unknown): value is Json =>

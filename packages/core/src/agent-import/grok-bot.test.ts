@@ -396,6 +396,13 @@ it("rejects explicit unrelated formats and newer string versions", () => {
   ).toThrow(GrokBotExportError);
 });
 
+it("finds an indented export and ignores apostrophes in chat braces", () => {
+  const indented = `{${" ".repeat(120)}"format": "grok-bot-export", "bots": [{"name": "Wren", "instructions": "Sam's rules."}]}`;
+  expect(parseGrokBotExport(`Here it is:\n\`\`\`json\n${indented}\n\`\`\``)[0]?.name).toBe("Wren");
+  const reply = `Notes on {Sam's bot}:\n\`\`\`json\n{"format": "grok-bot-export", "bots": [{"name": "Bramble", "instructions": "Use Sam's calendar."}]}\n\`\`\``;
+  expect(parseGrokBotExport(reply)[0]?.instructions).toBe("Use Sam's calendar.");
+});
+
 it("reads braces inside JSON5 strings in fenced replies", () => {
   expect(
     parseGrokBotExport(
