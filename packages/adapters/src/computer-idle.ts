@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerSleepJob,
+  isSandboxProviderOutage,
   runJobKey,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -897,18 +898,13 @@ export function providerKeepsHome(
 
 /**
  * Keeps a held computer up. The next idle check is already scheduled: it sends the heartbeat a
- * rate-limited or unreachable provider missed, and it or the holding run recovers a gone sandbox.
+ * provider outage missed, and it or the holding run recovers a gone sandbox.
  */
 async function sendHeldHeartbeat(sandbox: SandboxProvider, ref: ComputerRef): Promise<void> {
   try {
     await sandbox.keepAlive?.(ref);
   } catch (error) {
-    if (
-      !isSandboxGoneError(error) &&
-      !(error instanceof SandboxRateLimitError) &&
-      !(error instanceof SandboxUnresponsiveError)
-    )
-      throw error;
+    if (!isSandboxGoneError(error) && !isSandboxProviderOutage(error)) throw error;
   }
 }
 
