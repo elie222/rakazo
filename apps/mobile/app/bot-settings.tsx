@@ -101,6 +101,7 @@ export default function BotSettingsScreen() {
   const voiceChoice = useRef(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
 
   const crossSpaceSave = useMemo(
     () =>
@@ -391,7 +392,8 @@ export default function BotSettingsScreen() {
   }
 
   async function save() {
-    if (!botId || !bot || pending) return;
+    if (!botId || !bot || pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     setError(null);
     try {
@@ -460,6 +462,7 @@ export default function BotSettingsScreen() {
     } catch (err) {
       setError(errorText(err, t`Could not save bot`));
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
@@ -714,7 +717,7 @@ export default function BotSettingsScreen() {
                         label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
-                        if (pending || instructions !== bot.instructions) return;
+                        if (pendingRef.current || instructions !== bot.instructions) return;
                         const version = bot.instructionHistory?.find(
                           (item) => item.id === versionId,
                         );
@@ -724,6 +727,10 @@ export default function BotSettingsScreen() {
                             {
                               text: t`Restore`,
                               onPress: () => {
+                                if (pendingRef.current) return;
+                                pendingRef.current = true;
+                                setPending(true);
+                                setError(null);
                                 void rpc("bots/restoreInstructions", {
                                   botId: bot.id,
                                   versionId,
@@ -733,7 +740,11 @@ export default function BotSettingsScreen() {
                                     setBot(updated);
                                     setInstructions(updated.instructions ?? "");
                                   })
-                                  .catch((err) => setError(errorText(err)));
+                                  .catch((err) => setError(errorText(err)))
+                                  .finally(() => {
+                                    pendingRef.current = false;
+                                    setPending(false);
+                                  });
                               },
                             },
                           ]);
@@ -765,6 +776,7 @@ export default function BotSettingsScreen() {
                 label={t`Instructions`}
                 maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
                 value={instructions}
+                editable={!pending}
                 onChangeText={setInstructions}
                 backgroundColor={native.groupedCell}
                 fontSize={17}
