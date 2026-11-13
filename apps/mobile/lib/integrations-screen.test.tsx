@@ -443,7 +443,7 @@ it.each(["Add another", "Remove", "Uninstall"])(
     expect(state.write).not.toHaveBeenCalled();
     expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
     expect(container.textContent).not.toContain("Could not load integrations");
-    if (action !== "Uninstall") expect(container.textContent).toContain("Operation rejected");
+    expect(container.textContent).toContain("Operation rejected");
   },
 );
 

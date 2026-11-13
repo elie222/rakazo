@@ -808,8 +808,8 @@ export default function Integrations() {
       if (isCurrent()) closeDetail();
     } catch (reason) {
       if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t`Could not revoke connection`));
       await refresh().catch(() => undefined);
+      if (isCurrent()) setCatalogError(errorText(reason, t`Could not revoke connection`));
     } finally {
       if (isCurrent()) setPending(null);
     }
