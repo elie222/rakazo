@@ -67,4 +67,35 @@ describe("run recovery blockers", () => {
       select: { id: true, botId: true },
     });
   });
+
+  it("lets a routine that still holds the computer start while a person's run waits on it", async () => {
+    const now = new Date();
+    const waitingForPeople = vi.fn(async () => [{ id: "chat", botId: "bot" }]);
+    const prisma = {
+      computerExecutionLease: {
+        findMany: vi.fn(async () => [
+          {
+            computerId: "computer",
+            botId: "bot",
+            runId: "held-routine",
+            expiresAt: new Date(now.getTime() + 60_000),
+          },
+        ]),
+      },
+      run: { findMany: waitingForPeople },
+    } as unknown as PrismaClient;
+    const run = (id: string, trigger: string) => ({
+      id,
+      botId: "bot",
+      trigger,
+      bot: { computerId: "computer" },
+    });
+    const blockers = await findRunRecoveryBlockers(
+      prisma,
+      [run("held-routine", "routine"), run("chat", "user")],
+      now,
+    );
+    expect([...blockers]).toEqual([["chat", "held-routine"]]);
+    expect(waitingForPeople).not.toHaveBeenCalled();
+  });
 });

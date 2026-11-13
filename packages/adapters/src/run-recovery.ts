@@ -54,8 +54,13 @@ export async function findRunRecoveryBlockers(
     if (lease) blockers.set(run.id, lease.runId);
   }
   // A free computer goes to the bot's run a person is waiting on, as when a run releases it.
+  // A run that already holds the computer keeps it: the person's run waits on that lease, so
+  // holding the owner back too would leave neither able to start.
   const yielding = runs.filter(
-    (run) => isUnattendedRunTrigger(run.trigger) && !blockers.has(run.id),
+    (run) =>
+      isUnattendedRunTrigger(run.trigger) &&
+      !blockers.has(run.id) &&
+      !leases.some((lease) => lease.runId === run.id),
   );
   const attended = yielding.length
     ? await prisma.run.findMany({
