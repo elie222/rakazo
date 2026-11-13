@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 import type { ReactElement } from "react";
-import { act, StrictMode } from "react";
+import { act, Fragment, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Bars, LineChart, Pie } from "./charts.js";
-import { Metrics, Table } from "./data.js";
+import { Metrics, Status, Table } from "./data.js";
 import {
   CalendarHeatmap,
   ColumnSeries,
@@ -819,6 +819,58 @@ describe("data display", () => {
     act(() => root.unmount());
     unmounted = true;
     expect(observers[1]!.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("renders React node arrays in table cells like fragments", () => {
+    const tags = ["Ready", "Reviewed"].map((tag) => <Status key={tag}>{tag}</Status>);
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={[
+          [tags],
+          [<Fragment key="tags">{tags}</Fragment>],
+          [["Count: ", 0, null, false, [<strong key="nested">Nested</strong>]]],
+          [[]],
+          [{ text: tags, tone: "success" }],
+          ["Plain"],
+          [42],
+          [null],
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll("tbody td")];
+    expect(cells.map((cell) => cell.textContent)).toEqual([
+      "ReadyReviewed",
+      "ReadyReviewed",
+      "Count: 0Nested",
+      "",
+      "ReadyReviewed",
+      "Plain",
+      "42",
+      "",
+    ]);
+    expect(cells[0]!.innerHTML).toBe(cells[1]!.innerHTML);
+    expect(cells[2]!.querySelector("strong")?.textContent).toBe("Nested");
+  });
+
+  it("filters rows by labels rendered in array cells", () => {
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={Array.from({ length: 16 }, (_, i) => [
+          [<Status key="tag">{i === 0 ? "Ready" : "Pending"}</Status>],
+        ])}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filter, "Ready");
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "Ready",
+    ]);
   });
 
   it("sorts figures as numbers, filters long tables and pages very long ones", () => {
