@@ -18,7 +18,7 @@ export function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
  * Bump when the shape of replayed history changes (roles, labels, tool steps, images), so runs
  * record which replay format they used. Part of the prompt version.
  */
-export const HISTORY_FORMAT_VERSION = 1;
+export const HISTORY_FORMAT_VERSION = 2;
 
 /**
  * Provider, api and model stamped on replayed own replies. None matches a real model, so Pi
