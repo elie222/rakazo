@@ -221,7 +221,10 @@ describe("mobile thread event reduction", () => {
     ]);
     expect(completed?.messages[0]?.blocks).toEqual([
       { kind: "text", text: "Let me check now." },
-      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+      {
+        kind: "steps",
+        steps: [{ label: "Slack find channels", tool: "SLACK_FIND_CHANNELS", count: 1 }],
+      },
     ]);
     expect(blockText(completed?.messages[0] as MobileMessage)).toBe(
       "Let me check now.\nSlack find channels",
