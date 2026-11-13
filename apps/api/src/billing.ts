@@ -32,6 +32,7 @@ import {
   claimCheckoutLease,
   createBillingAccount,
   creditAccount,
+  expireModelCredits,
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
@@ -533,6 +534,8 @@ export function createBillingService(deps: {
     referralsEnabled: referrals.enabled,
     async selectFunding(actor, funding, client, interval) {
       const { organizationId } = await managedOrganization(actor);
+      // Choosing credits must see the balance left after any lapsed monthly credits expire.
+      if (funding === "credits") await expireModelCredits(prisma, organizationId);
       const account = await creditAccount(prisma, organizationId);
       const subscription = await billingAccountForOrganization(prisma, organizationId);
       if (
