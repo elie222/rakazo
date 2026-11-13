@@ -51,6 +51,7 @@ export function accountSecurity(
                 ),
               )
             ).some(Boolean),
+            linkedProviderIds: [...new Set(accounts.map((account) => account.providerId))],
             hasPassword: Boolean(credential?.password),
             passwordChangeEnabled,
             emailDeletion: Boolean(email),

@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { socialPresentation } from "../../../packages/auth/src/social-presentation";
 import { captureScreenshot } from "./helpers";
 
 const passwordOnly = {
@@ -11,8 +12,8 @@ const passwordOnly = {
 };
 
 const both = [
-  { id: "google", name: "Google" },
-  { id: "apple", name: "Apple", native: true },
+  { id: "google", name: "Google", presentation: socialPresentation("google") },
+  { id: "apple", name: "Apple", native: true, presentation: socialPresentation("apple") },
 ];
 
 async function mockSignedOut(page: Page, providers: typeof both | []) {
@@ -90,7 +91,9 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
 });
 
 test("one provider spans the chooser row", async ({ page }, testInfo) => {
-  await mockSignedOut(page, [{ id: "google", name: "Google" }]);
+  await mockSignedOut(page, [
+    { id: "google", name: "Google", presentation: socialPresentation("google") },
+  ]);
   await page.goto("/sign-in");
   const google = page.getByRole("button", { name: "Continue with Google" });
   const emailChoice = page.getByRole("button", { name: "Continue with email" });

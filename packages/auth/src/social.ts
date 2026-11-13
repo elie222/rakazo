@@ -1,5 +1,7 @@
+import type { SignInProvider } from "@rakazo/contracts";
 import type { AppleProfile } from "better-auth/social-providers";
 import { appleSigningKey } from "./apple-client-secret.js";
+import { socialPresentation } from "./social-presentation.js";
 
 interface AppleAccountLookup {
   account: {
@@ -46,6 +48,7 @@ export interface SocialAuthFields {
 }
 
 export interface PublicSignInProvider {
+  presentation?: SignInProvider["presentation"];
   id: string;
   name: string;
   /** The server accepts a native identity token for this provider. */
@@ -119,6 +122,7 @@ export function publicSignInProviders(
     providers.push({
       id: provider.id,
       name: provider.name,
+      presentation: socialPresentation(provider.id),
       ...(provider.id === "apple" && provider.bundleId ? { native: true } : {}),
     });
   }

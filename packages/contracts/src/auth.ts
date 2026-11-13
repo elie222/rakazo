@@ -3,6 +3,24 @@ import { z } from "zod";
 export const signInProviderSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  presentation: z
+    .object({
+      variant: z.enum(["solid", "outline"]),
+      mark: z
+        .object({
+          viewBox: z.string().max(64),
+          paths: z
+            .array(
+              z.object({
+                d: z.string().max(4096),
+                fill: z.string().regex(/^(currentColor|#[0-9a-fA-F]{6})$/),
+              }),
+            )
+            .max(8),
+        })
+        .optional(),
+    })
+    .optional(),
   /** The server accepts a native identity token for this provider. */
   native: z.boolean().optional(),
 });
@@ -53,6 +71,7 @@ export const accountSecuritySchema = z.object({
   passwordChangeEnabled: z.boolean().optional(),
   freshOidcAuth: z.boolean(),
   ssoLinked: z.boolean(),
+  linkedProviderIds: z.array(z.string()).optional(),
   emailDeletion: z.boolean(),
   sso: z.object({ name: z.string().min(1) }).nullable(),
 });

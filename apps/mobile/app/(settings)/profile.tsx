@@ -49,6 +49,7 @@ export default function Profile() {
   const stacked = useStackedSettings();
   const colorScheme = useResolvedAppearance();
   const [providers, setProviders] = useState<SignInProvider[]>([]);
+
   const [me, setMe] = useState<MobileMe | null>(null);
   const account = accountDisplay(me ?? {}, t`Your account`);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
@@ -77,6 +78,9 @@ export default function Profile() {
   });
 
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
+  const unlinkedProviders = security?.linkedProviderIds
+    ? providers.filter((provider) => !security.linkedProviderIds?.includes(provider.id))
+    : [];
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
   const deletion = useAccountDeletion({ onSecurity: setSecurity });
   const { run: securityAction, pending } = deletion;
@@ -197,7 +201,9 @@ export default function Profile() {
           />
         </SettingsGroup>
 
-        {(security?.sso && !security.ssoLinked) || providers.length > 0 || canChangePassword ? (
+        {(security?.sso && !security.ssoLinked) ||
+        unlinkedProviders.length > 0 ||
+        canChangePassword ? (
           <SettingsGroup>
             {security?.sso && !security.ssoLinked ? (
               <SettingsRow
@@ -213,7 +219,7 @@ export default function Profile() {
                 }
               />
             ) : null}
-            {providers.map((provider) => (
+            {unlinkedProviders.map((provider) => (
               <SettingsRow
                 key={provider.id}
                 accessibilityRole="button"
@@ -222,7 +228,8 @@ export default function Profile() {
                 title={t`Link ${provider.name}`}
                 onPress={() =>
                   void securityAction(async () => {
-                    await continueWithSso("link", provider.id);
+                    if (await continueWithSso("link", provider.id))
+                      setSecurity(await fetchAccountSecurity());
                   })
                 }
               />

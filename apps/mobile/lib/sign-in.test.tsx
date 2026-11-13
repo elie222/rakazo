@@ -122,6 +122,7 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
 }));
 vi.mock("expo-apple-authentication", () => ({
+  isAvailableAsync: vi.fn(async () => true),
   AppleAuthenticationButton: ({
     onPress,
     accessibilityLabel,
@@ -129,8 +130,8 @@ vi.mock("expo-apple-authentication", () => ({
     onPress: () => void;
     accessibilityLabel?: string;
   }) => (
-    <button type="button" onClick={onPress}>
-      {accessibilityLabel}
+    <button type="button" data-native-provider="true" onClick={onPress}>
+      {accessibilityLabel ?? "Continue with Apple"}
     </button>
   ),
   AppleAuthenticationButtonType: { CONTINUE: 1, SIGN_IN: 0, SIGN_UP: 2 },
@@ -275,6 +276,7 @@ it("offers each configured provider and uses native Apple on iOS", async () => {
   expect(input("Email")).toBeNull();
   expect(button("Continue with Google")).toBeDefined();
   expect(button("Continue with Apple")).toBeDefined();
+  expect(host.querySelector("[data-native-provider]")).not.toBeNull();
   expect(button("Continue with email")).toBeDefined();
   await press("Continue with Google");
   expect(continueWithSso).toHaveBeenCalledWith("sign-in", "google");

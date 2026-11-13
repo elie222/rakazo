@@ -84,7 +84,7 @@ async function click(label: string) {
 it("uses the shared desktop flow for linking", async () => {
   await render();
   await click("Link SSO");
-  const failed = `${window.location.origin}${window.location.pathname}?sso-link=1`;
+  const failed = `${window.location.origin}${window.location.pathname}?sso-link=oidc`;
   expect(runSsoFlow).toHaveBeenCalledWith(expect.any(Function), [window.location.href, failed]);
   expect(authClient.linkSocial).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -236,4 +236,31 @@ it("links the selected dedicated provider through the authenticated desktop flow
   expect(authClient.linkSocial).toHaveBeenCalledWith(
     expect.objectContaining({ provider: "google", disableRedirect: true }),
   );
+});
+
+it("shows a provider return error only on the row that started linking", async () => {
+  window.history.replaceState(null, "", "/?sso-link=google&error=account_not_linked");
+  await act(async () =>
+    root.render(
+      <>
+        <LinkSsoRow />
+        <LinkSsoRow provider={{ id: "google", name: "Google" }} />
+        <LinkSsoRow provider={{ id: "apple", name: "Apple" }} />
+      </>,
+    ),
+  );
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(host.querySelector('[role="alert"]')?.parentElement?.textContent).toContain("Google");
+});
+
+it("refreshes authenticated linked-account state after a successful provider link", async () => {
+  window.history.replaceState(null, "", "/");
+  const onSecurity = vi.fn();
+  const linked = { ...security, linkedProviderIds: ["google"] };
+  vi.mocked(fetchAccountSecurity).mockResolvedValue(linked);
+  await act(async () =>
+    root.render(<LinkSsoRow provider={{ id: "google", name: "Google" }} onSecurity={onSecurity} />),
+  );
+  await click("Link Google");
+  expect(onSecurity).toHaveBeenCalledWith(linked);
 });

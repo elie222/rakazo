@@ -1866,3 +1866,24 @@ it("starts Google linking only for an authenticated account and rejects provider
       .status,
   ).toBe(403);
 });
+
+it("reports only the authenticated user's linked provider ids", async () => {
+  setup();
+  expect((await request("/account-security")).status).toBe(401);
+  await signIn();
+  const account = rows("account")[0]!;
+  state.db.account!.push({
+    ...account,
+    id: "other-provider-account",
+    providerId: "social-example",
+  });
+  state.db.account!.push({
+    ...account,
+    id: "other-user-account",
+    userId: "different-user",
+    providerId: "private-provider",
+  });
+  const response = await request("/account-security");
+  expect(response.status).toBe(200);
+  expect((await response.json()).linkedProviderIds).toEqual(["oidc", "social-example"]);
+});

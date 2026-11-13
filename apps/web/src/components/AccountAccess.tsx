@@ -4,7 +4,6 @@ import { Button, Input, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
-import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearComposerDrafts } from "../lib/composer-draft";
 import { forgetSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
@@ -214,18 +213,20 @@ export function DeleteAccountForm({
 /** Links the organization's SSO identity to an account that signed up another way. */
 export function LinkSsoRow({
   provider = { id: "oidc", name: "SSO" },
+  onSecurity,
 }: {
   provider?: SignInProvider;
+  onSecurity?: (security: AccountSecurity) => void;
 }) {
   const { t } = useLingui();
   const [error, setError] = useState<string | null>(() => {
-    const code = redirectError("link");
+    const code = redirectError("link", provider.id);
     return code ? authErrorText({ code }, t`Could not continue`) : null;
   });
   async function link() {
     setError(null);
     const returnTo = ssoReturnURL(false);
-    const failed = ssoReturnURL(true);
+    const failed = ssoReturnURL(true, provider.id);
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
@@ -238,6 +239,7 @@ export function LinkSsoRow({
         [returnTo, failed],
       );
       if (result.error) setError(authErrorText(result.error, t`Could not continue`));
+      else if (onSecurity) onSecurity(await fetchAccountSecurity());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t`Could not continue`);
     }
@@ -260,36 +262,22 @@ export function LinkSsoRow({
   );
 }
 
-export function LinkProviderRows() {
-  const [providers, setProviders] = useState<SignInProvider[]>([]);
-  useEffect(() => {
-    let active = true;
-    void fetchAuthCapabilities()
-      .then((capabilities) => {
-        if (active)
-          setProviders((capabilities.providers ?? []).filter((provider) => provider.id !== "oidc"));
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
-  return providers.map((provider) => <LinkSsoRow key={provider.id} provider={provider} />);
-}
-
 const LINK_RETURN = "sso-link";
 
 /** This page without an earlier redirect's result; a failed link's return is marked as one. */
-function ssoReturnURL(failedLink: boolean): string {
+function ssoReturnURL(failedLink: boolean, providerId = "oidc"): string {
   const url = new URL(window.location.href);
   url.searchParams.delete("error");
   url.searchParams.delete(LINK_RETURN);
-  if (failedLink) url.searchParams.set(LINK_RETURN, "1");
+  if (failedLink) url.searchParams.set(LINK_RETURN, providerId);
   return url.href;
 }
 
 /** The error an SSO redirect came back with, for the flow that started it. */
-function redirectError(flow: "link" | "delete"): string | null {
+function redirectError(flow: "link" | "delete", providerId = "oidc"): string | null {
   const params = new URLSearchParams(window.location.search);
+  const marker = params.get(LINK_RETURN);
+  if (flow === "link" && marker !== providerId && !(marker === "1" && providerId === "oidc"))
+    return null;
   return params.has(LINK_RETURN) === (flow === "link") ? params.get("error") : null;
 }

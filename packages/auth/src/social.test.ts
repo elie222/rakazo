@@ -9,6 +9,7 @@ import {
   socialTrustedOrigins,
   trustedSocialLinking,
 } from "./social.js";
+import { socialPresentation } from "./social-presentation.js";
 
 const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   .privateKey.export({
@@ -77,8 +78,8 @@ it("lists OpenID Connect ahead of the configured social providers, without secre
   });
   expect(publicSignInProviders(social, { name: "SSO" })).toEqual([
     { id: "oidc", name: "SSO" },
-    { id: "google", name: "Google" },
-    { id: "apple", name: "Apple", native: true },
+    { id: "google", name: "Google", presentation: socialPresentation("google") },
+    { id: "apple", name: "Apple", native: true, presentation: socialPresentation("apple") },
   ]);
   expect(JSON.stringify(publicSignInProviders(social, undefined))).not.toContain("google-secret");
   expect(JSON.stringify(publicSignInProviders(social, undefined))).not.toContain("PRIVATE KEY");
