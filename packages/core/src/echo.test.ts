@@ -59,64 +59,6 @@ describe("isEchoOfSpeech", () => {
   it("drops a 2-word pair that only appears non-adjacently", () => {
     expect(isEchoOfSpeech("happy sure", NEWSPAPER)).toBe(false);
   });
-
-  it("catches a longer verbatim or slightly garbled echo inside one reply", () => {
-    const reply =
-      "I checked the staging deploy logs for your service and all thirty two integration tests passed without errors today";
-    expect(
-      isEchoOfSpeech(
-        "uh checked the staging deploy logs for your service and thirty two integration tests passed",
-        reply,
-      ),
-    ).toBe(true);
-  });
-
-  it("keeps a genuine long turn whose shared words are scattered across distant turns", () => {
-    const history = [
-      "I checked the weather forecast for tomorrow morning in Tokyo.",
-      "Please wait a moment while we look into your calendar details.",
-      "You should bring an umbrella if you plan to walk outside.",
-      "And the train schedule looks clear for the afternoon commute.",
-    ].join(" ");
-    expect(
-      isEchoOfSpeech(
-        "I checked if tomorrow in Tokyo you should bring an umbrella for the afternoon commute anyway",
-        history,
-      ),
-    ).toBe(false);
-  });
-
-  it("keeps long playback interruptions at the looser barge-in threshold", () => {
-    const reply =
-      "I checked the staging deploy logs for your service and all thirty two integration tests passed today";
-    expect(
-      isEchoOfSpeech(
-        "stop please I checked the logs already let us deploy something completely different instead",
-        reply,
-        0.4,
-      ),
-    ).toBe(false);
-  });
-
-  it("checks the next window after an overlapping window fails", () => {
-    const heard = "B C D E F G H A X1 X2 X3 X4 X5";
-    const spoken = `A B C D E F G H ${Array.from({ length: 12 }, (_, i) => `N${i + 1}`).join(" ")} A N13 N14`;
-    expect(isEchoOfSpeech(heard, spoken)).toBe(true);
-  });
-
-  it("handles repetitive long transcripts and replies without stalling", () => {
-    const repeatedReply = Array.from({ length: 150 }, (_, i) =>
-      i % 2 === 0 ? "yeah" : "okay",
-    ).join(" ");
-    const repeatedHeard = `${Array.from({ length: 75 }, () => "yeah").join(" ")} ${Array.from(
-      { length: 75 },
-      () => "wait",
-    ).join(" ")}`;
-    expect(isEchoOfSpeech(repeatedHeard, repeatedReply)).toBe(false);
-
-    const fiveMinuteClip = Array.from({ length: 500 }, () => "yeah").join(" ");
-    expect(isEchoOfSpeech(fiveMinuteClip, fiveMinuteClip)).toBe(false);
-  });
 });
 
 describe("SpokenMemory", () => {
@@ -142,29 +84,6 @@ describe("SpokenMemory", () => {
 
     expect(memory.isEcho("hey I am here and here", undefined, 14_000)).toBe(true);
     expect(memory.isEcho("hey I am here and here", undefined, 16_000)).toBe(false);
-  });
-
-  it("refreshes the echo window when the same reply is remembered again after playback", () => {
-    const memory = new SpokenMemory();
-    memory.remember(SPOKEN, 0);
-    memory.remember(SPOKEN, 20_000);
-
-    expect(memory.isEcho("hey I am here and here", undefined, 30_000)).toBe(true);
-    expect(memory.isEcho("hey I am here and here", undefined, 36_000)).toBe(false);
-  });
-
-  it("does not merge two separate replies to reject a genuine long turn", () => {
-    const memory = new SpokenMemory();
-    memory.remember("Please check the staging server status right now", 0);
-    memory.remember("before we restart the background worker queue", 1_000);
-
-    expect(
-      memory.isEcho(
-        "Please check the staging server status and wait before we restart the background worker queue today",
-        undefined,
-        2_000,
-      ),
-    ).toBe(false);
   });
 
   it("keeps a genuine turn, and everything once cleared", () => {

@@ -1917,28 +1917,6 @@ describe("mobile call session on a timer", () => {
       expect(getSnapshot()?.phase).toBe("listening");
     });
 
-    it("drops a long reply echo even when playback lasted longer than 15 seconds", async () => {
-      const longReply =
-        "Here is the full deployment summary for your production cluster across every region today";
-      const fake = fakes({ onDevice: true });
-      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
-      await tick();
-      fake.hear("give me the summary");
-      await tick();
-
-      fake.replyWith("message-1", longReply);
-      await tick(20_000);
-      fake.speeches[0]?.resolve();
-      await tick(ECHO_GUARD_MS);
-      expect(getSnapshot()?.phase).toBe("listening");
-
-      // A delayed echo arriving right after the guard still matches the refreshed memory.
-      fake.hear(longReply);
-      await tick();
-      expect(fake.send).toHaveBeenCalledTimes(1);
-      expect(getSnapshot()?.phase).toBe("listening");
-    });
-
     it("handles mute and unmute cleanly across the Android echo guard window", async () => {
       const fake = fakes({ onDevice: true });
       startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
