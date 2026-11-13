@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "postal-mime";
 import { htmlToPlainText } from "./keyless-http-web.js";
+import { sliceWellFormed } from "./utf8.js";
 
 /** Largest raw message accepted, the size common mail relays deliver. */
 export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;
@@ -148,7 +149,7 @@ export async function readInboundEmail(
     (email.html ? htmlToPlainText(email.html.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS * 10)) : "");
   const text =
     body.length > INBOUND_EMAIL_TEXT_MAX_CHARS
-      ? `${body.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS)}\n[…]`
+      ? `${sliceWellFormed(body, INBOUND_EMAIL_TEXT_MAX_CHARS)}\n[…]`
       : body;
   const fromName =
     email.from && !email.from.group && email.from.address?.trim().toLowerCase() === sender
