@@ -1475,6 +1475,184 @@ export async function forgetBotSecret(prisma: PrismaClient, scope: BotSecretScop
  */
 export type VaultItemUse = { id: string; name: string; spaceId: string | null; kind: string };
 
+/** Response headers APIs page and rate-limit with. Other headers can echo request values. */
+const PAGING_HEADERS = [
+  "content-range",
+  "retry-after",
+  "x-next-page",
+  "x-page",
+  "x-per-page",
+  "x-total",
+  "x-total-count",
+  "x-total-pages",
+] as const;
+
+/** A longer link or paging header value is dropped rather than crowd out the body. */
+const MAX_PAGING_VALUE_CHARS = 2_000;
+/** All returned links and paging headers together; past this, the less useful ones are left out. */
+const MAX_PAGING_TOTAL_CHARS = 6_000;
+
+/**
+ * The entries of a `Link` header (RFC 8288) as their target and lowercased parameters. Quoted
+ * parameter values may hold commas and semicolons; the first occurrence of a parameter counts.
+ */
+export function linkHeaderEntries(
+  header: string,
+): { target: string; params: Map<string, string> }[] {
+  const entries: { target: string; params: Map<string, string> }[] = [];
+  let i = 0;
+  const skipSpace = () => {
+    while (i < header.length && /[ \t]/.test(header[i]!)) i++;
+  };
+  // Skips to the next top-level `;` or `,`, stepping over quoted strings.
+  const skipValue = () => {
+    while (i < header.length && header[i] !== ";" && header[i] !== ",") {
+      if (header[i] === '"') readQuoted();
+      else i++;
+    }
+  };
+  const readQuoted = () => {
+    let value = "";
+    i++;
+    while (i < header.length && header[i] !== '"') {
+      if (header[i] === "\\" && i + 1 < header.length) i++;
+      value += header[i++];
+    }
+    i++;
+    return value;
+  };
+  while (i < header.length) {
+    skipSpace();
+    if (header[i] !== "<") {
+      // Not an entry start: skip to the next top-level separator.
+      skipValue();
+      i++;
+      continue;
+    }
+    const end = header.indexOf(">", i);
+    if (end === -1) break;
+    const target = header.slice(i + 1, end).trim();
+    i = end + 1;
+    const params = new Map<string, string>();
+    for (;;) {
+      skipSpace();
+      if (header[i] !== ";") break;
+      i++;
+      skipSpace();
+      const nameStart = i;
+      while (i < header.length && !/[=;,\s]/.test(header[i]!)) i++;
+      const name = header.slice(nameStart, i).toLowerCase();
+      skipSpace();
+      let value = "";
+      if (header[i] === "=") {
+        i++;
+        skipSpace();
+        if (header[i] === '"') value = readQuoted();
+        else {
+          const valueStart = i;
+          while (i < header.length && !/[;,\s]/.test(header[i]!)) i++;
+          value = header.slice(valueStart, i);
+        }
+      }
+      if (name && !params.has(name)) params.set(name, value);
+    }
+    skipValue();
+    if (header[i] === ",") i++;
+    entries.push({ target, params });
+  }
+  return entries;
+}
+
+/**
+ * Where a paged API says the rest is: `links` from the `Link` header by relation, resolved
+ * against the request URL (Canvas and GitHub put the next page there), and `headers` for the
+ * other paging headers present. A value too long, a link that is not http(s), or anything that
+ * carries the credential is left out.
+ */
+export function responsePaging(
+  headers: Headers,
+  requestUrl: string,
+  secrets: readonly string[] = [],
+): { links?: Record<string, string>; headers?: Record<string, string> } {
+  // A Map, so a relation named like an Object property (constructor, __proto__) is kept as given.
+  const links = new Map<string, string>();
+  for (const { target, params } of linkHeaderEntries(headers.get("link") ?? "")) {
+    let url: URL;
+    try {
+      url = new URL(target, requestUrl);
+    } catch {
+      continue;
+    }
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      url.href.length > MAX_PAGING_VALUE_CHARS ||
+      carriesSecret(target, secrets) ||
+      carriesSecret(url.href, secrets)
+    )
+      continue;
+    // Registered relation names compare case-insensitively; extension relations are URIs.
+    for (const rel of params.get("rel")?.split(/\s+/) ?? []) {
+      const name = /[:/]/.test(rel) ? rel : rel.toLowerCase();
+      // An extension relation is a URI too, and can carry the credential like the link.
+      if (name && !links.has(name) && !carriesSecret(name, secrets)) links.set(name, url.href);
+    }
+  }
+  const found = new Map<string, string>();
+  for (const name of PAGING_HEADERS) {
+    const value = headers.get(name);
+    if (value !== null && value.length <= MAX_PAGING_VALUE_CHARS && !carriesSecret(value, secrets))
+      found.set(name, value);
+  }
+  let budget = MAX_PAGING_TOTAL_CHARS;
+  const withinBudget = (entries: Iterable<[string, string]>) => {
+    const kept: [string, string][] = [];
+    for (const [name, value] of entries) {
+      const size = name.length + value.length;
+      if (size > budget) continue;
+      budget -= size;
+      kept.push([name, value]);
+    }
+    return kept;
+  };
+  // The next page first, then the paging headers, then the other links.
+  const next = links.get("next");
+  const keptNext = withinBudget(next === undefined ? [] : [["next", next]]);
+  const keptHeaders = withinBudget(found);
+  const keptLinks = [...keptNext, ...withinBudget([...links].filter(([name]) => name !== "next"))];
+  return {
+    ...(keptLinks.length ? { links: Object.fromEntries(keptLinks) } : {}),
+    ...(keptHeaders.length ? { headers: Object.fromEntries(keptHeaders) } : {}),
+  };
+}
+
+/**
+ * Whether a value holds any form of a credential, compared case-insensitively and also after
+ * percent-decoding (any case of escape, repeated), so an echo the body redaction would miss is
+ * caught. A link or header that does is left out whole: with the value replaced it would not work.
+ */
+function carriesSecret(value: string, secrets: readonly string[]): boolean {
+  if (secrets.length === 0) return false;
+  const forms = [value, value.replace(/\+/g, " ")];
+  let decoded = value;
+  for (let round = 0; round < 3; round++) {
+    const next = decoded.replace(/(?:%[0-9a-f]{2})+/gi, (run) => {
+      try {
+        return decodeURIComponent(run);
+      } catch {
+        return run;
+      }
+    });
+    if (next === decoded) break;
+    forms.push(next, next.replace(/\+/g, " "));
+    decoded = next;
+  }
+  const haystacks = forms.map((form) => form.toLowerCase());
+  return secrets.some((secret) => {
+    const needle = secret.toLowerCase();
+    return needle.length > 0 && haystacks.some((haystack) => haystack.includes(needle));
+  });
+}
+
 /** Credentials are resolved only inside this destination-bound HTTP boundary. */
 export async function requestWithBotSecret(input: {
   prisma: PrismaClient;
@@ -1568,8 +1746,13 @@ export async function requestWithBotSecret(input: {
     }
     // Redact before truncating, so an output boundary cannot expose part of a value.
     const safe = JSON.stringify(redactConnectorPayload(body, redactions));
+    const paging = redactConnectorPayload(
+      responsePaging(response.headers, url.href, redactions),
+      redactions,
+    ) as Record<string, unknown>;
     return {
       status: response.status,
+      ...paging,
       body: safe.length > 20_000 ? safe.slice(0, 20_000) : JSON.parse(safe),
       truncated: safe.length > 20_000,
     };

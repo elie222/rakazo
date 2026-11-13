@@ -655,7 +655,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "secret_request",
     description:
-      "Make an authenticated HTTPS request using a saved credential name. The backend injects authentication only at its saved origin. Redirects are rejected; response echoes of the credential are redacted. Use normal request URLs and bodies without secret placeholders.",
+      "Make an authenticated HTTPS request using a saved credential name. The backend injects authentication only at its saved origin. Redirects are rejected; response echoes of the credential are redacted. Use normal request URLs and bodies without secret placeholders. A paged response returns its Link header as links (request links.next to read on) and paging headers such as x-next-page or x-total-count in headers; when an API pages by headers, build the next page's URL by that API's rules. A missing links.next alone does not mean the list is complete.",
     inputSchema: z.toJSONSchema(SecretHttpRequest, { io: "input" }),
   },
   {

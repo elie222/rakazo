@@ -622,6 +622,25 @@ describe("NativeStackController", () => {
     expect(controller.hasProcesses()).toBe(false);
   });
 
+  it("fails the start when every service exits while the final health probe resolves", async () => {
+    const { deps, children } = harness({
+      probe: () =>
+        new Promise((resolve) => {
+          for (const child of children) child.exit();
+          setImmediate(() => resolve("v1.0.0"));
+        }),
+    });
+    const controller = new NativeStackController(deps);
+    const state = await controller.start();
+    expect(state.phase).toBe("failed");
+    expect(state.message).toBe(
+      "Rakazo services did not start. Check the output below, then retry.",
+    );
+    expect(state.output).toContain("postgres exited");
+    expect(controller.hasProcesses()).toBe(false);
+    await expect(controller.stop()).resolves.toMatchObject({ phase: "idle" });
+  });
+
   it("reports a failed or tampered download without starting anything", async () => {
     const { deps, children } = harness();
     const controller = new NativeStackController({
