@@ -18,6 +18,24 @@ export function voiceCallInstruction(disabled?: ReadonlySet<string>): string {
     : VOICE_CALL_BASE_INSTRUCTION;
 }
 
+/** Opens the computer guidance on every run that has a computer. */
+export const COMPUTER_USE_INSTRUCTION =
+  "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.";
+
+export const PRIVATE_WORKSPACE_INSTRUCTION =
+  "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+
+/** Where commands run when the computer is a host with its own shell rather than a sandbox. */
+export function hostComputerInstruction(
+  computerKind: string | undefined,
+  host: { home: unknown; shell: unknown; platform: string },
+): string {
+  const shell = `Home: ${JSON.stringify(host.home)}. Shell: ${JSON.stringify(host.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash.`;
+  return computerKind === "wuying"
+    ? `Commands run on a Windows cloud computer. ${shell} Files outside the bot workspace can be accessed through commands. The screen shows the Windows desktop; use the graphical tools for apps without a command line.`
+    : `Commands run on the user's ${host.platform} computer with their account permissions. ${shell} Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`;
+}
+
 /** Cap the roster so a large Space cannot flood the prompt. */
 export const BOT_DIRECTORY_LIMIT = 40;
 
@@ -120,6 +138,7 @@ export function persistentComputerInstruction(options: {
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
+  offeredToolNames?: ReadonlySet<string>,
 ): string | undefined {
   if (computerKind !== "docker") return undefined;
   const navigate = builtinOffered(disabled, "browser_navigate");
@@ -128,7 +147,17 @@ export function dockerComputerToolInstruction(
   const parts = [
     "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets.",
   ];
-  if (builtinOffered(disabled, "shell")) {
+  // Tool selection can drop shell (creation intro, background helpers) while bot
+  // settings leave it enabled, so the shell guidance follows the tools the run offers.
+  const shellOffered = offeredToolNames
+    ? offeredToolNames.has("shell")
+    : builtinOffered(disabled, "shell");
+  if (shellOffered) {
+    parts.push(
+      "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
+    );
+  }
+  if (shellOffered) {
     parts.push(
       "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
     );
@@ -182,7 +211,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   const clauses: string[] = [];
   if (builtinOffered(disabled, "request_secret")) {
     const fill = builtinOffered(disabled, "browser_act")
-      ? "; fill it with browser_act fill_secret, which only works on the saved site"
+      ? "; fill it with browser_act fill_secret, which only works on its site and its alsoOn sites"
       : "";
     clauses.push(
       `Use request_secret with a credential destination to save reusable API credentials, or with auth type login when the user wants a website login saved${fill}. When your shell commands need a secret value, use request_secret with auth type command; it is exported as the environment variable that request_secret and list_secrets report.`,
@@ -190,7 +219,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a code a site texts or emails, use request_secret oneTimeCode and browser_act fill_code, never chat.",
+      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {
@@ -305,7 +334,7 @@ function toolUsageLine(parts: {
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
     builtinOffered(disabled, "request_takeover")
-      ? "Use request_takeover when the user must provide protected input or human judgment."
+      ? "When the user only needs to see something on the computer screen, such as a QR code, take a screenshot and use attach_file to send it into the chat. Use request_takeover when the user must provide protected input or human judgment, or operate the screen."
       : undefined,
     "Use destination_write only for connected destination records.",
   ].filter((clause): clause is string => Boolean(clause));

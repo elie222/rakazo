@@ -1,6 +1,9 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import type { ConnectorTool, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import { describe, expect, it, vi } from "vitest";
 import { appendMemoryFact, editMemory, selectMemoryTools } from "./memory-tools.js";
+import type { RunContext } from "./run-context.js";
+import type { ToolCall } from "./run-tool-gate.js";
+import { memoryTools } from "./run-tools-memory.js";
 
 function tool(name: string): ConnectorTool {
   return { name, description: name, inputSchema: { type: "object", properties: {} } };
@@ -11,29 +14,123 @@ const allThree = [
   tool("recall_memory"),
   tool("save_memory"),
   tool("forget_memory"),
+  tool("reflect_memory"),
   tool("shell"),
 ];
 
 describe("selectMemoryTools", () => {
   it("keeps native remember and drops semantic memory tools when unconfigured", () => {
-    const names = selectMemoryTools(allThree, false, false).map((t) => t.name);
+    const names = selectMemoryTools(allThree, false, false, false).map((t) => t.name);
     expect(names).toEqual(["remember", "shell"]);
   });
 
   it("keeps native remember beside semantic memory tools when configured", () => {
-    const names = selectMemoryTools(allThree, true, true).map((t) => t.name);
-    expect(names).toEqual(["remember", "recall_memory", "save_memory", "forget_memory", "shell"]);
+    const names = selectMemoryTools(allThree, true, true, true).map((t) => t.name);
+    expect(names).toEqual([
+      "remember",
+      "recall_memory",
+      "save_memory",
+      "forget_memory",
+      "reflect_memory",
+      "shell",
+    ]);
   });
 
   it("keeps native remember and drops forget_memory when the provider cannot forget", () => {
-    const names = selectMemoryTools(allThree, true, false).map((t) => t.name);
-    expect(names).toEqual(["remember", "recall_memory", "save_memory", "shell"]);
+    const names = selectMemoryTools(allThree, true, false, true).map((t) => t.name);
+    expect(names).toEqual(["remember", "recall_memory", "save_memory", "reflect_memory", "shell"]);
+  });
+
+  it("offers reflect_memory only when the provider can reflect", () => {
+    const names = selectMemoryTools(allThree, true, true, false).map((t) => t.name);
+    expect(names).toEqual(["remember", "recall_memory", "save_memory", "forget_memory", "shell"]);
+    expect(selectMemoryTools(allThree, false, true, true).map((t) => t.name)).not.toContain(
+      "reflect_memory",
+    );
   });
 
   it("is a no-op for tool lists with no memory tools at all", () => {
     const shellOnly = [tool("shell")];
-    expect(selectMemoryTools(shellOnly, false, false)).toEqual(shellOnly);
-    expect(selectMemoryTools(shellOnly, true, true)).toEqual(shellOnly);
+    expect(selectMemoryTools(shellOnly, false, false, false)).toEqual(shellOnly);
+    expect(selectMemoryTools(shellOnly, true, true, true)).toEqual(shellOnly);
+  });
+});
+
+describe("reflect_memory", () => {
+  function reflectWith(reflect: SemanticMemoryProvider["reflect"]) {
+    const context = { operationId: "op-1" };
+    const ctx = {
+      bot: { id: "bot-1" },
+      context,
+      runId: "run-1",
+      state: { tainted: false },
+      memory: { semantic: { reflect }, scope: "shared" },
+    } as unknown as RunContext;
+    const call = { name: "reflect_memory", args: { query: "What does the user prefer?" } };
+    return { ctx, context, result: memoryTools.reflect_memory!(ctx, call as unknown as ToolCall) };
+  }
+
+  it("asks the provider with the bot and query and returns its answer", async () => {
+    const reflect = vi.fn(async () => ({ ok: true as const, value: "They prefer dark mode." }));
+    const { ctx, context, result } = reflectWith(reflect);
+    await expect(result).resolves.toEqual({ ok: true, value: "They prefer dark mode." });
+
+    expect(ctx.state.tainted).toBe(true);
+    expect(reflect).toHaveBeenCalledWith(
+      { query: "What does the user prefer?", botId: "bot-1" },
+      context,
+    );
+  });
+
+  it("says so when memory holds no answer", async () => {
+    const { result } = reflectWith(async () => ({ ok: true, value: "  " }));
+    await expect(result).resolves.toEqual({ ok: true, value: "No relevant memories." });
+  });
+
+  it("passes the provider's error through", async () => {
+    const { result } = reflectWith(async () => ({ ok: false, error: "Memory is unreachable." }));
+    await expect(result).resolves.toEqual({ ok: false, error: "Memory is unreachable." });
+  });
+
+  it("refuses when the provider cannot reflect", async () => {
+    const { result } = reflectWith(undefined);
+    await expect(result).resolves.toEqual({
+      error: "This memory provider cannot answer questions from memory.",
+    });
+  });
+});
+
+describe("recall_memory", () => {
+  async function recallWith(value: Array<{ memory: string; score: number; external?: true }>) {
+    const ctx = {
+      runId: "run-1",
+      bot: { id: "bot-1" },
+      thread: { historyCompactedUpToSeq: null, historyCompactionGeneration: 0 },
+      context: { operationId: "op-1" },
+      memory: { semantic: { recall: async () => ({ ok: true, value }) }, scope: "isolated" },
+      state: { tainted: false },
+    } as unknown as RunContext;
+    const call = { name: "recall_memory", args: { query: "pets" } };
+    const result = await memoryTools.recall_memory!(ctx, call as unknown as ToolCall);
+    return {
+      result,
+      tainted: ctx.state.tainted,
+    };
+  }
+
+  it("taints the run when another app wrote a recalled memory", async () => {
+    const value = [
+      { memory: "Prefers dark mode.", score: 0.9 },
+      { memory: "The dog is named Pixel.", score: 0.8, external: true as const },
+    ];
+    const { result, tainted } = await recallWith(value);
+    expect(result).toEqual({ ok: true, value });
+    expect(tainted).toBe(true);
+  });
+
+  it("does not promote the bot's own recalled knowledge to a clean source", async () => {
+    const { tainted } = await recallWith([{ memory: "Prefers dark mode.", score: 0.9 }]);
+    expect(tainted).toBe(true);
   });
 });
 

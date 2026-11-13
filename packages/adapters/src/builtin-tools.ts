@@ -28,6 +28,7 @@ import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 import { SCHEDULE_TIMING_FIELDS } from "./schedule-tools.js";
+import { SCRATCHPAD_NOTES_MAX_LENGTH, SCRATCHPAD_TITLE_MAX_LENGTH } from "./scratchpad-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
@@ -159,18 +160,19 @@ const scheduleTimingSpecs = {
   watch: {
     type: "object",
     description:
-      'Run only when something changes, checked without a model every everyMinutes (5 to 1440, default 15); send no cron, every or startAt with it. kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+      'Run when something changes; quiet checks use no model. everyMinutes: 5–1440 (default 15). Do not combine watch with cron/every/startAt. files: computer paths. command: shell command in your folder, repeated without per-run approval; compare its output. tool: read-only connected tool + args. http: public HTTPS url, GET only; no headers, auth, body or redirects. Prefer tool/http for network checks: no computer; files/command wake it. Watch one named resource, not a whole account. For JSON lists, track names the identity then changed fields: mail search ["id"], Drive folder ["id","modifiedTime"], ClickUp list ["id","date_updated"].',
     properties: {
-      kind: { type: "string", enum: ["files", "command", "tool"] },
+      kind: { type: "string", enum: ["files", "command", "tool", "http"] },
       paths: { type: "array", items: { type: "string" } },
       command: { type: "string" },
+      url: { type: "string" },
       tool: { type: "string" },
       args: { type: "object" },
       track: {
         type: "array",
         items: { type: "string" },
         description:
-          "For a JSON result: the field naming each item, then the fields whose change counts. Everything else is ignored, and the run is told which items are new, updated or gone.",
+          "For JSON: identity field, then fields whose changes count. Other fields are ignored. HTTP watches detect changes only; other kinds can name changed items.",
       },
       everyMinutes: { type: "number" },
       loud: {
@@ -354,7 +356,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "browser_act",
-    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). click is a real mouse click, and fill on a dropdown takes one of its options' visible labels or values. The result shows the page after the action, and a snapshot covers the whole page, so scrolling is rarely needed. upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types one field of a login saved with request_secret, by its label, only on the site it was saved for (in a frame: the frame's site); you never see the value. fill_card types an approved purchase's card or a saved card, only on its approved site; leave out ref to find the field, even in a payment frame. fill_code types a request_secret oneTimeCode once, only on its site. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. A file download, or a PDF a tab shows, is saved to Downloads and listed in downloads with its path; if its state is downloading, the file appears there when done. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
+    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). click is a real mouse click, and fill on a dropdown takes one of its options' visible labels or values. The result shows the page after the action, and a snapshot covers the whole page, so scrolling is rarely needed. upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types one field of a login saved with request_secret, by its label, only on its sites (in a frame: only its own site); you never see the value. fill_card types an approved purchase's card or a saved card, only on its approved site; leave out ref to find the field, even in a payment frame. fill_code types a oneTimeCode once on its site, or with secret a login's authenticatorCode. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. A file download, or a PDF a tab shows, is saved to Downloads and listed in downloads with its path; if its state is downloading, the file appears there when done. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -380,7 +382,11 @@ export const builtinAgentTools: ConnectorTool[] = [
                 items: { type: "string" },
                 description: "Files to attach, for upload.",
               },
-              secret: { type: "string", description: "Saved login name for fill_secret." },
+              secret: {
+                type: "string",
+                description:
+                  "Saved login name for fill_secret, or for fill_code to type that login's authenticator code.",
+              },
               purchase: {
                 type: "string",
                 description: "Approved purchase id for fill_card or fill_pay_token.",
@@ -1073,7 +1079,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "send_email",
     description:
-      "Send an email from your own address, for example to a company's support team. Replies come back to your inbox. To answer an email, pass its id as inReplyTo: it stays in the same thread and the subject defaults to Re: its subject. The email is plain text and you write it as yourself, never as your owner. Never put passwords or codes in an email.",
+      "Send plain-text email from your own address to your owner's verified address or an operator-approved recipient. If external replies are enabled, you can also reply to the authenticated sender of an incoming email received in the last 30 days. Pass its id as inReplyTo to keep the thread; the subject defaults to Re: its subject. Every To and CC recipient, including failed attempts, counts against the account's rolling 24-hour allowance, initially ten deliveries shared by all its bots. Replies come back to your inbox. Write as yourself, never as your owner. Never put passwords or codes in an email.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1179,7 +1185,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
   // Space memory provider is configured (`remember` stays), and
-  // forget_memory only when that provider can forget.
+  // forget_memory/reflect_memory only when that provider can forget/reflect.
   {
     name: "save_memory",
     description:
@@ -1195,6 +1201,18 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "recall_memory",
     description: "Semantically search this bot's durable memory for facts relevant to a query.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "reflect_memory",
+    description:
+      "Answer a question by reasoning over this bot's long-term memory, combining many memories. Use recall_memory to look up specific facts.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1249,13 +1267,21 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short title for the item." },
+        title: {
+          type: "string",
+          maxLength: SCRATCHPAD_TITLE_MAX_LENGTH,
+          description: "Short title for the item.",
+        },
         status: {
           type: "string",
           enum: ["open", "parked", "done"],
           description: "Defaults to open.",
         },
-        notes: { type: "string", description: "Optional notes." },
+        notes: {
+          type: "string",
+          maxLength: SCRATCHPAD_NOTES_MAX_LENGTH,
+          description: "Optional notes.",
+        },
       },
       required: ["title"],
     },
@@ -1267,9 +1293,13 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         itemId: { type: "string" },
-        title: { type: "string" },
+        title: { type: "string", maxLength: SCRATCHPAD_TITLE_MAX_LENGTH },
         status: { type: "string", enum: ["open", "parked", "done"] },
-        notes: { type: "string" },
+        notes: {
+          type: "string",
+          maxLength: SCRATCHPAD_NOTES_MAX_LENGTH,
+          description: "Replaces the current notes.",
+        },
       },
       required: ["itemId"],
     },

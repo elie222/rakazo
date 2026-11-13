@@ -55,31 +55,65 @@ describe("keyless HTTP web provider", () => {
     },
   );
 
-  it("uses the final response's MIME type after a redirect", async () => {
+  it.each([
+    "application/json",
+    "Application/JSON; charset=UTF-8",
+    "application/problem+json",
+    "application/vnd.api+json; charset=utf-8",
+    "model/gltf+json",
+  ])("preserves JSON values and formatting for %s", async (contentType) => {
+    const body = JSON.stringify(
+      {
+        path: "Use <project-root>/src",
+        entity: "&amp;",
+        spacing: "keep  spacing",
+        markup: "<title>not a page title</title><script>literal text</script>",
+      },
+      null,
+      2,
+    );
     const provider = new KeylessHttpWebProvider({
-      fetch: async (input) =>
-        String(input).endsWith("/start")
-          ? new Response(null, {
-              status: 302,
-              headers: { location: "/final", "content-type": "text/html" },
-            })
-          : new Response("Use <project-root>/src", {
-              headers: { "content-type": "text/plain; charset=UTF-8" },
-            }),
+      fetch: async () => new Response(body, { headers: { "content-type": contentType } }),
       resolveHostname: publicResolver,
     });
     await expect(
-      webFetchFromTool(provider, ctx, { url: "https://example.test/start" }),
-    ).resolves.toMatchObject({
-      url: "https://example.test/final",
-      text: "Use <project-root>/src",
+      webFetchFromTool(provider, ctx, { url: "https://example.test/data" }),
+    ).resolves.toEqual({
+      url: "https://example.test/data",
+      title: "Untitled",
+      text: body,
+      truncated: false,
     });
   });
 
-  it("paginates preserved plain text", async () => {
-    const body = "<x>  ".repeat(50);
+  it.each(["text/plain; charset=UTF-8", "application/json", "application/problem+json"])(
+    "uses the final response MIME type %s after a redirect",
+    async (contentType) => {
+      const provider = new KeylessHttpWebProvider({
+        fetch: async (input) =>
+          String(input).endsWith("/start")
+            ? new Response(null, {
+                status: 302,
+                headers: { location: "/final", "content-type": "text/html" },
+              })
+            : new Response("Use <project-root>/src", {
+                headers: { "content-type": contentType },
+              }),
+        resolveHostname: publicResolver,
+      });
+      await expect(
+        webFetchFromTool(provider, ctx, { url: "https://example.test/start" }),
+      ).resolves.toMatchObject({
+        url: "https://example.test/final",
+        text: "Use <project-root>/src",
+      });
+    },
+  );
+
+  it.each(["text/plain", "application/json"])("paginates preserved %s", async (contentType) => {
+    const body = JSON.stringify({ text: "<x>  ".repeat(50) });
     const provider = new KeylessHttpWebProvider({
-      fetch: async () => new Response(body, { headers: { "content-type": "text/plain" } }),
+      fetch: async () => new Response(body, { headers: { "content-type": contentType } }),
       resolveHostname: publicResolver,
     });
     await expect(
@@ -97,21 +131,24 @@ describe("keyless HTTP web provider", () => {
     ).resolves.toMatchObject({ text: body.slice(200), truncated: false });
   });
 
-  it("keeps the byte limit for plain text", async () => {
-    const provider = new KeylessHttpWebProvider({
-      fetch: async () =>
-        new Response("<x>".repeat(40), { headers: { "content-type": "text/plain" } }),
-      resolveHostname: publicResolver,
-      maxBufferBytes: 100,
-    });
-    await expect(
-      webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
-    ).resolves.toEqual({
-      error: "Response is too large",
-    });
-  });
+  it.each(["text/plain", "application/json"])(
+    "keeps the byte limit for %s",
+    async (contentType) => {
+      const provider = new KeylessHttpWebProvider({
+        fetch: async () =>
+          new Response("<x>".repeat(40), { headers: { "content-type": contentType } }),
+        resolveHostname: publicResolver,
+        maxBufferBytes: 100,
+      });
+      await expect(
+        webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
+      ).resolves.toEqual({
+        error: "Response is too large",
+      });
+    },
+  );
 
-  it("cancels an ongoing plain text read", async () => {
+  it.each(["text/plain", "application/json"])("cancels an ongoing %s read", async (contentType) => {
     const controller = new AbortController();
     let bodyStarted!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -126,7 +163,7 @@ describe("keyless HTTP web provider", () => {
             },
           }),
           {
-            headers: { "content-type": "text/plain" },
+            headers: { "content-type": contentType },
           },
         ),
       resolveHostname: publicResolver,
@@ -142,7 +179,13 @@ describe("keyless HTTP web provider", () => {
   });
 
   it("still extracts HTML and does not treat similar media types as plain text", async () => {
-    for (const contentType of ["text/html; charset=utf-8", "text/plain-extra"]) {
+    for (const contentType of [
+      "text/html; charset=utf-8",
+      "text/plain-extra",
+      "application/jsonp",
+      "application/problem+json-extra",
+      "text/html; profile=application/json",
+    ]) {
       const provider = new KeylessHttpWebProvider({
         fetch: async () =>
           new Response("<title>Doc</title><p>hello <b>world</b></p>", {
@@ -238,10 +281,22 @@ describe("keyless HTTP web provider", () => {
     ["unclosed titles", "<title>".repeat(40_000)],
     ["unclosed styles", "<style>".repeat(40_000)],
     ["whitespace runs", `<p>a${" ".repeat(60_000)}b</p>`],
+    [
+      "nested elements",
+      '<div><div><span><i></i></span><a href="/">x</a></div></div>'.repeat(5_000),
+    ],
   ])("extracts a page full of %s in linear time", (_name, html) => {
     const started = performance.now();
     extractReadableText(html, "https://example.test/");
     expect(performance.now() - started).toBeLessThan(1_500);
+  });
+
+  it("keeps the text of a page too large for article extraction", () => {
+    const html = `<html><head><title>Big</title></head><body><nav>Menu</nav>${"<div><span>row</span></div>".repeat(6_000)}<p>Closing paragraph</p></body></html>`;
+    const page = extractReadableText(html, "https://example.test/");
+    expect(page.title).toBe("Big");
+    expect(page.text).toContain("Menu");
+    expect(page.text).toContain("Closing paragraph");
   });
 
   it("parses HTML search results with a cap", () => {
@@ -298,6 +353,20 @@ describe("web tool clamps", () => {
     expect(clampMaxChars(undefined)).toBe(8_000);
     expect(clampMaxChars(10)).toBe(100);
     expect(clampMaxChars(999_999)).toBe(50_000);
+  });
+
+  it("uses the defaults when a model sends null, an empty string or a boolean", () => {
+    for (const value of [null, "", "  ", true, false, {}, []]) {
+      expect(clampMaxResults(value)).toBe(5);
+      expect(clampMaxChars(value)).toBe(8_000);
+    }
+  });
+
+  it("still reads numbers and numeric strings", () => {
+    expect(clampMaxResults("3")).toBe(3);
+    expect(clampMaxChars("2000")).toBe(2_000);
+    expect(clampMaxResults(0)).toBe(1);
+    expect(clampMaxChars("0")).toBe(100);
   });
 
   it("bounds offset and names the next read in a cut", () => {

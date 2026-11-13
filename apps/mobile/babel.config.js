@@ -53,5 +53,13 @@ const preset = require.resolve("babel-preset-expo", {
 
 module.exports = (api) => {
   api.cache(true);
-  return { presets: [preset], plugins: [asyncArrowRestPattern] };
+  return {
+    presets: [preset],
+    plugins: [
+      asyncArrowRestPattern,
+      // Release builds keep each string's English text, so a string the catalogs do not list yet
+      // shows in English instead of its id.
+      ["@lingui/babel-plugin-lingui-macro", { descriptorFields: "message" }],
+    ],
+  };
 };

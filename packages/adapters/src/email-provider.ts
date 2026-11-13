@@ -35,3 +35,17 @@ export function configuredEmailProvider(
       throw new Error("EMAIL_PROVIDER must be none, smtp, or resend");
   }
 }
+
+/** Bot mail has its own SMTP connection and never falls back to account-email credentials. */
+export function configuredBotEmailProvider(config: {
+  smtpUrl?: string;
+  domain?: string;
+}): TransactionalEmailProvider | undefined {
+  if (!config.smtpUrl) return undefined;
+  if (!config.domain) throw new Error("BOT_EMAIL_SMTP_URL requires INBOUND_EMAIL_DOMAIN");
+  try {
+    return new SmtpEmailProvider({ url: config.smtpUrl, from: `bot@${config.domain}` });
+  } catch (cause) {
+    throw new Error("BOT_EMAIL_SMTP_URL could not be configured", { cause });
+  }
+}

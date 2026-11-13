@@ -38,11 +38,11 @@ test("a group a bot creates after approval appears in the sidebar without a relo
     timeout: 30_000,
   });
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Send it", exact: true })).toBeEnabled();
+  await expect(composer).toBeEnabled();
   await captureScreenshot(page, testInfo, "pending-cards-never-block-chat");
   await page.reload();
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Send it", exact: true })).toBeEnabled();
+  await expect(composer).toBeEnabled();
 
   await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await expect(sidebar.getByRole("button", { name: /^Crew/ })).toBeVisible({ timeout: 30_000 });

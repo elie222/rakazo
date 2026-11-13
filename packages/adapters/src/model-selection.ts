@@ -6,12 +6,14 @@ import {
   selectCompatibleModelCredential,
   usableModelId,
 } from "@rakazo/contracts";
+import { MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   chooseModelCredential,
   findModelCredential,
   findModelCredentialById,
   GUEST_ROLE,
+  modelCredentialProviderFilter,
   organizationForMember,
 } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -30,7 +32,12 @@ import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import type { CatalogReads } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel, readOnce } from "./pi-live-catalog.js";
-import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import {
+  creditsCanPriceModel,
+  listPiCatalog,
+  offeredCatalog,
+  scriptedCatalogEntry,
+} from "./pi-models.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 
 export type ModelCredential = Awaited<ReturnType<typeof findModelCredential>>;
@@ -153,6 +160,26 @@ export type SpaceCatalogAuth = {
   secretIdByProvider: Partial<Record<string, string>>;
   secretIdByModel: Partial<Record<string, Partial<Record<string, string>>>>;
 };
+
+/** Whether this space would run the model on Rakazo credits rather than a member's own connection. */
+export function runsOnHostedCredits(
+  auth: SpaceCatalogAuth,
+  entry: { provider: string; id: string },
+): boolean {
+  return (
+    entry.provider === auth.managedProvider &&
+    !auth.secretIdByModel[entry.provider]?.[entry.id] &&
+    !auth.secretIdByProvider[entry.provider]
+  );
+}
+
+/** Credits refuse a model they cannot price; the member's own connection still runs it. */
+export function spaceCanRunCatalogModel(
+  auth: SpaceCatalogAuth,
+  entry: { provider: string; id: string },
+): boolean {
+  return !runsOnHostedCredits(auth, entry) || creditsCanPriceModel(entry);
+}
 
 /**
  * Auth kinds for the credentials `chooseModelCredential` would select in this space.
@@ -625,6 +652,8 @@ export async function validateBotModelChange(
       : await findConnectedModelCredential(deps.prisma, deps.secretStore, scope, provider, model);
     if (!credential) {
       if (hosted && isCatalogModelChoice(provider, model)) {
+        if (!creditsCanPriceModel({ provider, id: model }))
+          return { ok: false, error: MODEL_UNPRICED_FOR_CREDITS_ERROR };
         const allowed = listPiCatalog().find(
           (entry) => entry.provider === provider && entry.id === model,
         )?.thinkingLevels;
@@ -924,7 +953,7 @@ export function pinnedModelCredentialError(
 
 /**
  * A server key is available only to a funded organization and only for its configured provider.
- * Outside credits mode a balance still pays until the member connects that provider themselves.
+ * A personal connection takes precedence over hosted credits in every funding mode.
  */
 export async function hasHostedModelCredits(
   prisma: PrismaClient,
@@ -952,10 +981,9 @@ export async function hasHostedModelCredits(
           select: { mode: true, balanceMicros: true },
         })
       : null;
-  if (credits?.mode === "credits") return true;
-  if (!credits || credits.balanceMicros <= 0n) return false;
+  if (credits?.mode !== "credits" && (!credits || credits.balanceMicros <= 0n)) return false;
   return !(await prisma.userModelCredential.findFirst({
-    where: { userId: scope.userId, provider },
+    where: { userId: scope.userId, provider: modelCredentialProviderFilter(provider) },
     select: { id: true },
   }));
 }

@@ -50,7 +50,7 @@ live canaries explicitly enabled with `VERIFY_PROVIDERS` also opt into loading i
 
 ## UI strings and translations
 
-Add or change web strings in code only, with Lingui's `t` or `<Trans>`; leave the
+Add or change web and mobile strings in code only, with Lingui's `t` or `<Trans>`; leave the
 `messages.po` catalogs alone in feature pull requests (adding a UI language, below, is the
 one exception). Every production build extracts the
 source strings first, so a new string shows in English until someone translates it. After a
@@ -61,17 +61,17 @@ entries on that pull request, or in a separate translation-only pull request onc
 
 ## Adding a UI language
 
-The web and Electron-hosted UI use Lingui catalogs. To add a locale, register it in
-`apps/web/lingui.config.ts`, `apps/web/src/lib/ui-locale.ts`, and
-`apps/web/src/lib/i18n.ts`, then run `pnpm --filter @rakazo/web intl:extract`, fill the new
-`apps/web/src/locales/<locale>/messages.po` catalog, and validate it with
-`pnpm --filter @rakazo/web intl:compile`. Commit the new catalog in the same pull request,
+Web, the Electron-hosted UI and Expo mobile share one set of Lingui catalogs. To add a locale,
+register it in `lingui.config.ts`, `apps/web/src/lib/ui-locale.ts`, and
+`apps/web/src/lib/i18n.ts`, then run `pnpm intl:extract`, fill the new
+`packages/i18n/locales/<locale>/messages.po` catalog, and validate it with
+`pnpm intl:compile`. Commit the new catalog in the same pull request,
 since the app imports it and the sync workflow only updates catalogs that already exist. Keep message IDs, placeholders, JSX markers, and
 ICU plural branches intact; do not commit generated `*.js`/`*.mjs` catalog files.
 
-Expo mobile has its own catalog and locale registry. Add the locale to
-`apps/mobile/lib/ui-locale.ts`, add `apps/mobile/lib/locales/<locale>.ts`, and register the
-catalog in `apps/mobile/lib/i18n.ts`. Web PO entries do not translate mobile automatically.
+To ship it on mobile too, add it to `apps/mobile/lib/ui-locale.ts`, import its catalog in
+`apps/mobile/lib/i18n.ts`, and add its plural rules to `apps/mobile/lib/plural-rules.ts`, since
+Hermes has no `Intl.PluralRules`.
 Update the locale unit tests and a UI E2E scenario for each supported surface. The marketing
 homepage in `apps/www` and the native Electron setup window have separate localization paths;
 scope and test those changes explicitly instead of assuming the web catalog covers them.
@@ -82,7 +82,7 @@ deterministic execution tests, computer replay, and real-model quality evals.
 ## Optional live-provider checks
 
 The default Playwright suite uses the fake sandbox. To run the same scripted-agent suite against
-real computers, set the matching `E2B_API_KEY`, `NOVITA_API_KEY`, `DAYTONA_API_KEY`, `BOAT_API_KEY`, or `BOXD_API_KEY` and choose a provider:
+real computers, set the matching `E2B_API_KEY`, `NOVITA_API_KEY`, `DAYTONA_API_KEY`, `BOAT_API_KEY`, `BOXD_API_KEY`, or `INSTABOX_API_KEY` and choose a provider:
 
 ```bash
 pnpm test:e2e -- --sandbox=e2b
@@ -90,6 +90,7 @@ pnpm test:e2e -- --sandbox=novita
 pnpm test:e2e -- --sandbox=daytona
 pnpm test:e2e -- --sandbox=boat
 pnpm test:e2e -- --sandbox=boxd
+pnpm test:e2e -- --sandbox=instabox
 ```
 
 For Novita, build the [computer template](docs/self-host-sandbox-providers.md#novita-computer-template) first.

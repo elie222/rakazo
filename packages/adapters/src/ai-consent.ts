@@ -15,8 +15,10 @@ const PRIVACY_URLS: Record<string, string> = {
   elevenlabs: "https://elevenlabs.io/privacy-policy",
   cartesia: "https://cartesia.ai/legal/privacy",
   "fish-audio": "https://fish.audio/privacy/",
+  xai: "https://x.ai/legal/privacy-policy",
   supermemory: "https://supermemory.ai/privacy",
   honcho: "https://app.honcho.dev/privacy",
+  hindsight: "https://vectorize.io/privacy",
 };
 
 /** Never expose endpoint paths, query parameters, user info, or credentials in a disclosure. */
@@ -52,8 +54,10 @@ function recipientName(provider: string, use: AiDataUse) {
   if (use === "memory") {
     if (provider === "supermemory") return "Supermemory";
     if (provider === "honcho") return "Honcho";
+    if (provider === "hindsight") return "Hindsight";
     return provider;
   }
   if (provider === "cursor") return "Cursor";
+  if (provider === "t3code") return "T3 Code";
   return listPiCatalog().find((entry) => entry.provider === provider)?.providerName ?? provider;
 }

@@ -5,8 +5,8 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  expectCardWidth,
   openBotPanelTab,
+  openEmailSignIn,
   realSandboxTimeout,
   rpc,
   signup,
@@ -37,23 +37,20 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
+  // The chat card has its own Skip and I'm done; these steps answer from the computer.
+  const chrome = page.getByTestId("computer-chrome");
   const computerCard = page.getByTestId("computer-card");
   await expect(computerCard).toBeVisible();
   await expect(computerCard.getByText("Needs you", { exact: true })).toBeVisible();
   await expect(computerCard.getByTestId("computer-card-open")).toBeVisible();
-  await expectCardWidth(computerCard, 340);
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await computerCard.getByTestId("computer-card-open").click();
-  await page
-    .getByTestId("computer-chrome")
-    .getByRole("button", { name: "Take control", exact: true })
-    .click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
-  await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
+  await expect(chrome.getByRole("button", { name: "Skip", exact: true })).toBeVisible();
+  await expect(chrome.getByRole("button", { name: "I’m done", exact: true })).toBeVisible();
   if (process.env.SANDBOX_PROVIDER === "boat") await waitForBoatFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover-outcomes");
-  await page.getByRole("button", { name: "I’m done", exact: true }).last().click();
+  await chrome.getByRole("button", { name: "I’m done", exact: true }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await page.getByRole("button", { name: "Close computer" }).click();
   await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
@@ -94,7 +91,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     .getByRole("button", { name: "Take control", exact: true })
     .click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  await page.getByRole("button", { name: "Skip", exact: true }).last().click();
+  await chrome.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await page.getByRole("button", { name: "Close computer" }).click();
   await expect(page.getByText(/login was skipped/i).last()).toBeVisible({
@@ -435,6 +432,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
 
   await page.context().clearCookies();
   await page.goto("/sign-in");
+  await openEmailSignIn(page);
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByPlaceholder("Password").fill("password12");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

@@ -2,7 +2,8 @@ import { createReadStream, existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 
-const CONTENT_TYPES: Record<string, string> = {
+export const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
   ".mjs": "text/javascript",
   ".css": "text/css",
@@ -15,6 +16,8 @@ const CONTENT_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
 };
 
 function inside(root: string, relative: string): string | null {

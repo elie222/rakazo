@@ -28,6 +28,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
   "task_catalog",
   "recall_memory",
+  "reflect_memory",
   "schedule_list",
   "scratchpad_list",
   "board_tickets",
@@ -72,6 +73,7 @@ export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
   "web_fetch",
   "recall_memory",
+  "reflect_memory",
   "skill_read",
   "task_catalog",
   "scratchpad_list",
@@ -107,7 +109,10 @@ export function selectBuiltinToolsForRun(options: {
   semanticMemoryEnabled: boolean;
   /** The configured provider can forget individual facts. */
   semanticMemoryForgets?: boolean;
+  /** The configured provider can answer a question from many memories. */
+  semanticMemoryReflects?: boolean;
   cloudAgentEnabled?: boolean;
+  cloudAgentCleanupEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
@@ -124,7 +129,7 @@ export function selectBuiltinToolsForRun(options: {
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
   userComputer?: boolean;
-  /** That desktop can look at and drive its apps. */
+  /** Their connected desktop can look at and drive its apps. */
   userComputerScreen?: boolean;
   /** The bot has an email address and this run is its owner's own, outside any group or channel. */
   emailInbox?: boolean;
@@ -157,8 +162,10 @@ export function selectBuiltinToolsForRun(options: {
       ),
       options.semanticMemoryEnabled,
       Boolean(options.semanticMemoryForgets),
+      Boolean(options.semanticMemoryReflects),
     ),
     Boolean(options.cloudAgentEnabled),
+    Boolean(options.cloudAgentCleanupEnabled),
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
@@ -188,8 +195,7 @@ export function selectBuiltinToolsForRun(options: {
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
-      ((options.userComputer && options.userComputerScreen) ||
-        !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
+      (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&
         !options.groupId &&
@@ -208,6 +214,7 @@ export function selectBuiltinToolsForRun(options: {
             "save_memory",
             "recall_memory",
             "forget_memory",
+            "reflect_memory",
             "task_catalog",
             "board_tickets",
           ].includes(tool.name) &&

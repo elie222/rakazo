@@ -1,6 +1,6 @@
+import { useLingui } from "@lingui/react/macro";
 import type { SignupSurvey as SignupSurveyAnswers } from "@rakazo/contracts";
 import { signupSurveyAsksTeamSize } from "@rakazo/contracts";
-
 import { useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -15,7 +15,6 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { closeSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
@@ -27,7 +26,7 @@ type Use = NonNullable<SignupSurveyAnswers["use"]>;
 /** Optional questions shown once after signing up on a billing deployment. */
 export default function SignupSurvey() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const [reason, setReason] = useState("");
@@ -36,9 +35,9 @@ export default function SignupSurvey() {
   const [source, setSource] = useState("");
   const finished = useRef(false);
   const uses: { key: Use; label: string }[] = [
-    { key: "personal", label: t("Personal") },
-    { key: "work", label: t("Work") },
-    { key: "both", label: t("Both") },
+    { key: "personal", label: t`Personal` },
+    { key: "work", label: t`Work` },
+    { key: "both", label: t`Both` },
   ];
 
   function finish() {
@@ -66,42 +65,42 @@ export default function SignupSurvey() {
         <SettingsGroup>
           <ChoiceRow
             choices={uses}
-            label={t("How will you use Rakazo?")}
+            label={t`How will you use Rakazo?`}
             onChange={setUse}
             value={use}
           />
           {signupSurveyAsksTeamSize(use) ? (
             <ChoiceRow
               choices={SIGNUP_SURVEY_TEAM_SIZE_CHOICES}
-              label={t("How big is your team?")}
+              label={t`How big is your team?`}
               onChange={setTeamSize}
               value={teamSize}
             />
           ) : null}
         </SettingsGroup>
-        <SettingsGroup label={t("How did you hear about us?")}>
+        <SettingsGroup label={t`How did you hear about us?`}>
           <TextInput
-            accessibilityLabel={t("How did you hear about us?")}
+            accessibilityLabel={t`How did you hear about us?`}
             maxLength={500}
             onChangeText={setSource}
             style={styles.input}
             value={source}
           />
         </SettingsGroup>
-        <SettingsGroup label={t("What do you most want Rakazo to help with?")}>
+        <SettingsGroup label={t`What do you most want Rakazo to help with?`}>
           <TextInput
-            accessibilityLabel={t("What do you most want Rakazo to help with?")}
+            accessibilityLabel={t`What do you most want Rakazo to help with?`}
             maxLength={2000}
             multiline
             onChangeText={setReason}
-            placeholder={t("Optional")}
+            placeholder={t`Optional`}
             placeholderTextColor={native.tertiaryLabel}
             style={[styles.input, styles.multiline]}
             textAlignVertical="top"
             value={reason}
           />
         </SettingsGroup>
-        <NativeActionButton label={t("Continue")} onPress={finish} />
+        <NativeActionButton label={t`Continue`} onPress={finish} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
