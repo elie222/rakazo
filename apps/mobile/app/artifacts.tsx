@@ -80,6 +80,7 @@ export default function ArtifactsScreen() {
   const loadingMoreRef = useRef(false);
   const generationRef = useRef(0);
   const loadingPageRef = useRef(false);
+  const [loadingPage, setLoadingPage] = useState(false);
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const madeByBotsRef = useRef(madeByBots);
@@ -113,6 +114,7 @@ export default function ArtifactsScreen() {
     async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
       const generation = ++generationRef.current;
       loadingPageRef.current = true;
+      setLoadingPage(true);
       loadingMoreRef.current = false;
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
@@ -135,7 +137,10 @@ export default function ArtifactsScreen() {
         if (generation !== generationRef.current) return;
         setLoadError(errorText(error, t`Could not load artifacts.`));
       } finally {
-        if (generation === generationRef.current) loadingPageRef.current = false;
+        if (generation === generationRef.current) {
+          loadingPageRef.current = false;
+          setLoadingPage(false);
+        }
       }
     },
     [t],
@@ -225,12 +230,29 @@ export default function ArtifactsScreen() {
   }, [query, activeBotId, madeByBots]);
 
   useEffect(() => {
-    if (searchPageFailed || !queryActive || !nextCursor || loadingMore || items === null) return;
+    if (
+      loadingPage ||
+      searchPageFailed ||
+      !queryActive ||
+      !nextCursor ||
+      loadingMore ||
+      items === null
+    )
+      return;
     if (filtered && filtered.length > 0) return;
     if (autoFetchedCursorRef.current === nextCursor) return;
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
-  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive, searchPageFailed]);
+  }, [
+    filtered,
+    items,
+    loadMore,
+    loadingMore,
+    loadingPage,
+    nextCursor,
+    queryActive,
+    searchPageFailed,
+  ]);
 
   useEffect(() => {
     void load(activeBotId, madeByBots, "replace");

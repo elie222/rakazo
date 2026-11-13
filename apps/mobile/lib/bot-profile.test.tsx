@@ -1394,40 +1394,48 @@ describe("artifacts opened for one bot", () => {
     },
   );
 
-  it("blocks pagination while the deletion refresh is pending", async () => {
-    const file = {
-      id: "file-a",
-      name: "report.md",
-      botId: "bot-fixture",
-      groupId: null,
-      runId: null,
-      description: null,
-      mimeType: "text/markdown",
-      size: 6,
-      version: 1,
-      versionCount: 1,
-      createdAt: "2026-11-01T00:00:00.000Z",
-    };
-    const fresh = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
-    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "old-page" });
-    listSpaceArtifacts.mockReturnValueOnce(fresh.promise);
-    removeArtifact.mockResolvedValueOnce(undefined);
-    await render(createElement(ArtifactsScreen));
-    act(() => button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
-    await act(async () =>
-      alert.mock.lastCall?.[2]
-        .find((action: { style?: string }) => action.style === "destructive")
-        .onPress(),
-    );
-    await act(async () => button("End of list").click());
-    expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
-    await act(async () => fresh.resolve({ items: [], nextCursor: "fresh-page" }));
-    listSpaceArtifacts.mockResolvedValueOnce({ items: [], nextCursor: null });
-    await act(async () => button("End of list").click());
-    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
-      expect.objectContaining({ cursor: "fresh-page" }),
-    );
-  });
+  it.each([false, true])(
+    "blocks pagination during deletion refresh and resumes search (%s)",
+    async (search) => {
+      const file = {
+        id: "file-a",
+        name: "report.md",
+        botId: "bot-fixture",
+        groupId: null,
+        runId: null,
+        description: null,
+        mimeType: "text/markdown",
+        size: 6,
+        version: 1,
+        versionCount: 1,
+        createdAt: "2026-11-01T00:00:00.000Z",
+      };
+      const fresh = deferred<{ items: (typeof file)[]; nextCursor: string | null }>();
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: "old-page" });
+      listSpaceArtifacts.mockReturnValueOnce(fresh.promise);
+      removeArtifact.mockResolvedValueOnce(undefined);
+      await render(createElement(ArtifactsScreen));
+      act(() =>
+        button("report.md").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      await act(async () =>
+        alert.mock.lastCall?.[2]
+          .find((action: { style?: string }) => action.style === "destructive")
+          .onPress(),
+      );
+      if (search) {
+        act(() => screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }));
+      }
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+      listSpaceArtifacts.mockResolvedValueOnce({ items: [], nextCursor: null });
+      await act(async () => fresh.resolve({ items: [], nextCursor: "old-page" }));
+      await act(async () => button("End of list").click());
+      expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: "old-page" }),
+      );
+    },
+  );
 
   it("keeps a failed deletion's file and allows the pending refresh to finish", async () => {
     const file = {
