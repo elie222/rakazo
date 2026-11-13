@@ -59,7 +59,6 @@ async function collect(env: AppEnv, prisma: PrismaClient): Promise<DiagnosticsIn
       mcpStdioEnabled: env.mcpStdioEnabled,
       mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
       mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-      ticketBoardEnabled: env.ticketBoardEnabled,
       userDevicesEnabled: env.userDevicesEnabled,
       phoneCallsEnabled: env.phoneCallsEnabled,
       secretStore: process.env.SECRET_STORE?.trim() || "encrypted",

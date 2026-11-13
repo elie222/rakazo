@@ -64,7 +64,6 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   mcpStdioAllowedCommands: string[];
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   mcpAllowPrivateEndpoint: boolean;
-  ticketBoardEnabled: boolean;
   phoneCallsEnabled: boolean;
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
@@ -99,7 +98,6 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     pipedreamClientSecret: source.PIPEDREAM_CLIENT_SECRET,
     pipedreamProjectId: source.PIPEDREAM_PROJECT_ID,
     pipedreamEnvironment: source.PIPEDREAM_ENVIRONMENT,
-    ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
@@ -183,7 +181,6 @@ type SetByRunRuntime =
   | "deploymentModelKey"
   | "deploymentModelConfigured"
   | "dataDir"
-  | "ticketBoardEnabled"
   | "phoneCallsEnabled"
   | "phoneCallRingSeconds"
   | "phoneCallCooldownMinutes"
@@ -256,7 +253,6 @@ export function createRunRuntime(
     deploymentModelKey: env.deploymentModelKey,
     deploymentModelConfigured: env.deploymentModelConfigured,
     dataDir: env.dataDir,
-    ticketBoardEnabled: env.ticketBoardEnabled,
     phoneCallsEnabled: env.phoneCallsEnabled,
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,

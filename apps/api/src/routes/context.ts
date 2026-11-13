@@ -36,6 +36,7 @@ import type {
 import {
   appContract,
   canonicalPiProviderId,
+  hasLab,
   modelSupportsRole,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
@@ -436,16 +437,16 @@ export function createRouterContext(deps: RouterDeps) {
     return next();
   });
 
-  // The flag is checked first so a disabled board is not found even when signed out.
-  const boardEnabled = os
-    .use(async ({ next }) => {
-      if (!deps.env?.ticketBoardEnabled) throw new ORPCError("NOT_FOUND");
-      return next();
-    })
-    .use(signedIn);
+  const boardEnabled = os.use(signedIn).use(async ({ context, next }) => {
+    const user = await deps.prisma.user.findUnique({
+      where: { id: context.actor.userId },
+      select: { labs: true },
+    });
+    if (!hasLab(user?.labs, "board")) throw new ORPCError("NOT_FOUND");
+    return next();
+  });
   const ticketDeps = {
     prisma: deps.prisma,
-    ticketBoardEnabled: deps.env?.ticketBoardEnabled,
     onTicketChange: deps.ticketChanges,
   };
 

@@ -317,7 +317,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
-  const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
   const environmentSignupPolicy = signupPolicyFromEnv(env);
   // Mirror the env policy for the previous release during a rolling deploy.
@@ -367,7 +366,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     boardEvents,
     jobs,
     prisma,
-    ticketBoardEnabled,
   });
   const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
@@ -790,7 +788,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       inboundEmailDomain: env.inboundEmail?.domain,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
-      ticketBoardEnabled,
       navLinks: env.navLinks,
       adminEmails: env.adminEmails,
       maxUploadSizeBytes: env.maxUploadSizeBytes,

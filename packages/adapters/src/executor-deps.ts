@@ -56,7 +56,6 @@ export interface ExecutorDeps {
   jobs: JobPublisher;
   /** Publishes board-change signals and wakes ticket owners; absent disables both. */
   onTicketChange?: TicketChangeNotifier;
-  ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   /** The domain bot email addresses are on; absent when this server receives no email. */
   inboundEmailDomain?: string;

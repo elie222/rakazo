@@ -13,7 +13,9 @@ import {
   attachmentMaxBytes,
   attachmentMaxCount,
   canonicalPiProviderId,
+  hasLab,
   modelCreditsUsd,
+  parseLabs,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import { isAdmin } from "../admins.js";
@@ -38,6 +40,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         botAvatarSet: true,
+        labs: true,
         signupSurvey: { select: { userId: true } },
       },
     }),
@@ -47,7 +50,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   // Where the deployment runs computers once an admin's choice in Settings applies.
   const sandboxProvider = effectiveSandboxProvider(setup.settings, deps.env.sandboxProvider);
   return {
-    ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
+    labs: parseLabs(user.labs),
+    ticketBoardEnabled: hasLab(user.labs, "board"),
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),

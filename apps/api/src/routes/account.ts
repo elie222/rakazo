@@ -9,6 +9,7 @@ import {
   settleCallRequest,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
+import { parseLabs } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
   approvalPreferenceFromMode,
@@ -165,6 +166,7 @@ export function accountRoutes(ctx: RouterContext) {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         const userId = context.actor.userId;
         const botAvatarSet = input.botAvatarSet;
+        const labs = input.labs === undefined ? undefined : parseLabs(input.labs);
         if (input.timezone !== undefined) {
           // The routines that took the account zone keep their local schedule in the new
           // one, and the other fields commit in the same save. The move's row lock still
@@ -172,6 +174,7 @@ export function accountRoutes(ctx: RouterContext) {
           await changeUserTimezone(deps, userId, input.timezone, {
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            ...(labs === undefined ? {} : { labs }),
           });
         } else {
           await deps.prisma.user.update({
@@ -180,6 +183,7 @@ export function accountRoutes(ctx: RouterContext) {
             data: {
               ...(input.locale === undefined ? {} : { locale: input.locale }),
               ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+              ...(labs === undefined ? {} : { labs }),
             },
           });
         }

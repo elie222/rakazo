@@ -228,6 +228,7 @@ function ApprovalShot() {
 }
 
 const subscriptionMe: Me = {
+  labs: [],
   ticketBoardEnabled: false,
   navLinks: [],
   phoneCallsEnabled: false,
@@ -324,6 +325,8 @@ function SubscriptionShot() {
         onUsageOpen={() => undefined}
         timezone="UTC"
         onTimezoneChange={async () => undefined}
+        labs={[]}
+        onLabsChange={async () => undefined}
         onClose={() => undefined}
       />
     </main>

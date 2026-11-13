@@ -165,6 +165,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { LabFeatureSchema } from "./labs.js";
 import {
   BotMcpServerSchema,
   McpServerConfigInput,
@@ -397,13 +398,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Replaces the account's Labs list. */
+            labs: z.array(LabFeatureSchema).optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.labs !== undefined,
             { message: "Nothing to update" },
           ),
       )

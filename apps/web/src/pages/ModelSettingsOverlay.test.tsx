@@ -218,6 +218,7 @@ function account(provider: string, modelId: string) {
     mcpStdioEnabled: false,
     avatarStyle: "organic" as const,
     billingEnabled: false,
+    labs: [],
     ticketBoardEnabled: false,
     navLinks: [],
     phoneCallsEnabled: false,

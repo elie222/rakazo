@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PlanLimits, UsageSummary } from "@rakazo/contracts";
-import { modelCreditsUsd } from "@rakazo/contracts";
+import { hasLab, modelCreditsUsd } from "@rakazo/contracts";
 import { accountDisplay, formatTimeUntil } from "@rakazo/core";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -234,7 +234,7 @@ export default function Account() {
       href: "/artifacts",
       icon: { ios: "folder", android: "folder-outline" },
     },
-    ...(me?.ticketBoardEnabled
+    ...(hasLab(me?.labs, "board")
       ? [
           {
             title: t`Board`,
@@ -348,6 +348,11 @@ export default function Account() {
                   } as const,
                 ]
               : []),
+            {
+              title: t`Labs`,
+              href: "/labs",
+              icon: { ios: "flask", android: "flask-outline" },
+            } as const,
           ].map(settingsLink)}
         </SettingsGroup>
 

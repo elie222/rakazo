@@ -6,7 +6,7 @@ import type {
   ThreadMessage,
   VoiceStatus,
 } from "@rakazo/contracts";
-import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
+import { DEFAULT_NEW_BOT_AVATAR_SET, hasLab } from "@rakazo/contracts";
 import {
   activeThreadRuns,
   answerableAskMessageIds,
@@ -1037,7 +1037,7 @@ function SpaceShell() {
         }
         footerLogos={footerLogos}
         user={session.data?.user}
-        ticketBoardEnabled={Boolean(bootstrapMe?.ticketBoardEnabled)}
+        boardEnabled={hasLab(bootstrapMe?.labs, "board")}
         navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}

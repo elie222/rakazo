@@ -15,10 +15,8 @@ export function createTicketChangeNotifier(deps: {
   boardEvents: BoardEvents;
   prisma: PrismaClient;
   jobs: JobPublisher;
-  ticketBoardEnabled?: boolean;
 }): TicketChangeNotifier {
   return async (change) => {
-    if (!deps.ticketBoardEnabled) return;
     await deps.boardEvents
       .notify(change.spaceId, {
         boardId: change.boardId,

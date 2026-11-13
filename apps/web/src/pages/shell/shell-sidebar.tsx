@@ -79,7 +79,7 @@ export function ShellSidebar({
   archived,
   footerLogos,
   user,
-  ticketBoardEnabled,
+  boardEnabled,
   navLinks,
   openSettings,
   openIntegrations,
@@ -109,7 +109,7 @@ export function ShellSidebar({
   archived: ReactNode;
   footerLogos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
-  ticketBoardEnabled: boolean;
+  boardEnabled: boolean;
   navLinks: NavLink[];
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
@@ -310,7 +310,7 @@ export function ShellSidebar({
           mini={mini}
           logos={footerLogos}
           user={user}
-          ticketBoardEnabled={ticketBoardEnabled}
+          boardEnabled={boardEnabled}
           navLinks={navLinks}
           closeMobileSidebar={() => setMobileOpen(false)}
           navigate={navigate}
@@ -328,7 +328,7 @@ function ShellSidebarFooter({
   mini,
   logos,
   user,
-  ticketBoardEnabled,
+  boardEnabled,
   navLinks,
   closeMobileSidebar,
   navigate,
@@ -340,7 +340,7 @@ function ShellSidebarFooter({
   mini: boolean;
   logos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
-  ticketBoardEnabled: boolean;
+  boardEnabled: boolean;
   navLinks: NavLink[];
   closeMobileSidebar: () => void;
   navigate: (path: string) => void;
@@ -406,7 +406,7 @@ function ShellSidebarFooter({
           openSkills();
         }}
         onBoard={
-          ticketBoardEnabled
+          boardEnabled
             ? () => {
                 setMenuOpen(false);
                 closeMobileSidebar();

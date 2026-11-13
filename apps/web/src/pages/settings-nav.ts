@@ -5,6 +5,7 @@ import {
   CloudDownload,
   Cpu,
   CreditCard,
+  FlaskConical,
   Gauge,
   KeyRound,
   MessageCircle,
@@ -93,6 +94,7 @@ export function useSettingsNavItems(available: {
           },
         ]
       : []),
+    { id: "labs", label: t`Labs`, icon: FlaskConical },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
     { id: "organization", label: t`Organization`, icon: Building2 },

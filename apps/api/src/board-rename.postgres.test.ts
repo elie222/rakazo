@@ -21,13 +21,9 @@ describe.skipIf(!enabled)("board prefix rename (PostgreSQL)", () => {
   const spaceId = `board-rename-space-${suffix}`;
 
   const client = () =>
-    createRouterClient(
-      createRouter({
-        prisma,
-        env: { ticketBoardEnabled: true },
-      } as unknown as RouterDeps),
-      { context: { actor } },
-    );
+    createRouterClient(createRouter({ prisma, env: {} } as unknown as RouterDeps), {
+      context: { actor },
+    });
 
   beforeAll(() =>
     runAsSystem("board rename fixture", async () => {
@@ -39,6 +35,7 @@ describe.skipIf(!enabled)("board prefix rename (PostgreSQL)", () => {
           name: "Board rename",
           email: `${userId}@rakazo.test`,
           emailVerified: false,
+          labs: ["board"],
         },
       });
       await prisma.organization.create({

@@ -125,6 +125,8 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
             onUsageOpen={() => undefined}
             timezone={null}
             onTimezoneChange={async () => undefined}
+            labs={[]}
+            onLabsChange={async () => undefined}
             memoryConfig={null}
             onMemoryConfigChange={() => undefined}
             onClose={() => undefined}
