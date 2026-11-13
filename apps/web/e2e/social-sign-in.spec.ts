@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { socialPresentation } from "../../../packages/auth/src/social-presentation";
+import { LAST_SIGN_IN_COOKIE } from "../../../packages/contracts/src/auth";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 const passwordOnly = {
@@ -85,6 +86,39 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "sign-up-chooser");
+});
+
+test("returning people see the sign-in method they used last", async ({ page }, testInfo) => {
+  await mockSignedOut(page, both);
+  await page
+    .context()
+    .addCookies([
+      { name: LAST_SIGN_IN_COOKIE, value: "google", url: testInfo.project.use.baseURL! },
+    ]);
+  await page.goto("/sign-in");
+  const google = page.getByRole("button", { name: "Continue with Google" });
+  await expect(google.getByText("Last used")).toBeVisible();
+  await expect(page.getByText("Last used")).toHaveCount(1);
+  await captureScreenshot(page, testInfo, "sign-in-last-used");
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await captureScreenshot(page, testInfo, "sign-in-last-used-dark");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(google.getByText("Last used")).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-in-last-used-mobile");
+});
+
+test("a successful email sign-up is remembered for the next sign-in", async ({ page }) => {
+  await signup(page, `last-used-${Date.now()}@rakazo.test`, "password12", "Last Used QA");
+  const cookie = (await page.context().cookies()).find(({ name }) => name === LAST_SIGN_IN_COOKIE);
+  expect(cookie?.value).toBe("email");
+  expect(cookie?.httpOnly).toBe(false);
+  await mockSignedOut(page, both);
+  await page.goto("/sign-in");
+  const emailChoice = page.getByRole("button", { name: "Continue with email" });
+  await expect(emailChoice.getByText("Last used")).toBeVisible();
 });
 
 test("one provider spans the chooser row", async ({ page }, testInfo) => {
