@@ -224,7 +224,7 @@ export function expandComposioMultiExecute(
 }
 
 /** Composio tool slugs are prefixed with their toolkit slug, including multi-execute items. */
-function callUsesToolkit(call: ConnectorCall, toolkit: string): boolean {
+function callUsesToolkit(call: ConnectorCall, toolkit: string, toolkits: string[]): boolean {
   const prefix = `${composioSlugKey(toolkit)}_`;
   const tools = Array.isArray(call.args?.tools) ? call.args.tools : [];
   const slugs = [
@@ -233,7 +233,16 @@ function callUsesToolkit(call: ConnectorCall, toolkit: string): boolean {
       item && typeof item === "object" ? (item as { tool_slug?: unknown }).tool_slug : undefined,
     ),
   ];
-  return slugs.some((slug) => typeof slug === "string" && composioSlugKey(slug).startsWith(prefix));
+  return slugs.some((slug) => {
+    if (typeof slug !== "string") return false;
+    const key = composioSlugKey(slug);
+    if (!key.startsWith(prefix)) return false;
+    // A longer connected toolkit owns its tools (e.g. GITHUB_MCP, not GITHUB).
+    return !toolkits.some((candidate) => {
+      const candidatePrefix = `${composioSlugKey(candidate)}_`;
+      return candidatePrefix.length > prefix.length && key.startsWith(candidatePrefix);
+    });
+  });
 }
 
 function accountIsPinned(
@@ -611,11 +620,13 @@ export class ComposioConnector implements ComposioProvider {
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     const executed = [];
     try {
+      const connections = connectedComposioConnections(context);
       const { session, reconnect, connectedAccounts } = await this.sessionForExecute(
         context.userId,
-        connectedComposioConnections(context),
+        connections,
       );
-      const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit));
+      const toolkits = connections.map((connection) => connection.externalId);
+      const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit, toolkits));
       if (stale) {
         getLogger().warn("composio connected accounts need reconnect", {
           "composio.toolkits": stale,
