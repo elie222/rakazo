@@ -27,12 +27,17 @@ const SERIES_COLORS = ["--rk-c1", "--rk-c2", "--rk-c3", "--rk-c4", "--rk-c5"];
 // Estimate full-width glyphs as two Latin characters, consistently for wrapping and sizing.
 const wideGlyph =
   /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const characterWidth = (character: string) => {
-  if (/\p{Nonspacing_Mark}/u.test(character)) return 0;
-  return wideGlyph.test(character) || /\p{Emoji_Presentation}/u.test(character) ? 2 : 1;
+  if (/\p{Emoji_Presentation}|\uFE0F|\u20E3/u.test(character)) return 2;
+  return [...character].reduce(
+    (width, point) =>
+      width + (/\p{Nonspacing_Mark}/u.test(point) ? 0 : wideGlyph.test(point) ? 2 : 1),
+    0,
+  );
 };
 const textWidth = (text: string) =>
-  [...text].reduce((width, character) => width + characterWidth(character), 0);
+  [...graphemes.segment(text)].reduce((width, { segment }) => width + characterWidth(segment), 0);
 
 /** Greedy word wrap; a word longer than a line is split rather than clipped. */
 export function wrapText(text: string, perLine: number): string[] {
@@ -41,7 +46,7 @@ export function wrapText(text: string, perLine: number): string[] {
   for (const word of text.normalize("NFC").split(/\s+/).filter(Boolean)) {
     let remainder = "";
     let width = 0;
-    for (const character of word) {
+    for (const { segment: character } of graphemes.segment(word)) {
       const nextWidth = characterWidth(character);
       if (remainder && width + nextWidth > perLine) {
         if (line) lines.push(line);
