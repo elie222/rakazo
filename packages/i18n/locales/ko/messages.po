@@ -1201,6 +1201,7 @@ msgstr "추가 항목"
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/lib/cron.ts
 #: apps/web/src/pages/McpServerForm.tsx
+#: apps/web/src/pages/memory-providers/MemoryProviderAdvanced.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -1384,6 +1385,14 @@ msgstr "금액"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되어 있습니다."
 
+#: apps/web/src/pages/MemorySettingsOverlay.tsx
+msgid "An external memory service for storing and recalling context across chats."
+msgstr ""
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "An HTTPS endpoint"
+msgstr ""
+
 #: apps/web/src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
 msgstr "가져온 API 키를 확인하지 못했습니다. 다시 시도하세요."
@@ -1412,7 +1421,6 @@ msgstr "다른 어시스턴트"
 
 #: apps/mobile/components/IncomingCall.tsx
 #: apps/mobile/lib/incoming-calls.ts
-#: apps/web/src/components/AskCard.tsx
 msgid "Answer"
 msgstr "답변"
 
@@ -1467,6 +1475,7 @@ msgstr "링크가 있는 모든 사용자"
 #: apps/web/src/components/SecretAskCard.tsx
 #: apps/web/src/components/vault/kinds.tsx
 #: apps/web/src/lib/localized-provider-hint.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2679,6 +2688,7 @@ msgstr "이 브라우저 세션에서 URL에 연결할 수 있는지 확인한 �
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2792,6 +2802,7 @@ msgstr "연결되었습니다."
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 #: apps/web/src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -2885,14 +2896,14 @@ msgstr "{name}(으)로 계속하기"
 msgid "Control"
 msgstr "Control"
 
-#: apps/mobile/lib/ai-consent.ts
-msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr "맥락을 저장하고 불러오기 위해 대화 요약, 기억, 검색, 봇 및 스페이스 ID가 전송됩니다."
-
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "대화"
+
+#: apps/mobile/lib/ai-consent.ts
+msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
+msgstr ""
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/code-copy-button.tsx
@@ -3870,11 +3881,6 @@ msgstr "로그인을 시작하지 못했습니다"
 msgid "Could not start teaching"
 msgstr "가르치기를 시작하지 못했습니다."
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Could not stop computer"
-msgstr "컴퓨터를 중지하지 못했습니다"
-
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "답변을 제출하지 못했습니다"
@@ -4748,10 +4754,6 @@ msgstr "편집"
 msgid "Edit avatar"
 msgstr "아바타 편집"
 
-#: apps/web/src/components/AskCard.tsx
-msgid "Edit first"
-msgstr "수정 후 보내기"
-
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/name-dialog-compose.tsx
@@ -4876,6 +4878,10 @@ msgstr "금액을 입력하세요"
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "테스트하기 전에 API 키를 입력하세요."
+
+#: apps/web/src/lib/routine-draft.ts
+msgid "Enter an HTTPS URL"
+msgstr ""
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5107,12 +5113,8 @@ msgid "Failure handling"
 msgstr "실패했을 때 처리"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields that mark a change"
-msgstr "변경을 나타내는 필드"
-
-#: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "비교할 필드, 예: id, modifiedTime (선택 사항)"
+msgid "Fields to compare (optional)"
+msgstr ""
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/search-sheet.ts
@@ -5532,6 +5534,7 @@ msgstr "대화 기록 숨기기"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "High"
@@ -5600,6 +5603,10 @@ msgstr "Rakazo를 어떻게 사용하실 건가요?"
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
 msgstr "http://127.0.0.1:8000/v1"
+
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "HTTPS URL"
+msgstr ""
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
@@ -5935,6 +5942,10 @@ msgstr "마지막 확인 {0}: 변경 없음"
 msgid "Later"
 msgstr "나중에"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Learn from conversations"
+msgstr ""
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5963,10 +5974,6 @@ msgstr "왼쪽"
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "봇이 이 컴퓨터를 사용하도록 허용"
-
-#: apps/web/src/pages/MemorySettingsOverlay.tsx
-msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
-msgstr "MEMORY.md와 함께 봇이 의미를 기준으로 사실을 저장하고 떠올릴 수 있게 합니다."
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -6148,6 +6155,7 @@ msgstr "키가 포함된 것 같습니다"
 
 #: apps/mobile/lib/thinking-level.ts
 #: apps/web/src/lib/ticket-priority.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Low"
@@ -6277,6 +6285,7 @@ msgid "MCP servers"
 msgstr "MCP 서버"
 
 #: apps/mobile/lib/thinking-level.ts
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Medium"
@@ -6570,11 +6579,6 @@ msgstr "더보기"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "앱 더보기"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "More computer actions"
-msgstr "컴퓨터 작업 더보기"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7748,8 +7752,8 @@ msgid "Plugins"
 msgstr "플러그인"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "채팅에 “변경 없음” 게시"
+msgid "Post a chat message when a check finds no changes. The routine won't run."
+msgstr ""
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -7933,6 +7937,18 @@ msgstr "추론 강도"
 msgid "Recall and write"
 msgstr "불러오기와 쓰기"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall automatically"
+msgstr ""
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall depth"
+msgstr ""
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Recall from banks"
+msgstr ""
+
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Recall from this peer; save to Rakazo’s own peers."
 msgstr "이 피어에서 불러오고 Rakazo 자체 피어에 저장합니다."
@@ -7990,14 +8006,12 @@ msgstr "녹화가 시작되었습니다. 화면을 새로고침한 뒤 이어가
 msgid "Recording: {0}"
 msgstr "녹화 중: {0}"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "컴퓨터 복구"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Recover computer?"
 msgstr "컴퓨터를 복구할까요?"
@@ -8030,17 +8044,11 @@ msgstr "복구 실패"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "이전 작업이 중지될 때까지 복구할 수 없습니다."
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "복구하면 마지막으로 저장된 작업 공간이 복원됩니다. 저장하지 않은 작업은 손실될 수 있습니다."
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Recreate a computer that is not working."
-msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8343,6 +8351,10 @@ msgstr "답장이 취소되었습니다"
 msgid "Replying to {0}"
 msgstr "{0}에게 답장 중"
 
+#: apps/web/src/pages/routine-editor/trigger-cards.tsx
+msgid "Report unchanged checks"
+msgstr ""
+
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
 msgid "Request a new code"
@@ -8413,6 +8425,7 @@ msgstr "{date}에 초기화됩니다."
 msgid "Resets in {reset}"
 msgstr "{reset} 후 초기화"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "재설정 중…"
@@ -8447,11 +8460,6 @@ msgstr "복원"
 #: apps/web/src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "{name} 복원"
-
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Restore the last saved workspace."
-msgstr "마지막으로 저장한 작업 공간을 복원합니다."
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -8722,11 +8730,6 @@ msgstr "내 것 저장"
 msgid "Save section name"
 msgstr "섹션 이름 저장"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Save the workspace and install current software."
-msgstr "작업 공간을 저장하고 최신 소프트웨어를 설치합니다."
-
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Save to Vault"
@@ -8961,7 +8964,6 @@ msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 m
 msgstr "10분 안에 {linkApp}에서 <1>{linkAddress}</1>(으)로 <0>{linkCode}</0>을(를) 보내세요."
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "답변 보내기"
 
@@ -8974,10 +8976,6 @@ msgstr "파일로 보내기"
 #: apps/web/src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "삭제 코드 보내기"
-
-#: apps/web/src/components/AskCard.tsx
-msgid "Send it"
-msgstr "보내기"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Send recording"
@@ -9374,6 +9372,10 @@ msgstr "건너뛰기"
 msgid "Skip or deploy key"
 msgstr "건너뛰거나 배포 키"
 
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Skip unrelated memories"
+msgstr ""
+
 #: apps/mobile/components/ComputerCard.tsx
 #: apps/web/src/components/ComputerCard.tsx
 msgid "Skipped"
@@ -9633,11 +9635,6 @@ msgstr "실행 단계"
 msgid "Stop"
 msgstr "중지"
 
-#: apps/mobile/components/computer-maintenance-actions.tsx
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stop computer"
-msgstr "컴퓨터 중지"
-
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
 msgstr "받아쓰기 중지"
@@ -9659,10 +9656,6 @@ msgstr "중지됨"
 #: apps/web/src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "중지되었습니다."
-
-#: apps/web/src/components/ComputerMaintenanceActions.tsx
-msgid "Stopping…"
-msgstr "중지하는 중…"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Stored encrypted"
@@ -9715,6 +9708,14 @@ msgstr "내 AI로 구독"
 #: apps/web/src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "구독 필요"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries"
+msgstr ""
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Summaries and facts"
+msgstr ""
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10542,7 +10543,6 @@ msgid "Type without recording"
 msgstr "녹음 없이 입력"
 
 #: apps/mobile/components/thread/ask-block.tsx
-#: apps/web/src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "답변을 입력하세요"
 
@@ -10690,6 +10690,7 @@ msgstr "{name}의 컴퓨터 업데이트 중"
 msgid "Updating Team Computer"
 msgstr "팀 컴퓨터 업데이트 중"
 
+#: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "업데이트 중…"
@@ -10925,10 +10926,6 @@ msgstr "모두 보기"
 msgid "View source"
 msgstr "소스 보기"
 
-#: apps/web/src/components/SidebarFooter.tsx
-msgid "View usage"
-msgstr "사용량 보기"
-
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11063,6 +11060,10 @@ msgstr "이 루틴이 실행될 때마다 무엇을 해야 하나요?"
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
 msgid "What this bot is for"
 msgstr "이 Bot을 언제, 어떤 일에 사용할지 적어주세요"
+
+#: apps/web/src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What to recall"
+msgstr ""
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
@@ -11297,6 +11298,11 @@ msgstr "이번 달 미사용분을 제외한 {price}이(가) 오늘 카드로 �
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your card is charged the prorated difference today."
 msgstr "오늘 일할 계산된 차액이 카드로 청구됩니다."
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/ModelCredits.tsx
+msgid "Your card was not charged"
+msgstr ""
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
