@@ -3,13 +3,12 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { relabelToolImageMessages, withAutomatedLabels } from "./automated-messages.js";
 import {
   AUTOMATED_MESSAGE_LABEL,
-  relabelToolImageMessages,
   TOOL_IMAGES_LABEL,
   TOOL_IMAGES_TEXT,
-  withAutomatedLabels,
-} from "./automated-messages.js";
+} from "./automated-messages.prompt.js";
 import {
   SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT,
   SILENT_TOOL_CONTINUATION_PROMPT,

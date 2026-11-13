@@ -1,4 +1,4 @@
-import { automated } from "./automated-messages.js";
+import { automated } from "./automated-messages.prompt.js";
 
 // Sent in the user's role, so marked as automated: otherwise models read it as the user
 // telling them never to stop, and keep going instead of asking.

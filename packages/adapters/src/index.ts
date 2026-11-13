@@ -170,6 +170,7 @@ export * from "./model-roles.js";
 export * from "./model-secret.js";
 export * from "./model-selection.js";
 export * from "./model-vision.js";
+export { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.prompt.js";
 export * from "./none-sandbox.js";
 export * from "./novita-sandbox.js";
 export * from "./novita-template.js";
