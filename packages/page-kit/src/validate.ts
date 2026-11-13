@@ -68,7 +68,8 @@ const DECLARATION_ROLES: ReadonlySet<IdentifierRole | null> = new Set([
 
 /** Resources a page may name but the sandbox refuses to load from the network. */
 const REMOTE_RESOURCE =
-  /<(?:script|img|video|audio|source|link)\b[^>]*\b(?:src|href)\s*=\s*["'](?:https?:)?\/\//i;
+  // A malformed tag stops at the next opening bracket, avoiding overlapping suffix scans.
+  /<(?:script|img|video|audio|source|link)\b[^<>]*\b(?:src|href)\s*=\s*["'](?:https?:)?\/\//i;
 
 /**
  * An HTML page is stored exactly as written and runs in the same sandbox as any artifact, so

@@ -427,6 +427,22 @@ describe("checkHtmlPageSource", () => {
     });
   });
 
+  it("handles repeated unterminated tags up to the source byte limit", () => {
+    const source = "<img "
+      .repeat(Math.floor(PAGE_SOURCE_MAX_BYTES / 5))
+      .padEnd(PAGE_SOURCE_MAX_BYTES, " ");
+    expect(checkHtmlPageSource(source)).toEqual({ ok: true, code: source });
+  });
+
+  it("does not scan across another opening tag for resource attributes", () => {
+    const source = '<img <div src="https://example.test/image.png">';
+    expect(checkHtmlPageSource(source)).toEqual({ ok: true, code: source });
+    expect(checkHtmlPageSource('<img <img src="//example.test/image.png">')).toMatchObject({
+      ok: true,
+      warnings: [expect.any(String)],
+    });
+  });
+
   it("warns about network resources the sandbox will refuse instead of saving a hole", () => {
     const remote = '<html><body><img src="https://example.com/a.png"></body></html>';
     expect(checkHtmlPageSource(remote)).toEqual({
