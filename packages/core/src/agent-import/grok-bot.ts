@@ -292,7 +292,8 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
   const joinSkills = (mine: GrokBotSkill[], theirs: GrokBotSkill[]) => {
     const skills = [...mine];
     for (const skill of theirs) {
-      const at = skills.findIndex((item) => item.name.toLowerCase() === skill.name.toLowerCase());
+      // Only earlier parts' skills are continued, never one this part added.
+      const at = mine.findIndex((item) => item.name.toLowerCase() === skill.name.toLowerCase());
       const earlier = skills[at];
       if (!earlier) {
         skills.push(skill);

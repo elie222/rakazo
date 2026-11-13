@@ -339,6 +339,23 @@ it("joins a skill split across parts, and resolves exact skill names first", () 
   ]);
   const names = grokSkillNames(bot!);
   expect([names.get("a b"), names.get("a-b")]).toEqual(["a-b", "a-b-2"]);
+
+  // Two same-named skills in one later part stay two skills.
+  const pair = JSON.stringify({
+    bots: [
+      {
+        name: "Other",
+        skills: [
+          { name: "Check", instructions: "A." },
+          { name: "Check", instructions: "B." },
+        ],
+      },
+    ],
+  });
+  const [other] = parseGrokBotExport(
+    `${JSON.stringify({ bots: [{ name: "Other", memories: ["x"] }] })}\n\n${pair}`,
+  );
+  expect(other!.skills.map((skill) => skill.instructions)).toEqual(["A.", "B."]);
 });
 
 it("keeps skill names in any script", () => {
