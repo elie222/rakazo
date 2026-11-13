@@ -22,15 +22,19 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "你的 Rakazo 确认码",
   "Enter this code in Rakazo to confirm it's you:": "在 Rakazo 中输入此验证码以确认是你本人：",
   "Welcome to Rakazo": "欢迎使用 Rakazo",
-  "Thanks for signing up for Rakazo.": "感谢你注册 Rakazo。",
-  "Rakazo also has apps for": "Rakazo 还提供以下平台的应用：",
-  "Questions or ideas?": "有问题或想法？",
-  "Join us on Discord": "加入我们的 Discord",
-  "Rakazo is open source. If you like it,": "Rakazo 是开源项目。如果你喜欢它，",
-  "a star on GitHub": "在 GitHub 上点个星标",
-  "helps others find it.": "可以帮助更多人发现它。",
-  "Want to run it on your own servers?": "想在自己的服务器上运行？",
-  "Self-host Rakazo": "自行托管 Rakazo",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "欢迎使用 Rakazo。用得最好的人都会做三件事：",
+  "Get the apps": "下载应用",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo 支持 {platforms}，让你的机器人随时随地都能联系到你。",
+  "Join the community": "加入社区",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "在 {discord} 上看看别人在构建什么，快速获得帮助，并告诉我们接下来该做什么。",
+  "Star us on GitHub": "在 GitHub 上给我们加星",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo 是开源的。{star}能帮助更多人发现它。",
+  "A star on GitHub": "在 GitHub 上加星",
+  "Questions? Just reply. I read every one.": "有问题？直接回复即可。每封我都会看。",
   "Have any questions? Reply to this email.": "有任何问题？请回复此邮件。",
   Unsubscribe: "退订",
   "Invite a friend": "邀请好友",
