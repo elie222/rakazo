@@ -208,6 +208,10 @@ export default function ModelConnection() {
     scope: target.scope,
     credentialIdRef,
     setCredentialId,
+    onSaved: (saved) => {
+      ++loadGeneration.current;
+      setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
+    },
     modelId,
     load,
     finishConnecting,
