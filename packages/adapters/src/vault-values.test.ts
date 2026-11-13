@@ -188,6 +188,28 @@ const fillPassword = (db: Db) =>
   });
 
 describe("vault values under the envelope keys", () => {
+  it("saves with the newest key when an unused historical key cannot unwrap", async () => {
+    const db = encryptedDatabase();
+    await save(db, login, loginValue());
+    await db.migrate();
+    const old = db.keys[0]!;
+    const newest = await db.ring.rotate("user:user-1");
+    db.ring.clear();
+    const unwrap = db.provider.unwrap.bind(db.provider);
+    const calls = vi.spyOn(db.provider, "unwrap").mockImplementation((record, context) => {
+      if (record.wrappedKey === old.wrappedKey) throw new Error("retired key");
+      return unwrap(record, context);
+    });
+
+    await save(db, card, JSON.stringify(fakeCard));
+
+    expect(ciphertextKeyId(row(db, "visa").ciphertext)).toBe(newest.id);
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(await openVaultValue(db.prisma, secretStore, row(db, "visa"))).toBe(
+      JSON.stringify(fakeCard),
+    );
+  });
+
   it("keeps the previous release's format until migrate creates the vault's key", async () => {
     const db = encryptedDatabase();
     await save(db, login, loginValue());
@@ -1214,7 +1236,7 @@ describe("moving vault values to the envelope keys", () => {
     );
   });
 
-  it("counts items a process saved under its cached key version after a rotation, until reencrypt moves them", async () => {
+  it("counts older and damaged items while new saves observe rotation across processes", async () => {
     const { db, other, versionOf } = await cachedElsewhere();
     // Neither the previous format nor Infisical has a key version to count.
     const { ciphertext } = await secretStore.put(loginValue(), context, { recordId: "old" });
@@ -1247,12 +1269,12 @@ describe("moving vault values to the envelope keys", () => {
     expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 3 });
     for (const [name] of damaged) db.rows().splice(db.rows().indexOf(row(db, name)), 1);
     expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 0 });
-    // Within its cache window the other process still seals a save with version 1.
+    // A process with cached old keys still selects the newest stored version for new saves.
     const later = { ...login, name: "later" } as BotSecretDestination;
     await save({ ...db, prisma: other.prisma }, later, loginValue("fake-later"));
-    expect(versionOf("later")).toBe(1);
-    expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 1, damaged: 0 });
-    expect(await db.migrate("reencrypt")).toMatchObject({ migrated: 1 });
+    expect(versionOf("later")).toBe(2);
+    expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 0 });
+    expect(await db.migrate("reencrypt")).toMatchObject({ migrated: 0 });
     expect(versionOf("later")).toBe(2);
     expect(await vaultItemsUnderOlderKeys(db.prisma)).toEqual({ older: 0, damaged: 0 });
   });

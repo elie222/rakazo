@@ -30,6 +30,16 @@ function ringOf(prisma: PrismaClient) {
   return ring;
 }
 
+/** Read the newest stored version without unwrapping unrelated historical keys. */
+async function newestVaultKey(prisma: PrismaClient, scope: string) {
+  const key = await prisma.spaceKey.findFirst({
+    where: { spaceId: scope },
+    orderBy: { version: "desc" },
+    select: { id: true },
+  });
+  return key ? ringOf(prisma).byId(key.id) : undefined;
+}
+
 /**
  * A command's call to the key ring, given up at its interruption, since the key manager behind it
  * may hold a call open for longer; the call's own outcome stays handled, so a late answer is quiet.
@@ -53,7 +63,7 @@ export async function sealVaultValue(
 ): Promise<string> {
   const ring = contentEncryptionOf(prisma)?.ring;
   if (ring?.encryptWrites && store.describe().id === "app-encrypted") {
-    const key = (await ring.all(keyScope(row))).at(-1);
+    const key = await interruptible(newestVaultKey(prisma, keyScope(row)), context.signal);
     if (key) return encryptText(key, location(row), plaintext);
   }
   return (await store.put(plaintext, context, { recordId: row.id })).ciphertext;
@@ -146,18 +156,7 @@ export async function migrateVaultValues(
   // Read only the newest record, then unwrap only that key. A cached current version can be
   // stale after another process rotates; loading every historical version also needlessly
   // depends on master keys that the current value does not use.
-  const newestOf = (scope: string) =>
-    interruptible(
-      (async () => {
-        const key = await prisma.spaceKey.findFirst({
-          where: { spaceId: scope },
-          orderBy: { version: "desc" },
-          select: { id: true },
-        });
-        return key ? ringOf(prisma).byId(key.id) : undefined;
-      })(),
-      context.signal,
-    );
+  const newestOf = (scope: string) => interruptible(newestVaultKey(prisma, scope), context.signal);
   let cursor = "";
   while (true) {
     context.signal.throwIfAborted();
