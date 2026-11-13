@@ -11,11 +11,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
 import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
-import {
-  CLAUDE_CODE_PROVIDER_ID,
-  setClaudeCodeAccessCheck,
-} from "./cli-models/claude-code/provider.js";
-import { personalCliAccessCheck } from "./cli-models/personal-access.js";
+import { cliModelRuntime } from "./cli-models/runtime.js";
 import { reconcileCloudAgents } from "./cloud-agent-service.js";
 import type { ComposioProvider } from "./composio-connector.js";
 import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
@@ -210,11 +206,7 @@ export function createRunRuntime(
   },
 ) {
   const { messaging, isMessagingInstallationActive, ...executorDeps } = deps;
-  if (resolveDeploymentModel().provider === CLAUDE_CODE_PROVIDER_ID) {
-    setClaudeCodeAccessCheck(
-      personalCliAccessCheck({ prisma: deps.prisma, billingEnabled: deps.billingEnabled }),
-    );
-  }
+  const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
         prisma: deps.prisma,
@@ -232,7 +224,7 @@ export function createRunRuntime(
         isInstallationActive: isMessagingInstallationActive,
         judge: new ModelTeamChatEngagementJudge({
           prisma: deps.prisma,
-          runtime: deps.runtime,
+          runtime,
           secrets: deps.secretStore,
           deploymentProvider: env.defaultProvider,
           deploymentModel: env.defaultModel,
@@ -249,6 +241,7 @@ export function createRunRuntime(
     : undefined;
   const executor = createRunExecutor({
     ...executorDeps,
+    runtime,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
@@ -285,7 +278,7 @@ export function createRunRuntime(
     events: deps.events,
     // Every container runs node as the same pid, and deploys run old and new side by side.
     workerId: `${hostname()}:${process.pid}`,
-    runtime: deps.runtime,
+    runtime,
     notifications: deps.notifications instanceof ExpoPushProvider ? deps.notifications : undefined,
     secretStore: deps.secretStore,
     memoryProviders: deps.memoryProviders,

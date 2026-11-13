@@ -3,13 +3,13 @@ import type {
   Model,
   Models,
   ModelThinkingLevel,
+  MutableModels,
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
-import { registerClaudeCodeProvider } from "./cli-models/claude-code/provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
@@ -26,17 +26,19 @@ import {
   REASONING_MODEL_MAX_TOKENS,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
+import { scopedRuntimeModels } from "./pi-runtime-scope.js";
 
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
-function catalogModels(): Models {
-  catalogModelsCache ??= registerClaudeCodeProvider(
-    registerOpenAiCompatibleCatalog(
-      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
-    ),
+export function createRuntimeModels(): MutableModels {
+  return registerOpenAiCompatibleCatalog(
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
+}
+function catalogModels(): Models {
+  catalogModelsCache ??= createRuntimeModels();
   return catalogModelsCache;
 }
 
@@ -175,7 +177,7 @@ export function modelsForRequest(
       contextWindow: request.model.contextWindow,
     });
   }
-  return catalogModels();
+  return scopedRuntimeModels() ?? catalogModels();
 }
 
 export function modelForCompletion(model: Model<Api>, configuredMaxTokens?: number): Model<Api> {

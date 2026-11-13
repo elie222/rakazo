@@ -8,7 +8,6 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { createProvider, lazyStream } from "@earendil-works/pi-ai";
-import { resolveDeploymentModel } from "../../deployment-model.js";
 import type { PersonalCliAccessCheck } from "../personal-access.js";
 import { CLAUDE_CODE_PROVIDER_ID } from "./provider-id.js";
 
@@ -18,18 +17,9 @@ const CLAUDE_CODE_API = "claude-code-cli";
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const DEFAULT_MAX_TOKENS = 32_000;
 
-let accessCheck: PersonalCliAccessCheck | undefined;
-
-/** Installed by the run runtime, which can see billing and accounts; until then every call is refused. */
-export function setClaudeCodeAccessCheck(check: PersonalCliAccessCheck | undefined): void {
-  accessCheck = check;
-}
-
-async function assertAllowed(): Promise<void> {
-  const refusal = accessCheck
-    ? await accessCheck()
-    : "Claude Code runs only inside the Rakazo API and worker.";
-  if (refusal) throw new Error(refusal);
+interface ClaudeCodeProviderOptions {
+  modelId: string;
+  accessCheck?: PersonalCliAccessCheck;
 }
 
 /** The CLI takes Anthropic's model ids, so Pi's card for the same id supplies the limits. */
@@ -52,22 +42,22 @@ function claudeCodeModel(id: string, models: Models): Model<Api> {
   };
 }
 
-function stream(model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) {
-  return lazyStream(model, async () => {
-    const { streamClaudeCode } = await import("./stream.js");
-    return streamClaudeCode(model, context, { ...options, assertAllowed });
-  });
-}
-
-/**
- * Only the deployment's own default, opted into with host credentials, runs through the CLI. It
- * is never offered in the model catalog, so no one is asked for a Claude key or sign-in.
- */
-export function claudeCodeProvider(models: Models): Provider | undefined {
-  const deployment = resolveDeploymentModel();
-  if (deployment.provider !== CLAUDE_CODE_PROVIDER_ID || !deployment.hostCredentials) {
-    return undefined;
-  }
+export function claudeCodeProvider(models: Models, options: ClaudeCodeProviderOptions): Provider {
+  const assertAllowed = async () => {
+    const refusal = options.accessCheck
+      ? await options.accessCheck()
+      : "Claude Code runs only inside the Rakazo API and worker.";
+    if (refusal) throw new Error(refusal);
+  };
+  const stream = (
+    model: Model<Api>,
+    context: TranscriptContext,
+    streamOptions?: SimpleStreamOptions,
+  ) =>
+    lazyStream(model, async () => {
+      const { streamClaudeCode } = await import("./stream.js");
+      return streamClaudeCode(model, context, { ...streamOptions, assertAllowed });
+    });
   return createProvider({
     id: CLAUDE_CODE_PROVIDER_ID,
     name: "Claude Code",
@@ -78,13 +68,15 @@ export function claudeCodeProvider(models: Models): Provider | undefined {
         resolve: async () => ({ auth: {}, source: "claude auth login" }),
       },
     },
-    models: [claudeCodeModel(deployment.model, models)],
+    models: [claudeCodeModel(options.modelId, models)],
     api: { stream, streamSimple: stream },
   });
 }
 
-export function registerClaudeCodeProvider(models: MutableModels): MutableModels {
-  const provider = claudeCodeProvider(models);
-  if (provider) models.setProvider(provider);
+export function registerClaudeCodeProvider(
+  models: MutableModels,
+  options: ClaudeCodeProviderOptions,
+): MutableModels {
+  models.setProvider(claudeCodeProvider(models, options));
   return models;
 }

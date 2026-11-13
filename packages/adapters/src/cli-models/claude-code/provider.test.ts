@@ -11,23 +11,26 @@ import type {
   MutableModels,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { normalizeRunError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { hostCredentialSource, resolveDeploymentModel } from "../../deployment-model.js";
 import { listPiCatalog } from "../../pi-models.js";
+import { resolveRuntimeModel } from "../../pi-runtime-models.js";
+import { scopedRuntimeModels } from "../../pi-runtime-scope.js";
 import { normalizePiUsage } from "../../pi-usage.js";
 import {
   PERSONAL_CLI_BILLING_REFUSAL,
   PERSONAL_CLI_SHARED_REFUSAL,
   personalCliAccessCheck,
 } from "../personal-access.js";
+import { cliModelRuntime } from "../runtime.js";
 import { CLAUDE_CODE_NOT_INSTALLED_ERROR, CLAUDE_CODE_SIGNED_OUT_ERROR } from "./cli.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
   claudeCodeProvider,
   registerClaudeCodeProvider,
-  setClaudeCodeAccessCheck,
 } from "./provider.js";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.test-support.mjs", import.meta.url));
@@ -63,6 +66,11 @@ const hello: Context = {
 
 let models: MutableModels;
 let model: Model<Api>;
+
+function configureProvider(accessCheck: (() => Promise<string | undefined>) | undefined) {
+  models = registerClaudeCodeProvider(builtinModels(), { modelId: MODEL_ID, accessCheck });
+  model = models.getModel(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)!;
+}
 
 /** Puts a fake `claude` first on PATH; it records what it was started with. */
 function fakeClaude(scenario: string) {
@@ -112,14 +120,14 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     vi.stubEnv("PI_DEFAULT_PROVIDER", CLAUDE_CODE_PROVIDER_ID);
     vi.stubEnv("PI_DEFAULT_MODEL", MODEL_ID);
     vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
-    models = registerClaudeCodeProvider(builtinModels());
+    models = registerClaudeCodeProvider(builtinModels(), { modelId: MODEL_ID });
     model = models.getModel(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)!;
   });
   beforeEach(() => {
-    setClaudeCodeAccessCheck(async () => undefined);
+    configureProvider(async () => undefined);
   });
   afterAll(() => {
-    setClaudeCodeAccessCheck(undefined);
+    configureProvider(undefined);
     vi.unstubAllEnvs();
   });
 
@@ -502,11 +510,11 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
 
   it("refuses every request until the run runtime allows it", async () => {
     const cli = fakeClaude("reply");
-    setClaudeCodeAccessCheck(undefined);
+    configureProvider(undefined);
     expect((await run(hello)).message.errorMessage).toMatch(
       /only inside the Rakazo API and worker/,
     );
-    setClaudeCodeAccessCheck(async () => PERSONAL_CLI_SHARED_REFUSAL);
+    configureProvider(async () => PERSONAL_CLI_SHARED_REFUSAL);
     expect((await run(hello)).message.errorMessage).toBe(PERSONAL_CLI_SHARED_REFUSAL);
     expect(cli.started()).toBe(false);
   });
@@ -536,15 +544,13 @@ describe("Claude Code deployment", () => {
     expect(hostCredentialSource(CLAUDE_CODE_PROVIDER_ID)).toBe("Claude Code");
   });
 
-  it("registers the provider only for that deployment model", () => {
-    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
+  it("registers the explicitly supplied model without rereading process settings", () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
     expect(
-      claudeCodeProvider(builtinModels())
-        ?.getModels()
+      claudeCodeProvider(builtinModels(), { modelId: MODEL_ID })
+        .getModels()
         .map((card) => card.id),
     ).toEqual([MODEL_ID]);
-    vi.stubEnv("PI_DEFAULT_CREDENTIALS", "");
-    expect(claudeCodeProvider(builtinModels())).toBeUndefined();
   });
 
   it("is never offered in the model catalog", () => {
@@ -614,5 +620,65 @@ describe("Claude Code bridge sources", () => {
         /\.credentials\.json|keychain|find-generic-password|setup-token|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_(?:API_KEY|AUTH_TOKEN|BASE_URL)|sk-ant-|homedir\(|["'`~/]\.claude\b/i,
       );
     }
+  });
+});
+
+describe.skipIf(process.platform === "win32")("runtime-scoped CLI models", () => {
+  afterAll(() => vi.unstubAllEnvs());
+
+  it("uses supplied deployment settings and keeps concurrent access policies independent", async () => {
+    fakeClaude("reply");
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    vi.stubEnv("PI_DEFAULT_MODEL", "unrelated-model");
+    const base: AgentRuntime = {
+      describe: () => ({
+        id: "test",
+        contractVersion: "1",
+        adapterVersion: "1",
+        capabilities: { streaming: true, compaction: false, tools: true, scripted: false },
+      }),
+      abort: async () => {},
+      async *run() {
+        const selected = resolveRuntimeModel({ provider: CLAUDE_CODE_PROVIDER_ID, id: MODEL_ID });
+        await Promise.resolve();
+        expect(selected.model).toBeDefined();
+        const result = await selected.models.streamSimple(selected.model!, hello).result();
+        yield { type: "text", text: result.errorMessage ?? "allowed" };
+        await Promise.resolve();
+        expect(
+          resolveRuntimeModel({ provider: CLAUDE_CODE_PROVIDER_ID, id: MODEL_ID }).models,
+        ).toBe(selected.models);
+      },
+    };
+    const env = {
+      defaultProvider: CLAUDE_CODE_PROVIDER_ID,
+      defaultModel: MODEL_ID,
+      deploymentModelConfigured: true,
+    };
+    const runtime = (accounts: number) =>
+      cliModelRuntime(env, base, {
+        prisma: {
+          user: { count: async () => accounts },
+          deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: false }) },
+        } as unknown as PrismaClient,
+      });
+    const allowed = runtime(1);
+    const denied = runtime(2);
+    const collect = async (instance: AgentRuntime) => {
+      const events: AgentRuntimeEvent[] = [];
+      for await (const event of instance.run({} as AgentRunRequest)) events.push(event);
+      return events;
+    };
+    const results = await Promise.all([collect(allowed), collect(denied)]);
+    expect(results).toEqual([
+      [{ type: "text", text: "allowed" }],
+      [{ type: "text", text: PERSONAL_CLI_SHARED_REFUSAL }],
+    ]);
+    expect(scopedRuntimeModels()).toBeUndefined();
+    expect(
+      cliModelRuntime({ ...env, deploymentModelConfigured: false }, base, {
+        prisma: {} as PrismaClient,
+      }),
+    ).toBe(base);
   });
 });
