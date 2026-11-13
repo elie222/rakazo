@@ -303,6 +303,8 @@ export function useAgentImportSource() {
 
   async function pickGrokFiles(list: FileList | null) {
     const read = ++latestRead.current;
+    setBusy(true);
+    setGrokBots([]);
     const chosen = [...(list ?? [])];
     if (chosen.length === 0) {
       setBusy(false);

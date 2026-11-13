@@ -202,7 +202,9 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
 }
 
 const isExportDocument = (value: unknown): value is Json =>
-  isObject(value) && (value.format === GROK_BOT_EXPORT_FORMAT || Array.isArray(value.bots));
+  isObject(value) &&
+  (value.format === undefined || value.format === GROK_BOT_EXPORT_FORMAT) &&
+  Array.isArray(value.bots);
 const looksLikeBot = (value: unknown): value is Json =>
   isObject(value) && Boolean(text(value.name)) && BOT_FIELDS.some((key) => key in value);
 
@@ -327,12 +329,21 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
         : bot,
     );
   }
-  return [...merged.values()];
+  const result = [...merged.values()];
+  if (
+    result.some((bot) =>
+      [bot.skills, bot.apps, bot.routines, bot.memories, bot.userFacts].some(
+        (items) => items.length > 100,
+      ),
+    )
+  )
+    throw new GrokBotExportError("too_large");
+  return result;
 }
 
 /** Refuses newer formats, then joins the Bots by name. */
 function botsIn(documents: readonly Json[]): GrokBot[] {
-  if (documents.some((document) => typeof document.version === "number" && document.version > 1)) {
+  if (documents.some((document) => Number(document.version) > 1)) {
     throw new GrokBotExportError("newer_version");
   }
   const raw = documents.flatMap((document) =>
@@ -441,7 +452,8 @@ function slug(value: string): string {
   return value
     .normalize("NFKD")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)
     .replace(/-+$/, "");

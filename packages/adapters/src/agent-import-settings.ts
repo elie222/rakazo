@@ -191,6 +191,10 @@ export function readGrokBotImportSettings(
       skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
       continue;
     }
+    if (looksLikeCredential(source.instruction)) {
+      skipped.push({ path: `routines: ${source.name || index + 1}`, reason: "unsupported" });
+      continue;
+    }
     const cron = grokRoutineCron(source);
     if (!cron) continue;
     const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
@@ -226,6 +230,10 @@ export function readGrokBotImportSettings(
     // Only a remote address that carries no key can come over.
     const server =
       url?.protocol === "https:" &&
+      !url.search &&
+      !url.hash &&
+      !url.username &&
+      !url.password &&
       !url.pathname.split("/").some((part) => KEY_LIKE_SEGMENT.test(part)) &&
       !looksLikeCredential(app.mcpUrl)
         ? mcpServer(
