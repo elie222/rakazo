@@ -319,6 +319,18 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("leaves a heartbeat the provider fails after checkpointing to the next idle check", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCodes: [1, 0] });
+    harness.sandbox.keepAlive.mockRejectedValueOnce(
+      new SandboxUnresponsiveError("provider request failed (HTTP 500)"),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("uses provider-native idle inspection instead of retaining emulator computers", async () => {
     const harness = idleHarness({ providerBackgroundWorkStatus: "idle" });
 

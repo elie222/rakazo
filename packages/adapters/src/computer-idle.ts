@@ -504,18 +504,7 @@ export async function sleepComputerIfIdle(
   if (runHeld || takeoverHeldUntil || (await backgroundHolds())) {
     // Recheck when the takeover grace ends so the computer sleeps on time.
     scheduleComputerSleep(deps.jobs, computerId, takeoverHeldUntil ?? undefined);
-    try {
-      await deps.sandbox.keepAlive?.(ref);
-    } catch (error) {
-      // The holding run or the next idle check recovers a computer whose sandbox is gone, and
-      // the next check sends the heartbeat a rate-limited or unreachable provider missed.
-      if (
-        !isSandboxGoneError(error) &&
-        !(error instanceof SandboxRateLimitError) &&
-        !(error instanceof SandboxUnresponsiveError)
-      )
-        throw error;
-    }
+    await sendHeldHeartbeat(deps.sandbox, ref);
     return;
   }
 
@@ -656,7 +645,7 @@ export async function sleepComputerIfIdle(
       computerId,
       activeAfterCheckpoint ? undefined : (takeoverAfterCheckpoint ?? undefined),
     );
-    if (backgroundAfterCheckpoint) await deps.sandbox.keepAlive?.(ref);
+    if (backgroundAfterCheckpoint) await sendHeldHeartbeat(deps.sandbox, ref);
     return;
   }
   if (
@@ -904,6 +893,23 @@ export function providerKeepsHome(
   return (
     sandbox.keepsHome?.(computer) ?? Promise.resolve(sandbox.describe().capabilities.persistentHome)
   );
+}
+
+/**
+ * Keeps a held computer up. The next idle check is already scheduled: it sends the heartbeat a
+ * rate-limited or unreachable provider missed, and it or the holding run recovers a gone sandbox.
+ */
+async function sendHeldHeartbeat(sandbox: SandboxProvider, ref: ComputerRef): Promise<void> {
+  try {
+    await sandbox.keepAlive?.(ref);
+  } catch (error) {
+    if (
+      !isSandboxGoneError(error) &&
+      !(error instanceof SandboxRateLimitError) &&
+      !(error instanceof SandboxUnresponsiveError)
+    )
+      throw error;
+  }
 }
 
 /** A running computer, or one whose suspend claim was abandoned while it was still up. */
