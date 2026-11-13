@@ -62,6 +62,7 @@ import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AccountMenu } from "./AccountMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { InfoTooltip } from "./InfoTooltip";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
@@ -273,8 +274,18 @@ function TierPlans({
   choose: (ownKey: boolean, plan?: { tier: ByokTier; interval: ByokInterval }) => void;
 }) {
   const { t, i18n } = useLingui();
-  const computer = useTierComputer();
   const [first] = tiers;
+  /** A bigger tier's computer as a multiple of the first's, so the cards compare without specs. */
+  const power = (offer: TierOffer, base: TierOffer) => {
+    const times =
+      COMPUTER_SIZE_SPECS[offer.computerSize].vcpus / COMPUTER_SIZE_SPECS[base.computerSize].vcpus;
+    return t`A ${times}× more powerful computer for your bot`;
+  };
+  const powerDetail = (offer: TierOffer, base: TierOffer) => {
+    const { memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
+    const usage = Math.round(offer.computerHours / base.computerHours);
+    return t`${memoryGb} GB of RAM and ${usage}× the computer time of ${base.name}. Time counts only while your bot uses its computer.`;
+  };
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const trialDays = status.trialDays;
   return (
@@ -313,7 +324,6 @@ function TierPlans({
                     <Trans>/ month</Trans>
                   </span>
                 </p>
-                <p className="text-body text-muted-foreground">{computer(offer)}</p>
                 <ul className="space-y-3 text-body">
                   {(index === 0 || !first ? features : [t`Everything in ${first.name}`]).map(
                     (feature) => (
@@ -326,6 +336,13 @@ function TierPlans({
                       </li>
                     ),
                   )}
+                  {first && index > 0 ? (
+                    <li className="flex gap-2">
+                      <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      <span>{power(offer, first)}</span>
+                      <InfoTooltip label={offer.name}>{powerDetail(offer, first)}</InfoTooltip>
+                    </li>
+                  ) : null}
                 </ul>
               </CardContent>
               <CardFooter className="border-t-0 bg-transparent">
