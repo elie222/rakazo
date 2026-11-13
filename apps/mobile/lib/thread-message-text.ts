@@ -1,9 +1,5 @@
 import { t } from "@lingui/core/macro";
-import {
-  memberName,
-  previewMessageText as previewText,
-  resolvePersonaColorDef,
-} from "@rakazo/core";
+import { previewMessageText as previewText, resolvePersonaColorDef } from "@rakazo/core";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 
 export function previewMessageText(message: MobileMessage): string {
@@ -27,10 +23,4 @@ export function speakerColorFor(
   return resolvePersonaColorDef(botId, raw).hex;
 }
 
-export function botDisplayName(
-  members: MobileSnapshot["members"] | undefined,
-  bots: MobileBot[],
-  botId: string | undefined,
-): string | undefined {
-  return memberName(members, botId) ?? bots.find((bot) => bot.id === botId)?.name;
-}
+export { botDisplayName } from "@rakazo/core";
