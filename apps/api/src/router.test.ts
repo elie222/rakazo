@@ -7318,6 +7318,18 @@ describe("bot model auth on save", () => {
     );
   });
 
+  it("persists the connected mail codes preference through the bot update route", async () => {
+    const { botUpdate, handler } = saveDeps({ modelId: spark, preferences: () => null });
+    const response = await call(handler, "bots/update", {
+      botId: "bot-1",
+      connectedMailCodes: true,
+    });
+    expect(response.status).toBe(200);
+    expect(botUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ connectedMailCodes: true }) }),
+    );
+  });
+
   it("saves a rename while resending an existing Spark override", async () => {
     const { preferenceFindFirst, secretFindFirst, botUpdate, handler } = saveDeps({
       modelId: spark,
@@ -10329,7 +10341,7 @@ describe("shared space bot permissions", () => {
       computer: null,
     };
     const prisma = {
-      bot: { findFirst: vi.fn(async () => bot) },
+      bot: { findFirst: vi.fn(async () => bot), update: vi.fn() },
       spaceMember: { findUnique: vi.fn(async () => ({ role })) },
     };
     const secrets = { put: vi.fn() };
@@ -10359,6 +10371,14 @@ describe("shared space bot permissions", () => {
       where: { spaceId_userId: { spaceId: "space-1", userId: "user-1" } },
       select: { role: true },
     });
+  });
+
+  it("keeps the choice to read the creator's connected email with the creator", async () => {
+    const { client, prisma } = sharedBotClient("owner");
+    await expect(
+      client.bots.update({ botId: "bot-1", connectedMailCodes: true }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
   it("keeps a bot's webhook secret with its creator", async () => {

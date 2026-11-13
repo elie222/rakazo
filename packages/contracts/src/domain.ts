@@ -117,6 +117,11 @@ export const BotSchema = z.object({
   teamChatRules: z.string(),
   crossSpaceCommunication: z.boolean().optional(),
   dailyCheckIns: z.boolean().optional(),
+  /**
+   * Whether the bot fills sign-in codes from its creator's connected email. Reported to the
+   * creator only, whose email it reads; absent for everyone else, and from older servers.
+   */
+  connectedMailCodes: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
   replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
@@ -489,6 +494,7 @@ export const UpdateBotInput = z
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     crossSpaceCommunication: z.boolean().optional(),
     dailyCheckIns: z.boolean().optional(),
+    connectedMailCodes: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     replyMode: ReplyModeSchema.optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),

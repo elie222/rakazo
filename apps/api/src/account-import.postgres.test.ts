@@ -457,6 +457,10 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(child.replyMode).toBe("messages");
     expect(child.dailyCheckIns).toBe(false);
     expect(parent.dailyCheckIns).toBe(false);
+    // Reading the importer's connected email is their choice to make on the new bot, never the
+    // archive's: as a copy, an imported bot starts with it off.
+    expect(child.connectedMailCodes).toBe(false);
+    expect(parent.connectedMailCodes).toBe(false);
     expect(child.disabledBuiltinTools).toEqual(["browser"]);
     const section = await system.botSection.findFirstOrThrow({ where: { spaceId } });
     expect(child.sectionId).toBe(section.id);

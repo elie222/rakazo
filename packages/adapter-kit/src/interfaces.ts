@@ -39,6 +39,7 @@ import type {
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ConnectedConnector,
   ConnectorCall,
   ConnectorCapabilities,
   ConnectorCatalogItem,
@@ -730,4 +731,62 @@ export interface CloudAgentProvider {
 export interface AutoReviewProvider {
   describe(): AdapterDescriptor<AutoReviewCapabilities>;
   review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult>;
+}
+
+/**
+ * One message a mailbox lists, as the provider tells of it without handing over its content:
+ * enough to decide whether to read it at all.
+ */
+export interface ConnectedMailListing {
+  /** The provider's id for the message, stable across reads. */
+  id: string;
+  /**
+   * Its sender's address as the provider reports it, lowercased; absent when it does not say or
+   * names more than one. Not verified: it only tells which messages cannot be from a sender.
+   */
+  from?: string;
+  /** Its size in bytes as the provider reports it; absent when it does not say. */
+  size?: number;
+  /** When the mailbox received it, as the provider records; absent when it does not say. */
+  receivedAt?: Date;
+}
+
+/**
+ * Reads a mailbox someone connected through an integration, only ever reading: it never marks
+ * mail read, moves or sends it. Core runs with none configured.
+ */
+export interface ConnectedMailReader {
+  /** The address of the mailbox, lowercased. */
+  mailbox(context: AdapterContext): Promise<string>;
+  /**
+   * One page, newest first, of the messages received since `after` that the provider matches to
+   * senders at `fromDomain`: the first page, or the one `page` names. The provider's match is
+   * loose (a name or another domain holding `fromDomain` matches), so the caller judges each
+   * listed sender itself, reads only the messages that may be the sender's, and reads on through
+   * `next` until it has what it needs. No message's content is fetched for a listing.
+   */
+  recent(
+    context: AdapterContext,
+    query: { fromDomain: string; after: Date; limit: number; page?: string },
+  ): Promise<ConnectedMailPage>;
+  /**
+   * One listed message as the mailbox received it: the raw RFC 5322 bytes, which carry its
+   * signature. Fails, decoding nothing, when it is larger than `maxBytes`.
+   */
+  read(context: AdapterContext, id: string, maxBytes: number): Promise<Uint8Array>;
+}
+
+export interface ConnectedMailPage {
+  messages: ConnectedMailListing[];
+  /** Names the page after this one when the window holds more; absent on the last. */
+  next?: string;
+}
+
+/**
+ * The reader for a connected mailbox, from the connections a provider knows how to read. Only
+ * for a connection whose every read it can hold to that connection's own account: where the
+ * provider would otherwise choose an account itself, there is no reader.
+ */
+export interface ConnectedMailSource {
+  readerFor(connection: ConnectedConnector): ConnectedMailReader | undefined;
 }

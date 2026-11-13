@@ -20,6 +20,7 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   teamChatRules: "team_chat",
   crossSpaceCommunication: "cross_space",
   dailyCheckIns: "daily_check_ins",
+  connectedMailCodes: "connected_mail_codes",
   fleetManagement: "fleet_management",
   replyMode: "reply_mode",
   disabledBuiltinTools: "tools",

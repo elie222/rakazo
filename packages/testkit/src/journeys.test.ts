@@ -1892,11 +1892,17 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
     });
     expect(source.fleetManagement).toBe(true);
-    await rpc(app, cookie, "bots/update", { botId: source.id, fleetManagement: false });
+    await rpc(app, cookie, "bots/update", {
+      botId: source.id,
+      fleetManagement: false,
+      connectedMailCodes: true,
+    });
 
     const copy = await rpc<Bot>(app, cookie, "bots/duplicate", { botId: source.id });
 
     expect(copy.fleetManagement).toBe(true);
+    // Reading one's connected email is chosen per bot: a copy starts with it off.
+    expect(copy.connectedMailCodes).toBe(false);
     const bots = await rpc<Bot[]>(app, cookie, "bots/list");
     expect(bots.find((bot) => bot.id === source.id)?.fleetManagement).toBe(false);
   });
@@ -4734,6 +4740,7 @@ type Bot = {
   unread: boolean;
   computerMode: "team" | "dedicated";
   fleetManagement: boolean;
+  connectedMailCodes?: boolean;
   parentBotId?: string | null;
 };
 type Snap = {

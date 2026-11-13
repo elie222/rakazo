@@ -8,6 +8,7 @@ const bot = {
   instructions: "Be brief.",
   color: "#8B5CF6",
   dailyCheckIns: true,
+  connectedMailCodes: false,
   notifyOnFinish: true,
   modelProvider: "anthropic",
   modelId: "claude",
@@ -51,6 +52,13 @@ describe("changedBotSettings", () => {
       "daily_check_ins",
     ]);
     expect(changedBotSettings(bot, { botId: bot.id, dailyCheckIns: true })).toEqual([]);
+  });
+
+  it("counts the connected mail codes opt-in", () => {
+    expect(changedBotSettings(bot, { botId: bot.id, connectedMailCodes: true })).toEqual([
+      "connected_mail_codes",
+    ]);
+    expect(changedBotSettings(bot, { botId: bot.id, connectedMailCodes: false })).toEqual([]);
   });
 
   it("leaves sidebar organization out", () => {

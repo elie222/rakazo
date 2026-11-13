@@ -18,6 +18,7 @@ import {
   LOGIN_VALUE_CHANGED,
   listBotSecrets,
   loadLoginPasswordRedactions,
+  loadRunCodeHiding,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
   loginCodeClaim,
@@ -25,6 +26,7 @@ import {
   oneTimeCodeArgument,
   oneTimeCodeRedactions,
   prepareBotSecret,
+  RunCodeUnreadableError,
   relabelVaultItem,
   requestWithBotSecret,
   resolveCodeFill,
@@ -1600,9 +1602,13 @@ describe("a code's redactions", () => {
 describe("resolveCodeFill", () => {
   const codeScope = { userId: "user-1", spaceId: "space-1" };
 
-  async function codeFixture(origin = "https://login.example.test", runId = "run-1") {
+  async function codeFixture(
+    origin = "https://login.example.test",
+    runId = "run-1",
+    fromEmail?: string,
+  ) {
     const stored = await secretStore.put(
-      encodeRunCode(origin, "123456"),
+      encodeRunCode(origin, "123456", fromEmail),
       { ...codeScope, operationId: runId, traceId: runId, signal: new AbortController().signal },
       { ephemeral: true },
     );
@@ -1624,6 +1630,12 @@ describe("resolveCodeFill", () => {
           for (const row of found) Object.assign(row, data);
           return { count: found.length };
         }),
+      },
+      // The claim kept with a code taken from an email.
+      externalEffect: {
+        findFirst: vi.fn(async ({ where }) =>
+          fromEmail && where.runId === runId && where.kind === "emailed_code" ? { id: "c" } : null,
+        ),
       },
     } as unknown as PrismaClient;
     return { prisma, rows };
@@ -1677,6 +1689,30 @@ describe("resolveCodeFill", () => {
       "123456",
     );
     expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-2")).toEqual([]);
+  });
+
+  it("gives none of a run's hidden codes while one is unreadable, then all of them", async () => {
+    const { prisma } = await codeFixture(undefined, undefined, "email-1");
+    const store = { load: vi.fn(secretStore.load.bind(secretStore)) };
+    const unreadable = () => store.load.mockRejectedValueOnce(new Error("store unavailable"));
+    const load = [
+      () => loadRunCodeRedactions(prisma, store, codeScope, "run-1"),
+      () => loadRunCodeHiding(prisma, store, codeScope, "run-1"),
+    ];
+    for (const loader of load) {
+      unreadable();
+      await expect(loader()).rejects.toThrow(RunCodeUnreadableError);
+    }
+    // One reading of what the run holds gives both: every form, and the codes taken from mail.
+    const redactions = await load[0]!();
+    expect(redactions).toContain("123456");
+    expect(await load[1]!()).toEqual({ redactions, emailed: ["123456"] });
+  });
+
+  it("skips an unreadable code typed in chat, in a run that took none from an email", async () => {
+    const { prisma } = await codeFixture();
+    const store = { load: vi.fn().mockRejectedValue(new Error("store unavailable")) };
+    expect(await loadRunCodeRedactions(prisma, store, codeScope, "run-1")).toEqual([]);
   });
 
   it("never gives another run's code", async () => {

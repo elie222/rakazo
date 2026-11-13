@@ -29,10 +29,12 @@ import {
 } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
 import type { VaultItemUse } from "./bot-secrets.js";
+import { loadRunCodeHiding } from "./bot-secrets.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import type { selectRunConnections } from "./connection-context.js";
+import { runTookEmailedCode } from "./emailed-code.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
@@ -249,6 +251,13 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** The bot has an email address and this run may read its inbox (see readsBotInbox). */
+  emailInbox: boolean;
+  /**
+   * This run may read its owner's connected mail for codes: one that reads the bot's inbox. Whether
+   * the owner lets it is read at each request (findConnectedMailCode).
+   */
+  connectedMail: boolean;
 }
 
 export interface RunTools {
@@ -356,6 +365,21 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   reply.pendingProgress += reply.redactor.finish();
   ctx.secrets.push(...additions);
   reply.redactor = createStreamingRedactor(ctx.secrets);
+}
+
+/**
+ * The codes this run took from mail, as it holds them at this moment, with every form of its
+ * codes added to what the attempt hides. A code can be taken while a tool call is under way, by
+ * the run's own request or by mail answering its card, so a result that could show one asks this
+ * as it is produced, not when its call began. Throws RunCodeUnreadableError while a code the run
+ * took cannot be read: then nothing that could hold it is shown.
+ */
+export async function hideRunEmailedCodes(ctx: RunContext): Promise<string[]> {
+  const { deps, run, runId } = ctx;
+  if (!(await runTookEmailedCode(deps.prisma, runId))) return [];
+  const held = await loadRunCodeHiding(deps.prisma, deps.secretStore, run, runId);
+  addRunSecrets(ctx, held.redactions);
+  return held.emailed;
 }
 
 // Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes

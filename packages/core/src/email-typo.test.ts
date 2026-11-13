@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { suggestEmailCorrection } from "./email-typo.js";
+import { PUBLIC_MAILBOX_DOMAINS, suggestEmailCorrection } from "./email-typo.js";
 
 describe("suggestEmailCorrection", () => {
   it.each([
@@ -47,5 +47,13 @@ describe("suggestEmailCorrection", () => {
     "@gmail.con",
   ])("leaves %s alone", (email) => {
     expect(suggestEmailCorrection(email)).toBeNull();
+  });
+});
+
+describe("PUBLIC_MAILBOX_DOMAINS", () => {
+  it("holds the providers typos are corrected to and the other large ones", () => {
+    expect(PUBLIC_MAILBOX_DOMAINS).toEqual(
+      expect.arrayContaining(["gmail.com", "gmx.de", "yandex.ru", "hotmail.co.uk", "hey.com"]),
+    );
   });
 });

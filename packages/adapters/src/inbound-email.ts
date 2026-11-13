@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "@rakazo/contracts";
 import type { Address } from "postal-mime";
 import { htmlToPlainText } from "./keyless-http-web.js";
 
@@ -7,9 +8,6 @@ export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;
 
 /** DKIM signatures checked per message; mail carrying more is never verified. */
 export const INBOUND_EMAIL_MAX_SIGNATURES = 5;
-
-/** Body text handed to the bot; longer mail is cut here. */
-export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
 
 /** DNS TXT lookups for DKIM keys; tests pass a fixed one. */
 export type InboundEmailResolver = (
@@ -44,6 +42,18 @@ export type InboundEmail = {
   text: string;
   /** Auto-replies, bulk and mailing-list mail, which nothing should act on (RFC 3834). */
   automated: boolean;
+  /**
+   * Sent on by a mailing list (RFC 2919), which may sign what anyone on it wrote as its own. A
+   * relay could add the header, but that only makes mail count for less.
+   */
+  mailingList: boolean;
+  /**
+   * An automatic reply to or notice about another message (RFC 3834 Auto-Submitted other than
+   * auto-generated, or a responder's X-Autoreply or X-Autorespond), which can quote what someone
+   * else sent, or bulk mail (Precedence: bulk or junk), sent to many people. A notification a
+   * sender generates for one person, such as a sign-in code (auto-generated), is neither.
+   */
+  autoReplyOrBulk: boolean;
   attachments: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
 };
 
@@ -51,11 +61,15 @@ export type ReadInboundEmailOptions = {
   resolver?: InboundEmailResolver;
 };
 
-/** Parse a raw RFC 5322 message and check its DKIM signatures. */
+/**
+ * Parse a raw RFC 5322 message and check its DKIM signatures. One larger than
+ * INBOUND_EMAIL_MAX_BYTES is refused before any of it is read, whoever hands it over.
+ */
 export async function readInboundEmail(
   raw: Uint8Array,
   options: ReadInboundEmailOptions = {},
 ): Promise<InboundEmail> {
+  if (raw.byteLength > INBOUND_EMAIL_MAX_BYTES) throw new Error("The message is too large");
   // Loaded only on servers that receive email.
   const [{ default: PostalMime }, { dkimVerify }] = await Promise.all([
     import("postal-mime"),
@@ -136,10 +150,16 @@ export async function readInboundEmail(
             : "signature leaves out required headers";
 
   // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
+  const mailingList = values("precedence").includes("list") || fieldCount("list-id") > 0;
+  const autoReplyOrBulk =
+    values("auto-submitted").some((value) => !["no", "auto-generated"].includes(value)) ||
+    fieldCount("x-autoreply") > 0 ||
+    fieldCount("x-autorespond") > 0 ||
+    values("precedence").some((value) => ["bulk", "junk"].includes(value));
   const automated =
-    values("auto-submitted").some((value) => value !== "no") ||
-    values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
-    fieldCount("list-id") > 0;
+    mailingList ||
+    autoReplyOrBulk ||
+    values("auto-submitted").some((value) => value === "auto-generated");
 
   // A huge HTML part is cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS
   // of its text.
@@ -212,6 +232,8 @@ export async function readInboundEmail(
     date: email.date?.slice(0, 100) ?? null,
     text,
     automated,
+    mailingList,
+    autoReplyOrBulk,
     attachments,
   };
 }

@@ -76,10 +76,18 @@ function rosterUpdatedAt(newestMessage: { createdAt: Date } | undefined, botUpda
   return newestMessage?.createdAt ?? botUpdatedAt;
 }
 
+/** The choice to read one's connected email is the creator's alone; others never see it. */
+function forViewer(bot: Bot, viewerId: string, creatorId: string): Bot {
+  if (viewerId === creatorId) return bot;
+  const { connectedMailCodes: _creatorsAlone, ...rest } = bot;
+  return rest;
+}
+
 function mapBot(
   bot: {
     id: string;
     spaceId: string;
+    userId: string;
     name: string;
     description: string;
     instructions: string;
@@ -105,6 +113,7 @@ function mapBot(
     teamChatRules?: string;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
+    connectedMailCodes?: boolean;
     fleetManagement?: boolean;
     replyMode?: string;
     disabledBuiltinTools?: string[];
@@ -154,6 +163,7 @@ function mapBot(
     teamChatRules: bot.teamChatRules ?? "",
     crossSpaceCommunication: bot.crossSpaceCommunication ?? true,
     dailyCheckIns: bot.dailyCheckIns ?? true,
+    connectedMailCodes: bot.connectedMailCodes ?? false,
     fleetManagement: bot.fleetManagement ?? true,
     replyMode: bot.replyMode === "messages" ? "messages" : "chat",
     // Stored lists may name a tool that no longer exists; settings resend what they read.
@@ -481,7 +491,11 @@ export function createRepos(
                 : [],
             ),
           );
-          return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
+          return forViewer(
+            { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) },
+            actor.userId,
+            bot.userId,
+          );
         }),
       );
     },
@@ -716,7 +730,8 @@ export function createRepos(
           }
         }
       }
-      return mapBot(bot);
+      // A spawn key can return a bot another member created.
+      return forViewer(mapBot(bot), actor.userId, bot.userId);
     },
 
     async reorderBots(actor: Actor, botIds: string[]): Promise<void> {
@@ -769,7 +784,7 @@ export function createRepos(
           });
         }),
       );
-      return mapBot(updated);
+      return forViewer(mapBot(updated), actor.userId, updated.userId);
     },
   };
 }

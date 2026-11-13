@@ -746,6 +746,17 @@ describe("browser_act fill_code", () => {
     expect(await fill()).toContain("No code is waiting");
   });
 
+  it.each([
+    ["another origin of the site", "https://www.login.example.test"],
+    ["a site under the same shared suffix", "https://evil.example.test"],
+  ])("refuses to type it while the page is on %s, and keeps it", async (_name, held) => {
+    const { rows, fill } = await runWithCode({ origin: held });
+    const result = await fill();
+    expect(result).toContain("the page is on https://login.example.test");
+    expect(result).not.toContain(code);
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+  });
+
   it("refuses a code kept for plain HTTP, and keeps it", async () => {
     const { rows, fill } = await runWithCode({ origin: "http://login.example.test" });
     const result = await fill();

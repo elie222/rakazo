@@ -29,6 +29,29 @@ export function selectRunConnections<
   });
 }
 
+/**
+ * The connections a person made in a Space that are connected now, read afresh: what a step
+ * that runs outside a model run (a routine's check, a look for an emailed code) may use of them.
+ * A run's own set (selectRunConnections with the provider's live list) holds these and no fewer.
+ */
+export async function loadConnectedConnections(
+  prisma: Pick<PrismaClient, "connection">,
+  owner: { userId: string; spaceId: string },
+) {
+  const rows = await prisma.connection.findMany({
+    where: { userId: owner.userId, spaceId: owner.spaceId },
+    select: {
+      id: true,
+      connectorId: true,
+      provider: true,
+      providerRef: true,
+      displayName: true,
+      status: true,
+    },
+  });
+  return selectRunConnections(rows, []);
+}
+
 /** Authorized connection metadata shared by model runs and unattended checks. */
 export function connectedContext(
   rows: Array<{

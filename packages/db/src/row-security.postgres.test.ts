@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
+import { codeAnsweredSince, otherCodeRequestOpen } from "./code-requests.js";
 import {
   databaseUrls,
   describeRowSecurity,
@@ -901,6 +902,75 @@ describePostgres("row-level security (PostgreSQL)", () => {
       }),
     );
     expect(counts).toEqual([1, 2, 1]);
+  });
+
+  it("says of a user's code requests in other Spaces only yes or no", async () => {
+    const o = owner.prisma;
+    const site = {
+      name: "example.test",
+      holds: (origin: string) => origin.endsWith("example.test"),
+    };
+    const asks = (origin: string) => ({ label: "Code", oneTimeCode: { origin } });
+    // Tenant a's user has a run in tenant b's Space, and tenant b's user one of their own.
+    const run = async (userId: string) => {
+      const place = { spaceId: b.spaceId, botId: b.botId, threadId: b.threadId, userId };
+      const task = await o.task.create({
+        data: { ...place, prompt: "Sign in", status: "running" },
+      });
+      const created = await o.run.create({
+        data: { ...place, taskId: task.id, status: "waiting_input", trigger: "user_message" },
+      });
+      return created.id;
+    };
+    const [mine, theirs] = [await run(a.userId), await run(b.userId)];
+    const request = (runId: string, status: string, origin: string) =>
+      o.externalEffect.create({
+        data: {
+          runId,
+          spaceId: b.spaceId,
+          kind: "request_secret",
+          status,
+          idempotencyKey: `rls-code-${runId}-${status}-${origin}`,
+          request: asks(origin),
+        },
+      });
+    await request(mine, "intended", "https://login.example.test");
+    const answered = await request(mine, "approved", "https://login.example.test");
+    await request(theirs, "intended", "https://login.other.test");
+    await request(theirs, "approved", "https://login.other.test");
+    const shared = { botId: a.botId, userId: a.userId };
+    const around = {
+      runId: "another-run",
+      askedFrom: new Date(Date.now() - 60_000),
+      askedTo: new Date(Date.now() + 60_000),
+      runStartedBy: new Date(Date.now() + 60_000),
+    };
+    const other = { name: "other.test", holds: (origin: string) => origin.endsWith("other.test") };
+    const asked = (times: Date[], requestId = "another-request") => ({ requestId, times });
+
+    // Inside tenant a's transaction: the run in the other Space stays out of sight before and
+    // after, and the question comes back as yes or no.
+    const seen = await runAsTenant(a, () =>
+      db.$transaction(async (tx) => {
+        const before = await tx.run.count({ where: { id: { in: [mine, theirs] } } });
+        const open = await otherCodeRequestOpen(tx, shared, site, around);
+        const others = await otherCodeRequestOpen(tx, shared, other, around);
+        const used = await codeAnsweredSince(tx, shared, site, asked([answered.updatedAt]));
+        const after = await tx.run.count({ where: { id: { in: [mine, theirs] } } });
+        return { before, open, others, used, after };
+      }),
+    );
+    expect(seen).toEqual({ before: 0, open: true, others: false, used: [true], after: 0 });
+    // Outside a transaction too, for each time asked about; another user's requests say nothing.
+    const later = new Date(answered.updatedAt.getTime() + 1);
+    const times = [answered.updatedAt, later];
+    const answers = (of: typeof site, about = asked(times)) =>
+      runAsTenant(a, () => codeAnsweredSince(db, shared, of, about));
+    expect(await answers(site)).toEqual([true, false]);
+    expect(await answers(other)).toEqual([false, false]);
+    // The request that asks is not an answer to itself, whatever its status.
+    expect(await answers(site, asked(times, answered.id))).toEqual([false, false]);
+    expect(await runAsTenant(a, () => db.run.count({ where: { id: mine } }))).toBe(0);
   });
 
   it("repairs vault helper grants when provisioning a runtime role after migration", async () => {

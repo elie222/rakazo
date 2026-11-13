@@ -36,7 +36,7 @@ import {
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
-import { connectedContext, selectRunConnections } from "./connection-context.js";
+import { connectedContext, loadConnectedConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { isEgressRefused } from "./network-address.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
@@ -463,18 +463,8 @@ async function toolContext(
   prisma: PrismaClient,
   routine: RoutineWatchTarget,
 ): Promise<AdapterContext> {
-  const rows = await prisma.connection.findMany({
-    where: { userId: routine.userId, spaceId: routine.spaceId },
-    select: {
-      id: true,
-      connectorId: true,
-      provider: true,
-      providerRef: true,
-      displayName: true,
-      status: true,
-    },
-  });
-  return { ...context(routine), ...connectedContext(selectRunConnections(rows, [])) };
+  const connected = await loadConnectedConnections(prisma, routine);
+  return { ...context(routine), ...connectedContext(connected) };
 }
 
 // Lists every file under each path as "path<TAB>size<TAB>mtime". A path that

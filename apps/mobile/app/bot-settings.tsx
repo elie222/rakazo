@@ -84,6 +84,8 @@ export default function BotSettingsScreen() {
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [dailyCheckIns, setDailyCheckIns] = useState(true);
+  // Offered to the bot's creator only, whose email it reads; absent otherwise.
+  const [connectedMailCodes, setConnectedMailCodes] = useState<boolean | undefined>(undefined);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
   const [fleetManagement, setFleetManagement] = useState(true);
   const [replyMode, setReplyMode] = useState<ReplyMode>("chat");
@@ -120,6 +122,17 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, dailyCheckIns: value });
         },
         onChange: setDailyCheckIns,
+        onError: (err) => setError(errorText(err, t`Could not save bot`)),
+      }),
+    [botId, t],
+  );
+  const connectedMailCodesSave = useMemo(
+    () =>
+      createQueuedSave<boolean>(false, {
+        save: async (value) => {
+          await rpc("bots/update", { botId, connectedMailCodes: value });
+        },
+        onChange: setConnectedMailCodes,
         onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
@@ -212,6 +225,8 @@ export default function BotSettingsScreen() {
         setNotifyOnFinish(next.notifyOnFinish ?? true);
         setDailyCheckIns(next.dailyCheckIns ?? true);
         dailyCheckInsSave.reset(next.dailyCheckIns ?? true);
+        setConnectedMailCodes(next.connectedMailCodes);
+        connectedMailCodesSave.reset(next.connectedMailCodes ?? false);
         setCrossSpaceCommunication(next.crossSpaceCommunication ?? true);
         crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
         setFleetManagement(next.fleetManagement);
@@ -220,7 +235,16 @@ export default function BotSettingsScreen() {
         replyModeSave.reset(next.replyMode);
       })
       .catch((err) => setError(errorText(err, t`Could not load bot`)));
-  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, replyModeSave, notifySave, nameSave]);
+  }, [
+    botId,
+    dailyCheckInsSave,
+    connectedMailCodesSave,
+    crossSpaceSave,
+    fleetSave,
+    replyModeSave,
+    notifySave,
+    nameSave,
+  ]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -450,6 +474,7 @@ export default function BotSettingsScreen() {
       }
       await Promise.all([
         dailyCheckInsSave.flush(),
+        connectedMailCodesSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
         replyModeSave.flush(),
@@ -677,6 +702,17 @@ export default function BotSettingsScreen() {
                 }}
                 value={fleetManagement}
               />
+              {connectedMailCodes !== undefined && (
+                <SettingsSwitch
+                  label={t`Fill sign-in codes from my connected email`}
+                  value={connectedMailCodes}
+                  onChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    connectedMailCodesSave.update(value);
+                  }}
+                />
+              )}
             </SettingsGroup>
             <SettingsGroup label={t`Replies`}>
               <MenuPicker

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
+import { INBOUND_EMAIL_HEADER_MAX_CHARS, INBOUND_EMAIL_TEXT_MAX_CHARS } from "./bot-email.js";
 import { Id } from "./ids.js";
 import { isCloudMetadataHost, isPrivateNetworkHost } from "./network-host.js";
 import { settingsScopeInput } from "./settings-scope.js";
@@ -271,6 +272,929 @@ export function normalizeOneTimeCode(answer: string): string | undefined {
     /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/.test(code)
     ? code
     : undefined;
+}
+
+/**
+ * Whether a code can be hidden wherever it appears on its own: 6 digits or more, or letters with
+ * digits. Hiding a bare 4- or 5-digit number would blank years, prices and counts too, so only
+ * these are taken from an email, and only these are hidden bare.
+ */
+export function oneTimeCodeStandsAlone(code: string): boolean {
+  const characters = code.replaceAll("-", "");
+  return characters.length >= 6 || /[A-Za-z]/.test(characters);
+}
+
+/** Digit groups a code may be split into as an email writes it: "482 913", "4829-1375". */
+const CODE_GROUP_SIZES = [4, 3];
+const CODE_GROUP_SEPARATORS = [" ", "-"];
+
+/**
+ * Every way an email may write `code` that readOneTimeCode reads as this code: as is, and a
+ * code of two equal digit groups split by a space or a dash. A run that holds a code taken from
+ * an email hides each of these in everything it reads (oneTimeCodeRedactions), and its emails
+ * also hide any spelling of the code (hideOneTimeCodeInEmail).
+ */
+export function oneTimeCodeWritings(code: string): string[] {
+  const writings = [code];
+  if (!/^[0-9]+$/.test(code)) return writings;
+  for (const size of CODE_GROUP_SIZES) {
+    if (code.length !== size * 2) continue;
+    for (const separator of CODE_GROUP_SEPARATORS) {
+      writings.push(`${code.slice(0, size)}${separator}${code.slice(size)}`);
+    }
+  }
+  return writings;
+}
+
+/**
+ * What stands where a hidden value was, in whatever hides one from a run: redactSecrets and the
+ * redactors beside it, and hideOneTimeCodeInEmail. A search over hidden text leaves it out, so
+ * every writer and every reader of the mark takes it from here.
+ */
+export const REDACTED_MARK = "[redacted]";
+
+// Whitespace (no-break and other Unicode spaces too), zero-width space, dots, dashes, middle dot.
+const SPELLING_SEPARATORS = String.raw`[\s\u200b.\p{Pd}\u00b7]*`;
+
+/**
+ * Email text with `code` hidden as its characters in order, in either case, with any run of
+ * separators between them ("482 913", "4.8.2.9.1.3", one digit per line). No separator can be a
+ * code character, so a separator is read only by match attempts that start within the code's
+ * length before it: the time is linear in the text. `code` is one normalizeOneTimeCode accepted.
+ */
+export function hideOneTimeCodeInEmail(text: string, code: string): string {
+  const characters = [...code.replaceAll("-", "")];
+  if (!characters.length) return text;
+  return text.replace(new RegExp(characters.join(SPELLING_SEPARATORS), "giu"), REDACTED_MARK);
+}
+
+// Han, kana and Hangul text puts no space around a number, so those letters may touch a code.
+const SPACELESS = String.raw`\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangul}`;
+// A code stands as its own word: not part of a link, an amount, a phone number or a date, so not
+// next to a letter, digit, currency sign or link punctuation, nor a digit group a space away.
+const CODE_LEAD = String.raw`(?<!(?![${SPACELESS}])[\p{L}\p{N}_+#$€£¥@/\\.,=&?%-])(?<![0-9][ .-])`;
+// Punctuation joining it to a letter or digit after it, or a digit group a space after it.
+const JOINED_AFTER = String.raw`[.,:/-][\p{L}\p{N}]| [0-9]`;
+const CODE_TRAIL = String.raw`(?!(?![${SPACELESS}])[\p{L}\p{N}_@/\\%€$£¥]|${JOINED_AFTER})`;
+const CODE_SEPARATORS = `[${CODE_GROUP_SEPARATORS.join("")}]`;
+const CODE_FORMS = [
+  // Two equal digit groups, as oneTimeCodeWritings writes them.
+  ...CODE_GROUP_SIZES.map((size) => `[0-9]{${size}}${CODE_SEPARATORS}[0-9]{${size}}`),
+  "[0-9]{4,8}",
+  // Capital letters and digits, both; capitals only, as the code's token has no `i` flag.
+  "(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*[0-9])[A-Z0-9]{6,8}",
+];
+const YEAR_PATTERN = "^(?:19|20)[0-9]{2}$";
+const YEAR = new RegExp(YEAR_PATTERN);
+
+// Han, kana and Hangul text puts no space between words, so their letters end a word written in
+// another script: "您的code是" names a code. A word in those scripts has no word edges at all.
+const NOT_WORD_EDGE = String.raw`(?![${SPACELESS}])[\p{L}\p{M}\p{N}]`;
+/** Where a word may start: not right after a letter, mark or digit of a script with word edges. */
+const WORD_START = `(?<!${NOT_WORD_EDGE})`;
+const word = (cue: string) => String.raw`${WORD_START}(?:${cue})(?!(?![${SPACELESS}])[\p{L}\p{M}])`;
+/** A word by its distinctive start, with whatever ending it has. */
+const stem = (cue: string) => String.raw`${WORD_START}(?:${cue})[\p{L}\p{M}]*`;
+
+/**
+ * The words an email may use around a sign-in code, in each language the app ships. A unit of
+ * text (a sentence or a line) yields a code only when it is made of nothing but these words and
+ * the code, in one of the forms readUnit lists. `cue` names a sign-in code (code, passcode, OTP,
+ * PIN); `qualifier` is a word a cue may carry (verification, security, one-time); `filler` is
+ * the little words such a sentence has around them (your, is, enter); `stale` is a word that says
+ * a code is no longer good (old, previous, expired, invalid: past forms only, never "expires"),
+ * so a sentence that names a code with one makes the whole email give none, whatever else it
+ * says (namesStaleCode). Any other word, a number among them, or a noun that makes the cue name
+ * something else (tracking code, code de suivi, ZIP code, promo code) keeps the unit from
+ * yielding anything: the owner's card is the fallback. Each entry is a regex alternative for a
+ * whole word; a `stem` takes any ending.
+ */
+const LANGUAGES: {
+  language: string;
+  cue: string[];
+  qualifier: string[];
+  filler: string[];
+  stale: string[];
+}[] = [
+  {
+    // English, and the words every language's emails borrow.
+    language: "en",
+    cue: [
+      "codes?",
+      "passcodes?",
+      "otp",
+      "2fa",
+      "one[- ]time (?:password|passcode|pin)",
+      // A bare PIN is a postal code in some countries, so only a sign-in PIN is a cue.
+      "(?:verification|security|login|sign[- ]in|access|temporary) pin",
+      "security key",
+    ].map(word),
+    qualifier: [
+      "verification",
+      "verify",
+      "security",
+      "sign[- ]?in",
+      "log[- ]?in",
+      "one[- ]time",
+      "confirmation",
+      "authentication",
+      "two[- ]factor",
+      "access",
+      "temporary",
+      "[4-8][- ]digit",
+      "account",
+      "email",
+      "device",
+    ].map(word),
+    filler: [
+      "your",
+      "the",
+      "this",
+      "is",
+      "a",
+      "an",
+      "here",
+      "here s",
+      "below",
+      "use",
+      "enter",
+      "please",
+      "to",
+      "sign",
+      "log",
+      "in",
+      "for",
+      "continue",
+      "following",
+      "new",
+      "requested",
+      "you",
+      "has",
+    ].map(word),
+    stale: ["old", "previous", "expired", "invalid"].map(word),
+  },
+  {
+    // German.
+    language: "de",
+    cue: [
+      "(?:best[äa]tigungs|sicherheits|anmelde|zugangs|verifizierungs)?codes?",
+      "(?:login|einmal|authentifizierungs)?codes?",
+      "einmalpasswort",
+      "einmalkennwort",
+    ].map(word),
+    qualifier: ["verifizierung", "bestätigung", "einmalig(?:e|er|es)?", "sicherheit"].map(word),
+    filler: [
+      "ihr",
+      "ihre",
+      "dein",
+      "deine",
+      "der",
+      "die",
+      "das",
+      "ist",
+      "lautet",
+      "hier",
+      "bitte",
+      "geben",
+      "sie",
+      "ein",
+      "zum",
+      "zur",
+      "anmelden",
+      "einloggen",
+      "unten",
+      "folgenden",
+      "nutzen",
+      "verwenden",
+    ].map(word),
+    stale: [
+      "alt(?:e|er|en|es|em)?",
+      "vorherig(?:e|er|en|es|em)?",
+      "vorig(?:e|er|en|es|em)?",
+      "abgelaufen(?:e|er|en|es|em)?",
+      "ungültig(?:e|er|en|es|em)?",
+    ].map(word),
+  },
+  {
+    // Spanish.
+    language: "es",
+    cue: ["c[óo]digos?", "contraseña de un solo uso"].map(word),
+    qualifier: [
+      "verificaci[óo]n",
+      "seguridad",
+      "acceso",
+      "inicio de sesi[óo]n",
+      "confirmaci[óo]n",
+      "un solo uso",
+      "autenticaci[óo]n",
+      "temporal",
+    ].map(word),
+    filler: [
+      "tu",
+      "su",
+      "el",
+      "la",
+      "es",
+      "de",
+      "este",
+      "esta",
+      "aqu[íi]",
+      "usa",
+      "use",
+      "utiliza",
+      "introduce",
+      "ingresa",
+      "para",
+      "iniciar",
+      "sesi[óo]n",
+      "continuaci[óo]n",
+    ].map(word),
+    stale: [
+      "anterior(?:es)?",
+      "antigu[oa]s?",
+      "caducad[oa]s?",
+      "caducó",
+      "expirad[oa]s?",
+      "expiró",
+      "vencid[oa]s?",
+      "venció",
+      "inv[áa]lid[oa]s?",
+    ].map(word),
+  },
+  {
+    // French.
+    language: "fr",
+    cue: ["codes?", "mot de passe à usage unique"].map(word),
+    qualifier: [
+      "v[ée]rification",
+      "s[ée]curit[ée]",
+      "connexion",
+      "confirmation",
+      "usage unique",
+      "authentification",
+      "temporaire",
+      "validation",
+      "acc[èe]s",
+    ].map(word),
+    filler: [
+      "votre",
+      "vous",
+      "le",
+      "la",
+      "ce",
+      "est",
+      "de",
+      "d",
+      "voici",
+      "ci-dessous",
+      "utilisez",
+      "saisissez",
+      "entrez",
+      "pour",
+      "connecter",
+      "à",
+    ].map(word),
+    stale: [
+      "ancien(?:ne)?s?",
+      "précédent(?:e)?s?",
+      "expiré(?:e)?s?",
+      "périmé(?:e)?s?",
+      "invalide(?:s)?",
+    ].map(word),
+  },
+  {
+    // Dutch.
+    language: "nl",
+    cue: [
+      "(?:verificatie|beveiligings|inlog|toegangs|bevestigings|eenmalige)?codes?",
+      "pincodes?",
+      "eenmalig wachtwoord",
+    ].map(word),
+    qualifier: ["verificatie", "beveiliging", "eenmalig(?:e)?", "bevestiging"].map(word),
+    filler: [
+      "je",
+      "jouw",
+      "uw",
+      "de",
+      "het",
+      "is",
+      "dit",
+      "hier",
+      "hieronder",
+      "gebruik",
+      "voer",
+      "in",
+      "om",
+      "te",
+      "loggen",
+      "luidt",
+    ].map(word),
+    stale: ["oud(?:e)?", "vorige", "verlopen", "ongeldig(?:e)?"].map(word),
+  },
+  {
+    // Polish.
+    language: "pl",
+    cue: ["kod(?:y|u|em|ów)?", "hasło jednorazowe"].map(word),
+    qualifier: [
+      stem("weryfikac"),
+      stem("jednorazow"),
+      stem("potwierdz"),
+      word("bezpieczeństwa"),
+      word("logowania"),
+      word("dostępu"),
+    ],
+    filler: [
+      "twój",
+      "twoja",
+      "to",
+      "jest",
+      "oto",
+      "poniżej",
+      "wpisz",
+      "użyj",
+      "aby",
+      "się",
+      "zalogować",
+      "zaloguj",
+      "ten",
+      "w",
+    ].map(word),
+    stale: [
+      word("star(?:y|a|e|ego|ej)"),
+      stem("poprzedni"),
+      stem("wygasł"),
+      stem("nieważn"),
+      stem("nieaktualn"),
+    ],
+  },
+  {
+    // Portuguese.
+    language: "pt",
+    cue: ["c[óo]digos?", "senha de uso [úu]nico"].map(word),
+    qualifier: [
+      "verifica[çc][ãa]o",
+      "seguran[çc]a",
+      "acesso",
+      "confirma[çc][ãa]o",
+      "uso [úu]nico",
+      "autentica[çc][ãa]o",
+      "tempor[áa]rio",
+    ].map(word),
+    filler: [
+      "seu",
+      "sua",
+      "o",
+      "a",
+      "é",
+      "de",
+      "este",
+      "esta",
+      "aqui",
+      "está",
+      "abaixo",
+      "use",
+      "insira",
+      "digite",
+      "para",
+      "entrar",
+      "fazer",
+      "seguir",
+    ].map(word),
+    stale: [
+      "antig[oa]s?",
+      "anterior(?:es)?",
+      "expirad[oa]s?",
+      "expirou",
+      "vencid[oa]s?",
+      "venceu",
+      "inv[áa]lid[oa]s?",
+    ].map(word),
+  },
+  {
+    // Russian.
+    language: "ru",
+    cue: ["код(?:а|у|ом|е|ы|ов)?", "пин-код", "одноразовый пароль"].map(word),
+    qualifier: [
+      stem("подтвержд"),
+      stem("верификац"),
+      stem("одноразов"),
+      stem("безопасност"),
+      stem("авторизац"),
+      word("входа"),
+      word("доступа"),
+    ],
+    filler: [
+      "ваш",
+      "ваша",
+      "ваше",
+      "твой",
+      "это",
+      "для",
+      "в",
+      "вход",
+      "введите",
+      "используйте",
+      "ниже",
+      "чтобы",
+      "войти",
+      "войдите",
+      "с",
+    ].map(word),
+    stale: [
+      word("стар(?:ый|ая|ое|ого|ом|ые|ых)"),
+      stem("предыдущ"),
+      stem("прежн"),
+      stem("устаревш"),
+      stem("недействительн"),
+      stem("просрочен"),
+      word("ист[её]к(?:ла|ло|ли)?"),
+    ],
+  },
+  {
+    // Turkish.
+    language: "tr",
+    cue: ["kod(?:u|unuz|lar)?", "tek kullanımlık şifre"].map(word),
+    qualifier: [
+      "doğrulama",
+      "dogrulama",
+      "güvenlik",
+      "giriş",
+      "tek kullanımlık",
+      "onay",
+      "erişim",
+    ].map(word),
+    filler: [
+      "sizin",
+      "bu",
+      "için",
+      "yapmak",
+      "aşağıdaki",
+      "girin",
+      "kullanın",
+      "lütfen",
+      "ile",
+    ].map(word),
+    stale: ["eski", "önceki", "geçersiz", "süresi doldu", "süresi dolmuş"].map(word),
+  },
+  {
+    // Hindi.
+    language: "hi",
+    cue: ["कोड", "ओटीपी"].map(word),
+    qualifier: ["सत्यापन", "एक बार", "सुरक्षा", "लॉगिन", "पुष्टि"].map(word),
+    filler: [
+      // Your, your, is, this, of, for, please, enter, do, of, in, below.
+      "आपका",
+      "आपकी",
+      "है",
+      "यह",
+      "के",
+      "लिए",
+      "कृपया",
+      "दर्ज",
+      "करें",
+      "का",
+      "में",
+      "नीचे",
+    ].map(word),
+    stale: [
+      "पुराना",
+      "पुरानी",
+      "पिछला",
+      "पिछली",
+      "अमान्य",
+      "समाप्त हो गया",
+      "समाप्त हो गई",
+      "समाप्त हो चुका",
+    ].map(word),
+  },
+  {
+    // Hebrew joins "the", "of" and other one-letter words to the word itself.
+    language: "he",
+    cue: ["(?:[הבולמכש]|של)?(?:קוד(?:ים)?|סיסמה חד[- ]?פעמית)"].map(word),
+    qualifier: ["(?:[הבולמכש]|של)?(?:אימות|אבטחה|כניסה|התחברות|אישור|חד[- ]?פעמית?)"].map(word),
+    filler: [
+      "שלך",
+      "שלכם",
+      "הוא",
+      "הינו",
+      "זה",
+      "הזן",
+      "הזינו",
+      "הקלד",
+      "את",
+      "כדי",
+      "להתחבר",
+      "להיכנס",
+      "כאן",
+      "להלן",
+      "הבא",
+      "יש",
+      "להזין",
+    ].map(word),
+    stale: [
+      "(?:[הבולמכש]|של)?(?:ישנה?|קודמ(?:ת|ים)|קודם)",
+      "פג תוקף(?:ו|ה)?",
+      "אינו תקף",
+      "לא תקף",
+    ].map(word),
+  },
+  {
+    // Japanese: words run together, so these are matched as written, longest first.
+    language: "ja",
+    cue: ["コード", "認証番号", "暗証番号", "ワンタイムパスワード"],
+    qualifier: ["本人確認", "認証", "確認", "セキュリティ", "ログイン", "ワンタイム", "検証"],
+    filler: [
+      "あなたの",
+      "お客様の",
+      "こちらです",
+      "こちら",
+      "になります",
+      "してください",
+      "以下",
+      "入力",
+      "です",
+      "は",
+      "が",
+      "の",
+      "を",
+      "に",
+      "ご",
+    ],
+    stale: [
+      "有効期限切れ",
+      "有効期限が切れ",
+      "期限切れ",
+      "以前の",
+      "前回の",
+      "古い",
+      "無効になりました",
+      "無効です",
+      "無効な",
+    ],
+  },
+  {
+    // Korean.
+    language: "ko",
+    cue: ["코드", "인증번호", "인증 번호", "일회용 비밀번호"],
+    qualifier: ["인증", "확인", "보안", "로그인", "일회용"],
+    filler: [
+      "귀하의",
+      "고객님의",
+      "회원님의",
+      "입니다",
+      "해주세요",
+      "하세요",
+      "입력",
+      "아래",
+      "다음",
+      "은",
+      "는",
+      "이",
+      "가",
+      "를",
+      "을",
+      "의",
+    ],
+    stale: ["만료되었", "만료된", "만료됐", "이전", "예전", "유효하지 않은"],
+  },
+  {
+    // Chinese, simplified and traditional.
+    language: "zh",
+    cue: ["验证码", "校验码", "动态码", "动态密码", "驗證碼", "校驗碼", "動態密碼"],
+    qualifier: ["验证", "登录", "一次性", "安全", "短信", "驗證", "登入"],
+    filler: [
+      "您的",
+      "你的",
+      "本次",
+      "如下",
+      "下方",
+      "以下",
+      "输入",
+      "輸入",
+      "使用",
+      "是",
+      "为",
+      "為",
+      "请",
+      "請",
+      "的",
+      "此",
+    ],
+    stale: [
+      "已过期",
+      "已過期",
+      "过期的",
+      "過期的",
+      "已失效",
+      "无效的",
+      "無效的",
+      "之前的",
+      "以前的",
+      "旧的",
+      "舊的",
+      "上一个",
+      "上一個",
+    ],
+  },
+];
+
+/** What may stand between a cue and its code: a colon, equals sign or dash. */
+const SEPARATOR = String.raw`[:：=\p{Pd}]`;
+
+// The longest alternative first, so a word is read whole ("codes" before "code", "あなたの"
+// before "の"). The scanner takes the first alternative that matches at its position and never
+// backs up, so the order decides, not any backtracking.
+const longestFirst = (alternatives: string[]) =>
+  [...new Set(alternatives)].sort((left, right) => right.length - left.length);
+/**
+ * Text as words are matched in it: composed (NFC), with the Turkish dotted capital I (U+0130),
+ * the dotless small i (U+0131) and a small i with a dot above (U+0069 U+0307) all read as "i".
+ * A case-insensitive match folds none of those to "i", so a notice in Turkish capitals would
+ * not read as the same words in small letters; this folding is the same under every locale. It
+ * changes no capital letter or digit a code is made of.
+ */
+const foldCase = (text: string) => text.normalize("NFC").replace(/\u0130|i\u0307|\u0131/gu, "i");
+/**
+ * Words in any case: "Code", "CODE" and "code" are one cue. Only words: never a code. Matched
+ * with the `i` flag against text folded by foldCase, as the words themselves are here.
+ */
+const anyCaseWords = (alternatives: string[]) => `(?:${alternatives.map(foldCase).join("|")})`;
+const CUE_WORDS = longestFirst(LANGUAGES.flatMap((language) => language.cue));
+const STALE_WORDS = longestFirst(LANGUAGES.flatMap((language) => language.stale));
+/**
+ * The same words, for finding one anywhere in a sentence of any length: the word-start check
+ * most of them begin with is made once at a position, not once for each word tried there.
+ */
+function anywhere(alternatives: string[]): string {
+  const starts = (one: string) => one.startsWith(WORD_START);
+  const edged = alternatives.filter(starts).map((one) => one.slice(WORD_START.length));
+  const sources = [
+    `${WORD_START}(?:${edged.join("|")})`,
+    ...alternatives.filter((one) => !starts(one)),
+  ];
+  return foldCase(sources.join("|"));
+}
+/** A code word, and a word saying a code is no longer good, anywhere in a sentence. */
+const CUE_ANYWHERE_PATTERN = anywhere(CUE_WORDS);
+const STALE_ANYWHERE_PATTERN = anywhere(STALE_WORDS);
+const CUE_ANYWHERE = new RegExp(CUE_ANYWHERE_PATTERN, "iu");
+const STALE_ANYWHERE = new RegExp(STALE_ANYWHERE_PATTERN, "iu");
+/**
+ * A code as written, matched case-sensitively: no `i` flag, unlike the words, so its letters are
+ * capitals only. Lowercase letters and digits ("Code abc123.") are a word the scanner cannot
+ * read, so their unit gives nothing.
+ */
+const CODE_PATTERN = `${CODE_LEAD}(?:${CODE_FORMS.join("|")})${CODE_TRAIL}`;
+/**
+ * The kinds of token a unit may be made of, each as one regex that matches at a position: N a
+ * code, C a cue, Q a qualifier, F a filler, S a separator. A unit holding anything else is not
+ * read. No pattern quantifies a group, so none backtracks into a nested or overlapping loop, and
+ * the scanner runs each at most once per token: reading a unit costs at most a fixed number of
+ * regex executions per character, and a unit is at most ONE_TIME_CODE_UNIT_LIMIT long.
+ */
+const TOKEN_PATTERNS: readonly (readonly [kind: string, pattern: string, flags: string])[] = [
+  ["N", CODE_PATTERN, "yu"],
+  ["C", anyCaseWords(CUE_WORDS), "yiu"],
+  ["Q", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.qualifier))), "yiu"],
+  ["X", anyCaseWords(STALE_WORDS), "yiu"],
+  ["F", anyCaseWords(longestFirst(LANGUAGES.flatMap((language) => language.filler))), "yiu"],
+  ["S", SEPARATOR, "yu"],
+];
+export const ONE_TIME_CODE_TOKENS: readonly (readonly [kind: string, pattern: RegExp])[] =
+  TOKEN_PATTERNS.map(([kind, pattern, flags]) => [kind, new RegExp(pattern, flags)]);
+
+/**
+ * A unit of text longer than this yields no code. A real sentence naming a code is far shorter,
+ * and the cap bounds what reading one unit for a code can cost. It never keeps a sentence from
+ * being read for a stale word (namesStaleCode): that takes two passes over it, whatever its length.
+ */
+export const ONE_TIME_CODE_UNIT_LIMIT = 200;
+
+/**
+ * A character that ends a unit inside a line: sentence and clause punctuation (Chinese, Japanese
+ * and Hindi marks too), a bracket, a quote or a pipe. One character, so splitting never backs up;
+ * "1,234" or "4.8.2" splits into pieces, none of which is a code, as none was.
+ */
+const UNIT_BREAK_PATTERN = String.raw`[.!?;,()[\]{}"“”«»|。！？।；，、]`;
+const UNIT_BREAK = new RegExp(UNIT_BREAK_PATTERN, "u");
+
+type Unit = {
+  text: string;
+  /** The unit is all its line holds, so a line of nothing but a code reads as one. */
+  wholeLine: boolean;
+  /** The unit ends its line (or is the subject), so the next unit is the line below it. */
+  endsLine: boolean;
+};
+
+/**
+ * The pieces of `text` between unit breaks, each folded (foldCase) and trimmed with its spaces
+ * collapsed, blank ones dropped. Apostrophes read as spaces ("here's", "d'accès") so the words
+ * around them stand whole.
+ */
+const pieces = (text: string) =>
+  text
+    .split(UNIT_BREAK)
+    .map((part) => foldCase(part).replace(/['’]/gu, " ").replace(/\s+/gu, " ").trim())
+    .filter(Boolean);
+
+/** The sentences and lines of `text` in order: each line's pieces. */
+function units(text: string): Unit[] {
+  const result: Unit[] = [];
+  for (const line of text.split("\n")) {
+    const parts = pieces(line);
+    for (const [index, part] of parts.entries()) {
+      result.push({
+        text: part,
+        wholeLine: parts.length === 1,
+        endsLine: index === parts.length - 1,
+      });
+    }
+  }
+  return result;
+}
+
+/**
+ * The token kinds of a unit as a string ("FCSN" for "Your code: 482913") and the code tokens as
+ * written; or undefined when the unit holds anything that is not a known word, a code or a
+ * separator, or is longer than ONE_TIME_CODE_UNIT_LIMIT. A stale word (X) is known, so its unit
+ * reads, but no form takes it: such a unit yields no code.
+ */
+function scanUnit(unit: string): { kinds: string; codes: string[] } | undefined {
+  if (unit.length > ONE_TIME_CODE_UNIT_LIMIT) return undefined;
+  let kinds = "";
+  const codes: string[] = [];
+  let at = 0;
+  while (at < unit.length) {
+    if (unit[at] === " ") {
+      at++;
+      continue;
+    }
+    let token: [string, string] | undefined;
+    for (const [kind, pattern] of ONE_TIME_CODE_TOKENS) {
+      pattern.lastIndex = at;
+      const match = pattern.exec(unit);
+      if (match?.[0]) {
+        token = [kind, match[0]];
+        break;
+      }
+    }
+    if (!token) return undefined;
+    const [kind, written] = token;
+    kinds += kind;
+    if (kind === "N") codes.push(written);
+    at += written.length;
+  }
+  return { kinds, codes };
+}
+
+/**
+ * The sentences of `text` that a stale word is read in: its pieces as for units(), except that a
+ * line break inside a paragraph is a space, as mail wraps a sentence over lines. A sentence ends
+ * at a unit break (sentence or clause punctuation, a bracket, a quote, a pipe) or a blank line,
+ * and is as long as it is: every unit a code is read from is inside one of them.
+ */
+function sentences(text: string): string[] {
+  const result: string[] = [];
+  let paragraph: string[] = [];
+  for (const line of [...text.split("\n"), ""]) {
+    if (line.trim()) paragraph.push(line);
+    else if (paragraph.length) {
+      result.push(...pieces(paragraph.join(" ")));
+      paragraph = [];
+    }
+  }
+  return result;
+}
+
+/**
+ * Whether a sentence names a code and says it is no longer good (old, previous, expired, invalid
+ * in any of LANGUAGES), whatever else it holds and however long it is: such an email gives no
+ * code. The sentence is the unit because that is what says one thing of another: a stale word
+ * is about the code its own sentence names, and one in another sentence or paragraph ("Your
+ * previous orders") is about something else.
+ */
+function namesStaleCode(sentence: string): boolean {
+  return STALE_ANYWHERE.test(sentence) && CUE_ANYWHERE.test(sentence);
+}
+
+/** A phrase naming a code: cues, qualifiers and fillers in any order, with a cue among them. */
+const NAMES_CODE = "[FQC]*C[FQC]*";
+/**
+ * The forms a clause's token kinds may take to give a code (R4 of ONE_TIME_CODE_RUBRIC), each a pattern over the kinds,
+ * with exactly one code in it. Any word may carry a qualifier or another cue ("one-time PIN
+ * code"); between cue and code only fillers, qualifiers and one separator may stand; after a
+ * code in the first form only fillers and qualifiers ("to sign in").
+ */
+const CODE_FORM_PATTERNS = {
+  /** "<cue> [is | : | = | -] <code>" and "<code> [is] your <cue>". */
+  inOneClause: [`^${NAMES_CODE}S?N[FQ]*$`, `^NS?${NAMES_CODE}$`],
+  /** A clause that only names a code and ends its line, over a line of nothing but the code. */
+  overTwoLines: { names: `^${NAMES_CODE}S?$`, code: "^N$" },
+};
+const IN_ONE_CLAUSE = CODE_FORM_PATTERNS.inOneClause.map((form) => new RegExp(form));
+const NAMES_A_CODE = new RegExp(CODE_FORM_PATTERNS.overTwoLines.names);
+const ONLY_A_CODE = new RegExp(CODE_FORM_PATTERNS.overTwoLines.code);
+
+/**
+ * The rubric an email is read for a sign-in code by. No model may see a code, so this judgement
+ * is made by fixed rules and word lists and never by a model: a deliberate exception to judging
+ * prose with a model. The rules are checked against the calibration emails in
+ * bot-secrets.test.ts, which cover every language listed, and a change to any list, form or
+ * limit here takes a new ONE_TIME_CODE_RUBRIC_VERSION: a test pins the two together.
+ *
+ * R1. Only the subject and the text are read, and no more of either than the inbox keeps
+ *     (`limits`). An email with more than that gives no code: what was not read could name
+ *     another code or say this one expired.
+ * R2. Each is split into units, a line's pieces between unit breaks (`unitBreak`). A unit longer
+ *     than `limits.unit` gives nothing.
+ * R3. A unit is read only when it is nothing but known tokens (`tokens`): a code (N), a cue (C),
+ *     a qualifier (Q), a stale word (X), a filler (F) and a separator (S), in the words of
+ *     `languages`. Any other word keeps the unit from giving anything.
+ * R4. A unit gives a code only in one of `forms`: "<cue> is <code>", "<code> is your <cue>", or
+ *     a unit that names a code and ends its line over a line holding the code alone.
+ * R5. A sentence that holds a cue and a stale word (`staleSentence`) makes the whole email give
+ *     no code, whatever else it says.
+ * R6. The email gives a code only when it holds exactly one, which stands alone and is not a
+ *     year (`year`). Several codes, or one too short to take, give none.
+ * R7. Whatever gives no code leaves the owner's card as the answer.
+ */
+export const ONE_TIME_CODE_RUBRIC_VERSION = 1;
+export const ONE_TIME_CODE_RUBRIC = {
+  version: ONE_TIME_CODE_RUBRIC_VERSION,
+  limits: {
+    subject: INBOUND_EMAIL_HEADER_MAX_CHARS,
+    text: INBOUND_EMAIL_TEXT_MAX_CHARS,
+    unit: ONE_TIME_CODE_UNIT_LIMIT,
+  },
+  unitBreak: UNIT_BREAK_PATTERN,
+  languages: LANGUAGES,
+  tokens: TOKEN_PATTERNS,
+  forms: CODE_FORM_PATTERNS,
+  staleSentence: { cue: CUE_ANYWHERE_PATTERN, stale: STALE_ANYWHERE_PATTERN },
+  year: YEAR_PATTERN,
+} as const;
+
+/** Whether a unit's token kinds take one of the forms that give a code in one clause. */
+const yieldsCode = (kinds: string) => IN_ONE_CLAUSE.some((form) => form.test(kinds));
+
+/**
+ * The code a unit writes in a form yieldsCode accepts, or, when the unit only names a code and
+ * ends its line, the code the line below holds alone. Undefined when the unit takes no such form.
+ */
+function readUnit(unit: Unit, below: Unit | undefined): string | undefined {
+  const scanned = scanUnit(unit.text);
+  if (!scanned) return undefined;
+  if (yieldsCode(scanned.kinds)) return scanned.codes[0];
+  if (!NAMES_A_CODE.test(scanned.kinds)) return undefined;
+  const next = unit.endsLine && below?.wholeLine ? scanUnit(below.text) : undefined;
+  return next && ONLY_A_CODE.test(next.kinds) ? next.codes[0] : undefined;
+}
+
+/**
+ * What an email says of a one-time code: the one it gives, as it would be typed (digit groups
+ * joined), or none. The subject and each sentence or line of the text is read on its own
+ * (readUnit), and yields a code only when it is written in one of a few fixed forms with the
+ * words LANGUAGES lists and nothing else: "Your verification code is 482913", "Code: 482913",
+ * "482913 is your sign-in code", or "Your code:" on a line with the code alone on the next; the
+ * subject counts as the line above the text. Anything else, an order or tracking number near a
+ * code word included, yields nothing. The email gives a code only when it holds exactly one, the
+ * same one wherever it appears, and that one stands alone (oneTimeCodeStandsAlone), as a shorter
+ * one could not be hidden. Without one it is `unclear` when it names a code all the same: it
+ * writes several, or one too short to take, or has a sentence naming a code with a `stale` word
+ * ("This code has expired", namesStaleCode), whether or not it also names a current one, or it
+ * writes one and its subject or text is as long as the inbox keeps of it or longer. Only that much
+ * of either is read (INBOUND_EMAIL_HEADER_MAX_CHARS, INBOUND_EMAIL_TEXT_MAX_CHARS), which bounds
+ * what reading one email can cost, and such an email gives no code: what the inbox cut, or what
+ * was not read, could say the code expired or name another. A subject the inbox cut is exactly
+ * as long as it keeps, so one that long counts as cut; a text it cut is longer, by the mark it
+ * leaves. An unclear email leaves in doubt every code its sender wrote around then; one that
+ * names no code, however long it is, does not. The rules are ONE_TIME_CODE_RUBRIC's.
+ */
+export function readOneTimeCode(email: { subject: string; text: string }): {
+  code?: string;
+  unclear: boolean;
+} {
+  const parts = [
+    email.subject.slice(0, INBOUND_EMAIL_HEADER_MAX_CHARS),
+    email.text.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS),
+  ];
+  const cut =
+    email.subject.length >= INBOUND_EMAIL_HEADER_MAX_CHARS ||
+    email.text.length > INBOUND_EMAIL_TEXT_MAX_CHARS;
+  if (parts.some((part) => sentences(part).some(namesStaleCode))) return { unclear: true };
+  const codes = new Set<string>();
+  const all = parts.flatMap(units);
+  for (const [index, unit] of all.entries()) {
+    const written = readUnit(unit, all[index + 1]);
+    if (written === undefined) continue;
+    const code = normalizeOneTimeCode(written.replace(/[ -]/g, ""));
+    if (!code || YEAR.test(code) || !oneTimeCodeWritings(code).includes(written)) continue;
+    codes.add(code);
+  }
+  const [code] = codes;
+  if (codes.size === 1 && code && oneTimeCodeStandsAlone(code) && !cut)
+    return { code, unclear: false };
+  return { unclear: codes.size > 0 };
 }
 
 export const LOGIN_FIELD_LIMIT = 8;

@@ -8,6 +8,22 @@ export const BotEmailRecipientSchema = z.email().transform((address) => {
 
 export const BOT_EMAIL_NAME_TAKEN = "That address isn't available";
 
+/**
+ * Body text of an email handed to the bot, in characters; longer mail is cut here. What reads a
+ * sign-in code from an email reads no more of a text than this (readOneTimeCode), so it never
+ * takes mail the inbox cut for whole.
+ */
+export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
+
+/**
+ * Longest subject or sender name the inbox keeps of an email; longer ones are cut here. A subject
+ * this long gives no sign-in code (readOneTimeCode): what was cut could name another.
+ */
+export const INBOUND_EMAIL_HEADER_MAX_CHARS = 500;
+
+/** Messages one bot saves per day; past it, a flood of mail stops being stored. */
+export const INBOX_DAILY_LIMIT = 500;
+
 /** Role and abuse-desk names (RFC 2142), names people trust by reflex, and the project's own. */
 const RESERVED_BOT_EMAIL_NAMES = new Set([
   "abuse",

@@ -310,6 +310,8 @@ export function PermissionsGroup({
   onCrossSpaceCommunicationChange,
   fleetManagement,
   onFleetManagementChange,
+  connectedMailCodes,
+  onConnectedMailCodesChange,
 }: {
   ids: string;
   saving: boolean;
@@ -319,6 +321,9 @@ export function PermissionsGroup({
   onCrossSpaceCommunicationChange: (checked: boolean) => void;
   fleetManagement: boolean;
   onFleetManagementChange: (checked: boolean) => void;
+  /** Offered to the bot's creator only, whose email it reads; absent otherwise. */
+  connectedMailCodes: boolean | undefined;
+  onConnectedMailCodesChange: (checked: boolean) => void;
 }) {
   const { t } = useLingui();
   return (
@@ -356,6 +361,19 @@ export function PermissionsGroup({
           onCheckedChange={onFleetManagementChange}
         />
       </div>
+      {connectedMailCodes !== undefined && (
+        <div className="flex min-h-11 items-center justify-between gap-3 text-body">
+          <label htmlFor={`${ids}-connected-mail-codes`} className={rowLabelClass}>
+            <Trans>Fill sign-in codes from my connected email</Trans>
+          </label>
+          <Switch
+            id={`${ids}-connected-mail-codes`}
+            checked={connectedMailCodes}
+            disabled={saving}
+            onCheckedChange={onConnectedMailCodesChange}
+          />
+        </div>
+      )}
     </BotPanelGroup>
   );
 }

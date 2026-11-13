@@ -28,6 +28,7 @@ import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import type { Prisma, PrismaClient } from "./client.js";
+import { noteCodeAnswered } from "./code-requests.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
@@ -129,6 +130,13 @@ export interface AnswerRunInput {
   remember?: false;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
+  /** Only for a code card answered from mail: names the email the code was read from. */
+  fromEmail?: string;
+  /**
+   * With `fromEmail`: takes that email for the run in the answer's transaction, so it stays free
+   * when the card is not answered. It throws when another run took it, which rolls the answer back.
+   */
+  claimEmail?: (tx: Prisma.TransactionClient) => Promise<void>;
 }
 
 /** What request_secret returns to the bot once the user dismissed its card. */
@@ -156,7 +164,8 @@ export interface RunSecretWriter {
   }): Promise<void>;
 }
 
-async function findPendingAsk(
+/** The run's newest card still waiting for an answer, and the message it is on. */
+export async function findPendingAsk(
   tx: Prisma.TransactionClient,
   input: { threadId: string; runId: string },
 ) {
@@ -256,6 +265,7 @@ async function commitAnswerRunInput(
   // Login fields belong only to a login card, which cannot be saved without them.
   if (loginAsk ? !login : input.username !== undefined || input.fields !== undefined) return null;
   if (input.remember !== undefined && !loginAsk) return null;
+  if ((input.fromEmail !== undefined || input.claimEmail) && !code) return null;
   if (secretAsk && input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH)
     throw new AnswerTooLongError();
   let approvalEffect: {
@@ -410,6 +420,11 @@ async function commitAnswerRunInput(
     });
     if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
+    // A code card: noted with when it was answered, and no code is taken from mail for the
+    // run's bot or user while this answer is under way.
+    if (pendingAsk.oneTimeCode)
+      await noteCodeAnswered(tx, { botId: run.botId, userId: run.userId }, secretRequest);
+    await input.claimEmail?.(tx);
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,

@@ -21,6 +21,40 @@ const KNOWN_DOMAINS = [
   "email.com",
 ];
 
+/**
+ * Domains that give mailboxes to the public, so mail signed by one can come from anyone with an
+ * address there: a sign-in page on one of them never fills a code from mail. A mistyped address
+ * is corrected only to KNOWN_DOMAINS, so a lookalike real domain is never "corrected" to the rest.
+ */
+export const PUBLIC_MAILBOX_DOMAINS: readonly string[] = [
+  ...KNOWN_DOMAINS,
+  "gmx.de",
+  "gmx.net",
+  "web.de",
+  "t-online.de",
+  "yandex.ru",
+  "yandex.com",
+  "mail.ru",
+  "rambler.ru",
+  "yahoo.co.jp",
+  "hotmail.co.uk",
+  "hotmail.fr",
+  "outlook.fr",
+  "yahoo.fr",
+  "laposte.net",
+  "libero.it",
+  "seznam.cz",
+  "naver.com",
+  "daum.net",
+  "sina.com",
+  "yeah.net",
+  "zoho.com",
+  "fastmail.com",
+  "tuta.com",
+  "tutanota.com",
+  "hey.com",
+];
+
 const COM_TYPOS = new Set([
   "con",
   "cmo",

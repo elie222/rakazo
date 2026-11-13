@@ -38,7 +38,6 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
-  teamChatRunFromOwner,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
@@ -86,6 +85,7 @@ import {
 } from "./connection-context.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
+import { isNonOwnerChatRun, readsBotInbox } from "./emailed-code.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
@@ -615,16 +615,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
         // Team chat reaches people besides the owner, so their runs get a group channel's limits.
-        const teamChatConversationId =
-          run.trigger === "messaging" ? thread.externalConversationId : null;
-        const nonOwnerChatRun =
-          messagingChannelRun ||
-          (teamChatConversationId
-            ? !(await teamChatRunFromOwner(deps.prisma, {
-                externalConversationId: teamChatConversationId,
-                sourceClientNonce: messagingSource?.clientNonce,
-              }))
-            : false);
+        const nonOwnerChatRun = await isNonOwnerChatRun(deps.prisma, {
+          trigger: run.trigger,
+          sourceBlocks,
+          sourceClientNonce: messagingSource?.clientNonce,
+          externalConversationId: thread.externalConversationId,
+        });
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -1253,12 +1249,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const botEmail = emailName ? `${emailName.name}@${deps.inboundEmailDomain}` : null;
         // The inbox is the owner's mail: read only in their own runs, never in a group or channel, and
         // never for another bot, which may be answering someone else.
-        const emailInbox =
-          Boolean(botEmail) &&
-          run.userId === bot.userId &&
-          run.trigger !== "bot_message" &&
-          !thread.groupId &&
-          !nonOwnerChatRun;
+        const inboxRun = readsBotInbox({ run, bot, thread, nonOwnerChatRun });
+        const emailInbox = Boolean(botEmail) && inboxRun;
+        // The owner's switch is read at each code request, so turning it on or off counts at once.
+        const connectedMail = inboxRun && Boolean(deps.connectedMail);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
           sourceRole: sourceMessage?.role,
@@ -1517,6 +1511,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             callClientNonce: callClientNonceForRun,
             peerMessage,
             userComputerOwner: userComputerOwnerId,
+            emailInbox,
+            connectedMail,
           },
           computer: {
             stored: storedComputer,

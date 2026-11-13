@@ -31,25 +31,30 @@ export function sanitizeConnectorError(error: unknown, secrets: string[] = []): 
 
 export function redactConnectorPayload(value: unknown, secrets: string[]): unknown {
   if (secrets.length === 0) return value;
+  return maskPayload(value, (text) => redactSecrets(text, secrets));
+}
+
+/**
+ * `value` as JSON with `mask` applied to every string in it, keys included, and to every number
+ * and boolean as written; `{ ok: true }` when it is not JSON.
+ */
+export function maskPayload(value: unknown, mask: (text: string) => string): unknown {
   try {
-    return redactPayloadValue(JSON.parse(JSON.stringify(value)), secrets);
+    return maskPayloadValue(JSON.parse(JSON.stringify(value)), mask);
   } catch {
     return { ok: true };
   }
 }
 
-function redactPayloadValue(value: unknown, secrets: string[]): unknown {
-  if (typeof value === "string") return redactSecrets(value, secrets);
-  if (Array.isArray(value)) return value.map((item) => redactPayloadValue(item, secrets));
+function maskPayloadValue(value: unknown, mask: (text: string) => string): unknown {
+  if (typeof value === "string") return mask(value);
+  if (Array.isArray(value)) return value.map((item) => maskPayloadValue(item, mask));
   if (value === null || typeof value === "number" || typeof value === "boolean") {
     const serialized = String(value);
-    return redactSecrets(serialized, secrets) === serialized ? value : "[redacted]";
+    return mask(serialized) === serialized ? value : "[redacted]";
   }
   if (typeof value !== "object") return value;
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      redactSecrets(key, secrets),
-      redactPayloadValue(item, secrets),
-    ]),
+    Object.entries(value).map(([key, item]) => [mask(key), maskPayloadValue(item, mask)]),
   );
 }

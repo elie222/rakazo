@@ -1,9 +1,14 @@
+import { hideOneTimeCodeInEmail, REDACTED_MARK } from "@rakazo/contracts";
 import {
+  createStreamingRedactor,
+  redactSecrets,
+  redactSecretsAfter,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
 } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { encodeRunCode, oneTimeCodeRedactions } from "./bot-secrets.js";
 import { botEmailInstruction } from "./run-instructions.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { emailTools } from "./run-tools-email.js";
@@ -48,17 +53,47 @@ function fakeRun(
   options: {
     runUserId?: string;
     arriving?: Row;
+    /** When `arriving` shows up, in ms from the first look: on the second look unless given. */
+    arrivesAfterMs?: number;
     secrets?: string[];
+    /** A code the run took from an email, or several, held as request_secret keeps them. */
+    emailedCode?: string | string[];
+    /**
+     * A code the run takes from an email while the call is under way: once the inbox has been
+     * read this many times, as that read returns, or `after` ms from the first read.
+     */
+    takes?: { code: string; onRead?: number; afterMs?: number };
+    /** How many loads of the held code fail first, as when the secret store is down. */
+    unreadableLoads?: number;
     /** The Space's query tokens per key version, as content encryption returns them. */
     queryTokens?: number[][];
   } = {},
 ) {
   const inbox = [...rows];
   let listed = 0;
+  let firstLook: number | undefined;
+  /** The codes the run holds from email now, as its claims and its code rows say. */
+  const held = [options.emailedCode ?? []].flat();
+  /** Another call of the run keeps a code: not in what this attempt hides until it is asked. */
+  const takeCode = () => {
+    const code = options.takes?.code;
+    if (code && !held.includes(code)) held.push(code);
+  };
+  const inboxRead = () => {
+    const { onRead, afterMs } = options.takes ?? {};
+    if (onRead === listed) takeCode();
+    if (afterMs !== undefined && firstLook !== undefined)
+      setTimeout(takeCode, Math.max(0, firstLook + afterMs - Date.now()));
+  };
+  /** Every email the inbox handed out, decrypted, across all looks. */
+  const read: string[] = [];
+  /** How many codes the run held each time the database was asked to match a search itself. */
+  const databaseSearches: number[] = [];
   const copyEarlierFiles = vi.fn();
   const matches = (email: Row, where: Record<string, unknown>) => {
     const since = (where.receivedAt as { gt?: Date } | undefined)?.gt;
     const before = (where.receivedAt as { lt?: Date } | undefined)?.lt;
+    const left = (where.id as { notIn?: string[] } | undefined)?.notIn;
     const or = where.OR as
       | Array<Record<string, { contains?: string; hasEvery?: number[] }>>
       | undefined;
@@ -71,6 +106,7 @@ function fakeRun(
             .includes(test.contains!.toLowerCase());
     return (
       email.botId === where.botId &&
+      !left?.includes(email.id) &&
       (!since || email.receivedAt > since) &&
       (!before || email.receivedAt < before) &&
       (!or || or.some((clause) => Object.entries(clause).some(matchesClause)))
@@ -86,29 +122,54 @@ function fakeRun(
               }),
             }
           : {}),
+        secret: {
+          // One row a code; what is sealed in it stands for the code here.
+          findMany: async () => held.map((code) => ({ id: `row-${code}`, ciphertext: code })),
+        },
+        externalEffect: {
+          findFirst: async () => (held.length ? { id: "claim" } : null),
+        },
         botEmailMessage: {
-          findFirst: async ({ where }: { where: { id: string; botId: string } }) =>
-            inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null,
+          findFirst: async ({ where }: { where: { id: string; botId: string } }) => {
+            listed += 1;
+            firstLook ??= Date.now();
+            inboxRead();
+            return (
+              inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null
+            );
+          },
           findMany: async ({
             where,
+            skip = 0,
             take,
             orderBy,
           }: {
             where: Record<string, unknown>;
+            skip?: number;
             take?: number;
             orderBy: { receivedAt: "asc" | "desc" };
           }) => {
             listed += 1;
-            // Mail that arrives while the bot waits shows up on the second look.
-            if (listed === 2 && options.arriving) inbox.push(options.arriving);
-            return inbox
+            firstLook ??= Date.now();
+            if (where.OR) databaseSearches.push(held.length);
+            // Mail that arrives while the bot waits shows up on the second look, or once due.
+            const due =
+              options.arrivesAfterMs === undefined
+                ? listed === 2
+                : Date.now() - firstLook >= options.arrivesAfterMs;
+            if (due && options.arriving && !inbox.includes(options.arriving))
+              inbox.push(options.arriving);
+            const page = inbox
               .filter((email) => matches(email, where))
               .sort(
                 (a, b) =>
                   (orderBy.receivedAt === "asc" ? 1 : -1) *
                   (a.receivedAt.getTime() - b.receivedAt.getTime()),
               )
-              .slice(0, take);
+              .slice(skip, take === undefined ? undefined : skip + take);
+            read.push(...page.map((email) => email.id));
+            inboxRead();
+            return page;
           },
           deleteMany: async ({
             where,
@@ -129,10 +190,24 @@ function fakeRun(
     },
     bot: { id: "bot-1", userId: "owner-1" },
     run: { userId: options.runUserId ?? "owner-1" },
+    runId: "run-1",
+    state: { reply: { pendingProgress: "", redactor: createStreamingRedactor([]) } },
     computer: { copyEarlierFiles },
     context: { signal: new AbortController().signal },
-    secrets: options.secrets ?? [],
+    secrets: [
+      ...(options.secrets ?? []),
+      ...held.flatMap((code) => oneTimeCodeRedactions(code, { emailed: true })),
+    ],
   };
+  let unreadable = options.unreadableLoads ?? 0;
+  Object.assign(ctx.deps, {
+    secretStore: {
+      load: async (sealed: string) => {
+        if (unreadable-- > 0) throw new Error("store unavailable");
+        return encodeRunCode("https://shop.test", sealed, "email-0");
+      },
+    },
+  });
   const invoke = (name: "read_email" | "delete_email", args: Record<string, unknown>) =>
     emailTools[name]!(
       ctx as never,
@@ -145,10 +220,22 @@ function fakeRun(
     ) as Promise<Record<string, unknown>>;
   const call = (args: Record<string, unknown>) => invoke("read_email", args);
   const remove = (args: Record<string, unknown>) => invoke("delete_email", args);
-  return { call, remove, inbox, copyEarlierFiles };
+  return { call, remove, inbox, copyEarlierFiles, read, secrets: ctx.secrets, databaseSearches };
 }
 
 describe("read_email", () => {
+  // A search over hidden text leaves the mark out, so every writer of it must put the same one.
+  it("is shown one mark for a hidden value, whichever redactor hid it", () => {
+    const hidden = `before ${REDACTED_MARK} after`;
+    expect(redactSecrets("before secret-1234 after", ["secret-1234"])).toBe(hidden);
+    expect(redactSecretsAfter("before secret", "-1234 after", ["secret-1234"])).toBe(
+      `${REDACTED_MARK} after`,
+    );
+    const stream = createStreamingRedactor(["secret-1234"]);
+    expect(stream.push("before secret-1234 after") + stream.finish()).toBe(hidden);
+    expect(hideOneTimeCodeInEmail("before 4 8 2 9 1 3 after", "482913")).toBe(hidden);
+  });
+
   it("lists the newest mail as untrusted data", async () => {
     const { call } = fakeRun([
       row({ id: "old", receivedAt: new Date("2026-11-01T00:00:00.000Z"), subject: "Old" }),
@@ -216,6 +303,88 @@ describe("read_email", () => {
     expect(first.nextSince).toBe(checked.toISOString());
   });
 
+  const hour = (n: number) => new Date(Date.UTC(2026, 9, 1) + n * 3_600_000);
+  const fillers = (count: number) =>
+    Array.from({ length: count }, (_, n) =>
+      row({ id: `filler-${n}`, text: "Nothing here", receivedAt: hour(n + 2) }),
+    );
+
+  it("searches all the mail in a run that hides values but took no emailed code", async () => {
+    const rows = [row({ id: "old-hit", text: "Pelican sighting", receivedAt: hour(0) })];
+    const { call } = fakeRun([...rows, ...fillers(1_050)], { secrets: ["hunter22"] });
+
+    const found = (await call({ query: "pelican" })).emails as Array<{ id: string }>;
+
+    expect(found.map((email) => email.id)).toEqual(["old-hit"]);
+  });
+
+  it("searches past the newest hundred emails, on what it may read, holding a code", async () => {
+    const rows = [
+      row({ id: "old-hit", text: "Pelican sighting", receivedAt: hour(0) }),
+      row({ id: "old-hidden", text: "Your code is 4.8.2.9.1.3", receivedAt: hour(1) }),
+    ];
+    const { call } = fakeRun([...rows, ...fillers(250)], { emailedCode: "482913" });
+
+    const found = (await call({ query: "pelican" })).emails as Array<{ id: string }>;
+    const after = hour(-1).toISOString();
+    const hidden = await call({ query: "4.8.2.9.1.3", since: after });
+    const nothing = await call({ query: "zzzzqq", since: after });
+    const hiddenNewest = await call({ query: "4.8.2.9.1.3" });
+    const nothingNewest = await call({ query: "zzzzqq" });
+
+    expect(found.map((email) => email.id)).toEqual(["old-hit"]);
+    expect(JSON.stringify(hidden)).toBe(JSON.stringify(nothing));
+    expect(JSON.stringify(hiddenNewest)).toBe(JSON.stringify(nothingNewest));
+    expect(nothing.nextSince).toBe(hour(251).toISOString());
+  });
+
+  it("reads each email once in a wait with an emailed code, and still finds new mail", async () => {
+    const arriving = row({ id: "late", text: "Pelican sighting", receivedAt: new Date() });
+    const { call, read } = fakeRun(fillers(250), {
+      emailedCode: "482913",
+      arriving,
+      // After the second look: the third finds it.
+      arrivesAfterMs: 4_500,
+    });
+
+    const result = await call({ query: "pelican", waitSeconds: 7 });
+
+    expect(result.emails).toEqual([expect.objectContaining({ id: "late" })]);
+    expect(new Set(read).size).toBe(read.length);
+    expect(read).toHaveLength(251);
+  }, 15_000);
+
+  // A row is stamped when the transaction saving it starts and shows up when it commits, so mail
+  // can show up after a look read mail stamped later than it, or in the same millisecond.
+  it.each<[order: string, stamped: string, since: boolean, earlier: number]>([
+    ["newest first", "a second earlier", false, 1_000],
+    ["newest first", "in the same millisecond", false, 0],
+    ["after since", "a second earlier", true, 1_000],
+    ["after since", "in the same millisecond", true, 0],
+  ])(
+    "finds mail saved late in a wait holding a code, %s, stamped %s",
+    async (_order, _stamped, since, earlier) => {
+      const now = Date.now();
+      const checked = row({ id: "checked", text: "Nothing here", receivedAt: new Date(now) });
+      const late = row({
+        id: "late",
+        text: "Pelican sighting",
+        receivedAt: new Date(now - earlier),
+      });
+      const { call, read } = fakeRun([checked], { emailedCode: "482913", arriving: late });
+
+      const result = await call({
+        query: "pelican",
+        waitSeconds: 1,
+        ...(since ? { since: new Date(now - 60_000).toISOString() } : {}),
+      });
+
+      expect(result.emails).toEqual([expect.objectContaining({ id: "late" })]);
+      // Each read once: the later look leaves out what the first one read.
+      expect(read).toEqual(["checked", "late"]);
+    },
+  );
+
   it("starts the next look after the newest email it returned, or where it was asked to", async () => {
     const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
 
@@ -269,6 +438,189 @@ describe("read_email", () => {
     expect(listed).not.toContain("hunter22");
     expect(read).not.toContain("hunter22");
     expect(read).toContain("Your password is");
+  });
+
+  it("hides a code taken from an email however written, in every field it returns", async () => {
+    const spellings = ["4.8.2.9.1.3", "48 29 13", "482\u00a0913", "4\n8\n2\n9\n1\n3"];
+    const [dots, pairs, spaced, lines] = spellings;
+    const { call } = fakeRun(
+      [
+        row({
+          id: "email-1",
+          fromName: `Code ${dots}`,
+          fromAddress: `${pairs}@shop.test`.replace(/ /g, "."),
+          to: [`Code ${dots} <scout@bots.test>`, `${spaced} <a@bots.test>`],
+          cc: [`${pairs} <b@shop.test>`, lines!],
+          subject: `Your code: ${pairs}`,
+          text: `Use ${spaced} to sign in.`,
+          attachments: [
+            { name: `code ${dots}.pdf`, artifactId: "artifact-1", mimeType: "application/pdf" },
+            { name: `${pairs}.exe` },
+          ],
+        }),
+      ],
+      { emailedCode: "482913" },
+    );
+
+    const read = JSON.stringify(await call({ id: "email-1" }));
+    const listed = JSON.stringify(await call({}));
+
+    for (const shown of [read, listed]) {
+      for (const written of spellings)
+        expect(shown).not.toContain(JSON.stringify(written).slice(1, -1));
+      expect(shown.replace(/\D/g, "")).not.toContain("482913");
+    }
+    expect(read).toContain("scout@bots.test");
+    expect(read).toContain('"id":"email-1"');
+  });
+
+  // SECRECY: what a result hides is decided from the codes the run holds when the result is
+  // produced, never when its call began. The run can take a code from mail at any point of a
+  // call (its own request keeps one, or mail answers its card), and from then on no result shows
+  // it, matches a search on it, or hands over a file that could hold it: the call returns what
+  // it would have returned had the run held the code from the start.
+  const CODE_EMAIL = row({
+    id: "code-mail",
+    subject: "Your code: 48 29 13",
+    text: "Your verification code is 482913, or 4.8.2.9.1.3.",
+    attachments: [{ artifactId: "art-1", name: "code.pdf", mimeType: "application/pdf", size: 3 }],
+    receivedAt: new Date("2026-11-07T10:00:00.000Z"),
+  });
+  const OTHER_EMAIL = row({ id: "other-mail", subject: "Welcome", text: "Thanks for joining." });
+  type Taken = { onRead?: number; afterMs?: number };
+  // A wait's first look finds nothing; the code's email arrives for its second.
+  const WAITS: [mode: string, args: Record<string, unknown>][] = [
+    ["a waiting search for the code", { query: "482913" }],
+    ["a waiting search for the code written apart", { query: "4.8.2.9.1.3" }],
+    ["a waiting search for a word in the code's email", { query: "verification" }],
+    ["a waiting search after a time", { query: "482913", since: "2026-11-06T00:00:00Z" }],
+    ["a wait for new mail", { since: "2026-11-06T00:00:00Z" }],
+  ];
+  const DURING_A_WAIT: [point: string, takes: Taken | undefined][] = [
+    ["before the call", undefined],
+    ["while the first look read the inbox", { onRead: 1 }],
+    ["between two looks", { afterMs: 300 }],
+    ["while the look that found its email read the inbox", { onRead: 2 }],
+  ];
+  const LOOKS: [mode: string, args: Record<string, unknown>][] = [
+    ["a search for the code", { query: "482913" }],
+    ["a search for a word in the code's email", { query: "verification" }],
+    ["a list", {}],
+    ["a read by id", { id: "code-mail" }],
+  ];
+  const DURING_A_LOOK: [point: string, takes: Taken | undefined][] = [
+    ["before the call", undefined],
+    ["while the call read the inbox", { onRead: 1 }],
+  ];
+  type Interleaving = [
+    mode: string,
+    point: string,
+    args: Record<string, unknown>,
+    takes: Taken | undefined,
+    inbox: { rows: Row[]; arriving?: Row },
+  ];
+  const interleavings: Interleaving[] = [
+    ...WAITS.flatMap(([mode, args]) =>
+      DURING_A_WAIT.map(([point, takes]): Interleaving => {
+        const inbox = { rows: [OTHER_EMAIL], arriving: CODE_EMAIL };
+        return [mode, point, { ...args, waitSeconds: 1 }, takes, inbox];
+      }),
+    ),
+    ...LOOKS.flatMap(([mode, args]) =>
+      DURING_A_LOOK.map(
+        ([point, takes]): Interleaving => [mode, point, args, takes, { rows: [CODE_EMAIL] }],
+      ),
+    ),
+  ];
+  it.each(interleavings)(
+    "in %s, hides a code the run took %s",
+    async (_mode, _point, args, takes, inbox) => {
+      const run = (options: Parameters<typeof fakeRun>[1]) =>
+        fakeRun(inbox.rows, { ...options, arriving: inbox.arriving });
+      const taking = run(
+        takes ? { takes: { code: "482913", ...takes } } : { emailedCode: "482913" },
+      );
+      const result = await taking.call(args);
+      const shown = JSON.stringify(result);
+      expect(shown.replace(/\D/g, "")).not.toContain("482913");
+      expect(shown).not.toContain("art-1");
+      expect(taking.copyEarlierFiles).not.toHaveBeenCalled();
+      // The same as a run that held the code all along gets, and hidden in the attempt from now.
+      expect(result).toEqual(await run({ emailedCode: "482913" }).call(args));
+      expect(taking.secrets).toEqual(
+        expect.arrayContaining(oneTimeCodeRedactions("482913", { emailed: true })),
+      );
+    },
+  );
+
+  it("never has the database match a search in a look begun after a code was taken", async () => {
+    // The database matches stored text, the code included: only the look the code was taken
+    // during may have asked it, and that look's answer is dropped.
+    const between = fakeRun([OTHER_EMAIL], { takes: { code: "482913", afterMs: 300 } });
+    await between.call({ query: "482913", waitSeconds: 1 });
+    expect(between.databaseSearches).toEqual([0]);
+    const during = fakeRun([OTHER_EMAIL], { takes: { code: "482913", onRead: 1 } });
+    await during.call({ query: "482913", waitSeconds: 1 });
+    expect(during.databaseSearches).toEqual([0]);
+  });
+
+  it("reads again what a look matched before the run took a second code", async () => {
+    // The run holds one site's code and takes another's while it searches: what the look had
+    // read and matched without the second code is dropped and read again, not skipped as read.
+    const args = { query: "verification" };
+    const both = ["731905", "482913"];
+    const taking = fakeRun([CODE_EMAIL], {
+      emailedCode: "731905",
+      takes: { code: "482913", onRead: 1 },
+    });
+    const result = await taking.call(args);
+    expect(result).toMatchObject({ emails: [{ id: "code-mail" }] });
+    expect(JSON.stringify(result).replace(/\D/g, "")).not.toContain("482913");
+    expect(result).toEqual(await fakeRun([CODE_EMAIL], { emailedCode: both }).call(args));
+  });
+
+  it("shows no email when the run takes another code during every look it makes", async () => {
+    let reads = 0;
+    const { call } = fakeRun([CODE_EMAIL], {
+      takes: {
+        // Each read of the inbox ends with a code the look did not begin with.
+        get code() {
+          return String(482913 + reads);
+        },
+        get onRead() {
+          reads += 1;
+          return reads;
+        },
+      },
+    });
+    expect(await call({ query: "482913" })).toEqual({
+      error: expect.stringContaining("Try again"),
+    });
+  });
+
+  it("gives no email while its emailed code is unreadable, and hides it after", async () => {
+    const { call } = fakeRun(
+      [
+        row({ id: "email-0", subject: "Code 4.8.2.9.1.3", text: "Your code: 48 29 13" }),
+        row({
+          id: "email-1",
+          text: "Pelican sighting",
+          receivedAt: new Date(Date.UTC(2026, 9, 2)),
+        }),
+      ],
+      { emailedCode: "482913", unreadableLoads: 3 },
+    );
+    const looks = [{ id: "email-0" }, {}, { query: "pelican" }];
+
+    for (const args of looks) {
+      const result = await call(args);
+      expect(result).toEqual({ error: expect.stringContaining("Try again") });
+    }
+    for (const args of looks) {
+      const shown = JSON.stringify(await call(args));
+      expect(shown).not.toContain("error");
+      expect(shown.replace(/\D/g, "")).not.toContain("482913");
+    }
   });
 
   it("masks a secret that a page break or the preview would cut in two", async () => {
@@ -338,6 +690,23 @@ describe("read_email", () => {
     expect(copyEarlierFiles).toHaveBeenCalledWith([
       expect.objectContaining({ kind: "file", artifactId: "art-1", name: "invoice.pdf" }),
     ]);
+  });
+
+  it("gives the run no file from any email while it holds an emailed code", async () => {
+    // A file can hold the code as the text does, and nothing can hide it in there.
+    const { call, copyEarlierFiles } = fakeRun(
+      [
+        row({
+          attachments: [
+            { artifactId: "art-1", name: "code.pdf", mimeType: "application/pdf", size: 3 },
+          ],
+        }),
+      ],
+      { emailedCode: "482913" },
+    );
+    const email = (await call({ id: "email-1" })).email as Record<string, unknown>;
+    expect(email.files).toEqual([{ name: "code.pdf", unavailable: true }]);
+    expect(copyEarlierFiles).not.toHaveBeenCalled();
   });
 
   it("reads only this bot's mail, and only in its owner's runs", async () => {
@@ -426,6 +795,7 @@ describe("botEmailInstruction", () => {
 
     for (const tool of ["read_email", "send_email", "delete_email"]) expect(all).toContain(tool);
     expect(readOnly).toContain("read_email");
+    expect(readOnly).toContain("sign up for a site as yourself");
     expect(readOnly).not.toContain("send_email");
     expect(readOnly).not.toContain("delete_email");
     expect(
@@ -443,11 +813,14 @@ describe("claim_email_address", () => {
       raceTo?: string;
       tainted?: boolean;
       approved?: boolean;
+      groupId?: string | null;
+      messagingChannelRun?: boolean;
     } = {},
   ) {
     // name → botId, as bot_email_addresses keeps them.
     const names = new Map(Object.entries(options.claimed ?? {}));
     const ctx = {
+      source: { emailInbox: false, messagingChannelRun: Boolean(options.messagingChannelRun) },
       deps: {
         inboundEmailDomain: "domain" in options ? options.domain : "bots.test",
         prisma: {
@@ -473,7 +846,8 @@ describe("claim_email_address", () => {
         },
       },
       bot: { id: "bot-1", userId: "owner-1" },
-      run: { userId: options.runUserId ?? "owner-1" },
+      run: { userId: options.runUserId ?? "owner-1", trigger: "user" },
+      thread: { groupId: options.groupId ?? null },
       state: { tainted: Boolean(options.tainted) },
       runId: "run-1",
       trust: { receivedOutsideMessage: async () => false },
@@ -489,18 +863,32 @@ describe("claim_email_address", () => {
           finish: async (r: unknown) => r,
         } as never,
       ) as Promise<Record<string, unknown>>;
-    return { call, names };
+    return { call, names, ctx };
   }
 
   it("claims the name the owner agreed to, for good", async () => {
-    const { call, names } = claimRun();
+    const { call, names, ctx } = claimRun();
 
-    expect(await call({ name: " Scout " })).toEqual({ address: "scout@bots.test" });
+    expect(await call({ name: " Scout " })).toEqual({
+      address: "scout@bots.test",
+      note: "This is your email address now. Give it when you sign up for a site as yourself; every email sent to it is saved to your inbox.",
+    });
+    expect(ctx.source.emailInbox).toBe(true);
     expect(names.get("scout")).toBe("bot-1");
     expect(await call({ name: "other" })).toEqual({
       error: "You already have an address, and it can't change.",
       address: "scout@bots.test",
     });
+  });
+
+  it("does not open the inbox to a run that cannot read it", async () => {
+    const group = claimRun({ groupId: "group-1" });
+    const channel = claimRun({ messagingChannelRun: true });
+
+    expect((await group.call({ name: "scout" })).address).toBe("scout@bots.test");
+    expect(group.ctx.source.emailInbox).toBe(false);
+    expect((await channel.call({ name: "scout" })).address).toBe("scout@bots.test");
+    expect(channel.ctx.source.emailInbox).toBe(false);
   });
 
   it("claims after outside content only when the owner approved this call", async () => {
@@ -509,7 +897,10 @@ describe("claim_email_address", () => {
 
     expect((await steered.call({ name: "scout" })).error).toContain("read outside content");
     expect(steered.names.size).toBe(0);
-    expect(await approved.call({ name: "scout" })).toEqual({ address: "scout@bots.test" });
+    expect(await approved.call({ name: "scout" })).toEqual({
+      address: "scout@bots.test",
+      note: "This is your email address now. Give it when you sign up for a site as yourself; every email sent to it is saved to your inbox.",
+    });
   });
 
   it("tells a claim that lost a race to another name what the bot got", async () => {

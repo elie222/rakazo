@@ -507,6 +507,7 @@ export function botsRoutes(ctx: RouterContext) {
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
             dailyCheckIns: source.dailyCheckIns,
+            // Reading one's connected email is chosen per bot, not copied.
             color: source.color,
             avatarSet: resolveBotAvatarSet(source.avatarSet),
             avatarSetPinned: source.avatarSetPinned,
@@ -547,6 +548,9 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        // Reading the creator's own connected email is the creator's choice alone.
+        if (input.connectedMailCodes !== undefined && existing.userId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -589,6 +593,7 @@ export function botsRoutes(ctx: RouterContext) {
             botProfileLabelsChanged(input) ||
             input.expectedSettings !== undefined ||
             input.dailyCheckIns !== undefined ||
+            input.connectedMailCodes !== undefined ||
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
@@ -617,6 +622,9 @@ export function botsRoutes(ctx: RouterContext) {
               ? { crossSpaceCommunication: input.crossSpaceCommunication }
               : {}),
             ...(input.dailyCheckIns !== undefined ? { dailyCheckIns: input.dailyCheckIns } : {}),
+            ...(input.connectedMailCodes !== undefined
+              ? { connectedMailCodes: input.connectedMailCodes }
+              : {}),
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),

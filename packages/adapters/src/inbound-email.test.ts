@@ -1,10 +1,11 @@
 import { generateKeyPairSync } from "node:crypto";
+import { INBOUND_EMAIL_TEXT_MAX_CHARS } from "@rakazo/contracts";
 import { dkimSign, sealMessage } from "mailauth";
 import { describe, expect, it } from "vitest";
 import type { InboundEmailResolver } from "./inbound-email.js";
 import {
+  INBOUND_EMAIL_MAX_BYTES,
   INBOUND_EMAIL_MAX_SIGNATURES,
-  INBOUND_EMAIL_TEXT_MAX_CHARS,
   readInboundEmail,
 } from "./inbound-email.js";
 
@@ -328,6 +329,67 @@ describe("readInboundEmail", () => {
     expect(human.automated).toBe(false);
   });
 
+  it("tells list mail apart from other automated mail", async () => {
+    for (const [extra, list] of [
+      ["List-Id: <news.example.test>", true],
+      ["Precedence: list", true],
+      ["Auto-Submitted: auto-generated", false],
+      ["Precedence: bulk", false],
+    ] as const) {
+      const email = await readInboundEmail(bytes(message([...plain, extra])), { resolver });
+      expect(email.mailingList, extra).toBe(list);
+    }
+  });
+
+  // A site's sign-in code is a notification it generates for one person, and some senders mark it
+  // so (Auto-Submitted: auto-generated, X-Auto-Response-Suppress). An auto-reply, which can quote
+  // what someone else sent, and bulk mail are told apart from it; so is list mail, on its own.
+  // None of them is the person's own mail, so none starts a run (automated).
+  it.each<[kind: string, headers: string[], list: boolean, replyOrBulk: boolean, auto: boolean]>([
+    ["a plain notification", [], false, false, false],
+    [
+      "a notification marked auto-generated",
+      ["Auto-Submitted: auto-generated"],
+      false,
+      false,
+      true,
+    ],
+    [
+      "a notification asking not to be auto-answered",
+      ["Auto-Submitted: auto-generated", "X-Auto-Response-Suppress: All"],
+      false,
+      false,
+      true,
+    ],
+    [
+      "a notification with an unsubscribe link",
+      ["List-Unsubscribe: <mailto:unsubscribe@example.test>"],
+      false,
+      false,
+      false,
+    ],
+    ["mail marked not automatic", ["Auto-Submitted: no"], false, false, false],
+    ["an auto-reply", ["Auto-Submitted: auto-replied"], false, true, true],
+    ["a notice about another message", ["Auto-Submitted: auto-notified"], false, true, true],
+    ["a vacation reply", ["X-Autoreply: yes"], false, true, true],
+    ["a responder's reply", ["X-Autorespond: Out of office"], false, true, true],
+    [
+      "an auto-reply behind a no",
+      ["Auto-Submitted: no", "Auto-Submitted: auto-replied"],
+      false,
+      true,
+      true,
+    ],
+    ["bulk mail", ["Precedence: bulk"], false, true, true],
+    ["junk mail", ["Precedence: junk"], false, true, true],
+    ["list mail", ["List-Id: <news.example.test>"], true, false, true],
+  ])("tells %s apart", async (_kind, headers, list, replyOrBulk, auto) => {
+    const email = await readInboundEmail(bytes(message([...plain, ...headers])), { resolver });
+    expect(email.mailingList).toBe(list);
+    expect(email.autoReplyOrBulk).toBe(replyOrBulk);
+    expect(email.automated).toBe(auto);
+  });
+
   it("never looks up keys for mail stuffed with signatures", async () => {
     const lookups: string[] = [];
     const counting: InboundEmailResolver = async (domain, rrtype) => {
@@ -343,6 +405,16 @@ describe("readInboundEmail", () => {
 
     expect(email.authenticated).toBe(false);
     expect(lookups).toEqual([]);
+  });
+
+  it("refuses a message larger than the size limit before reading any of it", async () => {
+    // Whoever hands it over: the route that receives mail, or a mailbox someone connected.
+    const tooLarge = new Uint8Array(INBOUND_EMAIL_MAX_BYTES + 1);
+    await expect(readInboundEmail(tooLarge, { resolver })).rejects.toThrow("too large");
+    const small = bytes(message(plain));
+    await expect(readInboundEmail(small, { resolver })).resolves.toMatchObject({
+      text: "Please summarize the attached report.",
+    });
   });
 
   it("refuses mail with more parts than real mail has", async () => {
