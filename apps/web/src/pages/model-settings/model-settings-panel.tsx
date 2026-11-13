@@ -55,11 +55,17 @@ export function ModelSettingsPanel({
     setPending(true);
     try {
       await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });
+    } catch (err) {
+      setError(errorText(err, t`Could not save model settings`));
+      setPending(false);
+      return;
+    }
+    try {
       await onSaved();
       setEdited(null);
       setNotice(t`Saved.`);
     } catch (err) {
-      setError(errorText(err, t`Could not save model settings`));
+      setError(errorText(err, t`Could not load model settings`));
     } finally {
       setPending(false);
     }

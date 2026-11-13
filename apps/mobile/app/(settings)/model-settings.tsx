@@ -132,10 +132,16 @@ export default function ModelSettingsScreen() {
     setPending(true);
     try {
       await rpc("models/saveModelSettings", { credentialId: credential.id, modelId, settings });
+    } catch (err) {
+      announce({ error: errorText(err, t`Could not save model settings`) });
+      setPending(false);
+      return;
+    }
+    try {
       await load();
       announce({ notice: t`Saved.` });
     } catch (err) {
-      announce({ error: errorText(err, t`Could not save model settings`) });
+      announce({ error: errorText(err, t`Could not load model settings`) });
     } finally {
       setPending(false);
     }
