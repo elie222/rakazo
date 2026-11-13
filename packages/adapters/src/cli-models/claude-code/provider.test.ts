@@ -18,6 +18,7 @@ import { normalizeRunError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { hostCredentialSource, resolveDeploymentModel } from "../../deployment-model.js";
+import { knownModelImageInput, modelAcceptsImageInput } from "../../model-vision.js";
 import { listPiCatalog } from "../../pi-models.js";
 import { resolveRuntimeModel } from "../../pi-runtime-models.js";
 import { scopedRuntimeModels } from "../../pi-runtime-scope.js";
@@ -195,6 +196,34 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       { name: "lookup", description: tools[0]!.description, inputSchema: tools[0]!.parameters },
     ]);
     expect(record.tools.call).toMatchObject({ isError: true });
+  });
+
+  it("admits and forwards image input outside a runtime scope", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    expect(scopedRuntimeModels()).toBeUndefined();
+    expect(knownModelImageInput(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)).toBe(true);
+    expect(modelAcceptsImageInput(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)).toBe(true);
+    const cli = fakeClaude("reply");
+    const image = { type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" };
+    const { message } = await run({
+      ...hello,
+      messages: [{ role: "user", content: [image], timestamp: 1 }],
+    });
+    expect(message.stopReason).toBe("stop");
+    expect(cli.read().frames).toEqual([
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: image.data },
+            },
+          ],
+        },
+      },
+    ]);
   });
 
   it("starts the unmodified CLI with its own tools, settings and sessions off", async () => {

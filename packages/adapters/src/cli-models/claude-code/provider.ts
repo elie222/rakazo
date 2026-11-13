@@ -23,7 +23,7 @@ interface ClaudeCodeProviderOptions {
 }
 
 /** The CLI takes Anthropic's model ids, so Pi's card for the same id supplies the limits. */
-function claudeCodeModel(id: string, models: Models): Model<Api> {
+export function claudeCodeModel(id: string, models: Models): Model<Api> {
   const card = models.getModel("anthropic", id);
   return {
     id,
