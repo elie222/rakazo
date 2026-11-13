@@ -37,6 +37,8 @@ it("requires every selected platform and rejects feeds naming absent assets", ()
     expect(validate(["macos"]).status).toBe(0);
     expect(validate(["macos", "windows"]).status).not.toBe(0);
     expect(validate([]).status).not.toBe(0);
+    writeFileSync(feed, "version: 1.2.3\n");
+    expect(validate(["macos"]).status).not.toBe(0);
     writeFileSync(feed, "version: 1.2.3\npath: Missing.zip\n");
     expect(validate(["macos"]).status).not.toBe(0);
     writeFileSync(feed, "version: 1.2.3\npath: ../App.zip\n");

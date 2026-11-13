@@ -533,6 +533,12 @@ jobs:
           test "${#feeds[@]}" -gt 0
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
+            case "$feed" in
+              *latest-mac.yml) installer='zip' ;;
+              *latest-linux.yml) installer='AppImage' ;;
+              *latest.yml) installer='exe' ;;
+            esac
+            sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | grep -Eq "\.$installer$"
             # GitHub renames assets with spaces, so every file a feed names must upload under that name.
             sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | while IFS= read -r file; do
               if [[ "$file" == */* || ! -f "release-artifacts/$file" ]]; then
