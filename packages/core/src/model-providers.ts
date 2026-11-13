@@ -1,7 +1,8 @@
-import type { Bot, ModelApiProtocol, ModelCatalogEntry } from "@rakazo/contracts";
+import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
   normalizeOpenAiCompatibleBaseUrl,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
   selectCompatibleModelCredential,
   withConnectionName,
 } from "@rakazo/contracts";
@@ -160,6 +161,7 @@ type CredentialModelRef = {
   label: string;
   modelId?: string | null;
   enabledModelIds?: readonly string[] | null;
+  modelSettings?: Readonly<Record<string, ModelSettings>>;
   isDefault?: boolean;
   preferenceRank?: number;
 };
@@ -311,10 +313,17 @@ export function connectedModelChoices(
     const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
       enabled.length > 0
-        ? enabled.map((id) => ({
-            ...freeFormChoice(credential, id),
-            images: providerModels.find((entry) => entry.id === id)?.images,
-          }))
+        ? enabled.map((id) => {
+            const known = providerModels.find((entry) => entry.id === id)?.images;
+            const own = credential.modelSettings?.[id]?.images;
+            return {
+              ...freeFormChoice(credential, id),
+              images:
+                credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+                  ? (own ?? known)
+                  : (known ?? own),
+            };
+          })
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
           : catalogChoices(providerModels);

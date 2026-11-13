@@ -55,6 +55,19 @@ export function modelCapabilitiesConfigurable(
   return provider === OPENAI_COMPATIBLE_PROVIDER_ID || !entry || entry.live === true;
 }
 
+/** The catalog's entry for a model, matching provider aliases the way runs do. */
+export function catalogEntryFor<T extends Pick<ModelCatalogEntry, "provider" | "id">>(
+  catalog: readonly T[],
+  provider: string,
+  modelId: string,
+): T | undefined {
+  return catalog.find(
+    (entry) =>
+      canonicalPiProviderId(entry.provider) === canonicalPiProviderId(provider) &&
+      entry.id === modelId,
+  );
+}
+
 /** One model a connection runs, with the settings saved for it. */
 export type ConnectionModel = { id: string; label: string; settings?: ModelSettings };
 

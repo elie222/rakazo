@@ -1,12 +1,10 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import {
-  canonicalPiProviderId,
-  MAX_MODEL_CONTEXT_WINDOW,
-  MAX_MODEL_MAX_TOKENS,
-} from "@rakazo/contracts";
+import type { ModelSettings } from "@rakazo/contracts";
+import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
+  catalogEntryFor,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelSettingsDefaults,
@@ -56,11 +54,7 @@ export default function ModelSettingsScreen() {
     ]);
     const next = credentials.find((item) => item.id === credentialId);
     if (!next) throw new Error(t`Connection not found`);
-    const nextEntry = catalog.find(
-      (item) =>
-        canonicalPiProviderId(item.provider) === canonicalPiProviderId(next.provider) &&
-        item.id === modelId,
-    );
+    const nextEntry = catalogEntryFor(catalog, next.provider, modelId);
     setCredential(next);
     setEntry(nextEntry);
     setFields(modelSettingsFields(credentialModelSettings(next, modelId), nextEntry));
@@ -129,13 +123,14 @@ export default function ModelSettingsScreen() {
       });
       return;
     }
+    await persist(request.settings);
+  }
+
+  async function persist(settings: ModelSettings) {
+    if (!credential) return;
     setPending(true);
     try {
-      await rpc("models/saveModelSettings", {
-        credentialId: credential.id,
-        modelId,
-        settings: request.settings,
-      });
+      await rpc("models/saveModelSettings", { credentialId: credential.id, modelId, settings });
       await load();
       announce({ notice: t`Saved.` });
     } catch (err) {
@@ -206,6 +201,16 @@ export default function ModelSettingsScreen() {
             label={pending ? t`Saving…` : t`Save`}
             onPress={() => void save()}
             style={{ marginTop: 12 }}
+          />
+        ) : null}
+        {credential.modelSettings?.[modelId] ? (
+          <NativeActionButton
+            disabled={pending}
+            fill={false}
+            label={t`Reset to defaults`}
+            onPress={() => void persist({})}
+            prominence="secondary"
+            variant="text"
           />
         ) : null}
         {error ? (

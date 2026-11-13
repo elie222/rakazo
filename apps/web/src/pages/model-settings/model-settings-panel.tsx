@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ModelCredential } from "@rakazo/contracts";
+import type { ModelCredential, ModelSettings } from "@rakazo/contracts";
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import type { ModelSettingsFields as Fields } from "@rakazo/core";
 import {
@@ -31,7 +31,9 @@ export function ModelSettingsPanel({
   const rpc = useSpaceRpc();
   const provider = credential.provider;
   const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
-  const [fields, setFields] = useState(saved);
+  // Unedited fields follow what is saved, including after a save or reset.
+  const [edited, setEdited] = useState<Fields | null>(null);
+  const fields = edited ?? saved;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -39,11 +41,27 @@ export function ModelSettingsPanel({
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
   const dirty = (Object.keys(fields) as (keyof Fields)[]).some((key) => fields[key] !== saved[key]);
 
+  const customized = Boolean(credential.modelSettings?.[modelId]);
+
   const update = (patch: Partial<Fields>) => {
-    setFields((current) => ({ ...current, ...patch }));
+    setEdited({ ...fields, ...patch });
     setError(null);
     setNotice(null);
   };
+
+  async function persist(settings: ModelSettings) {
+    setPending(true);
+    try {
+      await rpc.models.saveModelSettings({ credentialId: credential.id, modelId, settings });
+      await onSaved();
+      setEdited(null);
+      setNotice(t`Saved.`);
+    } catch (err) {
+      setError(errorText(err, t`Could not save model settings`));
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function save() {
     const request = modelSettingsRequest({ fields, provider, entry });
@@ -59,20 +77,7 @@ export function ModelSettingsPanel({
       );
       return;
     }
-    setPending(true);
-    try {
-      await rpc.models.saveModelSettings({
-        credentialId: credential.id,
-        modelId,
-        settings: request.settings,
-      });
-      await onSaved();
-      setNotice(t`Saved.`);
-    } catch (err) {
-      setError(errorText(err, t`Could not save model settings`));
-    } finally {
-      setPending(false);
-    }
+    await persist(request.settings);
   }
 
   return (
@@ -108,17 +113,32 @@ export function ModelSettingsPanel({
         onReasoningChange={(reasoning) => update({ reasoning })}
         reasoningLabel={t`Supports thinking`}
       />
-      {dirty ? (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="mt-4"
-          disabled={pending}
-          onClick={() => void save()}
-        >
-          {pending ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-        </Button>
+      {dirty || customized ? (
+        <div className="mt-4 flex items-center gap-2">
+          {dirty ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={pending}
+              onClick={() => void save()}
+            >
+              {pending ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+            </Button>
+          ) : null}
+          {customized ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              disabled={pending}
+              onClick={() => void persist({})}
+            >
+              <Trans>Reset to defaults</Trans>
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </>
   );

@@ -52,6 +52,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import { providerScopeKey } from "./connection-flows.js";
+import { keptModelSettingsOf } from "./model-credentials.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -6263,8 +6264,32 @@ describe("model settings", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { tx, call, stored: () => JSON.parse(plaintext) as Record<string, unknown> };
+    return { deps, tx, call, stored: () => JSON.parse(plaintext) as Record<string, unknown> };
   }
+
+  it("reports a secret store outage as unavailable and keeps settings it could not read", async () => {
+    const { deps, call } = settingsDeps("sk-synthetic-key");
+    deps.secrets.load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    expect(
+      (
+        await call({
+          credentialId: "connection-1",
+          modelId: "glm-5.3-flashx",
+          settings: { images: true },
+        })
+      ).status,
+    ).toBe(503);
+    Object.assign(deps.prisma, {
+      secret: { findFirst: vi.fn(async () => ({ ciphertext: "sealed" })) },
+    });
+    await expect(keptModelSettingsOf(deps, actor, { secretId: "secret-1" })).rejects.toBeInstanceOf(
+      SecretStoreUnavailableError,
+    );
+    deps.secrets.load = vi.fn(async () => "not json {");
+    await expect(keptModelSettingsOf(deps, actor, { secretId: "secret-1" })).resolves.toEqual({});
+  });
 
   it("saves one model's settings on the connection without touching its key", async () => {
     const { tx, call, stored } = settingsDeps("sk-synthetic-key");

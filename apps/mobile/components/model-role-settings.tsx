@@ -22,7 +22,12 @@ import {
   modelRoleChoiceKey,
   withConnectionName,
 } from "@rakazo/contracts";
-import { createModelRoleSettings, modelRoleListPatch, modelThinkingLevels } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  createModelRoleSettings,
+  modelRoleListPatch,
+  modelThinkingLevels,
+} from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -130,11 +135,7 @@ export function ModelRoleSettings({
   const rows = primary ? [primary, ...backups] : backups;
   const busy = state.busy || state.stale || !settings;
   const entryFor = (choice: ModelRoleChoice) =>
-    state.catalog.find(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider) &&
-        entry.id === choice.modelId,
-    );
+    catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));

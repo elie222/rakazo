@@ -1,13 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
-  canonicalPiProviderId,
   connectionDisplayName,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { connectionModels, popularModelProvidersFirst } from "@rakazo/core";
+import { catalogEntryFor, connectionModels, popularModelProvidersFirst } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -208,11 +207,7 @@ export function ModelSettingsOverlay({
   const providerModels = (entry: ModelCredential) => connectionModels(entry, catalog);
 
   const catalogEntry = (provider: string, modelId: string) =>
-    catalog.find(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(provider) &&
-        entry.id === modelId,
-    );
+    catalogEntryFor(catalog, provider, modelId);
 
   const disconnectButton = connected ? (
     <Button

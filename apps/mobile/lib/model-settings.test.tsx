@@ -39,6 +39,7 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     apiProtocol: undefined as string | undefined,
     reasoning: false,
     thinkingLevel: undefined as string | undefined,
+    modelSettings: undefined as Record<string, object> | undefined,
     bots: [] as {
       id: string;
       name: string;
@@ -129,6 +130,7 @@ vi.mock("./api", () => ({
           ...(saved.apiProtocol ? { apiProtocol: saved.apiProtocol } : {}),
           ...(saved.reasoning ? { reasoning: true } : {}),
           ...(saved.thinkingLevel ? { thinkingLevel: saved.thinkingLevel } : {}),
+          ...(saved.modelSettings ? { modelSettings: saved.modelSettings } : {}),
         },
       ];
     return [];
@@ -673,6 +675,30 @@ it("saves a model's own limits and capabilities from its Manage model screen", a
       settings: { maxTokens: 8192, images: true, reasoning: false },
     });
   } finally {
+    delete params.credentialId;
+    delete params.modelId;
+  }
+});
+
+it("resets a customized model to its defaults", async () => {
+  params.credentialId = "credential-fixture";
+  params.modelId = "model-fixture";
+  saved.modelSettings = { "model-fixture": { maxTokens: 8192 } };
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(ModelSettingsScreen)));
+    });
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    const reset = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reset to defaults",
+    );
+    expect(reset).toBeDefined();
+    await act(async () => reset!.click());
+    expect(
+      rpcCalls.findLast(([procedure]) => procedure === "models/saveModelSettings")?.[1],
+    ).toEqual({ credentialId: "credential-fixture", modelId: "model-fixture", settings: {} });
+  } finally {
+    saved.modelSettings = undefined;
     delete params.credentialId;
     delete params.modelId;
   }

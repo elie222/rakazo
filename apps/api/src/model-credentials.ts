@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
   buildModelConnectPlaintext,
@@ -368,7 +369,9 @@ export async function keptModelSettingsOf(
     return keptModelSettings(
       parseModelSecret(await deps.secrets.load(row.ciphertext, credential.secretId)),
     );
-  } catch {
+  } catch (error) {
+    // An outage must not replace settings it could not read; a corrupt copy has none to keep.
+    if (error instanceof SecretStoreUnavailableError) throw error;
     return {};
   }
 }

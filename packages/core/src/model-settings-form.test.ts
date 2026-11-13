@@ -1,6 +1,7 @@
 import type { ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  catalogEntryFor,
   connectionModels,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
@@ -205,5 +206,17 @@ describe("connectionModels", () => {
         (model) => model.id,
       ),
     ).toEqual(["x"]);
+  });
+});
+
+describe("catalogEntryFor", () => {
+  it("finds a model under any alias of its provider", () => {
+    const catalog = [
+      { provider: "zai", id: "glm-5.3" },
+      { provider: "azure", id: "deployment" },
+    ];
+    expect(catalogEntryFor(catalog, "azure-openai-responses", "deployment")).toBe(catalog[1]);
+    expect(catalogEntryFor(catalog, "zai", "missing")).toBeUndefined();
+    expect(catalogEntryFor(catalog, "elsewhere", "glm-5.3")).toBeUndefined();
   });
 });

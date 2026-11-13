@@ -14,7 +14,12 @@ import {
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
 } from "@rakazo/contracts";
-import { createModelRoleSettings, modelRoleListPatch, modelThinkingLevels } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  createModelRoleSettings,
+  modelRoleListPatch,
+  modelThinkingLevels,
+} from "@rakazo/core";
 import {
   Button,
   DropdownMenu,
@@ -175,11 +180,7 @@ export function ModelRoleSettings({
   const backups = settings?.backups ?? [];
   const rows = primary ? [primary, ...backups] : backups;
   const entryFor = (choice: ModelBackupChoice) =>
-    state.catalog.find(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider) &&
-        entry.id === choice.modelId,
-    );
+    catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   // Grouped by the connection that runs them.
   const options: RoleModelOption[] = connectedBackupOptions(
     state.catalog,

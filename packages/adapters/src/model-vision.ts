@@ -117,10 +117,10 @@ export function modelAcceptsImageInput(
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (!resolved.provider || !resolved.id) return false;
   const models = catalogModels();
-  // Operator-declared vision models are registered in the compatible catalog.
+  // A model's own setting wins; operator-declared vision models are registered in the catalog.
   if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
     return (
-      acceptsImages === true ||
+      acceptsImages ??
       Boolean(models.getModel(resolved.provider, resolved.id)?.input.includes("image"))
     );
   const known = models.getModel(resolved.provider, resolved.id);

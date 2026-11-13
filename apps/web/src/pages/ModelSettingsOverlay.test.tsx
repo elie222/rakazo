@@ -481,6 +481,32 @@ it("saves a model's own limits from its row, leaving the catalog's capabilities 
   }
 });
 
+it("resets a customized model to its defaults", async () => {
+  models.list.mockResolvedValue([deepseekEntry]);
+  models.credentials.mockResolvedValue([
+    { ...deepseekCredential, modelSettings: { "deepseek-chat": { maxTokens: 4096 } } },
+  ]);
+  models.saveModelSettings.mockResolvedValue({ ok: true });
+
+  const view = await renderSettings();
+  try {
+    await rowMenu("Manage model");
+    expect(labeled(view.container, "Maximum output tokens")?.value).toBe("4096");
+    await click(
+      buttons(view.container, "Reset to defaults").find(
+        (entry) => entry.textContent === "Reset to defaults",
+      ),
+    );
+    expect(models.saveModelSettings).toHaveBeenCalledWith({
+      credentialId: "cred-deepseek",
+      modelId: "deepseek-chat",
+      settings: {},
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("lets a model the catalog cannot describe read images and think", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
   models.list.mockResolvedValue([compatibleEntry]);

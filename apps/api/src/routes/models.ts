@@ -602,7 +602,11 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       saveModelSettings: authed.models.saveModelSettings.handler(async ({ context, input }) => {
-        await saveConnectionModelSettings(deps, context.actor, input);
+        await saveConnectionModelSettings(deps, context.actor, input).catch((error: unknown) => {
+          if (error instanceof SecretStoreUnavailableError)
+            throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+          throw error;
+        });
         return { ok: true as const };
       }),
       rename: authed.models.rename.handler(async ({ context, input }) => {

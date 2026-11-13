@@ -208,6 +208,21 @@ describe("connected model choices", () => {
     ]);
   });
 
+  it("follows an OpenAI-compatible model's own image setting over the catalog", () => {
+    const choices = connectedModelChoices(
+      [
+        {
+          provider: "openai-compatible",
+          label: "Server",
+          enabledModelIds: ["declared", "custom", "unset"],
+          modelSettings: { declared: { images: false }, custom: { images: false } },
+        },
+      ],
+      [{ provider: "openai-compatible", id: "declared", label: "Declared", images: true }],
+    );
+    expect(choices.map((choice) => choice.images)).toEqual([false, false, undefined]);
+  });
+
   it("rewrites a catalog id that is only a display label", () => {
     const choices = connectedModelChoices(
       [{ provider: "deepseek", label: "DeepSeek", modelId: "deepseek-flash" }],
