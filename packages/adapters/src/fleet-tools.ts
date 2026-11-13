@@ -1322,7 +1322,7 @@ export async function updateOwnBotFromTool(
     loadArtifact: async (id) => {
       if (!deps.artifacts) return null;
       const row = await deps.prisma.artifact.findFirst({
-        where: { id, spaceId: run.spaceId },
+        where: { id, spaceId: run.spaceId, expiresAt: null },
         select: { mimeType: true, storageKey: true },
       });
       if (!row || !isAttachmentImageMimeType(row.mimeType)) return null;

@@ -1,6 +1,7 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetDeps, FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
   createChildRoutine,
@@ -11,6 +12,7 @@ import {
   setChildBotModel,
   setChildInstructions,
   updateChildBot,
+  updateOwnBotFromTool,
 } from "./fleet-tools.js";
 
 type FakeBot = {
@@ -1812,4 +1814,37 @@ describe("space bot management", () => {
       expect(prisma.bot.update).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("own bot avatar isolation", () => {
+  it.each([
+    { userId: "other-user", botId: "bot-self", expiresAt: new Date("2099-01-01") },
+    { userId: "user-1", botId: "other-bot", expiresAt: new Date("2099-01-01") },
+    { userId: "user-1", botId: "bot-self", expiresAt: new Date(0) },
+  ])("does not read a temporary artifact: %j", async (owner) => {
+    const row = { id: "image-1", spaceId: "space-1", ...owner };
+    const findFirst = vi.fn(async ({ where }) =>
+      Object.entries(where).every(([key, value]) => row[key as keyof typeof row] === value)
+        ? { mimeType: "image/png", storageKey: "private-image" }
+        : null,
+    );
+    const get = vi.fn();
+    const update = vi.fn();
+    const deps = { prisma: { artifact: { findFirst }, bot: { update } }, artifacts: { get } };
+    const result = await updateOwnBotFromTool(
+      deps as unknown as ExecutorDeps,
+      { id: "run-1", spaceId: "space-1", userId: "user-1", sourceMessageId: null },
+      "thread-1",
+      { id: "bot-self", name: "Bot" },
+      { artifact_id: "image-1" },
+      {} as AdapterContext,
+    );
+    expect(result).toHaveProperty("error");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "image-1", spaceId: "space-1", expiresAt: null },
+      select: { mimeType: true, storageKey: true },
+    });
+    expect(get).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
 });
