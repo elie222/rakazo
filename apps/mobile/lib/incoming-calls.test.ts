@@ -275,6 +275,10 @@ describe("mobile incoming calls", () => {
       { botId: bot.id, callId: "call-roster" },
       expect.anything(),
     );
+    expect(registerCallPushToken).toHaveBeenCalledWith({ voipToken: "voip-token" });
+    expect(fake.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(registerCallPushToken).mock.invocationCallOrder[0],
+    );
     expect(settled).toBe(false);
     releaseRegistration();
   });
