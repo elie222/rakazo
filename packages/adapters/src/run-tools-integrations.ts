@@ -1,11 +1,12 @@
 import type { ConnectorApp } from "@rakazo/adapter-kit";
+import { REDACTED_MARK } from "@rakazo/contracts";
 import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger } from "@rakazo/logging";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { collectLogIds } from "./composio-connector.js";
 import { connectApp } from "./connect-app.js";
-import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
+import { maskPayload, redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import { serviceCallFromTool, serviceSearchFromTool } from "./paid-service-tools.js";
@@ -75,9 +76,65 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
         }
       }
     }
-    return call.finish(result);
+    // A code held for this run, such as one read from the owner's Gmail, must not come back
+    // through a tool that returns the message it sits in.
+    if (ctx.secrets.length === 0) return call.finish(result);
+    return call.finish(maskPayload(result, secretHider(ctx.secrets)));
   }
   return call.finish({ error: `unknown tool ${name}` });
+}
+
+const LEAD_CHARS = [0, 2, 3];
+
+/**
+ * The base64 and base64url text that any copy of `secret` inside a larger message encodes to, at
+ * each of the three alignments a byte can fall on, without the characters that depend on its
+ * neighbours.
+ */
+function encodedForms(secret: string): string[] {
+  const forms: string[] = [];
+  for (const offset of [0, 1, 2]) {
+    const bytes = Buffer.concat([Buffer.alloc(offset), Buffer.from(secret)]);
+    const encoded = bytes.toString("base64").replace(/=+$/, "");
+    const form = encoded.slice(LEAD_CHARS[offset], bytes.length % 3 === 0 ? undefined : -1);
+    if (form.length < 4) continue;
+    forms.push(form, form.replaceAll("+", "-").replaceAll("/", "_"));
+  }
+  return forms;
+}
+
+const NOT_BASE64 = /[^A-Za-z0-9_+/-]+/;
+const BASE64_RUN_MIN = 16;
+
+/**
+ * A function hiding `secrets` in text, also where a message carries them base64-encoded: in a
+ * string of its own, among other text, wrapped over lines (real or written out as `\r\n` in
+ * JSON), or inside a message body that is itself base64.
+ */
+function secretHider(secrets: string[]): (text: string) => string {
+  const forms = secrets.flatMap(encodedForms);
+  const squash = (text: string) => text.replace(/\\+[rnt]|\s+/g, "");
+  const encodes = (text: string) => {
+    const compact = squash(text);
+    return forms.some((form) => compact.includes(form));
+  };
+  // The text before a run can glue onto it once whitespace is gone, so each run is read from each
+  // of the four characters it may start on.
+  const nests = (text: string) =>
+    squash(text)
+      .split(NOT_BASE64)
+      .some(
+        (run) =>
+          run.length >= BASE64_RUN_MIN &&
+          [0, 1, 2, 3].some((start) => {
+            const decoded = Buffer.from(run.slice(start), "base64").toString("utf8");
+            return redactSecrets(decoded, secrets) !== decoded || encodes(decoded);
+          }),
+      );
+  return (text) => {
+    const hidden = redactSecrets(text, secrets);
+    return encodes(hidden) || nests(hidden) ? REDACTED_MARK : hidden;
+  };
 }
 
 /**
