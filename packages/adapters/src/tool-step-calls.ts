@@ -123,6 +123,9 @@ export function runReplaysToolHistory(
     case "messaging":
       // Only the owner's own message: a channel or another person is nonOwnerChat above.
       return true;
+    // A run resumed after its question or a takeover is the same run, keeping its own trigger and
+    // source, so it inherits the original's answer here. A run recorded as "resume" names no
+    // original run to trace, so it is refused with every other trigger.
     default:
       return false;
   }

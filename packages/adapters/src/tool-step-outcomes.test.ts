@@ -241,6 +241,11 @@ describe("tool step outcomes", () => {
         expected[trigger],
       ]);
     expect(runReplaysToolHistory("a-trigger-added-later", owner)).toBe(false);
+    // Answering a paused run's question requeues that same run with its original trigger and
+    // source, so a resume gets the original's decision; "resume" alone traces to no original.
+    expect(runReplaysToolHistory("user", owner)).toBe(true);
+    expect(runReplaysToolHistory("bot_message", owner)).toBe(false);
+    expect(runReplaysToolHistory("resume", owner)).toBe(false);
     // A follow-up the bot queued, a channel, or another person in a team chat never gets them.
     expect(runReplaysToolHistory("follow_up", { fromUser: false, nonOwnerChat: false })).toBe(
       false,
