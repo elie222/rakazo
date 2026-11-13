@@ -6,6 +6,7 @@ import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { notifyConversationCleared } from "./conversation-cleared";
 import { removeFromSearchInbox } from "./search-inbox";
+import { currentSessionGeneration } from "./session";
 import { errorText } from "./user-error";
 
 export async function confirmDeleteBot(
@@ -23,6 +24,9 @@ export async function confirmDeleteBot(
     finished();
     return;
   }
+  const contextCurrent = () =>
+    requestContext.sessionGeneration === undefined ||
+    requestContext.sessionGeneration === currentSessionGeneration();
   // Native alerts cannot update their message: resolve the preview before opening one.
   let groupWarning = "";
   try {
@@ -36,14 +40,14 @@ export async function confirmDeleteBot(
     groupWarning = botRemovalWarning(null);
   }
 
-  if (!current()) {
+  if (!current() || !contextCurrent()) {
     finished();
     return;
   }
 
   const remove = async (deleteMemories: boolean) => {
     try {
-      if (!current()) return;
+      if (!current() || !contextCurrent()) return;
       const result = await rpc(
         "bots/remove",
         { botId: bot.id, deleteMemories },

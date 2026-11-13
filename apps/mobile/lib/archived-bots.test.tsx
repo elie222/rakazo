@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
+
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
