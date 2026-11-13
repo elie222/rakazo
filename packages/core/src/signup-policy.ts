@@ -9,7 +9,8 @@ export function parseAllowlist(raw: string | undefined): string[] {
 export function emailAllowed(email: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true;
   const normalized = email.trim().toLowerCase();
-  const domain = normalized.split("@")[1];
+  const at = normalized.lastIndexOf("@");
+  const domain = at === -1 ? undefined : normalized.slice(at + 1);
   return allowlist.some((entry) => {
     if (entry.startsWith("@")) return domain === entry.slice(1);
     return normalized === entry;

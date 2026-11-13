@@ -64,6 +64,32 @@ describe("speakable", () => {
     expect(speakable("**Done** ✅ — [x] shipped the _thing_")).toBe("Done — shipped the thing");
   });
 
+  it("keeps underscores inside identifiers and asterisks in arithmetic", () => {
+    expect(speakable("Open user_profile_page.tsx and set max_retry_count to 3")).toBe(
+      "Open user_profile_page.tsx and set max_retry_count to 3",
+    );
+    expect(speakable("compute 2*3*4 now")).toBe("compute 2*3*4 now");
+    expect(speakable("a_b and c_d")).toBe("a_b and c_d");
+  });
+
+  it("still drops emphasis markers around a word or phrase", () => {
+    expect(speakable("this is _really_ good")).toBe("this is really good");
+    expect(speakable("this is *really* good")).toBe("this is really good");
+    expect(speakable("this is *very good indeed* here")).toBe("this is very good indeed here");
+    expect(speakable("(_note_) and *(this)*")).toBe("(note) and (this)");
+  });
+
+  it("drops a horizontal rule however it is spaced", () => {
+    for (const rule of ["---", "***", "___", "* * *", "- - -", "_ _ _", "  ***  ", "-----"]) {
+      expect(speakable(`Intro\n\n${rule}\n\nBody`)).toBe("Intro. Body");
+    }
+  });
+
+  it("keeps a bullet list that has a rule-like first item", () => {
+    expect(speakable("- one\n- two")).toBe("one. two");
+    expect(speakable("* one\n* two")).toBe("one. two");
+  });
+
   it("gives a heading a full stop so the voice breathes", () => {
     expect(speakable("## Results\nAll green")).toBe("Results. All green");
   });
@@ -292,6 +318,35 @@ describe("spokenDecision", () => {
   );
 
   it("accepts accented sí", () => expect(spokenDecision("sí")).toBe("yes"));
+
+  it.each([
+    "okay, do not",
+    "sure, cancel that",
+    "yes but cancel it",
+    "yes please don't",
+    "ok stop",
+    "yeah nah",
+    "sí, mejor no",
+  ])("does not pick a side when %j says both yes and no", (text) =>
+    expect(spokenDecision(text)).toBeNull(),
+  );
+
+  it("still hears a plain yes or no that carries a polite extra", () => {
+    expect(spokenDecision("yes please")).toBe("yes");
+    expect(spokenDecision("ok, thanks")).toBe("yes");
+    expect(spokenDecision("no thanks")).toBe("no");
+  });
+
+  it("keeps a refusal that repeats the action as a no", () => {
+    expect(spokenDecision("don't do it")).toBe("no");
+    expect(spokenDecision("no, do it later")).toBe("no");
+  });
+
+  it("hears a curly apostrophe like a straight one", () => {
+    expect(spokenDecision("don’t")).toBe("no");
+    expect(spokenDecision("don’t do it")).toBe("no");
+    expect(spokenDecision("don't")).toBe("no");
+  });
 
   it("does not hear a yes in a Spanish condition, question or instruction", () => {
     expect(spokenDecision("si puedes, revisa los logs")).toBeNull();
