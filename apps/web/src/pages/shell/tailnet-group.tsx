@@ -79,12 +79,12 @@ export function TailnetGroup({ botId }: { botId: string }) {
             className="text-destructive hover:text-destructive"
             onClick={() => setConfirmingDisconnect(true)}
           >
-            <Trans>Disconnect Tailscale</Trans>
+            <Trans>Disconnect tailnet</Trans>
           </Button>
         </>
       ) : (
         <Button size="sm" variant="outline" disabled={pending} onClick={() => setConnecting(true)}>
-          <Trans>Connect Tailscale</Trans>
+          <Trans>Connect tailnet</Trans>
         </Button>
       )}
       {error ? (
@@ -92,7 +92,7 @@ export function TailnetGroup({ botId }: { botId: string }) {
           {error}
         </p>
       ) : null}
-      <ConnectTailscaleDialog
+      <ConnectTailnetDialog
         open={connecting}
         onOpenChange={setConnecting}
         onConnected={async (next) => {
@@ -103,7 +103,7 @@ export function TailnetGroup({ botId }: { botId: string }) {
       {confirmingDisconnect ? (
         <ConfirmDialog
           onCancel={() => setConfirmingDisconnect(false)}
-          title={t`Disconnect Tailscale?`}
+          title={t`Disconnect tailnet?`}
           busy={pending}
           onConfirm={() =>
             void act(() => rpc.tailnet.disconnect()).finally(() => setConfirmingDisconnect(false))
@@ -115,8 +115,8 @@ export function TailnetGroup({ botId }: { botId: string }) {
   );
 }
 
-/** A tailnet admin's OAuth client; Tailscale checks it before it is saved. */
-function ConnectTailscaleDialog({
+/** A tailnet admin's OAuth client, checked with the tailnet before it is saved. */
+function ConnectTailnetDialog({
   open,
   onOpenChange,
   onConnected,
@@ -153,7 +153,7 @@ function ConnectTailscaleDialog({
       reset();
       await onConnected(next);
     } catch (reason) {
-      setError(errorText(reason, t`Couldn't connect Tailscale`));
+      setError(errorText(reason, t`Couldn't connect tailnet`));
     } finally {
       setSaving(false);
     }
@@ -171,7 +171,7 @@ function ConnectTailscaleDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            <Trans>Connect Tailscale</Trans>
+            <Trans>Connect tailnet</Trans>
           </DialogTitle>
         </DialogHeader>
         <form

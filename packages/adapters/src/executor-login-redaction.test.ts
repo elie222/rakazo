@@ -522,7 +522,7 @@ describe("tailnet settings in shell commands", () => {
       },
     );
     expect(JSON.stringify(toolResults)).toContain(
-      "Tailnet access is off for this bot. Connect Tailscale and turn it on in the bot's settings.",
+      "Tailnet access is off for this bot. Connect your tailnet and turn it on in the bot's settings.",
     );
   });
 

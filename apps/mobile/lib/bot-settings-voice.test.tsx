@@ -416,7 +416,7 @@ describe("bot settings device voice menu", () => {
     });
   });
 
-  it("shows tailnet access only once the member has connected Tailscale", async () => {
+  it("shows tailnet access only once the member has connected a tailnet", async () => {
     const tailnetSwitch = () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Reach machines on your tailnet"]');
     mocks.tailnet = { unavailable: null, connection: null };

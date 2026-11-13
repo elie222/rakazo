@@ -32,9 +32,9 @@ You need to be an Owner or Admin of the tailnet. This is done once.
    bot's device; see [Devices in your tailnet](#devices-in-your-tailnet).
 3. Copy its client ID and secret.
 
-## Connect Tailscale
+## Connect your tailnet
 
-Open a bot's settings, choose **Advanced**, and under **Tailnet** choose **Connect Tailscale**.
+Open a bot's settings, choose **Advanced**, and under **Tailnet** choose **Connect tailnet**.
 Paste the client ID and secret. If you used a tag other than `tag:rakazo`, enter it too. Rakazo
 checks the client with Tailscale before saving it, and stores it encrypted.
 
@@ -45,7 +45,7 @@ Your connection is yours alone. In a shared [space](./spaces.md), a bot uses you
 chats and routines you started; when someone else messages the same bot, it has no access unless
 they connect their own. Leaving a space removes your connection there.
 
-On iOS and Android you can turn a bot's tailnet access on or off. Connect Tailscale on the web or
+On iOS and Android you can turn a bot's tailnet access on or off. Connect your tailnet on the web or
 desktop app, where copying the client from the admin console is easier.
 
 ## What a bot does
@@ -103,7 +103,7 @@ applies to every bot.
 
 ## Disconnect
 
-Choose **Disconnect Tailscale** in any bot's **Tailnet** settings. Your bots' devices leave your
+Choose **Disconnect tailnet** in any bot's **Tailnet** settings. Your bots' devices leave your
 tailnet right away, and open connections close. To stop Rakazo from using the client anywhere,
 also revoke it in the Tailscale admin console.
 

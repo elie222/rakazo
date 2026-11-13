@@ -115,7 +115,7 @@ function harness(options: { available?: boolean; serverOrigin?: string | undefin
 }
 
 describe("tailnet router", () => {
-  it("connects the member's own client after Tailscale accepts it, and never returns it", async () => {
+  it("connects the member's own client after the tailnet accepts it, and never returns it", async () => {
     const { call, service, rows } = harness();
     expect((await call("status")).json).toEqual({ unavailable: null, connection: null });
     const connected = await call("connect", CLIENT);
@@ -134,7 +134,7 @@ describe("tailnet router", () => {
     expect(service.disconnect).toHaveBeenCalledWith({ userId: "alice", spaceId: "home" });
   });
 
-  it("explains a client Tailscale refuses, and saves nothing", async () => {
+  it("explains a client the tailnet refuses, and saves nothing", async () => {
     const { call, service, rows } = harness();
     service.verify.mockRejectedValueOnce(
       new PrivateNetworkError("credentials", "Tailscale did not accept this OAuth client."),
@@ -179,7 +179,7 @@ describe("tailnet router", () => {
   });
 
   it.each([
-    [{ available: false }, "no_tailscale"],
+    [{ available: false }, "unsupported"],
     [{ serverOrigin: undefined }, "no_server_address"],
   ] as const)("says why the server can't (%o)", async (options, reason) => {
     const { call } = harness(options);

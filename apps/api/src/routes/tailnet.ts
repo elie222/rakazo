@@ -78,7 +78,8 @@ export function tailnetRoutes(ctx: RouterContext) {
           }
           throw error;
         }
-        if (!updated) throw new ORPCError("BAD_REQUEST", { message: "Connect Tailscale first." });
+        if (!updated)
+          throw new ORPCError("BAD_REQUEST", { message: "Connect your tailnet first." });
         if (!input.enabled) await tailnet?.service.disconnect(scope(context.actor), input.botId);
         return status(context.actor);
       }),
@@ -89,7 +90,7 @@ export function tailnetRoutes(ctx: RouterContext) {
 async function unavailable(
   tailnet: TailnetRouteDeps | undefined,
 ): Promise<TailnetStatus["unavailable"]> {
-  if (!tailnet?.service.available) return "no_tailscale";
+  if (!tailnet?.service.available) return "unsupported";
   if (!tailnet.serverOrigin) return "no_server_address";
   return null;
 }

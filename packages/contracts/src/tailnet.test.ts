@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseTailnetDestination,
-  TailscaleConnectionConfigSchema,
+  TailnetConnectionConfigSchema,
   tailnetAttributeValue,
   tailnetDestinationKey,
   tailnetNodeAttributes,
@@ -10,18 +10,18 @@ import {
 
 describe("tailnet connection config", () => {
   it("defaults the tag and normalizes its case", () => {
-    expect(TailscaleConnectionConfigSchema.parse({ clientId: "id", clientSecret: "s" }).tag).toBe(
+    expect(TailnetConnectionConfigSchema.parse({ clientId: "id", clientSecret: "s" }).tag).toBe(
       "tag:rakazo",
     );
     expect(
-      TailscaleConnectionConfigSchema.parse({ clientId: "id", clientSecret: "s", tag: "Tag:Bots" })
+      TailnetConnectionConfigSchema.parse({ clientId: "id", clientSecret: "s", tag: "Tag:Bots" })
         .tag,
     ).toBe("tag:bots");
   });
 
   it.each(["rakazo", "tag:", "tag:-bots", "tag:bots!", "tag:a b"])("refuses the tag %s", (tag) => {
     expect(
-      TailscaleConnectionConfigSchema.safeParse({ clientId: "id", clientSecret: "s", tag }).success,
+      TailnetConnectionConfigSchema.safeParse({ clientId: "id", clientSecret: "s", tag }).success,
     ).toBe(false);
   });
 });
@@ -63,7 +63,7 @@ describe("tailnet node hostname", () => {
 });
 
 describe("tailnet node attributes", () => {
-  it("keeps values within Tailscale's character set and length", () => {
+  it("keeps values within the tailnet's character set and length", () => {
     expect(tailnetAttributeValue("user@example.test")).toBe("user_example.test");
     expect(tailnetAttributeValue("x".repeat(80))).toHaveLength(50);
     expect(tailnetNodeAttributes({ spaceId: "sp1", botId: "bot-1", userId: "u1" })).toEqual({

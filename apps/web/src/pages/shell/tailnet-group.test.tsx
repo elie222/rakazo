@@ -89,18 +89,18 @@ function type(label: string, value: string) {
 }
 
 it("shows nothing on a server that can't put bots on a tailnet", async () => {
-  tailnet.status.mockResolvedValue({ unavailable: "no_tailscale", connection: null });
+  tailnet.status.mockResolvedValue({ unavailable: "unsupported", connection: null });
   await render();
   expect(container.textContent).toBe("");
 });
 
-it("connects Tailscale with an OAuth client, then turns this bot on", async () => {
+it("connects a tailnet with an OAuth client, then turns this bot on", async () => {
   tailnet.status.mockResolvedValue(disconnected);
   tailnet.connect.mockResolvedValue(connected([]));
   tailnet.setBotAccess.mockResolvedValue(connected(["helper"]));
   await render();
 
-  await act(async () => button("Connect Tailscale").click());
+  await act(async () => button("Connect tailnet").click());
   await act(async () => {
     type("OAuth client ID", "client-a");
     type("OAuth client secret", "tskey-client-kTEST-secretvalue");
@@ -124,11 +124,11 @@ it("connects Tailscale with an OAuth client, then turns this bot on", async () =
   await act(async () => vi.waitFor(() => expect(access.getAttribute("aria-checked")).toBe("true")));
 });
 
-it("shows why Tailscale refused the client", async () => {
+it("shows why the tailnet refused the client", async () => {
   tailnet.status.mockResolvedValue(disconnected);
   tailnet.connect.mockRejectedValue(new Error("Tailscale did not accept this OAuth client."));
   await render();
-  await act(async () => button("Connect Tailscale").click());
+  await act(async () => button("Connect tailnet").click());
   await act(async () => {
     type("OAuth client ID", "client-a");
     type("OAuth client secret", "wrong");
@@ -145,9 +145,9 @@ it("disconnects after confirming", async () => {
   tailnet.status.mockResolvedValue(connected(["helper"]));
   tailnet.disconnect.mockResolvedValue(disconnected);
   await render();
-  await act(async () => button("Disconnect Tailscale").click());
+  await act(async () => button("Disconnect tailnet").click());
   expect(tailnet.disconnect).not.toHaveBeenCalled();
   await act(async () => button("Disconnect").click());
   expect(tailnet.disconnect).toHaveBeenCalledTimes(1);
-  await act(async () => vi.waitFor(() => expect(button("Connect Tailscale")).toBeTruthy()));
+  await act(async () => vi.waitFor(() => expect(button("Connect tailnet")).toBeTruthy()));
 });

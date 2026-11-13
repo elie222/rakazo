@@ -6,7 +6,7 @@ export { TAILNET_CONNECT_PATH } from "./tailnet-path.js";
 /** The tag a space's bots join a tailnet with unless the admin picks another. */
 export const TAILNET_DEFAULT_TAG = "tag:rakazo";
 
-/** Tailscale tag names: `tag:` and a letter or digit, then letters, digits and hyphens. */
+/** Tailnet tag names: `tag:` and a letter or digit, then letters, digits and hyphens. */
 export const TailnetTagSchema = z
   .string()
   .trim()
@@ -17,20 +17,20 @@ export const TailnetTagSchema = z
  * A tailnet admin's OAuth client (client credentials). It needs the `auth_keys` and
  * `devices:posture_attributes` scopes and must own `tag`.
  */
-export const TailscaleConnectionConfigSchema = z.object({
+export const TailnetConnectionConfigSchema = z.object({
   clientId: z.string().trim().min(1).max(512),
   clientSecret: z.string().trim().min(1).max(16384),
   tag: TailnetTagSchema.default(TAILNET_DEFAULT_TAG),
 });
-export type TailscaleConnectionConfig = z.infer<typeof TailscaleConnectionConfigSchema>;
+export type TailnetConnectionConfig = z.infer<typeof TailnetConnectionConfigSchema>;
 
 /**
  * Tailnet access for the signed-in member in the current Space. `unavailable` says why this server
- * can't put bots on a tailnet: no Tailscale installed, or no address bots' computers can reach it
+ * can't put bots on a tailnet: no tailnet software installed, or no address bots' computers can reach it
  * at. `connection` is the member's own, never another member's, and never holds the client.
  */
 export const TailnetStatusSchema = z.object({
-  unavailable: z.enum(["no_tailscale", "no_server_address"]).nullable(),
+  unavailable: z.enum(["unsupported", "no_server_address"]).nullable(),
   connection: z.object({ tag: z.string(), botIds: z.array(z.string()) }).nullable(),
 });
 export type TailnetStatus = z.infer<typeof TailnetStatusSchema>;
@@ -74,7 +74,7 @@ export function tailnetNodeHostname(bot: { name: string; id: string }): string {
   return ["rakazo", slug, suffix].filter(Boolean).join("-");
 }
 
-/** Tailscale posture attribute values: at most 50 letters, digits, underscores and periods. */
+/** Tailnet device attribute values: at most 50 letters, digits, underscores and periods. */
 export function tailnetAttributeValue(value: string): string {
   return value.replace(/[^A-Za-z0-9_.]/g, "_").slice(0, 50);
 }
