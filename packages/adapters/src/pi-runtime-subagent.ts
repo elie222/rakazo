@@ -28,6 +28,7 @@ import { toAgentTools, toolCallBudgetExceededMessage } from "./pi-runtime-tools.
 import { observedPiStream } from "./pi-usage.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
+import { uniqueToolCallIdStream } from "./tool-call-ids.js";
 
 export const MAX_PARALLEL_SUBAGENTS = 4;
 
@@ -127,6 +128,8 @@ export async function executeSubagent(
   );
   const nestedHost: ToolHost = {
     ...host,
+    // The helper's transcript renames its own calls; they must not remap the main agent's ids.
+    providerToolCallIds: new Map(),
     activeModel: {
       config: requestModel,
       models: selectedModel.models,
@@ -233,6 +236,7 @@ export async function executeSubagent(
         requestModel.cacheCapabilities?.retentionMode,
       ),
   };
+  const toolCallIds = { used: new Set<string>(), provider: nestedHost.providerToolCallIds };
   nested = new Agent({
     finishTurn: async (turn, turnSignal) => {
       await deliverFinishedShells(
@@ -250,10 +254,13 @@ export async function executeSubagent(
     },
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
     streamFn: (_m, ctx, options) =>
-      fallbackAwareModelStream(
-        retryState,
-        ctx,
-        withAutomatedLabels({ ...options, fetch: host.modelFetch ?? options?.fetch }),
+      uniqueToolCallIdStream(
+        fallbackAwareModelStream(
+          retryState,
+          ctx,
+          withAutomatedLabels({ ...options, fetch: host.modelFetch ?? options?.fetch }),
+        ),
+        toolCallIds,
       ),
     getApiKey: async () =>
       hasBackups
