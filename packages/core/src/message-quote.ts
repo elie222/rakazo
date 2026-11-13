@@ -5,6 +5,7 @@ import { toHast } from "mdast-util-to-hast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import { isQuestionAskBlock } from "./ask-kind.js";
 import { blocksToAgentHistoryText } from "./attachments.js";
 import {
   compactReplyExcerpt,
@@ -132,7 +133,8 @@ export function deriveMessageQuote(
 export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
   for (const block of [
     ...blocks.filter((block) => block.kind === "text"),
-    ...blocks.filter((block) => block.kind !== "text"),
+    ...blocks.filter(isQuestionAskBlock),
+    ...blocks.filter((block) => block.kind !== "text" && !isQuestionAskBlock(block)),
   ]) {
     const source = replyBlockText(block).slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
     const visible =

@@ -257,6 +257,15 @@ describe("previewMessageText", () => {
     );
   });
 
+  it("keeps mixed-card question previews stable after sending", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "choice", question: "Pick a channel", options: [] },
+      { kind: "ask", text: "Which release?" },
+    ];
+    expect(previewMessageText({ role: "bot", blocks }, labels)).toBe("Which release?");
+    expect(messageReplyPreview(blocks, "bot").text).toBe("Which release?");
+  });
+
   it("keeps text ahead of questions and questions ahead of attachments", () => {
     const ask: MessageBlock = { kind: "ask", text: "Which release?" };
     expect(
