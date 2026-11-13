@@ -93,6 +93,14 @@ export class McpStdioLaunchError extends Error {
   }
 }
 
+/** How long a tool call may go without an answer or a progress report. Real calls (a
+ * search across mail folders, a document export) take minutes; connecting stays short.
+ * Below the HTTP client's default five-minute header wait, so this timeout fires first. */
+export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
+/** Progress restarts the wait, but never past this. The run's own cancellation still
+ * ends a call at any time. */
+export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
+
 const STDERR_TAIL_CHARS = 4_096;
 /** Terminal colour/cursor sequences (ESC [ ... letter) that npm and friends print. */
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
@@ -472,11 +480,17 @@ export class McpSession {
   async callTool(
     name: string,
     args: Record<string, unknown> = {},
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; timeoutMs?: number },
   ): Promise<CallToolResult> {
     this.assertConnected();
+    const timeout = options?.timeoutMs ?? MCP_TOOL_TIMEOUT_MS;
     return (await this.client.callTool({ name, arguments: args }, undefined, {
       signal: options?.signal,
+      timeout,
+      // A progress handler is what asks the server for progress reports at all.
+      onprogress: () => undefined,
+      resetTimeoutOnProgress: true,
+      maxTotalTimeout: Math.max(timeout, MCP_TOOL_MAX_TOTAL_MS),
     })) as CallToolResult;
   }
 
@@ -489,6 +503,12 @@ export class McpSession {
       { uri },
       { signal: options?.signal, timeout: MCP_APP_READ_TIMEOUT_MS },
     );
+  }
+
+  /** Whether the connection is still up. A call that failed while it stayed up (a
+   * timeout, a cancelled run, the server's own error) leaves the session reusable. */
+  get open(): boolean {
+    return this.connected && this.client.transport !== undefined;
   }
 
   /** `afterClose` follows actual SDK shutdown, even if this call stops waiting. */

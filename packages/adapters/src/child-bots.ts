@@ -28,6 +28,7 @@ import {
   createRepos,
   createThreadMessageInTransaction,
   deletePageShareSecrets,
+  draftRecordingsOfLeaseInTransaction,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
@@ -334,12 +335,20 @@ export async function archiveBot(
       data: { active: false, nextRunAt: null },
     });
     await expireComputerExecutionLeases(tx, { botId: bot.id });
+    // Archiving ends a person's control of the bot's screen, and the recording made under it.
+    const held = await tx.computer.findMany({
+      where: { controlBotId: bot.id, controlLeaseId: { not: null } },
+      select: { spaceId: true, controlLeaseId: true },
+    });
     await tx.computer.updateMany({
       where: {
         OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
       },
       data: releasedComputerLease(),
     });
+    for (const { spaceId, controlLeaseId } of held) {
+      await draftRecordingsOfLeaseInTransaction(tx, { spaceId, leaseId: controlLeaseId! });
+    }
     if (dedicated) {
       await tx.computer.updateMany({
         where: { id: dedicated.id, state: { notIn: ["running", "quarantined"] } },
@@ -769,7 +778,6 @@ function releasedComputerLease() {
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
     executionRunId: null,
     executionBotId: null,
     executionLeaseExpiresAt: null,

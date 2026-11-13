@@ -52,16 +52,16 @@ fi
 STOP_ON_FAILURE=1
 "${compose[@]}" stop api worker supervisor
 "${compose[@]}" up -d postgres
-until "${compose[@]}" exec -T postgres pg_isready -U rakazo >/dev/null 2>&1; do
+until "${compose[@]}" exec -T postgres sh -c 'exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; do
   sleep 1
 done
 # Roles live outside the dump, and its grants name the runtime role. The API's
 # start (its migration step) gives that role its login and grants afterwards.
-"${compose[@]}" exec -T postgres psql -X -U rakazo -d rakazo --set=ON_ERROR_STOP=on -c \
+"${compose[@]}" exec -T postgres sh -c 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh --set=ON_ERROR_STOP=on -c \
   "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rakazo_app') THEN CREATE ROLE rakazo_app NOLOGIN; END IF; END \$\$"
 # Stop on SQL errors and roll back the dump before restoring files or starting
 # the application. -f is required for psql's single-transaction mode.
-"${compose[@]}" exec -T postgres psql -X -U rakazo -d rakazo \
+"${compose[@]}" exec -T postgres sh -c 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh \
   --set=ON_ERROR_STOP=on --single-transaction --file=- < "$SRC/rakazo.sql"
 if [[ -n "$STAGE" && -d "$STAGE/data" ]]; then
   if [[ -e "$ROOT/data" ]]; then

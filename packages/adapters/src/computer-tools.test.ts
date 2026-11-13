@@ -73,6 +73,31 @@ describe("computer tool bridge", () => {
     ).toThrow(/x must be a non-negative coordinate/);
   });
 
+  it.each([
+    ["null", null],
+    ["an empty string", ""],
+    ["a blank string", "  "],
+    ["a boolean", true],
+    ["an empty array", []],
+    ["an object", {}],
+  ])("rejects %s as a pointer coordinate instead of clicking at 0", (_label, bad) => {
+    expect(() => parseComputerActions([{ kind: "click", x: bad, y: 10 }])).toThrow(
+      /x must be a non-negative coordinate/,
+    );
+    expect(() => parseComputerActions([{ kind: "click", x: 10, y: bad }])).toThrow(
+      /y must be a non-negative coordinate/,
+    );
+    expect(() =>
+      parseComputerActions([{ kind: "scroll", direction: "down", x: bad, y: 5 }]),
+    ).toThrow(/x must be a non-negative coordinate/);
+  });
+
+  it("still accepts a coordinate sent as a number or a numeric string", () => {
+    expect(parseComputerActions([{ kind: "click", x: 0, y: "12.4" }])).toEqual([
+      { kind: "pointer", x: 0, y: 12, type: "click", button: "left" },
+    ]);
+  });
+
   it("tells repeated scrolls at different points apart", () => {
     const here = computerVisualActionKey(
       parseComputerActions([{ kind: "scroll", direction: "down", x: 100, y: 200 }]),

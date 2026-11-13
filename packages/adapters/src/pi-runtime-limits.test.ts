@@ -243,9 +243,30 @@ describe("clipToolResultText", () => {
     expect(clipped.endsWith("…")).toBe(true);
     expect(clipped.length).toBe(TOOL_RESULT_TEXT_LIMIT + 1);
   });
+
+  it("does not split an emoji at the limit", () => {
+    const clipped = clipToolResultText(`${"a".repeat(89)}😀b`, 90);
+    expect(clipped).toBe(`${"a".repeat(89)}…`);
+  });
+
+  it("keeps an emoji that ends exactly at the limit", () => {
+    expect(clipToolResultText(`${"a".repeat(88)}😀b`, 90)).toBe(`${"a".repeat(88)}😀…`);
+  });
 });
 
 describe("clipToolResultContent", () => {
+  it("does not split an emoji where the shared budget runs out", () => {
+    const clipped = clipToolResultContent(
+      [
+        { type: "text" as const, text: "a".repeat(10) },
+        { type: "text" as const, text: `${"b".repeat(4)}😀tail` },
+      ],
+      15,
+    );
+    const last = clipped[1] as { text: string };
+    expect(last.text).toBe(`${"b".repeat(4)}…`);
+  });
+
   it("shares one character budget across all text parts and leaves images", () => {
     const first = "a".repeat(TOOL_RESULT_TEXT_LIMIT - 10);
     const second = "b".repeat(40);

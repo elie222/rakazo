@@ -19,8 +19,9 @@ any failed run.
 
 ## Restore
 
-For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
-Compose stack. The script validates and extracts the homes archive in a clean sibling directory
+For backups created by `scripts/backup.sh`, use an empty database in the development
+Compose stack. Both scripts use the Postgres container’s `POSTGRES_USER` and `POSTGRES_DB` settings
+(defaulting to `rakazo` in Compose). The script validates and extracts the homes archive in a clean sibling directory
 before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
 path that is a symlink or a non-directory. Stop bot computers and any other processes that
 write to this database or tree before running the script.
