@@ -216,10 +216,12 @@ const looksLikeBot = (value: unknown): value is Json =>
  * Text that is nothing but JSON may also be a bare Bot or a list of them. Curly quotes are
  * repaired only once the text as written found nothing.
  */
+function repairQuotes(source: string): string {
+  return source.replace(/[“”]/g, '"').replace(/(?<![\p{L}\p{N}])[‘’]|[‘’](?![\p{L}\p{N}])/gu, "'");
+}
+
 function documentsIn(source: string): Json[] {
-  const repaired = source
-    .replace(/[“”]/g, '"')
-    .replace(/(?<![\p{L}\p{N}])[‘’]|[‘’](?![\p{L}\p{N}])/gu, "'");
+  const repaired = repairQuotes(source);
   // Set by the last text tried: an export part that never closed would leave its setup out.
   let cutOff = false;
   for (const version of repaired === source ? [source] : [source, repaired]) {
@@ -233,13 +235,7 @@ function documentsIn(source: string): Json[] {
     cutOff = scan.cutOff;
     if (cutOff) continue;
     const documents = scan.found
-      .map(
-        (part) =>
-          looseJson(part) ??
-          looseJson(
-            part.replace(/[“”]/g, '"').replace(/(?<![\p{L}\p{N}])[‘’]|[‘’](?![\p{L}\p{N}])/gu, "'"),
-          ),
-      )
+      .map((part) => looseJson(part) ?? looseJson(repairQuotes(part)))
       .filter(isExportDocument);
     if (documents.length > 0) return documents;
   }
