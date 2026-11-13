@@ -11,6 +11,7 @@ import {
   getOwnedArtifact,
   getSpaceArtifact,
   getSpaceArtifactById,
+  listArtifactVersions,
   listSpaceArtifacts,
   resolveGroupSendAttachments,
   resolveSendAttachments,
@@ -774,5 +775,22 @@ describe("a reply's kept screenshot", () => {
       getOwnedArtifact(deps, actor, { artifactId: "shot-1", botId: "bot-1" }),
     ).rejects.toBeInstanceOf(IsolationError);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it("is neither listed as a file's versions nor deletable from a client", async () => {
+    const findFirst = vi.fn(async () => null);
+    const prisma = { artifact: { findFirst, findMany: vi.fn() } } as unknown as PrismaClient;
+    await expect(
+      listArtifactVersions({ prisma }, actor, { familyId: "shot-1" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(
+      deleteArtifactFamily({ prisma, artifacts: {} as ArtifactStore }, actor, {
+        familyId: "shot-1",
+      }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    for (const [query] of findFirst.mock.calls as unknown as Array<[{ where: unknown }]>)
+      expect(query.where).toMatchObject({
+        mimeType: { notIn: expect.arrayContaining(["image/png;profile=step-screenshot"]) },
+      });
   });
 });

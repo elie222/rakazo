@@ -8,6 +8,7 @@ import { sanitizeConnectorError } from "./connector-safety.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { storeStepScreenshot } from "./thread-artifacts.js";
+import { toolCompletionOutcome } from "./tool-completion-audit.js";
 
 /**
  * The most of one call's result, or of any one text in its arguments, kept for later turns. The
@@ -104,7 +105,8 @@ export function keepToolStepResult(
 ): void {
   const call = reply.toolStepCalls.get(completion.executionId);
   if (!call) return;
-  const failed = completion.error !== undefined ? ({ failed: true } as const) : {};
+  // An error, an error result or a non-zero exit, as the step's outcome counts it.
+  const failed = toolCompletionOutcome(completion) === "failed" ? ({ failed: true } as const) : {};
   const left = TOOL_REPLY_RESULTS_MAX_CHARS - reply.keptResultChars;
   // Once the reply's budget is spent, later calls keep how they ended but not what they returned.
   const result =

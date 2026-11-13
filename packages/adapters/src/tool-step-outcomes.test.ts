@@ -194,6 +194,22 @@ describe("tool step outcomes", () => {
     });
   });
 
+  it("marks a call that exited non-zero as failed, like its step's outcome", () => {
+    const reply = {
+      toolStepCalls: new Map([["call-1", { arguments: "{}" }]]),
+      keptResultChars: 0,
+    } as unknown as ReplyState;
+    keepToolStepResult(
+      reply,
+      {
+        ...base,
+        result: { content: [{ type: "text", text: "no such file" }], details: { exitCode: 2 } },
+      },
+      [],
+    );
+    expect(reply.toolStepCalls.get("call-1")).toMatchObject({ failed: true });
+  });
+
   it("keeps no more than a reply's result budget, then only how later calls ended", () => {
     const reply = { toolStepCalls: new Map(), keptResultChars: 0 } as unknown as ReplyState;
     const big = { content: [{ type: "text", text: "x".repeat(10_000) }] };
