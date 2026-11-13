@@ -8,7 +8,6 @@ import {
   formatFileSize,
   isApprovalAskBlock,
   isQuestionAskBlock,
-  memberName,
   messagingProviderLabel,
   resolveAskChoice,
   selectedAskActionLabel,
@@ -34,7 +33,7 @@ import { messagePresentationSegments } from "../../lib/message-presentation";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
 import { blockText } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
-import { speakerColorFor } from "../../lib/thread-message-text";
+import { botDisplayName, speakerColorFor } from "../../lib/thread-message-text";
 import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";
 import { errorText } from "../../lib/user-error";
@@ -321,14 +320,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
-    const from =
-      memberName(members, handoff.fromBotId) ??
-      bots.find((bot) => bot.id === handoff.fromBotId)?.name ??
-      t`bot`;
-    const to =
-      memberName(members, handoff.toBotId) ??
-      bots.find((bot) => bot.id === handoff.toBotId)?.name ??
-      t`bot`;
+    const from = botDisplayName(members, bots, handoff.fromBotId) ?? t`bot`;
+    const to = botDisplayName(members, bots, handoff.toBotId) ?? t`bot`;
     return (
       <AgentEventLabel
         actionProps={actionProps}
@@ -572,9 +565,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   if (attachments.length > 0) {
     const speaker =
       message.role === "bot"
-        ? (memberName(members, message.botId) ??
-          bots.find((bot) => bot.id === message.botId)?.name ??
-          botName)
+        ? (botDisplayName(members, bots, message.botId) ?? botName)
         : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
@@ -734,11 +725,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const segments = messagePresentationSegments(message.blocks);
   const speaker =
-    message.role === "bot"
-      ? (memberName(members, message.botId) ??
-        bots.find((bot) => bot.id === message.botId)?.name ??
-        botName)
-      : authorName;
+    message.role === "bot" ? (botDisplayName(members, bots, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
   const showSpeaker = showBotSenderName || Boolean(authorName);
