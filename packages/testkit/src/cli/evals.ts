@@ -715,6 +715,7 @@ async function main() {
             store && !values.fresh
               ? store.plan({
                   scenario,
+                  trials: controls.trials,
                   strategy: planned.strategy!,
                   fingerprint,
                   judge: judgeIdentity(report.judge),

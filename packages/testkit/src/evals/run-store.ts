@@ -16,7 +16,12 @@ export type StoredReport = {
   fixtureVersion: string | null;
   caseFixtureVersions?: Record<string, string>;
   codeRevision: string | null;
-  judge: { model: string; rubricVersion: string } | null;
+  judge: {
+    model: string;
+    provider?: string;
+    rubricVersion: string;
+    costUsd?: number | null;
+  } | null;
   fingerprint?: { run: string | null; cases: Record<string, string | null> };
   workflowTotals?: { costUsd: number | null };
   trials: TrialResult[];
@@ -34,7 +39,7 @@ export type RunIndexEntry = {
   provider: string | null;
   fixtureVersion: string | null;
   caseFixtureVersions: Record<string, string>;
-  judge: { model: string; rubricVersion: string } | null;
+  judge: { model: string; provider?: string; rubricVersion: string } | null;
   codeRevision: string | null;
   startedAt: string;
   trials: {
@@ -63,8 +68,9 @@ const usable = (trial: TrialResult) =>
   (trial.status === "passed" ||
     (trial.status === "failed" && (trial.category === "agent" || trial.category === "product")));
 
+/** The judge's provider, model and rubric version; a change to any of them regrades. */
 export const judgeIdentity = (judge: StoredReport["judge"]) =>
-  judge ? `${judge.model}@${judge.rubricVersion}` : null;
+  judge ? `${judge.provider ?? ""}/${judge.model}@${judge.rubricVersion}` : null;
 
 /**
  * Finished eval runs kept by fingerprint: `index.jsonl` with one line per run, and each report
@@ -117,10 +123,21 @@ export class RunStore {
     mkdirSync(path.join(this.dir, fingerprint), { recursive: true });
     // A rerun or a regrade of the same fingerprint sits beside the first; nothing is overwritten.
     const stamp = report.startedAt.replace(/[^0-9TZ]/g, "");
-    let relative = path.join(fingerprint, "report.json.gz");
-    for (let n = 1; existsSync(path.join(this.dir, relative)); n++)
-      relative = path.join(fingerprint, `report-${stamp}${n > 1 ? `-${n}` : ""}.json.gz`);
-    writeFileSync(path.join(this.dir, relative), gzipSync(json), { mode: 0o600, flag: "wx" });
+    const gz = gzipSync(json);
+    let relative = "";
+    for (let n = 0; !relative; n++) {
+      const candidate = path.join(
+        fingerprint,
+        n ? `report-${stamp}${n > 1 ? `-${n}` : ""}.json.gz` : "report.json.gz",
+      );
+      try {
+        // Exclusive create: a concurrent save of the same fingerprint takes the next name.
+        writeFileSync(path.join(this.dir, candidate), gz, { mode: 0o600, flag: "wx" });
+        relative = candidate;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    }
     const attempted = report.trials.filter((t) => t.status !== "not-run");
     const origin = (kind?: string) => report.trials.filter((t) => t.origin?.kind === kind).length;
     const entry: RunIndexEntry = {
@@ -133,7 +150,11 @@ export class RunStore {
       fixtureVersion: report.fixtureVersion,
       caseFixtureVersions: report.caseFixtureVersions ?? {},
       judge: report.judge
-        ? { model: report.judge.model, rubricVersion: report.judge.rubricVersion }
+        ? {
+            model: report.judge.model,
+            ...(report.judge.provider ? { provider: report.judge.provider } : {}),
+            rubricVersion: report.judge.rubricVersion,
+          }
         : null,
       codeRevision: report.codeRevision,
       startedAt: report.startedAt,
@@ -146,7 +167,8 @@ export class RunStore {
         regraded: origin("regraded"),
       },
       costUsd: {
-        new: report.workflowTotals?.costUsd ?? null,
+        // The bot's new calls and the judge's, which a regrade alone still pays for.
+        new: sumNullable(report.workflowTotals?.costUsd ?? null, report.judge?.costUsd ?? 0),
         trials: sumCosts(attempted),
       },
       cases: Object.fromEntries(
@@ -171,6 +193,8 @@ export class RunStore {
   plan(input: {
     scenario: EvalCase;
     strategy: string;
+    /** Trials the run wants; more stored than that does not make a run a better source. */
+    trials: number;
     fingerprint: string;
     judge: string | null;
   }): CasePlan {
@@ -194,7 +218,7 @@ export class RunStore {
       .filter((candidate) => candidate.trials.length > 0)
       .sort(
         (a, b) =>
-          b.trials.length - a.trials.length ||
+          Math.min(b.trials.length, input.trials) - Math.min(a.trials.length, input.trials) ||
           Number(b.sameJudge) - Number(a.sameJudge) ||
           b.entry.startedAt.localeCompare(a.entry.startedAt),
       );
@@ -202,6 +226,10 @@ export class RunStore {
     if (!best) return { kind: "run" };
     return { kind: best.sameJudge ? "reuse" : "regrade", from: best.entry, trials: best.trials };
   }
+}
+
+function sumNullable(a: number | null, b: number | null) {
+  return a === null || b === null ? null : a + b;
 }
 
 function sumCosts(trials: readonly TrialResult[]) {

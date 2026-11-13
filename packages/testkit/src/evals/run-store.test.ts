@@ -189,6 +189,7 @@ describe("run store", () => {
   const plan = (s: RunStore, fingerprint = "f1", rubric = "meaning-v1") =>
     s.plan({
       scenario,
+      trials: 3,
       strategy: "current",
       fingerprint,
       judge: judgeIdentity({ model: "judge-model", rubricVersion: rubric }),
@@ -202,6 +203,7 @@ describe("run store", () => {
       path: path.join("f1".padStart(64, "0"), "report.json.gz"),
       trials: { planned: 2, attempted: 2, passed: 1, run: 2, reused: 0, regraded: 0 },
       costUsd: { new: 0.03, trials: 0.02 },
+      judge: { model: "judge-model", rubricVersion: "meaning-v1" },
       cases: { "lease/current": "f1" },
     });
     // Reruns of one fingerprint, even with the same start time, sit beside each other.
@@ -220,6 +222,20 @@ describe("run store", () => {
     expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 1 }, { trial: 2 }] });
     expect(plan(s, "f1", "meaning-v2")).toMatchObject({ kind: "regrade" });
     expect(plan(s, "f2")).toEqual({ kind: "run" });
+    // The same judge model through another provider is another judge.
+    expect(
+      s.plan({
+        scenario,
+        trials: 3,
+        strategy: "current",
+        fingerprint: "f1",
+        judge: judgeIdentity({
+          provider: "other",
+          model: "judge-model",
+          rubricVersion: "meaning-v1",
+        }),
+      }),
+    ).toMatchObject({ kind: "regrade" });
     // Once a regrade is stored, the newer judge reuses it.
     s.save(report([trial(1), trial(2)], { rubric: "meaning-v2" }));
     expect(plan(s, "f1", "meaning-v2")).toMatchObject({ kind: "reuse" });
@@ -255,6 +271,13 @@ describe("run store", () => {
     const s = store();
     s.save(report([trial(1, { status: "failed", category: "provider" }), trial(2)]));
     expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 2 }] });
+  });
+
+  it("prefers the current judge once a run has the trials wanted", () => {
+    const s = store();
+    s.save(report([trial(1), trial(2), trial(3), trial(4)], { rubric: "meaning-v0" }));
+    s.save(report([trial(1), trial(2), trial(3)]));
+    expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{}, {}, {}] });
   });
 
   it("prefers the stored run with more trials", () => {
