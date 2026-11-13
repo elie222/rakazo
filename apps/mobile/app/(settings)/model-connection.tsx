@@ -429,10 +429,19 @@ export default function ModelConnection() {
       });
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
+      // The mutation has saved this connection even if the follow-up reads fail.
+      setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
+      setHeaderRows(null);
       if (!limitsOnly) setApiKey("");
       if (!savingLimitOnly && (await finishConnecting(activeModelId, saved.id))) return;
-      await load({ modelId });
-      publishFeedback(anchor, { notice: t`Saved.` });
+      try {
+        await load({ modelId });
+        publishFeedback(anchor, { notice: t`Saved.` });
+      } catch (err) {
+        publishFeedback(anchor, {
+          error: errorText(err, t`Could not load model settings`),
+        });
+      }
     } catch (err) {
       publishFeedback(anchor, {
         error: errorText(err, t`Could not connect this provider`),

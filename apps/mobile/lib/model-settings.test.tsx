@@ -35,6 +35,7 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     label: "Fixture",
     held: null as Promise<void> | null,
     failMe: false,
+    failConnect: false,
     apiProtocol: undefined as string | undefined,
     reasoning: false,
     thinkingLevel: undefined as string | undefined,
@@ -95,7 +96,25 @@ vi.mock("./api", () => ({
       if (failure) throw new Error("offline");
       return {};
     }
-    if (procedure === "models/connect") return { id: "credential-new" };
+    if (procedure === "models/connect") {
+      if (saved.failConnect) throw new Error("connection refused");
+      const form = input as {
+        provider: string;
+        baseUrl?: string;
+        modelId?: string;
+        maxTokens?: number;
+      };
+      return {
+        id: "credential-new",
+        provider: form.provider,
+        label: "Saved fixture",
+        hasKey: true,
+        baseUrl: form.baseUrl,
+        modelId: form.modelId,
+        maxTokens: form.maxTokens,
+        headerNames: ["x-session"],
+      };
+    }
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
@@ -788,4 +807,69 @@ it("searches discovered models without losing the selected default", async () =>
   expect(container.textContent).toContain("found-0");
   expect(field("found-0")?.checked).toBe(true);
   expect(field("found-1")?.checked).toBe(true);
+});
+
+describe("connection success with a failed refresh", () => {
+  afterEach(() => {
+    saved.failMe = false;
+    saved.failConnect = false;
+  });
+
+  it("keeps a new saved connection and clears its key when refreshing fails", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    saved.failMe = true;
+    await saveConnection();
+    expect(container.textContent).not.toContain("Could not connect this provider");
+    expect(container.textContent).toContain("Could not load model settings");
+    expect(field("API key")?.value).toBe("");
+    expect(field("API key")?.placeholder).toBe("Paste a replacement key");
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    expect(save.disabled).toBe(false);
+    await saveConnection();
+    const connects = rpcCalls.filter(([procedure]) => procedure === "models/connect");
+    expect(connects).toHaveLength(2);
+    expect(connects[1]?.[1]).toMatchObject({ credentialId: "credential-new" });
+    expect((connects[1]?.[1] as { apiKey?: string } | undefined)?.apiKey).toBeUndefined();
+  });
+
+  it("updates an existing credential before a failed limits refresh", async () => {
+    await remount(() => renderConnection({ provider: "anthropic", credentialId: null }));
+    await change("API key", "synthetic-test-key");
+    saved.failMe = true;
+    const connect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect API key",
+    )!;
+    await act(async () => connect.click());
+    expect(container.textContent).toContain("Replace API key");
+    expect(container.textContent).not.toContain("Could not connect this provider");
+    const advanced = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Advanced",
+    )!;
+    await act(async () => advanced.click());
+    await change("Maximum output tokens", "8192");
+    await saveConnection();
+    expect(field("Maximum output tokens")?.value).toBe("8192");
+    expect(
+      [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
+    ).toBe(false);
+    expect(rpcCalls.filter(([procedure]) => procedure === "models/connect")[1]?.[1]).toMatchObject({
+      credentialId: "credential-new",
+      maxTokens: 8192,
+    });
+  });
+
+  it("keeps the typed key and unsaved state when the connection itself fails", async () => {
+    await remount(() => renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1" }));
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    saved.failConnect = true;
+    await saveConnection();
+    expect(container.textContent).toContain("Could not connect this provider");
+    expect(field("API key")?.value).toBe("synthetic-test-key");
+    expect(field("API key")?.placeholder).not.toBe("Paste a replacement key");
+  });
 });
