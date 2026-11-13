@@ -1,4 +1,5 @@
 import { ph, t } from "@lingui/core/macro";
+import { botRemovalWarning } from "@rakazo/i18n/bot-removal";
 import { Alert } from "react-native";
 import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
@@ -30,16 +31,11 @@ export async function confirmDeleteBot(
       { botId: bot.id },
       { requestContext, skipSpaceAuthRecovery: true },
     );
-    const names = groups.map((group) => group.name).join(", ");
-    if (groups.length === 1) {
-      groupWarning = t`The group ${ph({ names })} will be deleted too, including its messages, files, and pages.`;
-    } else if (groups.length > 1) {
-      groupWarning = t`The groups ${ph({ names })} will be deleted too, including their messages, files, and pages.`;
-    }
+    groupWarning = botRemovalWarning(groups);
   } catch {
-    // Match the web dialog: a failed preview warns generally rather than hiding the risk.
-    groupWarning = t`Groups left with fewer than two bots are deleted too, including their messages, files, and pages.`;
+    groupWarning = botRemovalWarning(null);
   }
+
   if (!current()) {
     finished();
     return;

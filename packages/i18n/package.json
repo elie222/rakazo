@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./bot-removal": "./src/bot-removal.ts",
     "./run-error": "./src/run-error.ts",
     "./vault": "./src/vault.ts",
     "./locales/*": "./locales/*"

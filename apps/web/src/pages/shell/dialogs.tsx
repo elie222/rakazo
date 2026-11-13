@@ -1,5 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { AccountItem, Bot, BotSection } from "@rakazo/contracts";
+import { botRemovalWarning } from "@rakazo/i18n/bot-removal";
 import {
   Button,
   Checkbox,
@@ -347,37 +348,8 @@ export function ClearConversationDialog({
 
 /** The groups a failed preview cannot name, so Delete stays available. */
 function removedGroupsWarning(input: { failed: boolean; groups: readonly { name: string }[] }) {
-  if (input.failed) {
-    return (
-      <>
-        {" "}
-        <Trans>
-          Groups left with fewer than two bots are deleted too, including their messages, files, and
-          pages.
-        </Trans>
-      </>
-    );
-  }
-  if (input.groups.length === 0) return null;
-  const names = input.groups.map((group) => group.name).join(", ");
-  if (input.groups.length === 1) {
-    return (
-      <>
-        {" "}
-        <Trans>
-          The group {names} will be deleted too, including its messages, files, and pages.
-        </Trans>
-      </>
-    );
-  }
-  return (
-    <>
-      {" "}
-      <Trans>
-        The groups {names} will be deleted too, including their messages, files, and pages.
-      </Trans>
-    </>
-  );
+  const warning = botRemovalWarning(input.failed ? null : input.groups);
+  return warning ? <> {warning}</> : null;
 }
 
 export function DeleteBotDialog({
