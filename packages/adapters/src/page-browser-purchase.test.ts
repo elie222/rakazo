@@ -340,6 +340,11 @@ describe("purchase detection in the page helper", () => {
     expect(none.intent("Pay now")?.amount).toBe("");
   });
 
+  it("preserves multiple prices on a total line so the server refuses ambiguity", () => {
+    const checkout = page(`<p>Total: $100, fee .99 USD</p><button>Pay now</button>`);
+    expect(checkout.intent("Pay now")?.amount).toBe("$100, .99 USD");
+  });
+
   it("keeps the separator of an amount with no whole part", () => {
     expect(page(`<button>Pay $.99</button>`).intent("Pay $.99")?.amount).toBe("$.99");
     const after = page(`<p>Total: .99 USD</p><button>Pay now</button>`);
