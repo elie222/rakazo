@@ -374,14 +374,22 @@ it.each(["Remove", "Uninstall"])(
     );
     await act(async () => added?.click());
     state.rpc.mockImplementation((proc: string) =>
-      proc === "connections/catalog"
-        ? Promise.reject(new Error("Unavailable"))
-        : Promise.resolve([]),
+      proc === "connections/catalog" ? Promise.reject(new Error()) : Promise.resolve([]),
     );
     const remove = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === action,
     );
+    const toolsCalls = state.rpc.mock.calls.filter(([proc]) => proc === "connections/tools").length;
     await act(async () => remove?.click());
+    expect(container.textContent).toContain("Could not load integrations");
+    expect(container.textContent).not.toContain("Could not revoke connection");
+    if (action === "Uninstall") {
+      expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+    } else {
+      expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/tools")).toHaveLength(
+        toolsCalls + 1,
+      );
+    }
     expect(state.write).toHaveBeenLastCalledWith(expect.anything(), {
       catalog: [{ ...item, connected: false }],
       connections: [{ ...account, status: "revoked" }],
@@ -396,7 +404,7 @@ it("persists a completed connection before refreshing", async () => {
     if (proc === "connections/begin")
       return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
     if (proc === "connections/complete") return Promise.resolve(account);
-    if (proc === "connections/catalog") return Promise.reject(new Error("Unavailable"));
+    if (proc === "connections/catalog") return Promise.reject(new Error());
     return Promise.resolve([]);
   });
   const add = [...container.querySelectorAll("button")].find(
@@ -408,7 +416,36 @@ it("persists a completed connection before refreshing", async () => {
     connections: [account],
   });
   expect(container.textContent).toContain("Example appAdded");
+  expect(container.textContent).toContain("Could not load integrations");
+  expect(container.textContent).not.toContain("Could not connect");
 });
+
+it.each(["Add another", "Remove", "Uninstall"])(
+  "still reports an operation failure for %s without changing the saved account",
+  async (action) => {
+    state.read.mockReturnValue({ catalog: [item], connections: [account] });
+    await render();
+    const added = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Added",
+    );
+    await act(async () => added?.click());
+    state.rpc.mockImplementation((proc: string) => {
+      if (proc === "connections/begin" || proc === "connections/revoke")
+        return Promise.reject(new Error("Operation rejected"));
+      if (proc === "connections/catalog") return Promise.reject(new Error());
+      return Promise.resolve([]);
+    });
+    const button = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === action,
+    );
+    expect(button).toBeDefined();
+    await act(async () => button?.click());
+    expect(state.write).not.toHaveBeenCalled();
+    expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+    expect(container.textContent).not.toContain("Could not load integrations");
+    if (action !== "Uninstall") expect(container.textContent).toContain("Operation rejected");
+  },
+);
 
 it("paints persisted cached rows while identity is pending or offline", async () => {
   state.persisted.mockResolvedValue({ userId: "user-a", spaceId: "space-a" });

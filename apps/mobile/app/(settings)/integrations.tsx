@@ -726,7 +726,7 @@ export default function Integrations() {
       if (result.status === "connected") {
         if (result.row) updateAccount(result.row);
         void notifyAppConnected(item, isCurrent);
-        await refresh();
+        await retryRefresh();
         if (isCurrent()) setToolsTick((tick) => tick + 1);
         return;
       }
@@ -754,7 +754,7 @@ export default function Integrations() {
       await rpc("connections/revoke", { connectionId: row.id });
       if (!isCurrent()) return;
       updateAccount({ ...row, status: "revoked" });
-      await refresh();
+      await retryRefresh();
       if (isCurrent()) setToolsTick((tick) => tick + 1);
     } catch (reason) {
       if (!isCurrent()) return;
@@ -804,7 +804,7 @@ export default function Integrations() {
         if (!isCurrent()) return;
         updateAccount({ ...row, status: "revoked" });
       }
-      await refresh();
+      await retryRefresh();
       if (isCurrent()) closeDetail();
     } catch (reason) {
       if (!isCurrent()) return;
