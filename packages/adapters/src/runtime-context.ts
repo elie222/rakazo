@@ -372,6 +372,7 @@ export function createRuntimeContextPolicy(
     if (currentIndex < 0)
       currentIndex = messages.findLastIndex((message) => message.role === "user");
     if (currentIndex < 0) currentIndex = 0;
+    const currentMessage = messages[currentIndex];
     // Steering, follow-ups and finished shells arrive as user messages during the
     // run. Give each its own exchange so it does not push older history out:
     // a moved first message rewrites the provider's whole cached prefix.
@@ -561,19 +562,7 @@ export function createRuntimeContextPolicy(
           ],
         };
       });
-    const retained = shortenOlderResults(true);
-    // Fall back before selection can discard older progress to make room for whole results.
-    const retainedTokens = retained.reduce(
-      (total, message) =>
-        total +
-        estimateContextTokens(
-          providerContextPrefix("", [], [message]).messages[0],
-          options.imageTokens,
-        ),
-      fixed,
-    );
-    messages = retainedTokens <= contextWindow - reserve ? retained : shortenOlderResults(false);
-    const selected = selectContext(messages, {
+    const selectionOptions = {
       budget,
       strategy,
       protectedIndexes,
@@ -586,7 +575,35 @@ export function createRuntimeContextPolicy(
       ...(strategy === "retrieval"
         ? { earlier: { before: currentIndex, tokens: shortHistoryAllowance } }
         : {}),
-    });
+    };
+    const retained = shortenOlderResults(true);
+    let selected: ReturnType<typeof selectContext<Message>> | undefined;
+    try {
+      // Measure the context selection actually keeps, not history it will discard.
+      // Whole recent results must not crowd out any progress from the current run.
+      const candidate = selectContext(retained, {
+        ...selectionOptions,
+        truncateToolResults: false,
+      });
+      const kept = new Set(candidate.messages);
+      const activeStart = currentMessage ? retained.indexOf(currentMessage) : 0;
+      if (retained.slice(activeStart).every((message) => kept.has(message))) {
+        selected = candidate;
+        if (sent) {
+          const fallback = selectContext(shortenOlderResults(false), selectionOptions);
+          // Whole results must not evict an otherwise stable prefix: signed thinking
+          // before the first shortened result still depends on that history.
+          if (
+            firstChange(sent.messages, candidate.messages) <
+            firstChange(sent.messages, fallback.messages)
+          )
+            selected = fallback;
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof ContextBudgetError)) throw error;
+    }
+    selected ??= selectContext(shortenOlderResults(false), selectionOptions);
     const shortenedStructuredResults = selected.messages.filter((message) => {
       if (message.role !== "toolResult") return false;
       try {
