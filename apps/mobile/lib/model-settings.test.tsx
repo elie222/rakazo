@@ -836,6 +836,28 @@ describe("connection success with a failed refresh", () => {
     expect((connects[1]?.[1] as { apiKey?: string } | undefined)?.apiKey).toBeUndefined();
   });
 
+  it("keeps a saved connection when the picker's follow-up read fails", async () => {
+    const onConnected = vi.fn(async () => {
+      throw new Error("credentials refresh failed");
+    });
+    await remount(() =>
+      renderConnection({ credentialId: null, baseUrl: "https://ollama.com/v1", onConnected }),
+    );
+    await change("API key", "synthetic-test-key");
+    await change("Model id", "model-fixture");
+    await saveConnection();
+    expect(onConnected).toHaveBeenCalledWith({
+      provider: "openai-compatible",
+      modelId: "model-fixture",
+      credentialId: "credential-new",
+    });
+    expect(container.textContent).toContain("Could not load model settings");
+    expect(container.textContent).not.toContain("Could not connect this provider");
+    expect(field("API key")?.value).toBe("");
+    expect(field("API key")?.placeholder).toBe("Paste a replacement key");
+    expect(back).not.toHaveBeenCalled();
+  });
+
   it("updates an existing credential before a failed limits refresh", async () => {
     await remount(() => renderConnection({ provider: "anthropic", credentialId: null }));
     await change("API key", "synthetic-test-key");

@@ -433,8 +433,8 @@ export default function ModelConnection() {
       setCredentials((current) => [...current.filter((entry) => entry.id !== saved.id), saved]);
       setHeaderRows(null);
       if (!limitsOnly) setApiKey("");
-      if (!savingLimitOnly && (await finishConnecting(activeModelId, saved.id))) return;
       try {
+        if (!savingLimitOnly && (await finishConnecting(activeModelId, saved.id))) return;
         await load({ modelId });
         publishFeedback(anchor, { notice: t`Saved.` });
       } catch (err) {
