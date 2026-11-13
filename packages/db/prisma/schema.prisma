@@ -1187,6 +1187,9 @@ model Message {
   clientNonce      String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
+  /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
+  /// the blocks. Only the bot's runs read it: message reads leave it out unless they select it.
+  toolHistory      String?
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -1849,7 +1852,6 @@ model Computer {
   controlLeaseId          String?
   controlLeaseExpiresAt   DateTime?
   controlBotId            String?
-  controlRunId            String?
   /// The person holding user control. A Space's members share its computers, never a lease.
   controlUserId           String?
   controlFence            Int                      @default(0)

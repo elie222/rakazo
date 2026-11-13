@@ -922,8 +922,9 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(call(asInvitee, "computer/takeover", { botId: bot.id })).resolves.toMatchObject({
       status: 409,
     });
+    // Handing back a screen someone else holds changes nothing.
     await expect(call(asInvitee, "computer/release", { botId: bot.id })).resolves.toMatchObject({
-      status: 409,
+      status: 200,
     });
     // Nor can stopping or resetting the computer under them.
     for (const procedure of ["computer/stop", "computer/reset"]) {
@@ -1319,6 +1320,66 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       system.mcpServer.findUniqueOrThrow({ where: { id: everywhere.id } }),
     ).resolves.toMatchObject({ spaceId: invitee.spaceId, userId: invitee.id });
   });
+  it("ends control without a draft card when a live recording is removed", async () => {
+    const owner = await person("owner");
+    const computer = await system.computer.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: owner.id,
+        scopeKey: `team:${owner.spaceId}:${owner.id}`,
+        homeKey: computerHomeKey({ mode: "team", spaceId: owner.spaceId, userId: owner.id }),
+        kind: "docker",
+        state: "running",
+      },
+    });
+    const bot = await system.bot.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: owner.id,
+        name: "Shopper",
+        color: "test",
+        computerId: computer.id,
+      },
+    });
+    const thread = await system.thread.create({
+      data: { spaceId: owner.spaceId, botId: bot.id, userId: owner.id },
+    });
+    const controlLeaseId = randomUUID();
+    await system.computer.update({
+      where: { id: computer.id },
+      data: {
+        controlHolder: "user",
+        controlLeaseId,
+        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+        controlBotId: bot.id,
+        controlUserId: owner.id,
+      },
+    });
+    const skill = await system.taughtSkill.create({
+      data: {
+        spaceId: owner.spaceId,
+        botId: bot.id,
+        userId: owner.id,
+        goal: "Book a table",
+        status: "recording",
+        recording: { events: [], snapshots: [], controlLeaseId },
+      },
+    });
+
+    await expect(call(owner.actor, "skills/remove", { skillId: skill.id })).resolves.toMatchObject({
+      status: 200,
+    });
+
+    await expect(
+      system.computer.findUniqueOrThrow({ where: { id: computer.id } }),
+    ).resolves.toMatchObject({ controlHolder: "none", controlLeaseId: null });
+    await expect(system.taughtSkill.findUnique({ where: { id: skill.id } })).resolves.toBeNull();
+    const messages = await system.message.findMany({ where: { threadId: thread.id } });
+    expect(
+      messages.flatMap((message) => message.blocks as Array<{ kind: string }>),
+    ).not.toContainEqual(expect.objectContaining({ kind: "skill_draft" }));
+  });
+
   it("leaves a live recording to its teacher and an organization member in their organization", async () => {
     const owner = await person("owner");
     const invitee = await person("invitee");
