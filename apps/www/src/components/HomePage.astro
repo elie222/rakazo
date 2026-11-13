@@ -22,6 +22,7 @@ import openRouterLogo from "./provider-logos/openrouter.svg?raw";
 import imessageLogo from "./brand-logos/imessage.svg?raw";
 import slackLogo from "./brand-logos/slack.svg?raw";
 import telegramLogo from "./brand-logos/telegram.svg?raw";
+import teamsLogo from "./brand-logos/microsoftteams.svg?raw";
 import whatsappLogo from "./brand-logos/whatsapp.svg?raw";
 import {
   HOME_CHANNELS,
@@ -81,6 +82,7 @@ const PROVIDER_LOGOS: Record<string, string> = {
 };
 const CHANNEL_LOGOS: Record<(typeof HOME_CHANNELS)[number]["id"], string> = {
   slack: slackLogo,
+  teams: teamsLogo,
   imessage: imessageLogo,
   whatsapp: whatsappLogo,
   telegram: telegramLogo,
@@ -204,7 +206,7 @@ const structuredData = homeStructuredData({
               HOME_CHANNELS.map((channel) => (
                 <li class="channel-tile">
                   <span class="channel-tile__logo"><Fragment set:html={CHANNEL_LOGOS[channel.id]} /></span>
-                  <span class="channel-tile__name">{channel.name}</span>
+                  <a class="channel-tile__name" href={`/docs/messaging-apps/#${channel.docsAnchor}`}>{channel.name}</a>
                   {channel.selfHosted && (
                     <a class="self-host-tag" href={selfHostOnlyHref}>{copy.selfHost.heading}</a>
                   )}
