@@ -37,6 +37,7 @@ const composioSdkState = vi.hoisted(() => ({
     resultType?: "completed" | "failed" | "blocked";
   },
   failTools: null as null | string[],
+  repeatToolCursor: false,
   rawToolQueries: [] as Array<{ toolkit_slug: string; limit: number; cursor?: string }>,
   logIds: null as null | string[],
   connectedAccounts: {
@@ -89,7 +90,7 @@ vi.mock("@composio/core", () => ({
                 slug: `GMAIL_ACTION_${offset + index}`,
                 description: "An action",
               })),
-              next_cursor: end < 250 ? String(end) : null,
+              next_cursor: composioSdkState.repeatToolCursor ? "0" : end < 250 ? String(end) : null,
             };
           },
         },
@@ -171,6 +172,26 @@ vi.mock("@composio/core", () => ({
 }));
 
 describe("composio app tools", () => {
+  it("rejects a repeated catalog cursor", async () => {
+    composioSdkState.repeatToolCursor = true;
+    try {
+      await expect(
+        new ComposioConnector().listAppTools(
+          {
+            operationId: "app-tools",
+            traceId: "app-tools",
+            spaceId: "workspace",
+            userId: "user-1",
+            signal: new AbortController().signal,
+          },
+          "gmail",
+        ),
+      ).rejects.toThrow("pagination did not terminate");
+    } finally {
+      composioSdkState.repeatToolCursor = false;
+    }
+  });
+
   it("does not fetch tools for an aborted request", async () => {
     const signal = AbortSignal.abort(new Error("Cancelled"));
     const before = composioSdkState.rawToolQueries.length;

@@ -615,9 +615,14 @@ export class ComposioConnector implements ComposioProvider {
     if (!toolkit) return [];
     const composio = await this.sdk();
     const tools: unknown[] = [];
+    const seen = new Set<string>();
     let cursor: string | undefined;
     do {
       context.signal.throwIfAborted();
+      if (seen.size >= 200 || (cursor && seen.has(cursor))) {
+        throw new Error("App tool catalog pagination did not terminate");
+      }
+      if (cursor) seen.add(cursor);
       const page = await composio
         .getClient()
         .tools.list({ toolkit_slug: toolkit, limit: 200, cursor }, { signal: context.signal });
