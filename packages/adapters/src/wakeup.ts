@@ -236,6 +236,17 @@ function abandonment() {
   return state;
 }
 
+/**
+ * Identifies one claim of a job by when it was locked, together with `locked_by`, which names
+ * only the runner's pool; the attempt count cannot, since a refused claim gives its attempt back.
+ * Graphile sets `locked_at` once per claim and hands it to the task as a Date, which pg's parser
+ * cuts to the millisecond, so the column is compared the same way. That still tells claims
+ * apart: after a claim whose task ran, the job is deleted or released with at least a second of
+ * backoff (fail_job adds exp(least(attempts, 10)) seconds), or only after the four-hour lock
+ * reset.
+ */
+const CLAIM_LOCKED_AT = "date_trunc('milliseconds', locked_at)";
+
 /** Thrown for a claim that returned after the stop gave up on its runner; its handler never ran. */
 class JobNotStartedError extends Error {
   constructor(
@@ -252,19 +263,19 @@ class JobNotStartedError extends Error {
  * stays locked: the lock names this runner's pool, not the claim, so unlocking here would let a
  * newer claim of the job by the same pool take it before Graphile's failure write that follows,
  * and that write would then fail the newer claim. The failure write releases the job with the
- * usual backoff for the attempts it has left. Matching the attempt count too limits the give-back
- * to this claim. Returns whether it matched a row.
+ * usual backoff for the attempts it has left. Matching the claim's lock time too limits the
+ * give-back to this claim. Returns whether it matched a row.
  */
 async function returnUnstartedAttempt(helpers: JobHelpers): Promise<boolean> {
-  const { id, locked_by: lockedBy, attempts } = helpers.job;
-  if (!lockedBy) return false;
+  const { id, locked_by: lockedBy, locked_at: lockedAt } = helpers.job;
+  if (!lockedBy || !lockedAt) return false;
   try {
     const { rowCount } = await helpers.withPgClient((client) =>
       client.query(
         `update graphile_worker._private_jobs
          set attempts = greatest(0, attempts - 1)
-         where id = $1::bigint and locked_by = $2::text and attempts = $3::int`,
-        [id, lockedBy, attempts],
+         where id = $1::bigint and locked_by = $2::text and ${CLAIM_LOCKED_AT} = $3::timestamptz`,
+        [id, lockedBy, lockedAt],
       ),
     );
     return rowCount === 1;
@@ -272,11 +283,6 @@ async function returnUnstartedAttempt(helpers: JobHelpers): Promise<boolean> {
     // Graphile's failure write still unlocks the job, at the cost of the attempt.
     return false;
   }
-}
-
-/** A plain timer, so fake timers in tests control it. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -342,13 +348,13 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
  * The pool the runner gets, so the host learns the moment Graphile's job writes
  * become durable: a write's statement resolving through a checked-out client
  * means the jobs it carries have settled in the database. `onWriteSent` sees each
- * statement as it goes out and returns what to call once it lands. Everything else,
+ * statement as it goes out and returns what to call once it lands or fails. Everything else,
  * including pg-pool's internal callback-form checkouts (pool.query, the notify
  * listener), passes through untouched.
  */
 function poolObservingJobWrites(
   pool: Pool,
-  onWriteSent: (ids: readonly string[]) => () => void,
+  onWriteSent: (ids: readonly string[]) => (landed: boolean) => void,
 ): Pool {
   return new Proxy(pool, {
     get(target, property) {
@@ -368,20 +374,23 @@ function poolObservingJobWrites(
 
 function clientObservingJobWrites(
   client: PoolClient,
-  onWriteSent: (ids: readonly string[]) => () => void,
+  onWriteSent: (ids: readonly string[]) => (landed: boolean) => void,
 ): PoolClient {
   return new Proxy(client, {
     get(target, property) {
       if (property === "query") {
         return (config: unknown, ...rest: unknown[]) => {
           const ids = jobWriteJobIds(config);
-          const landed = ids && onWriteSent(ids);
+          const settled = ids && onWriteSent(ids);
           const query = target.query.bind(target) as (...args: unknown[]) => unknown;
           const result = query(config, ...rest);
-          // Only a resolved statement has landed; a failed one retries, and its
+          // Only a resolved statement has landed; a failed one may retry, and its
           // ids must stay owed until a retry succeeds.
-          if (landed && isPromiseLike(result)) {
-            void Promise.resolve(result).then(landed, () => undefined);
+          if (settled && isPromiseLike(result)) {
+            void Promise.resolve(result).then(
+              () => settled(true),
+              () => settled(false),
+            );
           }
           return result;
         };
@@ -434,6 +443,12 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
    * claim's write.
    */
   private readonly owedWrites = new Map<string, object>();
+  /**
+   * The claim token of a job write whose response failed. The write may have committed, so a
+   * newer claim can owe its own write by the time Graphile retries this one; every later
+   * statement for the job is bound to this token, so none can clear the newer claim's write.
+   */
+  private readonly retriedWrites = new Map<string, object>();
   /** Set while stopping: re-arms the stop deadline when outstanding work changes. */
   private rearmStopDeadline: (() => void) | undefined;
   /** Rejects once the drain deadline passes, failing every job still running. */
@@ -451,7 +466,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       localQueueSize?: number;
       /** Omit for a worker that handles every task (tests and embedded hosts). */
       workload?: Workload;
-      /** Test seam: delay between 53300 restart attempts. */
+      /** Test seam for the host's timed waits: 53300 restart backoff, a stop's write allowance. */
       sleep?: (ms: number) => Promise<void>;
       /** Test seam for JOB_DRAIN_TIMEOUT_MS. */
       drainTimeoutMs?: number;
@@ -474,6 +489,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.executions.start();
     this.abandoned = abandonment();
     this.owedWrites.clear();
+    this.retriedWrites.clear();
     this.handlers = handlers;
     await this.launchRunner();
     // run() resolves once the runner is up; runner.promise can still reject later
@@ -561,7 +577,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       // unlocks those jobs for another worker, so when work ran, give the writes the
       // idle bound to land before leaving them to the same paths as a crash.
       if (!drained && (busy || ranSinceStop)) {
-        await Promise.race([runnerStop.catch(() => undefined), sleep(idleMs)]);
+        await Promise.race([runnerStop.catch(() => undefined), this.sleep(idleMs)]);
       }
     } finally {
       this.claimedWhileStopping = undefined;
@@ -586,15 +602,25 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
 
   /**
    * A job write leaves for the database. It belongs to the claims that owe a write for its
-   * jobs now: a newer claim can only follow once this write committed.
+   * jobs now: a newer claim can only follow once this write committed. A retry belongs to the
+   * claim of the send whose response failed. The host cannot tell a retry from a newer claim's
+   * write, so after a failed response a newer claim's write stays owed, bounded by the drain.
    */
-  private noteWriteSent(ids: readonly string[]): () => void {
-    const claims = ids.map((id) => [id, this.owedWrites.get(id)] as const);
-    return () => {
+  private noteWriteSent(ids: readonly string[]): (landed: boolean) => void {
+    const claims = ids.map(
+      (id) => [id, this.retriedWrites.get(id) ?? this.owedWrites.get(id)] as const,
+    );
+    return (landed) => {
       let removed = false;
       for (const [id, claim] of claims) {
-        if (claim === undefined || this.owedWrites.get(id) !== claim) continue;
+        if (claim === undefined) continue;
+        if (!landed) {
+          this.retriedWrites.set(id, claim);
+          continue;
+        }
+        if (this.owedWrites.get(id) !== claim) continue;
         this.owedWrites.delete(id);
+        this.retriedWrites.delete(id);
         removed = true;
       }
       if (removed) this.rearmStopDeadline?.();
@@ -659,12 +685,13 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
                   await client.query(
                     `update graphile_worker._private_jobs
                      set run_at = greatest(run_at, now() + $2::int * interval '1 millisecond')
-                     where id = $1::bigint and locked_by = $3::text and attempts = $4::int`,
+                     where id = $1::bigint and locked_by = $3::text
+                       and ${CLAIM_LOCKED_AT} = $4::timestamptz`,
                     [
                       helpers.job.id,
                       Math.ceil(error.delayMs),
                       helpers.job.locked_by,
-                      helpers.job.attempts,
+                      helpers.job.locked_at,
                     ],
                   );
                 });
@@ -727,11 +754,14 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.runner = runner;
   }
 
+  /** A plain timer by default, so fake timers in tests control it. */
+  private sleep(ms: number): Promise<void> {
+    if (this.options.sleep) return this.options.sleep(ms);
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   private delay(ms: number): Promise<void> {
     if (this.stopping) return Promise.resolve();
-    const sleep =
-      this.options.sleep ??
-      ((wait: number) => new Promise<void>((resolve) => setTimeout(resolve, wait)));
     return new Promise((resolve) => {
       let settled = false;
       const finish = () => {
@@ -741,7 +771,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         resolve();
       };
       this.wakeSleep = finish;
-      void Promise.resolve(sleep(ms)).then(finish, finish);
+      void Promise.resolve(this.sleep(ms)).then(finish, finish);
     });
   }
 

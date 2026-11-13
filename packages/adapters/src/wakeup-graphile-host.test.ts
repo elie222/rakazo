@@ -143,9 +143,12 @@ async function landJobWrite(pool: Pool, name: string, values: unknown[]) {
   }
 }
 
+/** When the fixture claims were locked, as Graphile returns it: cut to the millisecond. */
+const LOCKED_AT = new Date("2026-01-01T00:00:00.123Z");
+
 /**
  * What Graphile hands a task besides its payload: the job id the host tracks its write by,
- * locked by the runner's pool, by default on a first try of the default 25.
+ * locked by the runner's pool at LOCKED_AT, by default on a first try of the default 25.
  */
 function jobHelpers(
   id: string,
@@ -157,7 +160,7 @@ function jobHelpers(
 ) {
   const { attempts = 1, max_attempts = 25, withPgClient } = options;
   return {
-    job: { id, attempts, max_attempts, locked_by: "pool-fixture" },
+    job: { id, attempts, max_attempts, locked_by: "pool-fixture", locked_at: LOCKED_AT },
     withPgClient,
   } as unknown as JobHelpers;
 }
@@ -1050,8 +1053,13 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       const [text, values] = client.query.mock.calls[0]!;
       expect(text).toContain("attempts = greatest(0, attempts - 1)");
       expect(text).not.toContain("locked_by = null");
-      expect(text).toContain("locked_by = $2::text and attempts = $3::int");
-      expect(values).toEqual(["job-last", "pool-fixture", HISTORY_COMPACT_MAX_ATTEMPTS]);
+      // The attempt count changes with every claim and give-back, so the claim is matched by
+      // when it was locked: Graphile hands that time over cut to the millisecond.
+      expect(text).toContain(
+        "locked_by = $2::text and date_trunc('milliseconds', locked_at) = $3::timestamptz",
+      );
+      expect(text).not.toContain("attempts = $");
+      expect(values).toEqual(["job-last", "pool-fixture", LOCKED_AT]);
       // Graphile reports the refusal as the job failing for good on its last attempt;
       // the attempt was given back, so nothing may record the job as exhausted.
       const on = graphile.runner.events.on as ReturnType<typeof vi.fn>;
@@ -1190,6 +1198,103 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     }
   });
 
+  /**
+   * A host on a stalled runner with a local queue, whose wrapped pool answers or fails each
+   * statement only when the test lets it, and a way to report jobs the local queue returns.
+   */
+  async function returningHost() {
+    const graphile = stalledRunner();
+    run.mockResolvedValueOnce(graphile.runner);
+    const answers: Array<{ resolve: () => void; reject: () => void }> = [];
+    const client = {
+      query: vi.fn(
+        () =>
+          new Promise<{ rows: [] }>((resolve, reject) => {
+            answers.push({
+              resolve: () => resolve({ rows: [] }),
+              reject: () => reject(new Error("fixture lost response")),
+            });
+          }),
+      ),
+      release: vi.fn(),
+    };
+    const pool = { connect: vi.fn(async () => client) } as unknown as Pool;
+    const host = new GraphileJobWorkerHost(pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: IDLE_MS,
+      drainTimeoutMs: DRAIN_MS,
+      localQueueSize: 10,
+    });
+    await host.start(handlers());
+    const on = graphile.runner.events.on as ReturnType<typeof vi.fn>;
+    const returned = on.mock.calls.find(
+      (call) => call[0] === "localQueue:returnJobs",
+    )![1] as (event: { jobs: Array<{ id: string }> }) => void;
+    const wrapped = run.mock.calls[0]![0].pgPool as Pool;
+    // Sends Graphile's return write for one job; its retries send the same statement again.
+    const sendReturn = async (id: string) => {
+      const sent = (await wrapped.connect()).query({
+        text: "return_job",
+        name: "return_job/graphile_worker",
+        values: ["pool-fixture", [id]],
+      });
+      sent.catch(() => undefined);
+      return { sent };
+    };
+    return { host, answers, returned, sendReturn };
+  }
+
+  it("keeps a newer claim's write owed when a retry of an earlier write lands", async () => {
+    vi.useFakeTimers();
+    const { host, answers, returned, sendReturn } = await returningHost();
+    try {
+      returned({ jobs: [{ id: "job-again" }] });
+      // The earlier return commits, which unlocks the job, but its response fails.
+      const earlier = await sendReturn("job-again");
+      answers[0]!.reject();
+      await earlier.sent.catch(() => undefined);
+      // The job is claimed and returned again before Graphile retries the earlier write.
+      returned({ jobs: [{ id: "job-again" }] });
+      const stopped = settles(host.stop());
+      // The retry lands; it settles the earlier claim, not the newer one.
+      const retry = await sendReturn("job-again");
+      answers[1]!.resolve();
+      await retry.sent;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(stopped.settled).toBe(false);
+    } finally {
+      for (const answer of answers) answer.resolve();
+      const last = host.stop();
+      await vi.advanceTimersByTimeAsync(DRAIN_MS + IDLE_MS);
+      await last;
+    }
+  });
+
+  it("clears a write once its retry lands after a failed response", async () => {
+    vi.useFakeTimers();
+    const { host, answers, returned, sendReturn } = await returningHost();
+    try {
+      returned({ jobs: [{ id: "job-once" }] });
+      const first = await sendReturn("job-once");
+      answers[0]!.reject();
+      await first.sent.catch(() => undefined);
+      const stopped = settles(host.stop());
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(stopped.settled).toBe(false);
+      // No newer claim exists, so the retry landing settles the only write owed.
+      const retry = await sendReturn("job-once");
+      answers[1]!.resolve();
+      await retry.sent;
+      await vi.advanceTimersByTimeAsync(IDLE_MS + WRITE_ALLOWANCE_MS);
+      expect(stopped.settled).toBe(true);
+    } finally {
+      for (const answer of answers) answer.resolve();
+      const last = host.stop();
+      await vi.advanceTimersByTimeAsync(DRAIN_MS + IDLE_MS);
+      await last;
+    }
+  });
+
   it("limits a retry update to the claim that asked for it", async () => {
     vi.useFakeTimers();
     run.mockResolvedValueOnce(stalledRunner().runner);
@@ -1222,15 +1327,16 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       expect(client.query).toHaveBeenCalledTimes(1);
       // The drain deadline abandons the job while its update is in flight. Graphile's
       // failure write then unlocks it, and another claim may hold it by the time the
-      // update executes, so the update must match only this claim's lock and attempt.
+      // update executes, so the update must match only this claim's lock.
       await vi.advanceTimersByTimeAsync(1_000 + IDLE_MS);
       expect(stopped.settled).toBe(true);
       expect(dispatched.settled).toBe(true);
       const [text, values] = client.query.mock.calls[0]!;
-      expect(text).toContain(
-        "where id = $1::bigint and locked_by = $3::text and attempts = $4::int",
+      expect(text.replace(/\s+/g, " ")).toContain(
+        "where id = $1::bigint and locked_by = $3::text" +
+          " and date_trunc('milliseconds', locked_at) = $4::timestamptz",
       );
-      expect(values).toEqual(["job-retry", 5_000, "pool-fixture", 3]);
+      expect(values).toEqual(["job-retry", 5_000, "pool-fixture", LOCKED_AT]);
     } finally {
       answer.resolve();
       const last = host.stop();
