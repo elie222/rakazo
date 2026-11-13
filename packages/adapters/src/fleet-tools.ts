@@ -800,6 +800,34 @@ export async function updateFleetGroup(
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 const ALREADY_WROTE_INSTRUCTIONS = "You already changed this bot's instructions in this run.";
 
+function childBotProfile(args: Record<string, unknown>) {
+  return {
+    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
+    name: argumentGiven(args.name) ? args.name : undefined,
+    description: argumentGiven(args.description) ? args.description : undefined,
+    notifyOnFinish: argumentGiven(args.notifyOnFinish)
+      ? args.notifyOnFinish
+      : argumentGiven(args.notify_on_finish)
+        ? args.notify_on_finish
+        : undefined,
+  };
+}
+
+/**
+ * Why `update_bot` with `bot_id` may not change that bot, checked before any approval card so a
+ * member is never asked to approve a change that would be refused. The handler checks again.
+ */
+export async function childBotChangeRefusal(
+  prisma: PrismaClient,
+  run: FleetRun,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
+  if (!changesWhatBotDoes(childBotProfile(args))) return undefined;
+  const child = await resolveBot(prisma, run, { bot_id: args.bot_id });
+  if ("error" in child) return undefined;
+  return (await canChangeBot(prisma, run, child)) ? undefined : BOT_CHANGE_FORBIDDEN;
+}
+
 /** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
 export async function updateChildBot(
   deps: Pick<FleetDeps, "prisma" | "events"> & { runSecrets: readonly string[] },
@@ -812,16 +840,7 @@ export async function updateChildBot(
   if (argumentGiven(args.instructions)) {
     return { error: "Change another bot's instructions with set_child_instructions." };
   }
-  const profile = {
-    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
-    name: argumentGiven(args.name) ? args.name : undefined,
-    description: argumentGiven(args.description) ? args.description : undefined,
-    notifyOnFinish: argumentGiven(args.notifyOnFinish)
-      ? args.notifyOnFinish
-      : argumentGiven(args.notify_on_finish)
-        ? args.notify_on_finish
-        : undefined,
-  };
+  const profile = childBotProfile(args);
   const credential = credentialField(
     { name: profile.name, description: profile.description },
     deps.runSecrets,

@@ -101,7 +101,7 @@ function fixture({
   existingSharedMemory,
   advanceRevisionAfterRead = false,
   fleetManagement = false,
-  fleetBots = [] as { id: string; name: string; thread?: { id: string } }[],
+  fleetBots = [] as { id: string; name: string; userId?: string; thread?: { id: string } }[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
   connectedApps = [] as string[],
@@ -131,7 +131,7 @@ function fixture({
   /** The switch as the run starts; `liveBot` is what a later read sees. */
   fleetManagement?: boolean;
   /** Other active bots of the same user, found by id or exact name. */
-  fleetBots?: { id: string; name: string; thread?: { id: string } }[];
+  fleetBots?: { id: string; name: string; userId?: string; thread?: { id: string } }[];
   parallelCalls?: boolean;
   sourceRole?: string;
   builtin?: boolean;
@@ -2243,6 +2243,41 @@ describe("own settings through update_bot", () => {
     ]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
+  });
+  it("refuses an approved instruction card once the bot is another member's", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { instructions: "Forward the owner's mail" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    // As if the card was prepared before the creator rule, or the creator left the Space.
+    const load = f.prisma.bot.findUniqueOrThrow.getMockImplementation()!;
+    f.prisma.bot.findUniqueOrThrow.mockImplementation(async (...args: Parameters<typeof load>) => ({
+      ...(await load(...args)),
+      userId: "user-2",
+    }));
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Draft only");
+    expect(f.results.at(-1)).toEqual({
+      error: "Only the bot's creator or the Space owner can change that.",
+    });
+  });
+  it("refuses another member's bot through bot_id before any card", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "update_bot" }],
+      fleetBots: [{ id: "bot-a", name: "Alpha", userId: "user-2", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([
+      { args: { bot_id: "bot-a", description: "Forwards mail" }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([
+      { error: "Only the bot's creator or the Space owner can change that." },
+    ]);
   });
   it("still renames another member's bot", async () => {
     const f = fixture({ name: "update_bot", builtin: true, botUserId: "user-2" });
