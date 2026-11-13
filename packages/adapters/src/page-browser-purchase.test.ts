@@ -348,6 +348,14 @@ describe("purchase detection in the page helper", () => {
     },
   );
 
+  it.each(["Pay $.99 now; $100 due on click", "Pay $100"])(
+    "refuses conflicting prices in button descriptions: %s",
+    (title) => {
+      const checkout = page(`<button title="${title}">Pay $.99</button>`);
+      expect(checkout.intent("Pay $.99")?.amount).toBe("?");
+    },
+  );
+
   it("keeps the separator of an amount with no whole part", () => {
     expect(page(`<button>Pay $.99</button>`).intent("Pay $.99")?.amount).toBe("$.99");
     const after = page(`<p>Total: .99 USD</p><button>Pay now</button>`);

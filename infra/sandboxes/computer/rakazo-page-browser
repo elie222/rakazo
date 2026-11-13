@@ -2072,7 +2072,8 @@ PURCHASE_HELPERS = r"""
   // A button that names another amount than the page's total also reports the total, which the spending
   // limit counts if larger. `items`: the order lines the page lists, when it lists any.
   function shownPurchase(reason, label, words = [label]) {
-    const named = words.map((word) => moneyIn(word)).find(Boolean) || "";
+    const prices = [...new Set(words.map((word) => moneyIn(word)).filter(Boolean))];
+    const named = prices.length > 1 ? "?" : prices[0] || "";
     const total = totalShown();
     const items = orderItems();
     return { reason, label: cut(label, 80), amount: named || total, amountFrom: named ? "button" : "page",
