@@ -2,8 +2,9 @@ import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 
 /**
  * The shape of a model request a provider rejected, safe to log: key names, counts, part types,
- * numbers, booleans and a few known enum settings. Never prompt or message text, tool arguments
- * or results, file data, identifiers, keys or headers.
+ * numbers, booleans, a few known enum settings, and tool names with their definitions' sizes.
+ * Never prompt or message text, tool descriptions, schemas, arguments or results, file data,
+ * identifiers, keys or headers.
  */
 export interface RejectedProviderRequest {
   provider: string;
@@ -17,7 +18,14 @@ export interface ProviderRequestShape {
   bytes?: number;
   keys: string[];
   params: Record<string, string | number | boolean | string[]>;
-  tools?: { count: number; maxNameLength: number; invalidNames: number };
+  tools?: {
+    count: number;
+    maxNameLength: number;
+    invalidNames: number;
+    duplicateNames: number;
+    /** Each list of tools the request declares, by where it sits: `tools` or `input.<index>`. */
+    lists: { at: string; tools: string[] }[];
+  };
   messages?: { count: number; items: string[] };
 }
 
@@ -90,14 +98,147 @@ function describeSetting(
   } else if (value !== undefined) params[path] = value === null ? "null" : "object";
 }
 
-/** Names stay out: an MCP tool's name carries its server's user-chosen slug. */
-function toolNames(tool: unknown): string[] {
+/** Schema keywords some providers reject or only partly support; a likely cause of a 400. */
+const RISKY_SCHEMA_KEYWORDS = new Set([
+  "$ref",
+  "$defs",
+  "definitions",
+  "$schema",
+  "$id",
+  "$anchor",
+  "$dynamicRef",
+  "oneOf",
+  "allOf",
+  "not",
+  "if",
+  "then",
+  "else",
+  "patternProperties",
+  "dependentSchemas",
+  "dependentRequired",
+  "dependencies",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "propertyNames",
+  "prefixItems",
+  "contains",
+]);
+const SCHEMA_MAPS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"];
+const SCHEMA_LISTS = ["anyOf", "oneOf", "allOf", "prefixItems"];
+const SCHEMA_VALUES = [
+  "items",
+  "additionalProperties",
+  "not",
+  "if",
+  "then",
+  "else",
+  "contains",
+  "propertyNames",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+];
+const MAX_SCHEMA_DEPTH = 64;
+const MAX_TOOL_NAME = 80;
+
+/** Walks schema positions only, so a property named like a keyword is never mistaken for one. */
+function scanSchema(
+  schema: unknown,
+  depth: number,
+  found: { keywords: Set<string>; depth: number },
+) {
+  const node = record(schema);
+  if (!node || depth > MAX_SCHEMA_DEPTH) return;
+  found.depth = Math.max(found.depth, depth);
+  for (const key of Object.keys(node)) if (RISKY_SCHEMA_KEYWORDS.has(key)) found.keywords.add(key);
+  for (const key of SCHEMA_MAPS)
+    for (const value of Object.values(record(node[key]) ?? {})) scanSchema(value, depth + 1, found);
+  for (const key of SCHEMA_LISTS) {
+    const list = node[key];
+    if (Array.isArray(list)) for (const value of list) scanSchema(value, depth + 1, found);
+  }
+  for (const key of SCHEMA_VALUES) {
+    const value = node[key];
+    if (Array.isArray(value)) for (const item of value) scanSchema(item, depth + 1, found);
+    else scanSchema(value, depth + 1, found);
+  }
+}
+
+function byteLength(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value) ?? "");
+  } catch {
+    return 0;
+  }
+}
+
+interface ToolEntry {
+  name: string;
+  summary: string;
+}
+
+/**
+ * One entry per tool: its name, encoded size, and only what could make a definition invalid,
+ * such as a non-function type, strict mode, a root that is not an object, or risky keywords.
+ */
+function describeTools(tool: unknown): ToolEntry[] {
   const item = record(tool);
-  if (!item) return [""];
+  if (!item) return [{ name: "", summary: "?" }];
   const declarations = item.functionDeclarations ?? item.function_declarations;
-  if (Array.isArray(declarations)) return declarations.flatMap(toolNames);
-  const name = item.name ?? record(item.function)?.name;
-  return [typeof name === "string" ? name : ""];
+  if (Array.isArray(declarations)) return declarations.flatMap(describeTools);
+  const definition = record(item.function) ?? item;
+  const name = typeof definition.name === "string" ? definition.name : "";
+  const flags: string[] = [`${byteLength(tool)}B`];
+  const type = token(item.type);
+  if (type && type !== "function") flags.push(type);
+  if (definition.strict === true) flags.push("strict");
+  if (item.defer_loading === true) flags.push("deferred");
+  const schema =
+    definition.parameters ??
+    definition.parametersJsonSchema ??
+    definition.input_schema ??
+    definition.inputSchema;
+  if (schema !== undefined) {
+    const root = record(schema);
+    if (root?.type !== "object")
+      flags.push(`root=${root ? (token(root.type) ?? "untyped") : typeof schema}`);
+    const found = { keywords: new Set<string>(), depth: 0 };
+    scanSchema(schema, 0, found);
+    if (found.keywords.size) flags.push(`uses=${[...found.keywords].sort().join(",")}`);
+    if (found.depth > 10) flags.push(`depth=${found.depth}`);
+  }
+  const label = name ? name.slice(0, MAX_TOOL_NAME) : "(unnamed)";
+  return [{ name, summary: `${label} ${flags.join(" ")}` }];
+}
+
+function describeToolLists(body: Record<string, unknown>): ProviderRequestShape["tools"] {
+  const lists: { at: string; tools: unknown[] }[] = [];
+  if (Array.isArray(body.tools)) lists.push({ at: "tools", tools: body.tools });
+  if (Array.isArray(body.input))
+    body.input.forEach((item, index) => {
+      const tools = record(item)?.tools;
+      if (Array.isArray(tools)) lists.push({ at: `input.${index}`, tools });
+    });
+  if (!lists.length) return undefined;
+  let duplicateNames = 0;
+  const all: ToolEntry[] = [];
+  const described = lists.map(({ at, tools }) => {
+    const entries = tools.flatMap(describeTools);
+    const seen = new Set<string>();
+    for (const { name } of entries) {
+      if (name && seen.has(name)) duplicateNames += 1;
+      seen.add(name);
+    }
+    all.push(...entries);
+    return { at, tools: compact(entries.map((entry) => entry.summary)) };
+  });
+  const names = all.map((entry) => entry.name).filter(Boolean);
+  return {
+    count: all.length,
+    maxNameLength: Math.max(0, ...names.map((name) => name.length)),
+    invalidNames: names.filter((name) => !VALID_TOOL_NAME.test(name)).length,
+    duplicateNames,
+    lists: described,
+  };
 }
 
 function partTypes(content: unknown): string {
@@ -145,15 +286,8 @@ export function summarizeProviderRequest(payload: unknown): ProviderRequestShape
   try {
     shape.bytes = Buffer.byteLength(JSON.stringify(body));
   } catch {}
-  if (Array.isArray(body.tools)) {
-    const tools = body.tools.flatMap(toolNames);
-    const names = tools.filter(Boolean);
-    shape.tools = {
-      count: tools.length,
-      maxNameLength: Math.max(0, ...names.map((name) => name.length)),
-      invalidNames: names.filter((name) => !VALID_TOOL_NAME.test(name)).length,
-    };
-  }
+  const tools = describeToolLists(body);
+  if (tools) shape.tools = tools;
   const messages = [body.messages, body.input, body.contents].find(Array.isArray);
   if (messages)
     shape.messages = { count: messages.length, items: compact(messages.map(describeMessage)) };

@@ -75,7 +75,18 @@ describe("summarizeProviderRequest", () => {
         "reasoning.summary": "auto",
         api_key: "string",
       },
-      tools: { count: 2, maxNameLength: 6, invalidNames: 0 },
+      tools: {
+        count: 2,
+        maxNameLength: 6,
+        invalidNames: 0,
+        duplicateNames: 0,
+        lists: [
+          {
+            at: "tools",
+            tools: ["search 86B root=untyped", "(unnamed) 21B web_search"],
+          },
+        ],
+      },
       messages: {
         count: 5,
         items: [
@@ -105,7 +116,10 @@ describe("summarizeProviderRequest", () => {
         tools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
       }),
     ).toMatchObject({
-      tools: { count: 1, maxNameLength: 6, invalidNames: 0 },
+      tools: {
+        count: 1,
+        lists: [{ at: "tools", tools: ["lookup 64B root=untyped"] }],
+      },
       messages: { count: 4, items: ["system:text", "user:text x2", "tool:text"] },
     });
     expect(
@@ -120,7 +134,7 @@ describe("summarizeProviderRequest", () => {
         generationConfig: { maxOutputTokens: 100, thinkingConfig: { thinkingBudget: 512 } },
       }),
     ).toMatchObject({
-      tools: { count: 2, maxNameLength: 1, invalidNames: 0 },
+      tools: { count: 2, maxNameLength: 1, lists: [{ at: "tools", tools: ["x 12B", "y 12B"] }] },
       messages: { items: ["model:functionCall"] },
       params: {
         "generationConfig.maxOutputTokens": 100,
@@ -139,18 +153,72 @@ describe("summarizeProviderRequest", () => {
   });
 });
 
-describe("tool names", () => {
-  it("records only their shape, never the names", () => {
+describe("tool definitions", () => {
+  it("lists every declared tool with its size and what could make it invalid, never its schema", () => {
+    const strictTool = {
+      type: "function",
+      name: "lookup",
+      description: "PROMPT-TEXT-secret",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          not: { type: "string", description: "TOOL-ARGS-secret" },
+          filter: { oneOf: [{ $ref: "#/$defs/range" }, { type: "string" }] },
+        },
+        $defs: { range: { type: "object", patternProperties: { "^x": { type: "number" } } } },
+      },
+    };
     const shape = summarizeProviderRequest({
-      tools: [
-        { type: "function", name: "acme-private-server_search" },
-        { type: "function", name: "has spaces.and.dots" },
+      tools: [{ type: "function", name: "acme-server_search", parameters: { type: "object" } }],
+      input: [
+        { type: "additional_tools", role: "developer", tools: [strictTool] },
+        { role: "user", content: "PROMPT-TEXT-secret" },
+        {
+          type: "tool_search_output",
+          tools: [
+            { ...strictTool, defer_loading: true },
+            { type: "function", name: "has spaces", parameters: { type: "string" } },
+          ],
+        },
       ],
     });
-    expect(shape?.tools).toEqual({ count: 2, maxNameLength: 26, invalidNames: 1 });
-    expect(JSON.stringify(shape)).not.toContain("acme");
+    const uses = "uses=$defs,$ref,oneOf,patternProperties";
+    expect(shape?.tools).toEqual({
+      count: 4,
+      maxNameLength: 18,
+      invalidNames: 1,
+      duplicateNames: 0,
+      lists: [
+        {
+          at: "tools",
+          tools: [
+            `acme-server_search ${byteLength({ type: "function", name: "acme-server_search", parameters: { type: "object" } })}B`,
+          ],
+        },
+        { at: "input.0", tools: [`lookup ${byteLength(strictTool)}B strict ${uses}`] },
+        {
+          at: "input.2",
+          tools: [
+            `lookup ${byteLength({ ...strictTool, defer_loading: true })}B strict deferred ${uses}`,
+            expect.stringMatching(/^has spaces \d+B root=string$/),
+          ],
+        },
+      ],
+    });
+    const serialized = JSON.stringify(shape);
+    for (const secret of SECRETS) expect(serialized).not.toContain(secret);
+  });
+
+  it("counts a name declared twice in one list", () => {
+    const tool = { type: "function", name: "x", parameters: { type: "object" } };
+    expect(summarizeProviderRequest({ tools: [tool, tool] })?.tools?.duplicateNames).toBe(1);
   });
 });
+
+function byteLength(value: unknown) {
+  return Buffer.byteLength(JSON.stringify(value));
+}
 
 describe("request size", () => {
   it("counts the encoded bytes, not characters", () => {
