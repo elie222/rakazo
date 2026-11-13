@@ -1242,7 +1242,6 @@ function SpaceShell() {
         discardChatAttachments={composer.discardThreadAttachments}
         computer={computer}
         computerOpen={computerOpen}
-        booting={booting}
         computerPanel={
           active ? (
             <ComputerPanel
@@ -1413,9 +1412,6 @@ function SpaceShell() {
           onTakeControl={() => void openComputer(computerBot.id, true)}
           onStart={() => void openComputer(computerBot.id)}
           onRefreshTeaching={refreshActiveTeaching}
-          onRefreshComputer={async () => {
-            await computerControls.refreshComputerFor(computerBot.id);
-          }}
           onClose={() => setComputerOpen(false)}
         />
       ) : null}
