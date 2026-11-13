@@ -22,7 +22,7 @@ vi.mock("./session", () => ({ currentSessionGeneration: () => 0 }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({ rpc, selectedSpaceId: () => "space-a" }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },

@@ -6,7 +6,7 @@ import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
-import { rpc } from "../lib/api";
+import { rpc, selectedSpaceId } from "../lib/api";
 import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "../lib/archived-chats";
 import { confirmDeleteGroup } from "../lib/bot-lifecycle";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
@@ -30,13 +30,15 @@ export default function GroupSettingsScreen() {
 
   useEffect(() => {
     if (!groupId) return;
+    const spaceId = selectedSpaceId();
     let generation = 0;
     let baseline: MobileGroup | null = null;
     async function load() {
+      if (selectedSpaceId() !== spaceId) return;
       const request = ++generation;
       try {
         const [groups, nextBots] = await Promise.all([rpc("groups/list"), rpc("bots/list")]);
-        if (request !== generation) return;
+        if (request !== generation || selectedSpaceId() !== spaceId) return;
         const nextGroup = groups.find((row) => row.id === groupId);
         if (!nextGroup) throw new Error(t`Group not found`);
         const ids = new Set([
@@ -67,7 +69,8 @@ export default function GroupSettingsScreen() {
         );
         setBots(nextBots.filter((bot) => !bot.archivedAt));
       } catch (err) {
-        if (request === generation) setLoadError(errorText(err, t`Could not load group`));
+        if (request === generation && selectedSpaceId() === spaceId)
+          setLoadError(errorText(err, t`Could not load group`));
       }
     }
     void load();
